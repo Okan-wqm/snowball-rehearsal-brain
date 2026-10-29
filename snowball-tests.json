@@ -1,7 +1,8 @@
 {
   "tests": [
-    {"id": "T13", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_chain.py'", "stage": 0}
+    {"id": "T13", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_chain.py'", "stage": 0},
+    {"id": "T38", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_secrets.py'", "stage": 0}
   ],
-  "done_mf": [1],
+  "done_mf": [1, 2],
   "lockfiles": []
 }
