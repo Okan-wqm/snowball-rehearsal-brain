@@ -217,6 +217,32 @@ class Detection(unittest.TestCase):
         self.assert_caught("prompt", prompt_with('client_secret = "%s"' % long_value), "secret-assignment",
                            long_value)
 
+    def test_bare_and_weak_assigned_values_are_caught(self):
+        """A value after a secret-named key leaks whether it is quoted, bare, random or weak.
+
+        Rejection of 99278a5 (the rival's verdict was withheld for holding a bare assignment): the
+        assignment rule only took quoted, random-looking values, so an unquoted one scanned clean. In a
+        JSON row the quotes around a value are escaped; they are decoded before the scan.
+        """
+        pw, tok, sec = j("pass", "word"), j("to", "ken"), j("sec", "ret")
+        weak = j("hunter", "22")
+        random_value = body("bare", 20)
+        cases = [
+            ("DB_%s=%s" % (pw.upper(), random_value), random_value),
+            ("DB_%s=%s" % (pw.upper(), weak), weak),
+            ("x_%s: %s" % (tok, random_value), random_value),
+            ('%s = "%s"' % (pw, weak), weak),
+            ('{"client_%s": "%s"}' % (sec, weak), weak),
+            ("export API_%s=%s;" % (tok.upper(), random_value), random_value),
+            ("the %s is %s=%s." % (pw, pw, weak), weak),
+            ("%s := `%s`" % (tok, weak), weak),
+        ]
+        for text, value in cases:
+            for kind, wrapped in (("prompt", prompt_with(text)), ("row", row_with(text)),
+                                  ("diff", diff_with(text))):
+                with self.subTest(text=text, kind=kind):
+                    self.assert_caught(kind, wrapped, "secret-assignment", value)
+
     def test_diff_reports_path_and_scans_removed_lines(self):
         token = FAKES["github-token"]
         result = self.assert_caught("diff", diff_with('T = "%s"' % token, sign="-", path="svc/old.py"),
@@ -296,6 +322,11 @@ class Clean(unittest.TestCase):
             '%s = os.environ["%s"]' % (key, key.upper()),
             '%s = "${%s_FROM_ENV}"' % (sec, sec.upper()),
             '%s = "%s"' % (tok, "a" * 24),
+            "%s = self.%s" % (tok, tok),
+            "%s = request.form" % pw,
+            "%s = %s_value" % (sec, sec),
+            "%s_name = %s" % (tok, j("change", "me")),
+            "rejected: %s_in_verdict:generic_assignment." % sec,
             "url = 'https://user" + ":%s@example.com/'" % pw,
             "commit 632a84cc3e7e70741607457a4060e375caa0e3a4",
             "row_hash 3bae91580aca99362572e9f5f41b3e46c2bc0c29236f72e867faa5cd46ca603a",

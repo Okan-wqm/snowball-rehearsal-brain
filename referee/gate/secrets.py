@@ -9,12 +9,14 @@ where it is and its sha256 fingerprint).
   the input, and the sha256 of the matched text. The matched text itself never leaves this module.
 - Rules are the high-confidence token shapes of the providers the system touches (Anthropic, GitHub,
   AWS, Google, Slack, Stripe, npm, GitLab, OpenAI), private key blocks, JWTs, credentials inside URLs and
-  a quoted assignment to a secret-named key whose value looks random. Callers may add ``known`` values
-  (the referee's own secrets, by environment variable name on the command line): those match verbatim.
-- Every line is scanned three ways: as written; with ``\\uXXXX`` / ``\\xNN`` escapes decoded (a JSON
-  row may spell a token in escapes); and NFKC-folded with invisible format characters (zero-width
-  space, soft hyphen, BOM ...) removed. A diff is scanned whole: removed and context lines leak as
-  much as added ones once the diff is put in a prompt.
+  a quoted or bare value assigned to a secret-named key, unless it is a template or a code reference.
+  Callers may add ``known`` values (the referee's own secrets, by environment variable name on the
+  command line): those match verbatim.
+- Every line is scanned three ways: as written; with ``\\uXXXX`` / ``\\xNN`` / ``\\"`` escapes decoded
+  (a JSON row may spell a token in escapes, and always escapes the quotes around a value); and
+  NFKC-folded with invisible format characters (zero-width space, soft hyphen, BOM ...) removed. A diff
+  is scanned whole: removed and context lines leak as much as added ones once the diff is put in a
+  prompt.
 - Fail closed: input that is not UTF-8 is decoded with replacement and still scanned; an unreadable file
   or a bad command line is exit 2, never "clean".
 
@@ -34,7 +36,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 import re
 import subprocess
@@ -67,14 +68,19 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("url-credentials", re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]{1,15}://[^\s/:@\"'<>]{1,64}:([^\s/@\"'<>]{6,128})@")),
 ]
 
-# A quoted value assigned to a secret-named key. Only reported when the value looks random (below),
-# so a call like get_token() or a <placeholder> value stays clean.
+# A value assigned to a secret-named key, quoted or bare, of 8 or more characters. There is no entropy
+# test: a weak password is still a password (hunter22 leaks as much as a random string). Only shapes
+# that cannot be the secret itself are skipped (``_placeholder``): templates and code references.
 ASSIGNMENT = re.compile(
-    r"(?i)(?:passw(?:or)?d|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
-    r"client[_\-]?secret|auth)[A-Za-z0-9_\-]*[\"']?\s*(?::=|=>|[:=])\s*[\"']([^\"'\s]{16,})[\"']")
+    r"(?i)(?:passw(?:or)?d|passphrase|pwd|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
+    r"credential|auth)[A-Za-z0-9_\-]*[\"'`]?[ \t]*(?::=|=>|[:=])[ \t]*"
+    r"(?:([\"'`])([^\"'`\s]{8,})\1|([^\s\"'`,;()\[\]{}]{8,}))")
+PLACEHOLDER_WORDS = {"password", "passwd", "secret", "changeme", "example", "redacted", "placeholder",
+                     "undefined", "none", "null", "true", "false"}
+CODE_PATH = re.compile(r"[A-Za-z]+(?:[._][A-Za-z]+)+")
 URL_PLACEHOLDERS = {"password", "passwd", "secret", "changeme", "example", "xxxxxx", "********"}
 
-ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})")
+ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})|\\([\"'/\\])")
 DIFF_PATH = re.compile(r"^\+\+\+ (?:b/)?(.*?)\s*$")
 
 
@@ -95,22 +101,20 @@ def _fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
 
 
-def _entropy(text: str) -> float:
-    counts: dict[str, int] = {}
-    for ch in text:
-        counts[ch] = counts.get(ch, 0) + 1
-    return -sum(c / len(text) * math.log2(c / len(text)) for c in counts.values())
-
-
-def _looks_random(value: str) -> bool:
-    if value.startswith(("$", "<", "{", "%")) or "(" in value or "${" in value:
-        return False
-    classes = sum(1 for test in (str.isdigit, str.isupper, str.islower) if any(test(c) for c in value))
-    return classes >= 2 and _entropy(value) >= 3.5
+def _placeholder(value: str, after: str) -> bool:
+    """True when an assigned value cannot be the secret: a template, a call, a name, one repeated char."""
+    if value.startswith(("$", "<", "{", "%")) or "${" in value or "(" in value:
+        return True
+    if len(set(value)) == 1 or value.lower() in PLACEHOLDER_WORDS:
+        return True
+    # get_token(request), os.environ["KEY"], self.token, request.form, secret_value: code, not a value
+    return after in ("(", "[") or CODE_PATH.fullmatch(value) is not None
 
 
 def _unescape(line: str) -> str:
     def one(m: re.Match) -> str:
+        if m.group(3):
+            return m.group(3)
         code = int(m.group(1) or m.group(2), 16)
         return "" if 0xD800 <= code <= 0xDFFF else chr(code)
     return ESCAPE.sub(one, line)
@@ -138,8 +142,10 @@ def _line_hits(line: str, known: list[tuple[str, str]]) -> list[tuple[str, str]]
                     continue
                 hits.append((name, m.group(0)))
         for m in ASSIGNMENT.finditer(variant):
-            if _looks_random(m.group(1)):
-                hits.append(("secret-assignment", m.group(1)))
+            # a bare value loses the full stop or colon that ends a sentence ("... is token:abc.")
+            value = m.group(2) or m.group(3).rstrip(".:")
+            if len(value) >= 8 and not _placeholder(value, variant[m.end():m.end() + 1]):
+                hits.append(("secret-assignment", value))
         for label, value in known:
             if value in variant:
                 hits.append((label, value))
