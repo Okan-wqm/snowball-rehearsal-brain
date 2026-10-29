@@ -65,7 +65,7 @@ RULES: list[tuple[str, re.Pattern]] = [
 ]
 
 # A quoted value assigned to a secret-named key. Only reported when the value looks random (below),
-# so ``token = get_token()`` and ``password: "<placeholder>"`` stay clean.
+# so a call like get_token() or a <placeholder> value stays clean.
 ASSIGNMENT = re.compile(
     r"(?i)(?:passw(?:or)?d|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
     r"client[_\-]?secret|auth)[A-Za-z0-9_\-]*[\"']?\s*(?::=|=>|[:=])\s*[\"']([^\"'\s]{16,256})[\"']")

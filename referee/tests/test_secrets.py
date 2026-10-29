@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -56,6 +57,24 @@ FAKES = {
 AWS_SECRET_VALUE = body("awssecret", 40, ALNUM + "/+")
 ASSIGNED_VALUE = body("assigned", 32)
 URL_PASSWORD = body("urlpw", 14)
+
+# A broader shape than the scanner's own assignment rule: no entropy test, quoted or bare value. The
+# scanner lets low-entropy placeholders through on purpose; the seed keeps any such text out of the
+# rival's prompt (29b:26), so the files this repo pushes must not hold it at all.
+BROAD = [
+    ("assignment", re.compile(
+        r"(?i)(?:passw(?:or)?d|passphrase|pwd|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
+        r"credential|auth)[A-Za-z0-9_\-]*[\"'`]?[ \t]*(?::=|=>|[:=])[ \t]*[\"'`]?([^\s\"'`,;()\[\]{}]{8,})")),
+    ("url-userinfo", re.compile(r"://[^\s/@\"']+:[^\s/@\"']+@")),
+    ("key-block", re.compile(r"BEGIN [A-Z ]*PRIVATE KEY")),
+]
+PUSHED = ("referee/gate/secrets.py", "referee/tests/test_secrets.py", "referee/ledger/chain.py",
+          "referee/tests/test_chain.py", "snowball-tests.json")
+
+
+def broad_hits(text: str) -> list:
+    return [(n, name, m.group(0)[:40]) for n, line in enumerate(text.splitlines(), 1)
+            for name, pattern in BROAD for m in pattern.finditer(line)]
 
 
 def sha(text: str) -> str:
@@ -241,13 +260,16 @@ class Clean(unittest.TestCase):
                 self.assert_clean("prompt", prompt_with("value %s" % text))
 
     def test_ordinary_code_and_placeholders(self):
+        # key names are assembled too: a literal quoted value after a secret-named key is the shape the
+        # seed keeps out of the rival's prompt, placeholder or not (see BROAD below)
+        tok, pw, key, sec = j("to", "ken"), j("pass", "word"), j("api", "_key"), j("sec", "ret")
         lines = [
-            "token = get_token(request)",
-            'password = "<placeholder>"',
-            'api_key = os.environ["API_KEY"]',
-            'secret = "${SECRET_FROM_ENV}"',
-            'token = "aaaaaaaaaaaaaaaaaaaaaaaa"',
-            "url = 'https://user:password@example.com/'",
+            "%s = get_%s(request)" % (tok, tok),
+            '%s = "<placeholder>"' % pw,
+            '%s = os.environ["%s"]' % (key, key.upper()),
+            '%s = "${%s_FROM_ENV}"' % (sec, sec.upper()),
+            '%s = "%s"' % (tok, "a" * 24),
+            "url = 'https://user" + ":%s@example.com/'" % pw,
             "commit 632a84cc3e7e70741607457a4060e375caa0e3a4",
             "row_hash 3bae91580aca99362572e9f5f41b3e46c2bc0c29236f72e867faa5cd46ca603a",
             "id 123e4567-e89b-12d3-a456-426614174000",
@@ -256,6 +278,26 @@ class Clean(unittest.TestCase):
         self.assert_clean("diff", diff_with("\n+".join(lines)))
         self.assert_clean("prompt", prompt_with("\n".join(lines)))
         self.assert_clean("prompt", "")
+
+    def test_broad_shape_catches_what_the_scanner_lets_through(self):
+        """BROAD is stricter than the scanner: placeholders after a secret-named key are flagged."""
+        tok, pw = j("to", "ken"), j("pass", "word")
+        for text in ('%s = "%s"' % (tok, "a" * 24), "%s = get_%s(request)" % (tok, tok), '%s: "<placeholder>"' % pw, "%s=%s" % (pw, "hunter22"),
+                     j("https://user", ":%s@example.com/" % pw), j("-----BEGIN RSA ", "PRIVATE KEY-----")):
+            with self.subTest(text=text):
+                self.assertTrue(broad_hits(text))
+        for text in ("row_hash: 3bae9158", "key = None", "-----BEGIN PUBLIC KEY-----"):
+            with self.subTest(text=text):
+                self.assertEqual(broad_hits(text), [])
+
+    def test_pushed_files_hold_no_assignment_shaped_text(self):
+        """No pushed file, nor any report, holds text the seed would keep out of the rival's prompt."""
+        reports = os.path.join(BRAIN, "reports")
+        paths = list(PUSHED) + ["reports/" + n for n in sorted(os.listdir(reports)) if n.endswith(".json")]
+        for rel in paths:
+            with self.subTest(path=rel):
+                with open(os.path.join(BRAIN, rel), encoding="utf-8") as fh:
+                    self.assertEqual(broad_hits(fh.read()), [])
 
     def test_the_real_ledger_and_this_push_are_clean(self):
         for rel in ("founder-ledger.jsonl", "referee/gate/secrets.py", "referee/tests/test_secrets.py",
