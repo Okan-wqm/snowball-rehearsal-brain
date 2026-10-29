@@ -1,0 +1,7 @@
+{
+  "id": "spec-013-lint-green-vs-violation",
+  "kind": "spec_issue",
+  "ref": "spec/asama-0/08-kabul-kurali-ve-esleme.md:63",
+  "evidence_test": "cd referee && python -m unittest tests.test_unit_verify.Run.test_lint_must_finish_and_be_deterministic",
+  "state": "open"
+}

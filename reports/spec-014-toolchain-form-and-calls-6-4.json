@@ -1,0 +1,7 @@
+{
+  "id": "spec-014-toolchain-form-and-calls-6-4",
+  "kind": "spec_issue",
+  "ref": "spec/tohum/26c-semalar-asama-0.md:54",
+  "evidence_test": "cd referee && python -m unittest tests.test_unit_verify.StaticCheck.test_toolchain_is_exact_node_version tests.test_unit_verify.StaticCheck.test_with_tree_profile_and_lock_are_judged",
+  "state": "open"
+}
