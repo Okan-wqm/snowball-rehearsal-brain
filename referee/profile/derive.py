@@ -81,7 +81,15 @@ A field the proposal does not carry is not proposed, so it is not compared; only
 the profile (tohum/14). Out of scope here: every other ``profile.json`` field (toolchains, commands,
 graph, banned constructs, ...) and the recipe's own values (image, commands, limits: MF6).
 
-Command line, run from ``referee/`` (one JSON line on stdout; exit 0 fine, 1 refused, 2 unusable input):
+Command line, run from ``referee/`` (one JSON line on stdout; exit 0 fine, 1 refused, 2 no verdict).
+Exit 1 comes only from a ``check`` report with ``ok`` false. Every other failure is exit 2 with an
+``error`` line and no profile: unusable input (a target or policy file that is missing, not JSON, nested
+too deeply for the parser, or of the wrong shape; an operator or ownership-file pattern that does not
+compile, such as ``[z-a]``; a tree entry that cannot be listed or stat'ed), and, as a last resort, any
+other exception, reported as ``internal error: <type>``. An ownership-file pattern in the target tree
+that does not compile stops the derivation rather than being skipped, since skipping it could drop a
+security path. A ``package.json`` or lock file nested too deeply to parse counts as unparsable.
+Out of scope: signals (``KeyboardInterrupt``) and the interpreter being killed.
 
     python -m profile.derive derive TREE [--target FILE] [--policy FILE]
     python -m profile.derive check TREE PROPOSAL [--target FILE] [--policy FILE]
@@ -169,7 +177,10 @@ def pattern_regex(pattern: str) -> re.Pattern:
         else:
             out.append(re.escape(p[i]))
             i += 1
-    return re.compile(("" if anchored else "(?:.*/)?") + "".join(out) + "(?:/.*)?\\Z", re.DOTALL)
+    try:
+        return re.compile(("" if anchored else "(?:.*/)?") + "".join(out) + "(?:/.*)?\\Z", re.DOTALL)
+    except re.error as exc:
+        raise DeriveError("invalid pattern %r: %s" % (pattern, exc)) from None
 
 
 def pattern_matches(pattern: str, path: str) -> bool:
@@ -221,7 +232,8 @@ def excluded(derived: dict, path: str) -> str | None:
 def _keywords(policy: dict | None) -> list[str]:
     if policy is None:
         return list(SECURITY_KEYWORDS)
-    words = (policy.get("constitutional") or {}).get("security_keywords") if isinstance(policy, dict) else None
+    constitutional = policy.get("constitutional") if isinstance(policy, dict) else None
+    words = constitutional.get("security_keywords") if isinstance(constitutional, dict) else None
     if not (isinstance(words, list) and words and all(isinstance(w, str) and w for w in words)):
         raise DeriveError("policy.constitutional.security_keywords is not a list of words")
     return [w.casefold() for w in words]
@@ -247,22 +259,29 @@ def _walk(root: str):
     """Yield (relative path, lstat) for every entry, depth first in name order; never follows symlinks.
 
     The caller sends False into the generator to keep it out of a directory it has just been given.
+    The walk keeps its own stack, so tree depth is bounded by the file system, not by Python recursion.
     """
-    def rec(rel: str):
+    def listing(rel: str):
         full = os.path.join(root, rel) if rel else root
         try:
             names = sorted(os.listdir(full))
         except OSError as exc:
             raise DeriveError("cannot list %s: %s" % (rel or ".", exc.strerror)) from None
-        for name in names:
-            if name == ".git":
-                continue
-            child = posixpath.join(rel, name) if rel else name
+        return iter([posixpath.join(rel, n) if rel else n for n in names if n != ".git"])
+
+    stack = [listing("")]
+    while stack:
+        child = next(stack[-1], None)
+        if child is None:
+            stack.pop()
+            continue
+        try:
             st = os.lstat(os.path.join(root, child))
-            descend = yield child, st
-            if descend is not False and stat.S_ISDIR(st.st_mode):
-                yield from rec(child)
-    return rec("")
+        except OSError as exc:
+            raise DeriveError("cannot stat %s: %s" % (child, exc.strerror)) from None
+        descend = yield child, st
+        if descend is not False and stat.S_ISDIR(st.st_mode):
+            stack.append(listing(child))
 
 
 def derive(tree: str, target: dict | None = None, policy: dict | None = None) -> dict:
@@ -419,7 +438,7 @@ def _json(tree: str, rel: str) -> tuple[bool, Any]:
         return False, None
     try:
         return True, json.loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, RecursionError):
         return True, None
 
 
@@ -615,8 +634,11 @@ def _emit(obj: dict) -> None:
 
 
 def _load(path: str) -> Any:
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except RecursionError:
+        raise DeriveError("%s: JSON nested too deeply" % path) from None
 
 
 def main(argv: list[str]) -> int:
@@ -625,7 +647,10 @@ def main(argv: list[str]) -> int:
         it = iter(argv)
         for a in it:
             if a in ("--target", "--policy"):
-                opts[a] = _load(next(it))
+                path = next(it, None)
+                if path is None:
+                    raise DeriveError("%s needs a file" % a)
+                opts[a] = _load(path)
             else:
                 args.append(a)
         if len(args) == 2 and args[0] == "derive":
@@ -638,8 +663,11 @@ def main(argv: list[str]) -> int:
         _emit({"error": "usage: python -m profile.derive derive TREE | check TREE PROPOSAL"
                         " [--target FILE] [--policy FILE]"})
         return 2
-    except (DeriveError, ValueError, OSError, StopIteration) as exc:
+    except (DeriveError, ValueError, OSError) as exc:
         _emit({"error": "unusable input: %s" % exc})
+        return 2
+    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
+        _emit({"error": "internal error: %s: %s" % (type(exc).__name__, exc)})
         return 2
 
 

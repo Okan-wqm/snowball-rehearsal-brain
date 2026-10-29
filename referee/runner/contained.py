@@ -54,7 +54,10 @@ with the same image (required), flags and limits. It is red when its status is `
 invalid (``red_control_green``); a control that could not run is ``red_control_fault``.
 
 Command line, run from ``referee/`` (stdout is one JSON line; exit 0 fine, 1 refused or invalid, 2
-unusable input):
+unusable input). Exit 1 comes only from a refusal (``ContainmentError``, ``check`` not ok, ``run`` not
+valid); input that is not JSON, nested too deeply to parse, or of the wrong shape is exit 2, and so, as a
+last resort, is any other exception (``internal error: <type>``), never a traceback. Out of scope:
+signals and the interpreter being killed.
 
     python -m runner.contained argv      stdin {image, cmd, run_root, operating, env?, uid?, gid?, artifacts?, name?}
     python -m runner.contained check     stdin: an argv as a JSON array
@@ -535,8 +538,11 @@ def main(argv: list[str]) -> int:
     except ContainmentError as exc:
         _emit({"error": str(exc)})
         return 1
-    except (ValueError, KeyError, TypeError, OSError) as exc:
+    except (ValueError, KeyError, TypeError, OSError, RecursionError) as exc:
         _emit({"error": "unusable input: %s" % exc})
+        return 2
+    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
+        _emit({"error": "internal error: %s: %s" % (type(exc).__name__, exc)})
         return 2
 
 

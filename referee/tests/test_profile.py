@@ -6,11 +6,15 @@ that differs from it, or narrows it, is refused.
   ownership-file line whose owner holds a keyword; the policy's keywords replace the default ones;
 - excluded directories, the operator's patterns, test path rules and inline Rust tests;
 - ``check``: an equal proposal passes; each field narrowed or widened is refused; ``excluded_paths`` may
-  only widen; a field the derivation does not produce is refused; the command line.
+  only widen; a field the derivation does not produce is refused; the command line;
+- unusable input (a pattern that does not compile, in the target or in an ownership file; a policy of the
+  wrong shape; JSON nested too deeply; a tree deeper than Python's recursion limit) gives exit 2 and one
+  JSON error line, never a traceback, and any other exception in ``main`` is exit 2, not a refusal.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
@@ -250,6 +254,90 @@ class ProfileTest(unittest.TestCase):
         code, out = self.run_cli("derive", os.path.join(self.base, "missing"))
         self.assertEqual(code, 2)
         self.assertIn("error", out)
+
+    # ------------------------------------------------------------ unusable input: exit 2, never a traceback
+
+    def write_json_file(self, name, text):
+        path = os.path.join(self.base, name)
+        with open(path, "w") as fh:
+            fh.write(text)
+        return path
+
+    def assert_no_verdict(self, *args):
+        proc = subprocess.run([sys.executable, "-m", "profile.derive", *args], cwd=REFEREE,
+                              capture_output=True, text=True, timeout=120)
+        self.assertNotIn("Traceback", proc.stderr, args)
+        self.assertEqual(proc.returncode, 2, (args, proc.stdout, proc.stderr))
+        lines = proc.stdout.splitlines()
+        self.assertEqual(len(lines), 1, proc.stdout)
+        out = json.loads(lines[0])
+        self.assertEqual(list(out), ["error"], out)
+        return out["error"]
+
+    def test_invalid_pattern_is_derive_error(self):
+        for bad in ("[z-a]", "x[!]y]", "a/[9-0]/b"):
+            with self.assertRaises(D.DeriveError, msg=bad):
+                D.pattern_regex(bad)
+            with self.assertRaises(D.DeriveError, msg=bad):
+                self.derive(target={"excluded_paths": [bad]})
+
+    def test_invalid_ownership_pattern_stops_derivation(self):
+        # skipping the line could drop a security path, so the tree is not derived
+        self.add({"CODEOWNERS": "x[z-a] @org/security\n"})
+        with self.assertRaises(D.DeriveError):
+            self.derive()
+        # a line whose owner names no keyword is not compiled, as before
+        self.add({"CODEOWNERS": "x[z-a] @org/docs\n"})
+        self.derive()
+
+    def test_policy_constitutional_of_wrong_shape(self):
+        for policy in ([1], {"constitutional": [1]}, {"constitutional": "x"}, {"constitutional": {}}):
+            with self.assertRaises(D.DeriveError, msg=repr(policy)):
+                self.derive(policy=policy)
+
+    def test_deep_tree_is_walked_without_recursion_limit(self):
+        depth = sys.getrecursionlimit() + 100
+        cur = os.path.join(self.base, "deep")
+        os.mkdir(cur)
+        rel = []
+        for _ in range(depth):
+            cur = os.path.join(cur, "d")
+            os.mkdir(cur)
+            rel.append("d")
+        with open(os.path.join(cur, "auth.py"), "w") as fh:
+            fh.write("x")
+        d = D.derive(os.path.join(self.base, "deep"))
+        self.assertEqual(d["security_paths"], ["/".join(rel + ["auth.py"])])
+        self.assertEqual(d["languages"], {"python": {"files": 1}})
+
+    def test_deeply_nested_tree_json_is_unparsable(self):
+        deep = "[" * 200000
+        self.add({"app/package.json": {"name": "a"}, "app/package-lock.json": deep})
+        cand = D.derive(self.tree, {"unit_candidates": ["app"]})["unit_candidates"][0]
+        self.assertEqual(cand["reasons"], ["lock_unparsable"])
+        self.add({"app/package.json": deep, "app/package-lock.json": LOCK_OK})
+        cand = D.derive(self.tree, {"unit_candidates": ["app"]})["unit_candidates"][0]
+        self.assertEqual(cand["reasons"], ["package_json_unparsable"])
+
+    def test_cli_unusable_input_is_exit_2_with_json_error(self):
+        target = self.write_json_file("t.json", json.dumps({"excluded_paths": ["[z-a]"]}))
+        self.assertIn("invalid pattern", self.assert_no_verdict("derive", self.tree, "--target", target))
+        policy = self.write_json_file("p.json", json.dumps({"constitutional": [1]}))
+        self.assert_no_verdict("derive", self.tree, "--policy", policy)
+        deep = self.write_json_file("deep.json", "[" * 200000)
+        self.assertIn("nested too deeply", self.assert_no_verdict("derive", self.tree, "--target", deep))
+        self.assert_no_verdict("check", self.tree, deep)
+        self.assertIn("--target needs a file", self.assert_no_verdict("derive", self.tree, "--target"))
+        self.assert_no_verdict("derive", self.tree, "--target", self.write_json_file("bad.json", "{"))
+        self.add({"CODEOWNERS": "x[z-a] @org/security\n"})
+        self.assert_no_verdict("derive", self.tree)
+
+    def test_unexpected_exception_is_exit_2_not_refusal(self):
+        out = io.StringIO()
+        with mock.patch.object(D, "derive", side_effect=TypeError("boom")), mock.patch.object(D.sys, "stdout", out):
+            code = D.main(["derive", self.tree])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(out.getvalue()), {"error": "internal error: TypeError: boom"})
 
 
 if __name__ == "__main__":

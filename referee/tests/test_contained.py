@@ -275,6 +275,33 @@ class ArgvTest(unittest.TestCase):
                            capture_output=True, text=True)
         self.assertEqual(p.returncode, 2)
 
+    def test_command_line_unusable_input_is_exit_2_never_traceback(self):
+        deep = "[" * 200000
+        run_file = os.path.join(tempfile.mkdtemp(prefix="t-cli-"), "run.json")
+        self.addCleanup(shutil.rmtree, os.path.dirname(run_file), True)
+        with open(run_file, "w") as fh:
+            fh.write(deep)
+        # a request that parses but is refused ("request must be an object") stays exit 1
+        cases = ((["check"], deep, 2), (["argv"], deep, 2), (["run", run_file], "", 2), (["check"], "not json", 2),
+                 (["run", run_file + ".missing"], "", 2), (["argv"], "[1]", 1))
+        for args, stdin, code in cases:
+            p = subprocess.run([sys.executable, "-m", "runner.contained", *args], cwd=REFEREE, input=stdin,
+                               capture_output=True, text=True, timeout=60)
+            self.assertNotIn("Traceback", p.stderr, args)
+            self.assertEqual(p.returncode, code, (args, p.stdout))
+            self.assertIn("error", json.loads(p.stdout), args)
+
+    def test_unexpected_exception_is_exit_2_not_refusal(self):
+        from unittest import mock
+        import io
+        out = io.StringIO()
+        with mock.patch.object(contained, "check_argv", side_effect=AttributeError("boom")), \
+                mock.patch.object(contained.sys, "stdin", io.StringIO("[]")), \
+                mock.patch.object(contained.sys, "stdout", out):
+            code = contained.main(["check"])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(out.getvalue()), {"error": "internal error: AttributeError: boom"})
+
 
 # ---------------------------------------------------------------- canary (test 21)
 
