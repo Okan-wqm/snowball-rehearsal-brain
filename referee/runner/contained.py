@@ -1,0 +1,544 @@
+"""Contained run: one docker container per command, fresh host directory, hashes taken outside (stage 0, MF3).
+
+Rules: tohum/08 items 2-3 (container flags, fresh host worktree, results hashed outside after the
+container ends, red control in every run), tohum/26a (run.contained: command, trees, artifacts, unit
+image and limits in; results and their hashes out), tohum/18a and 26c (``operating{key: {value, band}}``
+limits, ``limit_hit:<key>``), asama-0/14 (group ``contained``: the generated ``docker run`` argv carries
+the mandatory flags and none of the forbidden ones).
+
+The argv. ``build_argv`` writes exactly this shape, and ``check_argv`` accepts nothing else:
+
+    docker run --rm --pull never --network none --cap-drop ALL --read-only
+      --security-opt no-new-privileges --user UID:GID --memory N --memory-swap N
+      --name snowball-<32 hex> --workdir /work [--env NAME=VALUE ...]
+      --mount type=bind,src=ROOT/work,dst=/work --mount type=bind,src=ROOT/out,dst=/out
+      [--mount type=bind,src=ROOT/in,dst=/in,readonly]
+      IMAGE CMD [ARG ...]
+
+- ``check_argv`` is an allowlist, not a list of bad flags: before the image, every token must be one of
+  the flags above, written as its own token with its value in the next token (the ``--flag=value`` form,
+  short forms and any other docker flag are refused, so ``--privileged``, ``--network host``, ``--cap-add``,
+  ``-v``, ``--device``, ``--pid host``, ``--env-file`` cannot appear). Each flag but ``--env`` and
+  ``--mount`` appears exactly once; ``argv[0:2]`` is exactly ``docker run`` (no global option such as
+  ``-H``). Values: user is two decimal ids, neither 0; memory and swap are the same integer of at least
+  6 MiB; env is ``NAME=VALUE`` with NAME an identifier not starting, in any case, with ``ACTIONS_``, ``GITHUB_`` or
+  ``RUNNER_`` (the ``--env NAME`` form, which copies the host's value, is refused); mounts are exactly
+  ``/work`` and ``/out`` writable and optionally ``/in`` read-only, all three from one absolute, normalised
+  ROOT spelled with ``[A-Za-z0-9._/-]`` only. The image is pinned: ``name[:tag]@sha256:<64 hex>``.
+- Out of scope of ``check_argv``: what CMD does inside the container, and env values (the ``koş`` job
+  carries no secret, tohum/08 item 1, so a value can only come from the caller). Whether a mount source
+  is a real directory and not a symlink is checked by ``run`` on the host, not by ``check_argv``.
+
+The run (``run``):
+
+- A fresh directory per run (``tempfile.mkdtemp``) holds ``work`` (a copy of the tree), ``out`` (empty) and
+  ``in`` (a copy of the artifacts, mounted read-only). Docker's own process gets ``PATH`` and ``HOME`` (the
+  fresh directory) only, so no other host variable reaches it, and the argv is checked before docker
+  starts.
+- After docker returns (on timeout: ``docker kill`` by name, then wait), ``work``, ``out`` and ``in`` are
+  hashed from the host without following symlinks: a symlink is recorded with its target, a FIFO or
+  device as its type and is never opened; an entry the host cannot read or list makes the run
+  ``unreadable_output``.
+- ``status`` is ``ok``; or ``runner_fault`` (docker exit 125); ``limit_hit:kos_wall_s`` (timeout),
+  ``limit_hit:worktree_bytes`` (tree too big before the run, or ``work`` too big after),
+  ``limit_hit:output_bytes`` (``out`` too big after); ``breach:in_changed`` (the read-only artifacts differ
+  after the run); ``unreadable_output``. Only ``ok`` is a valid result; the command's own exit code is the
+  result, not the status.
+- Limits are measured, not enforced while the command runs: a command can fill the disk before the
+  size check after it sees that. ``files_read`` and ``network_attempts`` are not measured here and are
+  reported as ``null``; ``paths_written`` is the hash difference of ``work`` and ``out``.
+
+Red control (``run_with_red_control``): every call runs a known bad candidate in its own fresh directory
+with the same image (required), flags and limits. It is red when its status is ``ok`` and its exit code is not
+0, 125, 126 or 127 (docker, not-executable and not-found failures). A green control makes the whole run
+invalid (``red_control_green``); a control that could not run is ``red_control_fault``.
+
+Command line, run from ``referee/`` (stdout is one JSON line; exit 0 fine, 1 refused or invalid, 2
+unusable input):
+
+    python -m runner.contained argv      stdin {image, cmd, run_root, operating, env?, uid?, gid?, artifacts?, name?}
+    python -m runner.contained check     stdin: an argv as a JSON array
+    python -m runner.contained run FILE  FILE {job, red_control, operating, base?}; job and red_control are
+                                         {image, cmd, tree?, artifacts?, env?, uid?, gid?}
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import secrets as _random
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from typing import Any, Callable
+
+DEFAULT_UID = 65534
+DEFAULT_GID = 65534
+MIN_MEMORY = 6 * 1024 * 1024
+RUN_LIMITS = ("container_mem_bytes", "kos_wall_s", "worktree_bytes", "output_bytes")
+FORBIDDEN_ENV_PREFIXES = ("ACTIONS_", "GITHUB_", "RUNNER_")
+NOT_RED_EXITS = (0, 125, 126, 127)
+KILL_WAIT_S = 30
+
+# Flag -> value rule, in the order build_argv writes them. None: no value. Each appears exactly once.
+SINGLE_FLAGS: dict[str, Any] = {
+    "--rm": None,
+    "--pull": "never",
+    "--network": "none",
+    "--cap-drop": "ALL",
+    "--read-only": None,
+    "--security-opt": "no-new-privileges",
+    "--user": re.compile(r"([1-9][0-9]{0,9}):([1-9][0-9]{0,9})\Z"),
+    "--memory": re.compile(r"[1-9][0-9]{0,18}\Z"),
+    "--memory-swap": re.compile(r"[1-9][0-9]{0,18}\Z"),
+    "--name": re.compile(r"snowball-[0-9a-f]{32}\Z"),
+    "--workdir": "/work",
+}
+MANDATORY = ("--network", "--cap-drop", "--read-only", "--user")
+ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+ROOT_PATH = re.compile(r"/[A-Za-z0-9._/-]*\Z")
+MOUNT = re.compile(r"type=bind,src=(/[A-Za-z0-9._/-]*),dst=(/work|/out|/in)(,readonly)?\Z")
+MOUNT_SUBDIR = {"/work": "work", "/out": "out", "/in": "in"}
+_COMPONENT = r"[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*"
+IMAGE = re.compile(
+    r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?/)?"
+    + _COMPONENT + r"(?:/" + _COMPONENT + r")*"
+    + r"(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?"
+    + r"@sha256:[0-9a-f]{64}\Z")
+
+
+class ContainmentError(ValueError):
+    """The request cannot be run inside the container the spec requires; nothing was started."""
+
+
+# ---------------------------------------------------------------- limits
+
+def limits(operating: dict, keys: tuple[str, ...]) -> dict[str, int]:
+    """Read ``operating{key: {value, band: [min, max]}}``; every key is required, value inside its band."""
+    out = {}
+    for key in keys:
+        entry = operating.get(key) if isinstance(operating, dict) else None
+        if not isinstance(entry, dict):
+            raise ContainmentError("operating.%s missing" % key)
+        value, band = entry.get("value"), entry.get("band")
+        if not _posint(value):
+            raise ContainmentError("operating.%s.value is not a positive integer" % key)
+        if not (isinstance(band, list) and len(band) == 2
+                and all(isinstance(b, int) and not isinstance(b, bool) and b >= 0 for b in band)):
+            raise ContainmentError("operating.%s.band is not [min, max]" % key)
+        if not band[0] <= value <= band[1]:
+            raise ContainmentError("operating.%s.value outside its band" % key)
+        out[key] = value
+    return out
+
+
+def _posint(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+# ---------------------------------------------------------------- argv
+
+def build_argv(image: str, cmd: list[str], run_root: str, operating: dict, env: dict | None = None,
+               uid: int = DEFAULT_UID, gid: int = DEFAULT_GID, artifacts: bool = False,
+               name: str | None = None) -> list[str]:
+    """The ``docker run`` argv for one command; refused (ContainmentError) unless ``check_argv`` accepts it."""
+    memory = limits(operating, ("container_mem_bytes",))["container_mem_bytes"]
+    if not (isinstance(cmd, list) and cmd and all(isinstance(c, str) for c in cmd)):
+        raise ContainmentError("cmd must be a non-empty list of strings")
+    if not all(_posint(i) for i in (uid, gid)):
+        raise ContainmentError("uid and gid must be positive integers (never root)")
+    argv = ["docker", "run", "--rm", "--pull", "never", "--network", "none", "--cap-drop", "ALL",
+            "--read-only", "--security-opt", "no-new-privileges", "--user", "%d:%d" % (uid, gid),
+            "--memory", str(memory), "--memory-swap", str(memory),
+            "--name", name or "snowball-" + _random.token_hex(16), "--workdir", "/work"]
+    for key in sorted(env or {}):
+        if not isinstance(env[key], str):
+            raise ContainmentError("env values must be strings")
+        argv += ["--env", "%s=%s" % (key, env[key])]
+    argv += ["--mount", "type=bind,src=%s/work,dst=/work" % run_root,
+             "--mount", "type=bind,src=%s/out,dst=/out" % run_root]
+    if artifacts:
+        argv += ["--mount", "type=bind,src=%s/in,dst=/in,readonly" % run_root]
+    argv += [image] + cmd
+    report = check_argv(argv)
+    if not report["ok"]:
+        raise ContainmentError("argv refused: %s" % json.dumps(report, sort_keys=True))
+    return argv
+
+
+def check_argv(argv: Any) -> dict:
+    """``{ok, missing, forbidden}`` for an argv; ``ok`` only for the exact shape in the module docstring."""
+    missing: list[str] = []
+    forbidden: list[str] = []
+    if not (isinstance(argv, list) and all(isinstance(a, str) for a in argv)):
+        return {"ok": False, "missing": [], "forbidden": ["argv is not a list of strings"]}
+    if argv[:2] != ["docker", "run"]:
+        return {"ok": False, "missing": [], "forbidden": ["argv must start with exactly: docker run"]}
+    seen: dict[str, int] = {}
+    mounts: list[str] = []
+    i = 2
+    image_at = None
+    while i < len(argv):
+        tok = argv[i]
+        if not tok.startswith("-"):
+            image_at = i
+            break
+        if tok in SINGLE_FLAGS:
+            rule = SINGLE_FLAGS[tok]
+            seen[tok] = seen.get(tok, 0) + 1
+            if rule is None:
+                i += 1
+                continue
+            value = argv[i + 1] if i + 1 < len(argv) else None
+            if value is None or not _value_ok(rule, value):
+                forbidden.append("%s %s" % (tok, value))
+            i += 2
+            continue
+        if tok == "--env":
+            value = argv[i + 1] if i + 1 < len(argv) else None
+            reason = _env_problem(value)
+            if reason:
+                forbidden.append("--env %s (%s)" % (value, reason))
+            i += 2
+            continue
+        if tok == "--mount":
+            value = argv[i + 1] if i + 1 < len(argv) else None
+            if value is None:
+                forbidden.append("--mount without a value")
+            else:
+                mounts.append(value)
+            i += 2
+            continue
+        forbidden.append("flag not allowed: %s" % tok)
+        i += 1
+    for flag in SINGLE_FLAGS:
+        if seen.get(flag, 0) == 0:
+            missing.append(flag)
+        elif seen[flag] > 1:
+            forbidden.append("%s given %d times" % (flag, seen[flag]))
+    mem = _flag_value(argv, "--memory")
+    swap = _flag_value(argv, "--memory-swap")
+    if mem is not None and mem.isdigit() and int(mem) < MIN_MEMORY:
+        forbidden.append("--memory below %d" % MIN_MEMORY)
+    if mem is not None and swap is not None and mem != swap:
+        forbidden.append("--memory-swap differs from --memory")
+    forbidden += _mount_problems(mounts, missing)
+    if image_at is None:
+        missing.append("image")
+    elif not IMAGE.match(argv[image_at]):
+        forbidden.append("image not pinned by @sha256: %s" % argv[image_at])
+    elif image_at + 1 >= len(argv):
+        missing.append("command")
+    ok = not missing and not forbidden
+    return {"ok": ok, "missing": missing, "forbidden": forbidden}
+
+
+def _value_ok(rule: Any, value: str) -> bool:
+    if isinstance(rule, str):
+        return value == rule
+    return bool(rule.match(value))
+
+
+def _flag_value(argv: list[str], flag: str) -> str | None:
+    for i in range(2, len(argv) - 1):
+        if argv[i] == flag:
+            return argv[i + 1]
+    return None
+
+
+def _env_problem(value: str | None) -> str | None:
+    if value is None:
+        return "no value"
+    name, sep, _ = value.partition("=")
+    if not sep:
+        return "NAME without =VALUE copies the host's value"
+    if not ENV_NAME.match(name):
+        return "not an identifier"
+    if name.upper().startswith(FORBIDDEN_ENV_PREFIXES):
+        return "runner variable"
+    return None
+
+
+def _mount_problems(mounts: list[str], missing: list[str]) -> list[str]:
+    problems: list[str] = []
+    roots: set[str] = set()
+    dsts: list[str] = []
+    for value in mounts:
+        m = MOUNT.match(value)
+        if not m:
+            problems.append("--mount not allowed: %s" % value)
+            continue
+        src, dst, readonly = m.group(1), m.group(2), bool(m.group(3))
+        if (dst == "/in") != readonly:
+            problems.append("--mount %s: only /in is read-only, and it must be" % value)
+        suffix = "/" + MOUNT_SUBDIR[dst]
+        root = src[: -len(suffix)] if src.endswith(suffix) else None
+        if not root or not _root_ok(root):
+            problems.append("--mount %s: source must be ROOT%s under one fresh ROOT" % (value, suffix))
+            continue
+        roots.add(root)
+        dsts.append(dst)
+    for dst in set(dsts):
+        if dsts.count(dst) > 1:
+            problems.append("--mount for %s given %d times" % (dst, dsts.count(dst)))
+    for dst in ("/work", "/out"):
+        if dst not in dsts:
+            missing.append("--mount %s" % dst)
+    if len(roots) > 1:
+        problems.append("--mount sources under more than one ROOT")
+    return problems
+
+
+def _root_ok(root: str) -> bool:
+    return bool(ROOT_PATH.match(root)) and root != "/" and os.path.normpath(root) == root \
+        and "/../" not in root + "/" and "/./" not in root + "/"
+
+
+# ---------------------------------------------------------------- hashing outside
+
+def hash_tree(top: str) -> dict[str, dict]:
+    """Every entry under ``top`` by relative path, read from the host; symlinks are never followed."""
+    entries: dict[str, dict] = {}
+    if not os.path.isdir(top):
+        return entries
+
+    pending = [(top, "")]
+    while pending:
+        path, rel = pending.pop()
+        try:
+            with os.scandir(path) as it:
+                children = sorted(it, key=lambda e: e.name)
+        except OSError:
+            entries[rel] = {"type": "dir", "unreadable": True}
+            continue
+        for child in children:
+            crel = child.name if not rel else rel + "/" + child.name
+            try:
+                st = os.lstat(child.path)
+            except OSError:
+                entries[crel] = {"type": "unknown", "unreadable": True}
+                continue
+            if stat.S_ISLNK(st.st_mode):
+                entries[crel] = {"type": "symlink", "target": os.readlink(child.path)}
+            elif stat.S_ISDIR(st.st_mode):
+                entries[crel] = {"type": "dir"}
+                pending.append((child.path, crel))
+            elif stat.S_ISREG(st.st_mode):
+                entries[crel] = _hash_file(child.path)
+            else:
+                entries[crel] = {"type": "other", "mode": stat.S_IFMT(st.st_mode)}
+    return entries
+
+
+def _hash_file(path: str) -> dict:
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return {"type": "file", "unreadable": True}
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return {"type": "other", "mode": stat.S_IFMT(st.st_mode)}
+        digest = hashlib.sha256()
+        size = 0
+        while True:
+            chunk = os.read(fd, 1 << 20)
+            if not chunk:
+                break
+            digest.update(chunk)
+            size += len(chunk)
+        return {"type": "file", "sha256": digest.hexdigest(), "size": size}
+    finally:
+        os.close(fd)
+
+
+def tree_bytes(entries: dict[str, dict]) -> int:
+    return sum(e.get("size", 0) for e in entries.values())
+
+
+def tree_sha256(entries: dict[str, dict]) -> str:
+    return hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+# ---------------------------------------------------------------- run
+
+@dataclass
+class RunnerResult:
+    exit: int | None
+    stdout: bytes
+    stderr: bytes
+    timed_out: bool
+
+
+Runner = Callable[[list, dict, float], RunnerResult]
+
+
+def docker_runner(argv: list[str], env: dict, timeout: float) -> RunnerResult:
+    """Run the docker CLI; on timeout kill the container by its ``--name`` and wait for the CLI."""
+    proc = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        return RunnerResult(proc.returncode, out, err, False)
+    except subprocess.TimeoutExpired:
+        name = _flag_value(argv, "--name")
+        subprocess.run(["docker", "kill", name], env=env, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=KILL_WAIT_S, check=False)
+        try:
+            out, err = proc.communicate(timeout=KILL_WAIT_S)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, err = proc.communicate()
+        return RunnerResult(None, out, err, True)
+
+
+def fresh_run_root(base: str | None = None) -> str:
+    """A new private directory with empty ``work``, ``out`` and ``in``; never an existing one."""
+    root = os.path.realpath(tempfile.mkdtemp(prefix="snowball-run-", dir=base))
+    if not _root_ok(root):
+        shutil.rmtree(root, ignore_errors=True)
+        raise ContainmentError("run root has characters the mount rule refuses: %s" % root)
+    for sub in ("work", "out", "in"):
+        os.mkdir(os.path.join(root, sub))
+    os.chmod(os.path.join(root, "out"), 0o777)
+    return root
+
+
+def _open_tree(top: str) -> None:
+    """Let the container user write the copied worktree (the run root itself stays private, 0700)."""
+    os.chmod(top, 0o777)
+    for dirpath, dirnames, filenames in os.walk(top):
+        for d in dirnames:
+            p = os.path.join(dirpath, d)
+            if not os.path.islink(p):
+                os.chmod(p, 0o777)
+        for f in filenames:
+            p = os.path.join(dirpath, f)
+            if not os.path.islink(p):
+                os.chmod(p, os.lstat(p).st_mode | 0o666)
+
+
+def _sources_real(root: str, artifacts: bool) -> None:
+    for sub in ("work", "out") + (("in",) if artifacts else ()):
+        path = os.path.join(root, sub)
+        if os.path.realpath(path) != path or not stat.S_ISDIR(os.lstat(path).st_mode):
+            raise ContainmentError("mount source is not a real directory: %s" % path)
+
+
+def run(job: dict, operating: dict, runner: Runner | None = None, base: str | None = None) -> dict:
+    """One contained run of ``job`` = {image, cmd, tree?, artifacts?, env?, uid?, gid?}; see the docstring."""
+    runner = runner or docker_runner
+    lim = limits(operating, RUN_LIMITS)
+    root = fresh_run_root(base)
+    work, out, inp = (os.path.join(root, s) for s in ("work", "out", "in"))
+    has_artifacts = bool(job.get("artifacts"))
+    if job.get("tree"):
+        shutil.copytree(job["tree"], work, symlinks=True, dirs_exist_ok=True)
+    _open_tree(work)
+    if has_artifacts:
+        shutil.copytree(job["artifacts"], inp, symlinks=True, dirs_exist_ok=True)
+    argv = build_argv(job["image"], job["cmd"], root, operating, env=job.get("env"),
+                      uid=job.get("uid", DEFAULT_UID), gid=job.get("gid", DEFAULT_GID), artifacts=has_artifacts)
+    _sources_real(root, has_artifacts)
+    work_before = hash_tree(work)
+    in_before = hash_tree(inp)
+    result: dict[str, Any] = {"run_root": root, "argv": argv, "exit": None, "timed_out": False,
+                              "files_read": None, "network_attempts": None}
+    if tree_bytes(work_before) > lim["worktree_bytes"]:
+        return _finish(result, "limit_hit:worktree_bytes", work_before, work_before, {}, None)
+    docker_env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": root}
+    res = runner(argv, docker_env, lim["kos_wall_s"])
+    result.update(exit=res.exit, timed_out=res.timed_out,
+                  stdout_sha256=hashlib.sha256(res.stdout).hexdigest(),
+                  stderr_sha256=hashlib.sha256(res.stderr).hexdigest())
+    work_after, out_after, in_after = hash_tree(work), hash_tree(out), hash_tree(inp)
+    status = "ok"
+    if res.timed_out:
+        status = "limit_hit:kos_wall_s"
+    elif res.exit == 125:
+        status = "runner_fault"
+    if in_after != in_before:
+        status = "breach:in_changed"
+    elif any(e.get("unreadable") for e in list(out_after.values()) + list(work_after.values())):
+        status = "unreadable_output" if status == "ok" else status
+    elif status == "ok" and tree_bytes(out_after) > lim["output_bytes"]:
+        status = "limit_hit:output_bytes"
+    elif status == "ok" and tree_bytes(work_after) > lim["worktree_bytes"]:
+        status = "limit_hit:worktree_bytes"
+    return _finish(result, status, work_before, work_after, out_after, in_after)
+
+
+def _finish(result: dict, status: str, work_before: dict, work_after: dict, out_after: dict,
+            in_after: dict | None) -> dict:
+    written = sorted(["work/" + p for p in set(work_before) | set(work_after)
+                      if work_before.get(p) != work_after.get(p)] + ["out/" + p for p in out_after])
+    result.update(status=status, valid=status == "ok", outputs=out_after,
+                  outputs_sha256=tree_sha256(out_after), worktree_sha256=tree_sha256(work_after),
+                  paths_written=written)
+    return result
+
+
+def run_with_red_control(job: dict, red_control: dict, operating: dict, runner: Runner | None = None,
+                         base: str | None = None) -> dict:
+    """``job`` and the known bad ``red_control``, each contained; the run is valid only if the control is red."""
+    if not isinstance(red_control, dict) or not red_control.get("cmd"):
+        raise ContainmentError("every run carries a red control")
+    if red_control.get("image") != job.get("image"):
+        raise ContainmentError("the red control runs in the job's image")
+    red = run(red_control, operating, runner, base)
+    main = run(job, operating, runner, base)
+    reasons = []
+    if red["status"] != "ok" or red["exit"] in (125, 126, 127) or red["exit"] is None:
+        reasons.append("red_control_fault")
+    elif red["exit"] == 0:
+        reasons.append("red_control_green")
+    if not main["valid"]:
+        reasons.append(main["status"])
+    return {"valid": not reasons, "reasons": reasons, "result": main, "red_control": red}
+
+
+# ---------------------------------------------------------------- command line
+
+def _emit(obj: dict) -> None:
+    sys.stdout.write(json.dumps(obj, sort_keys=True) + "\n")
+
+
+def main(argv: list[str]) -> int:
+    try:
+        if argv == ["check"]:
+            report = check_argv(json.loads(sys.stdin.read()))
+            _emit(report)
+            return 0 if report["ok"] else 1
+        if argv == ["argv"]:
+            req = json.loads(sys.stdin.read())
+            if not isinstance(req, dict):
+                raise ContainmentError("request must be an object")
+            built = build_argv(req.get("image"), req.get("cmd"), req.get("run_root", ""), req.get("operating", {}),
+                               env=req.get("env"), uid=req.get("uid", DEFAULT_UID),
+                               gid=req.get("gid", DEFAULT_GID), artifacts=bool(req.get("artifacts")),
+                               name=req.get("name"))
+            _emit({"argv": built, "check": check_argv(built)})
+            return 0
+        if len(argv) == 2 and argv[0] == "run":
+            with open(argv[1], encoding="utf-8") as fh:
+                req = json.load(fh)
+            report = run_with_red_control(req["job"], req.get("red_control"), req["operating"], base=req.get("base"))
+            _emit(report)
+            return 0 if report["valid"] else 1
+        _emit({"error": "usage: python -m runner.contained argv|check|run FILE"})
+        return 2
+    except ContainmentError as exc:
+        _emit({"error": str(exc)})
+        return 1
+    except (ValueError, KeyError, TypeError, OSError) as exc:
+        _emit({"error": "unusable input: %s" % exc})
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
