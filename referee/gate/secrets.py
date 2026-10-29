@@ -45,30 +45,33 @@ from typing import Callable, Iterable
 KINDS = ("diff", "row", "prompt")
 MIN_KNOWN = 8  # shorter "known" values would match everywhere and mean nothing
 
+# No rule is anchored on a word boundary (\b) or on what follows the token: "_" and letters are word
+# characters, so x_<token> or <token>_x would have no boundary and slip through. The prefixes are
+# distinctive enough on their own; a token glued to other text still leaks once the text is sent.
 RULES: list[tuple[str, re.Pattern]] = [
     ("anthropic-key", re.compile(r"sk-ant-[a-z]{2,8}\d{2}-[A-Za-z0-9_\-]{20,}")),
-    ("github-token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,255}\b")),
-    ("github-pat", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{60,255}\b")),
-    ("aws-access-key-id", re.compile(r"\b(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b")),
+    ("github-token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36,255}")),
+    ("github-pat", re.compile(r"github_pat_[A-Za-z0-9_]{60,255}")),
+    ("aws-access-key-id", re.compile(r"(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}")),
     ("aws-secret-key", re.compile(
-        r"(?i)aws_?secret_?(?:access_?)?key[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+])")),
-    ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}(?![0-9A-Za-z_\-])")),
-    ("slack-token", re.compile(r"\bxox[abposr]-[A-Za-z0-9\-]{10,}")),
+        r"(?i)aws_?secret_?(?:access_?)?key[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9/+]{40}")),
+    ("google-api-key", re.compile(r"AIza[0-9A-Za-z_\-]{35}")),
+    ("slack-token", re.compile(r"xox[abposr]-[A-Za-z0-9\-]{10,}")),
     ("slack-webhook", re.compile(r"hooks\.slack\.com/services/T[A-Za-z0-9_]+/B[A-Za-z0-9_]+/[A-Za-z0-9_]+")),
-    ("stripe-key", re.compile(r"\b[rs]k_(?:live|test)_[0-9A-Za-z]{24,}\b")),
-    ("npm-token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
-    ("gitlab-token", re.compile(r"\bglpat-[A-Za-z0-9_\-]{20,}")),
-    ("openai-key", re.compile(r"\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_\-]{20,}T3BlbkFJ[A-Za-z0-9_\-]{20,}")),
+    ("stripe-key", re.compile(r"[rs]k_(?:live|test)_[0-9A-Za-z]{24,}")),
+    ("npm-token", re.compile(r"npm_[A-Za-z0-9]{36}")),
+    ("gitlab-token", re.compile(r"glpat-[A-Za-z0-9_\-]{20,}")),
+    ("openai-key", re.compile(r"sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_\-]{20,}T3BlbkFJ[A-Za-z0-9_\-]{20,}")),
     ("private-key", re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----")),
-    ("jwt", re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}")),
-    ("url-credentials", re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.\-]{1,15}://[^\s/:@\"'<>]{1,64}:([^\s/@\"'<>]{6,128})@")),
+    ("jwt", re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}")),
+    ("url-credentials", re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]{1,15}://[^\s/:@\"'<>]{1,64}:([^\s/@\"'<>]{6,128})@")),
 ]
 
 # A quoted value assigned to a secret-named key. Only reported when the value looks random (below),
 # so a call like get_token() or a <placeholder> value stays clean.
 ASSIGNMENT = re.compile(
     r"(?i)(?:passw(?:or)?d|passphrase|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
-    r"client[_\-]?secret|auth)[A-Za-z0-9_\-]*[\"']?\s*(?::=|=>|[:=])\s*[\"']([^\"'\s]{16,256})[\"']")
+    r"client[_\-]?secret|auth)[A-Za-z0-9_\-]*[\"']?\s*(?::=|=>|[:=])\s*[\"']([^\"'\s]{16,})[\"']")
 URL_PLACEHOLDERS = {"password", "passwd", "secret", "changeme", "example", "xxxxxx", "********"}
 
 ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})")

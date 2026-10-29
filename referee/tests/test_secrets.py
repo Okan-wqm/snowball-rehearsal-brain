@@ -174,6 +174,29 @@ class Detection(unittest.TestCase):
             with self.subTest(rule=rule, kind="prompt"):
                 self.assert_caught("prompt", prompt_with("value: %s" % token), rule, token, line=4)
 
+    def test_token_glued_to_word_characters_is_caught(self):
+        """A token right after or before "_", a letter or a digit has no word boundary; it still leaks.
+
+        Rejection of 1c83fb7 (repro f1a0971b4ed0529f): x_ plus a GitHub token was reported clean.
+        """
+        glued = [("x_", ""), ("A", ""), ("9", ""), ("", "_x"), ("", "Z"), ("", "7"), ("see_x_", "_end")]
+        for rule, token in FAKES.items():
+            for before, after in glued:
+                with self.subTest(rule=rule, before=before, after=after):
+                    text = j(before, token, after)
+                    for kind, wrapped in (("prompt", prompt_with("see %s" % text)), ("row", row_with(text)),
+                                          ("diff", diff_with('KEY = "%s"' % text))):
+                        code, result, raw = scan(kind, wrapped)
+                        self.assertEqual(code, 1, raw)
+                        self.assertIn(rule, {m["rule"] for m in result["matches"]}, (kind, result))
+                        self.assertNotIn(token.encode(), raw)
+        url = j("_postgres://admin:", URL_PASSWORD, "@db.internal/app")
+        code, result, raw = scan("prompt", prompt_with(url))
+        self.assertIn("url-credentials", {m["rule"] for m in result["matches"]}, raw)
+        aws = "aws_secret_access_key = %sQ" % AWS_SECRET_VALUE
+        code, result, raw = scan("prompt", prompt_with(aws))
+        self.assertIn("aws-secret-key", {m["rule"] for m in result["matches"]}, raw)
+
     def test_aws_secret_assignment_url_credentials_and_quoted_assignment(self):
         line = "aws_secret_access_key = %s" % AWS_SECRET_VALUE
         code, result, raw = scan("diff", diff_with(line))
@@ -189,6 +212,10 @@ class Detection(unittest.TestCase):
 
         self.assert_caught("diff", diff_with('client_secret = "%s"' % ASSIGNED_VALUE), "secret-assignment",
                            ASSIGNED_VALUE, line=7)
+        # no upper length cap: a long random value is still a secret
+        long_value = body("assigned-long", 300)
+        self.assert_caught("prompt", prompt_with('client_secret = "%s"' % long_value), "secret-assignment",
+                           long_value)
 
     def test_diff_reports_path_and_scans_removed_lines(self):
         token = FAKES["github-token"]
