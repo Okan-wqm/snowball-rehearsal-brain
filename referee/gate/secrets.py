@@ -13,8 +13,9 @@ where it is and its sha256 fingerprint).
   inside a URL, and a quoted or bare value of 8 or more characters assigned to a secret-named key. The
   exact assignment forms, how a value is read and the only values skipped are in the comment above
   ``ASSIGNMENT``, which keys are secret-named in the comment at ``NAME_PARTS``; what they do not report
-  is listed there as a boundary, not left implicit. A value shaped like a provider prefix and nothing
-  else (``PROVIDER_SHAPED``) is left to the token rules, so the seed's near misses stay clean.
+  is listed there as a boundary, not left implicit. The value's shape never exempts it: a value that
+  looks like a near miss of a provider token (ghq_..., AKIA plus 13) is still reported after a
+  secret-named key; the seed's near misses are clean only where no secret-named key assigns them.
   Callers may add ``known`` values (the referee's own secrets, by environment variable name on the
   command line): those match verbatim.
 - Every line is scanned several ways: as written; with ``\\uXXXX`` / ``\\xNN`` / ``\\"`` escapes decoded
@@ -163,13 +164,6 @@ SCHEME = re.compile(r"(?i)(?:bearer|basic|token|digest|bot)[ \t]+")
 QUOTES = "\"'`"
 STRING_PREFIX = re.compile(r"[rRbBuUfF]{1,2}")
 NON_VALUES = {"none", "null", "nil", "true", "false", "undefined"}
-# A value that is, as a whole, a GitHub-style prefix (gh, one lower-case letter, _) or an AWS key id prefix
-# (AKIA, ASIA) followed only by letters and digits is judged by the token rules alone, not by the
-# assignment rule: the seed (29f, clean_near_miss) names ghq_ plus 36 and AKIA plus 15 as near misses that
-# are not matches, and GITHUB_TOKEN= or AWS_ACCESS_KEY_ID= before them would otherwise report them.
-# The stated cost: a secret of exactly that shape that no token rule takes (ghx_ plus anything, or AKIA
-# plus fewer than 16) is not reported after a secret-named key.
-PROVIDER_SHAPED = re.compile(r"gh[a-z]_[A-Za-z0-9]+|(?:AKIA|ASIA)[A-Z0-9]+")
 TEMPLATE = re.compile(
     r"\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Z_][A-Z0-9_]*|\{\{[ \t]*[A-Za-z_][A-Za-z0-9_.]*[ \t]*\}\}|"
     r"\{[A-Za-z_][A-Za-z0-9_.]*\}|<[A-Za-z][A-Za-z0-9_\- ]*>|%\([A-Za-z_][A-Za-z0-9_]*\)[sd]|%[A-Z_][A-Z0-9_]*%")
@@ -323,12 +317,10 @@ def _url_placeholder(password: str) -> bool:
 def _assigned(text: str, pos: int) -> str | None:
     """The secret value assigned at ``pos`` (just after the operator), or None when there is none: the
     first of the two readings of ``_value`` that is 8 or more characters, not a whole template, not one
-    of NON_VALUES and not PROVIDER_SHAPED."""
+    of NON_VALUES. Nothing else about the value's shape exempts it."""
     for glue in (False, True):
         value = _value(text, pos, glue)
         if value is None or len(value) < 8 or value.lower() in NON_VALUES or not TEMPLATE.sub("", value):
-            continue
-        if PROVIDER_SHAPED.fullmatch(value):
             continue
         return value
     return None

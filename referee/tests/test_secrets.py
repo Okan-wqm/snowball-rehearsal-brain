@@ -740,20 +740,49 @@ class Vector(unittest.TestCase):
                    text.replace("x_gh" + "p_", "x_gh" + "q_").encode(), 1, {"clean": False, "lines": [3]})
 
     def test_clean_near_miss(self):
-        """ghq_ plus 36, a 15-character key id and the words FAKE and EXAMPLE, alone, in prose, after a
-        secret-named key (PROVIDER_SHAPED) and on the line before a word (the joined-line boundary)."""
-        gh_name, aws_name = j("GITHUB_TO", "KEN"), j("AWS_ACCESS_KEY", "_ID")
-        lines = ["token %s is not real" % NEAR_GH, "id %s" % NEAR_ID, "FAKE", "EXAMPLE",
-                 "%s=%s" % (gh_name, NEAR_GH), '%s = "%s"' % (aws_name, NEAR_ID), "%s:" % j("to", "ken"), "  " + NEAR_GH,
+        """ghq_ plus 36, a 15-character key id and the words FAKE and EXAMPLE, alone, in prose and on the
+        line before a word (the joined-line boundary) are not matches. No secret-named key assigns them
+        here: after one they are reported (test_assignment_value_shape_never_exempts)."""
+        lines = ["token %s is not real" % NEAR_GH, "id %s" % NEAR_ID, "FAKE", "EXAMPLE", NEAR_GH,
                  NEAR_ID, "FAKE", "x_%s_y" % NEAR_ID]
         text = "\n".join(lines) + "\n"
         self.check("prompt", text.encode(), 0, {"clean": True, "lines": []},
                    text.replace("gh" + "q_", "gh" + "p_", 1).encode(), 1, {"clean": False, "lines": [1]})
         self.check("diff", diff_with("\n+".join(lines)).encode(), 0, {"clean": True, "lines": []},
-                   diff_with("\n+".join(lines + [NEAR_ID + "Q"])).encode(), 1, {"clean": False, "lines": [18]})
+                   diff_with("\n+".join(lines + [NEAR_ID + "Q"])).encode(), 1, {"clean": False, "lines": [15]})
         rows = "\n".join(row_with(line) for line in lines)
         self.check("row", rows.encode(), 0, {"clean": True, "lines": []},
                    rows.replace(NEAR_ID, NEAR_ID + "Q", 1).encode(), 1, {"clean": False, "lines": [2]})
+
+    def test_assignment_value_shape_never_exempts(self):
+        """Refutation 04585388fd8833de: a value that looks like a near miss of a provider token (AKIA or
+        ASIA plus fewer than 16, gh<letter>_ plus anything) after a secret-named key is reported like any
+        other value of 8 or more characters, quoted or bare, on one line or split after the key, in all
+        three kinds. The same line with the key renamed to a word that is not secret-named is clean, so
+        the key is what reports it."""
+        pw, tok, sec = j("pass", "word"), j("to", "ken"), j("sec", "ret")
+        gh_name, aws_name = j("GITHUB_TO", "KEN"), j("AWS_ACCESS_KEY", "_ID")
+        cases = [
+            ('%s = "%s"' % (pw, j("AK", "IA", "HUNTER2PASSWD")), pw),
+            ("%s=%s" % (gh_name, NEAR_GH), gh_name),
+            ('%s = "%s"' % (aws_name, NEAR_ID), aws_name),
+            ("%s: %s" % (sec, j("AS", "IA", "QWERTY12")), sec),
+            ("--%s %s" % (pw, j("gh", "x_", "abcdefgh")), pw),
+            ("%s:\n  %s" % (tok, NEAR_GH), tok),
+        ]
+        for line, key in cases:
+            with self.subTest(line=line):
+                text = line + "\n"
+                plain = text.replace(key, "colour")
+                self.check("prompt", text.encode(), 1, {"clean": False, "lines": [1]},
+                           plain.encode(), 0, {"clean": True, "lines": []})
+                body_lines = line.split("\n")
+                self.check("diff", diff_with("\n+".join(body_lines)).encode(), 1, {"clean": False, "lines": [7]},
+                           diff_with("\n+".join(plain.rstrip("\n").split("\n"))).encode(), 0,
+                           {"clean": True, "lines": []})
+                if "\n" not in line:
+                    self.check("row", row_with(line).encode(), 1, {"clean": False, "lines": [1]},
+                               row_with(plain.rstrip("\n")).encode(), 0, {"clean": True, "lines": []})
 
     def test_row_unusable_fails_closed(self):
         good = row_with("first")
