@@ -12,12 +12,17 @@ Okunma: Aşama 0'ın her mikro özelliğini yazarken ve önyükleme hakeminin ve
 **Veri biçimi.** Her vektör veridir: `{cmd, stdin?, fixture, expect, changed: {…, expect_not}}`. `cmd`
 `referee/` kökünden koşan komut, `fixture` `vectors/` altındaki girdi ağacı ya da dosyası, `expect`
 stdout'taki tek satır JSON'un beklenen alanları; `changed` aynı vektörün bir bayt ya da bir alan
-değiştirilmiş girdisidir ve `expect_not` onun **vermemesi** gereken sonuçtur. İkisi de tutmazsa vektör
-kırmızıdır. Beklenen değerler tohum yazılırken iki bağımsız hesapla doğrulanır.
+değiştirilmiş girdisidir ve `expect_not` onun **vermemesi** gereken sonuçtur. Biri tutmazsa vektör
+kırmızıdır (`29a`). Beklenen değerler tohum yazılırken iki bağımsız hesapla doğrulanır.
 
 **Genel koşucu.** Önyükleme hakemi bütün grupları tek bir veri koşucusuyla, Kurucu'nun koduna `koş`un
 kumunda uygular (python imajı; git, docker, node yok). Gruba özgü kod yoktur; yeni grup veridir ve tohum
 dönemiyle gelir. Komutun son denemesi 125 ile biterse sonuç `runner_fault`'tur, Kurucu'ya yazılmaz.
+Hakem stdout'un son satırını okur ve yalnız `expect`'in adlandırdığı alanlara bakar; satırdaki başka alanlar
+komutundur. Değerler JSON olarak karşılaştırılır: `true` `1` değildir, `1` `1.0` değildir. `changed` aynı
+alanları vermeli ve `expect_not`'u vermemelidir; cevap vermeyen ya da alanı eksik bırakan da kırmızıdır.
+`chain`, P1'in ve provanın grupları kendi yargıçlarıyla koşar (`29a`, `29c`). `secrets`'tan `diffguard`'a
+grupların komutları, girdileri, çıktı alanları ve vakaları `29f` ve `29g`'dedir.
 
 | Grup | MF | Bağladığı |
 |---|---|---|
