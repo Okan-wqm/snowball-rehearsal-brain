@@ -9,13 +9,17 @@ tarballs served by a mirror directory (the sandbox has no network; the HTTPS pat
 - the same lock gives the same content address, one changed lock byte another; ``verify`` takes the
   artifact by its hash and refuses a changed tarball, lock or manifest and an extra file;
 - the license report is written; with ``--product`` an unlisted or missing license is refused;
-- ``operating.deps_bytes`` stops the fetch; unusable input is exit 2 with one JSON line, never a traceback.
+- ``operating.deps_bytes`` stops the fetch; unusable input is exit 2 with one JSON line, never a traceback;
+- the ``npmlock`` vector interface (tohum/29g), ``fetch LOCK MIRROR`` with stdin, is ``TestNpmlock``: the
+  named cases, the order of reasons per package, the address recomputed here, exit 2; the artifact is
+  written by ``store`` and prints the same ``artefact``.
 """
 
 from __future__ import annotations
 
 import base64
 import copy
+import gzip
 import hashlib
 import io
 import json
@@ -494,7 +498,7 @@ class TestLimitAndVerify(Base):
 
 class TestCli(Base):
     def run_cli(self, *args):
-        proc = subprocess.run([sys.executable, "-m", "runner.deps_npm", *args], cwd=REFEREE,
+        proc = subprocess.run([sys.executable, "-m", "runner.deps_npm", *args], cwd=REFEREE, input="",
                               capture_output=True, text=True, timeout=120)
         lines = proc.stdout.splitlines()
         self.assertEqual(len(lines), 1, proc.stdout + proc.stderr)
@@ -511,7 +515,7 @@ class TestCli(Base):
         lock = self.fx.write_lock()
         code, out = self.run_cli("check", lock)
         self.assertEqual((code, out), (0, {"ok": True, "reasons": []}))
-        code, out = self.run_cli("fetch", lock, self.fx.out, "--mirror", self.fx.mirror)
+        code, out = self.run_cli("store", lock, self.fx.out, "--mirror", self.fx.mirror)
         self.assertEqual(code, 0)
         self.assertTrue(out["ok"])
         self.assertEqual(self.run_cli("verify", os.path.join(self.fx.out, out["address"]))[0], 0)
@@ -523,7 +527,7 @@ class TestCli(Base):
             b = fh.read(1)
             fh.seek(40)
             fh.write(bytes([b[0] ^ 0x80]))
-        code, out = self.run_cli("fetch", lock, self.fx.out, "--mirror", self.fx.mirror)
+        code, out = self.run_cli("store", lock, self.fx.out, "--mirror", self.fx.mirror)
         self.assertEqual((code, out["reasons"]), (1, ["integrity_mismatch:node_modules/left-pad"]))
         self.fx.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
         lock = self.fx.write_lock()
@@ -536,7 +540,7 @@ class TestCli(Base):
     def test_cli_product_and_policy(self):
         self.fx.add("left-pad", "1.3.0", manifest={"name": "left-pad", "version": "1.3.0", "license": "GPL-2.0"})
         lock = self.fx.write_lock()
-        args = ("fetch", lock, self.fx.out, "--mirror", self.fx.mirror)
+        args = ("store", lock, self.fx.out, "--mirror", self.fx.mirror)
         self.assertEqual(self.run_cli(*args)[0], 0)
         code, out = self.run_cli(*args, "--product")
         self.assertEqual((code, out["reasons"]), (1, ["license_not_allowed:node_modules/left-pad"]))
@@ -562,17 +566,18 @@ class TestCli(Base):
             ("check", shrink, "--registry", "https://registry.npmjs.org:99999/"),
             ("check", shrink, "--registry"),
             ("check", shrink, "--policy", self.write("p0.json", {})),
-            ("fetch", wrong_name, self.fx.out, "--mirror", self.fx.mirror),
-            ("fetch", shrink, self.fx.out, "--mirror", empty_mirror),
-            ("fetch", shrink, os.path.join(self.base, "no-out"), "--mirror", self.fx.mirror),
-            ("fetch", shrink, self.fx.out, "--mirror", self.fx.mirror, "--policy", self.write("p1.json", [])),
-            ("fetch", shrink, self.fx.out, "--mirror", self.fx.mirror,
+            ("store", wrong_name, self.fx.out, "--mirror", self.fx.mirror),
+            ("store", shrink, self.fx.out, "--mirror", empty_mirror),
+            ("store", shrink, os.path.join(self.base, "no-out"), "--mirror", self.fx.mirror),
+            ("store", shrink, self.fx.out, "--mirror", self.fx.mirror, "--policy", self.write("p1.json", [])),
+            ("store", shrink, self.fx.out, "--mirror", self.fx.mirror,
              "--policy", self.write("p2.json", {"operating": {"deps_bytes": {"value": "1"}}})),
-            ("fetch", shrink, self.fx.out, "--mirror", self.fx.mirror,
+            ("store", shrink, self.fx.out, "--mirror", self.fx.mirror,
              "--policy", self.write("p3.json", {"constitutional": {"license_allowlist": "MIT"}})),
-            ("fetch", shrink, self.fx.out, "--mirror", self.fx.mirror,
+            ("store", shrink, self.fx.out, "--mirror", self.fx.mirror,
              "--policy", self.write("p4.json", {"constitutional": {"license_exceptions": {"a==1": "MIT"}}})),
-            ("fetch", shrink, self.fx.out, "--mirror", self.fx.mirror, "--mirror", self.fx.mirror),
+            ("store", shrink, self.fx.out, "--mirror", self.fx.mirror, "--mirror", self.fx.mirror),
+            ("fetch", shrink, self.fx.out, "--mirror", self.fx.mirror),
             ("verify", self.fx.out, "--registry", REG),
             ("nonsense",),
             (),
@@ -591,6 +596,313 @@ class TestCli(Base):
             code = N.main(["check", lock])
         self.assertEqual(code, 2)
         self.assertTrue(json.loads(buf.getvalue())["error"].startswith("internal error: KeyError"))
+
+
+def vtgz(files: dict, gz_mtime: int = 0) -> bytes:
+    """A gzip tar with a fixed gzip header (``mtime``), members under ``package/``."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+        for name, content in files.items():
+            data = json.dumps(content).encode() if isinstance(content, dict) else content
+            info = tarfile.TarInfo("package/" + name)
+            info.mtime, info.size = 0, len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return gzip.compress(buf.getvalue(), mtime=gz_mtime)
+
+
+def expected_address(rows: list[tuple[str, str]]) -> str:
+    """Recomputed by hand: ``[{"integrity":..,"path":..}]`` sorted by path, no spaces, UTF-8."""
+    def q(v):
+        return json.dumps(v, ensure_ascii=False)
+    body = ",".join('{"integrity":%s,"path":%s}' % (q(i), q(p)) for p, i in sorted(rows, key=lambda r: r[0]))
+    return "sha256:" + hashlib.sha256(("[" + body + "]").encode("utf-8")).hexdigest()
+
+
+class TestNpmlock(unittest.TestCase):
+    """Group ``npmlock`` (tohum/29g): ``fetch LOCK MIRROR``, stdin ``{registry_egress, install_scripts_required}``."""
+
+    def setUp(self):
+        self.base = writable_base("npmlock-")
+        self.addCleanup(shutil.rmtree, self.base, True)
+        self.mirror = os.path.join(self.base, "mirror")
+        os.makedirs(self.mirror)
+        self.stdin = {"registry_egress": [REG], "install_scripts_required": ["gyp-thing@1.2.0"]}
+        # keys deliberately not in sorted order
+        self.packages = {"": {"name": "toy", "version": "1.0.0"}}
+        self.add("node_modules/zeta", "zeta", "1.0.0", {"license": "MIT"})
+        self.add("node_modules/@scope/util", "@scope/util", "2.0.0", {"license": "Apache-2.0"})
+        self.add("node_modules/zeta/node_modules/inner", "inner", "0.1.0", {})
+        self.add("node_modules/gyp-thing", "gyp-thing", "1.2.0",
+                 {"license": {"type": "ISC"}, "scripts": {"postinstall": "node-gyp rebuild"}},
+                 extra={"binding.gyp": b"{}"}, hasInstallScript=True)
+
+    def add(self, key, name, version, manifest, extra=None, data=None, resolved=None, **entry):
+        files = {"package.json": dict({"name": name, "version": version}, **manifest)}
+        files.update(extra or {})
+        data = vtgz(files) if data is None else data
+        u = resolved or url(name, version)
+        self.put(u, data)
+        self.packages[key] = dict({"version": version, "resolved": u, "integrity": sri(data)}, **entry)
+        return data
+
+    def put(self, u, data):
+        path = os.path.join(self.mirror, *u.split("://", 1)[1].split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as fh:
+            fh.write(data)
+        return path
+
+    def lock_text(self, packages=None, **dump):
+        return json.dumps({"name": "toy", "lockfileVersion": 3, "requires": True,
+                           "packages": self.packages if packages is None else packages}, **dump)
+
+    def write(self, text, name="package-lock.json"):
+        path = os.path.join(self.base, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return path
+
+    def run_fetch(self, lock=None, mirror=None, stdin=None, raw_stdin=None, args=None):
+        lock = lock if lock is not None else self.write(self.lock_text())
+        argv = args if args is not None else ["fetch", lock, mirror or self.mirror]
+        proc = subprocess.run([sys.executable, "-m", "runner.deps_npm", *argv], cwd=REFEREE,
+                              input=raw_stdin if raw_stdin is not None else json.dumps(stdin or self.stdin),
+                              capture_output=True, text=True, timeout=120)
+        lines = proc.stdout.splitlines()
+        self.assertEqual(len(lines), 1, proc.stdout + proc.stderr)
+        self.assertEqual(proc.stderr, "")
+        return proc.returncode, json.loads(lines[-1])
+
+    def good_rows(self):
+        return [(k, v["integrity"]) for k, v in self.packages.items() if k]
+
+    def snapshot(self):
+        out = {}
+        for root, dirs, files in os.walk(self.base):
+            for n in dirs + files:
+                st = os.lstat(os.path.join(root, n))
+                out[os.path.join(root, n)] = (st.st_size, st.st_mtime_ns)
+        return out
+
+    def test_integrity_good_and_one_byte(self):
+        lock = self.write(self.lock_text())
+        before = self.snapshot()
+        code, out = self.run_fetch(lock)
+        self.assertEqual(self.snapshot(), before)  # nothing written next to the lock or in the mirror
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out, {
+            "ok": True, "rejected": [], "artefact": expected_address(self.good_rows()),
+            "licenses": [
+                {"path": "node_modules/@scope/util", "name": "@scope/util", "version": "2.0.0",
+                 "license": "Apache-2.0"},
+                {"path": "node_modules/gyp-thing", "name": "gyp-thing", "version": "1.2.0", "license": None},
+                {"path": "node_modules/zeta", "name": "zeta", "version": "1.0.0", "license": "MIT"},
+                {"path": "node_modules/zeta/node_modules/inner", "name": "inner", "version": "0.1.0",
+                 "license": None}]})
+        path = os.path.join(self.mirror, "registry.npmjs.org", "zeta", "-", "zeta-1.0.0.tgz")
+        with open(path, "rb") as fh:
+            orig = fh.read()
+        changed = bytearray(orig)
+        changed[4] ^= 0x01  # gzip header MTIME byte
+        self.assertEqual(gzip.decompress(bytes(changed)), gzip.decompress(orig))
+        with open(path, "wb") as fh:
+            fh.write(bytes(changed))
+        self.assertEqual(self.run_fetch(lock), (1, {"ok": False, "rejected": ["integrity_mismatch:node_modules/zeta"],
+                                                    "artefact": None, "licenses": None}))
+
+    def test_install_script_unmarked(self):
+        self.add("node_modules/post", "post", "1.0.0", {"scripts": {"postinstall": "node x.js"}})
+        self.add("node_modules/pre", "pre", "1.0.0", {"scripts": {"preinstall": "node x.js"}})
+        self.add("node_modules/inst", "inst", "1.0.0", {"scripts": {"install": "node x.js"}})
+        self.add("node_modules/gyp", "gyp", "1.0.0", {}, extra={"binding.gyp": b"{}"})
+        self.add("node_modules/flag", "flag", "1.0.0", {}, hasInstallScript=True)
+        self.add("node_modules/test-only", "test-only", "1.0.0", {"scripts": {"test": "x", "prepare": "y"}})
+        stdin = dict(self.stdin, install_scripts_required=["gyp-thing@1.2.0", "node_modules/post", "pre", "inst@2.0.0"])
+        code, out = self.run_fetch(stdin=stdin)
+        self.assertEqual((code, out["rejected"]), (1, ["install_script_unmarked:node_modules/%s" % n
+                                                       for n in ("flag", "gyp", "inst", "post", "pre")]))
+        self.assertIsNone(out["artefact"])
+        stdin["install_scripts_required"] += ["post@1.0.0", "pre@1.0.0", "inst@1.0.0", "gyp@1.0.0", "flag@1.0.0"]
+        self.assertEqual(self.run_fetch(stdin=stdin)[0], 0)
+        self.assertEqual(self.run_fetch(stdin=dict(self.stdin, install_scripts_required=[]))[1]["rejected"],
+                         ["install_script_unmarked:node_modules/%s" % n
+                          for n in ("flag", "gyp", "gyp-thing", "inst", "post", "pre")])
+
+    def test_registry_not_allowed(self):
+        for i, host in enumerate(("registry.npmjs.org.evil.com", "registry.npmjs.orgx")):
+            self.add("node_modules/look%d" % i, "look%d" % i, "1.0.0", {},
+                     resolved="https://%s/look%d/-/look%d-1.0.0.tgz" % (host, i, i))
+        self.add("node_modules/plain", "plain", "1.0.0", {},
+                 resolved="http://registry.npmjs.org/plain/-/plain-1.0.0.tgz")
+        self.add("node_modules/upper", "upper", "1.0.0", {},
+                 resolved="https://Registry.npmjs.org/upper/-/upper-1.0.0.tgz")
+        code, out = self.run_fetch()
+        self.assertEqual((code, out["rejected"]), (1, ["registry_not_allowed:node_modules/%s" % n
+                                                       for n in ("look0", "look1", "plain", "upper")]))
+        # the same tarballs pass once their registry is allowed: only the prefix stopped them
+        stdin = dict(self.stdin, registry_egress=[REG, "https://registry.npmjs.org.evil.com/",
+                                                  "https://registry.npmjs.orgx/", "https://Registry.npmjs.org/"])
+        code, out = self.run_fetch(stdin=stdin)
+        self.assertEqual(out["rejected"], ["registry_not_allowed:node_modules/plain"])
+        # a path prefix is a prefix of the whole URL, '/' included
+        del self.packages["node_modules/plain"], self.packages["node_modules/upper"]
+        del self.packages["node_modules/look0"], self.packages["node_modules/look1"]
+        self.add("node_modules/sub", "sub", "1.0.0", {},
+                 resolved="https://npm.example/registry-evil/sub/-/sub-1.0.0.tgz")
+        self.add("node_modules/ok", "ok", "1.0.0", {}, resolved="https://npm.example/registry/ok/-/ok-1.0.0.tgz")
+        stdin = dict(self.stdin, registry_egress=[REG, "https://npm.example/registry/"])
+        self.assertEqual(self.run_fetch(stdin=stdin)[1]["rejected"], ["registry_not_allowed:node_modules/sub"])
+
+    def test_git_dependency_and_file_dependency_even_with_integrity(self):
+        integrity = self.packages["node_modules/zeta"]["integrity"]
+        git = {"g1": "git+ssh://git@github.com/a/b.git#0123", "g2": "git://github.com/a/b.git", "g3": "github:a/b",
+               "g4": "git@github.com:a/b.git"}
+        files = {"f1": ({"resolved": "file:../local.tgz"}), "f2": {"resolved": "../outside", "link": True},
+                 "f3": {"resolved": "/abs/pkg", "link": True}, "f4": {"resolved": "C:\\pkg", "link": True},
+                 "f5": {"resolved": "packages/a/../../x", "link": True}}
+        for n, u in git.items():
+            self.packages["node_modules/" + n] = {"version": "1.0.0", "resolved": u, "integrity": integrity}
+        for n, e in files.items():
+            self.packages["node_modules/" + n] = dict({"version": "1.0.0", "integrity": integrity}, **e)
+        code, out = self.run_fetch()
+        self.assertEqual(code, 1)
+        self.assertEqual(out["rejected"], sorted(["file_dependency:node_modules/%s" % n for n in files]
+                                                 + ["git_dependency:node_modules/%s" % n for n in git]))
+        # not a git or file dependency, but nothing of theirs comes from an allowed registry: refused there
+        self.packages = {"": {}, "node_modules/inside": {"resolved": "packages/a", "link": True},
+                         "packages/a": {"name": "a", "version": "1.0.0"},
+                         "node_modules/zeta/node_modules/bundled": {"version": "1.0.0", "inBundle": True},
+                         "node_modules/upper": {"version": "1.0.0", "resolved": "GIT+https://x/y.git"}}
+        self.assertEqual(self.run_fetch()[1]["rejected"], [
+            "registry_not_allowed:node_modules/inside", "registry_not_allowed:node_modules/upper",
+            "registry_not_allowed:node_modules/zeta/node_modules/bundled", "registry_not_allowed:packages/a"])
+
+    def test_license_from_tarball(self):
+        self.packages["node_modules/zeta"]["license"] = "GPL-3.0"
+        self.add("node_modules/copyleft", "copyleft", "3.0.0", {"license": "AGPL-3.0-only"}, license="MIT")
+        self.add("node_modules/nolicense", "nolicense", "1.0.0", {}, license="MIT")
+        code, out = self.run_fetch()
+        self.assertEqual(code, 0, out)  # a report, not a gate
+        lic = {r["path"]: r["license"] for r in out["licenses"]}
+        self.assertEqual((lic["node_modules/zeta"], lic["node_modules/copyleft"], lic["node_modules/nolicense"]),
+                         ("MIT", "AGPL-3.0-only", None))
+        self.assertEqual([r["path"] for r in out["licenses"]], sorted(r["path"] for r in out["licenses"]))
+
+    def test_same_lock_same_address(self):
+        code, out = self.run_fetch(self.write(self.lock_text(indent=2)))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["artefact"], expected_address(self.good_rows()))
+        reordered = {k: dict(reversed(list(v.items()))) for k, v in reversed(list(self.packages.items()))}
+        compact = json.dumps({"packages": reordered, "requires": True, "lockfileVersion": 3, "name": "toy"},
+                             separators=(",", ":"))
+        self.assertEqual(self.run_fetch(self.write(compact, "other.json"))[1]["artefact"], out["artefact"])
+        # another tarball for one package: another integrity, another address
+        self.add("node_modules/zeta", "zeta", "1.0.0", {"license": "MIT", "description": "changed"})
+        code, out2 = self.run_fetch()
+        self.assertEqual(code, 0, out2)
+        self.assertNotEqual(out2["artefact"], out["artefact"])
+        self.assertEqual(out2["artefact"], expected_address(self.good_rows()))
+
+    def test_first_failing_check_is_the_reason_in_order(self):
+        bad = "sha512-" + base64.b64encode(hashlib.sha512(b"other").digest()).decode()
+        script = {"scripts": {"postinstall": "x"}}
+        self.packages.update({
+            "node_modules/a": {"version": "1.0.0", "resolved": "git+file:../a", "link": True, "integrity": bad},
+            "node_modules/b": {"version": "1.0.0", "resolved": "file:../b", "integrity": bad},
+            "node_modules/c": {"version": "1.0.0", "resolved": "../c", "link": True, "integrity": bad},
+            "node_modules/d": {"version": "1.0.0", "resolved": "https://other.example/d/-/d-1.0.0.tgz",
+                               "integrity": bad, "hasInstallScript": True},
+            "node_modules/e": {"version": "1.0.0", "resolved": url("e", "1.0.0"), "integrity": bad,
+                               "hasInstallScript": True},
+        })
+        self.put("https://other.example/d/-/d-1.0.0.tgz", vtgz({"package.json": {"name": "d", "version": "1.0.0"}}))
+        self.add("node_modules/f", "f", "1.0.0", script)
+        self.packages["node_modules/f"]["integrity"] = bad
+        self.add("node_modules/g", "g", "1.0.0", script)
+        # an on-registry URL that climbs out of the mirror cannot be in it, even where the file exists
+        escape = REG + "../../secret.tgz"
+        data = vtgz({"package.json": {"name": "h", "version": "1.0.0"}})
+        with open(os.path.join(self.base, "secret.tgz"), "wb") as fh:
+            fh.write(data)
+        self.packages["node_modules/h"] = {"version": "1.0.0", "resolved": escape, "integrity": sri(data)}
+        code, out = self.run_fetch()
+        self.assertEqual((code, out["rejected"]), (1, [
+            "file_dependency:node_modules/b", "file_dependency:node_modules/c", "git_dependency:node_modules/a",
+            "install_script_unmarked:node_modules/g", "integrity_mismatch:node_modules/f",
+            "registry_not_allowed:node_modules/d", "tarball_missing:node_modules/e",
+            "tarball_missing:node_modules/h"]))
+
+    def test_integrity_reads_the_sha512_tokens(self):
+        zeta = self.packages["node_modules/zeta"]
+        data_sha1 = "sha1-" + base64.b64encode(hashlib.sha1(b"x").digest()).decode()
+        for integrity, ok in ((zeta["integrity"] + " " + data_sha1, True),
+                              (sri(b"x", "sha256") + " " + zeta["integrity"], True),
+                              (zeta["integrity"].replace("sha512", "sha256"), False),
+                              (data_sha1, False), ("", False), (None, False),
+                              (zeta["integrity"] + " " + sri(b"x"), False)):
+            if integrity is None:
+                zeta.pop("integrity", None)
+            else:
+                zeta["integrity"] = integrity
+            code, out = self.run_fetch()
+            self.assertEqual(code, 0 if ok else 1, (integrity, out))
+            if not ok:
+                self.assertEqual(out["rejected"], ["integrity_mismatch:node_modules/zeta"])
+
+    def test_store_prints_the_same_artefact(self):
+        lock = self.write(self.lock_text())
+        out_dir = os.path.join(self.base, "out")
+        os.mkdir(out_dir)
+        proc = subprocess.run([sys.executable, "-m", "runner.deps_npm", "store", lock, out_dir, "--mirror", self.mirror,
+                               "--recipe", self.write(json.dumps(self.stdin), "units.json")],
+                              cwd=REFEREE, input="", capture_output=True, text=True, timeout=120)
+        stored = json.loads(proc.stdout.splitlines()[-1])
+        self.assertEqual(proc.returncode, 0, stored)
+        self.assertEqual(stored["artefact"], self.run_fetch(lock)[1]["artefact"])
+        self.assertEqual(os.listdir(out_dir), [stored["address"]])
+
+    def test_unusable_input_is_exit_2(self):
+        good = self.lock_text()
+        not_dir = self.write("x", "file")
+        cases = [
+            dict(lock=os.path.join(self.base, "missing.json")),
+            dict(lock=self.base),
+            dict(lock=self.write("{", "l1.json")),
+            dict(lock=self.write(json.dumps({"lockfileVersion": 2, "packages": self.packages}), "l2.json")),
+            dict(lock=self.write(good.replace('"lockfileVersion": 3', '"lockfileVersion": 3.0'), "l3.json")),
+            dict(lock=self.write(json.dumps({"lockfileVersion": 3, "packages": []}), "l4.json")),
+            dict(lock=self.write(json.dumps({"lockfileVersion": 3, "packages": {"node_modules/a": "x"}}), "l5.json")),
+            dict(lock=self.write("[" * 100000, "l6.json")),
+            dict(mirror=os.path.join(self.base, "no-mirror")),
+            dict(mirror=not_dir),
+            dict(raw_stdin=""),
+            dict(raw_stdin="{"),
+            dict(stdin={"registry_egress": [REG]}),
+            dict(stdin={"registry_egress": ["https://registry.npmjs.org"], "install_scripts_required": []}),
+            dict(stdin={"registry_egress": ["http://registry.npmjs.org/"], "install_scripts_required": []}),
+            dict(stdin={"registry_egress": [REG], "install_scripts_required": [1]}),
+            dict(args=["fetch", self.write(good, "l7.json")]),
+            dict(args=["fetch", self.write(good, "l8.json"), self.base, "--mirror", self.mirror]),
+        ]
+        for case in cases:
+            code, out = self.run_fetch(**case)
+            self.assertEqual(code, 2, (case, out))
+            self.assertEqual(list(out), ["error"], case)
+            self.assertFalse(out["error"].startswith("internal error"), (case, out))
+        # a tarball that matches its integrity but cannot be read: no verdict, not a pass
+        for name, data in (("raw", b"not gzip"), ("nopkg", vtgz({"index.js": b"x"})),
+                           ("badjson", vtgz({"package.json": b"{"}))):
+            packages = {"": {}}
+            self.packages = packages
+            self.add("node_modules/" + name, name, "1.0.0", {}, data=data)
+            code, out = self.run_fetch()
+            self.assertEqual((code, list(out)), (2, ["error"]), (name, out))
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
+            self.packages = {"": {}}
+            path = self.put(url("zeta", "1.0.0"), b"x")
+            self.add("node_modules/zeta", "zeta", "1.0.0", {})
+            os.chmod(path, 0)
+            self.assertEqual(self.run_fetch()[0], 2)
 
 
 if __name__ == "__main__":

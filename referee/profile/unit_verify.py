@@ -10,11 +10,11 @@ stage 0), tohum/26a (``unit.verify``: recipe, tree and ``deps`` in; verified rec
 3/3 results out; ``limit_hit:<key>``), asama-0/06 (only the unit's ``inputs`` enter the worktree; the
 container installs the dependencies without network and without scripts; a marked package's script runs
 in ``koş`` without network), asama-0/08 criterion 6, asama-0/09 test 48, tohum/18a (``operating{}``),
-tohum/29d (group ``recipe``: the static check). It calls MF3 (``runner.contained``), MF5
+tohum/29d and 29g (group ``recipe``: ``vector_check`` below). It calls MF3 (``runner.contained``), MF5
 (``runner.deps_npm``) and MF4 (``profile.derive``: the recipe's path and inputs against the derivation,
 and the exclusions while the inputs are copied).
 
-The static check (``check_recipe``; every reason listed):
+``verify``'s static check (``check_recipe``; every reason listed):
 
 - Fields: every recipe field is required (``missing:<field>``), no other field is allowed
   (``field_not_in_recipe:<field>``).
@@ -29,9 +29,10 @@ The static check (``check_recipe``; every reason listed):
   (``invalid:lockfiles``), covered by an input (``lockfile_not_in_inputs``), in the unit's directory or
   one of its ancestors (``lockfile_not_for_unit``).
 - ``install_scripts_required`` a list of strings (their form is MF5's: exact lock key or ``name@version``).
-- ``lint_cmd`` and ``test_cmd`` non-empty lists of non-empty strings without NUL (``invalid:<field>``);
-  ``affected_test_cmd`` a list of such strings, possibly empty. It is not run here (stage 0's affected
-  set is the unit's whole service-free test set, asama-0/08 item 6).
+- ``lint_cmd``, ``test_cmd`` and ``affected_test_cmd`` non-empty lists of non-empty strings without NUL
+  (``invalid:<field>``; an empty ``affected_test_cmd`` is refused as group ``recipe`` refuses it,
+  tohum/29g). ``affected_test_cmd`` is not run here (stage 0's affected set is the unit's whole
+  service-free test set, asama-0/08 item 6).
 - ``services`` is ``[]`` (``services_not_empty``).
 - ``limits`` an object whose keys are ``operating{}`` keys (``limit_key_unknown:<key>``) and whose values are
   positive integers (``invalid:limits.<key>``); given the policy's ``operating``, a value may tighten the
@@ -96,13 +97,35 @@ Founder, tohum/18a --, an invalid contained run such as ``red_control_green``, `
 asama-0/08 criteria 4, 5 and 7 (the lint tool's rule ids, fixes and violations, and churn: parsing the
 tool's output is not done here), and whether the tests are "well tested".
 
-Command line, run from ``referee/`` (one JSON line; exit 0 verified or check ok, 1 refused, 2 no verdict).
-Exit 1 comes only from a report whose verdict is ``refused``; unusable input (missing or non-JSON files,
-JSON nested too deeply, wrong shapes, a policy without the needed ``operating`` keys) and, as a last
-resort, any other exception (``internal error: <type>``) are exit 2. Out of scope: signals and the
-interpreter being killed.
+Group ``recipe``'s check (``vector_check``, tohum/29g; no tree, nothing run) is a separate, narrower
+check than ``check_recipe``: it emits only these reasons, every applicable one, sorted in code point
+order, ``<input>`` and ``<key>`` as written in the recipe:
 
-    python -m profile.unit_verify check RECIPE [--tree TREE] [--policy FILE] [--target FILE]
+- ``image_not_pinned``: ``env_image`` (any value, missing included) is not ``<ref>@sha256:<64 lowercase
+  hex>`` (``run.contained``'s image rule);
+- ``inputs_missing_unit``: no input covers ``path`` (tohum/29f coverage: ``p == e.rstrip('/')`` or ``p``
+  starts with ``e.rstrip('/') + '/'``, case-sensitive, as written);
+- ``input_not_plain:<input>``: the input is absolute, holds ``\\`` or has a ``.`` or ``..`` component
+  (``.`` itself included);
+- ``input_excluded:<input>``: the input itself is agent configuration (tohum/29f, case-insensitive: a
+  component ``.claude``, ``.vscode`` or ``.devcontainer``, or the last component, trailing ``/`` ignored,
+  ``CLAUDE.md``, ``AGENTS.md``, ``.mcp.json`` or ``.envrc``);
+- ``cmd_empty:<field>``: ``lint_cmd``, ``test_cmd`` or ``affected_test_cmd`` is missing, not a list, empty,
+  or holds a non-string or an empty string;
+- ``limit_key_unknown:<key>``: a ``limits`` key is not a key of ``policy.operating`` (values not looked at);
+- ``services_not_empty``: ``services`` is not ``[]`` (missing included).
+
+Unusable input there (exit 2): a file missing or not JSON, ``recipe`` not an object, ``policy`` not
+``{operating: {...}}``, ``path`` not a string, ``inputs`` not a list of strings, ``limits`` not an
+object. Other recipe fields are not looked at.
+
+Command line, run from ``referee/``, no stdin; the last stdout line is one JSON line. ``check``: ``{ok,
+reasons}``, exit 0 when ``reasons`` is empty, else 1. ``verify``: the report, exit 0 verified, 1 refused, 2
+no verdict. Unusable input (missing or non-JSON files, JSON nested too deeply, wrong shapes, a policy
+without the needed ``operating`` keys) and, as a last resort, any other exception (``internal error:
+<type>``) are exit 2 with ``{ok: false, error}``. Out of scope: signals and the interpreter being killed.
+
+    python -m profile.unit_verify check RECIPE POLICY
     python -m profile.unit_verify verify FILE
 
 ``FILE`` is ``{recipe, tree, policy, red_control: {cmd}, deps?, target?, base?}``: ``recipe`` and
@@ -141,6 +164,9 @@ TOOLCHAIN = re.compile(r"node@([0-9]+\.[0-9]+\.[0-9]+)")
 VERSION_TEXT = re.compile(r"v?([0-9]+\.[0-9]+\.[0-9]+)")
 OFFICIAL_REPOS = ("node", "docker.io/library/node")
 IMAGE_SHAPE = re.compile(r"(?P<repo>[^@]+?)(?::(?P<tag>[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?@sha256:[0-9a-f]{64}")
+CMD_FIELDS = ("lint_cmd", "test_cmd", "affected_test_cmd")
+AGENT_DIRS = (".claude", ".vscode", ".devcontainer")
+AGENT_FILES = ("claude.md", "agents.md", ".mcp.json", ".envrc")
 BIN_NAME = re.compile(r"[A-Za-z0-9._-]+")
 RESERVED = ".snowball"
 ATTEMPTS = 3
@@ -161,8 +187,8 @@ def canonical(obj: Any) -> bytes:
 
 # ---------------------------------------------------------------- static check
 
-def _argv_ok(value: Any, allow_empty: bool = False) -> bool:
-    return (isinstance(value, list) and (allow_empty or bool(value))
+def _argv_ok(value: Any) -> bool:
+    return (isinstance(value, list) and bool(value)
             and all(isinstance(v, str) and v and "\x00" not in v for v in value))
 
 
@@ -174,6 +200,57 @@ def _operating(policy: Any, keys) -> dict:
     except C.ContainmentError as exc:
         raise VerifyError("policy: %s" % exc) from None
     return {k: (values[k], operating[k]["band"]) for k in keys}
+
+
+def _covers_as_written(entry: str, path: str) -> bool:
+    """tohum/29f coverage: ``path == entry.rstrip('/')`` or ``path`` starts with it plus ``/``."""
+    e = entry.rstrip("/")
+    return path == e or path.startswith(e + "/")
+
+
+def _agent_config_as_written(path: str) -> bool:
+    """tohum/29f agent configuration, case-insensitive, on the path as written (trailing ``/`` ignored)."""
+    parts = path.rstrip("/").split("/")
+    return (any(p.casefold() in AGENT_DIRS for p in parts)
+            or parts[-1].casefold() in AGENT_FILES)
+
+
+def vector_check(recipe: Any, policy: Any) -> list[str]:
+    """Group ``recipe``'s static check (tohum/29g): the sorted reasons; see ``check`` in the module docstring.
+
+    Raises ``VerifyError`` (unusable input) when ``recipe`` or ``policy.operating`` is not an object, or
+    ``path``, ``inputs`` (a list of strings) or ``limits`` (an object) is missing or of another type."""
+    if not isinstance(recipe, dict):
+        raise VerifyError("recipe is not an object")
+    operating = policy.get("operating") if isinstance(policy, dict) else None
+    if not isinstance(operating, dict):
+        raise VerifyError("policy must be {operating: {key: {value, band}}}")
+    path, inputs, limits = recipe.get("path"), recipe.get("inputs"), recipe.get("limits")
+    if not isinstance(path, str):
+        raise VerifyError("recipe.path must be a string")
+    if not (isinstance(inputs, list) and all(isinstance(e, str) for e in inputs)):
+        raise VerifyError("recipe.inputs must be a list of strings")
+    if not isinstance(limits, dict):
+        raise VerifyError("recipe.limits must be an object")
+    reasons = set()
+    image = recipe.get("env_image")
+    if not (isinstance(image, str) and C.IMAGE.match(image)):
+        reasons.add("image_not_pinned")
+    if not any(_covers_as_written(e, path) for e in inputs):
+        reasons.add("inputs_missing_unit")
+    for e in inputs:
+        if e.startswith("/") or "\\" in e or any(p in (".", "..") for p in e.split("/")):
+            reasons.add("input_not_plain:%s" % e)
+        if _agent_config_as_written(e):
+            reasons.add("input_excluded:%s" % e)
+    for field in CMD_FIELDS:
+        value = recipe.get(field)
+        if not (isinstance(value, list) and value and all(isinstance(v, str) and v for v in value)):
+            reasons.add("cmd_empty:%s" % field)
+    reasons.update("limit_key_unknown:%s" % k for k in limits if k not in operating)
+    if recipe.get("services") != []:
+        reasons.add("services_not_empty")
+    return sorted(reasons)
 
 
 def check_recipe(recipe: Any, policy: Any = None, tree: str | None = None, target: Any = None) -> list[str]:
@@ -222,11 +299,9 @@ def check_recipe(recipe: Any, policy: Any = None, tree: str | None = None, targe
                 reasons.append("lockfile_not_for_unit")
     if "install_scripts_required" in recipe and not D._str_list(get("install_scripts_required")):
         reasons.append("invalid:install_scripts_required")
-    for field in ("lint_cmd", "test_cmd"):
+    for field in CMD_FIELDS:
         if field in recipe and not _argv_ok(get(field)):
             reasons.append("invalid:%s" % field)
-    if "affected_test_cmd" in recipe and not _argv_ok(get("affected_test_cmd"), allow_empty=True):
-        reasons.append("invalid:affected_test_cmd")
     if "services" in recipe and get("services") != []:
         reasons.append("services_not_empty")
     if "limits" in recipe:
@@ -622,45 +697,32 @@ def _load(path: str) -> Any:
         raise VerifyError("%s: JSON nested too deeply" % path) from None
 
 
-USAGE = ("usage: python -m profile.unit_verify check RECIPE [--tree TREE] [--policy FILE] [--target FILE]"
-         " | verify FILE")
+USAGE = "usage: python -m profile.unit_verify check RECIPE POLICY | verify FILE"
 EXIT = {"verified": 0, "refused": 1, "no_verdict": 2}
 
 
 def main(argv: list[str]) -> int:
     try:
-        args, opts = [], {}
-        it = iter(argv)
-        for a in it:
-            if a in ("--tree", "--policy", "--target"):
-                value = next(it, None)
-                if value is None or a in opts:
-                    raise VerifyError("%s needs one value" % a)
-                opts[a] = value
-            else:
-                args.append(a)
-        if len(args) == 2 and args[0] == "check":
-            policy = _load(opts["--policy"]) if "--policy" in opts else None
-            target = _load(opts["--target"]) if "--target" in opts else None
-            reasons = check_recipe(_load(args[1]), policy, opts.get("--tree"), target)
+        if len(argv) == 3 and argv[0] == "check":
+            reasons = vector_check(_load(argv[1]), _load(argv[2]))
             _emit({"ok": not reasons, "reasons": reasons})
             return 0 if not reasons else 1
-        if len(args) == 2 and args[0] == "verify" and not opts:
-            req = _load(args[1])
+        if len(argv) == 2 and argv[0] == "verify":
+            req = _load(argv[1])
             if not isinstance(req, dict) or not isinstance(req.get("tree"), str):
                 raise VerifyError("verify FILE must be {recipe, tree, policy, red_control, deps?, target?, base?}")
             report = verify(req.get("recipe"), req["tree"], req.get("policy"), req.get("red_control"),
                             req.get("deps"), req.get("target"), base=req.get("base"))
             _emit(report)
             return EXIT[report["verdict"]]
-        _emit({"error": USAGE})
+        _emit({"ok": False, "error": USAGE})
         return 2
     except (VerifyError, D.DeriveError, C.ContainmentError, ValueError, KeyError, TypeError, OSError,
             RecursionError) as exc:
-        _emit({"error": "unusable input: %s" % exc})
+        _emit({"ok": False, "error": "unusable input: %s" % exc})
         return 2
     except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
-        _emit({"error": "internal error: %s: %s" % (type(exc).__name__, exc)})
+        _emit({"ok": False, "error": "internal error: %s: %s" % (type(exc).__name__, exc)})
         return 2
 
 

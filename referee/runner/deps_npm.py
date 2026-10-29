@@ -36,7 +36,7 @@ The lock (``check``, before anything is fetched; every reason listed as ``<reaso
 - ``hasInstallScript: true`` needs the package marked in the recipe's ``install_scripts_required``
   (``install_script_not_marked``); a mark is the exact lock key or exactly ``name@version``.
 
-The fetch (``fetch``), only when the lock passes: each distinct ``resolved`` is fetched once and every
+The artifact fetch (``store``), only when the lock passes: each distinct ``resolved`` is fetched once and every
 strong ``integrity`` token must equal the bytes' digest (``integrity_mismatch``; one changed byte is
 caught). A tarball that matches is read in memory, never extracted: it must be gzip tar
 (``tarball_unreadable``) with exactly one regular member ``<top>/package.json`` (``tarball_no_package_json``,
@@ -59,20 +59,49 @@ identifier is ASCII ``[A-Za-z0-9.+-]`` and in ``license_allowlist`` after lowerc
 case-sensitive; ``--policy`` replaces the 18a list): ``OR`` does not
 let a listed identifier carry an unlisted one, ``WITH`` and ``+`` are not allowed unless listed as written.
 
-The artifact, written only when nothing is refused: ``OUT/<address>/`` holding the lock under its own
-name (``package-lock.json`` or ``npm-shrinkwrap.json``), ``tarballs/<sha512 hex>.tgz`` and
+The artifact, written by ``store`` only when nothing is refused: ``OUT/<address>/`` holding the lock under
+its own name (``package-lock.json`` or ``npm-shrinkwrap.json``), ``tarballs/<sha512 hex>.tgz`` and
 ``manifest.json``, the canonical JSON (sorted keys, no spaces, ASCII) of the lock's sha256 and, per key,
 name, version, resolved, integrity, sha512, bytes, the listed licenses and the install-script flag.
 ``address`` is the sha256 of ``manifest.json``'s bytes, so the same lock and tarballs give the same
 address and a changed lock byte gives another. ``verify`` takes it by that hash: the manifest bytes must
 hash to the address, each tarball must be a regular file with its sha512 and must match its
 ``integrity``, the lock copy must hash to ``lock_sha256``, and no other file may be there
-(``unexpected_file``).
+(``unexpected_file``). ``store`` also prints the ``npmlock`` ``artefact`` of the same packages (below).
 
 Fetching: ``--mirror DIR`` reads ``DIR/<host>/<path>`` (the referee's fixtures and tests); without it
 the tarball is fetched over HTTPS with redirects refused and the read capped. The HTTPS path is not
 exercised by the tests here (no network in the sandbox); its proof is asama-0/10a #getir. A tarball that
 cannot be fetched is no verdict (exit 2), not a refusal: an outage says nothing about the lock.
+
+Group ``npmlock`` (tohum/29g, the vector interface; ``fetch``, a report, nothing written): stdin
+``{registry_egress[], install_scripts_required[]}``, each registry ``https://<host>/...`` ending with ``/``,
+each mark ``name@version``. The lock must be ``lockfileVersion`` 3 with a ``packages`` object of objects.
+Every ``packages`` entry other than ``""`` is a package, a link or an entry without ``resolved`` too, and
+gets the first of these reasons that holds, in this order:
+
+- ``git_dependency``: ``resolved`` starts with ``git+``, ``git:``, ``github:`` or ``git@`` (as written);
+- ``file_dependency``: ``resolved`` starts with ``file:``, or ``link`` is true and the target (``resolved``)
+  is absolute (``/``, ``\\`` or a drive letter) or contains ``..``;
+- ``registry_not_allowed``: ``resolved`` is missing or does not start with a ``registry_egress`` entry
+  (a plain string prefix over the whole URL, ``/`` included); so an in-tree link and a bundled entry are
+  refused here, nothing of theirs being fetched;
+- ``tarball_missing``: no regular file ``MIRROR/<host>/<path>`` for ``https://<host>/<path>`` (taken
+  literally; an empty, ``.`` or ``..`` segment cannot be in the mirror);
+- ``integrity_mismatch``: the lock's ``integrity`` has no ``sha512-`` token, or one differs from
+  ``sha512-`` + base64 of the sha512 of the raw ``.tgz`` bytes (other tokens are not read);
+- ``install_script_unmarked``: ``package/package.json`` has ``preinstall``, ``install`` or ``postinstall``
+  in ``scripts``, or ``package/binding.gyp`` exists, or the lock entry has ``hasInstallScript: true``; and the
+  tarball's ``name@version`` is not in ``install_scripts_required``.
+
+The tarball is read in memory. Out: ``{ok, rejected, artefact, licenses}``; ``rejected`` the sorted
+``<reason>:<lock path>``; ``artefact`` ``sha256:`` + the hex sha256 of the canonical JSON (RFC 8785 for
+strings: sorted keys, no spaces, UTF-8) of ``[{integrity, path}]`` sorted by path, ``integrity`` as the
+lock writes it, so a lock written another way gives the same address; ``licenses`` sorted by path
+``{path, name, version, license}`` from ``package/package.json`` (each ``null`` unless a string; a report,
+no gate). With a refusal ``artefact`` and ``licenses`` are ``null``. Exit 2: a lock or stdin that is not as
+above, a mirror that is not a readable directory, a mirror file that cannot be read, and a tarball that
+passes ``integrity`` but is not gzip tar with exactly one ``package/package.json`` JSON object.
 
 Command line, run from ``referee/`` (one JSON line on stdout; exit 0 fine, 1 refused, 2 no verdict). Exit
 1 comes only from a report with ``ok`` false; every other failure is exit 2 with an ``error`` line:
@@ -81,8 +110,9 @@ wrong shape, a lock file not named as above, a fetch that failed, an existing ar
 does not verify) and, as a last resort, any other exception (``internal error: <type>``). Out of scope:
 signals and the interpreter being killed.
 
+    python -m runner.deps_npm fetch LOCK MIRROR < {"registry_egress": [...], "install_scripts_required": [...]}
     python -m runner.deps_npm check LOCK [--registry URL]... [--recipe FILE]
-    python -m runner.deps_npm fetch LOCK OUT [--mirror DIR] [--registry URL]... [--recipe FILE]
+    python -m runner.deps_npm store LOCK OUT [--mirror DIR] [--registry URL]... [--recipe FILE]
                                              [--policy FILE] [--product]
     python -m runner.deps_npm verify ARTIFACT_DIR [--address HEX]
 
@@ -486,7 +516,8 @@ def fetch(lock_path: str, out: str, fetcher: Callable[[str, int | None], bytes],
     address = hashlib.sha256(manifest_bytes).hexdigest()
     _write_artifact(out, address, name, lock_bytes, manifest_bytes, blobs)
     return {"ok": True, "reasons": [], "address": address, "packages": len(rows),
-            "bytes": sum(len(b) for b in blobs.values()), "licenses": licenses}
+            "bytes": sum(len(b) for b in blobs.values()), "licenses": licenses,
+            "artefact": vector_address([{"integrity": r["integrity"], "path": r["key"]} for r in rows])}
 
 
 def _write_artifact(out: str, address: str, lock_name: str, lock_bytes: bytes, manifest_bytes: bytes,
@@ -575,6 +606,152 @@ def verify(directory: str, address: str | None = None) -> dict:
     return {"ok": not reasons, "reasons": reasons, "address": address}
 
 
+# ---------------------------------------------------------------- npmlock (the vector interface)
+
+VECTOR_GIT = ("git+", "git:", "github:", "git@")
+VECTOR_REASONS = ("git_dependency", "file_dependency", "registry_not_allowed", "tarball_missing",
+                  "integrity_mismatch", "install_script_unmarked")
+_REGISTRY_RE = re.compile(r"https://[^/\s]+/\S*")
+_ABSOLUTE_RE = re.compile(r"[/\\]|[A-Za-z]:")
+
+
+def vector_canonical(obj: Any) -> bytes:
+    """RFC 8785 for values made of objects, arrays and strings: sorted keys, no spaces, UTF-8."""
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def vector_address(rows: list[dict]) -> str:
+    """``sha256:`` + hex of the canonical JSON of ``[{integrity, path}]`` sorted by path."""
+    listed = sorted(({"integrity": r["integrity"], "path": r["path"]} for r in rows), key=lambda r: r["path"])
+    return "sha256:" + hashlib.sha256(vector_canonical(listed)).hexdigest()
+
+
+def _vector_request(raw: bytes) -> tuple[list[str], list[str]]:
+    req = _parse(raw, "<stdin>")
+    if not isinstance(req, dict):
+        raise DepsError("stdin is not an object")
+    regs, marks = req.get("registry_egress"), req.get("install_scripts_required")
+    for field, value in (("registry_egress", regs), ("install_scripts_required", marks)):
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise DepsError("stdin %s is not a list of strings" % field)
+    for reg in regs:
+        if not _REGISTRY_RE.fullmatch(reg) or not reg.endswith("/"):
+            raise DepsError("registry not usable (https://<host>/... ending with /): %r" % reg)
+    return regs, marks
+
+
+def _vector_lock(path: str) -> dict:
+    lock = _parse(_read(path), path)
+    version = lock.get("lockfileVersion") if isinstance(lock, dict) else None
+    if type(version) is not int or version != 3:
+        raise DepsError("%s: not a lockfileVersion 3 lock" % path)
+    packages = lock.get("packages")
+    if not isinstance(packages, dict) or not all(isinstance(v, dict) for v in packages.values()):
+        raise DepsError("%s: packages is not an object of objects" % path)
+    return packages
+
+
+def _mirror_file(mirror: str, resolved: str) -> str | None:
+    """``https://<host>/<path>`` -> ``<mirror>/<host>/<path>``, taken literally; None if it cannot be there."""
+    if not resolved.startswith("https://"):
+        return None
+    parts = resolved[len("https://"):].split("/")
+    if any(p in ("", ".", "..") or "\\" in p or "\0" in p for p in parts):
+        return None
+    return os.path.join(mirror, *parts)
+
+
+def _sha512_tokens(integrity: Any) -> list[str]:
+    return [t for t in integrity.split() if t.startswith("sha512-")] if isinstance(integrity, str) else []
+
+
+def _vector_tarball(data: bytes, where: str) -> dict:
+    """``package/package.json`` (an object) and whether ``package/binding.gyp`` exists; else no verdict."""
+    found, gyp = [], False
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+            for member in tar:
+                name = "/".join(p for p in member.name.split("/") if p not in ("", "."))
+                if name == "package/binding.gyp":
+                    gyp = True
+                elif name == "package/package.json":
+                    if not member.isfile() or member.size > PACKAGE_JSON_MAX:
+                        raise DepsError("%s: package/package.json not a readable file" % where)
+                    fh = tar.extractfile(member)
+                    found.append(fh.read() if fh else b"")
+    except (tarfile.TarError, EOFError, zlib.error, OSError) as exc:
+        raise DepsError("%s: tarball unreadable: %s" % (where, exc)) from None
+    if len(found) != 1:
+        raise DepsError("%s: %d package/package.json members" % (where, len(found)))
+    manifest = _parse(found[0], where + ":package/package.json")
+    if not isinstance(manifest, dict):
+        raise DepsError("%s: package/package.json is not an object" % where)
+    return {"manifest": manifest, "binding_gyp": gyp}
+
+
+def npmlock(lock_path: str, mirror: str, registries: list[str], marks: list[str]) -> dict:
+    """The ``npmlock`` report ``{ok, rejected, artefact, licenses}``; DepsError is unusable input."""
+    packages = _vector_lock(lock_path)
+    try:
+        os.listdir(mirror)
+    except OSError as exc:
+        raise DepsError("mirror unreadable: %s" % (exc.strerror or exc)) from None
+    rejected, rows, licenses, cache = [], [], [], {}
+    for path in sorted(packages):
+        if path == "":
+            continue
+        entry = packages[path]
+        resolved = entry.get("resolved")
+        resolved = resolved if isinstance(resolved, str) else None
+        reason = None
+        if resolved is not None and resolved.startswith(VECTOR_GIT):
+            reason = "git_dependency"
+        elif (resolved is not None and resolved.startswith("file:")) or (
+                entry.get("link") is True and resolved is not None
+                and (_ABSOLUTE_RE.match(resolved) or ".." in resolved)):
+            reason = "file_dependency"
+        elif resolved is None or not any(resolved.startswith(r) for r in registries):
+            reason = "registry_not_allowed"
+        else:
+            fpath = _mirror_file(mirror, resolved)
+            if fpath is None or not os.path.isfile(fpath):
+                reason = "tarball_missing"
+            else:
+                if fpath not in cache:
+                    try:
+                        cache[fpath] = _read(fpath)
+                    except OSError as exc:
+                        raise DepsError("mirror unreadable: %s: %s" % (fpath, exc.strerror or exc)) from None
+                data = cache[fpath]
+                want = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode("ascii")
+                hashes = _sha512_tokens(entry.get("integrity"))
+                if not hashes or any(t != want for t in hashes):
+                    reason = "integrity_mismatch"
+                else:
+                    info = _vector_tarball(data, path)
+                    manifest = info["manifest"]
+                    name, version = manifest.get("name"), manifest.get("version")
+                    scripts = manifest.get("scripts")
+                    script = (info["binding_gyp"] or entry.get("hasInstallScript") is True
+                              or (isinstance(scripts, dict) and any(s in scripts for s in INSTALL_SCRIPTS)))
+                    marked = isinstance(name, str) and isinstance(version, str) and "%s@%s" % (name, version) in marks
+                    if script and not marked:
+                        reason = "install_script_unmarked"
+                    else:
+                        rows.append({"integrity": entry["integrity"], "path": path})
+                        lic = manifest.get("license")
+                        licenses.append({"path": path, "name": name if isinstance(name, str) else None,
+                                         "version": version if isinstance(version, str) else None,
+                                         "license": lic if isinstance(lic, str) else None})
+        if reason:
+            rejected.append("%s:%s" % (reason, path))
+    rejected.sort()
+    if rejected:
+        return {"ok": False, "rejected": rejected, "artefact": None, "licenses": None}
+    return {"ok": True, "rejected": [], "artefact": vector_address(rows),
+            "licenses": sorted(licenses, key=lambda r: r["path"])}
+
+
 # ---------------------------------------------------------------- command line
 
 def _read(path: str) -> bytes:
@@ -604,12 +781,20 @@ def _emit(obj: dict) -> None:
     sys.stdout.write(json.dumps(obj, sort_keys=True) + "\n")
 
 
-USAGE = ("usage: python -m runner.deps_npm check LOCK [--registry URL]... [--recipe FILE] | fetch LOCK OUT "
-         "[--mirror DIR] [--registry URL]... [--recipe FILE] [--policy FILE] [--product] | verify DIR [--address HEX]")
+USAGE = ("usage: python -m runner.deps_npm fetch LOCK MIRROR (stdin {registry_egress, install_scripts_required}) | "
+         "check LOCK [--registry URL]... [--recipe FILE] | store LOCK OUT [--mirror DIR] [--registry URL]... "
+         "[--recipe FILE] [--policy FILE] [--product] | verify DIR [--address HEX]")
 
 
 def main(argv: list[str]) -> int:
     try:
+        if argv[:1] == ["fetch"]:
+            if len(argv) != 3 or any(a.startswith("--") for a in argv[1:]):
+                raise DepsError(USAGE)
+            registries, marks = _vector_request(sys.stdin.buffer.read())
+            report = npmlock(argv[1], argv[2], registries, marks)
+            _emit(report)
+            return 0 if report["ok"] else 1
         args, opts, regs = [], {}, []
         it = iter(argv)
         for a in it:
@@ -634,7 +819,7 @@ def main(argv: list[str]) -> int:
             report = check(_parse(_read(args[1]), args[1]), registries, _marks(recipe))
             _emit({"ok": report["ok"], "reasons": report["reasons"]})
             return 0 if report["ok"] else 1
-        if len(args) == 3 and args[0] == "fetch" and "--address" not in opts:
+        if len(args) == 3 and args[0] == "store" and "--address" not in opts:
             fetcher = mirror_fetcher(opts["--mirror"]) if "--mirror" in opts else https_fetcher
             report = fetch(args[1], args[2], fetcher, registries, _marks(recipe), policy, "--product" in opts)
             _emit(report)

@@ -6,34 +6,45 @@ callers llm.call, gate.check, ledger.append), tohum/30c (a finding never carries
 where it is and its sha256 fingerprint).
 
 - A match is ``{rule, line, sha256}`` plus ``path`` for diffs: the rule that fired, the 1-based line of
-  the input, and the sha256 of the matched text. The matched text itself never leaves this module.
+  the input counted by LF, and the sha256 of the matched text. The matched text itself never leaves
+  this module.
 - Rules are the high-confidence token shapes of the providers the system touches (Anthropic, GitHub,
   AWS, Google, Slack, Stripe, npm, GitLab, OpenAI), private key blocks, JWTs, a password of any length
   inside a URL, and a quoted or bare value of 8 or more characters assigned to a secret-named key. The
   exact assignment forms, how a value is read and the only values skipped are in the comment above
   ``ASSIGNMENT``, which keys are secret-named in the comment at ``NAME_PARTS``; what they do not report
-  is listed there as a boundary, not left implicit.
+  is listed there as a boundary, not left implicit. A value shaped like a provider prefix and nothing
+  else (``PROVIDER_SHAPED``) is left to the token rules, so the seed's near misses stay clean.
   Callers may add ``known`` values (the referee's own secrets, by environment variable name on the
   command line): those match verbatim.
 - Every line is scanned several ways: as written; with ``\\uXXXX`` / ``\\xNN`` / ``\\"`` escapes decoded
   (a JSON row may spell a token in escapes, and always escapes the quotes around a value); and
   NFKC-folded with invisible format characters (zero-width space, soft hyphen, BOM ...) removed;
   percent-decoded; and each base64 run that decodes to text is scanned as text. Two adjacent lines are
-  also scanned joined, so a token or a key and its value split over a line break is caught. What is
-  out of reach: a secret that only code would compute ("gh" + "p_..."), since no text holds it; a token
-  split over three or more lines; encodings other than the ones above (hex, HTML entities). A diff
-  is scanned whole: removed and context lines leak as much as added ones once the diff is put in a
-  prompt.
-- Fail closed: input that is not UTF-8 is decoded with replacement and still scanned; an unreadable file
-  or a bad command line is exit 2, never "clean".
+  also scanned joined, so a token or a key and its value split over a line break is caught; a token
+  found only in the joined text counts when no ASCII letter or digit follows it there (a 15-character
+  key id near miss on one line and a word on the next is not a key id). What is out of reach: a secret
+  that only code would compute ("gh" + "p_..."), since no text holds it; a token split over three or
+  more lines; encodings other than the ones above (hex, HTML entities). A diff is scanned whole:
+  removed and context lines leak as much as added ones once the diff is put in a prompt.
+- Fail closed: in the ``--kind`` form, input that is not UTF-8 is decoded with replacement and still
+  scanned; in the vector form it is unusable. An unreadable file or a bad command line is exit 2, never
+  "clean".
 
 Command line, run from ``referee/`` (stdout is one JSON line; exit 0 clean, 1 match, 2 unusable input):
 
+    python -m gate.secrets scan diff|row|prompt FILE
     python -m gate.secrets scan --kind diff|row|prompt [--known-env NAME ...] [FILE]   FILE or stdin
     python -m gate.secrets send [--known-env NAME ...] -- CMD [ARG ...]
 
-``scan`` prints ``{"clean", "kind", "run_valid", "matches"}``. ``send`` reads a prompt on stdin, scans
-it as a prompt and only when it is clean runs CMD with the prompt on CMD's stdin (CMD's stdout goes to
+``scan KIND FILE`` is the seed's vector interface (tohum/29f, secrets; ``match_lines``): it never reads
+stdin, prints ``{"clean", "lines"}`` (the sorted unique 1-based LF lines where a match starts, the JSONL
+line for a row; ``[]`` when clean) and nothing else about a match, neither text nor rule. A file that is
+not UTF-8, a row line that is empty or not a JSON object, a missing file or a bad kind is exit 2 with
+``{"clean": false, "error"}``. Out of scope for this form: ``--known-env`` and row schema checks.
+
+``scan --kind`` prints ``{"clean", "kind", "run_valid", "matches"}``. ``send`` reads a prompt on stdin,
+scans it as a prompt and only when it is clean runs CMD with the prompt on CMD's stdin (CMD's stdout goes to
 stderr); it prints ``{"clean", "run_valid", "sent", "sender_exit", "matches"}``. A match means
 ``run_valid: false`` and ``sent: false``: CMD is never started. A clean prompt exits 0 whatever CMD
 returned; ``sender_exit`` carries CMD's code.
@@ -63,7 +74,7 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("anthropic-key", re.compile(r"sk-ant-[a-z]{2,8}\d{2}-[A-Za-z0-9_\-]{20,}")),
     ("github-token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36,255}")),
     ("github-pat", re.compile(r"github_pat_[A-Za-z0-9_]{60,255}")),
-    ("aws-access-key-id", re.compile(r"(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}")),
+    ("aws-access-key-id", re.compile(r"(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}")),
     ("aws-secret-key", re.compile(
         r"(?i)aws_?secret_?(?:access_?)?key[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9/+]{40}")),
     ("google-api-key", re.compile(r"AIza[0-9A-Za-z_\-]{35}")),
@@ -152,6 +163,13 @@ SCHEME = re.compile(r"(?i)(?:bearer|basic|token|digest|bot)[ \t]+")
 QUOTES = "\"'`"
 STRING_PREFIX = re.compile(r"[rRbBuUfF]{1,2}")
 NON_VALUES = {"none", "null", "nil", "true", "false", "undefined"}
+# A value that is, as a whole, a GitHub-style prefix (gh, one lower-case letter, _) or an AWS key id prefix
+# (AKIA, ASIA) followed only by letters and digits is judged by the token rules alone, not by the
+# assignment rule: the seed (29f, clean_near_miss) names ghq_ plus 36 and AKIA plus 15 as near misses that
+# are not matches, and GITHUB_TOKEN= or AWS_ACCESS_KEY_ID= before them would otherwise report them.
+# The stated cost: a secret of exactly that shape that no token rule takes (ghx_ plus anything, or AKIA
+# plus fewer than 16) is not reported after a secret-named key.
+PROVIDER_SHAPED = re.compile(r"gh[a-z]_[A-Za-z0-9]+|(?:AKIA|ASIA)[A-Z0-9]+")
 TEMPLATE = re.compile(
     r"\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Z_][A-Z0-9_]*|\{\{[ \t]*[A-Za-z_][A-Za-z0-9_.]*[ \t]*\}\}|"
     r"\{[A-Za-z_][A-Za-z0-9_.]*\}|<[A-Za-z][A-Za-z0-9_\- ]*>|%\([A-Za-z_][A-Za-z0-9_]*\)[sd]|%[A-Z_][A-Z0-9_]*%")
@@ -159,6 +177,7 @@ TEMPLATE = re.compile(
 ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})|\\([\"'/\\])")
 DIFF_PATH = re.compile(r"^\+\+\+ (?:b/)?(.*?)\s*$")
 BASE64_RUN = re.compile(r"[A-Za-z0-9+/_\-]{16,}={0,2}")
+ALNUM_AT = re.compile(r"[A-Za-z0-9]")
 
 
 class ScanError(ValueError):
@@ -303,11 +322,13 @@ def _url_placeholder(password: str) -> bool:
 
 def _assigned(text: str, pos: int) -> str | None:
     """The secret value assigned at ``pos`` (just after the operator), or None when there is none: the
-    first of the two readings of ``_value`` that is 8 or more characters, not a whole template and not
-    one of NON_VALUES."""
+    first of the two readings of ``_value`` that is 8 or more characters, not a whole template, not one
+    of NON_VALUES and not PROVIDER_SHAPED."""
     for glue in (False, True):
         value = _value(text, pos, glue)
         if value is None or len(value) < 8 or value.lower() in NON_VALUES or not TEMPLATE.sub("", value):
+            continue
+        if PROVIDER_SHAPED.fullmatch(value):
             continue
         return value
     return None
@@ -355,12 +376,17 @@ def _variants(line: str) -> list[str]:
 
 
 def _line_hits(line: str, known: list[tuple[str, str]], tokens: bool = True,
-               assignments: bool = True) -> list[tuple[str, str]]:
+               assignments: bool = True, joined: bool = False) -> list[tuple[str, str]]:
+    """The hits in ``line``. With ``joined`` (two lines joined into one) a token match counts only when
+    no ASCII letter or digit follows it: the 15-character near miss AKIA... on one line and FAKE on the
+    next do not join into a key id, while a token cut in two and joined back still ends where it ended."""
     hits: list[tuple[str, str]] = []
     for variant in _variants(line):
         for name, pattern in RULES if tokens else ():
             for m in pattern.finditer(variant):
                 if name == "url-credentials" and _url_placeholder(m.group(1)):
+                    continue
+                if joined and ALNUM_AT.match(variant, m.end()):
                     continue
                 hits.append((name, m.group(0)))
         for end in _assignment_ends(variant) if assignments else ():
@@ -400,9 +426,16 @@ def scan(text: str, kind: str, known: Iterable[tuple[str, str]] = ()) -> list[di
     seen: set[tuple[int, str, str]] = set()
     path = None
     lines = text.splitlines()
+    # a line is reported by its LF count (1-based): the other breaks splitlines knows (\r, \v, \f,
+    # \x1c-\x1e, \x85 and the Unicode line and paragraph separators) split the scan but do not start
+    # a new reported line
+    numbers, lf = [], 1
+    for piece in text.splitlines(keepends=True):
+        numbers.append(lf)
+        lf += piece.endswith("\n")
     hits = [_line_hits(line, known_values) for line in lines]
     for index, line in enumerate(lines):
-        lineno = index + 1
+        lineno = numbers[index]
         if kind == "diff":
             header = DIFF_PATH.match(line)
             if header:
@@ -419,7 +452,8 @@ def scan(text: str, kind: str, known: Iterable[tuple[str, str]] = ()) -> list[di
             head, tail = line.rstrip(), following.lstrip()
             # a trailing backslash continues a string or a shell line: the halves join without it
             pieces = _variants(line) + _variants(following)
-            found += [hit for hit in _line_hits(head.removesuffix("\\") + tail, known_values, assignments=False)
+            found += [hit for hit in _line_hits(head.removesuffix("\\") + tail, known_values, assignments=False,
+                                                joined=True)
                       if hit not in alone and not any(hit[1] in piece for piece in pieces)]
             found += [hit for hit in _dangling_hits(head, tail) if hit not in alone]
         for rule, value in found:
@@ -445,6 +479,64 @@ def send_if_clean(prompt: str, send: Callable[[str], object], known: Iterable[tu
     """Call ``send(prompt)`` only when the prompt is clean; otherwise raise ``SecretFound`` unsent."""
     require_clean(prompt, "prompt", known)
     return send(prompt)
+
+
+class _Pairs(list):
+    """A decoded JSON object as the list of its (key, value) pairs: a repeated key hides no value."""
+
+
+def _strings(value: object) -> Iterable[str]:
+    """Every string in a decoded JSON value, object keys included."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, _Pairs):
+        for key, item in value:
+            yield key
+            yield from _strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _strings(item)
+
+
+def match_lines(data: bytes, kind: str) -> list[int]:
+    """The seed's vector form of the scan (tohum/29f, secrets): the sorted, unique 1-based lines where a
+    match starts in ``data``; an empty list means clean. Raise ``ScanError`` when the input is unusable.
+
+    ``data`` must be UTF-8. Lines are counted by LF; the empty piece after a last LF is not a line. A
+    ``row`` input is JSON Lines: every line must decode as a JSON object (an empty line or any other JSON
+    value makes the whole input unusable); then each string in it (keys and values, escapes decoded) is
+    scanned on its own, and a hit in any reports the line. The line as written is not scanned: read as
+    text, the JSON quotes and commas after a secret-named key ending one string would be read as that
+    key's value, and keys and values of different strings would be read as one assignment.
+    """
+    if kind not in KINDS:
+        raise ScanError("kind must be one of %s" % ", ".join(KINDS))
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ScanError("input is not UTF-8") from None
+    if kind != "row":
+        return sorted({m["line"] for m in scan(text, kind)})
+    rows = text.split("\n")
+    if rows[-1] == "":
+        rows.pop()
+    decoded = []
+    for number, row in enumerate(rows, 1):
+        try:
+            value = json.loads(row, object_pairs_hook=_Pairs)
+        except (ValueError, RecursionError):
+            raise ScanError("row %d is not JSON" % number) from None
+        if not isinstance(value, _Pairs):
+            raise ScanError("row %d is not a JSON object" % number)
+        decoded.append(value)
+    found = set()
+    try:
+        for number, value in enumerate(decoded, 1):
+            if any(scan(string, kind) for string in _strings(value)):
+                found.add(number)
+    except RecursionError:
+        raise ScanError("a row nests too deep to scan") from None
+    return sorted(found)
 
 
 # ---------------------------------------------------------------- command line
@@ -493,7 +585,26 @@ def _read(path: str | None) -> str:
     return data.decode("utf-8", "replace")
 
 
+def _scan_vector(kind: str, path: str) -> int:
+    """``scan KIND FILE``: print ``{"clean", "lines"}``, or ``{"clean": false}`` with an error."""
+    try:
+        if kind not in KINDS:
+            raise ScanError("kind must be one of %s" % ", ".join(KINDS))
+        with open(path, "rb") as fh:
+            lines = match_lines(fh.read(), kind)
+    except (ScanError, OSError) as exc:
+        _emit({"clean": False, "error": str(exc)})
+        return 2
+    _emit({"clean": not lines, "lines": lines})
+    return 0 if not lines else 1
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) > 1 and argv[0] == "scan" and not argv[1].startswith("--"):
+        if len(argv) != 3:
+            _emit({"clean": False, "error": "usage: scan diff|row|prompt FILE"})
+            return 2
+        return _scan_vector(argv[1], argv[2])
     try:
         command, opts = _parse(argv)
         known = _known_from_env(opts["known_env"])

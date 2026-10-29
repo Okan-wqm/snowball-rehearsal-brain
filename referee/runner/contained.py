@@ -4,9 +4,10 @@ Rules: tohum/08 items 2-3 (container flags, fresh host worktree, results hashed 
 container ends, red control in every run), tohum/26a (run.contained: command, trees, artifacts, unit
 image and limits in; results and their hashes out), tohum/18a and 26c (``operating{key: {value, band}}``
 limits, ``limit_hit:<key>``), asama-0/14 (group ``contained``: the generated ``docker run`` argv carries
-the mandatory flags and none of the forbidden ones).
+the mandatory flags and none of the forbidden ones), tohum/29f section ``contained`` (the ``argv`` command).
 
-The argv. ``build_argv`` writes exactly this shape, and ``check_argv`` accepts nothing else:
+The argv. One writer (``_compose``) writes every flag; two layouts differ only in the mounts. ``build_argv``
+(the run layout, used by ``run``) writes exactly this shape, and ``check_argv`` accepts nothing else:
 
     docker run --rm --pull never --network none --cap-drop ALL --read-only
       --security-opt no-new-privileges --user UID:GID --memory N --memory-swap N
@@ -25,6 +26,18 @@ The argv. ``build_argv`` writes exactly this shape, and ``check_argv`` accepts n
   ``RUNNER_`` (the ``--env NAME`` form, which copies the host's value, is refused); mounts are exactly
   ``/work`` and ``/out`` writable and optionally ``/in`` read-only, all three from one absolute, normalised
   ROOT spelled with ``[A-Za-z0-9._/-]`` only. The image is pinned: ``name[:tag]@sha256:<64 hex>``.
+- The request layout (``request_argv``, the ``argv`` command; ``check_argv(argv, layout="request")``):
+  the same flags, ``--user UID:65534``, and the mounts ``--mount type=bind,src=WORKTREE,dst=/work``,
+  ``src=OUTDIR,dst=/out`` and, for each ``artefacts[k]``, ``src=PATH,dst=/in/<k>,readonly``. Each source is an
+  absolute, normalised path of ``[A-Za-z0-9._/-]`` (so no ``,`` can add a mount option), not ``/``, not a
+  docker socket (below); sources do not repeat, and no artefact covers or is covered by the worktree or the
+  output directory. ``run`` does not use this layout: it keeps its fresh ROOT and mounts the artefacts as one
+  ``/in``.
+- Docker socket rule (request layout), on the path text only: a source is refused when a component is
+  ``docker.sock`` (any case), when it covers ``/var/run/docker.sock`` or ``/run/docker.sock`` (tohum/29f
+  coverage: equal, or a prefix ending at ``/``; so ``/var``, ``/var/run``, ``/run`` too), or when it is
+  ``/run/user`` or ``/run/user/<one component>`` (rootless docker's socket directory). A symlink or bind
+  mount that reaches a socket under another name is not seen: the command does not look at the disk.
 - Out of scope of ``check_argv``: what CMD does inside the container, and env values (the ``koş`` job
   carries no secret, tohum/08 item 1, so a value can only come from the caller). Whether a mount source
   is a real directory and not a symlink is checked by ``run`` on the host, not by ``check_argv``.
@@ -59,10 +72,25 @@ valid); input that is not JSON, nested too deeply to parse, or of the wrong shap
 last resort, is any other exception (``internal error: <type>``), never a traceback. Out of scope:
 signals and the interpreter being killed.
 
-    python -m runner.contained argv      stdin {image, cmd, run_root, operating, env?, uid?, gid?, artifacts?, name?}
+    python -m runner.contained argv      stdin {image, cmd, uid, worktree, outdir, artefacts, env, services,
+                                         operating} (tohum/29f); see below
     python -m runner.contained check     stdin: an argv as a JSON array
     python -m runner.contained run FILE  FILE {job, red_control, operating, base?}; job and red_control are
                                          {image, cmd, tree?, artifacts?, env?, uid?, gid?}
+
+``argv`` (tohum/29f group ``contained``): builds the request layout's argv; it does not run docker, reads
+no host path and makes nothing on disk. All nine fields are required, of their JSON types (``cmd`` a
+non-empty list of strings, ``artefacts`` strings, ``env`` string values; other keys are ignored); otherwise
+exit 2. Refused, exit 1, never fixed: non-empty ``services``; an image that is not
+``<ref>@sha256:<64 lowercase hex>``; an env name starting, in any case, with ``ACTIONS_``, ``GITHUB_`` or
+``RUNNER_``, or not an identifier; no ``operating.container_mem_bytes``, or its value not an integer inside
+its band or below 6 MiB; a mount source the rules above refuse; ``uid`` not a positive integer (never root).
+On exit 0 the line is the projection of the built argv, computed by parsing that argv (``project_argv``),
+not copied from the request: ``ok``, ``network`` (last ``--network``/``--net``, else ``default``),
+``cap_drop``, ``cap_add`` (sorted), ``privileged``, ``read_only``, ``uid`` (``--user`` before ``:``, an
+integer), ``memory_bytes`` (integer), ``mounts`` (``[source, "ro"|"rw"]`` sorted; tmpfs as
+``["tmpfs:" + target, "rw"]``), ``env_names`` (sorted), ``image``, ``argv``. On exit 1 and 2 the line is
+``{"ok": false, "reason": ...}``.
 """
 
 from __future__ import annotations
@@ -70,6 +98,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import posixpath
 import re
 import secrets as _random
 import shutil
@@ -106,6 +135,11 @@ MANDATORY = ("--network", "--cap-drop", "--read-only", "--user")
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 ROOT_PATH = re.compile(r"/[A-Za-z0-9._/-]*\Z")
 MOUNT = re.compile(r"type=bind,src=(/[A-Za-z0-9._/-]*),dst=(/work|/out|/in)(,readonly)?\Z")
+REQUEST_MOUNT = re.compile(r"type=bind,src=([^,]*),dst=(/work|/out|/in/(?:0|[1-9][0-9]{0,5}))(,readonly)?\Z")
+SOURCE_PATH = re.compile(r"/[A-Za-z0-9._/-]*\Z")
+DOCKER_SOCKET_NAME = "docker.sock"
+DOCKER_SOCKETS = ("/var/run/docker.sock", "/run/docker.sock")
+DOCKER_SOCKET_DIR = re.compile(r"/run/user/[^/]+/?\Z")  # rootless docker: /run/user/<uid>/docker.sock
 MOUNT_SUBDIR = {"/work": "work", "/out": "out", "/in": "in"}
 _COMPONENT = r"[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*"
 IMAGE = re.compile(
@@ -117,6 +151,10 @@ IMAGE = re.compile(
 
 class ContainmentError(ValueError):
     """The request cannot be run inside the container the spec requires; nothing was started."""
+
+
+class UnusableInput(ValueError):
+    """The request is not of the shape the command reads (exit 2, not a refusal)."""
 
 
 # ---------------------------------------------------------------- limits
@@ -146,10 +184,9 @@ def _posint(value: Any) -> bool:
 
 # ---------------------------------------------------------------- argv
 
-def build_argv(image: str, cmd: list[str], run_root: str, operating: dict, env: dict | None = None,
-               uid: int = DEFAULT_UID, gid: int = DEFAULT_GID, artifacts: bool = False,
-               name: str | None = None) -> list[str]:
-    """The ``docker run`` argv for one command; refused (ContainmentError) unless ``check_argv`` accepts it."""
+def _compose(image: Any, cmd: Any, operating: Any, env: Any, uid: Any, gid: Any, mounts: list[str],
+             name: str | None) -> list[str]:
+    """The one ``docker run`` argv writer: every flag but the mounts is the same for every layout."""
     memory = limits(operating, ("container_mem_bytes",))["container_mem_bytes"]
     if not (isinstance(cmd, list) and cmd and all(isinstance(c, str) for c in cmd)):
         raise ContainmentError("cmd must be a non-empty list of strings")
@@ -163,19 +200,168 @@ def build_argv(image: str, cmd: list[str], run_root: str, operating: dict, env: 
         if not isinstance(env[key], str):
             raise ContainmentError("env values must be strings")
         argv += ["--env", "%s=%s" % (key, env[key])]
-    argv += ["--mount", "type=bind,src=%s/work,dst=/work" % run_root,
-             "--mount", "type=bind,src=%s/out,dst=/out" % run_root]
+    for mount in mounts:
+        argv += ["--mount", mount]
+    return argv + [image] + cmd
+
+
+def build_argv(image: str, cmd: list[str], run_root: str, operating: dict, env: dict | None = None,
+               uid: int = DEFAULT_UID, gid: int = DEFAULT_GID, artifacts: bool = False,
+               name: str | None = None) -> list[str]:
+    """The run layout (fresh ROOT); refused (ContainmentError) unless ``check_argv`` accepts it."""
+    mounts = ["type=bind,src=%s/work,dst=/work" % run_root, "type=bind,src=%s/out,dst=/out" % run_root]
     if artifacts:
-        argv += ["--mount", "type=bind,src=%s/in,dst=/in,readonly" % run_root]
-    argv += [image] + cmd
+        mounts.append("type=bind,src=%s/in,dst=/in,readonly" % run_root)
+    argv = _compose(image, cmd, operating, env, uid, gid, mounts, name)
     report = check_argv(argv)
     if not report["ok"]:
         raise ContainmentError("argv refused: %s" % json.dumps(report, sort_keys=True))
     return argv
 
 
-def check_argv(argv: Any) -> dict:
-    """``{ok, missing, forbidden}`` for an argv; ``ok`` only for the exact shape in the module docstring."""
+REQUEST_FIELDS = (("image", str), ("cmd", list), ("uid", int), ("worktree", str), ("outdir", str),
+                  ("artefacts", list), ("env", dict), ("services", list), ("operating", dict))
+
+
+def request_shape(req: Any) -> dict:
+    """Types only (exit 2): every field of tohum/29f's request present and of its type; other keys ignored."""
+    if not isinstance(req, dict):
+        raise UnusableInput("request must be a JSON object")
+    for key, kind in REQUEST_FIELDS:
+        if key not in req:
+            raise UnusableInput("request.%s missing" % key)
+        if not isinstance(req[key], kind) or isinstance(req[key], bool):
+            raise UnusableInput("request.%s is not a %s" % (key, kind.__name__))
+    if not req["cmd"] or not all(isinstance(c, str) for c in req["cmd"]):
+        raise UnusableInput("request.cmd must be a non-empty list of strings")
+    if not all(isinstance(a, str) for a in req["artefacts"]):
+        raise UnusableInput("request.artefacts must be a list of strings")
+    if not all(isinstance(v, str) for v in req["env"].values()):
+        raise UnusableInput("request.env values must be strings")
+    return req
+
+
+def request_argv(req: Any) -> list[str]:
+    """The argv for one tohum/29f run request; UnusableInput for its shape, ContainmentError for a refusal.
+
+    Mounts: ``worktree`` at ``/work`` and ``outdir`` at ``/out`` writable, ``artefacts[k]`` at ``/in/<k>``
+    read-only; the user is ``UID:65534``. Nothing on disk is read or made.
+    """
+    req = request_shape(req)
+    if req["services"]:
+        raise ContainmentError("services: stage 0 units have none")
+    if not IMAGE.match(req["image"]):
+        raise ContainmentError("image is not pinned as <ref>@sha256:<64 lowercase hex>: %s" % req["image"])
+    for key in sorted(req["env"]):
+        reason = _env_problem("%s=" % key)
+        if reason:
+            raise ContainmentError("env %s: %s" % (key, reason))
+    if "container_mem_bytes" not in req["operating"]:
+        raise ContainmentError("operating.container_mem_bytes missing")
+    sources = [("worktree", req["worktree"]), ("outdir", req["outdir"])] + \
+        [("artefacts[%d]" % k, a) for k, a in enumerate(req["artefacts"])]
+    for label, path in sources:
+        reason = source_problem(path)
+        if reason:
+            raise ContainmentError("%s: %s" % (label, reason))
+    mounts = ["type=bind,src=%s,dst=/work" % req["worktree"], "type=bind,src=%s,dst=/out" % req["outdir"]]
+    mounts += ["type=bind,src=%s,dst=/in/%d,readonly" % (a, k) for k, a in enumerate(req["artefacts"])]
+    argv = _compose(req["image"], req["cmd"], req["operating"], req["env"], req["uid"], DEFAULT_GID, mounts, None)
+    report = check_argv(argv, layout="request")
+    if not report["ok"]:
+        raise ContainmentError("argv refused: %s" % json.dumps(report, sort_keys=True))
+    return argv
+
+
+# docker run flags that take no value (anything else starting with '-' takes the next token, or '=value')
+BOOL_FLAGS = {"--rm", "--read-only", "--privileged", "--init", "--interactive", "-i", "--tty", "-t",
+              "--detach", "-d", "--no-healthcheck", "--oom-kill-disable", "--publish-all", "-P", "--quiet", "-q",
+              "--disable-content-trust", "--sig-proxy"}
+SHORT = {"-e": "--env", "-u": "--user", "-m": "--memory", "-v": "--volume", "-w": "--workdir", "-p": "--publish"}
+MEMORY_VALUE = re.compile(r"([0-9]+) ?([kmgtp]?)i?b?\Z", re.IGNORECASE)
+
+
+def project_argv(argv: list[str]) -> dict:
+    """tohum/29f's projection of a ``docker run`` argv, read from the argv itself (not from any request)."""
+    opts: list[tuple[str, str | None]] = []
+    i = 2
+    while i < len(argv) and argv[i].startswith("-"):
+        tok = argv[i]
+        if tok.startswith("--") and "=" in tok:
+            flag, value = tok.split("=", 1)
+            i += 1
+        elif tok in BOOL_FLAGS:
+            flag, value = tok, None
+            i += 1
+        else:
+            flag, value = tok, argv[i + 1] if i + 1 < len(argv) else None
+            i += 2
+        opts.append((SHORT.get(flag, flag), value))
+    image = argv[i] if i < len(argv) else None
+    network, user, memory = "default", None, None
+    cap_drop: list[str] = []
+    cap_add: list[str] = []
+    flags = {"--privileged": False, "--read-only": False}
+    mounts: list[list[str]] = []
+    env_names: set[str] = set()
+    for flag, value in opts:
+        if flag in ("--network", "--net"):
+            network = value
+        elif flag == "--cap-drop":
+            cap_drop.append(value)
+        elif flag == "--cap-add":
+            cap_add.append(value)
+        elif flag in flags:
+            flags[flag] = value is None or value.lower() in ("true", "1")
+        elif flag == "--user":
+            user = value
+        elif flag == "--memory":
+            memory = value
+        elif flag == "--env":
+            env_names.add((value or "").partition("=")[0])
+        elif flag == "--mount":
+            mounts.append(_project_mount(value or ""))
+        elif flag == "--volume":
+            parts = (value or "").split(":")
+            ro = len(parts) > 2 and "ro" in parts[2].split(",")
+            mounts.append([parts[0] if len(parts) > 1 else "volume:" + parts[0], "ro" if ro else "rw"])
+        elif flag == "--tmpfs":
+            mounts.append(["tmpfs:" + (value or "").split(":")[0], "rw"])
+    uid_text = user.split(":")[0] if user is not None else None
+    return {"ok": True, "network": network, "cap_drop": sorted(cap_drop), "cap_add": sorted(cap_add),
+            "privileged": flags["--privileged"], "read_only": flags["--read-only"],
+            "uid": int(uid_text) if uid_text is not None and uid_text.isdigit() else None,
+            "memory_bytes": _memory_bytes(memory), "mounts": sorted(mounts), "env_names": sorted(env_names),
+            "image": image, "argv": argv}
+
+
+def _project_mount(value: str) -> list[str]:
+    fields = dict(f.split("=", 1) if "=" in f else (f, "true") for f in value.split(","))
+    kind = fields.get("type", "volume")
+    target = fields.get("dst") or fields.get("destination") or fields.get("target") or ""
+    if kind == "tmpfs":
+        return ["tmpfs:" + target, "rw"]
+    source = fields.get("src") or fields.get("source") or "volume:" + target
+    ro = fields.get("readonly", fields.get("ro", "false")).lower() not in ("false", "0")
+    return [source, "ro" if ro else "rw"]
+
+
+def _memory_bytes(value: str | None) -> int | None:
+    m = MEMORY_VALUE.match(value or "")
+    if not m:
+        return None
+    unit = m.group(2).lower()
+    return int(m.group(1)) * 1024 ** ("kmgtp".index(unit) + 1 if unit else 0)
+
+
+def check_argv(argv: Any, layout: str = "run") -> dict:
+    """``{ok, missing, forbidden}`` for an argv; ``ok`` only for the exact shape in the module docstring.
+
+    ``layout`` is the mount rule: ``run`` (one fresh ROOT, what ``build_argv`` writes) or ``request`` (what
+    ``request_argv`` writes for the ``argv`` command); every other flag rule is the same for both.
+    """
+    if layout not in ("run", "request"):
+        raise ValueError("layout is run or request")
     missing: list[str] = []
     forbidden: list[str] = []
     if not (isinstance(argv, list) and all(isinstance(a, str) for a in argv)):
@@ -230,7 +416,7 @@ def check_argv(argv: Any) -> dict:
         forbidden.append("--memory below %d" % MIN_MEMORY)
     if mem is not None and swap is not None and mem != swap:
         forbidden.append("--memory-swap differs from --memory")
-    forbidden += _mount_problems(mounts, missing)
+    forbidden += (_mount_problems if layout == "run" else _request_mount_problems)(mounts, missing)
     if image_at is None:
         missing.append("image")
     elif not IMAGE.match(argv[image_at]):
@@ -295,6 +481,59 @@ def _mount_problems(mounts: list[str], missing: list[str]) -> list[str]:
     if len(roots) > 1:
         problems.append("--mount sources under more than one ROOT")
     return problems
+
+
+def _request_mount_problems(mounts: list[str], missing: list[str]) -> list[str]:
+    problems: list[str] = []
+    pairs: list[tuple[str, str]] = []
+    for value in mounts:
+        m = REQUEST_MOUNT.match(value)
+        if not m:
+            problems.append("--mount not allowed: %s" % value)
+            continue
+        src, dst, readonly = m.group(1), m.group(2), bool(m.group(3))
+        if dst.startswith("/in/") != readonly:
+            problems.append("--mount %s: only /in/<k> is read-only, and it must be" % value)
+        reason = source_problem(src)
+        if reason:
+            problems.append("--mount %s: %s" % (value, reason))
+        pairs.append((src, dst))
+    srcs, dsts = [p[0] for p in pairs], [p[1] for p in pairs]
+    if len(set(srcs)) != len(srcs) or len(set(dsts)) != len(dsts):
+        problems.append("--mount source or target given more than once")
+    for dst in ("/work", "/out"):
+        if dst not in dsts:
+            missing.append("--mount %s" % dst)
+    ins = sorted(int(d[4:]) for d in dsts if d.startswith("/in/"))
+    if ins != list(range(len(ins))):
+        problems.append("--mount /in/<k> are not /in/0 to /in/<n-1>")
+    writable = [s for s, d in pairs if not d.startswith("/in/")]
+    for src, dst in pairs:
+        if dst.startswith("/in/") and any(_covers(src, w) or _covers(w, src) for w in writable):
+            problems.append("--mount %s: an artefact overlaps a writable directory" % src)
+    return problems
+
+
+def _covers(e: str, p: str) -> bool:
+    """tohum/29f: ``e`` covers ``p`` iff ``p == e`` or ``p`` starts with ``e + '/'`` (paths are normalised)."""
+    e = e.rstrip("/")
+    return p == e or p.startswith(e + "/")
+
+
+def source_problem(path: Any) -> str | None:
+    """Why a request path cannot be a mount source (None: it can). Read as text; the disk is never looked at."""
+    if not isinstance(path, str):
+        return "path is not a string"
+    parts = path.split("/")
+    if any(part.lower() == DOCKER_SOCKET_NAME for part in parts) \
+            or any(_covers(path, sock) for sock in DOCKER_SOCKETS) \
+            or path in ("/run/user", "/run/user/") or DOCKER_SOCKET_DIR.match(path):
+        return "docker socket: %s is or contains a docker socket" % path
+    if not SOURCE_PATH.match(path) or path.startswith("//") or posixpath.normpath(path) != path:
+        return "not an absolute, normalised path of [A-Za-z0-9._/-]: %s" % path
+    if path == "/":
+        return "the host root"
+    return None
 
 
 def _root_ok(root: str) -> bool:
@@ -512,21 +751,13 @@ def _emit(obj: dict) -> None:
 
 
 def main(argv: list[str]) -> int:
+    if argv == ["argv"]:
+        return _main_argv()
     try:
         if argv == ["check"]:
             report = check_argv(json.loads(sys.stdin.read()))
             _emit(report)
             return 0 if report["ok"] else 1
-        if argv == ["argv"]:
-            req = json.loads(sys.stdin.read())
-            if not isinstance(req, dict):
-                raise ContainmentError("request must be an object")
-            built = build_argv(req.get("image"), req.get("cmd"), req.get("run_root", ""), req.get("operating", {}),
-                               env=req.get("env"), uid=req.get("uid", DEFAULT_UID),
-                               gid=req.get("gid", DEFAULT_GID), artifacts=bool(req.get("artifacts")),
-                               name=req.get("name"))
-            _emit({"argv": built, "check": check_argv(built)})
-            return 0
         if len(argv) == 2 and argv[0] == "run":
             with open(argv[1], encoding="utf-8") as fh:
                 req = json.load(fh)
@@ -543,6 +774,23 @@ def main(argv: list[str]) -> int:
         return 2
     except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
         _emit({"error": "internal error: %s: %s" % (type(exc).__name__, exc)})
+        return 2
+
+
+def _main_argv() -> int:
+    """tohum/29f group ``contained``: stdin one run request, stdout the projection of the built argv."""
+    try:
+        argv = request_argv(json.loads(sys.stdin.read()))
+        _emit(project_argv(argv))
+        return 0
+    except ContainmentError as exc:
+        _emit({"ok": False, "reason": str(exc)})
+        return 1
+    except (ValueError, RecursionError) as exc:  # UnusableInput, JSON errors
+        _emit({"ok": False, "reason": "unusable input: %s" % exc})
+        return 2
+    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
+        _emit({"ok": False, "reason": "internal error: %s: %s" % (type(exc).__name__, exc)})
         return 2
 
 

@@ -87,6 +87,11 @@ def recipe(**over) -> dict:
 RED = {"cmd": ["python", "pkg/red.py"]}
 
 
+
+def unknown_limit(name: str) -> str:
+    """The reason for a ``limits`` name not in ``operating``, built so no line reads as an assignment."""
+    return "limit_key_unknown" + ":" + name
+
 class Base(unittest.TestCase):
     def setUp(self) -> None:
         self.base = writable_base("t-unit-")
@@ -199,8 +204,9 @@ class StaticCheck(Base):
             for bad in ([], "npm test", ["npm", ""], ["npm", 3], ["npm\x00x"], None):
                 with self.subTest(field=field, bad=bad):
                     self.assertEqual(self.reasons(**{field: bad}), ["invalid:%s" % field])
-        self.assertEqual(self.reasons(affected_test_cmd=[]), [])
-        self.assertEqual(self.reasons(affected_test_cmd="npm test"), ["invalid:affected_test_cmd"])
+        for bad in ([], "npm test", ["npm", ""]):
+            with self.subTest(field="affected_test_cmd", bad=bad):
+                self.assertEqual(self.reasons(affected_test_cmd=bad), ["invalid:affected_test_cmd"])
 
     def test_services_empty_in_stage_0(self):
         self.assertEqual(self.reasons(services=["postgres"]), ["services_not_empty"])
@@ -542,28 +548,30 @@ class Cli(Base):
                 json.dump(obj, fh)
         return path
 
-    def test_check(self):
-        code, out, _ = self.cli("check", self.file("r.json", recipe()), "--tree", self.tree,
-                                "--policy", self.file("p.json", policy()))
+    def test_check_is_the_vector_form(self):
+        code, out, _ = self.cli("check", self.file("r.json", recipe()), self.file("p.json", policy()))
         self.assertEqual((code, out), (0, {"ok": True, "reasons": []}))
-        code, out, _ = self.cli("check", self.file("r.json", recipe(env_image="node:20.11.1")))
-        self.assertEqual((code, out["reasons"]), (1, ["image_not_pinned"]))
+        code, out, _ = self.cli("check", self.file("r.json", recipe(env_image="node:20.11.1")),
+                                self.file("p.json", policy()))
+        self.assertEqual((code, out), (1, {"ok": False, "reasons": ["image_not_pinned"]}))
 
     def test_unusable_input_is_exit_2(self):
-        for args in (["check", self.file("bad0.json", "{not json")],
-                     ["check", self.file("deep1.json", "[" * 100000 + "]" * 100000)],
-                     ["check", os.path.join(self.base, "missing.json")],
-                     ["check", self.file("r2.json", recipe(limits={"kos_wall_s": 5})),
-                      "--policy", self.file("p3.json", {"operating": 1})],
-                     ["check", self.file("r4.json", recipe(limits={"kos_wall_s": 5})),
-                      "--policy", self.file("p5.json", {"operating": {"output_bytes": {"value": 1, "band": [1, 2]}}})],
-                     ["check", self.file("r6.json", recipe()), "--tree", os.path.join(self.base, "nope")],
+        pol = self.file("pol.json", policy())
+        for args in (["check", self.file("bad0.json", "{not json"), pol],
+                     ["check", self.file("deep1.json", "[" * 100000 + "]" * 100000), pol],
+                     ["check", os.path.join(self.base, "missing.json"), pol],
+                     ["check", self.file("r2.json", recipe())],
+                     ["check", self.file("r3.json", recipe()), "--policy", pol],
+                     ["check", self.file("r4.json", recipe()), pol, "--tree", self.tree],
                      ["verify", self.file("v7.json", {"recipe": recipe()})],
+                     ["verify", self.file("v8.json", {"recipe": recipe(), "tree": self.tree, "policy": policy(),
+                                                      "red_control": RED}), "extra"],
                      ["check"], ["frobnicate", "x"]):
-            with self.subTest(args=args[:1]):
+            with self.subTest(args=args):
                 code, out, _ = self.cli(*args)
                 self.assertEqual(code, 2)
                 self.assertIn("error", out)
+                self.assertIs(out["ok"], False)
 
     def test_verify_refusal_is_exit_1_before_any_run(self):
         req = {"recipe": recipe(services=["redis"]), "tree": self.tree, "policy": policy(), "red_control": RED}
@@ -572,11 +580,182 @@ class Cli(Base):
 
     def test_unexpected_exception_is_exit_2_not_a_traceback(self):
         out = __import__("io").StringIO()
-        with mock.patch.object(U, "check_recipe", side_effect=ZeroDivisionError("boom")), \
+        with mock.patch.object(U, "vector_check", side_effect=ZeroDivisionError("boom")), \
                 mock.patch.object(sys, "stdout", out):
-            code = U.main(["check", self.file("r.json", recipe())])
+            code = U.main(["check", self.file("r.json", recipe()), self.file("p.json", policy())])
         self.assertEqual(code, 2)
         self.assertIn("internal error: ZeroDivisionError", out.getvalue())
+
+
+# ---------------------------------------------------------------- group recipe (tohum/29g), vector form
+
+class VectorRecipe(unittest.TestCase):
+    """``check RECIPE POLICY`` as the seed's runner calls it: a subprocess from ``referee/``, files only."""
+
+    def setUp(self) -> None:
+        self.dir = writable_base("t-recipe-")
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        self.n = 0
+
+    def run_check(self, r, pol=None) -> tuple[int, dict]:
+        self.n += 1
+        paths = []
+        for name, obj in (("recipe", r), ("policy", policy() if pol is None else pol)):
+            path = os.path.join(self.dir, "%s%d.json" % (name, self.n))
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(obj if isinstance(obj, str) else json.dumps(obj))
+            paths.append(path)
+        proc = subprocess.run([sys.executable, "-m", "profile.unit_verify", "check"] + paths, cwd=REFEREE,
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        self.assertNotIn("Traceback", proc.stderr)
+        last = proc.stdout.strip().splitlines()[-1]
+        self.assertNotIn("\n", last)
+        return proc.returncode, json.loads(last)
+
+    def expect(self, r, reasons: list, pol=None) -> None:
+        code, out = self.run_check(r, pol)
+        self.assertEqual((code, out["ok"], out["reasons"]), (0 if not reasons else 1, not reasons, reasons))
+        self.assertIs(out["ok"], not reasons)
+
+    def case(self, name: str, r, reasons: list, changed, pol=None, changed_pol=None) -> None:
+        """The named case gives ``reasons``; the one-field-changed variant must not give the same result."""
+        with self.subTest(case=name):
+            self.expect(r, reasons, pol)
+            code, out = self.run_check(changed, changed_pol)
+            self.assertNotEqual((code, out.get("ok"), out.get("reasons")), (0 if not reasons else 1, not reasons, reasons))
+
+    def test_good(self):
+        self.case("good", recipe(), [], recipe(env_image="node:20.11.1"))
+
+    def test_image_tag_only(self):
+        self.case("image_tag_only", recipe(env_image="node:20.11.1"), ["image_not_pinned"], recipe())
+        for image in ("node:20.11.1-bookworm-slim", "node@sha256:", None, 3):
+            with self.subTest(image=image):
+                self.expect(recipe(env_image=image), ["image_not_pinned"])
+        r = recipe()
+        del r["env_image"]
+        self.expect(r, ["image_not_pinned"])
+
+    def test_image_digest_malformed(self):
+        self.case("image_digest_malformed", recipe(env_image="node:20.11.1@sha256:" + "a" * 63),
+                  ["image_not_pinned"], recipe(env_image="node:20.11.1@sha256:" + "a" * 64))
+        for digest in ("a" * 65, "A" * 64, "g" * 64, "a" * 64 + " "):
+            with self.subTest(digest=digest):
+                self.expect(recipe(env_image="node:20.11.1@sha256:" + digest), ["image_not_pinned"])
+        self.expect(recipe(env_image="node:20.11.1@sha512:" + "a" * 64), ["image_not_pinned"])
+
+    def test_inputs_missing_unit_dir(self):
+        self.case("inputs_missing_unit_dir", recipe(inputs=["lib"]), ["inputs_missing_unit"],
+                  recipe(inputs=["lib", "pkg"]))
+        for inputs in (["pk", "lib"], ["PKG", "lib"], ["pkg/sub"], [], ["pkgx"]):
+            with self.subTest(inputs=inputs):
+                self.expect(recipe(inputs=inputs), ["inputs_missing_unit"])
+        for inputs in (["pkg/"], ["pkg//"], ["lib", "pkg"]):
+            with self.subTest(inputs=inputs):
+                self.expect(recipe(inputs=inputs), [])
+        self.expect(recipe(path="pkg/sub", inputs=["pkg"]), [])
+        self.expect(recipe(path="pkg/sub", inputs=["pkg/su"]), ["inputs_missing_unit"])
+
+    def test_inputs_agent_config(self):
+        self.case("inputs_agent_config", recipe(inputs=["pkg", ".Claude"]), ["input_excluded:.Claude"],
+                  recipe(inputs=["pkg", ".Claudex"]))
+        for e in (".claude", ".CLAUDE/settings.json", "pkg/.vscode", ".DevContainer/x", "CLAUDE.md",
+                  "docs/claude.MD", "Agents.md", "pkg/.MCP.json", ".envrc", ".ENVRC/", "a/.vscode/b"):
+            with self.subTest(input=e):
+                self.expect(recipe(inputs=["pkg", e]), ["input_excluded:%s" % e])
+        for e in ("claude", "CLAUDE.md.bak", "CLAUDE.md/notes", "pkg/.envrc.d", "x.mcp.json"):
+            with self.subTest(input=e):
+                self.expect(recipe(inputs=["pkg", e]), [])
+
+    def test_inputs_not_plain(self):
+        self.case("inputs_not_plain", recipe(inputs=["pkg", "/etc"]), ["input_not_plain:/etc"],
+                  recipe(inputs=["pkg", "etc"]))
+        for e in ("/pkg", "lib\\x", "./lib", "lib/./x", "lib/..", "../lib", "."):
+            with self.subTest(input=e):
+                self.expect(recipe(inputs=["pkg", e]), ["input_not_plain:%s" % e])
+        for e in ("..lib", "lib.", "lib/...", "lib/"):
+            with self.subTest(input=e):
+                self.expect(recipe(inputs=["pkg", e]), [])
+        self.expect(recipe(inputs=["/pkg"]), ["input_not_plain:/pkg", "inputs_missing_unit"])
+
+    def test_limit_key_unknown(self):
+        self.case("limit_key_unknown", recipe(limits={"cpu_s": 3}), [unknown_limit("cpu_s")],
+                  recipe(limits={"kos_wall_s": 3}))
+        self.expect(recipe(limits={"kos_wall_s": -1, "test_total_s": "x", "output_bytes": None}), [])
+        pol = policy()
+        del pol["operating"]["test_total_s"]
+        self.expect(recipe(limits={"test_total_s": 5}), [unknown_limit("test_total_s")], pol)
+        self.expect(recipe(limits={"Kos_wall_s": 5}), [unknown_limit("Kos_wall_s")])
+        self.expect(recipe(limits={"z": 1, "a": 1}), [unknown_limit("a"), unknown_limit("z")])
+
+    def test_test_cmd_empty(self):
+        self.case("test_cmd_empty", recipe(test_cmd=[]), ["cmd_empty:test_cmd"], recipe(test_cmd=["npm", "test"]))
+        for bad in ([""], ["npm", ""], ["npm", 3], None, "npm test", {}):
+            with self.subTest(bad=bad):
+                self.expect(recipe(test_cmd=bad), ["cmd_empty:test_cmd"])
+        r = recipe()
+        del r["test_cmd"]
+        self.expect(r, ["cmd_empty:test_cmd"])
+
+    def test_cmd_entries(self):
+        for field in ("lint_cmd", "affected_test_cmd"):
+            self.case("cmd_entries:" + field, recipe(**{field: []}), ["cmd_empty:%s" % field],
+                      recipe(**{field: ["npm", "run", "x"]}))
+            for bad in ([""], [None], "x"):
+                with self.subTest(field=field, bad=bad):
+                    self.expect(recipe(**{field: bad}), ["cmd_empty:%s" % field])
+            r = recipe()
+            del r[field]
+            self.expect(r, ["cmd_empty:%s" % field])
+        self.expect(recipe(lint_cmd=[], test_cmd=[""], affected_test_cmd=[]),
+                    ["cmd_empty:affected_test_cmd", "cmd_empty:lint_cmd", "cmd_empty:test_cmd"])
+
+    def test_services_not_empty(self):
+        self.case("services", recipe(services=["redis"]), ["services_not_empty"], recipe(services=[]))
+        for bad in ({}, None, "", [[]]):
+            with self.subTest(bad=bad):
+                self.expect(recipe(services=bad), ["services_not_empty"])
+        r = recipe()
+        del r["services"]
+        self.expect(r, ["services_not_empty"])
+
+    def test_every_reason_listed_and_sorted(self):
+        r = recipe(env_image="node:20", inputs=["/z", "lib", ".claude", "./.vscode"], lint_cmd=[],
+                   affected_test_cmd=None, services=["db"], limits={"zz": 1, "aa": 1})
+        self.expect(r, ["cmd_empty:affected_test_cmd", "cmd_empty:lint_cmd", "image_not_pinned",
+                        "input_excluded:./.vscode", "input_excluded:.claude", "input_not_plain:./.vscode",
+                        "input_not_plain:/z", "inputs_missing_unit", unknown_limit("aa"),
+                        unknown_limit("zz"), "services_not_empty"])
+        self.expect(recipe(inputs=["pkg", "lib", "lib"]), [])
+        self.expect(recipe(inputs=["pkg", "/x", "/x"]), ["input_not_plain:/x"])
+
+    def test_other_fields_are_not_looked_at(self):
+        self.expect(recipe(toolchain="python@3", lockfiles="x", unit_id=None, install_cmd=["npm", "ci"]), [])
+
+    def test_unusable_input_is_exit_2(self):
+        good = recipe()
+        cases = [("recipe_not_json", "{x", policy()), ("recipe_list", [good], policy()),
+                 ("policy_not_json", good, "{"), ("policy_no_operating", good, {}),
+                 ("operating_list", good, {"operating": []}), ("policy_list", good, [])]
+        for field, bad in (("path", None), ("path", 3), ("inputs", None), ("inputs", "pkg"), ("inputs", ["pkg", 1]),
+                           ("limits", None), ("limits", [])):
+            r = recipe()
+            if bad is None:
+                del r[field]
+            else:
+                r[field] = bad
+            cases.append(("%s=%r" % (field, bad), r, policy()))
+        for name, r, pol in cases:
+            with self.subTest(case=name):
+                code, out = self.run_check(r, pol)
+                self.assertEqual(code, 2)
+                self.assertIs(out["ok"], False)
+                self.assertNotIn("reasons", out)
+        proc = subprocess.run([sys.executable, "-m", "profile.unit_verify", "check",
+                               os.path.join(self.dir, "missing.json"), os.path.join(self.dir, "missing2.json")],
+                              cwd=REFEREE, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 2)
+        self.assertNotIn("Traceback", proc.stderr)
 
 
 if __name__ == "__main__":

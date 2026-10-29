@@ -12,10 +12,8 @@ a proposal that narrows the list, or a recipe that reaches into it, is refused.
 from __future__ import annotations
 
 import copy
-import json
 import os
 import shutil
-import subprocess
 import sys
 import unittest
 
@@ -209,18 +207,10 @@ class UnitsTest(unittest.TestCase):
                          ["units[0]:input_symlink:src/out/x.js", "units[0]:input_missing:src/gone"])
         self.assertTrue(D.check(d, {"units": [unit]})["ok"])  # without the tree only the paths are judged
 
-    def test_cli_check_recipe(self):
-        target = os.path.join(self.base, "target.json")
-        units = os.path.join(self.base, "units.json")
-        with open(target, "w") as fh:
-            json.dump(self.target, fh)
-        for unit, code in ((recipe(), 0), (recipe(inputs=[".", "CLAUDE.md"]), 1)):
-            with open(units, "w") as fh:
-                json.dump({"units": [unit]}, fh)
-            proc = subprocess.run([sys.executable, "-m", "profile.derive", "check", self.tree, units,
-                                   "--target", target], cwd=REFEREE, capture_output=True, text=True, timeout=60)
-            self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
-            self.assertEqual(json.loads(proc.stdout)["ok"], code == 0)
+    def test_check_recipe_with_tree(self):
+        d = self.derive()
+        for unit, ok in ((recipe(), True), (recipe(inputs=[".", "CLAUDE.md"]), False)):
+            self.assertEqual(D.check(d, {"units": [unit]}, self.tree)["ok"], ok, unit)
 
 
 if __name__ == "__main__":

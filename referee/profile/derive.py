@@ -81,21 +81,44 @@ A field the proposal does not carry is not proposed, so it is not compared; only
 the profile (tohum/14). Out of scope here: every other ``profile.json`` field (toolchains, commands,
 graph, banned constructs, ...) and the recipe's own values (image, commands, limits: MF6).
 
-Command line, run from ``referee/`` (one JSON line on stdout; exit 0 fine, 1 refused, 2 no verdict).
-Exit 1 comes only from a ``check`` report with ``ok`` false. Every other failure is exit 2 with an
-``error`` line and no profile: unusable input (a target or policy file that is missing, not JSON, nested
-too deeply for the parser, or of the wrong shape; an operator or ownership-file pattern that does not
-compile, such as ``[z-a]``; a tree entry that cannot be listed or stat'ed), and, as a last resort, any
-other exception, reported as ``internal error: <type>``. An ownership-file pattern in the target tree
-that does not compile stops the derivation rather than being skipped, since skipping it could drop a
-security path. A ``package.json`` or lock file nested too deeply to parse counts as unparsable.
-Out of scope: signals (``KeyboardInterrupt``) and the interpreter being killed.
+The functions above are the Python API (``unit_verify`` uses them on a checked-out tree). The command
+line is the seed's vector interface for group ``profile`` (tohum/29f, 29d), a separate, smaller rule set
+over a tar archive (``derive_vector``, ``check_vector``); it does not run the rules above.
 
-    python -m profile.derive derive TREE [--target FILE] [--policy FILE]
-    python -m profile.derive check TREE PROPOSAL [--target FILE] [--policy FILE]
+    python -m profile.derive derive TREE.tar.gz OPERATOR.json
+    python -m profile.derive check TREE.tar.gz OPERATOR.json PROPOSAL.json
 
-``--target`` is one ``targets[]`` entry (``excluded_paths``, ``unit_candidates``); ``--policy`` a
-``policy.json`` whose ``constitutional.security_keywords`` replaces the default keywords.
+Run from ``referee/``, no stdin; the last (only) stdout line is one JSON object.
+
+- Tree: a gzip tar read in memory; only member names are used, never contents. Directory members are
+  ignored; a leading ``./`` is dropped. Any other member type (symlink, link, device, ...), an absolute
+  name, or a name with an empty, ``.`` or ``..`` component makes the input unusable.
+- ``OPERATOR.json``: an object with ``security_keywords``, ``excluded_paths`` and ``unit_candidates``,
+  each a list of strings (other keys are ignored).
+- Agent configuration: case-insensitively (``casefold``), a component ``.claude``, ``.vscode`` or
+  ``.devcontainer``, or a last component ``CLAUDE.md``, ``AGENTS.md``, ``.mcp.json`` or ``.envrc``.
+- Coverage: ``e`` covers ``p`` when ``p == e.rstrip('/')`` or ``p`` starts with ``e.rstrip('/') + '/'``;
+  case-sensitive, as written (``src`` does not cover ``srcx/a.py``).
+- A file is excluded when it is agent configuration or covered by an operator ``excluded_paths`` entry.
+- ``languages``: from non-excluded files by extension, ``.py`` python, ``.js .mjs .cjs`` javascript,
+  ``.ts .tsx .mts .cts`` typescript (extension compared as written), nothing else.
+- ``security_paths``: non-excluded files whose lower-cased path holds a lower-cased keyword as a substring.
+- ``excluded_paths``: the excluded files of the tree.
+- ``unit_candidates``: the operator's entries in their order (as written), each kept when it is not
+  itself excluded by the file rule above and covers at least one file of the tree, excluded or not.
+
+``languages``, ``security_paths`` and ``excluded_paths`` are sorted in code point order. ``check`` reads a
+proposal object carrying the same four lists (missing or of the wrong type: unusable) and prints
+``accepted`` (true when ``reasons`` is empty) and the sorted ``reasons``, each at most once:
+``differs:languages`` (sets differ), ``differs:unit_candidates`` (lists differ), ``narrows:security_paths``
+and ``narrows:excluded_paths`` (a derived path is not in the proposal's list, compared as strings). A
+proposal that only widens ``security_paths`` or ``excluded_paths`` is accepted: tohum/14's specific rule
+allows widening (29f notes that its general sentence would refuse it; no vector judges this case).
+
+Exit: ``derive`` 0, or 2 when an input is unusable; ``check`` 0 accepted, 1 refused, 2 unusable input.
+On exit 2 the line is ``{"error": ...}`` (``check`` adds ``"accepted": false``), never a traceback; any
+other exception is exit 2 as ``internal error: <type>``. Out of scope: signals and the interpreter being
+killed.
 """
 
 from __future__ import annotations
@@ -107,6 +130,8 @@ import posixpath
 import re
 import stat
 import sys
+import tarfile
+import zlib
 from typing import Any
 
 AGENT_CONFIG = (".claude", "CLAUDE.md", "AGENTS.md", ".mcp.json", ".vscode", ".envrc", ".devcontainer")
@@ -627,10 +652,98 @@ def _check_units(derived: dict, units: Any, tree: str | None) -> list[str]:
     return reasons
 
 
+# ---------------------------------------------------------------- vector interface (tohum/29f, ``profile``)
+
+VECTOR_EXTENSIONS = {".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
+                     ".ts": "typescript", ".tsx": "typescript", ".mts": "typescript", ".cts": "typescript"}
+_AGENT_ANY = frozenset(n.casefold() for n in (".claude", ".vscode", ".devcontainer"))
+_AGENT_LAST = frozenset(n.casefold() for n in ("CLAUDE.md", "AGENTS.md", ".mcp.json", ".envrc"))
+VECTOR_FIELDS = ("languages", "security_paths", "excluded_paths", "unit_candidates")
+
+
+def vector_agent_config(path: str) -> bool:
+    """tohum/29f: a component .claude/.vscode/.devcontainer, or a last component CLAUDE.md, ..., any case."""
+    parts = [p.casefold() for p in path.split("/")]
+    return any(p in _AGENT_ANY for p in parts) or parts[-1] in _AGENT_LAST
+
+
+def vector_covers(entry: str, path: str) -> bool:
+    """tohum/29f coverage: case-sensitive, as written."""
+    e = entry.rstrip("/")
+    return path == e or path.startswith(e + "/")
+
+
+def read_tree(path: str) -> list[str]:
+    """The file names of a gzip tar (sorted, unique); directory members are ignored."""
+    names = set()
+    try:
+        with tarfile.open(path, "r:gz") as tar:
+            for member in tar:
+                name = member.name
+                while name.startswith("./"):
+                    name = name[2:]
+                if member.isdir():
+                    continue
+                if not member.isfile():
+                    raise DeriveError("tree member %r is not a file or directory" % member.name)
+                parts = name.split("/")
+                if name.startswith("/") or any(p in ("", ".", "..") for p in parts):
+                    raise DeriveError("tree member %r is not a relative POSIX path" % member.name)
+                names.add(name)
+    except (tarfile.TarError, EOFError, zlib.error) as exc:
+        raise DeriveError("tree is not a readable gzip tar: %s" % exc) from None
+    return sorted(names)
+
+
+def read_operator(path: str) -> dict:
+    op = _load(path)
+    if not isinstance(op, dict):
+        raise DeriveError("operator.json must be an object")
+    for key in ("security_keywords", "excluded_paths", "unit_candidates"):
+        if not _str_list(op.get(key)):
+            raise DeriveError("operator.%s must be a list of strings" % key)
+    return op
+
+
+def derive_vector(files: list[str], operator: dict) -> dict:
+    def is_excluded(p: str) -> bool:
+        return vector_agent_config(p) or any(vector_covers(e, p) for e in operator["excluded_paths"])
+
+    keywords = [k.lower() for k in operator["security_keywords"]]
+    excluded_files = sorted(f for f in files if is_excluded(f))
+    kept = sorted(f for f in files if not is_excluded(f))
+    languages = {VECTOR_EXTENSIONS[posixpath.splitext(f)[1]] for f in kept
+                 if posixpath.splitext(f)[1] in VECTOR_EXTENSIONS}
+    return {
+        "languages": sorted(languages),
+        "security_paths": [f for f in kept if any(k in f.lower() for k in keywords)],
+        "excluded_paths": excluded_files,
+        "unit_candidates": [c for c in operator["unit_candidates"]
+                            if not is_excluded(c.rstrip("/")) and any(vector_covers(c, f) for f in files)],
+    }
+
+
+def check_vector(derived: dict, proposal: Any) -> dict:
+    if not isinstance(proposal, dict):
+        raise DeriveError("proposal must be an object")
+    for key in VECTOR_FIELDS:
+        if not _str_list(proposal.get(key)):
+            raise DeriveError("proposal.%s must be a list of strings" % key)
+    reasons = []
+    if set(proposal["languages"]) != set(derived["languages"]):
+        reasons.append("differs:languages")
+    if proposal["unit_candidates"] != derived["unit_candidates"]:
+        reasons.append("differs:unit_candidates")
+    for key in ("security_paths", "excluded_paths"):
+        if not set(derived[key]) <= set(proposal[key]):
+            reasons.append("narrows:%s" % key)
+    return {"accepted": not reasons, "reasons": sorted(reasons)}
+
+
 # ---------------------------------------------------------------- command line
 
 def _emit(obj: dict) -> None:
-    sys.stdout.write(json.dumps(obj, sort_keys=True) + "\n")
+    sys.stdout.write(json.dumps(obj, sort_keys=True, separators=(",", ":")) + "\n")
 
 
 def _load(path: str) -> Any:
@@ -641,33 +754,28 @@ def _load(path: str) -> Any:
         raise DeriveError("%s: JSON nested too deeply" % path) from None
 
 
+USAGE = ("usage: python -m profile.derive derive TREE.tar.gz OPERATOR.json"
+         " | check TREE.tar.gz OPERATOR.json PROPOSAL.json")
+
+
 def main(argv: list[str]) -> int:
+    fail = {"accepted": False} if argv[:1] == ["check"] else {}
     try:
-        args, opts = [], {}
-        it = iter(argv)
-        for a in it:
-            if a in ("--target", "--policy"):
-                path = next(it, None)
-                if path is None:
-                    raise DeriveError("%s needs a file" % a)
-                opts[a] = _load(path)
-            else:
-                args.append(a)
-        if len(args) == 2 and args[0] == "derive":
-            _emit(derive(args[1], opts.get("--target"), opts.get("--policy")))
+        if len(argv) == 3 and argv[0] == "derive":
+            _emit(derive_vector(read_tree(argv[1]), read_operator(argv[2])))
             return 0
-        if len(args) == 3 and args[0] == "check":
-            report = check(derive(args[1], opts.get("--target"), opts.get("--policy")), _load(args[2]), args[1])
+        if len(argv) == 4 and argv[0] == "check":
+            derived = derive_vector(read_tree(argv[1]), read_operator(argv[2]))
+            report = check_vector(derived, _load(argv[3]))
             _emit(report)
-            return 0 if report["ok"] else 1
-        _emit({"error": "usage: python -m profile.derive derive TREE | check TREE PROPOSAL"
-                        " [--target FILE] [--policy FILE]"})
+            return 0 if report["accepted"] else 1
+        _emit(dict(fail, error=USAGE))
         return 2
     except (DeriveError, ValueError, OSError) as exc:
-        _emit({"error": "unusable input: %s" % exc})
+        _emit(dict(fail, error="unusable input: %s" % exc))
         return 2
     except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
-        _emit({"error": "internal error: %s: %s" % (type(exc).__name__, exc)})
+        _emit(dict(fail, error="internal error: %s: %s" % (type(exc).__name__, exc)))
         return 2
 
 

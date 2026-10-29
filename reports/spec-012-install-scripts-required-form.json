@@ -2,6 +2,6 @@
   "id": "spec-012-install-scripts-required-form",
   "kind": "spec_issue",
   "ref": "spec/tohum/26c-semalar-asama-0.md:54",
-  "evidence_test": "cd referee && python -m unittest tests.test_deps_npm.TestInstallScripts.test_lock_flag_needs_a_mark",
-  "state": "open"
+  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_deps_npm.py'  # name@version marks per tohum/29g npmlock",
+  "state": "confirmed"
 }

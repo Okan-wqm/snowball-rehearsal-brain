@@ -249,28 +249,14 @@ class ArgvTest(unittest.TestCase):
             with self.assertRaises(contained.ContainmentError, msg=(image, cmd, rroot, op)):
                 contained.build_argv(image, cmd, rroot, op)
 
-    def test_command_line(self):
-        req = {"image": IMAGE, "cmd": ["python3", "-c", "pass"], "run_root": "/tmp/snowball-run-x",
-               "operating": operating()}
-        p = subprocess.run([sys.executable, "-m", "runner.contained", "argv"], cwd=REFEREE, input=json.dumps(req),
-                           capture_output=True, text=True)
-        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        out = json.loads(p.stdout)
-        self.assertTrue(out["check"]["ok"])
-        argv = out["argv"]
-        for flag, value in MANDATORY_PAIRS:
-            self.assertEqual(argv[argv.index(flag) + 1], value)
+    def test_command_line_check(self):
+        argv = good_argv()
         for argv_in, code in [(argv, 0), (argv[:4] + ["--privileged"] + argv[4:], 1),
                               ([a for a in argv if a != "--read-only"], 1)]:
             p = subprocess.run([sys.executable, "-m", "runner.contained", "check"], cwd=REFEREE,
                                input=json.dumps(argv_in), capture_output=True, text=True)
             self.assertEqual(p.returncode, code, p.stdout)
             self.assertEqual(json.loads(p.stdout)["ok"], code == 0)
-        req["image"] = "python:latest"
-        p = subprocess.run([sys.executable, "-m", "runner.contained", "argv"], cwd=REFEREE, input=json.dumps(req),
-                           capture_output=True, text=True)
-        self.assertEqual(p.returncode, 1)
-        self.assertIn("error", json.loads(p.stdout))
         p = subprocess.run([sys.executable, "-m", "runner.contained", "check"], cwd=REFEREE, input="not json",
                            capture_output=True, text=True)
         self.assertEqual(p.returncode, 2)
@@ -281,15 +267,19 @@ class ArgvTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, os.path.dirname(run_file), True)
         with open(run_file, "w") as fh:
             fh.write(deep)
-        # a request that parses but is refused ("request must be an object") stays exit 1
         cases = ((["check"], deep, 2), (["argv"], deep, 2), (["run", run_file], "", 2), (["check"], "not json", 2),
-                 (["run", run_file + ".missing"], "", 2), (["argv"], "[1]", 1))
+                 (["run", run_file + ".missing"], "", 2), (["argv"], "[1]", 2))
         for args, stdin, code in cases:
             p = subprocess.run([sys.executable, "-m", "runner.contained", *args], cwd=REFEREE, input=stdin,
                                capture_output=True, text=True, timeout=60)
             self.assertNotIn("Traceback", p.stderr, args)
             self.assertEqual(p.returncode, code, (args, p.stdout))
-            self.assertIn("error", json.loads(p.stdout), args)
+            line = json.loads(p.stdout.splitlines()[-1])
+            if args == ["argv"]:  # tohum/29f: {"ok": false} with a free reason
+                self.assertIs(line["ok"], False, args)
+                self.assertIsInstance(line["reason"], str, args)
+            else:
+                self.assertIn("error", line, args)
 
     def test_unexpected_exception_is_exit_2_not_refusal(self):
         from unittest import mock
@@ -301,6 +291,216 @@ class ArgvTest(unittest.TestCase):
             code = contained.main(["check"])
         self.assertEqual(code, 2)
         self.assertEqual(json.loads(out.getvalue()), {"error": "internal error: AttributeError: boom"})
+
+
+# ---------------------------------------------------------------- the argv command (tohum/29f, group contained)
+
+MiB = 1024 * 1024
+IMAGE_2 = "ghcr.io/org/node:20@sha256:" + "0f" * 32
+COMPARED = ("ok", "network", "cap_drop", "cap_add", "privileged", "read_only", "uid", "memory_bytes", "mounts",
+            "env_names", "image")
+
+
+def request(**over) -> dict:
+    """argv_baseline's request. The paths do not exist: the command must not look at them."""
+    req = {"image": IMAGE, "cmd": ["python3", "-m", "pytest", "-q"], "uid": 1000,
+           "worktree": "/nonexistent/snowball-t/work", "outdir": "/nonexistent/snowball-t/out",
+           "artefacts": ["/nonexistent/snowball-t/deps"], "env": {"LANG": "C.UTF-8", "CI": "true"},
+           "services": [], "operating": operating(container_mem_bytes=512 * MiB)}
+    req.update(over)
+    return req
+
+
+def second_request() -> dict:
+    return {"image": IMAGE_2, "cmd": ["node", "test.js"], "uid": 2001,
+            "worktree": "/srv/b/tree", "outdir": "/srv/b/results",
+            "artefacts": ["/srv/cache/z-last", "/srv/cache/a-first"], "env": {"NODE_ENV": "test"},
+            "services": [], "operating": {"container_mem_bytes": {"value": 1024 * MiB, "band": [64 * MiB, 4096 * MiB]},
+                                          "kos_wall_s": {"value": 60, "band": [1, 600]}}}
+
+
+BASELINE_EXPECT = {"ok": True, "network": "none", "cap_drop": ["ALL"], "cap_add": [], "privileged": False,
+                   "read_only": True, "uid": 1000, "memory_bytes": 512 * MiB,
+                   "mounts": [["/nonexistent/snowball-t/deps", "ro"], ["/nonexistent/snowball-t/out", "rw"],
+                              ["/nonexistent/snowball-t/work", "rw"]],
+                   "env_names": ["CI", "LANG"], "image": IMAGE}
+SECOND_EXPECT = {"ok": True, "network": "none", "cap_drop": ["ALL"], "cap_add": [], "privileged": False,
+                 "read_only": True, "uid": 2001, "memory_bytes": 1024 * MiB,
+                 "mounts": [["/srv/b/results", "rw"], ["/srv/b/tree", "rw"], ["/srv/cache/a-first", "ro"],
+                            ["/srv/cache/z-last", "ro"]],
+                 "env_names": ["NODE_ENV"], "image": IMAGE_2}
+REFUSED = {"ok": False}
+
+
+def as_json(obj) -> str:
+    """tohum/29d: values compare as JSON (true is not 1, 1 is not 1.0, "1000" is not 1000)."""
+    return json.dumps(obj, sort_keys=True)
+
+
+class ArgvCommandTest(unittest.TestCase):
+    def cli(self, stdin) -> tuple[int, dict]:
+        if not isinstance(stdin, str):
+            stdin = json.dumps(stdin)
+        p = subprocess.run([sys.executable, "-m", "runner.contained", "argv"], cwd=REFEREE, input=stdin,
+                           capture_output=True, text=True, timeout=60)
+        self.assertNotIn("Traceback", p.stderr)
+        lines = p.stdout.splitlines()
+        self.assertTrue(lines, "no answer")
+        return p.returncode, json.loads(lines[-1])
+
+    def assertFields(self, line: dict, expect: dict) -> None:
+        """The general runner's rule: only the fields expect names, each present, compared as JSON."""
+        for key in expect:
+            self.assertIn(key, line)
+        self.assertEqual(as_json({k: line[k] for k in expect}), as_json(expect))
+
+    def assertNotFields(self, line: dict, expect_not: dict) -> None:
+        for key in expect_not:
+            self.assertIn(key, line, "the changed vector must give the same fields")
+        self.assertNotEqual(as_json({k: line[k] for k in expect_not}), as_json(expect_not))
+
+    def test_argv_baseline(self):
+        code, line = self.cli(request())
+        self.assertEqual(code, 0, line)
+        self.assertFields(line, BASELINE_EXPECT)
+        argv = line["argv"]
+        self.assertEqual(argv[:2], ["docker", "run"])
+        for flag, value in (("--network", "none"), ("--cap-drop", "ALL"), ("--user", "1000:65534"),
+                            ("--memory", str(512 * MiB))):
+            self.assertEqual(argv[argv.index(flag) + 1], value, flag)
+        self.assertIn("--read-only", argv)
+        self.assertEqual(argv[-5:], [IMAGE, "python3", "-m", "pytest", "-q"])
+        self.assertTrue(contained.check_argv(argv, layout="request")["ok"])
+        self.assertFalse(contained.check_argv(argv)["ok"], "the run layout's check stays strict")
+        self.assertFalse(os.path.exists("/nonexistent"), "nothing is made on disk")
+        # changed: one field (the memory limit) changed must not give baseline's projection
+        code, line = self.cli(request(operating=operating(container_mem_bytes=256 * MiB)))
+        self.assertEqual(code, 0, line)
+        self.assertNotFields(line, BASELINE_EXPECT)
+        self.assertEqual(line["memory_bytes"], 256 * MiB)
+
+    def test_argv_baseline_each_field_reaches_the_projection(self):
+        for over, key, value in [(dict(uid=1001), "uid", 1001), (dict(env={"LANG": "C"}), "env_names", ["LANG"]),
+                                 (dict(artefacts=[]), "mounts", [["/nonexistent/snowball-t/out", "rw"],
+                                                                 ["/nonexistent/snowball-t/work", "rw"]]),
+                                 (dict(image=IMAGE_2), "image", IMAGE_2)]:
+            code, line = self.cli(request(**over))
+            self.assertEqual(code, 0, (over, line))
+            self.assertNotFields(line, BASELINE_EXPECT)
+            self.assertEqual(as_json(line[key]), as_json(value), over)
+
+    def test_argv_second_request(self):
+        code, line = self.cli(second_request())
+        self.assertEqual(code, 0, line)
+        self.assertFields(line, SECOND_EXPECT)
+        self.assertNotFields(line, BASELINE_EXPECT)  # a constant argv cannot satisfy both
+        changed = second_request()
+        changed["uid"] = 2002
+        code, line = self.cli(changed)
+        self.assertNotFields(line, SECOND_EXPECT)
+
+    def refused(self, req: dict, fixed: dict) -> None:
+        code, line = self.cli(req)
+        self.assertEqual(code, 1, line)
+        self.assertFields(line, REFUSED)
+        self.assertIsInstance(line.get("reason"), str)
+        self.assertNotIn("argv", line)
+        code, line = self.cli(fixed)  # the changed vector: one field changed, must not be refused
+        self.assertEqual(code, 0, (fixed, line))
+        self.assertNotFields(line, REFUSED)
+
+    def test_refuse_unpinned_image(self):
+        for image in ("python:3.12-slim", "python:3.12-slim@sha256:" + "AB" * 32, "python@sha256:" + "ab" * 31,
+                      "python@sha512:" + "ab" * 64, "python:3.12-slim@sha256:" + "ab" * 32 + " ", "@sha256:" + "ab" * 32):
+            self.refused(request(image=image), request(image=IMAGE))
+
+    def test_refuse_actions_env(self):
+        for name in ("ACTIONS_RUNTIME_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "actions_cache_url"):
+            self.refused(request(env={"LANG": "C.UTF-8", name: "x"}),
+                         request(env={"LANG": "C.UTF-8", "XACTIONS_" + name[8:]: "x"}))
+
+    def test_refuse_docker_socket(self):
+        base = request()
+        for field, path, fixed in [
+                ("worktree", "/var/run/docker.sock", "/var/run/dockerx"),
+                ("outdir", "/var/run", "/var/runx"),
+                ("outdir", "/run", "/srv/run"),
+                ("worktree", "/var", "/srv/var"),
+                ("worktree", "/home/u/.docker/run/docker.sock", "/home/u/.docker/run/docker.sockx"),
+                ("worktree", "/srv/Docker.Sock/w", "/srv/Docker.Socks/w"),
+                ("outdir", "/run/user/1000", "/srv/user/1000"),
+                ("artefacts", ["/run/docker.sock"], ["/run/docker"]),
+                ("artefacts", ["/opt/a", "/tmp/docker.sock"], ["/opt/a", "/tmp/docker.socket"])]:
+            req, ok = dict(base), dict(base)
+            req[field], ok[field] = path, fixed
+            code, line = self.cli(req)
+            self.assertEqual(code, 1, (field, path, line))
+            self.assertIn("docker socket", line["reason"])
+            self.refused(req, ok)
+
+    def test_refuse_services(self):
+        self.refused(request(services=["postgres:16"]), request(services=[]))
+        self.refused(request(services=[{"image": IMAGE}]), request(services=[]))
+
+    def test_refuse_missing_mem_limit(self):
+        no_mem = {k: v for k, v in operating().items() if k != "container_mem_bytes"}
+        self.refused(request(operating=no_mem), request(operating=operating()))
+        self.refused(request(operating={}), request(operating={"container_mem_bytes": {"value": 64 * MiB,
+                                                                                      "band": [MiB, 128 * MiB]}}))
+
+    def test_other_refusals(self):
+        for over in [dict(uid=0), dict(uid=-1), dict(env={"GITHUB_TOKEN": "x"}), dict(env={"1BAD": "x"}),
+                     dict(operating=operating(container_mem_bytes=MiB)),
+                     dict(operating={"container_mem_bytes": {"value": 10 ** 9, "band": [1, 10]}}),
+                     dict(worktree="relative/work"), dict(outdir="/srv/o,readonly=false"), dict(outdir="/srv/a/../o"),
+                     dict(worktree="/"), dict(outdir="/nonexistent/snowball-t/work"),
+                     dict(artefacts=["/nonexistent/snowball-t/work/node_modules"]),
+                     dict(artefacts=["/nonexistent"])]:
+            code, line = self.cli(request(**over))
+            self.assertEqual(code, 1, (over, line))
+            self.assertFields(line, REFUSED)
+
+    def test_unusable_input_is_exit_2(self):
+        req = request()
+        cases = ["not json", "", "[" * 200000, "[1]", json.dumps("x"), b"\xff".decode("latin-1")]
+        for key, bad in [("image", 1), ("cmd", "python3"), ("cmd", []), ("cmd", ["a", 1]), ("uid", "1000"),
+                         ("uid", True), ("uid", 1000.0), ("worktree", None), ("artefacts", "/a"), ("artefacts", [1]),
+                         ("env", {"A": 1}), ("env", []), ("services", "postgres"), ("operating", [])]:
+            cases.append(json.dumps(dict(req, **{key: bad})))
+        for key in ("image", "cmd", "uid", "worktree", "outdir", "artefacts", "env", "services", "operating"):
+            cases.append(json.dumps({k: v for k, v in req.items() if k != key}))
+        for stdin in cases:
+            code, line = self.cli(stdin)
+            self.assertEqual(code, 2, (stdin[:200], line))
+            self.assertFields(line, REFUSED)
+            self.assertIsInstance(line.get("reason"), str)
+
+    def test_projection_is_read_from_the_argv_not_the_request(self):
+        """Whatever argv the builder hands over is what the line describes."""
+        from unittest import mock
+        import io
+        weak = ["docker", "run", "--net", "bridge", "--network=host", "--privileged", "--cap-add", "SYS_ADMIN",
+                "--cap-add=NET_ADMIN", "--cap-drop", "MKNOD", "-u", "0:0", "-m", "1g", "-e", "B=1", "--env", "A",
+                "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", "/srv/x:/x:ro,z", "--tmpfs", "/tmp:size=1m",
+                "--mount", "type=bind,source=/srv/y,target=/y,readonly", "--mount", "type=tmpfs,dst=/t",
+                "--read-only=false", "img:latest", "sh"]
+        out = io.StringIO()
+        with mock.patch.object(contained, "request_argv", return_value=weak), \
+                mock.patch.object(contained.sys, "stdin", io.StringIO(json.dumps(request()))), \
+                mock.patch.object(contained.sys, "stdout", out):
+            code = contained.main(["argv"])
+        self.assertEqual(code, 0)
+        line = json.loads(out.getvalue().splitlines()[-1])
+        self.assertFields(line, {"ok": True, "network": "host", "cap_drop": ["MKNOD"],
+                                 "cap_add": ["NET_ADMIN", "SYS_ADMIN"], "privileged": True, "read_only": False,
+                                 "uid": 0, "memory_bytes": 1024 ** 3,
+                                 "mounts": [["/srv/x", "ro"], ["/srv/y", "ro"], ["/var/run/docker.sock", "rw"],
+                                            ["tmpfs:/t", "rw"], ["tmpfs:/tmp", "rw"]],
+                                 "env_names": ["A", "B"], "image": "img:latest"})
+        self.assertEqual(line["argv"], weak)
+        bare = contained.project_argv(["docker", "run", "img", "true"])
+        self.assertFields(bare, {"network": "default", "uid": None, "memory_bytes": None, "read_only": False,
+                                 "mounts": [], "env_names": []})
 
 
 # ---------------------------------------------------------------- canary (test 21)

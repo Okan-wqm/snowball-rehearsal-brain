@@ -39,3 +39,23 @@ def write_tree(root: str, files: dict) -> str:
             with open(full, "wb") as fh:
                 fh.write(content.encode() if isinstance(content, str) else content)
     return root
+
+
+def write_tar(path: str, files, dirs=(), extra=()) -> str:
+    """A gzip tar at ``path``: ``files`` (names, or name -> bytes) as regular members, ``dirs`` as
+    directory members, ``extra`` as ready ``TarInfo`` members (symlinks and such)."""
+    import io
+    import tarfile
+    items = files.items() if isinstance(files, dict) else ((f, b"x") for f in files)
+    with tarfile.open(path, "w:gz") as tar:
+        for name in dirs:
+            info = tarfile.TarInfo(name)
+            info.type = tarfile.DIRTYPE
+            tar.addfile(info)
+        for name, data in items:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        for info in extra:
+            tar.addfile(info)
+    return path

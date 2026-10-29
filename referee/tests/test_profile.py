@@ -6,10 +6,13 @@ that differs from it, or narrows it, is refused.
   ownership-file line whose owner holds a keyword; the policy's keywords replace the default ones;
 - excluded directories, the operator's patterns, test path rules and inline Rust tests;
 - ``check``: an equal proposal passes; each field narrowed or widened is refused; ``excluded_paths`` may
-  only widen; a field the derivation does not produce is refused; the command line;
+  only widen; a field the derivation does not produce is refused;
 - unusable input (a pattern that does not compile, in the target or in an ownership file; a policy of the
-  wrong shape; JSON nested too deeply; a tree deeper than Python's recursion limit) gives exit 2 and one
-  JSON error line, never a traceback, and any other exception in ``main`` is exit 2, not a refusal.
+  wrong shape) is a ``DeriveError``; a tree deeper than Python's recursion limit is walked;
+- the command line, the seed's vector interface (tohum/29f ``profile``), in ``VectorTest``: each named
+  case and a one-field variant that must not give the same result, coverage boundaries, trailing ``/``,
+  widening accepted, unusable input exit 2 with one JSON line and no traceback, any other exception in
+  ``main`` exit 2, not a refusal.
 """
 
 from __future__ import annotations
@@ -27,7 +30,9 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from profile import derive as D  # noqa: E402
-from profile_tree import LOCK_OK, writable_base, write_tree  # noqa: E402
+import tarfile  # noqa: E402
+
+from profile_tree import LOCK_OK, writable_base, write_tar, write_tree  # noqa: E402
 
 TREE = {
     "package.json": {"name": "toy"},
@@ -229,50 +234,7 @@ class ProfileTest(unittest.TestCase):
         self.assertEqual(D.check(d, {"security_paths": "src"})["reasons"], ["malformed:security_paths"])
         self.assertEqual(D.check(d, "x")["reasons"], ["malformed:proposal"])
 
-    # ------------------------------------------------------------ command line
-
-    def run_cli(self, *args):
-        proc = subprocess.run([sys.executable, "-m", "profile.derive", *args], cwd=REFEREE,
-                              capture_output=True, text=True, timeout=60)
-        lines = proc.stdout.splitlines()
-        self.assertEqual(len(lines), 1, proc.stdout + proc.stderr)
-        return proc.returncode, json.loads(lines[0])
-
-    def test_cli(self):
-        target = os.path.join(self.base, "target.json")
-        with open(target, "w") as fh:
-            json.dump(self.target, fh)
-        code, out = self.run_cli("derive", self.tree, "--target", target)
-        self.assertEqual(code, 0)
-        self.assertEqual(out, json.loads(json.dumps(self.derive())))
-        prop = os.path.join(self.base, "p.json")
-        for proposal, want in ((self.proposal(out), 0), ({"security_paths": out["security_paths"][1:]}, 1)):
-            with open(prop, "w") as fh:
-                json.dump(proposal, fh)
-            code, report = self.run_cli("check", self.tree, prop, "--target", target)
-            self.assertEqual((code, report["ok"]), (want, want == 0))
-        code, out = self.run_cli("derive", os.path.join(self.base, "missing"))
-        self.assertEqual(code, 2)
-        self.assertIn("error", out)
-
     # ------------------------------------------------------------ unusable input: exit 2, never a traceback
-
-    def write_json_file(self, name, text):
-        path = os.path.join(self.base, name)
-        with open(path, "w") as fh:
-            fh.write(text)
-        return path
-
-    def assert_no_verdict(self, *args):
-        proc = subprocess.run([sys.executable, "-m", "profile.derive", *args], cwd=REFEREE,
-                              capture_output=True, text=True, timeout=120)
-        self.assertNotIn("Traceback", proc.stderr, args)
-        self.assertEqual(proc.returncode, 2, (args, proc.stdout, proc.stderr))
-        lines = proc.stdout.splitlines()
-        self.assertEqual(len(lines), 1, proc.stdout)
-        out = json.loads(lines[0])
-        self.assertEqual(list(out), ["error"], out)
-        return out["error"]
 
     def test_invalid_pattern_is_derive_error(self):
         for bad in ("[z-a]", "x[!]y]", "a/[9-0]/b"):
@@ -319,25 +281,226 @@ class ProfileTest(unittest.TestCase):
         cand = D.derive(self.tree, {"unit_candidates": ["app"]})["unit_candidates"][0]
         self.assertEqual(cand["reasons"], ["package_json_unparsable"])
 
-    def test_cli_unusable_input_is_exit_2_with_json_error(self):
-        target = self.write_json_file("t.json", json.dumps({"excluded_paths": ["[z-a]"]}))
-        self.assertIn("invalid pattern", self.assert_no_verdict("derive", self.tree, "--target", target))
-        policy = self.write_json_file("p.json", json.dumps({"constitutional": [1]}))
-        self.assert_no_verdict("derive", self.tree, "--policy", policy)
-        deep = self.write_json_file("deep.json", "[" * 200000)
-        self.assertIn("nested too deeply", self.assert_no_verdict("derive", self.tree, "--target", deep))
-        self.assert_no_verdict("check", self.tree, deep)
-        self.assertIn("--target needs a file", self.assert_no_verdict("derive", self.tree, "--target"))
-        self.assert_no_verdict("derive", self.tree, "--target", self.write_json_file("bad.json", "{"))
-        self.add({"CODEOWNERS": "x[z-a] @org/security\n"})
-        self.assert_no_verdict("derive", self.tree)
+
+NO_OP = {"security_keywords": [], "excluded_paths": [], "unit_candidates": []}
+
+
+class VectorTest(unittest.TestCase):
+    """The command line: tohum/29f group ``profile``, run as the seed's general runner runs it."""
+
+    def setUp(self):
+        self.base = writable_base("t-pvec-")
+        self.addCleanup(shutil.rmtree, self.base, True)
+        self.n = 0
+
+    def path(self, suffix):
+        self.n += 1
+        return os.path.join(self.base, "f%d%s" % (self.n, suffix))
+
+    def tar(self, files, dirs=(), extra=()):
+        return write_tar(self.path(".tar.gz"), files, dirs, extra)
+
+    def json_file(self, obj):
+        path = self.path(".json")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(obj if isinstance(obj, str) else json.dumps(obj))
+        return path
+
+    def cli(self, *args):
+        proc = subprocess.run([sys.executable, "-m", "profile.derive", *args], cwd=REFEREE, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=60)
+        self.assertNotIn("Traceback", proc.stderr, args)
+        lines = proc.stdout.splitlines()
+        self.assertEqual(len(lines), 1, proc.stdout + proc.stderr)
+        return proc.returncode, json.loads(lines[-1])
+
+    def derive(self, files, operator, dirs=()):
+        code, out = self.cli("derive", self.tar(files, dirs), self.json_file(operator))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted(out), ["excluded_paths", "languages", "security_paths", "unit_candidates"])
+        return out
+
+    def check(self, files, operator, proposal):
+        return self.cli("check", self.tar(files), self.json_file(operator), self.json_file(proposal))
+
+    # ------------------------------------------------------------ named cases
+
+    AGENT = [".Claude/settings.json", "a/b/.VSCODE/x.py", "x/.devContainer/y.ts", "deep/q/claude.MD", "Agents.md",
+             "z/.MCP.JSON", "w/.EnvRc", "src/main.py", "src/claude.py", "CLAUDE.md/inner.js", "docs/AGENTS.md.txt"]
+
+    def test_agent_config_case_insensitive(self):
+        out = self.derive(self.AGENT, NO_OP, dirs=[".vscode", "empty/.claude"])
+        self.assertEqual(out, {
+            # CLAUDE.md as a directory is not agent configuration (only as the last component)
+            "languages": ["javascript", "python"],
+            "security_paths": [],
+            "excluded_paths": [".Claude/settings.json", "Agents.md", "a/b/.VSCODE/x.py", "deep/q/claude.MD",
+                               "w/.EnvRc", "x/.devContainer/y.ts", "z/.MCP.JSON"],
+            "unit_candidates": [],
+        })
+        # one byte changed: .devContainer_ is not agent configuration, so its .ts file counts
+        changed = [f.replace(".devContainer/", ".devContainer_/") for f in self.AGENT]
+        out2 = self.derive(changed, NO_OP)
+        self.assertNotEqual(out2["excluded_paths"], out["excluded_paths"])
+        self.assertEqual(out2["languages"], ["javascript", "python", "typescript"])
+
+    def test_operator_excluded_paths(self):
+        files = ["src/a.py", "legacy/old.ts", "legacy/pkg/index.js"]
+        op = {"security_keywords": [], "excluded_paths": ["legacy/"], "unit_candidates": ["legacy/pkg", "src"]}
+        out = self.derive(files, op)
+        self.assertEqual(out, {"languages": ["python"], "security_paths": [],
+                               "excluded_paths": ["legacy/old.ts", "legacy/pkg/index.js"], "unit_candidates": ["src"]})
+        changed = self.derive(files, dict(op, excluded_paths=["legacy/pkg"]))
+        self.assertEqual(changed["languages"], ["python", "typescript"])
+        self.assertEqual(changed["excluded_paths"], ["legacy/pkg/index.js"])
+        self.assertEqual(changed["unit_candidates"], ["src"])
+        unexcluded = self.derive(files, dict(op, excluded_paths=[]))
+        self.assertEqual(unexcluded["unit_candidates"], ["legacy/pkg", "src"])
+        self.assertEqual(unexcluded["languages"], ["javascript", "python", "typescript"])
+
+    def test_coverage_boundary_case_and_trailing_slash(self):
+        files = ["src/a.py", "srcx/b.ts", "SRC/c.js", "src", "lib/m.py"]
+        for entry in ("src", "src/", "src//"):
+            out = self.derive(files, dict(NO_OP, excluded_paths=[entry]))
+            # covers the file named src and everything below src/, not srcx/ nor SRC/ (case-sensitive)
+            self.assertEqual(out["excluded_paths"], ["src", "src/a.py"], entry)
+            self.assertEqual(out["languages"], ["javascript", "python", "typescript"], entry)
+        out = self.derive(files, dict(NO_OP, excluded_paths=["sr"], unit_candidates=["sr", "src/", "SRC", "lib/m.py"]))
+        self.assertEqual(out["excluded_paths"], [])
+        self.assertEqual(out["unit_candidates"], ["src/", "SRC", "lib/m.py"])
+
+    def test_security_keyword_substring(self):
+        files = ["src/oauth2/handler.py", "lib/TokenStore.ts", "lib/plain.py", "docs/authors.txt", ".claude/auth.py",
+                 "vendor/token.js", "AUTH", "lib/to/ken.js"]
+        op = {"security_keywords": ["Auth", "token"], "excluded_paths": ["vendor"], "unit_candidates": []}
+        out = self.derive(files, op)
+        self.assertEqual(out["security_paths"], ["AUTH", "docs/authors.txt", "lib/TokenStore.ts",
+                                                 "src/oauth2/handler.py"])
+        changed = self.derive(files, dict(op, security_keywords=["token"]))
+        self.assertEqual(changed["security_paths"], ["lib/TokenStore.ts"])
+
+    def test_unit_candidates_order_and_filter(self):
+        files = ["pkgs/web/package.json", "pkgs/api/index.js", "apps/b/x.py", "vendor/lib/a.js", ".claude/pkg/p.json",
+                 "tools/AGENTS.md", "docs/CLAUDE.md"]
+        cands = ["pkgs/web", "missing", ".claude/pkg", "apps/b/", "vendor/lib", "pkgs/api", "tools/AGENTS.md", "pkg",
+                 "docs"]
+        op = {"security_keywords": [], "excluded_paths": ["vendor"], "unit_candidates": cands}
+        out = self.derive(files, op)
+        # docs covers only an excluded file and is kept; pkg does not cover pkgs/
+        self.assertEqual(out["unit_candidates"], ["pkgs/web", "apps/b/", "pkgs/api", "docs"])
+        swapped = self.derive(files, dict(op, unit_candidates=["pkgs/api"] + cands[:5] + cands[6:]))
+        self.assertEqual(swapped["unit_candidates"], ["pkgs/api", "pkgs/web", "apps/b/", "docs"])
+
+    TREE = ["src/auth.py", "web/app.ts", ".vscode/settings.json", "old/x.js"]
+    OP = {"security_keywords": ["auth"], "excluded_paths": ["old"], "unit_candidates": ["web", "src"]}
+
+    def proposal(self):
+        return {"languages": ["python", "typescript"], "security_paths": ["src/auth.py"],
+                "excluded_paths": [".vscode/settings.json", "old/x.js"], "unit_candidates": ["web", "src"]}
+
+    def test_proposal_equal_to_derivation_accepted(self):
+        self.assertEqual(self.derive(self.TREE, self.OP), self.proposal())
+        self.assertEqual(self.check(self.TREE, self.OP, self.proposal()), (0, {"accepted": True, "reasons": []}))
+
+    def test_reject_narrowed_excluded(self):
+        p = self.proposal()
+        p["excluded_paths"] = ["old/x.js"]
+        self.assertEqual(self.check(self.TREE, self.OP, p),
+                         (1, {"accepted": False, "reasons": ["narrows:excluded_paths"]}))
+        p["excluded_paths"] = ["old", ".vscode"]  # a covering directory is not the derived path
+        self.assertEqual(self.check(self.TREE, self.OP, p)[0], 1)
+
+    def test_reject_different_languages(self):
+        for langs in (["python"], ["python", "typescript", "javascript"], ["python", "TypeScript"]):
+            p = self.proposal()
+            p["languages"] = langs
+            self.assertEqual(self.check(self.TREE, self.OP, p),
+                             (1, {"accepted": False, "reasons": ["differs:languages"]}), langs)
+        p = self.proposal()
+        p["languages"] = ["typescript", "python", "python"]  # compared as sets
+        self.assertEqual(self.check(self.TREE, self.OP, p), (0, {"accepted": True, "reasons": []}))
+
+    def test_other_reasons_and_their_order(self):
+        p = self.proposal()
+        p["unit_candidates"] = ["src", "web"]
+        self.assertEqual(self.check(self.TREE, self.OP, p)[1]["reasons"], ["differs:unit_candidates"])
+        p = self.proposal()
+        p["security_paths"] = []
+        self.assertEqual(self.check(self.TREE, self.OP, p)[1]["reasons"], ["narrows:security_paths"])
+        empty = {"languages": [], "security_paths": [], "excluded_paths": [], "unit_candidates": []}
+        self.assertEqual(self.check(self.TREE, self.OP, empty),
+                         (1, {"accepted": False, "reasons": ["differs:languages", "differs:unit_candidates",
+                                                             "narrows:excluded_paths", "narrows:security_paths"]}))
+
+    def test_widening_only_is_accepted(self):
+        # tohum/14's specific rule (widening allowed); 29f notes no vector judges this case
+        p = self.proposal()
+        p["excluded_paths"].append("web/app.ts")
+        p["security_paths"].append("web/app.ts")
+        self.assertEqual(self.check(self.TREE, self.OP, p), (0, {"accepted": True, "reasons": []}))
+
+    def test_tree_member_forms(self):
+        out = self.derive({"./src/a.py": b"", "b.js": b"x" * 10}, NO_OP, dirs=["./", "./src/", "lone/.claude/"])
+        self.assertEqual(out["languages"], ["javascript", "python"])
+        self.assertEqual(out["excluded_paths"], [])
+
+    # ------------------------------------------------------------ unusable input: exit 2
+
+    def assert_unusable(self, *args):
+        code, out = self.cli(*args)
+        self.assertEqual(code, 2, (args, out))
+        self.assertIn("error", out)
+        if args and args[0] == "check":
+            self.assertIs(out["accepted"], False)
+        return out["error"]
+
+    def test_unusable_tree(self):
+        op = self.json_file(NO_OP)
+        plain = self.path(".tar")
+        with tarfile.open(plain, "w") as tar:
+            tar.addfile(tarfile.TarInfo("a.py"), io.BytesIO(b""))
+        garbage = self.json_file("not a tar")
+        link = tarfile.TarInfo("ln")
+        link.type, link.linkname = tarfile.SYMTYPE, "a.py"
+        trees = [os.path.join(self.base, "missing.tar.gz"), plain, garbage, self.base,
+                 self.tar(["a.py"], extra=[link]), self.tar(["/abs.py"]), self.tar(["a/../b.py"]),
+                 self.tar(["a//b.py"]), self.tar(["a/./b.py"])]
+        for tree in trees:
+            self.assert_unusable("derive", tree, op)
+            self.assert_unusable("check", tree, op, self.json_file(self.proposal()))
+
+    def test_unusable_operator_and_proposal(self):
+        tree = self.tar(self.TREE)
+        for bad in ("{", "[]", "[" * 200000, {}, dict(NO_OP, excluded_paths="old"), dict(NO_OP, unit_candidates=[1]),
+                    {"excluded_paths": [], "unit_candidates": []}):
+            self.assert_unusable("derive", tree, self.json_file(bad))
+        self.assert_unusable("derive", tree, os.path.join(self.base, "missing.json"))
+        op = self.json_file(self.OP)
+        bad_proposals = ["{", "[" * 200000, [], {k: v for k, v in self.proposal().items() if k != "languages"},
+                         dict(self.proposal(), languages="python"), dict(self.proposal(), security_paths=[None])]
+        for bad in bad_proposals:
+            self.assert_unusable("check", tree, op, self.json_file(bad))
+
+    def test_usage(self):
+        tree, op = self.tar(self.TREE), self.json_file(self.OP)
+        self.assert_unusable("derive", tree)
+        self.assert_unusable("check", tree, op)
+        self.assert_unusable("derive", tree, op, op)
+        self.assert_unusable("verify", tree, op)
+        self.assert_unusable()
 
     def test_unexpected_exception_is_exit_2_not_refusal(self):
-        out = io.StringIO()
-        with mock.patch.object(D, "derive", side_effect=TypeError("boom")), mock.patch.object(D.sys, "stdout", out):
-            code = D.main(["derive", self.tree])
-        self.assertEqual(code, 2)
-        self.assertEqual(json.loads(out.getvalue()), {"error": "internal error: TypeError: boom"})
+        tree, op, prop = self.tar(self.TREE), self.json_file(self.OP), self.json_file(self.proposal())
+        for args in (["derive", tree, op], ["check", tree, op, prop]):
+            out = io.StringIO()
+            with mock.patch.object(D, "derive_vector", side_effect=TypeError("boom")), \
+                    mock.patch.object(D.sys, "stdout", out):
+                code = D.main(args)
+            self.assertEqual(code, 2)
+            want = {"error": "internal error: TypeError: boom"}
+            if args[0] == "check":
+                want["accepted"] = False
+            self.assertEqual(json.loads(out.getvalue()), want)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,7 @@
+{
+  "id": "spec-015-npmlock-workspace-link",
+  "kind": "spec_issue",
+  "ref": "spec/tohum/29g-vektor-arayuzleri-devam.md:21",
+  "evidence_test": "cd referee && python -m runner.deps_npm fetch LOCK MIRROR  # lock entry {link: true, resolved: 'packages/a'} -> registry_not_allowed:node_modules/a",
+  "state": "open"
+}

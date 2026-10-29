@@ -2,8 +2,8 @@
 invalidates the run and the prompt is not sent.
 
 Every command case drives ``python -m gate.secrets`` from ``referee/`` in a subprocess, the way the
-referee runs it; input goes through stdin or a pipe (``/dev/fd/N``), so nothing is written to disk and
-the suite runs in a read-only container. No fake secret is written literally in this file: each is
+referee runs it; input goes through stdin or a pipe (``/dev/fd/N``), except for the seed's vector form
+(class Vector, ``scan KIND FILE``), whose fixtures are files written to a temporary directory. No fake secret is written literally in this file: each is
 assembled at run time from split parts, so the file itself (and the diff that carries it to the
 rival's prompt) holds no secret-shaped text. Expected fingerprints are computed here with hashlib.
 """
@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import unittest
 
@@ -24,6 +25,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BRAIN = os.path.dirname(REFEREE)
 ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 UPPER32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+KINDS = ("diff", "row", "prompt")
 
 
 def body(seed: str, n: int, alphabet: str = ALNUM) -> str:
@@ -640,6 +642,163 @@ class Library(unittest.TestCase):
             self.secrets.require_clean(row_with(FAKES["slack-token"]), "row")
         with self.assertRaises(self.secrets.ScanError):
             self.secrets.scan("x", "email")
+
+
+UPPER_DIGITS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+AWS_ID = j("AK", "IA", "0189", body("vec-aws", 12, UPPER_DIGITS))  # holds 0 1 8 9: the base is [A-Z0-9]
+NEAR_GH = j("gh", "q_", body("vec-ghq", 36))
+NEAR_ID = j("AK", "IA", body("vec-near", 15, UPPER_DIGITS[:26]))
+
+
+def run_vector(kind: str, data: bytes, stdin: bytes = b""):
+    """Run the seed's vector form ``python -m gate.secrets scan KIND FILE`` from referee/ on a fixture
+    written to a temporary directory; return the exit code, the last stdout line decoded and all output."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "input")
+        with open(path, "wb") as fh:
+            fh.write(data)
+        env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+        proc = subprocess.run([sys.executable, "-m", "gate.secrets", "scan", kind, path], cwd=REFEREE, env=env,
+                              input=stdin, capture_output=True, timeout=60)
+    lines = proc.stdout.decode().splitlines()
+    return proc.returncode, json.loads(lines[-1]) if lines else None, proc.stdout + proc.stderr
+
+
+class Vector(unittest.TestCase):
+    """The seed's vector interface (tohum/29f, secrets): each named case with its expected exit code and
+    last-line fields, and a changed input (one byte or one field) that must not give the same result.
+    Every output is checked to hold none of the fake values."""
+
+    PLANTED = (FAKES["github-token"], AWS_ID, NEAR_GH, NEAR_ID)
+
+    def check(self, kind: str, data: bytes, code: int, expect: dict, changed: bytes | None = None,
+              changed_code: int | None = None, changed_expect: dict | None = None):
+        """Like the seed's runner, only the fields ``expect`` names are compared, as JSON values (True is
+        not 1); the line may carry nothing but clean, lines and an error."""
+        def result(data: bytes, fields: dict):
+            got_code, last, raw = run_vector(kind, data)
+            self.assertLessEqual(set(last), {"clean", "lines", "error"}, raw)
+            for value in self.PLANTED:
+                self.assertNotIn(value.encode(), raw, "a scanned value leaked into the output")
+            self.assertLessEqual(set(fields), set(last), raw)  # a missing field is red
+            return got_code, json.dumps({name: last[name] for name in fields}, sort_keys=True), raw
+
+        want = (code, json.dumps(expect, sort_keys=True))
+        got = result(data, expect)
+        self.assertEqual(got[:2], want, got[2])
+        if changed is None:
+            return
+        self.assertNotEqual(changed, data)
+        got = result(changed, expect)
+        self.assertNotEqual(got[:2], want, "the changed input gave the expected result")
+        got = result(changed, changed_expect)
+        self.assertEqual(got[:2], (changed_code, json.dumps(changed_expect, sort_keys=True)), got[2])
+
+    def test_diff_added_line(self):
+        fake = FAKES["github-token"]
+        self.check("diff", diff_with('T = "%s"' % fake).encode(), 1, {"clean": False, "lines": [7]},
+                   diff_with('T = "%s"' % fake[:-1]).encode(), 0, {"clean": True, "lines": []})
+
+    def test_diff_context_line(self):
+        text = diff_with("x = 1").replace(" import os", " ID = %s" % AWS_ID)
+        self.check("diff", text.encode(), 1, {"clean": False, "lines": [6]},
+                   text.replace(AWS_ID, AWS_ID[:-1]).encode(), 0, {"clean": True, "lines": []})
+
+    def test_row_json_escape(self):
+        escaped = "".join("\\u%04x" % ord(c) for c in AWS_ID)
+        rows = [row_with("first"), row_with("ESCAPED"), row_with("third")]
+        text = "\n".join(rows).replace("ESCAPED", escaped) + "\n"
+        self.assertNotIn(AWS_ID, text)
+        self.check("row", text.encode(), 1, {"clean": False, "lines": [2]},
+                   text.replace(escaped[:12], escaped[:6] + "4c").encode(), 0, {"clean": True, "lines": []})
+
+    def test_row_keys_and_values_are_decoded_and_scanned(self):
+        """A token cut by a JSON \\n escape is no token in the row as written; decoded, its two lines join
+        back into one. It is caught as an object key and as a value, nested or not."""
+        fake = FAKES["github-token"]
+        cut = fake[:10] + "\\n" + fake[10:]
+        rows = [row_with("first"), '{"payload": {"%s": 1}}' % cut, row_with("third"), '{"a": ["%s"]}' % cut]
+        self.check("row", "\n".join(rows).encode(), 1, {"clean": False, "lines": [2, 4]},
+                   "\n".join(rows[:3] + [row_with("fourth")]).encode(), 1, {"clean": False, "lines": [2]})
+        repeated = '{"a": "%s", "a": "x"}' % cut  # a repeated key hides no value
+        self.check("row", repeated.encode(), 1, {"clean": False, "lines": [1]},
+                   repeated.replace(cut, "plain").encode(), 0, {"clean": True, "lines": []})
+
+    def test_prompt(self):
+        fake = FAKES["github-token"]
+        self.check("prompt", prompt_with("leak %s" % fake).encode(), 1, {"clean": False, "lines": [4]},
+                   prompt_with("leak %s" % fake.replace("p_", "q_", 1)).encode(), 0, {"clean": True, "lines": []})
+
+    def test_prompt_clean(self):
+        self.check("prompt", prompt_with("nothing secret here").encode(), 0, {"clean": True, "lines": []},
+                   prompt_with("nothing secret %s" % AWS_ID).encode(), 1, {"clean": False, "lines": [4]})
+
+    def test_glued_token(self):
+        fake = FAKES["github-token"]
+        text = "see x_%s now\nplain\nid_%s_x\n" % (fake, AWS_ID)
+        self.check("prompt", text.encode(), 1, {"clean": False, "lines": [1, 3]},
+                   text.replace("x_gh" + "p_", "x_gh" + "q_").encode(), 1, {"clean": False, "lines": [3]})
+
+    def test_clean_near_miss(self):
+        """ghq_ plus 36, a 15-character key id and the words FAKE and EXAMPLE, alone, in prose, after a
+        secret-named key (PROVIDER_SHAPED) and on the line before a word (the joined-line boundary)."""
+        gh_name, aws_name = j("GITHUB_TO", "KEN"), j("AWS_ACCESS_KEY", "_ID")
+        lines = ["token %s is not real" % NEAR_GH, "id %s" % NEAR_ID, "FAKE", "EXAMPLE",
+                 "%s=%s" % (gh_name, NEAR_GH), '%s = "%s"' % (aws_name, NEAR_ID), "%s:" % j("to", "ken"), "  " + NEAR_GH,
+                 NEAR_ID, "FAKE", "x_%s_y" % NEAR_ID]
+        text = "\n".join(lines) + "\n"
+        self.check("prompt", text.encode(), 0, {"clean": True, "lines": []},
+                   text.replace("gh" + "q_", "gh" + "p_", 1).encode(), 1, {"clean": False, "lines": [1]})
+        self.check("diff", diff_with("\n+".join(lines)).encode(), 0, {"clean": True, "lines": []},
+                   diff_with("\n+".join(lines + [NEAR_ID + "Q"])).encode(), 1, {"clean": False, "lines": [18]})
+        rows = "\n".join(row_with(line) for line in lines)
+        self.check("row", rows.encode(), 0, {"clean": True, "lines": []},
+                   rows.replace(NEAR_ID, NEAR_ID + "Q", 1).encode(), 1, {"clean": False, "lines": [2]})
+
+    def test_row_unusable_fails_closed(self):
+        good = row_with("first")
+        for bad in ("not json", "", "[1]", '"text"', "{", "null"):
+            with self.subTest(bad=bad):
+                text = "\n".join([good, bad, row_with("third")]) + "\n"
+                fixed = "\n".join([good, row_with("second"), row_with("third")]) + "\n"
+                self.check("row", text.encode(), 2, {"clean": False}, fixed.encode(), 0, {"clean": True})
+        # a blank line at the end is a line; the empty piece after the last LF is not
+        self.check("row", (good + "\n\n").encode(), 2, {"clean": False})
+        self.check("row", (good + "\n").encode(), 0, {"clean": True, "lines": []})
+        self.check("row", b"", 0, {"clean": True, "lines": []})
+
+    def test_not_utf8_is_unusable(self):
+        for kind in KINDS:
+            text = json.dumps({"summary": "café"}, ensure_ascii=False) if kind == "row" else "café %s\n" % AWS_ID
+            data = text.encode("utf-8")
+            with self.subTest(kind=kind):
+                self.check(kind, data.replace(b"\xc3\xa9", b"\xe9"), 2, {"clean": False}, data,
+                           0 if kind == "row" else 1,
+                           {"clean": True, "lines": []} if kind == "row" else {"clean": False, "lines": [1]})
+
+    def test_lines_are_sorted_unique_and_counted_by_lf(self):
+        """Two matches on one line give it once; lines 3 and 10 come out in order; a form feed, a CR
+        and a Unicode line separator split nothing that is reported."""
+        fake = FAKES["github-token"]
+        lines = ["plain"] * 10
+        lines[2] = "%s and %s" % (fake, AWS_ID)
+        lines[9] = "again %s" % AWS_ID
+        lines[0] = "a\x0cb\rc d"
+        text = "\n".join(lines)  # no final LF: the last piece is still a line
+        self.check("prompt", text.encode(), 1, {"clean": False, "lines": [3, 10]},
+                   text.replace(AWS_ID, "x").encode(), 1, {"clean": False, "lines": [3]})
+
+    def test_stdin_is_not_read_and_usage(self):
+        code, last, raw = run_vector("prompt", b"plain\n", stdin=FAKES["github-token"].encode())
+        self.assertEqual((code, last), (0, {"clean": True, "lines": []}), raw)
+        for args in (["scan", "email", "/dev/null"], ["scan", "prompt"], ["scan", "prompt", "/nonexistent/x"],
+                     ["scan", "prompt", "/dev/null", "extra"]):
+            with self.subTest(args=args):
+                proc = subprocess.run([sys.executable, "-m", "gate.secrets", *args], cwd=REFEREE,
+                                      env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"), capture_output=True,
+                                      timeout=60)
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertIs(json.loads(proc.stdout.decode().splitlines()[-1])["clean"], False)
 
 
 class Usage(unittest.TestCase):
