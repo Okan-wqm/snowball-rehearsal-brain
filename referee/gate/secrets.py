@@ -42,7 +42,9 @@ Command line, run from ``referee/`` (stdout is one JSON line; exit 0 clean, 1 ma
 stdin, prints ``{"clean", "lines"}`` (the sorted unique 1-based LF lines where a match starts, the JSONL
 line for a row; ``[]`` when clean) and nothing else about a match, neither text nor rule. A file that is
 not UTF-8, a row line that is empty or not a JSON object, a missing file or a bad kind is exit 2 with
-``{"clean": false, "error"}``. Out of scope for this form: ``--known-env`` and row schema checks.
+``{"clean": false, "error"}``. A row is decoded: each string in it is scanned on its own, and a string
+held under a secret-named object key is judged as that key's assigned value (``match_lines``). Out of
+scope for this form: ``--known-env`` and row schema checks.
 
 ``scan --kind`` prints ``{"clean", "kind", "run_valid", "matches"}``. ``send`` reads a prompt on stdin,
 scans it as a prompt and only when it is clean runs CMD with the prompt on CMD's stdin (CMD's stdout goes to
@@ -314,15 +316,20 @@ def _url_placeholder(password: str) -> bool:
     return not TEMPLATE.sub("", password)
 
 
+def _secret_value(value: str) -> bool:
+    """True when ``value``, once assigned to a secret-named key, is reported: 8 or more characters, not a
+    whole template, not one of NON_VALUES. Nothing else about the value's shape exempts it. The one
+    rule for both the text forms (``_assigned``) and a JSON member of a row (``_secret_members``)."""
+    return len(value) >= 8 and value.lower() not in NON_VALUES and bool(TEMPLATE.sub("", value))
+
+
 def _assigned(text: str, pos: int) -> str | None:
     """The secret value assigned at ``pos`` (just after the operator), or None when there is none: the
-    first of the two readings of ``_value`` that is 8 or more characters, not a whole template, not one
-    of NON_VALUES. Nothing else about the value's shape exempts it."""
+    first of the two readings of ``_value`` that ``_secret_value`` reports."""
     for glue in (False, True):
         value = _value(text, pos, glue)
-        if value is None or len(value) < 8 or value.lower() in NON_VALUES or not TEMPLATE.sub("", value):
-            continue
-        return value
+        if value is not None and _secret_value(value):
+            return value
     return None
 
 
@@ -490,6 +497,25 @@ def _strings(value: object) -> Iterable[str]:
             yield from _strings(item)
 
 
+def _secret_members(value: object, held: bool = False) -> bool:
+    """True when a decoded JSON value holds a string assigned to a secret-named key: an object member
+    whose key (as decoded, or NFKC-folded) is secret-named by ``_secret_key`` holds, as its value or at
+    any depth inside it (arrays, nested objects' values), a string that ``_secret_value`` reports once one
+    leading scheme word is removed. With ``held`` the value is already under such a key. Numbers,
+    booleans and null are never reported (a ledger row counts tokens_in and tokens_out in numbers)."""
+    if isinstance(value, str):
+        if not held:
+            return False
+        scheme = SCHEME.match(value)
+        return _secret_value(value[scheme.end():] if scheme else value)
+    if isinstance(value, _Pairs):
+        return any(_secret_members(item, held or _secret_key(key) or _secret_key(_fold(key)))
+                   for key, item in value)
+    if isinstance(value, list):
+        return any(_secret_members(item, held) for item in value)
+    return False
+
+
 def match_lines(data: bytes, kind: str) -> list[int]:
     """The seed's vector form of the scan (tohum/29f, secrets): the sorted, unique 1-based lines where a
     match starts in ``data``; an empty list means clean. Raise ``ScanError`` when the input is unusable.
@@ -497,9 +523,13 @@ def match_lines(data: bytes, kind: str) -> list[int]:
     ``data`` must be UTF-8. Lines are counted by LF; the empty piece after a last LF is not a line. A
     ``row`` input is JSON Lines: every line must decode as a JSON object (an empty line or any other JSON
     value makes the whole input unusable); then each string in it (keys and values, escapes decoded) is
-    scanned on its own, and a hit in any reports the line. The line as written is not scanned: read as
-    text, the JSON quotes and commas after a secret-named key ending one string would be read as that
-    key's value, and keys and values of different strings would be read as one assignment.
+    scanned on its own, and each object member is judged as an assignment by ``_secret_members`` (a
+    string under a secret-named key); a hit in either reports the line. The line as written is not
+    scanned: read as text, the JSON quotes and commas after a secret-named key ending one string would be
+    read as that key's value, and keys and values of different strings would be read as one assignment.
+    Stated boundaries of the member rule: a number, boolean or null value; a secret whose name is held by
+    a sibling member rather than the key ({"name": <a secret-named word>, "value": ...}); a key that is
+    not secret-named by the comment at NAME_PARTS.
     """
     if kind not in KINDS:
         raise ScanError("kind must be one of %s" % ", ".join(KINDS))
@@ -524,7 +554,7 @@ def match_lines(data: bytes, kind: str) -> list[int]:
     found = set()
     try:
         for number, value in enumerate(decoded, 1):
-            if any(scan(string, kind) for string in _strings(value)):
+            if _secret_members(value) or any(scan(string, kind) for string in _strings(value)):
                 found.add(number)
     except RecursionError:
         raise ScanError("a row nests too deep to scan") from None

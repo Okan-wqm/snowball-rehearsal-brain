@@ -784,6 +784,41 @@ class Vector(unittest.TestCase):
                     self.check("row", row_with(line).encode(), 1, {"clean": False, "lines": [1]},
                                row_with(plain.rstrip("\n")).encode(), 0, {"clean": True, "lines": []})
 
+    def test_row_member_under_secret_named_key(self):
+        """Claim 87c088321252: in a decoded row, an object member whose key is secret-named is an
+        assignment, so a string of 8 or more characters it holds (directly, in an array, or as a nested
+        object's value, at any depth; the key escaped or fullwidth) reports the line. Each case with the
+        key renamed to a word that is not secret-named is clean, so the key is what reports it."""
+        kp, kt = j("pass", "word"), j("to", "ken")
+        held = body("member", 14)
+        fullwidth = "".join(chr(ord(c) + 0xFEE0) for c in kp)
+        cases = [
+            ({"row_id": "r1", kp: held}, kp),
+            ({"payload": {"env": {j("DB_PASS", "WORD"): held}}}, j("DB_PASS", "WORD")),
+            ({j("to", "kens"): ["short", held]}, j("to", "kens")),
+            ({j("cred", "entials"): {"user": held}}, j("cred", "entials")),
+            ({j("Auth", "orization"): "Bearer " + held}, j("Auth", "orization")),
+            ({fullwidth: held}, fullwidth),
+        ]
+        for obj, key in cases:
+            with self.subTest(key=key):
+                text = json.dumps(obj) + "\n"
+                plain = text.replace(json.dumps(key)[1:-1], "colour")
+                self.assertNotEqual(plain, text)
+                self.check("row", text.encode(), 1, {"clean": False, "lines": [1]},
+                           plain.encode(), 0, {"clean": True, "lines": []})
+        escaped = '{"\\u0070%s": "%s"}\n' % (kp[1:], held)  # the key spelled with a \\u escape
+        self.check("row", escaped.encode(), 1, {"clean": False, "lines": [1]},
+                   escaped.replace(kp[1:], "olour").encode(), 0, {"clean": True, "lines": []})
+        # the member rule's stated boundaries: the same skips as an assignment in text (a whole template,
+        # a null word, fewer than 8 characters after the scheme word), and numbers, booleans and null
+        clean = [{kp: "${DB_%s}" % kp.upper()}, {kt: "null"}, {kp: "abc1234"}, {kt: "Bearer abc1234"},
+                 {j("tokens", "_in"): 123456789012}, {kp: True}, {kp: None}, {kp: []},
+                 {"name": kp, "value": "plain words here"}]
+        rows = "\n".join(json.dumps(obj) for obj in clean) + "\n"
+        self.check("row", rows.encode(), 0, {"clean": True, "lines": []},
+                   rows.replace("abc1234", "abc12345").encode(), 1, {"clean": False, "lines": [3, 4]})
+
     def test_row_unusable_fails_closed(self):
         good = row_with("first")
         for bad in ("not json", "", "[1]", '"text"', "{", "null"):
