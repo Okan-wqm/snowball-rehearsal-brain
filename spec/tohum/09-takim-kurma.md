@@ -1,6 +1,6 @@
 # Takım Kurma Kuralları
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: takım kurarken ve ajan önerirken
 Çapa: ajan dosyalarındaki köken alanları; `ledger.jsonl` `part: accept` satırları
 
@@ -30,8 +30,10 @@ Okunma: takım kurarken ve ajan önerirken
   düzelticisi, merdivenin alt basamakları, defter bakımı. En ucuz model `policy.json`'da
   adlandırılır ve yalnız panelin faz 1–2'si için izinlidir. Kimlikler `24`'tedir; bağımsızlık
   kuralı `09a`'dadır ve model politikasının üstündedir.
-- **Takım boyutu aşama spec'inde yazar.** Aşama 0 ve 1 için iki ajan: Kurucu ve tohum rakibi;
-  Aşama 1'in çalışma-zamanı modeli yalnız düzelticinin Sonnet çağrısıdır. Aşama 2 ve 3'te altı ya
+- **Takım boyutu aşama spec'inde yazar.** Aşama 0 ve 1 için iki ajan: Kurucu ve tohum rakibi
+  (dürüstlük ekimini kurulumda operatörün ayrı bir ajanı bir kez yapar, `asama-0/10`); Aşama 0'ın
+  çalışma-zamanı modeli yalnız (B)'deki `llm.call` kanaryası, Aşama 1'inki düzelticinin Sonnet çağrısı
+  ve P2'nin güvenlik avcısıdır. Aşama 2 ve 3'te altı ya
   da yedi. Sayı bütçeyle sınırlıdır; her ajanın hangi sayıyı oynattığı çıkış raporunda yazar.
 - **Anlaşma değil, çürütme.** İki ajanın aynı sonuca varması kanıt değildir. Bir artefakt ancak
   farklı modelden ve ayrı bağlamdan bir rakip onu çürütmeyi deneyip başaramadığında kabul edilir.

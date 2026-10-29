@@ -1,33 +1,39 @@
 # Aşama 0 §0.13 — Teslim listesi
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: Aşama 0 çalışırken
 Çapa: beklemede: aşama 0 çıkış raporu
 
 ---
 
-**Beyin reposunda, `referee/` altında (aktarılacak hakem):** `ledger/` (`ledger.append`,
-`chain.verify`, `rekor.anchor`), kill switch ve bütçe okuyucu, `profile.derive`, `harness/`
-(`snapshot.make`, `cases.build` ve mutasyon kataloğu, `exit.sample`, `exit.drill`, `harness.score`,
-`harness.baseline` ve grep kümesi), `spec.lint`, `runner/` (`run.contained`, `deps.fetch`),
-`gate/` (`gate.diffguard`, `gate.check`, `sentinel.run`, `gate.revert`, `lock.check`,
-`brain.accept`), `drift.check`, `llm.call`, `secrets.scan`, `dispatcher/` (`agent.dispatch`),
-`gozcu/` (`gozcu.evaluate`, `status.block`), `schemas/`, beş işin iş akışları (`çek`, `getir`,
-`koş`, `çağır`, `yaz`), kendi testleri, aktarım ve etkinleştirme betikleri.
+**Beyin reposunda, `referee/` altında (aktarılacak döngü hakemi):** §0.14'ün 18 modülü
+(`ledger/chain.py`, `gate/secrets.py`, `runner/contained.py`, `profile/derive.py`, `runner/deps_npm.py`,
+`profile/unit_verify.py`, `gate/diffguard.py`, `gate/check.py`, `target/write.py`, `ledger/append.py`,
+`ledger/anchor.py`, `gate/sentinel.py`, `gate/revert.py`, `harness/revert_drill.py`,
+`dispatcher/llm_call.py`, `status/block.py`, `activate.py`), döngü iş akışı `.github/workflows/loop.yml`,
+`schemas/` ve kendi testleri (`tests/`).
 
-**Beyin reposunda, oyuncu:** `cli/` (`snowball init`), `profile.propose`, `mcp/` (bu aşamanın
-beyin araçları, `tohum/26a`), `docs.index`, `founder-ledger.jsonl`, `tests/fixtures/toy-repo/`
-(tohumlanmış lint borcu, gömülü dispatch kanaryaları), `candidates/` altında etkinleştirmenin hazır
-iyi ve hazır kötü adayı.
+**Beyin reposunda, `referee/` dışında:** `targets/<hedef>/units.json` (tarif önerisi, veri);
+`candidates/<hedef>/<cid>/` (`finding.json`, `diff.patch`, `expect.json`; oyuncakta bir iyi ve dört kötü,
+kopyada bir iyi ve bir kötü aday); `tests/fixtures/toy-repo/` (oyuncak hedefin içeriği: tohumlanmış
+düzeltilebilir lint borcu, ajan yapılandırması yok); `founder-ledger.jsonl` (tohumun aracıyla zincirli);
+`reports/*.json` (tipli bildirimler); `snowball-tests.json`; çıkışta `exit-request.json` (`tohum/26c`).
 
-**Hakem reposunda, aktarımla:** pinli SHA'nın `referee/` ağacı; önyükleme hakemi yerini ona bırakır.
+**Hakem reposunda, aktarımla:** pinli SHA'nın `referee/` ağacı kökte ve `.github/workflows/loop.yml`;
+önyükleme hakemi (`bootstrap/`, `bootstrap.yml`) yerinde kalır; `setup/imports.jsonl` satırı. Kilit
+açılışında `setup/stage.json` (§0.10a).
 
-**Hedeflerde, etkinleştirmeyle (`brain/state`):** `profile.json`, `cases/` (dev K0),
-`ledger.jsonl` (`events`, `cost`, `rival`, `accept` bölümleri), `chain/root.jsonl`, `status.md`
-(hakemin durum bloğu ve Aşama 0 şablonu). Oyuncak hedefte ayrıca canlı döngünün
-`brain/integration` merge'ü.
+**Hedeflerde (oyuncak ve kopya), `brain/state`:** genesis satırı; `profile.json` (`units[]` ve
+doğrulanmış tarif); `ledger.jsonl` (`events`, `cost` ve `drill` satırları); `chain/root.jsonl`;
+`status.md` bloğu. `brain/integration`'da merge ve geri alma commit'leri; oyuncakta PASS satırı.
 
-**Rekor'da:** (A) sonuçları, kurulum özeti hash'i ve ilk kök hash.
+**Rekor'da:** (A) sonucu (kurulum özeti, vektör, koltuk ve politika hash'leriyle, `tohum/25`) ve her
+devrin kökü.
 
-**`asama-0/` altında:** tarihli çıkış raporu: PASS satırının kopyası, taban recall ve maliyeti,
-güven kökü, insan dokunuşu sayacı.
+**`asama-0/` altında:** tarihli çıkış raporu: PASS satırının kopyası, güven kökü, insan dokunuşu sayısı,
+kopyada ilk canlı merge'e kadar oturum ve USD.
+
+**Bu aşamada olmayanlar:** `snowball init`, `mcp/`, `docs.index`, `profile.propose`, snapshot ve vaka
+seti, `harness.score`, taban avcı, `exit.sample`, `drift.check`, Gözcü, `agent.dispatch`, `spec.lint`,
+`lock.check`, `brain.accept`. Yerleri ve açılış tetikleri `asama-1/13`'tedir; kilit ve push kabulü
+önyükleme hakemindedir (`tohum/29b`).

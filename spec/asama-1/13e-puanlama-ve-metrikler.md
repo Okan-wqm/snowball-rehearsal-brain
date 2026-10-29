@@ -1,10 +1,13 @@
-# Aşama 0 §0.8 — Puanlama ve metrikler
+# Aşama 1 §1.13e — P1: Puanlama ve metrikler
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
-Okunma: Aşama 0 çalışırken
-Çapa: beklemede: aşama 0 çıkış raporu
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Okunma: P1 partisi yazılırken ve Aşama 1 çalışırken
+Çapa: beklemede: aşama 1 çıkış raporu
 
 ---
+
+Bu sayfa Aşama 0 2.2'nin §0.8'inin puanlama ve metrik kısmıdır; P1 partisiyle gelir (§1.13). Eşlenmiş
+satırın tanımı Aşama 0'da kalır (`asama-0/08`).
 
 **`match-rule v2`, sürümlü.**
 
@@ -29,6 +32,6 @@ yüzden kaçırılan kurallar raporlanır: deterministik sarıcıda kaçırma bi
 sonraki çıkış yeni tohumla çekilir. Held-out havuzlu sınıflarda bir bakış yalnız verdict
 döndürür; kaçırma nedenleri yalnız dev koşularından gelir (`tohum/19`).
 
-**Maliyet bölümü.** `ledger.jsonl`'ın `cost` bölümü her koşuya satır ekler. Okuyucuları: bütçe
-denetimi ve Gözcü (tavanda temiz duruş), Aşama 0'da taban satırı, Aşama 3'ten itibaren maliyet
-merdiveni.
+**Maliyet bölümü.** `ledger.jsonl`'ın `cost` bölümü Aşama 0'dan beri her çağrıya satır ekler
+(`asama-0/14` MF15). Okuyucuları: frenler ve P1'den Gözcü (frende temiz duruş), Aşama 4 partisinden taban
+satırı, Aşama 3'ten itibaren maliyet merdiveni.

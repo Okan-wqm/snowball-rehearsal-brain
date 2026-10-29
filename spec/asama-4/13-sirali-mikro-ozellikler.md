@@ -1,6 +1,6 @@
 # Aşama 4 §4.13 — Sıralı mikro özellikler
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: hedef taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: hedef taslak · Sahibi: operatör
 Okunma: Aşama 4 çalışırken
 Çapa: beklemede: aşama 4 çıkış raporu
 
@@ -12,7 +12,8 @@ Hedef taslaktır; Aşama 3 PASS alınca yeniden yazılır. Her satır tek mekani
 2. İleriye dönük held-out: prompt hash mührü ve mühür sonrası `human_fix` toplama.
 3. `looks` satırları: havuz bütçesi, α/k, yalnız verdict.
 4. Property spec'i ve kalıp sızıntısı denetimi.
-5. Sağlayıcı geçidi ve koşuya bağlı belirteç.
+5. Avcının model yolu (`tohum/08` 5): iç kullanımda `çağır` işinde `claude` CLI'si, yalnız hakemin
+   MCP araçlarıyla; sağlayıcı geçidi ve koşuya bağlı belirteç ticari kullanımda, API anahtarıyla.
 6. Kapsayıcılık özetleri (koşu öncesi ve sonrası).
 7. Sandbox kanaryası.
 8. Snapshot kanaryası, clean ve planted.

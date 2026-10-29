@@ -1,6 +1,6 @@
 # Şemalar, Devam: Bilgi, Organ, Profil, Politika
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: Aşama 0 inşasında ve her şema değişikliğinde
 Çapa: beklemede: aşama 0 — hakem reposundaki schemas/
 
@@ -48,7 +48,8 @@ typecheck[], test[], format[], build[], coverage[]}}`, `affected_test_cmd`, `gra
 `graph_granularity`, `test_path_rules[]`, `doc_paths[]`, `banned_constructs{lang: []}`,
 `rule_property_map{tool: {rule_id: property}}`, `finding_id_patterns[]`, `security_paths[]`,
 `excluded_dirs[]`, `registry_egress[]`, `install_scripts_required[]`, `ci_system`, `runner`,
-`state_root`, `domain_lexicon[]`, `context_fingerprint`. Okuyucu listesi profilde değil, `27`'dedir.
+`state_root`, `domain_lexicon[]`, `context_fingerprint`, `units[]` (doğrulanmış birim tarifleri, `26c`).
+Okuyucu listesi profilde değil, `27`'dedir.
 
 **policy.json**: `constitutional{monthly_cap_usd, monthly_cap_ci_minutes, session_cap_usd, shares,
 class_floors{K0, K1, K2, K4: {kind: census, misses: 0}, K3, K5..K8: {recall_lb, precision_lb}},
@@ -56,6 +57,7 @@ required_exit_rows{capability: [row]}, regression_freeze, cycle_caps, daily_caps
 security_keywords[], banned_phrases[], stage_order, look_budget, confidence_level,
 noninferiority_margin, n_min_paired, mcnemar_min_discordant, survival_windows{}, gate_rules{},
 stage_params{}, stage_budgets{}, license_allowlist[], license_exceptions{pin: {expression, evidence}}}`,
+`operating{key: {value, band}}` (kaynak sınırları; bandı operatör yazar, değer bant içinde iki yöne, `26c`),
 `performance{rules{name: expr}, windows{}, lambda, beta_prior, shadow_discount, shadow_min_runs,
 shadow_max_windows, ablation_margin, severity_map{}, op_allow{}, cheapest_model, effort{},
 signal_thresholds{}}`. Eylemi kapılayan her şey anayasal bölümdedir ve yalnız sıkılaşır.
@@ -71,10 +73,8 @@ havuz başınadır; tüm soylar paylaşır.
 **heldout.seal.json**: `seal_id`, `hmac_sha256`, `case_count`, `created_at`, `rotation_due`,
 `cutoff_ts`, `sealed_prompt_sha256`; vaka listesi mühürlü depodadır.
 
-**snowball-tests.json** (beyin reposu kökü): `{tests: [{id, cmd, stage}], done_mf: [], lockfiles: []}`;
-`id` §0.9 test numarasıdır (`T13`); `cmd` repo kökünden koşar. **exit-request.json** (kök): `{stage, sha,
-spec_sha256}`; `sha` son kabul edilmiş commit, `spec_sha256` donmuş aşama dizininin hash'idir; yalnız
-bu dosyayı değiştiren push çıkış isteğidir (`29b`, `asama-0/10`).
+**snowball-tests.json**, **exit-request.json**, aşama tablosu (`stage0.json`), tarif, aday, bildirim ve
+operatör dosyaları (`control.json`, `setup/*`) `26c`'dedir.
 
 **contract**: `contract_id`, `producer`, `consumer`, `schema_ref`, `state` (`proposed`|`frozen`),
 `tests[]`. Bulgu biçimi sözleşme değil bu şemadır; ilk sözleşme ikinci ortak arayüzle doğar.

@@ -62,7 +62,8 @@ altında kalan ders zarar veriyordur ve kanıtıyla `superseded` olur.
 İlk ham ders satırı Aşama 1'de, geri alınan ilk düzeltmenin `cause`'uyla doğar; hayatta kalan
 başarılar da satır doğurur. Yapısal dersler sabit şablondan üretilir; serbest metinli dersler
 Aşama 2'nin planlayıcısıyla gelir ve her biri kanıt referansı taşır. Aynı `cause` üç kez
-tekrarlanınca genesis derslerden bir skill ya da dedektör taslaklar (`17`).
+tekrarlanınca genesis derslerden bir skill ya da dedektör taslaklar (`17`). Güvenlikte üçüncü tekrar
+beklenmez: kapanan her açık ders satırını bir dedektör ve bir regresyon testiyle birlikte bırakır (`30e`).
 
 Dersin doğduğu, doğru işe verildiği ve hatayı azalttığı provayla sınanır (`22a`); ders görünümünü
 getiren aşama provanın satırlarını çıkış testinde taşır (`18`).

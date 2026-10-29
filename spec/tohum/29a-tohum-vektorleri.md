@@ -1,6 +1,6 @@
 # Tohum Vektörleri: Değişmeyen Beklenen Çıktılar
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: zincir, istatistik ve puanlama kodu yazarken
 Çapa: hakem reposu `vectors/` dosyası; hash'i `setup/summary.json`'da
 
@@ -9,9 +9,11 @@ Okunma: zincir, istatistik ve puanlama kodu yazarken
 Bu değerler tohumla gelir; operatör kurulumda onları hakem reposunun `vectors/` dizinine kopyalar.
 Kurucu değiştiremez; önyükleme hakemi Kurucu'nun koduna her push'ta onları koşturur (`29b`).
 Değerler tohum yazılırken iki bağımsız hesapla doğrulanmıştır. **Vektörler tabandır, yeter
-değildir:** vektöre özgü bir dal yazmak tohum rakibinin ilk baktığı şeydir (`29`).
+değildir:** vektöre özgü bir dal yazmak tohum rakibinin ilk baktığı şeydir (`29`). Her grubun bir sahibi
+vardır: grup, sahibi olan MF `done_mf`'e girdiği push'tan sonra her push'ta koşar; sahibi geçerli aşamanın
+tablosunda olmayan grup koşmaz. Aşama 0'ın grupları, veri biçimi ve genel koşucu `29d`'dedir.
 
-## Zincir
+## Zincir (`chain`, Aşama 0 MF1)
 
 Kanonik biçim RFC 8785; vektörlerde yalnız ASCII dizgi, tamsayı, nesne ve dizi vardır.
 `row_hash = sha256(canonical(row − row_hash) ‖ prev_hash)`; `‖` bayt birleştirmedir, `prev_hash`
@@ -28,7 +30,7 @@ ASCII onaltılık dizgidir. Z = 64 sıfır.
 - **V3.** V2'de `payload.usd_micros` 1 yapılıp `row_hash` değiştirilmezse `chain.verify` `r2`'yi
   kırık raporlar; V1 geçerli kalır.
 
-## İstatistik
+## İstatistik (`cp_lower`, `mcnemar`; sahibi P1, Aşama 0'da koşmaz)
 
 Tek yönlü Clopper–Pearson alt sınırı, α = 0,10 (`19`):
 
@@ -42,9 +44,8 @@ Tek yönlü Clopper–Pearson alt sınırı, α = 0,10 (`19`):
 | (8, 10) | 0,5504 |
 | gerçel `x_eff` (7,5; 10) | 0,4982 |
 
-Gerçel argümanlı Beta ile `x_eff` = 8,0 tamsayı sonucunu (0,5504) vermelidir.
-
-Tam tek yönlü McNemar p-değeri (b: eskinin lehine, c: yeninin lehine uyuşmaz çift):
+Gerçel argümanlı Beta ile `x_eff` = 8,0 tamsayı sonucunu (0,5504) vermelidir. Tam tek yönlü McNemar
+p-değeri (b: eskinin lehine, c: yeninin lehine uyuşmaz çift):
 
 | (b, c) | p |
 |---|---|
@@ -54,26 +55,26 @@ Tam tek yönlü McNemar p-değeri (b: eskinin lehine, c: yeninin lehine uyuşmaz
 | (0, 8) | 0,0039 |
 | (2, 8) | 0,0547 |
 
-## Eşleme (match-rule v2)
+## Eşleme (`match`, match-rule v2; sahibi P1, Aşama 0'da koşmaz)
 
-- K0: bulgu ile vakanın `tool`, `rule_id` ve hunk üzerinden eşlenmiş satırı aynıysa isabet.
+- K0: bulgu ile vakanın `tool`, `rule_id` ve hunk üzerinden eşlenmiş satırı aynıysa isabet; eşlenmiş
+  satırın tanımı Aşama 0'ın `k0map` grubuyla sabittir (`asama-0/08`, `29d`).
 - K0: aynı kural, eşlenmiş satır farklı → isabet değil.
 - Bir bulgu iki vakayı alamaz; bir vaka bir koşuda bir kez sayılır.
 
 ## Arayüz
 
-Önyükleme hakemi vektörleri Kurucu'nun koduna şu komutlarla, `referee/` kökünden uygular; çıktı
-stdout'ta tek satır JSON'dur:
+Önyükleme hakemi vektörleri Kurucu'nun koduna `referee/` kökünden uygular; çıktı stdout'ta tek satır
+JSON'dur, karşılaştırma tablodaki basamak sayısıyla yapılır:
 
 - `python -m ledger.chain hash` (stdin: tek satır) → `{"row_hash": ...}`
 - `python -m ledger.chain verify <dosya> [--previous <dosya>]` → `{"valid": bool, "broken_row": ...}`
-- `python -m harness.stats cp_lower <x> <n> <alpha>` → `{"lb": "0.962400"}` (altı ondalık dizgi)
-- `python -m harness.stats mcnemar <b> <c>` → `{"p": "0.062500"}`
-- `python -m harness.score <bulgular> <vakalar>` (iki JSON dizisi) → `{"hits": int}`; eşleme fikstürleri önyükleme
-  hakemiyle birlikte `seed/bootstrap/vectors/` altında gelir.
-- `python -m harness.drill judge <prova dosyası>` → `{"drill": ..., "verdicts": {...}}`; kurallar ve vektörler `29c`'de.
+- P1: `python -m harness.stats cp_lower <x> <n> <alpha>` → `{"lb": "0.962400"}` (altı ondalık dizgi);
+  `python -m harness.stats mcnemar <b> <c>` → `{"p": "0.062500"}`; `python -m harness.score <bulgular>
+  <vakalar>` (iki JSON dizisi) → `{"hits": int}`, eşleme fikstürleri `seed/bootstrap/vectors/`'te.
+- Aşama 2 partisi: `python -m harness.drill judge <prova dosyası>` → `{"drill": ..., "verdicts": {...}}`
+  (`drill` grubu; kurallar ve vektörler `29c`'de).
 
-Karşılaştırma tablodaki basamak sayısıyla yapılır.
-
-Her vektörün testi hem doğru sonucu hem de bir bayt değiştirilmiş girdide yanlış sonucun
+Aşama 0'da `spec.lint` ve `gate.lock` vektörü yoktur: spec denetimi ve aşama kilidi tohumun kodudur
+(`29b`). Her vektörün testi hem doğru sonucu hem de bir bayt değiştirilmiş girdide yanlış sonucun
 reddedildiğini gösterir; yalnız doğru girdide yeşil kalan vektör testi test değildir (`04`).

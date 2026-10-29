@@ -1,6 +1,6 @@
 # Çekişme Protokolü: Her Artefakt İçin
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: her artefakt üretildiğinde
 Çapa: faz kararları ve oracle sonuçları defterde
 
@@ -37,7 +37,7 @@ oracle'la yan yana koşar; kazananı yürütme seçer. Her öneri `origin` taş�
 
 | Artefakt | Faz 5 oracle'ı |
 |---|---|
-| Aşama spec'i, property spec'i | `spec.lint` (yapı, `required_exit_rows`, kalıp sızıntısı); sonra o aşamanın çıkış testi |
+| Aşama spec'i, property spec'i | `spec.lint` (Aşama 1 çıkışına kadar tohumun spec denetimi; yapı, `required_exit_rows`, kalıp sızıntısı); sonra o aşamanın çıkış testi |
 | Bulgu (K5 ve üstü) | Üreme testi: kırmızı → düzeltme → yeşil, etki kümesi yeşil (`04a`) |
 | Bulgu (K0–K2, K4) | Aracın yeniden koşusu ve mandal (Y8, `03`) |
 | Düzeltme, PR | Aynı test ya da araç + etkilenen-test komutu + diff-guard; K5'ten sonra ikinci panel diff üzerinde |

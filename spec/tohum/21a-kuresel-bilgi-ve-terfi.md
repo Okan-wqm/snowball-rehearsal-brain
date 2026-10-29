@@ -47,6 +47,7 @@ sistem hangi koşulda hangi kaynağa güveneceğini de öğrenir.
 kiracı izolasyonu) ancak üç şeyle öneri olur: kaynakta kanıt (hayatta kalmış uygulama ve
 testleri), hedefte uygulanabilirlik koşulları ve sandbox'ta ölçülmüş fayda. Ölçülebilir faydası
 olmayan şey görüştür. Güvenlik örüntüleri K6 kapısından geçer; kök neden kuralları geçerlidir (`23`).
+Kapanmış bir güvenlik açığının deseni katalog kimliği, CWE, dedektör biçimi ve koşullarla taşınır (`30e`).
 Öneri kalıbı tarif eder, kaynağın kodunu taşımaz: hedefe giren kod hedefte yeniden yazılır ve
 kaynağa yalnız `evidence_refs` ile atıf yapılır. Kaynak kodun kendisi ancak lisansı
 `license_allowlist`'teyse ve atfı bildirime yazılırsa alınır (`24`); lisansı bulunamayan repodan

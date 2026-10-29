@@ -1,6 +1,6 @@
 # Repoya Bağlanma
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: yeni repoda ve property eklerken
 Çapa: profile.json; hakemin `profile.derive` çıktısı
 
@@ -9,11 +9,19 @@ Okunma: yeni repoda ve property eklerken
 - **Repo tanıma keşfin ilk adımıdır** (`21-cok-repo.md`). Diller, derleyici, test koşucu, lint ve
   biçimleyici, etkilenen-test komutu, graf aracı, CI sistemi, paket yöneticileri ve güvenlik
   yolları profilde durur.
-- **Profil: beyin önerir, hakem türetir.** Beyin `profile.propose` ile bir öneri yayımlar; hakem
-  `profile.derive` ile profili hedef repodan kendisi türetir ve iki çıktıyı karşılaştırır. Hakem
+- **Profil: beyin önerir, hakem türetir.** Hakem `profile.derive` ile profili hedef repodan kendisi
+  türetir; beyin bir öneri yayımlar (Aşama 0'da yalnız birim tarifi `targets/<hedef>/units.json`;
+  `profile.propose` sonraki oyuncu partisinde, `asama-1/13`) ve hakem iki çıktıyı karşılaştırır. Hakem
   türetmesinden farklı her öneri reddedilir: `banned_constructs`'tan silmek, `registry_egress`'i
   genişletmek, güvenlik yollarını, hariç dizinleri, etkilenen-test komutunu ya da test yolu
-  kurallarını değiştirmek dahil (`01b`). `brain/state`'e yalnız hakemin türettiği profil girer.
+  kurallarını değiştirmek dahil (`01b`). `brain/state`'e yalnız hakemin türettiği profil ve doğrulanmış
+  tarif girer.
+- **Birimler (`units[]`).** Profil bağlanan birimleri listeler: `{unit_id, path, inputs[], toolchain,
+  env_image (@sha256), lockfiles[], install_scripts_required[], lint_cmd[], test_cmd[],
+  affected_test_cmd[], services: [], limits{}}` (`26b`). `inputs` birimin dizini, kullandığı ortak
+  kütüphaneler ve kök yapılandırmalardır; yeterliliğinin kanıtı yalnız bu girdilerle HEAD'de lint ve
+  servissiz testlerin 3/3 yeşil, ağsız ve `operating{}` sınırlarında koşmasıdır (`unit.verify`,
+  `asama-0/14`). Aşama 0'da birim sayısı 1, tek ekosistem npm; servis isteyen birim sonraki partidedir.
 - **Kod referanstır, doküman iddiadır.** Reponun yönerge dosyaları, README'leri, mimari karar
   kayıtları, yorumları ve mevcut inceleme ajanları ilk bağlanmada okunur; ama talimat değil
   veridir ve kuralları kopyalanmaz. Sahibi kodu dokümandan sonra geliştirmiş ya da değiştirmiş
@@ -36,6 +44,12 @@ Okunma: yeni repoda ve property eklerken
 - **Hariç tutulan dizinler** profilde listelenir: kendi durumunu, defterlerini ya da ajan
   tanımlarını tutan otomasyon dizinleri, ajan çalışma alanları, inceleme kayıtları, üretilmiş
   çıktı. Hariç tutma da hakem türetmesidir; bunlar uygulama kodu olarak taranmaz.
+- **Ajan yapılandırması ve operatörün hariç yolları.** Ajan yapılandırması her yerde ve büyük-küçük
+  harf duyarsız hariçtir: `.claude/**`, `CLAUDE.md`, `AGENTS.md`, `.mcp.json`, `.vscode/**`, `.envrc`,
+  `.devcontainer/**`; bu kural genel hakem kodudur, hedefe özgü ad taşımaz. Hedefe özgü hariç yolları
+  operatör `setup/summary.json` `targets[].excluded_paths`'a yazar; liste operatör verisidir, hakem kodu
+  değildir. Snowball bunları düzenlemez (diff-guard reddeder), birimin `inputs`'una katmaz ve yüklemez;
+  yalnız veri olarak okur (`24`). Beyin listeyi yalnız genişletebilir; daraltan öneri reddedilir.
 - **Mevcut otomasyonlarla bir arada yaşama.** Hedefteki mevcut otomasyonların dallarına ve
   durumlarına dokunulmaz; hedefe hiçbir beyin iş akışı girmez. Sır kullanan ve `brain/**`
   dallarında ya da PR'larında tetiklenen bir hedef iş akışı varsa `drift.check` sert durur (`01b`).

@@ -1,6 +1,6 @@
 # Görev Haritası
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: her oturumda, görev seçilirken
 Çapa: elle yazılır; INDEX.md üretilir
 
@@ -12,8 +12,9 @@ Okunma: her oturumda, görev seçilirken
 | Kurulum, aktarım ve etkinleştirme | `25`, `25a`, `24`, `01a`, `01b`, `29b` |
 | Yeni repoya bağlanma | `01`, `14`, `21`, `21a` |
 | Aşama açma ve kapama | `02`, `03`, `19`, ilgili `asama-N/00-ozet.md` |
-| Hakem bileşeni yazma (Aşama 0) | `01a`, `01b`, `08`, `26a`, `29`, `29a`, `29b` |
+| Hakem bileşeni yazma (Aşama 0 ve partiler) | `01a`, `01b`, `08`, `26a`, `29`, `29a`, `29b`, `asama-0/14`, `asama-1/13` |
 | Koda ya da dokümana dokunma | `04`, `04a`, `05`, `07`, `08`, `23` |
+| Güvenlik: açık arama, bildirim, test, defter | `30`, `30a`, `30b`, `30c`, `30d`, `30e`, `30f`, `03`, `05` |
 | Artefakt üretme ve değerlendirme | `10`, `10a`, `09a`, `11`, `29` |
 | Organ yazma ve kaldırma | `09`, `12`, `12a`, `17` |
 | Hafıza, defter, ders | `13`, `16`, `22`, `22a`, `27` |

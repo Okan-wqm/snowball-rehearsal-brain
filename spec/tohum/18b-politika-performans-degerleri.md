@@ -14,6 +14,7 @@ aynıdır.
 | Anahtar | Başlangıç | Okuyan |
 |---|---|---|
 | `windows.measure` | Ölçüm penceresi 14 gün | `11`, `12`, `17`, `28` |
+| `windows.security_sweep` | Güvenlik avcısının bütün sistemi bütün katalogla süpürmesi 7 günde bir ve her katalog ya da profil sürümünde | `30f` |
 | `rules.recall_gate`, `rules.precision_gate` | `18`'deki örnek kurallar | `12`, kapı |
 | `shadow_min_runs` | Pencere başına koşu sayısının yarısı, en az 3 | `12` |
 | `shadow_max_windows` | 4 pencere; sonunda SHADOW → RETIRED | `12` |
@@ -25,8 +26,8 @@ aynıdır.
 | `severity_map` | CRIT 10, HIGH 5, MED 2, LOW 1, lint 0,05 | `11`, `17`, `20` |
 | `op_allow` | K0 `lint_fix`; K1 `lint_fix`, `change_type`; K2 `remove`; K5–K6 `doc_fix` dışı hepsi; K8 `doc_fix` | `04a` 8, `26` |
 | `cheapest_model` | `claude-haiku-5-5`; yalnız panel faz 1–2 | `06`, `09` |
-| `effort` | Kurucu `high`; rakip `medium`; panel koltuğu `low`; düzeltici `low` | `24`, `10a` |
-| `rules.max_turns` | Rakip 30 (CLI turu; `bootstrap.json` `rival.max_turns`), avcı 60, panel koltuğu 12 | `24` |
+| `effort` | Kurucu `high`; rakip `medium`; güvenlik avcısı `high`; panel koltuğu `low`; düzeltici `low` | `24`, `10a`, `30f` |
+| `rules.max_turns` | Rakip 30 (CLI turu; `bootstrap.json` `rival.max_turns`), avcı ve güvenlik avcısı 60, panel koltuğu 12 | `24`, `30f` |
 | `rules.gap_rule` | gap ≥ 0,2 iki pencere üst üste ve havuz ≥ 20 vaka | `17` |
 | `signal_thresholds` | `17`'deki tablonun eşik sütunu | `17` |
 | `rules.drift_bound` | Bir eşiğin başlangıçtan net hareketi > %20 → Gözcü işareti | `18` |

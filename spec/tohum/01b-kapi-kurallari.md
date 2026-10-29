@@ -1,25 +1,27 @@
 # Kapı Kuralları, Tetik, Döngü İşlemi
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: her merge ve her state yazımında
 Çapa: beklemede: aşama 0 — `gate.diffguard`, `gate.check`, `drift.check` kendi-testleri
 
 ---
 
 **Aday nedir.** Beyin bir adayı kendi reposunda, `candidates/` altında yayımlar: bulgu, diff ve
-onu üreten organların tanım hash'leri. Hakem yalnız kabul edilmiş beyin SHA'sındaki organların
-adaylarını çeker (`brain.accept`); tanım hash'i kapının izin listesinde olmayan organın çıktısı
-reddedilir. Oyuncunun önerdiği her satır `trust: inferred` saklanır; `brain/state`'in satırlarını
-yalnız hakem yazar.
+onu üreten organların tanım hash'leri. Hakem yalnız önyükleme hakeminin kabul ettiği beyin SHA'sındaki
+adayları çeker (`29b`); Aşama 1'den tanım hash'i kapının izin listesinde (`accept` satırı) olmayan
+organın çıktısı reddedilir. Aşama 0'da adaylar Kurucu'nun hazır adaylarıdır ve kabul kuralı
+`asama-0/08`'dedir. Oyuncunun önerdiği her satır `trust: inferred` saklanır; `brain/state`'in
+satırlarını yalnız hakem yazar.
 
 **Ret listesi.** Kapının diff-guard'ı (`gate.diffguard`) şunlara dokunan adayı reddeder:
 kökteki `.github/**`, `.gitattributes`, lint, tip ve test yapılandırmaları, bağımlılık manifestleri ve
 lockfile'lar, `<state_root>/**`; profildeki `banned_constructs`; `policy.json`'daki yasaklı
 ifadeler; tavanın üstünde brüt silme; K6 canlı olana kadar güvenlik yolları, biçimleyici dahil.
 **Yalnız düz dosya:** sembolik bağ, alt modül, `../` içeren ya da depo kökü dışına çözülen yol
-reddedilir. Doküman yolları yalnız K8 sınıfının adaylarında geçer (`03`). Aynı liste
-`brain.accept`'te beyin kodu değişikliklerine uygulanır; `referee/` altındaki iş akışı dosyaları
-düz dosyadır ve canlıya yalnız operatör aktarımıyla girer.
+reddedilir. Doküman yolları yalnız K8 sınıfının adaylarında geçer (`03`). Hariç yollar ve hedefin
+ajan yapılandırması (`14`) her sınıfta reddedilir. Benzer liste önyükleme hakeminin kabulünde beyin
+kodu değişikliklerine uygulanır (`29b`); `referee/` altındaki iş akışı dosyaları düz dosyadır ve
+canlıya yalnız operatör aktarımıyla girer.
 
 **`brain/state` kuralları.** Yazarı yalnız hakemin `yaz` işidir; döngü başına tek doğrudan commit,
 PR yok. Ruleset: `deletion`, `non_fast_forward`; bypass aktörü yok. Hakem commit'ten önce şunları
@@ -44,7 +46,7 @@ artefakt kimliği ve hash'le okur, baseline'ı yeniden ölçer ve mandalı uygul
 kırmızıdır. Aynı koşudaki kırmızı kontrol kırmızı çıkmadıysa koşu geçersizdir (`08`).
 
 **Tetik.** Hedefte beynin iş akışı ve kimliği yoktur. Hakem reposunun zamanlayıcısı beyin
-reposunu ve hedefi okuyucu App'iyle yoklar; yeni beyin SHA'sı, yeni aday ya da yeni hedef başı bir
+reposunu kimliksiz, özel hedefi okuyucu App'iyle yoklar; yeni beyin SHA'sı, yeni aday ya da yeni hedef başı bir
 döngü başlatır. Hakemin kendi yazımları döngü başlatmaz. Yoklamanın en az beş dakikalık gecikmesi
 kabul edilir.
 

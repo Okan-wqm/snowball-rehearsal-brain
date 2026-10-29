@@ -1,6 +1,6 @@
 # Memory Kuralları ve Zincirli Defterler
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: yeni memory açarken ve her defter yazımında
 Çapa: beklemede: aşama 0 — chain/root.jsonl; Rekor kayıtları; tohum vektörleri V1–V3
 
@@ -9,8 +9,8 @@ Okunma: yeni memory açarken ve her defter yazımında
 - Memory bir üçlüdür: **yazar, okuyucu, okuyucunun değiştirdiği karar.** Üçü aynı değişiklikte
   gelir ve dosya ancak okuyucusunun bir kararı değiştirebildiği aşamada açılır (Y4). Sekiz hafıza
   türü ve tohumda hangisinin verildiği `16-hafiza-modeli.md`'dedir.
-- İlk memory, Aşama 0'daki hata seti ve önyükleme hakeminin sonuçlarıdır; ikincisi defterin
-  `cost` bölümüdür. Dersler, itibar ve harita ilk okuyucularıyla açılır (`22`, `11`, aşağıda).
+- İlk memory, önyükleme hakeminin sonuçları ve Aşama 0 döngüsünün zincirli defteridir (`events`,
+  `cost`, `drill`); hata seti P1 partisiyle gelir (`asama-1/13a`). Dersler, itibar ve harita ilk okuyucularıyla açılır (`22`, `11`, aşağıda).
   Semantik ya da vektör memory ancak ölçülmüş bir geri çağırma boşluğunda eklenir.
 - **Repo haritası hata yapmamak içindir:** bir yeri yaparken başka bir yeri bozmamak ve bir
   güvenlik açığı açmamak (`05`). Katmanları aşama takvimiyle değil, ilk okuyucularıyla açılır:
@@ -37,6 +37,9 @@ alanıyla ayrılır (`26`). Her satır `prev_hash` ve `row_hash` taşır: `row_h
 sha256(canonical(satır − row_hash) ‖ prev_hash)`, kanonik biçim RFC 8785, küçük harf onaltılık;
 ilk satırın `prev_hash`'i 64 sıfırdır. Uygulama tohum vektörleri V1–V3'ü geçer (`29a`).
 
+- **Güvenlik bölümü.** `security` her güvenlik bulgusunu, düzeltmesini, eklenen testi, teyidi ve feragati
+  hangi ajanın yaptığıyla, commit ve testleriyle aynı zincirde tutar; kuralları `30e`'de. Hakemin ve beynin
+  kendi satırları tohumda `seed/security-ledger.jsonl`'dadır ve etkinleştirmede oradan devam eder.
 - **Satırları yalnız hakem yazar.** Oyuncunun önerdiği her satır `trust: inferred` olarak saklanır;
   hakem kendi ölçümünden yazmadıkça hiçbir oyuncu iddiası durum olmaz. Hakemin `yaz` işi döngü
   başına `brain/state`'e tek commit atar (`08`, `26a`). Kurucu'nun `founder-ledger.jsonl`'ı beyin

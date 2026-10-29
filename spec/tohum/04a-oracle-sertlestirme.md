@@ -38,7 +38,8 @@ oracle sınıfın aracının yeniden koşusudur (Y8, `03`); 1–6 ve 11–13 tes
    tavanın üstünde **brüt** silme ve düz dosya olmayan her şey: sembolik bağ, alt modül, `../`
    içeren ya da çalışma ağacı dışına çıkan yol. Doküman yolları yalnız K8 sınıfında geçer.
 10. **Güvenlik yolları.** K6 oracle'ı canlı olana kadar güvenlik yollarına hiçbir yol dokunamaz,
-    biçimleyici dahil. K6 canlı olunca yalnız K6 kapısından geçer.
+    biçimleyici dahil. K6 canlı olunca yalnız K6 kapısından geçer. Güvenlik testleri ve bildirimleri
+    hedefe yazılmaz, `<state_root>/security/`'e yazılır; bu yüzden Aşama 1'den açıktır (`30`).
 11. **Niyet kanıtı.** Panelde "belgelenmiş niyet" savunması yalnız git blame yazarı beyin ya da
     hakem olmayan bir kaynağa dayanabilir; doküman niyet kanıtı değil, koda karşı doğrulanacak
     bir iddiadır (Y1).

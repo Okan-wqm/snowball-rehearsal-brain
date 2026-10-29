@@ -1,6 +1,6 @@
 # Aşama 4 §4.5 — Avcının bildiği ve çıktısı
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: hedef taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: hedef taslak · Sahibi: operatör
 Okunma: Aşama 4 çalışırken
 Çapa: beklemede: aşama 4 çıkış raporu
 
@@ -21,4 +21,5 @@ dizisi); `repo_model.md`: avcının bu koşuda P için bulduğu mekanizmalar, he
 referansıyla. Harness puanlamaz; harita adapter'ları bunları aday kenar olarak okur ve statik
 analiz ya da test doğrulayana kadar hiçbir avcıya verilmez; exit koşularından önce harita
 dondurulur. Exit koşusunun ham çıktıları mühürlü depoda kalır. `run_meta.json`:
-`previous_run_ref` her zaman boş; model, maliyet ve okunan dosya alanlarını geçit ve sandbox ölçer.
+`previous_run_ref` her zaman boş; model, maliyet ve okunan dosya alanlarını `çağır` işi (satışta
+geçit) ve sandbox ölçer (`tohum/08` 5).

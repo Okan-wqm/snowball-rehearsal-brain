@@ -1,6 +1,6 @@
 # Hedef Sistem
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: ilk oturumda
 Çapa: profile.json; status.md amaç tablosu
 
@@ -29,8 +29,9 @@ tutmak, başka repolardan ve modelin kendi bilgisinden yararlanmak bunun araçla
 hata oranıdır (Y5). Bir repodan öğrenilen kalıp kopyalanmaz: modelin kendi bilgisinden gelen bir
 alternatifle çekiştirilir ve kazananı yürütme seçer (`10`, `21`).
 
-**En basit döngü.** Döngü en basit hâliyle başlar. Aşama 0'da Kurucu hakemi kurar; Aşama 1'de
-canlı olan yalnız şudur: profildeki lint aracını saran tek adapter, aracın `fix` aralığını
+**En basit döngü.** Döngü en basit hâliyle başlar. Aşama 0'da Kurucu yürüyen iskeleti kurar: hazır
+bir adayı kapıdan geçirip merge eden, izleyen ve geri alan ilk canlı döngü, önce oyuncak hedefte, sonra
+gerçek hedefin kopyasında tek birimde. Aşama 1'de canlı olan yalnız şudur: profildeki lint aracını saran tek adapter, aracın `fix` aralığını
 uygulayan düzeltici, aracın kendisi olan oracle, adayı çekip yeniden koşturan ve merge eden hakem
 kapısı, her merge'den sonra nöbetçi, zincirli tek defter. Keşifte LLM yoktur; LLM yalnız aracın
 düzeltemediği bulguyu düzeltmek için, araçsız tek bir çağrı olarak girer. Harita, itibar, dersler

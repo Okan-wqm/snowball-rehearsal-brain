@@ -1,6 +1,6 @@
 # Aşama 1 §1.9 — Yasaklar
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: Aşama 1 çalışırken
 Çapa: beklemede: aşama 1 çıkış raporu
 
@@ -13,9 +13,10 @@ Okunma: Aşama 1 çalışırken
   reddeder ve ret `events` bölümüne yazılır.
 - Güvenlik yollarına dokunmak, `--fix` dahil.
 - `main`'e dokunmak; `main`'i `brain/integration`'a senkronlamak.
-- **Hakeme yazmak.** Bu aşamada hakem reposu, `referee/` aday alanı, tohum vektörleri, tohum
-  koltukları, `control.json` ve anayasal politika değişmez. Hakem değişikliği gerektiren her bulgu
-  `blocked` olur ve bir sonraki aşama çıkışının aktarım listesine yazılır.
+- **Parti yolu dışında hakeme yazmak.** `referee/` yalnız §1.13'teki partilerin MF'leriyle değişir ve
+  canlıya yalnız parti ya da çıkış aktarımıyla girer. Hakem reposu, önyükleme hakemi, tohum vektörleri,
+  tohum koltukları, `control.json` ve anayasal politika Kurucu'ya kapalıdır. Partide olmayan bir hakem
+  değişikliği gerektiren bulgu `blocked` olur ve sonraki parti ya da aşama çıkışının listesine yazılır.
 - Çalışma zamanında araç kullanan ajan. Sonnet düzelticisi araçsızdır.
 - Sırlı bir işte oyuncu ya da hedef kodu koşturmak.
 - §1.12'de açılış tetiği yazan parçaları tetik doğmadan kurmak (Y4).

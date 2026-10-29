@@ -1,32 +1,30 @@
 # Aşama 0 §0.2 — Doğruluk özellikleri
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: Aşama 0 çalışırken
 Çapa: beklemede: aşama 0 çıkış raporu
 
 ---
 
-Harness ve hakem için korunan özellikler; her biri bir kendi-testiyle (§0.9) kanıtlanır:
+Döngü hakemi için korunan özellikler; her biri bir kendi-testiyle (§0.9) kanıtlanır. Numaralar 2.2'deki
+gibidir; Aşama 0'dan çıkanlar tablonun altındadır, 13 yenidir.
 
-1. **Determinizm:** aynı girdi, bit düzeyinde aynı rapor.
-2. **Sızıntısızlık:** hiçbir snapshot cevap anahtarını, çıkış örneklemi üyeliğini ya da fix commit
-   kimliğini taşımaz; bulgu-ID kalıpları her snapshot'ta temizlenir.
-3. **Kendi çıktısı kanıt değil:** harness'in, bir ajanın ya da önceki koşunun çıktısına atıf
-   yapan kanıt reddedilir.
-4. **Çalışma zamanında LLM yok:** harness modülleri hiçbir LLM istemcisi import etmez; ağ
-   kapalıyken geçer.
-5. **Genellik:** beyin boş bir oyuncak repoya bağlanır ve `<state_root>` sıfırdan büyür; beyin
-   koduna, `referee/`'ye ya da tohuma hedef repoya özgü ad sızmışsa kırmızı.
-6. **Zincir:** her defter satırı `prev_hash`/`row_hash` taşır; tohum vektörleri V1–V3 tutar;
-   bozulmuş satır yakalanır.
-7. **Şema:** her artefakt `tohum/26`'daki şemaya karşı doğrulanır.
-8. **Çıkış örneklemi gizliliği:** K0 çıkış örneklemini `exit.sample` gizli tohumla, yalnız sırlı
-   hakem işinde ve adapter SHA'sı pinlendikten sonra çeker; aynı tohum aynı örneklemi verir.
-9. **Yürütme ayrımı:** oyuncu ya da hedef kodu yalnız `koş` işinde, sırsız ve ağsız koşar; sırlı
-   işler kod koşturmaz; kırmızı kontrol her koşuda kırmızı çıkar (`tohum/08`).
-10. **Kapalıya düşme:** kill switch, bütçe tavanı, Rekor hatası, kayma ve rakip zaman aşımı işi
-    durdurur ya da reddeder; hiçbiri sessizce geçer sayılmaz.
-11. **Yalnız düz dosya:** adaylarda sembolik bağ, alt modül, `../` yolu ve ret listesindeki yollar
-    reddedilir.
-12. **İzolasyon:** araç kullanan ajan hedef reponun yönerge, hook ve MCP dosyalarını yüklemez;
-    onları yalnız dosya olarak okuyabilir (`tohum/24`).
+| # | Özellik | Test |
+|---|---|---|
+| 1 | **Determinizm:** aynı girdi, aynı karar; kapıda araç üç koşuda bayt bayt aynı çıktıyı verir (§0.8) | 35 |
+| 6 | **Zincir:** her defter satırı `prev_hash`/`row_hash` taşır; tohum vektörleri V1–V3 tutar; bozulmuş satır yakalanır; yazımdan önce `verify --previous`; her devrin kökü imzalıdır | 13, 39, 40 |
+| 7 | **Şema (daraltıldı):** döngünün yazdığı her artefakt `tohum/26`, `26b` ve `26c`'deki şemaya uyar | 14 |
+| 9 | **Yürütme ayrımı:** hedef kodu yalnız `koş` işinde, sırsız ve ağsız koşar; sırlı işler kod koşturmaz; kırmızı kontrol her koşuda kırmızı çıkar (`tohum/08`) | 20, 21, 46 |
+| 10 | **Kapalıya düşme (daraltıldı):** kill switch, `merge_paused`, fren tavanı ve Rekor hatası işi durdurur ya da reddeder; hiçbiri sessizce geçer sayılmaz. Abonelik penceresine takılmak kesintidir, ret değildir (§0.12) | 46, 37, 40 |
+| 11 | **Yalnız düz dosya:** adaylarda sembolik bağ, alt modül, `../` yolu, güvenlik yolu, hariç yol ve ajan yapılandırması reddedilir; diff birimin `inputs`'u içinde kalır | 23 |
+| 13 | **Yazım sınırı:** hedefe yalnız API ile ve yalnız `refs/heads/brain/**` altına yazılır; `main`'e yazım 0 | 49 |
+
+**Aşama 0'dan çıkanlar** (yerleri `asama-1/13`):
+
+- 2 sızıntısızlık, 3 kendi çıktısı kanıt değil, 4 harness'te LLM yokluğu, 5 genellik (`<state_root>`'un
+  sıfırdan büyümesi) ve 8 çıkış örneklemi gizliliği P1 partisine gider; snapshot, vaka seti, harness ve
+  çıkış örneklemi oradadır. 5'in ad denetimi Aşama 0'da tohumun denetimidir (§0.10 #genellik).
+- 12 izolasyon (araç kullanan ajan hedefin yönerge, hook ve MCP dosyalarını yüklemez) P2 partisine gider.
+  Aşama 0'da araç kullanan ajan yoktur; `llm.call` yalnız tipli girdi alır ve hedefin ajan yapılandırması
+  hariç yoldur (`tohum/14`).
+- 10'dan kayma (`drift.check`) P1'e, rakip zaman aşımı önyükleme hakemine gider (`tohum/29b`).

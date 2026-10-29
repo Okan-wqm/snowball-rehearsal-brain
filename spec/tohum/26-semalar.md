@@ -1,25 +1,25 @@
 # Şemalar ve Kanonik Biçimler: Defter, Bulgu, Vaka, Koşu
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: Aşama 0 inşasında ve her şema değişikliğinde
 Çapa: beklemede: aşama 0 — hakem reposundaki schemas/
 
 ---
 
-Alanların tek kaynağı bu sayfa ve `26b`'dir; başka sayfa alan adı tanımlamaz, buraya atıf yapar.
-Hepsi JSON Schema olarak hakem reposunda `schemas/` altındadır; harness her artefaktı şemaya
-karşı doğrular. Alan adları İngilizce. Araç imzaları `26a`'da. Şema hakem kodudur: yeni alan ya
+Alanların tek kaynağı bu sayfa, `26b` ve güvenlik şemaları için `30d` ile `30e`'dir; başka sayfa alan
+adı tanımlamaz. Hepsi JSON Schema olarak hakem reposunda `schemas/` altındadır; harness her artefaktı
+şemaya karşı doğrular. Alan adları İngilizce. Araç imzaları `26a`'da. Şema hakem kodudur: yeni alan ya
 da yeni kategori önerisini genesis değil şerit yazarı yapar (`09a`).
 
 **Bölüm → dosya.** Her durum dosyası yalnız sonuna eklenen, zincirli JSONL'dir; kök hash hepsini kapsar.
 
 | Bölüm (`part`) | Dosya | Yazar | Açılış |
 |---|---|---|---|
-| `founder` | beyin reposunda `founder-ledger.jsonl` | Kurucu | Aşama 0 |
-| `events`, `cost`, `freeze`, `rival`, `accept` | `<state_root>/ledger.jsonl` | Hakem işleri | Etkinleştirme |
+| `founder` | beyin reposunda `founder-ledger.jsonl` | Kurucu, tohumun defter aracıyla | Aşama 0, ilk oturum |
+| `events`, `cost`, `drill` | `<state_root>/ledger.jsonl` | Hakem işleri; `drill` `exit.drill` (Aşama 0'da yalnız geri alma provası) | Etkinleştirme |
+| `freeze`; `rival`, `accept`; `security` | aynı dosya (`security`'nin hakem ve beyin kapsamı tohumda `seed/security-ledger.jsonl`, `30e`) | Gözcü; döngünün `yaz`'ı, önyükleme hakeminin imzalı sonucundan; `security.run` | P1; Aşama 1 MF6; P2 (`asama-1/13`) |
 | `looks` | `<state_root>/ledger.jsonl` | Hakem exit işi | İlk held-out havuzu |
-| `drill` | `<state_root>/ledger.jsonl` | Hakem `exit.drill` işi | İlk prova (`18`, `22a`, `12a`) |
-| — (bulgu satırları) | `<state_root>/findings.jsonl` | Hakem, adapter önerisinden | Etkinleştirme |
+| — (bulgu satırları) | `<state_root>/findings.jsonl` | Hakem, adapter önerisinden | Aşama 1 |
 | — (unresolved satırları) | `<state_root>/unresolved.jsonl` | Hakem kapısı | Aşama 1 |
 | — (kökler) | `<state_root>/chain/root.jsonl` | Hakem `yaz` işi | Etkinleştirme |
 
@@ -30,10 +30,9 @@ ile işaretlenir ve `trust: inferred` saklanır. Kanonik biçim RFC 8785; `row_h
 sha256(canonical(row − row_hash) ‖ prev_hash)`, küçük harf onaltılık; ilk satırın `prev_hash`'i
 64 sıfır. Vektörler `29a`'da. **Sayılar:** hash'lenen hiçbir artefaktta kayan nokta yoktur;
 tamsayı (para `*_micros`, süre `*_ms`) ya da en çok altı ondalıklı sabit ondalık dizgi
-(`"0.962400"`) kullanılır. **`founder` satırı:** `kind` ∈ {`session_start`, `decision`, `build`,
-`blocked`, `seed_issue`, `cost`, `session_end`}, `payload` `{summary, refs[]}`, `snapshot_id` beyin
-reposunun o anki SHA'sı. `findings.jsonl` ve `unresolved.jsonl` satırları da `prev_hash`,
-`row_hash` taşır.
+(`"0.962400"`) kullanılır. **`founder` satırı:** `kind` ∈ {`session_start`, `decision`, `build`, `blocked`,
+`seed_issue`, `cost`, `session_end`}, `payload` `{summary, refs[]}`, `snapshot_id` beyin reposunun o anki
+SHA'sı. `findings.jsonl` ve `unresolved.jsonl` satırları da `prev_hash`, `row_hash` taşır.
 
 **derivation** (kapalı küme): `tool`, `static_analysis`, `test_verified`, `llm_inference`,
 `name_similarity`, `imported`. **trust**: `verified`, `observed`, `inferred`. Merge kararına
@@ -69,12 +68,13 @@ declared_exits[]}`. Model, token ve maliyet alanlarını `çağır` işi ya da s
 ve `imported_used`'ı dispatcher yazar. Ajanın yazdığı tek alan `declared_exits`'tir.
 
 **rival payload** (`part: rival`): `{subject_sha, verdict: refuted|not_refuted|unresolved,
-attempts:[{claim, evidence_refs, reproducer?}], reproduced}`. `reproduced` hakemin yeniden
-üreticiyi `koş`ta koşturmasının sonucudur; yalnız `reproduced: true` çürütmedir.
+attempts:[{claim, evidence_refs, reproducer?}], reproduced}`. `reproduced` hakemin yeniden üreticiyi
+`koş`ta (önyükleme hakeminde `yeniden`) koşturmasının sonucudur; yalnız `reproduced: true` çürütmedir.
 
-**drill payload** (`part: drill`): `{drill: lesson|revert|context|genesis, question, family,
+**drill payload** (`part: drill`): `{drill: lesson|revert|context|genesis|security, question, family,
 instance_id, arm?: with|without, commitment_sha256, revealed_sha256?, outcome, verdict}`.
 Taahhüt koşudan önce, açılım koşudan sonra yazılır; eşleşmezse prova `FAIL`'dır. Prova dosyası `29c`'de.
 
-Diğer şemalar (ders, bilgi, öneri, harita, organ, itibar, rapor, profil, politika, test-yazıcı,
-bakış, mühür, sözleşme) `26b`'dedir.
+Diğer şemalar (ders, bilgi, öneri, harita, organ, itibar, rapor, profil, politika, test-yazıcı, bakış,
+mühür, sözleşme) `26b`'de; Aşama 0'ın dosyaları (`control.json`, `setup/*`, tarif, aday, bildirim,
+`snowball-tests.json`) `26c`'de; güvenlik profili `30d`'de, `security` satırının yükü `30e`'dedir.

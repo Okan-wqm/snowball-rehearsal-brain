@@ -27,7 +27,8 @@ bağımlılığa dayanıyor. Oracle doğrulama kapsamını bu kümeyle kurar.
 - Güvenlik sınırı kenarına dokunan değişiklik, hangi sınıf bulmuş olursa olsun K6'dır; K6 oracle'ı
   canlı değilse `blocked` kalır. Harita katmanı (c) gelene kadar güvenlik sınırını profildeki
   `security_paths` tanımlar. K6 canlı olana kadar güvenlik yollarına hiç dokunulmaz, biçimleyici
-  ve `--fix` dahil (`04a` 10).
+  ve `--fix` dahil (`04a` 10). Güvenlik testi bağlamak ve açık bildirmek dokunmak değildir: test hedefe
+  değil `<state_root>/security/tests/`'e yazılır ve Aşama 1'den her döngü koşar (`30`, `30d`).
 - Bağımlılık manifesti değişikliği K6'dır ve Y3 gereği `blocked`'dır; bağımlılık eklemek
   sistemin işi değildir.
 - Derleme grafiğinin dışında kalan dizinlerdeki değişiklik, o dizin için profilde bir araç zinciri

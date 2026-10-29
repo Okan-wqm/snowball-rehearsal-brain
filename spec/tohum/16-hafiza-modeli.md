@@ -9,7 +9,8 @@ Okunma: yeni hafıza türü önerirken ve her defter şeması değişikliğinde
 Sekiz hafıza vardır ama sekiz veritabanı yoktur. Tek gerçek kaynak zincirli `ledger.jsonl`'dır;
 bölümleri `part` alanıyla ayrılır ve tek kök hash'e bağlanır (`13`, `26`). İtibar, ders sayaçları,
 kapsama, organ durumu, hipotezler ve ithal bilgi **görünümdür**: defterden yeniden kurulur ve
-harness'in bir kendi-testi onları sıfırdan kurup mevcut hâlleriyle karşılaştırır.
+harness'in bir kendi-testi onları sıfırdan kurup mevcut hâlleriyle karşılaştırır. Güvenlik kayıtları da
+ayrı bir veritabanı değil, aynı defterin `security` bölümüdür (`30e`).
 
 | # | Hafıza | Cevapladığı soru | Tohumda | Büyüme yolu |
 |---|---|---|---|---|

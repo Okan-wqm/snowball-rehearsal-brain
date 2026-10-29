@@ -1,6 +1,6 @@
 # İş Boyutu ve Gerçek Test
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: her mikro görevde ve her test yazarken
 Çapa: profildeki CI erişilebilirlik denetimi; PR'daki kasıtlı bozma kaydı
 
@@ -14,13 +14,15 @@ yanlış boyutlanmıştır ve bölünür.
 
 **Bir mikro özellik, bir mekanizma.** Bir mikro özellik ve onun PR'ı tek bir mekanizma getirir:
 tek bir araç, tek bir kural, tek bir defter bölümü ya da tek bir koltuk. "Dispatcher, kira, geçit
-ve model kaydı" bir satır değil dört satırdır. Birden fazla mekanizma taşıyan satır `spec.lint`'te
-kırmızıdır; bölünür, kök neden bölünmez (`23`).
+ve model kaydı" bir satır değil dört satırdır. Birden fazla mekanizma taşıyan satır spec
+denetiminde (`02`) kırmızıdır; bölünür, kök neden bölünmez (`23`).
 
 **Gerçek test kuralı.** Bir test ancak üç şartı birden sağlıyorsa testtir:
 
 1. **Kasıtlı bozma.** Değişiklik geri alındığında test kırmızıya döner ve bu PR'da gösterilir.
-   Geri alındığında yeşil kalan test, test değildir.
+   Geri alındığında yeşil kalan test, test değildir. **Modülsüz kırmızı:** bir mikro özellik bitti
+   denince önyükleme hakemi onun testlerini, aşama tablosundaki modül yolu silinmiş ağaçta yeniden
+   koşar; yeşil kalırsa ret (`module_less_green:MFk`, `asama-0/14`). Çıkışta bütün mikro özellikler için.
 2. **Canlı yol.** Test, mekanizmayı üretim kodunun çağırdığı yoldan çalıştırır; yardımcı
    fonksiyonu doğrudan çağırmaz. Yardımcıyı doğrudan çağıran suite, üretim yolu onu hiç
    çağırmasa da yeşil kalır.

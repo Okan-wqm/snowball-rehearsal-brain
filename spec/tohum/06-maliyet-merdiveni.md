@@ -1,6 +1,6 @@
 # Maliyet Merdiveni ve Bütçe
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: bir yetenek harness'te geçtikten sonra ve her bütçe kararında
 Çapa: `ledger.jsonl` `part: cost` satırları; `policy.json` bütçe payları
 
@@ -45,7 +45,18 @@ payı ablasyon, held-out koşuları ve panel kalibrasyonunu içerir. Aşama büt
 oracle maliyetini de kapsar; "koşu başına" tavanlar bunların toplamını aşamaz.
 
 İnşa-zamanı LLM bütçesi (Kurucu ve rakip) ile çalışma-zamanı LLM bütçesi (sistemin kendisi) ayrı
-kalemlerdir; Aşama 0'ın çalışma-zamanı LLM maliyeti sıfırdır. Kurucu bütçesi oturum sayısıyla ve
-oturum başına tavanla yazılır; sonraki oturum öncekinin sonucu yeşilken başlar. Bütçe tavanı
-istemcinin tahmini değil, sağlayıcı geçidinin ya da `çağır` işinin yanıttan ölçtüğü maliyettir
-(`08`); tek istisna tohum rakibidir: maliyeti `claude` CLI'sinin liste fiyatı tahminidir, faturalanan tutar değildir; zaman aşımında harcama bilinmez, çağrı başı tavan yazılır. Kurucu oturumları Actions dakikası harcamaz (`24`).
+kalemlerdir; Aşama 0'ın çalışma-zamanı LLM maliyeti yalnız (B)'deki `llm.call` kanaryasıdır. Bütçe
+tavanı istemcinin tahmini değil, sağlayıcı geçidinin ya da `çağır` işinin yanıttan ölçtüğü maliyettir
+(`08`). İç kullanımda (API anahtarı yokken) her model çağrısının maliyeti `claude` CLI'sinin liste
+fiyatı tahminidir, faturalanan tutar değildir; zaman aşımında çağrı başı tavan yazılır. Kurucu
+oturumları Actions dakikası harcamaz (`24`).
+
+**İç kullanımda bütçe kaçak frenidir, kısıt değil.** Sistem abonelikle, `claude` CLI'siyle koşar. Tavanlar
+olağan işi hiçbir zaman durdurmayacak kadar yüksek kurulur; işleri döngüyü kesmektir (aynı commit'in
+saatte bir yeniden koşması, art arda yinelenen rakip çağrıları). Sayılar `policy.json` anahtarıdır
+(`18a`); frene takılan iş durur ve operatör uyarılır, Kurucu'nun reddi değildir. Oturum sayısı ve USD
+toplamları ilerlemenin ve maliyetin **ölçüsüdür**: çıkış koşulu değildir, Kurucu'yu durdurmaz; sonraki
+oturum öncekinin sonucu yeşilken başlar. Gerçek sınır aboneliğin kullanım penceresidir (5 saatlik ve
+haftalık kota): ona takılmak (HTTP 429) operatör uyarısı ve kesintidir, Kurucu reddi ya da ret hafızasına
+giren bir neden değildir (`29b`, `asama-0/12`). Satışta API anahtarına geçilince tavanlar fatura
+sınırı olur.

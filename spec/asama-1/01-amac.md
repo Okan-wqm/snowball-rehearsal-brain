@@ -1,6 +1,6 @@
 # Aşama 1 §1.1 — Amaç
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: Aşama 1 çalışırken
 Çapa: beklemede: aşama 1 çıkış raporu
 
@@ -13,8 +13,9 @@ lint adapter → düzeltici → aday paketi → hakem: çek, koş, çağır, yaz
   → brain/integration → nöbetçi → defter ve Rekor → sayfalar
 ```
 
-Bu aşama yalnız **oyuncu organlarını** kurar. Hakem Aşama 0'da kuruldu, aktarıldı ve bu aşama
-boyunca değişmez.
+Bu aşama **oyuncu organlarını** kurar. Döngü hakemi Aşama 0'da yürüyen iskelet olarak kuruldu ve
+aktarıldı; geri kalanı (organ koşucusu, harness, Gözcü, kayma, güvenlik gözlemi, çıkış örneklemi) ilk
+okuyucusundan hemen önceki parti aktarımıyla gelir (§1.13).
 
 Keşifte LLM yoktur. LLM yalnız aracın kendi başına düzeltemediği bulguyu düzeltmek için girer ve
 Sonnet'tir. Bu çağrı araçsızdır: hakemin `llm.call`'ı tek bir yapılandırılmış çıktı ister,

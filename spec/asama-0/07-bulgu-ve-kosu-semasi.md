@@ -1,33 +1,15 @@
-# Aşama 0 §0.7 — Bulgu ve koşu şeması
+# Aşama 0 §0.7 — Bulgu ve koşu şeması (P1'e taşındı)
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: Aşama 0 çalışırken
 Çapa: beklemede: aşama 0 çıkış raporu
 
 ---
 
-İki format, tek kaynak: ajan için `findings.jsonl` satırı, insan için üretilmiş sayfa
-(`tohum/15`). Alanların tek tanımı `tohum/26`'dadır; bu sayfa onları tanımlamaz, Aşama 0'daki
-anlamlarını söyler.
+`findings.jsonl` alanlarının Aşama 1'deki anlamı ve `run_meta` P1 partisine taşındı; metin
+`asama-1/13d`'dedir. Alanların tek tanımı yine `tohum/26`'dadır.
 
-| Alan | Aşama 0'daki anlamı |
-|---|---|
-| `finding_id`, `fingerprint` | Parmak izi `property + file + symbol + normalize(claim)`; satır girmez (`tohum/07`) |
-| `state` | `open`, `fixed`, `verified`, `reopened`, `withdrawn`, `blocked`, `unresolved` |
-| `class_level`, `property` | §0.5 |
-| `tool`, `rule_id` | K0–K2 için zorunlu; K0 isabeti kural + eşlenmiş satırdır |
-| `claim` | Ürün hakkında tek cümle |
-| `evidence_refs` | `[{path, line_start, line_end}]`; manifestte var olmalı; tek birincil ref ≤ `stage_params.evidence_ref_max_lines` (30) satır |
-| `required_change` | Dizi: `[{file, symbol?, op}]`; boşsa gözlemdir, puanlanmaz |
-| `severity_hint` | Yalnız ipucu; şiddeti property ve sınıftan politika haritası türetir |
-| `confidence`, `derivation`, `trust`, `snapshot_id` | `tohum/26` |
-
-Gerekçe: gerçek hata, birinin değiştirmesi gereken şeydir; bir kuralın tetiklenmesi hata değildir.
-
-**Satırı hakem yazar.** Adapter'ın ürettiği bulgu bir öneridir; `findings.jsonl`'a hakem yazar,
-oyuncunun önerdiği içerik `proposed_by` ile işaretlenir.
-
-**`run_meta`.** Alanlar `tohum/26`'dadır. Model, token ve maliyet alanlarını `çağır` işi ya da
-sağlayıcı geçidi, `files_read` ve kapsayıcılık alanlarını `run.contained` ölçer; ajan yalnız
-`declared_exits`'i yazar. `previous_run_ref` her zaman boştur. Aşama 0 ve 1'de `lessons_injected`
-ve `imported_used` boştur.
+Aşama 0'da `findings.jsonl` yoktur. Döngü hedef bulguyu adayın `finding.json`'undan alır ve hakemin
+kendi araç koşusuyla doğrular (§0.8). Her karar, nedeniyle birlikte bir `events` satırıdır; her
+`llm.call` çağrısı bir `cost` satırı (model, sunulan model, CLI'nin bildirdiği maliyet) yazar. Satırları
+yalnız hakem yazar; beyinden gelen içerik (aday, tarif önerisi) `proposed_by` ile işaretlenir.

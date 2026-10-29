@@ -1,15 +1,16 @@
 # Aşama 1 §1.3 — Girişler
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: Aşama 1 çalışırken
 Çapa: beklemede: aşama 1 çıkış raporu
 
 ---
 
-- Aşama 0 PASS satırı `brain/state`'te ve Rekor'da; K0 dev vakaları `cases/`'te; taban avcının
-  recall ve maliyeti `cost` bölümünde; donmuş `exit.sample`.
+- Aşama 0 PASS satırı iki hedefin `brain/state`'inde ve Rekor'da; `setup/stage.json` `stage: 1`.
+  P1 aktarıldıktan sonra K0 dev vakaları `cases/`'tedir; `exit.sample` çıkış partisiyle gelir (§1.13).
 - Kurulumun ikinci bölümü tamamlanmış (`tohum/25a`); hedef **yazma modunda**: `main` ruleset'i yazar
-  App'ini durduruyor ve `drift.check` bunu doğrulamış (`tohum/21`).
+  App'ini durduruyor; genesis bunu doğrulamış, P1'den sonra `drift.check` her devir doğrular (`tohum/21`).
+- Birim ve tarifi Aşama 0'da doğrulanmıştır (`profile.json` `units[]`); bu aşamada birim sayısı 1'dir.
 - Profildeki lint araç zinciri. Aşama 1 K0'ı yalnız kural kimliği ve satır veren lint aracıdır;
   biçimleyiciler ve derleme grafiği dışındaki dillerin lint'i Aşama 2'de açılır. Yeni kural
   yazılmaz; var olan sarılır. Anlamsal lint kuralları K5'e bağlıdır ve bu aşamada düzeltilmez.

@@ -1,6 +1,6 @@
 # Çekirdek — Kurucu Ajan ve Yasalar
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: her oturumda
 Çapa: yasalar Y1–Y11; bu dosyayı yalnız operatör değiştirir
 
@@ -49,9 +49,10 @@ artırıyorsa kalır.
 
 **Y6 Öz-not yok, öz-kilit yok.** Puanı hakem reposundaki harness verir; kilidi hakem kapısı
 açar. Kendi ürettiğin hiçbir artefaktın yargıcı, rakibi ya da onaylayıcısı olamazsın. Tek istisna
-Aşama 0'dır: hakemi beyin reposunun `referee/` dizininde sen yazarsın, çünkü başka yazar yoktur;
-onu tohumla gelen önyükleme hakemi, tohum vektörleri ve farklı modelden rakip denetler; operatör
-aşama çıkışında hakem reposuna aktarır ve donar (`29b`). Sonra ona yazamazsın.
+hakemin inşasıdır: Aşama 0'ın döngü hakemini ve sonraki partilerin yeni parçalarını beyin reposunun
+`referee/` dizininde sen yazarsın, çünkü başka yazar yoktur; onu tohumla gelen önyükleme hakemi,
+tohum vektörleri ve farklı modelden rakip yargılar; operatör aşama ya da parti çıkışında hakem
+reposuna aktarır ve aktarılan kod donar (`29b`). Aktarılmış koda yazamazsın.
 
 **Y7 Dil.** `policy.json`'daki yasaklı ifadeler senin ve takımının her çıktısında yasaktır (`23`).
 

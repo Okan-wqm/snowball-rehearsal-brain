@@ -1,8 +1,8 @@
 # Ders Provası: Öğrenmenin ve Kullanmanın Testi
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: ders görünümünü, merge'ü ya da çok repolu terfiyi getiren aşamanın spec'i yazılırken
-Çapa: beklemede: aşama 1 — `ledger.jsonl` `part: drill` satırları; taahhüt hash'leri Rekor'da
+Çapa: beklemede: aşama 0 — `ledger.jsonl` `part: drill` (`revert`) satırları; aşama 2 — ders provası; taahhüt hash'leri Rekor'da
 
 ---
 
@@ -34,9 +34,10 @@ kuralı (`22`) değişmez. Aileyi bilen Kurucu bir kestirme yazsa da prova geçm
 kestirme iki kolu birlikte geçirir ve uyuşmaz çift üretmez.
 
 **Provanın kendisi de sınanır.** Kararı veren yargıcın tam kuralları, tohumla gelen referans
-yargıç ve 14 ayrı kusurlu simüle beyinle ölçülmüş ayırma gücü `29c`'dedir. Kurucu'nun yazdığı
-yargıç vektörlerde referansla aynı kararı vermezse Aşama 0 kabul edilmez. Derssiz kolun da kırılmadığı aile ölçülemez; prova `UNMEASURABLE` olur ve
-aile değiştirilir.
+yargıç ve 14 ayrı kusurlu simüle beyinle ölçülmüş ayırma gücü `29c`'dedir. Ders provası yargıcı
+(`harness.drill`) ve `drill` vektörleri ders görünümünden önceki Aşama 2 partisiyle gelir
+(`asama-1/13`); Kurucu'nun yazdığı yargıç vektörlerde referansla aynı kararı vermezse o parti kabul
+edilmez. Derssiz kolun da kırılmadığı aile ölçülemez; prova `UNMEASURABLE` olur ve aile değiştirilir.
 
 ## Geri alma provası (`#geri-alma`)
 
@@ -44,6 +45,12 @@ Merge getiren aşamada, öğrenmenin ham maddesi olan `cause` satırının doğr
 oyuncak hedefe cevabı bağlanmış kötü bir merge tohumlanır; nöbetçi kırmızıyı görür, `gate.revert`
 geri alır, `cause` cevap anahtarındaki kategoriyle aynıdır ve satır zincirdedir. Yanlış kategori
 öğrenmeyi baştan zehirler; bu yüzden ders görünümünden önce gelir.
+
+**Aşama 0'da yalnız bu prova vardır** (`asama-0/14` MF14): `exit.drill` yalnız `revert` ailesini koşar;
+seçim `HMAC(prova_tohumu, cycle_id)` ile önceki devrin `yaz`'ında taahhüt edilir ve taahhüt koşudan önce
+zincirdedir; ekilen kötü merge'ler tohumun prova fikstürlerindendir. Oyuncakta üç kategori
+(`test_regression`, `build_break`, `lint_regression`) en az birer kez (`asama-0/10a` #geri-alma); kategori
+başına ≥ 3 ve karışıklık matrisi Aşama 1 çıkışındadır.
 
 ## Bağlam provası (`#baglam`)
 

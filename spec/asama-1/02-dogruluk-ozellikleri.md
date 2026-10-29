@@ -1,6 +1,6 @@
 # Aşama 1 §1.2 — Doğruluk özellikleri
 
-Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: Aşama 1 çalışırken
 Çapa: beklemede: aşama 1 çıkış raporu
 
@@ -20,4 +20,5 @@ Okunma: Aşama 1 çalışırken
    saklanır.
 9. **Zincir ve Rekor:** her döngü kök hash yazar ve Rekor'a bağlar; `status.md` ve üretilmiş
    sayfalar defterden yeniden kurulabilir.
-10. **Hakem donuktur:** etkinleştirmeden bu yana hakem ağacı değişmez (`lock.check`).
+10. **Hakem yalnız aktarımla değişir:** canlı hakem ağacının hash'i son `imports.jsonl` satırınınkiyle
+    aynıdır; aktarımlar yalnız §1.13'ün partileri ve aşama çıkışıdır.
