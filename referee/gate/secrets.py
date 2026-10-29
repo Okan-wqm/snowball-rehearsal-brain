@@ -9,12 +9,16 @@ where it is and its sha256 fingerprint).
   the input, and the sha256 of the matched text. The matched text itself never leaves this module.
 - Rules are the high-confidence token shapes of the providers the system touches (Anthropic, GitHub,
   AWS, Google, Slack, Stripe, npm, GitLab, OpenAI), private key blocks, JWTs, credentials inside URLs and
-  a quoted or bare value assigned to a secret-named key, unless it is a template or a code reference.
+  a quoted or bare value assigned to a secret-named key, unless the whole value is a template (or,
+  unquoted, a code reference).
   Callers may add ``known`` values (the referee's own secrets, by environment variable name on the
   command line): those match verbatim.
 - Every line is scanned three ways: as written; with ``\\uXXXX`` / ``\\xNN`` / ``\\"`` escapes decoded
   (a JSON row may spell a token in escapes, and always escapes the quotes around a value); and
-  NFKC-folded with invisible format characters (zero-width space, soft hyphen, BOM ...) removed. A diff
+  NFKC-folded with invisible format characters (zero-width space, soft hyphen, BOM ...) removed;
+  percent-decoded; and each base64 run that decodes to text is scanned as text. Two adjacent lines are
+  also scanned joined, so a token or a key and its value split over a line break is caught. What is
+  out of reach: a secret that only code would compute ("gh" + "p_..."), since no text holds it. A diff
   is scanned whole: removed and context lines leak as much as added ones once the diff is put in a
   prompt.
 - Fail closed: input that is not UTF-8 is decoded with replacement and still scanned; an unreadable file
@@ -34,6 +38,8 @@ returned; ``sender_exit`` carries CMD's code.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -41,6 +47,7 @@ import re
 import subprocess
 import sys
 import unicodedata
+import urllib.parse
 from typing import Callable, Iterable
 
 KINDS = ("diff", "row", "prompt")
@@ -68,20 +75,27 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("url-credentials", re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]{1,15}://[^\s/:@\"'<>]{1,64}:([^\s/@\"'<>]{6,128})@")),
 ]
 
-# A value assigned to a secret-named key, quoted or bare, of 8 or more characters. There is no entropy
-# test: a weak password is still a password (hunter22 leaks as much as a random string). Only shapes
-# that cannot be the secret itself are skipped (``_placeholder``): templates and code references.
+# A value assigned to a secret-named key: quoted (spaces allowed, a passphrase is a secret too) or bare,
+# of 8 or more characters. There is no entropy test: a weak password is still a password (hunter22 leaks
+# as much as a random string). A value is skipped only when the whole of it is a template or, unquoted,
+# a code reference (``_placeholder``); a value that merely starts with ``$`` or holds ``(`` is a value.
 ASSIGNMENT = re.compile(
     r"(?i)(?:passw(?:or)?d|passphrase|pwd|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
     r"credential|auth)[A-Za-z0-9_\-]*[\"'`]?[ \t]*(?::=|=>|[:=])[ \t]*"
-    r"(?:([\"'`])([^\"'`\s]{8,})\1|([^\s\"'`,;()\[\]{}]{8,}))")
+    r"(?:\"([^\"\n]{8,})\"|'([^'\n]{8,})'|`([^`\n]{8,})`|([^\s\"'`,;()\[\]{}]{8,}))")
 PLACEHOLDER_WORDS = {"password", "passwd", "secret", "changeme", "example", "redacted", "placeholder",
                      "undefined", "none", "null", "true", "false"}
+# Whole-value templates: ${NAME}, $NAME (upper case, an environment variable), {{ name }}, <your-token>,
+# %(name)s, %NAME%. Anything after or around them makes the value a value again.
+TEMPLATE = re.compile(
+    r"\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Z_][A-Z0-9_]*|\{\{[ \t]*[A-Za-z_][A-Za-z0-9_.]*[ \t]*\}\}|"
+    r"<[A-Za-z][A-Za-z0-9_\- ]*>|%\([A-Za-z_][A-Za-z0-9_]*\)[sd]|%[A-Z_][A-Z0-9_]*%")
 CODE_PATH = re.compile(r"[A-Za-z]+(?:[._][A-Za-z]+)+")
 URL_PLACEHOLDERS = {"password", "passwd", "secret", "changeme", "example", "xxxxxx", "********"}
 
 ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})|\\([\"'/\\])")
 DIFF_PATH = re.compile(r"^\+\+\+ (?:b/)?(.*?)\s*$")
+BASE64_RUN = re.compile(r"[A-Za-z0-9+/_\-]{16,}={0,2}")
 
 
 class ScanError(ValueError):
@@ -101,12 +115,13 @@ def _fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
 
 
-def _placeholder(value: str, after: str) -> bool:
-    """True when an assigned value cannot be the secret: a template, a call, a name, one repeated char."""
-    if value.startswith(("$", "<", "{", "%")) or "${" in value or "(" in value:
+def _placeholder(value: str, quoted: bool, after: str) -> bool:
+    """True when an assigned value cannot be the secret: a whole template, a placeholder word, one
+    repeated character, or (unquoted only) a call, a subscript or a dotted or underscored name."""
+    if TEMPLATE.fullmatch(value) or len(set(value)) == 1 or value.lower() in PLACEHOLDER_WORDS:
         return True
-    if len(set(value)) == 1 or value.lower() in PLACEHOLDER_WORDS:
-        return True
+    if quoted:
+        return False
     # get_token(request), os.environ["KEY"], self.token, request.form, secret_value: code, not a value
     return after in ("(", "[") or CODE_PATH.fullmatch(value) is not None
 
@@ -125,28 +140,49 @@ def _fold(line: str) -> str:
     return "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
 
 
-def _variants(line: str) -> list[str]:
-    out = [line]
-    for candidate in (_unescape(line), _fold(line), _fold(_unescape(line))):
-        if candidate not in out:
-            out.append(candidate)
+def _base64_texts(line: str) -> list[str]:
+    """Each base64 (standard or URL-safe) run of 16+ characters that decodes to printable UTF-8 text."""
+    out = []
+    for m in BASE64_RUN.finditer(line):
+        run = m.group(0).rstrip("=").replace("-", "+").replace("_", "/")
+        try:
+            text = base64.b64decode(run + "=" * (-len(run) % 4), validate=True).decode("utf-8")
+        except (binascii.Error, ValueError):
+            continue
+        if text and all(ch.isprintable() or ch in "\t\r\n" for ch in text):
+            out.append(text)
     return out
 
 
-def _line_hits(line: str, known: list[tuple[str, str]]) -> list[tuple[str, str]]:
+def _variants(line: str) -> list[str]:
+    out = [line]
+    for candidate in (_unescape(line), _fold(line), _fold(_unescape(line)), urllib.parse.unquote(line)):
+        if candidate not in out:
+            out.append(candidate)
+    for variant in list(out):
+        for decoded in _base64_texts(variant):
+            for candidate in (decoded, _fold(decoded)):
+                if candidate not in out:
+                    out.append(candidate)
+    return out
+
+
+def _line_hits(line: str, known: list[tuple[str, str]], tokens: bool = True,
+               assignments: bool = True) -> list[tuple[str, str]]:
     hits: list[tuple[str, str]] = []
     for variant in _variants(line):
-        for name, pattern in RULES:
+        for name, pattern in RULES if tokens else ():
             for m in pattern.finditer(variant):
                 if name == "url-credentials" and m.group(1).lower() in URL_PLACEHOLDERS:
                     continue
                 hits.append((name, m.group(0)))
-        for m in ASSIGNMENT.finditer(variant):
+        for m in ASSIGNMENT.finditer(variant) if assignments else ():
+            quoted = m.group(4) is None
             # a bare value loses the full stop or colon that ends a sentence ("... is token:abc.")
-            value = m.group(2) or m.group(3).rstrip(".:")
-            if len(value) >= 8 and not _placeholder(value, variant[m.end():m.end() + 1]):
+            value = m.group(1) or m.group(2) or m.group(3) or m.group(4).rstrip(".:")
+            if len(value) >= 8 and not _placeholder(value, quoted, variant[m.end():m.end() + 1]):
                 hits.append(("secret-assignment", value))
-        for label, value in known:
+        for label, value in known if tokens else ():
             if value in variant:
                 hits.append((label, value))
     return hits
@@ -164,12 +200,32 @@ def scan(text: str, kind: str, known: Iterable[tuple[str, str]] = ()) -> list[di
     matches: list[dict] = []
     seen: set[tuple[int, str, str]] = set()
     path = None
-    for lineno, line in enumerate(text.splitlines(), start=1):
+    lines = text.splitlines()
+    hits = [_line_hits(line, known_values) for line in lines]
+    for index, line in enumerate(lines):
+        lineno = index + 1
         if kind == "diff":
             header = DIFF_PATH.match(line)
             if header:
                 path = header.group(1)
-        for rule, value in _line_hits(line, known_values):
+        found = list(hits[index])
+        if index + 1 < len(lines):
+            # a secret split over two lines: join them (the next line without its diff marker and
+            # indentation) and keep what neither line holds alone. Tokens are joined with nothing
+            # between the halves; a value is joined to its key with a space (YAML "token:" then the
+            # value on the next line), so the last word of one line never glues to the first of the next
+            following = lines[index + 1]
+            if kind == "diff" and following[:1] in ("+", "-", " "):
+                following = following[1:]
+            alone = set(hits[index]) | set(hits[index + 1])
+            head, tail = line.rstrip(), following.lstrip()
+            # a trailing backslash continues a string or a shell line: the halves join without it
+            pieces = _variants(line) + _variants(following)
+            found += [hit for hit in _line_hits(head.removesuffix("\\") + tail, known_values, assignments=False)
+                      if hit not in alone and not any(hit[1] in piece for piece in pieces)]
+            found += [hit for hit in _line_hits(head + " " + tail, known_values, tokens=False)
+                      if hit not in alone]
+        for rule, value in found:
             digest = _fingerprint(value)
             if (lineno, rule, digest) in seen:
                 continue

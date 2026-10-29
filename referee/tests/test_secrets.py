@@ -10,6 +10,7 @@ rival's prompt) holds no secret-shaped text. Expected fingerprints are computed 
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -243,6 +244,46 @@ class Detection(unittest.TestCase):
                 with self.subTest(text=text, kind=kind):
                     self.assert_caught(kind, wrapped, "secret-assignment", value)
 
+    def test_only_a_whole_template_is_skipped(self):
+        """Rejection of 6e29850 (refutation fff7b2af3d2f6053): a value that started with $, <, { or %,
+        or held "(", was taken for a template, so a real password beginning with a dollar sign scanned
+        clean. Now only a value that is a template as a whole is skipped; a quoted value may hold spaces.
+        """
+        pw, tok, sec = j("pass", "word"), j("to", "ken"), j("sec", "ret")
+        values = [j("$uper", "S3cretVal9"), j("<b>", "Secret99"), j("{x}", "Secret99"), j("%", "Secret99x"),
+                  j("f(x)", "Secret9"), j("abc${X}", "def99"), j("Correct.", "Horse9"), j("Correct.", "Horse"),
+                  j("correct horse ", "battery staple")]
+        for value in values:
+            for text in ('%s="%s"' % (pw, value), "%s: '%s'" % (sec, value), '{"client_%s": "%s"}' % (sec, value)):
+                for kind, wrapped in (("prompt", prompt_with(text)), ("row", row_with(text)),
+                                      ("diff", diff_with(text))):
+                    with self.subTest(text=text, kind=kind):
+                        self.assert_caught(kind, wrapped, "secret-assignment", value)
+        # unquoted: a dollar sign before a lower-case or mixed name is not an environment variable
+        bare = j("$uper", "S3cretVal9")
+        self.assert_caught("prompt", prompt_with("%s=%s" % (tok, bare)), "secret-assignment", bare)
+
+    def test_split_and_encoded_tokens_are_caught(self):
+        """A token split over two lines, base64-encoded or percent-encoded still leaks."""
+        token = FAKES["github-token"]
+        half = len(token) // 2
+        split = "see %s\n    %s please" % (token[:half], token[half:])
+        self.assert_caught("prompt", prompt_with(split), "github-token", token)
+        code, result, raw = scan("diff", diff_with("x = '%s\\\n+%s'" % (token[:half], token[half:])))
+        self.assertEqual(code, 1, raw)
+        self.assertIn(sha(token), {m["sha256"] for m in result["matches"]})
+        for name, encoded in (("base64", base64.b64encode(("t=" + token).encode()).decode()),
+                              ("base64url", base64.urlsafe_b64encode(token.encode()).decode().rstrip("=")),
+                              ("percent", "".join("%%%02X" % ord(c) for c in token))):
+            for kind, wrapped in (("prompt", prompt_with("blob " + encoded)), ("row", row_with(encoded)),
+                                  ("diff", diff_with("B = '%s'" % encoded))):
+                with self.subTest(name=name, kind=kind):
+                    self.assert_caught(kind, wrapped, "github-token", token)
+        # a value on the line after its key (YAML), in a prompt and a diff
+        pw, weak = j("pass", "word"), j("hunter", "22")
+        self.assert_caught("prompt", prompt_with("db:\n  %s:\n    %s\n" % (pw, weak)), "secret-assignment", weak)
+        self.assert_caught("diff", diff_with("%s:\n+  %s" % (pw, weak)), "secret-assignment", weak)
+
     def test_diff_reports_path_and_scans_removed_lines(self):
         token = FAKES["github-token"]
         result = self.assert_caught("diff", diff_with('T = "%s"' % token, sign="-", path="svc/old.py"),
@@ -332,6 +373,19 @@ class Clean(unittest.TestCase):
             "row_hash 3bae91580aca99362572e9f5f41b3e46c2bc0c29236f72e867faa5cd46ca603a",
             "id 123e4567-e89b-12d3-a456-426614174000",
             "-----BEGIN PUBLIC KEY-----",
+            # whole templates, quoted or bare
+            "%s=${DB_%s}" % (pw, pw.upper()),
+            "%s=$DB_%s" % (pw, pw.upper()),
+            '%s: "{{ db_%s }}"' % (pw, pw),
+            "%s = '%%(%s)s'" % (sec, sec),
+            "%s=%%API_%s%%" % (tok, tok.upper()),
+            '%s = "<your-api-%s>"' % (tok, tok),
+            # consecutive hashes and base64 of plain words: no split or decoded token
+            "3bae91580aca99362572e9f5f41b3e46c2bc0c29236f72e867faa5cd46ca603a",
+            "640eae94a77d1a73c0676cf52e681cb3aa0593f607f6feab6ca9a43a8f094460",
+            base64.b64encode(b"plain words, nothing to hide here").decode(),
+            "the next line starts a word",
+            "whatever comes next",
         ]
         self.assert_clean("diff", diff_with("\n+".join(lines)))
         self.assert_clean("prompt", prompt_with("\n".join(lines)))
