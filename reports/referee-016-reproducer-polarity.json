@@ -1,0 +1,7 @@
+{
+  "id": "referee-016-reproducer-polarity",
+  "kind": "referee_weakness",
+  "ref": "spec/tohum/29-tohum-koltuklari.md:32",
+  "evidence_test": "cd referee && python3 -m gate.secrets scan row R  # R = one row {row_id, <secret-named key>: 14-char value}; at 86cc8b4 (defect) prints {\"clean\": true, \"lines\": []} exit 0, at 362aacf/f668776 (fixed) prints {\"clean\": false, \"lines\": [1]} exit 1; the held reproducer 027465767d2d46dc expects stdout to contain \"clean\": false, i.e. the correct output, so it matches only on fixed code and rejects every later code push (refutation_still_reproduces) until waived",
+  "state": "open"
+}
