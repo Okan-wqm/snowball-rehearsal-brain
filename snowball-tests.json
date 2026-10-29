@@ -3,8 +3,10 @@
     {"id": "T13", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_chain.py'", "stage": 0},
     {"id": "T38", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_secrets.py'", "stage": 0},
     {"id": "T20", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_contained_red.py'", "stage": 0},
-    {"id": "T21", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_contained.py'", "stage": 0}
+    {"id": "T21", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_contained.py'", "stage": 0},
+    {"id": "T19", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_profile.py'", "stage": 0},
+    {"id": "T47", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_profile_units.py'", "stage": 0}
   ],
-  "done_mf": [1, 2, 3],
+  "done_mf": [1, 2, 3, 4],
   "lockfiles": []
 }

@@ -1,0 +1,7 @@
+{
+  "id": "spec-011-profile-shadows-stdlib",
+  "kind": "spec_issue",
+  "ref": "spec/asama-0/14-sirali-mikro-ozellikler.md:31",
+  "evidence_test": "cd referee && python -c 'import cProfile'  # AttributeError: module 'profile' has no attribute 'run'",
+  "state": "open"
+}
