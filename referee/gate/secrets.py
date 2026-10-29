@@ -90,23 +90,28 @@ RULES: list[tuple[str, re.Pattern]] = [
 #   is not escaped by a backslash, so it may hold spaces and escaped quotes. Text glued after the
 #   closing quote ("abc"def) is part of it unless it starts with , ; . : ) ] }. A quote that never
 #   closes is read like an unquoted value.
-# - a value ends at a quote that follows it (in a JSON row that quote closes the string holding the
-#   text), so abc"def" is read as abc.
+# - a quote right after an unquoted part (abc"def") gives two readings: the value ends at the quote (in a
+#   JSON row that quote closes the string holding the text, so abc"} is read as abc), and the quoted part
+#   is glued on (abc"defghij" is also read as abcdefghij; only that first quoted part). The value is
+#   reported when either reading is.
 # - an authorization scheme word (Bearer, Basic, Token, Digest, Bot) before the value is skipped.
-# Every value of 8 or more characters is reported, weak or random: there is no entropy test. A value is
-# skipped only when (a) nothing is left once every template in it is removed (TEMPLATE: ${NAME}, upper
-# case $NAME, {name}, {{ name }}, <word>, %(name)s, %NAME%), (b) it is one repeated character or one of
-# PLACEHOLDER_WORDS, or (c) it is unquoted and the whole of it is code (``_is_code``): a dotted or
-# underscored name of letters only (self.token, request.form, secret_value), or an expression with at
-# least one call, subscript or parenthesis over names, numbers and string literals (get_token(request),
-# os.environ["KEY"], key[:-1], f(a, b=1) + g(c)), also when a bracket is still open at the end of the
-# line (the expression goes on below).
-# Stated boundaries, not reported: a password whose bare spelling is itself such a code expression
-# (abc(defgh)), string literals inside a call on the right of the key (getenv("X", "default")), the
-# quoted part after an unquoted one (abc"defghij" is read as abc), a value with no operator after its
-# key other than a flag or Dockerfile ENV (PASSWORD hunter22), a value whose first word is a scheme word
-# ("token abc" is read as abc), and a key none of whose words is secret-named by the rules below
-# (DB_CONN, DSN or LOGIN holding a password: only a URL password or a Password= inside it is reported).
+# Every value of 8 or more characters is reported, weak or random, quoted or not, literal or code: there
+# is no entropy test, no placeholder list and no test for code. Text alone cannot tell a passphrase from
+# a name (correct_horse_battery, self.token, get_token(request) may each be either), so a name or
+# expression on the right of a secret-named key is reported like a literal. A value is skipped only when
+# (a) nothing is left once every template in it is removed (TEMPLATE: ${NAME}, upper case $NAME, {name},
+# {{ name }}, <word>, %(name)s, %NAME%), or (b) it is, in any case, one of NON_VALUES, the null and
+# boolean words of the languages the system reads.
+# Stated boundaries, not reported: a secret spelled exactly as a whole template or a null word, a value of
+# fewer than 8 characters, a value with no operator after its key other than a flag or Dockerfile ENV
+# (PASSWORD hunter22), a value whose first word is a scheme word ("token abc" is read as abc), and a key
+# none of whose words is secret-named by the rules below (DB_CONN, DSN or LOGIN holding a password: only
+# a URL password or a Password= inside it is reported).
+# The stated cost: code that assigns a name or expression of 8 or more characters to a secret-named key
+# (self.token or request.form after a token or password key) is reported, as are example values such
+# as changeme and namespaced words after a secret-named prefix and a colon (a reason code spelled
+# secret_in_x, a colon and a word);
+# a match stops the send (tohum/08 item 11), so this scanner errs on the side of not sending.
 # Which keys are secret-named. The key is a whole word of letters, digits, _ - and . (no word character,
 # - or . before it), judged by ``_secret_key``:
 # - a key whose last dotted part is one of FILE_EXTENSIONS is a file name (test_secrets.py: in prose),
@@ -146,16 +151,10 @@ ENV_FORM = re.compile(r"(?<![\w\-.])ENV[ \t]+(?P<key>[\w\-.]+)[ \t]+(?=[^\s=])")
 SCHEME = re.compile(r"(?i)(?:bearer|basic|token|digest|bot)[ \t]+")
 QUOTES = "\"'`"
 STRING_PREFIX = re.compile(r"[rRbBuUfF]{1,2}")
-PLACEHOLDER_WORDS = {"password", "passwd", "secret", "changeme", "example", "redacted", "placeholder",
-                     "undefined", "none", "null", "true", "false"}
+NON_VALUES = {"none", "null", "nil", "true", "false", "undefined"}
 TEMPLATE = re.compile(
     r"\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Z_][A-Z0-9_]*|\{\{[ \t]*[A-Za-z_][A-Za-z0-9_.]*[ \t]*\}\}|"
     r"\{[A-Za-z_][A-Za-z0-9_.]*\}|<[A-Za-z][A-Za-z0-9_\- ]*>|%\([A-Za-z_][A-Za-z0-9_]*\)[sd]|%[A-Z_][A-Z0-9_]*%")
-CODE_PATH = re.compile(r"[A-Za-z]+(?:[._][A-Za-z]+)+")
-NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-NUMBER = re.compile(r"\d+(?:\.\d+)?")
-BINARY_OP = re.compile(r"[ \t]*(?:\*\*|//|[-+*/%|&])[ \t]*")
-URL_PLACEHOLDERS = {"password", "passwd", "secret", "changeme", "example", "xxxxxx", "********"}
 
 ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})|\\([\"'/\\])")
 DIFF_PATH = re.compile(r"^\+\+\+ (?:b/)?(.*?)\s*$")
@@ -192,11 +191,11 @@ def _close_quote(text: str, start: int) -> int:
     return -1
 
 
-def _value(text: str, pos: int) -> tuple[str, str, bool] | None:
-    """Read the value that starts at ``pos``: ``(value, raw, quoted)``, or None when there is none.
+def _value(text: str, pos: int, glue: bool = False) -> str | None:
+    """Read the value that starts at ``pos`` with its quotes removed, or None when there is none.
 
-    ``value`` is the text with its quotes removed, ``raw`` the text as written and ``quoted`` whether it
-    starts with a quote (or a string prefix and a quote). See the comment above ASSIGNMENT.
+    Without ``glue`` a quote after an unquoted part ends the value; with it, the quoted part is read on
+    as part of the value. See the comment above ASSIGNMENT.
     """
     scheme = SCHEME.match(text, pos)
     if scheme:
@@ -209,8 +208,10 @@ def _value(text: str, pos: int) -> tuple[str, str, bool] | None:
             break
         if ch in QUOTES:
             prefix = len(segments) == 1 and STRING_PREFIX.fullmatch(segments[0][0]) is not None
+            if segments and depth == 0 and not prefix and not glue:
+                break
             if segments and depth == 0 and not prefix:
-                break  # a quote after a value ends it (in a JSON row it closes the string holding the text)
+                glue = False  # only the first quoted part after an unquoted one is glued on  # a quote after a value ends it (in a JSON row it closes the string holding the text)
             if open_ended:
                 break
             end = _close_quote(text, i)
@@ -245,141 +246,13 @@ def _value(text: str, pos: int) -> tuple[str, str, bool] | None:
             while tail.endswith(closer) and bare.count(closer) > bare.count(opener):
                 tail, bare = tail[:-1], bare[:-1]
         segments[-1] = (tail, tail, False)
-    quoted = open_ended or segments[0][2]
     if len(segments) > 1 and segments[1][2] and STRING_PREFIX.fullmatch(segments[0][0]):
-        segments, quoted = segments[1:], True
+        segments = segments[1:]
     value = "".join(s[0] for s in segments)
-    raw = "".join(s[1] for s in segments)
     scheme = SCHEME.match(value)
     if scheme:
         value = value[scheme.end():]
-    return value, raw, quoted
-
-
-class _Code:
-    """A recursive-descent check: is ``text`` as a whole a code expression? (see ``_is_code``)."""
-
-    def __init__(self, text: str):
-        self.text, self.i, self.called = text, 0, False
-
-    def end(self) -> bool:
-        return self.i >= len(self.text)
-
-    def ws(self) -> None:
-        while self.i < len(self.text) and self.text[self.i] in " \t":
-            self.i += 1
-
-    def eat(self, ch: str) -> bool:
-        if self.text.startswith(ch, self.i):
-            self.i += len(ch)
-            return True
-        return False
-
-    def string(self) -> bool:
-        prefix = STRING_PREFIX.match(self.text, self.i)
-        start = prefix.end() if prefix and prefix.end() < len(self.text) and self.text[prefix.end()] in QUOTES \
-            else self.i
-        if start >= len(self.text) or self.text[start] not in QUOTES:
-            return False
-        end = _close_quote(self.text, start)
-        if end < 0:
-            return False
-        self.i = end + 1
-        return True
-
-    def operand(self) -> bool:
-        number = re.compile(r"-?" + NUMBER.pattern).match(self.text, self.i)
-        if self.string():
-            while True:  # adjacent literals are one string ("a" "b")
-                back = self.i
-                self.ws()
-                if not self.string():
-                    self.i = back
-                    break
-        elif number:
-            self.i = number.end()
-        elif self.eat("("):
-            self.called = True
-            if not self.args(")"):
-                return False
-        elif not self.expr():
-            return False
-        return self.postfix()
-
-    def arg(self) -> bool:
-        self.ws()
-        keyword = NAME.match(self.text, self.i)
-        if keyword:
-            after = keyword.end()
-            while after < len(self.text) and self.text[after] in " \t":
-                after += 1
-            if self.text.startswith("=", after) and not self.text.startswith("==", after):
-                self.i = after + 1
-                self.ws()
-        if not self.operand():
-            return False
-        while True:
-            op = BINARY_OP.match(self.text, self.i)
-            if not op:
-                break
-            self.i = op.end()
-            if not self.operand():
-                return False
-        self.ws()
-        return True
-
-    def args(self, closer: str) -> bool:
-        """Arguments up to ``closer``; in a subscript an item may be empty and : separates slice parts.
-        Running out of text inside the brackets is an expression that goes on on the next line."""
-        separators = (",", ":") if closer == "]" else (",",)
-        self.ws()
-        while True:
-            if self.end() or self.eat(closer):
-                return True
-            if closer == "]" and self.text[self.i] == ":":
-                pass  # an empty slice part
-            elif not self.arg():
-                return False
-            if self.end() or self.eat(closer):
-                return True
-            if not any(self.eat(sep) for sep in separators):
-                return False
-            self.ws()
-
-    def postfix(self) -> bool:
-        while True:
-            if self.eat("."):
-                name = NAME.match(self.text, self.i)
-                if not name:
-                    return False
-                self.i = name.end()
-            elif self.eat("("):
-                self.called = True
-                if not self.args(")"):
-                    return False
-            elif self.eat("["):
-                self.called = True
-                if not self.args("]"):
-                    return False
-            else:
-                return True
-
-    def expr(self) -> bool:
-        name = NAME.match(self.text, self.i)
-        if not name:
-            return False
-        self.i = name.end()
-        return self.postfix()
-
-
-def _is_code(raw: str) -> bool:
-    """True when an unquoted value is, as a whole, a name or expression rather than a literal: a dotted or
-    underscored name of letters only, or a call or subscript expression whose arguments are names,
-    numbers, string literals, keyword arguments and + - * / % | & between them."""
-    if CODE_PATH.fullmatch(raw):
-        return True
-    parser = _Code(raw)
-    return parser.operand() and parser.end() and parser.called
+    return value
 
 
 def _key_words(key: str) -> list[str]:
@@ -423,24 +296,21 @@ def _assignment_ends(line: str, dangling: bool = False) -> list[int]:
 
 
 def _url_placeholder(password: str) -> bool:
-    """A URL password of any length is reported unless it is a placeholder word, one repeated
-    character or nothing but templates (a password spelled ${DB_PASSWORD})."""
-    return password.lower() in URL_PLACEHOLDERS or len(set(password)) == 1 or not TEMPLATE.sub("", password)
+    """A URL password of any length is reported unless it is nothing but templates (a password spelled
+    ${DB_PASSWORD}); a placeholder word such as password is reported like any other."""
+    return not TEMPLATE.sub("", password)
 
 
 def _assigned(text: str, pos: int) -> str | None:
-    """The secret value assigned at ``pos`` (just after the operator), or None when there is none."""
-    read = _value(text, pos)
-    if read is None:
-        return None
-    value, raw, quoted = read
-    if len(value) < 8 or len(set(value)) == 1 or value.lower() in PLACEHOLDER_WORDS:
-        return None
-    if not TEMPLATE.sub("", value):
-        return None
-    if not quoted and _is_code(raw):
-        return None
-    return value
+    """The secret value assigned at ``pos`` (just after the operator), or None when there is none: the
+    first of the two readings of ``_value`` that is 8 or more characters, not a whole template and not
+    one of NON_VALUES."""
+    for glue in (False, True):
+        value = _value(text, pos, glue)
+        if value is None or len(value) < 8 or value.lower() in NON_VALUES or not TEMPLATE.sub("", value):
+            continue
+        return value
+    return None
 
 
 def _unescape(line: str) -> str:

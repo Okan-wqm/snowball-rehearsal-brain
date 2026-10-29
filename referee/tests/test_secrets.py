@@ -306,6 +306,43 @@ class Detection(unittest.TestCase):
         ]
         self.assert_all_caught(cases)
 
+    def test_names_code_and_example_values_are_caught(self):
+        """Rejection of d02c924 (refutation e0cbb7117d7d11d4): an unquoted value that was a letters-only
+        dotted or underscored name was skipped as code, so a passphrase spelled correct_horse_battery
+        scanned clean. The class is every value exclusion a real secret can also be: names, dotted names,
+        calls, subscripts, placeholder words, one repeated character, and the quoted part glued after an
+        unquoted one. None of them is skipped any more; only whole templates and NON_VALUES are."""
+        pw, tok, sec, key = j("pass", "word"), j("to", "ken"), j("sec", "ret"), j("api", "_key")
+        cases = [
+            ("%s=%s" % (pw, j("correct_horse", "_battery")), j("correct_horse", "_battery")),
+            ("%s=%s" % (pw, j("correct.horse", ".staple")), j("correct.horse", ".staple")),
+            ("%s = %s" % (sec, j("CorrectHorse", "Battery")), j("CorrectHorse", "Battery")),
+            ("%s = %s" % (tok, j("self.", tok)), j("self.", tok)),
+            ("%s = %s" % (pw, j("request.", "form")), j("request.", "form")),
+            ("%s = %s" % (sec, j(sec, "_value")), j(sec, "_value")),
+            ("%s = %s" % (sec, j("SECRET", "_KEY")), j("SECRET", "_KEY")),
+            ("%s = get_%s(request)" % (tok, tok), j("get_", tok, "(request)")),
+            ("%s=%s" % (pw, j("abc(", "defgh)")), j("abc(", "defgh)")),
+            ('%s = os.environ["%s"]' % (key, key.upper()), j('os.environ[', key.upper(), ']')),
+            ("%s = %s" % (tok, j("expected_", tok)), j("expected_", tok)),
+            ("%s_name = %s" % (tok, j("change", "me")), j("change", "me")),
+            ('%s = "%s"' % (pw, j("pass", "word1")), j("pass", "word1")),
+            ("%s=%s" % (sec, j("exam", "ple1")), j("exam", "ple1")),
+            ('%s = "%s"' % (tok, "a" * 24), "a" * 24),
+            ("%s: %s" % (pw, "z" * 9), "z" * 9),
+            ('%s=%s"%s"' % (pw, "abc", j("defg", "hij")), j("abcdefg", "hij")),
+        ]
+        self.assert_all_caught(cases)
+        # the rival's reproducer, alone, as the referee ran it
+        self.assert_caught("prompt", "%s=%s\n" % (pw, j("correct_horse", "_battery")), "secret-assignment",
+                           j("correct_horse", "_battery"))
+        # a URL password is reported whatever word it is, unless it is a whole template
+        for word in (pw, j("change", "me"), "x" * 6):
+            with self.subTest(url_password=word):
+                code, result, raw = scan("prompt", prompt_with(j("https://user:", word, "@example.com/")))
+                self.assertEqual(code, 1, raw)
+                self.assertIn("url-credentials", {m["rule"] for m in result["matches"]})
+
     def test_every_assignment_form_is_caught(self):
         """Forms the old pattern missed: a subscripted key, a comparison, a type annotation, the Go
         string type, a command-line flag, an authorization scheme word, a keyword argument, a JSON array."""
@@ -451,52 +488,42 @@ class Clean(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assert_clean("prompt", prompt_with("value %s" % text))
 
-    def test_ordinary_code_and_placeholders(self):
+    def test_templates_null_words_and_short_values(self):
         # key names are assembled too: a literal quoted value after a secret-named key is the shape the
         # seed keeps out of the rival's prompt, placeholder or not (see BROAD below)
         tok, pw, key, sec = j("to", "ken"), j("pass", "word"), j("api", "_key"), j("sec", "ret")
         lines = [
-            "%s = get_%s(request)" % (tok, tok),
             '%s = "<placeholder>"' % pw,
-            '%s = os.environ["%s"]' % (key, key.upper()),
             '%s = "${%s_FROM_ENV}"' % (sec, sec.upper()),
-            '%s = "%s"' % (tok, "a" * 24),
-            "%s = self.%s" % (tok, tok),
-            "%s = request.form" % pw,
-            "%s = %s_value" % (sec, sec),
-            "%s_name = %s" % (tok, j("change", "me")),
-            "rejected: %s_in_verdict:generic_assignment." % sec,
-            "url = 'https://user" + ":%s@example.com/'" % pw,
             "commit 632a84cc3e7e70741607457a4060e375caa0e3a4",
             "row_hash 3bae91580aca99362572e9f5f41b3e46c2bc0c29236f72e867faa5cd46ca603a",
             "id 123e4567-e89b-12d3-a456-426614174000",
             "-----BEGIN PUBLIC KEY-----",
-            # whole templates, quoted or bare
+            # whole templates, quoted or bare, also behind a scheme word and inside a URL
             "%s=${DB_%s}" % (pw, pw.upper()),
             "%s=$DB_%s" % (pw, pw.upper()),
             '%s: "{{ db_%s }}"' % (pw, pw),
             "%s = '%%(%s)s'" % (sec, sec),
             "%s=%%API_%s%%" % (tok, tok.upper()),
             '%s = "<your-api-%s>"' % (tok, tok),
+            'headers = {"%s": f"Bearer {%s}"}' % (j("Auth", "orization"), tok),
+            "%s = `Bearer ${%s}`" % (j("au", "th"), tok),
+            j("url = 'https://user:", "${DB_%s}" % pw.upper(), "@example.com/'"),
+            # NON_VALUES in any case, values under 8 characters, a key that is not secret-named
+            "%s = None" % tok,
+            "%s: null" % pw,
+            "%s = Undefined" % sec,
+            "%s = %s" % (tok, j("get", "(x)")),
+            "%s = %s" % (pw, j("load", "(")),
+            "if %s == %s:" % (tok, j("other", "s")),
+            '%s = "%s"' % (key, "a" * 7),
+            "the %s budget: unlimited" % tok,
             # consecutive hashes and base64 of plain words: no split or decoded token
             "3bae91580aca99362572e9f5f41b3e46c2bc0c29236f72e867faa5cd46ca603a",
             "640eae94a77d1a73c0676cf52e681cb3aa0593f607f6feab6ca9a43a8f094460",
             base64.b64encode(b"plain words, nothing to hide here").decode(),
-            # code on the right of a secret-named key: calls, subscripts, slices, f-strings, templates
-            "%s = get_%s(request, scope)" % (tok, tok),
-            'headers = {"%s": f"Bearer {%s}"}' % (j("Auth", "orization"), tok),
-            '%s = jwt.encode(payload, key, algorithm="HS256")' % tok,
-            '%s = os.environ.get("DB_%s", "")' % (pw, pw.upper()),
-            "%s = hashlib.sha256(salt + pw).hexdigest()" % tok,
-            "%s = (salt + pw).encode()" % tok,
-            "%s: Optional[str] = load_%s(path)" % (tok, tok),
-            "%s = `Bearer ${%s}`" % (j("au", "th"), tok),
-            '"%s": FAKES["x"][:-1],' % tok,
-            "%s = load_settings(" % sec,
-            "%s = SECRET_KEY" % sec,
-            "if %s == expected_%s:" % (tok, tok),
-            j("url = 'https://user:", "${DB_%s}" % pw.upper(), "@example.com/'"),
-            "the %s budget: unlimited" % tok,
+            # a JSON row's closing quote ends a short value; the glued reading holds no more text
+            '{"summary": "%s=abc"}' % pw,
 
             "the next line starts a word",
             "whatever comes next",
@@ -546,13 +573,20 @@ class Clean(unittest.TestCase):
                     self.assertEqual(broad_hits(fh.read()), [])
 
     def test_the_real_ledger_and_this_push_are_clean(self):
-        for rel in ("founder-ledger.jsonl", "referee/gate/secrets.py", "referee/tests/test_secrets.py",
-                    "referee/ledger/chain.py", "snowball-tests.json"):
+        """Every ledger row from f59 on (the rows this scanner guards since code is no longer skipped)
+        and the scanner's own files are clean. Rows before f59 were checked by the scanner of their day;
+        four of them quote a referee reason code (a secret-named prefix, a colon, a word) that is now
+        reported, and the chain keeps them as written. test_secrets.py holds fixtures assigned to
+        secret-named keys by code, so it is checked by BROAD only."""
+        with open(os.path.join(BRAIN, "founder-ledger.jsonl"), encoding="utf-8") as fh:
+            rows = [line for line in fh.read().splitlines()
+                    if int(json.loads(line)["row_id"].lstrip("f")) >= 59]
+        self.assertTrue(rows)
+        self.assert_clean("row", "\n".join(rows))
+        for rel in ("referee/gate/secrets.py", "referee/ledger/chain.py", "snowball-tests.json"):
             with self.subTest(path=rel):
                 with open(os.path.join(BRAIN, rel), encoding="utf-8") as fh:
-                    text = fh.read()
-                kind = "row" if rel.endswith(".jsonl") else "prompt"
-                self.assert_clean(kind, text)
+                    self.assert_clean("prompt", fh.read())
 
 
 class Send(unittest.TestCase):
