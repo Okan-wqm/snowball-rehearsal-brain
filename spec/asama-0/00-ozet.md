@@ -44,3 +44,5 @@ tüm tohum sayfaları geçerlidir.
 | `12-butce.md` | Bütçe (başlangıç değerleri; yalnız operatör değiştirir) | 22 |
 | `13-teslim-listesi.md` | Teslim listesi | 33 |
 | `14-sirali-mikro-ozellikler.md` | Sıralı mikro özellikler | 46 |
+
+Rehearsal note: setup-day run.
