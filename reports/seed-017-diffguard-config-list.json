@@ -1,0 +1,7 @@
+{
+  "id": "seed-017-diffguard-config-list",
+  "kind": "seed_issue",
+  "ref": "spec/tohum/29g-vektor-arayuzleri-devam.md:66",
+  "state": "open",
+  "evidence_test": "cd referee && python -m unittest tests.test_diffguard.Reasons.test_measured_tool_config_manifest_lock  # 29g config/manifest/lock lists miss the target's lint and test configuration; ledger f111 has the counts and the draft text"
+}

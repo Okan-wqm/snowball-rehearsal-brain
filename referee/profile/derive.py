@@ -160,6 +160,8 @@ SET_FIELDS = ("agent_config", "security_keywords", "security_paths", "security_o
 PROPOSABLE = SET_FIELDS + ("languages", "excluded_paths", "units")
 
 _AGENT = frozenset(n.casefold() for n in AGENT_CONFIG)
+AGENT_CONFIG_DIRS = frozenset(n.casefold() for n in (".claude", ".vscode", ".devcontainer"))
+AGENT_CONFIG_FILES = frozenset(n.casefold() for n in AGENT_CONFIG) - AGENT_CONFIG_DIRS
 _EXCL_DIR = frozenset(n.casefold() for n in EXCLUDED_DIR_NAMES)
 
 
@@ -225,6 +227,22 @@ def norm_path(path: Any) -> str | None:
 def covers(entry: str, path: str) -> bool:
     entry, path = entry.casefold(), path.casefold()
     return entry == "." or path == entry or path.startswith(entry + "/")
+
+
+def covers_as_written(entry: str, path: str) -> bool:
+    """tohum/29f coverage, on paths as written: ``path == entry.rstrip('/')`` or ``path`` starts with it
+    plus ``/``; case-sensitive, no normalisation (``covers`` above is the derivation's folded form)."""
+    e = entry.rstrip("/")
+    return path == e or path.startswith(e + "/")
+
+
+def agent_config_as_written(path: str) -> bool:
+    """tohum/29f agent configuration on a path as written (trailing ``/`` ignored): case-insensitively, some
+    component is ``.claude``, ``.vscode`` or ``.devcontainer``, or the last one is ``CLAUDE.md``,
+    ``AGENTS.md``, ``.mcp.json`` or ``.envrc``."""
+    parts = path.rstrip("/").split("/")
+    return (any(p.casefold() in AGENT_CONFIG_DIRS for p in parts)
+            or parts[-1].casefold() in AGENT_CONFIG_FILES)
 
 
 def minimal(paths) -> list[str]:

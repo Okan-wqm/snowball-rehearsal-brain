@@ -165,8 +165,6 @@ VERSION_TEXT = re.compile(r"v?([0-9]+\.[0-9]+\.[0-9]+)")
 OFFICIAL_REPOS = ("node", "docker.io/library/node")
 IMAGE_SHAPE = re.compile(r"(?P<repo>[^@]+?)(?::(?P<tag>[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?@sha256:[0-9a-f]{64}")
 CMD_FIELDS = ("lint_cmd", "test_cmd", "affected_test_cmd")
-AGENT_DIRS = (".claude", ".vscode", ".devcontainer")
-AGENT_FILES = ("claude.md", "agents.md", ".mcp.json", ".envrc")
 BIN_NAME = re.compile(r"[A-Za-z0-9._-]+")
 RESERVED = ".snowball"
 ATTEMPTS = 3
@@ -202,19 +200,6 @@ def _operating(policy: Any, keys) -> dict:
     return {k: (values[k], operating[k]["band"]) for k in keys}
 
 
-def _covers_as_written(entry: str, path: str) -> bool:
-    """tohum/29f coverage: ``path == entry.rstrip('/')`` or ``path`` starts with it plus ``/``."""
-    e = entry.rstrip("/")
-    return path == e or path.startswith(e + "/")
-
-
-def _agent_config_as_written(path: str) -> bool:
-    """tohum/29f agent configuration, case-insensitive, on the path as written (trailing ``/`` ignored)."""
-    parts = path.rstrip("/").split("/")
-    return (any(p.casefold() in AGENT_DIRS for p in parts)
-            or parts[-1].casefold() in AGENT_FILES)
-
-
 def vector_check(recipe: Any, policy: Any) -> list[str]:
     """Group ``recipe``'s static check (tohum/29g): the sorted reasons; see ``check`` in the module docstring.
 
@@ -236,12 +221,12 @@ def vector_check(recipe: Any, policy: Any) -> list[str]:
     image = recipe.get("env_image")
     if not (isinstance(image, str) and C.IMAGE.match(image)):
         reasons.add("image_not_pinned")
-    if not any(_covers_as_written(e, path) for e in inputs):
+    if not any(D.covers_as_written(e, path) for e in inputs):
         reasons.add("inputs_missing_unit")
     for e in inputs:
         if e.startswith("/") or "\\" in e or any(p in (".", "..") for p in e.split("/")):
             reasons.add("input_not_plain:%s" % e)
-        if _agent_config_as_written(e):
+        if D.agent_config_as_written(e):
             reasons.add("input_excluded:%s" % e)
     for field in CMD_FIELDS:
         value = recipe.get(field)
