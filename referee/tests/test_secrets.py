@@ -340,6 +340,27 @@ class Detection(unittest.TestCase):
                 self.assertEqual(code, 1, raw)
                 self.assertIn("url-credentials", {m["rule"] for m in result["matches"]})
 
+    def test_every_secret_named_key_is_caught(self):
+        """Each rule of _secret_key on its own value: a part anywhere in a word (DB_PASS, DBPASS), a name
+        word, a word ending in key, session id, words split at _ - . and camelCase, PLAIN_WORDS not hiding
+        another word, and the R arrow and Dockerfile ENV forms."""
+        def value(n: int) -> str:  # one random 12-character value per case, like Zq8xLm2Pv9Rt
+            return body("named%d" % n, 12)
+
+        keys = [j("DB_", "PASS"), j("db", "Pass"), j("DB", "PASS"), j("db.", "pass"), j("MYSQL_", "PWD"),
+                j("user_", "pin"), j("OTP_", "SEED"), j("app_", "creds"), j("session", "_id"), j("SESSION", "ID"),
+                j("STRIPE_", "KEY"), j("api", "Key"), j("master", "key"), j("X-Api", "-Key"), j("jwt.sec", "ret.key"),
+                j("spring.datasource.pass", "word"), j("o", "auth_client"), j("COOK", "IE"), j("bypass_", "pass"),
+                j("ş", "ifre"), j("par", "ola"), j("kenn", "wort"), j("signing_", "keys"), j("auth", "Token")]
+        cases = [("%s=%s" % (key, value(n)), value(n)) for n, key in enumerate(keys)]
+        cases += [
+            ("%s <- '%s'" % (j("db_", "pass"), value(100)), value(100)),
+            ("ENV %s %s" % (j("DB_", "PASS"), value(101)), value(101)),
+            ("%s: %s" % (j("X-Api", "-Key"), value(102)), value(102)),
+            ("--%s %s" % (j("db-", "pass"), value(103)), value(103)),
+        ]
+        self.assert_all_caught(cases)
+
     def test_split_and_encoded_tokens_are_caught(self):
         """A token split over two lines, base64-encoded or percent-encoded still leaks."""
         token = FAKES["github-token"]
@@ -483,6 +504,26 @@ class Clean(unittest.TestCase):
         self.assert_clean("diff", diff_with("\n+".join(lines)))
         self.assert_clean("prompt", prompt_with("\n".join(lines)))
         self.assert_clean("prompt", "")
+
+    def test_keys_that_are_not_secret_named(self):
+        """The stated boundaries and exclusions of _secret_key: the bare word key alone, PLAIN_WORDS, a
+        file name, a key none of whose words is secret-named, and a Python if-line ending in a colon
+        (only a key that starts its line takes its value from the next line)."""
+        def value(n: int) -> str:
+            return body("plain%d" % n, 12)
+
+        lines = ["%s=%s" % (key, value(n)) for n, key in enumerate(
+            ["key", "KEY", "keys", "compass", "bypass", "author", "tokenizer", "monkey_name", "passenger",
+             "DB_CONN", "LOGIN", "pinned", "keyboard"])]
+        lines += [
+            "sorted(rows, key=%s)" % value(50),
+            "%s: %s" % (j("test_sec", "rets.py"), value(51)),
+            "%s: %s" % (j("notes/to", "ken.md"), value(52)),
+            "if word in %s:" % j("TO", "KENS"),
+            "    continue",
+        ]
+        self.assert_clean("diff", diff_with("\n+".join(lines)))
+        self.assert_clean("prompt", prompt_with("\n".join(lines)))
 
     def test_broad_shape_catches_what_the_scanner_lets_through(self):
         """BROAD is stricter than the scanner: placeholders after a secret-named key are flagged."""

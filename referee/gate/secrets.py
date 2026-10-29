@@ -11,7 +11,8 @@ where it is and its sha256 fingerprint).
   AWS, Google, Slack, Stripe, npm, GitLab, OpenAI), private key blocks, JWTs, a password of any length
   inside a URL, and a quoted or bare value of 8 or more characters assigned to a secret-named key. The
   exact assignment forms, how a value is read and the only values skipped are in the comment above
-  ``ASSIGNMENT``; what it does not report is listed there as a boundary, not left implicit.
+  ``ASSIGNMENT``, which keys are secret-named in the comment at ``NAME_PARTS``; what they do not report
+  is listed there as a boundary, not left implicit.
   Callers may add ``known`` values (the referee's own secrets, by environment variable name on the
   command line): those match verbatim.
 - Every line is scanned several ways: as written; with ``\\uXXXX`` / ``\\xNN`` / ``\\"`` escapes decoded
@@ -77,11 +78,12 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("url-credentials", re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]{1,15}://[^\s/:@\"'<>]+:([^\s/@\"'<>]+)@")),
 ]
 
-# A value assigned to a secret-named key. The key is any word holding one of the SECRET_NAME words; it
-# may be followed by its closing quote and a closing subscript (config["password"]), by a type
+# A value assigned to a secret-named key (which keys are secret-named: the comment at NAME_PARTS).
+# The key may be followed by its closing quote and a closing subscript (config["password"]), by a type
 # annotation (password: str =) or by the Go string type (password string =). The operator is one of
-# = : := => == === != !==, or the key is a command-line flag and the value follows a space
-# (--password VALUE). The value is read by ``_value``, not by a pattern:
+# = : := => <- == === != !==; or the key is a command-line flag and the value follows a space
+# (--password VALUE); or it is a Dockerfile ENV KEY VALUE (upper-case ENV, anywhere in the line). The
+# value is read by ``_value``, not by a pattern:
 # - unquoted, it runs to the first whitespace outside brackets, so ; , ( ) [ ] { } inside it are part
 #   of it. One trailing , ; . : and closing brackets with no opening one are syntax, not value.
 # - quoted (" ' or `, with an optional string prefix such as f or b), it runs to the closing quote that
@@ -102,14 +104,45 @@ RULES: list[tuple[str, re.Pattern]] = [
 # Stated boundaries, not reported: a password whose bare spelling is itself such a code expression
 # (abc(defgh)), string literals inside a call on the right of the key (getenv("X", "default")), the
 # quoted part after an unquoted one (abc"defghij" is read as abc), a value with no operator after its
-# key (PASSWORD hunter22), and a value whose first word is a scheme word ("token abc" is read as abc).
-SECRET_NAME = (r"(?:passw(?:or)?d|passphrase|pwd|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
-               r"credential|auth)")
+# key other than a flag or Dockerfile ENV (PASSWORD hunter22), a value whose first word is a scheme word
+# ("token abc" is read as abc), and a key none of whose words is secret-named by the rules below
+# (DB_CONN, DSN or LOGIN holding a password: only a URL password or a Password= inside it is reported).
+# Which keys are secret-named. The key is a whole word of letters, digits, _ - and . (no word character,
+# - or . before it), judged by ``_secret_key``:
+# - a key whose last dotted part is one of FILE_EXTENSIONS is a file name (test_secrets.py: in prose),
+#   never secret-named;
+# - otherwise it is split into words at _ - . and at camelCase humps (DB_PASS, dbPass, db.pass and
+#   X-Api-Key give db pass, db pass, db pass and x api key), each word lower-cased; words in PLAIN_WORDS
+#   are ordinary words that hold a part by accident (compass, bypass, author, tokenizer, monkey) and
+#   count for nothing, while another word of the same key still counts (bypass_password);
+# - it is secret-named when one word (a) holds one of NAME_PARTS anywhere in it (password, DBPASS,
+#   passphrase, oauth, authToken, cookie ...), or (b) is one of NAME_WORDS (pw, pin, otp ...), or
+#   (c) ends with key or keys, unless that word is the bare key or keys and the key has no other word
+#   (STRIPE_KEY, apiKey, masterkey, x-api-key count), or (d) is session followed by the word id.
+# Stated boundaries: the bare key or keys alone is not secret-named (Python's sort key, every keyword
+# argument named key and every map entry's key spell it); nor is any key none of whose words meets
+# (a)-(d), whatever it holds (DB_CONN, DSN, LOGIN). The stated cost: a non-secret key that meets them
+# (a cache key, the shell's PWD) is reported when a literal value of 8 or more characters is assigned to
+# it; this scanner errs on the side of not sending.
+NAME_PARTS = ("pass", "pwd", "secret", "token", "credential", "auth", "sessionid", "cookie", "bearer",
+              "jwt", "mnemonic", "kennwort", "parola", "sifre", "şifre", "contrasena", "contraseña",
+              "senha", "wachtwoord", "haslo", "hasło", "salasana", "lozinka")
+NAME_WORDS = {"pw", "pin", "otp", "totp", "cred", "creds", "mdp", "clave", "anahtar"}
+PLAIN_WORDS = {"compass", "encompass", "bypass", "surpass", "passenger", "passengers", "passive",
+               "passage", "passages", "passthrough", "passing", "passed", "passes", "author", "authors",
+               "authored", "authority", "tokenize", "tokenized", "tokenizer", "tokenizers", "tokenization",
+               "monkey", "turkey", "donkey", "hockey", "jockey", "whiskey", "hotkey", "turnkey"}
+FILE_EXTENSIONS = {"py", "js", "mjs", "cjs", "ts", "tsx", "jsx", "json", "jsonl", "md", "txt", "yaml", "yml",
+                   "toml", "sh", "go", "rs", "java", "kt", "rb", "php", "c", "h", "cpp", "html", "css", "lock",
+                   "log"}
+KEY = r"(?<![\w\-.])(?P<key>[\w\-.]*\w)"
+CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 TYPE = r"[A-Za-z_][A-Za-z0-9_.]*(?:\[[^\]\n]*\])?(?:[ \t]*\|[ \t]*[A-Za-z_][A-Za-z0-9_.]*(?:\[[^\]\n]*\])?)*"
 ASSIGNMENT = re.compile(
-    r"(?i)" + SECRET_NAME + r"[A-Za-z0-9_\-]*[\"'`]?\]?[ \t]*"
-    r"(?:(?::[ \t]*" + TYPE + r"[ \t]*|[ \t]+string[ \t]*)?(?:===?|!==?|:=|=>|=)|:)[ \t]*")
-FLAG = re.compile(r"(?i)(?<![A-Za-z0-9_\-])--?[A-Za-z0-9_\-]*" + SECRET_NAME + r"[A-Za-z0-9_\-]*[ \t]+")
+    KEY + r"[\"'`]?\]?[ \t]*"
+    r"(?:(?::[ \t]*" + TYPE + r"[ \t]*|[ \t]+string[ \t]*)?(?:===?|!==?|:=|=>|<-|=)|:)[ \t]*")
+FLAG = re.compile(r"(?<![\w\-])--?(?P<key>[\w\-]*\w)[ \t]+")
+ENV_FORM = re.compile(r"(?<![\w\-.])ENV[ \t]+(?P<key>[\w\-.]+)[ \t]+(?=[^\s=])")  # Dockerfile ENV KEY VALUE
 SCHEME = re.compile(r"(?i)(?:bearer|basic|token|digest|bot)[ \t]+")
 QUOTES = "\"'`"
 STRING_PREFIX = re.compile(r"[rRbBuUfF]{1,2}")
@@ -349,6 +382,46 @@ def _is_code(raw: str) -> bool:
     return parser.operand() and parser.end() and parser.called
 
 
+def _key_words(key: str) -> list[str]:
+    """``key`` split at _ - . (and any other non-word character) and at camelCase humps, lower-cased."""
+    return [word.lower() for part in re.split(r"[\W_]+", key) if part for word in CAMEL.split(part) if word]
+
+
+def _secret_key(key: str) -> bool:
+    """True when ``key`` is secret-named (see the comment at NAME_PARTS)."""
+    if "." in key and key.rsplit(".", 1)[1].lower() in FILE_EXTENSIONS:
+        return False
+    words = _key_words(key)
+    for index, word in enumerate(words):
+        if word in PLAIN_WORDS:
+            continue
+        if any(part in word for part in NAME_PARTS) or word in NAME_WORDS:
+            return True
+        if (word.endswith("key") or word.endswith("keys")) and (len(words) > 1 or word not in ("key", "keys")):
+            return True
+        if word == "session" and words[index + 1:index + 2] == ["id"]:
+            return True
+    return False
+
+
+def _assignment_ends(line: str, dangling: bool = False) -> list[int]:
+    """Where a value assigned to a secret-named key starts in ``line``: just after each operator.
+
+    With ``dangling``, a key whose operator is a bare colon counts only when it starts the line (after
+    blanks, a diff marker, a YAML list dash and an opening quote): a YAML key that ends its line takes
+    its value from the next line, a Python if-line that ends in a colon does not."""
+    ends = []
+    for pattern in (ASSIGNMENT, FLAG, ENV_FORM):
+        for m in pattern.finditer(line):
+            if not _secret_key(m.group("key")):
+                continue
+            if dangling and pattern is ASSIGNMENT and line[m.end("key"):].strip(" \t\"'`]") == ":" \
+                    and line[:m.start("key")].strip(" \t+-\"'`") != "":
+                continue
+            ends.append(m.end())
+    return ends
+
+
 def _url_placeholder(password: str) -> bool:
     """A URL password of any length is reported unless it is a placeholder word, one repeated
     character or nothing but templates (a password spelled ${DB_PASSWORD})."""
@@ -420,11 +493,10 @@ def _line_hits(line: str, known: list[tuple[str, str]], tokens: bool = True,
                 if name == "url-credentials" and _url_placeholder(m.group(1)):
                     continue
                 hits.append((name, m.group(0)))
-        for pattern in (ASSIGNMENT, FLAG) if assignments else ():
-            for m in pattern.finditer(variant):
-                value = _assigned(variant, m.end())
-                if value is not None:
-                    hits.append(("secret-assignment", value))
+        for end in _assignment_ends(variant) if assignments else ():
+            value = _assigned(variant, end)
+            if value is not None:
+                hits.append(("secret-assignment", value))
         for label, value in known if tokens else ():
             if value in variant:
                 hits.append((label, value))
@@ -436,7 +508,7 @@ def _dangling_hits(head: str, tail: str) -> list[tuple[str, str]]:
     from the start of ``tail``."""
     hits: list[tuple[str, str]] = []
     for variant in _variants(head):
-        if not any(m.end() == len(variant) for pattern in (ASSIGNMENT, FLAG) for m in pattern.finditer(variant)):
+        if len(variant) not in _assignment_ends(variant, dangling=True):
             continue
         for following in _variants(tail):
             value = _assigned(following, 0)
