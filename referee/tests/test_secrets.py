@@ -59,13 +59,14 @@ AWS_SECRET_VALUE = body("awssecret", 40, ALNUM + "/+")
 ASSIGNED_VALUE = body("assigned", 32)
 URL_PASSWORD = body("urlpw", 14)
 
-# A broader shape than the scanner's own assignment rule: no entropy test, quoted or bare value. The
-# scanner lets low-entropy placeholders through on purpose; the seed keeps any such text out of the
-# rival's prompt (29b:26), so the files this repo pushes must not hold it at all.
+# A broader shape than the scanner's own assignment rule: no template, placeholder or code exclusion,
+# and a value cut only at whitespace or a quote. The scanner lets placeholders and code through on
+# purpose; the seed keeps any such text out of the rival's prompt (29b:26), so the files this repo
+# pushes must not hold it at all.
 BROAD = [
     ("assignment", re.compile(
         r"(?i)(?:passw(?:or)?d|passphrase|pwd|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
-        r"credential|auth)[A-Za-z0-9_\-]*[\"'`]?[ \t]*(?::=|=>|[:=])[ \t]*[\"'`]?([^\s\"'`,;()\[\]{}]{8,})")),
+        r"credential|auth)[A-Za-z0-9_\-]*[\"'`]?\]?[ \t]*(?:===?|!==?|:=|=>|[:=])[ \t]*[\"'`]?([^\s\"'`]{8,})")),
     ("url-userinfo", re.compile(r"://[^\s/@\"']+:[^\s/@\"']+@")),
     ("key-block", re.compile(r"BEGIN [A-Z ]*PRIVATE KEY")),
 ]
@@ -166,6 +167,21 @@ class Detection(unittest.TestCase):
         self.assertNotIn(value.encode(), raw, "the secret value leaked into the output")
         return result
 
+    def assert_all_caught(self, cases: list, rule: str = "secret-assignment"):
+        """One scan per kind holding every case on its own line (one row per line for rows); each value
+        must be reported under ``rule`` by its own fingerprint and none may leak into the output."""
+        texts = [text for text, _ in cases]
+        for kind, wrapped in (("prompt", prompt_with("\n\n".join(texts))),
+                              ("row", "\n".join(row_with(text) for text in texts)),
+                              ("diff", diff_with("\n+".join(texts)))):
+            code, result, raw = scan(kind, wrapped)
+            self.assertEqual(code, 1, raw)
+            found = {m["sha256"] for m in result["matches"] if m["rule"] == rule}
+            for text, value in cases:
+                with self.subTest(text=text, kind=kind):
+                    self.assertIn(sha(value), found)
+                    self.assertNotIn(value.encode(), raw)
+
     def test_every_rule_in_diff_row_and_prompt(self):
         for rule, token in FAKES.items():
             with self.subTest(rule=rule, kind="diff"):
@@ -262,6 +278,67 @@ class Detection(unittest.TestCase):
         # unquoted: a dollar sign before a lower-case or mixed name is not an environment variable
         bare = j("$uper", "S3cretVal9")
         self.assert_caught("prompt", prompt_with("%s=%s" % (tok, bare)), "secret-assignment", bare)
+
+    def test_value_runs_to_whitespace_not_to_punctuation(self):
+        """Rejection of 8265299 (refutation 8d96fe1aafd87a0e): an unquoted value was cut at the first
+        , ; ( ) [ ] { }, so a key followed by ab;cd;ef;gh;ij scanned clean. Now an unquoted value runs to
+        the first whitespace outside brackets; only one trailing , ; . : and unmatched closers are syntax.
+        """
+        pw, tok = j("pass", "word"), j("to", "ken")
+        values = [j("ab;cd", ";ef;gh;ij"), j("ab,cd", ",ef,gh"), j("Xy7(k9", "!pQ)"), j("ab[cd]", "ef9"),
+                  j("ab{cd}", "ef9"), j("ab)cd", "efgh"), j("p@ss;", "w0rd;x")]
+        forms = ("%s=%%s" % pw, "%s: %%s" % tok, "export DB_%s=%%s;" % pw.upper(), "f(%s=%%s)" % pw,
+                 "{%s: %%s}," % tok)
+        # every case has its own value, so one line's match cannot stand in for another's
+        cases = [(form % (value + str(n)), value + str(n)) for value in values for n, form in enumerate(forms)]
+        self.assert_all_caught(cases)
+        # the rival's reproducer, alone, as the referee ran it
+        self.assert_caught("prompt", "%s=%s\n" % (pw, values[0]), "secret-assignment", values[0])
+
+    def test_quoted_values_hold_escaped_quotes_glued_tails_and_no_close(self):
+        pw, sec = j("pass", "word"), j("sec", "ret")
+        cases = [
+            ('%s="%s"' % (pw, j("ab\\", '"cdefghij')), j("ab\\", '"cdefghij')),
+            ('%s="%s"%s' % (pw, "abc", "defghij"), "abcdefghij"),
+            ('%s="%s' % (pw, j("hunter", "22a")), j("hunter", "22a")),
+            ("%s = b'%s'" % (sec, j("hunter", "22b")), j("hunter", "22b")),
+            ('%s = f"%s{x}"' % (sec, j("hunter", "22c")), j("hunter", "22c{x}")),
+        ]
+        self.assert_all_caught(cases)
+
+    def test_every_assignment_form_is_caught(self):
+        """Forms the old pattern missed: a subscripted key, a comparison, a type annotation, the Go
+        string type, a command-line flag, an authorization scheme word, a keyword argument, a JSON array."""
+        pw, tok, auth = j("pass", "word"), j("to", "ken"), j("Auth", "orization")
+
+        def weak(n: int) -> str:  # one value per case, so no case is found by another's line
+            return j("hunter", "22x", str(n))
+
+        def opaque(n: int) -> str:
+            return body("opaque%d" % n, 32)
+
+        cases = [
+            ('config["%s"] = "%s"' % (pw, weak(1)), weak(1)),
+            ("os.environ['DB_%s'] = '%s'" % (pw.upper(), weak(2)), weak(2)),
+            ('if %s == "%s":' % (pw, weak(3)), weak(3)),
+            ("if (%s !== '%s') {" % (tok, weak(4)), weak(4)),
+            ('%s: str = "%s"' % (pw, weak(5)), weak(5)),
+            ('%s: Optional[str] = "%s"' % (pw, weak(6)), weak(6)),
+            ('var %s string = "%s"' % (pw, weak(7)), weak(7)),
+            ("mysql --%s %s db" % (pw, weak(8)), weak(8)),
+            ("curl --oauth2-bearer-%s %s" % (tok, opaque(9)), opaque(9)),
+            ("%s: Bearer %s" % (auth, opaque(10)), opaque(10)),
+            ('{"%s": "Basic %s"}' % (auth, opaque(11)), opaque(11)),
+            ("login(user, %s=%s)" % (pw, weak(12)), weak(12)),
+            ('[{"%s": "%s"},{"user": "bob"}]' % (pw, weak(13)), weak(13)),
+        ]
+        self.assert_all_caught(cases)
+        # a URL password of any length (the rule took 6 or more characters)
+        for short in (j("ab", "c12"), "ab"):
+            with self.subTest(url_password=short):
+                code, result, raw = scan("prompt", prompt_with(j("postgres://admin:", short, "@db.internal/app")))
+                self.assertEqual(code, 1, raw)
+                self.assertIn("url-credentials", {m["rule"] for m in result["matches"]})
 
     def test_split_and_encoded_tokens_are_caught(self):
         """A token split over two lines, base64-encoded or percent-encoded still leaks."""
@@ -384,6 +461,22 @@ class Clean(unittest.TestCase):
             "3bae91580aca99362572e9f5f41b3e46c2bc0c29236f72e867faa5cd46ca603a",
             "640eae94a77d1a73c0676cf52e681cb3aa0593f607f6feab6ca9a43a8f094460",
             base64.b64encode(b"plain words, nothing to hide here").decode(),
+            # code on the right of a secret-named key: calls, subscripts, slices, f-strings, templates
+            "%s = get_%s(request, scope)" % (tok, tok),
+            'headers = {"%s": f"Bearer {%s}"}' % (j("Auth", "orization"), tok),
+            '%s = jwt.encode(payload, key, algorithm="HS256")' % tok,
+            '%s = os.environ.get("DB_%s", "")' % (pw, pw.upper()),
+            "%s = hashlib.sha256(salt + pw).hexdigest()" % tok,
+            "%s = (salt + pw).encode()" % tok,
+            "%s: Optional[str] = load_%s(path)" % (tok, tok),
+            "%s = `Bearer ${%s}`" % (j("au", "th"), tok),
+            '"%s": FAKES["x"][:-1],' % tok,
+            "%s = load_settings(" % sec,
+            "%s = SECRET_KEY" % sec,
+            "if %s == expected_%s:" % (tok, tok),
+            j("url = 'https://user:", "${DB_%s}" % pw.upper(), "@example.com/'"),
+            "the %s budget: unlimited" % tok,
+
             "the next line starts a word",
             "whatever comes next",
         ]

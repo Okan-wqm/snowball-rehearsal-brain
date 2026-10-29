@@ -8,17 +8,19 @@ where it is and its sha256 fingerprint).
 - A match is ``{rule, line, sha256}`` plus ``path`` for diffs: the rule that fired, the 1-based line of
   the input, and the sha256 of the matched text. The matched text itself never leaves this module.
 - Rules are the high-confidence token shapes of the providers the system touches (Anthropic, GitHub,
-  AWS, Google, Slack, Stripe, npm, GitLab, OpenAI), private key blocks, JWTs, credentials inside URLs and
-  a quoted or bare value assigned to a secret-named key, unless the whole value is a template (or,
-  unquoted, a code reference).
+  AWS, Google, Slack, Stripe, npm, GitLab, OpenAI), private key blocks, JWTs, a password of any length
+  inside a URL, and a quoted or bare value of 8 or more characters assigned to a secret-named key. The
+  exact assignment forms, how a value is read and the only values skipped are in the comment above
+  ``ASSIGNMENT``; what it does not report is listed there as a boundary, not left implicit.
   Callers may add ``known`` values (the referee's own secrets, by environment variable name on the
   command line): those match verbatim.
-- Every line is scanned three ways: as written; with ``\\uXXXX`` / ``\\xNN`` / ``\\"`` escapes decoded
+- Every line is scanned several ways: as written; with ``\\uXXXX`` / ``\\xNN`` / ``\\"`` escapes decoded
   (a JSON row may spell a token in escapes, and always escapes the quotes around a value); and
   NFKC-folded with invisible format characters (zero-width space, soft hyphen, BOM ...) removed;
   percent-decoded; and each base64 run that decodes to text is scanned as text. Two adjacent lines are
   also scanned joined, so a token or a key and its value split over a line break is caught. What is
-  out of reach: a secret that only code would compute ("gh" + "p_..."), since no text holds it. A diff
+  out of reach: a secret that only code would compute ("gh" + "p_..."), since no text holds it; a token
+  split over three or more lines; encodings other than the ones above (hex, HTML entities). A diff
   is scanned whole: removed and context lines leak as much as added ones once the diff is put in a
   prompt.
 - Fail closed: input that is not UTF-8 is decoded with replacement and still scanned; an unreadable file
@@ -72,25 +74,54 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("openai-key", re.compile(r"sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_\-]{20,}T3BlbkFJ[A-Za-z0-9_\-]{20,}")),
     ("private-key", re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----")),
     ("jwt", re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}")),
-    ("url-credentials", re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]{1,15}://[^\s/:@\"'<>]{1,64}:([^\s/@\"'<>]{6,128})@")),
+    ("url-credentials", re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]{1,15}://[^\s/:@\"'<>]+:([^\s/@\"'<>]+)@")),
 ]
 
-# A value assigned to a secret-named key: quoted (spaces allowed, a passphrase is a secret too) or bare,
-# of 8 or more characters. There is no entropy test: a weak password is still a password (hunter22 leaks
-# as much as a random string). A value is skipped only when the whole of it is a template or, unquoted,
-# a code reference (``_placeholder``); a value that merely starts with ``$`` or holds ``(`` is a value.
+# A value assigned to a secret-named key. The key is any word holding one of the SECRET_NAME words; it
+# may be followed by its closing quote and a closing subscript (config["password"]), by a type
+# annotation (password: str =) or by the Go string type (password string =). The operator is one of
+# = : := => == === != !==, or the key is a command-line flag and the value follows a space
+# (--password VALUE). The value is read by ``_value``, not by a pattern:
+# - unquoted, it runs to the first whitespace outside brackets, so ; , ( ) [ ] { } inside it are part
+#   of it. One trailing , ; . : and closing brackets with no opening one are syntax, not value.
+# - quoted (" ' or `, with an optional string prefix such as f or b), it runs to the closing quote that
+#   is not escaped by a backslash, so it may hold spaces and escaped quotes. Text glued after the
+#   closing quote ("abc"def) is part of it unless it starts with , ; . : ) ] }. A quote that never
+#   closes is read like an unquoted value.
+# - a value ends at a quote that follows it (in a JSON row that quote closes the string holding the
+#   text), so abc"def" is read as abc.
+# - an authorization scheme word (Bearer, Basic, Token, Digest, Bot) before the value is skipped.
+# Every value of 8 or more characters is reported, weak or random: there is no entropy test. A value is
+# skipped only when (a) nothing is left once every template in it is removed (TEMPLATE: ${NAME}, upper
+# case $NAME, {name}, {{ name }}, <word>, %(name)s, %NAME%), (b) it is one repeated character or one of
+# PLACEHOLDER_WORDS, or (c) it is unquoted and the whole of it is code (``_is_code``): a dotted or
+# underscored name of letters only (self.token, request.form, secret_value), or an expression with at
+# least one call, subscript or parenthesis over names, numbers and string literals (get_token(request),
+# os.environ["KEY"], key[:-1], f(a, b=1) + g(c)), also when a bracket is still open at the end of the
+# line (the expression goes on below).
+# Stated boundaries, not reported: a password whose bare spelling is itself such a code expression
+# (abc(defgh)), string literals inside a call on the right of the key (getenv("X", "default")), the
+# quoted part after an unquoted one (abc"defghij" is read as abc), a value with no operator after its
+# key (PASSWORD hunter22), and a value whose first word is a scheme word ("token abc" is read as abc).
+SECRET_NAME = (r"(?:passw(?:or)?d|passphrase|pwd|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
+               r"credential|auth)")
+TYPE = r"[A-Za-z_][A-Za-z0-9_.]*(?:\[[^\]\n]*\])?(?:[ \t]*\|[ \t]*[A-Za-z_][A-Za-z0-9_.]*(?:\[[^\]\n]*\])?)*"
 ASSIGNMENT = re.compile(
-    r"(?i)(?:passw(?:or)?d|passphrase|pwd|secret|token|api[_\-]?key|access[_\-]?key|private[_\-]?key|"
-    r"credential|auth)[A-Za-z0-9_\-]*[\"'`]?[ \t]*(?::=|=>|[:=])[ \t]*"
-    r"(?:\"([^\"\n]{8,})\"|'([^'\n]{8,})'|`([^`\n]{8,})`|([^\s\"'`,;()\[\]{}]{8,}))")
+    r"(?i)" + SECRET_NAME + r"[A-Za-z0-9_\-]*[\"'`]?\]?[ \t]*"
+    r"(?:(?::[ \t]*" + TYPE + r"[ \t]*|[ \t]+string[ \t]*)?(?:===?|!==?|:=|=>|=)|:)[ \t]*")
+FLAG = re.compile(r"(?i)(?<![A-Za-z0-9_\-])--?[A-Za-z0-9_\-]*" + SECRET_NAME + r"[A-Za-z0-9_\-]*[ \t]+")
+SCHEME = re.compile(r"(?i)(?:bearer|basic|token|digest|bot)[ \t]+")
+QUOTES = "\"'`"
+STRING_PREFIX = re.compile(r"[rRbBuUfF]{1,2}")
 PLACEHOLDER_WORDS = {"password", "passwd", "secret", "changeme", "example", "redacted", "placeholder",
                      "undefined", "none", "null", "true", "false"}
-# Whole-value templates: ${NAME}, $NAME (upper case, an environment variable), {{ name }}, <your-token>,
-# %(name)s, %NAME%. Anything after or around them makes the value a value again.
 TEMPLATE = re.compile(
     r"\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Z_][A-Z0-9_]*|\{\{[ \t]*[A-Za-z_][A-Za-z0-9_.]*[ \t]*\}\}|"
-    r"<[A-Za-z][A-Za-z0-9_\- ]*>|%\([A-Za-z_][A-Za-z0-9_]*\)[sd]|%[A-Z_][A-Z0-9_]*%")
+    r"\{[A-Za-z_][A-Za-z0-9_.]*\}|<[A-Za-z][A-Za-z0-9_\- ]*>|%\([A-Za-z_][A-Za-z0-9_]*\)[sd]|%[A-Z_][A-Z0-9_]*%")
 CODE_PATH = re.compile(r"[A-Za-z]+(?:[._][A-Za-z]+)+")
+NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+NUMBER = re.compile(r"\d+(?:\.\d+)?")
+BINARY_OP = re.compile(r"[ \t]*(?:\*\*|//|[-+*/%|&])[ \t]*")
 URL_PLACEHOLDERS = {"password", "passwd", "secret", "changeme", "example", "xxxxxx", "********"}
 
 ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})|\\([\"'/\\])")
@@ -115,15 +146,228 @@ def _fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
 
 
-def _placeholder(value: str, quoted: bool, after: str) -> bool:
-    """True when an assigned value cannot be the secret: a whole template, a placeholder word, one
-    repeated character, or (unquoted only) a call, a subscript or a dotted or underscored name."""
-    if TEMPLATE.fullmatch(value) or len(set(value)) == 1 or value.lower() in PLACEHOLDER_WORDS:
-        return True
-    if quoted:
+def _close_quote(text: str, start: int) -> int:
+    """Index of the quote closing the one at ``start`` (a backslash escapes it), or -1."""
+    q, i = text[start], start + 1
+    while i < len(text):
+        if text[i] == "\\" and q != "'":
+            i += 2
+            continue
+        if text[i] == q:
+            return i
+        i += 1
+    return -1
+
+
+def _value(text: str, pos: int) -> tuple[str, str, bool] | None:
+    """Read the value that starts at ``pos``: ``(value, raw, quoted)``, or None when there is none.
+
+    ``value`` is the text with its quotes removed, ``raw`` the text as written and ``quoted`` whether it
+    starts with a quote (or a string prefix and a quote). See the comment above ASSIGNMENT.
+    """
+    scheme = SCHEME.match(text, pos)
+    if scheme:
+        pos = scheme.end()
+    segments: list[tuple[str, str, bool]] = []  # (content, raw, quoted)
+    depth, i, n, open_ended = 0, pos, len(text), False
+    while i < n:
+        ch = text[i]
+        if ch.isspace() and depth == 0:
+            break
+        if ch in QUOTES:
+            prefix = len(segments) == 1 and STRING_PREFIX.fullmatch(segments[0][0]) is not None
+            if segments and depth == 0 and not prefix:
+                break  # a quote after a value ends it (in a JSON row it closes the string holding the text)
+            if open_ended:
+                break
+            end = _close_quote(text, i)
+            if end < 0:
+                if segments:
+                    break
+                open_ended = True  # a quote that never closes: read the rest like an unquoted value
+                i += 1
+                continue
+            segments.append((text[i + 1:end], text[i:end + 1], True))
+            i = end + 1
+            continue
+        if segments and segments[-1][2] and depth == 0 and ch in ",;.:)]}":
+            break  # syntax after a closing quote ("abc", or "abc"}), not a glued tail ("abc"def)
+        start = i
+        while i < n and text[i] not in QUOTES and not (text[i].isspace() and depth == 0):
+            if text[i] in "([{":
+                depth += 1
+            elif text[i] in ")]}":
+                depth = max(0, depth - 1)
+            i += 1
+        segments.append((text[start:i], text[start:i], False))
+    if not segments:
+        return None
+    if not segments[-1][2]:
+        # one trailing , ; . : ends a statement or a sentence; closers with no opener close the caller
+        tail = segments[-1][0]
+        if tail[-1:] in (",", ";", ".", ":"):
+            tail = tail[:-1]
+        bare = "".join(s[0] for s in segments[:-1] if not s[2]) + tail
+        for opener, closer in ("()", "[]", "{}"):
+            while tail.endswith(closer) and bare.count(closer) > bare.count(opener):
+                tail, bare = tail[:-1], bare[:-1]
+        segments[-1] = (tail, tail, False)
+    quoted = open_ended or segments[0][2]
+    if len(segments) > 1 and segments[1][2] and STRING_PREFIX.fullmatch(segments[0][0]):
+        segments, quoted = segments[1:], True
+    value = "".join(s[0] for s in segments)
+    raw = "".join(s[1] for s in segments)
+    scheme = SCHEME.match(value)
+    if scheme:
+        value = value[scheme.end():]
+    return value, raw, quoted
+
+
+class _Code:
+    """A recursive-descent check: is ``text`` as a whole a code expression? (see ``_is_code``)."""
+
+    def __init__(self, text: str):
+        self.text, self.i, self.called = text, 0, False
+
+    def end(self) -> bool:
+        return self.i >= len(self.text)
+
+    def ws(self) -> None:
+        while self.i < len(self.text) and self.text[self.i] in " \t":
+            self.i += 1
+
+    def eat(self, ch: str) -> bool:
+        if self.text.startswith(ch, self.i):
+            self.i += len(ch)
+            return True
         return False
-    # get_token(request), os.environ["KEY"], self.token, request.form, secret_value: code, not a value
-    return after in ("(", "[") or CODE_PATH.fullmatch(value) is not None
+
+    def string(self) -> bool:
+        prefix = STRING_PREFIX.match(self.text, self.i)
+        start = prefix.end() if prefix and prefix.end() < len(self.text) and self.text[prefix.end()] in QUOTES \
+            else self.i
+        if start >= len(self.text) or self.text[start] not in QUOTES:
+            return False
+        end = _close_quote(self.text, start)
+        if end < 0:
+            return False
+        self.i = end + 1
+        return True
+
+    def operand(self) -> bool:
+        number = re.compile(r"-?" + NUMBER.pattern).match(self.text, self.i)
+        if self.string():
+            while True:  # adjacent literals are one string ("a" "b")
+                back = self.i
+                self.ws()
+                if not self.string():
+                    self.i = back
+                    break
+        elif number:
+            self.i = number.end()
+        elif self.eat("("):
+            self.called = True
+            if not self.args(")"):
+                return False
+        elif not self.expr():
+            return False
+        return self.postfix()
+
+    def arg(self) -> bool:
+        self.ws()
+        keyword = NAME.match(self.text, self.i)
+        if keyword:
+            after = keyword.end()
+            while after < len(self.text) and self.text[after] in " \t":
+                after += 1
+            if self.text.startswith("=", after) and not self.text.startswith("==", after):
+                self.i = after + 1
+                self.ws()
+        if not self.operand():
+            return False
+        while True:
+            op = BINARY_OP.match(self.text, self.i)
+            if not op:
+                break
+            self.i = op.end()
+            if not self.operand():
+                return False
+        self.ws()
+        return True
+
+    def args(self, closer: str) -> bool:
+        """Arguments up to ``closer``; in a subscript an item may be empty and : separates slice parts.
+        Running out of text inside the brackets is an expression that goes on on the next line."""
+        separators = (",", ":") if closer == "]" else (",",)
+        self.ws()
+        while True:
+            if self.end() or self.eat(closer):
+                return True
+            if closer == "]" and self.text[self.i] == ":":
+                pass  # an empty slice part
+            elif not self.arg():
+                return False
+            if self.end() or self.eat(closer):
+                return True
+            if not any(self.eat(sep) for sep in separators):
+                return False
+            self.ws()
+
+    def postfix(self) -> bool:
+        while True:
+            if self.eat("."):
+                name = NAME.match(self.text, self.i)
+                if not name:
+                    return False
+                self.i = name.end()
+            elif self.eat("("):
+                self.called = True
+                if not self.args(")"):
+                    return False
+            elif self.eat("["):
+                self.called = True
+                if not self.args("]"):
+                    return False
+            else:
+                return True
+
+    def expr(self) -> bool:
+        name = NAME.match(self.text, self.i)
+        if not name:
+            return False
+        self.i = name.end()
+        return self.postfix()
+
+
+def _is_code(raw: str) -> bool:
+    """True when an unquoted value is, as a whole, a name or expression rather than a literal: a dotted or
+    underscored name of letters only, or a call or subscript expression whose arguments are names,
+    numbers, string literals, keyword arguments and + - * / % | & between them."""
+    if CODE_PATH.fullmatch(raw):
+        return True
+    parser = _Code(raw)
+    return parser.operand() and parser.end() and parser.called
+
+
+def _url_placeholder(password: str) -> bool:
+    """A URL password of any length is reported unless it is a placeholder word, one repeated
+    character or nothing but templates (a password spelled ${DB_PASSWORD})."""
+    return password.lower() in URL_PLACEHOLDERS or len(set(password)) == 1 or not TEMPLATE.sub("", password)
+
+
+def _assigned(text: str, pos: int) -> str | None:
+    """The secret value assigned at ``pos`` (just after the operator), or None when there is none."""
+    read = _value(text, pos)
+    if read is None:
+        return None
+    value, raw, quoted = read
+    if len(value) < 8 or len(set(value)) == 1 or value.lower() in PLACEHOLDER_WORDS:
+        return None
+    if not TEMPLATE.sub("", value):
+        return None
+    if not quoted and _is_code(raw):
+        return None
+    return value
 
 
 def _unescape(line: str) -> str:
@@ -173,18 +417,31 @@ def _line_hits(line: str, known: list[tuple[str, str]], tokens: bool = True,
     for variant in _variants(line):
         for name, pattern in RULES if tokens else ():
             for m in pattern.finditer(variant):
-                if name == "url-credentials" and m.group(1).lower() in URL_PLACEHOLDERS:
+                if name == "url-credentials" and _url_placeholder(m.group(1)):
                     continue
                 hits.append((name, m.group(0)))
-        for m in ASSIGNMENT.finditer(variant) if assignments else ():
-            quoted = m.group(4) is None
-            # a bare value loses the full stop or colon that ends a sentence ("... is token:abc.")
-            value = m.group(1) or m.group(2) or m.group(3) or m.group(4).rstrip(".:")
-            if len(value) >= 8 and not _placeholder(value, quoted, variant[m.end():m.end() + 1]):
-                hits.append(("secret-assignment", value))
+        for pattern in (ASSIGNMENT, FLAG) if assignments else ():
+            for m in pattern.finditer(variant):
+                value = _assigned(variant, m.end())
+                if value is not None:
+                    hits.append(("secret-assignment", value))
         for label, value in known if tokens else ():
             if value in variant:
                 hits.append((label, value))
+    return hits
+
+
+def _dangling_hits(head: str, tail: str) -> list[tuple[str, str]]:
+    """A key and operator that end ``head`` (YAML "token:" with the value below) take their value
+    from the start of ``tail``."""
+    hits: list[tuple[str, str]] = []
+    for variant in _variants(head):
+        if not any(m.end() == len(variant) for pattern in (ASSIGNMENT, FLAG) for m in pattern.finditer(variant)):
+            continue
+        for following in _variants(tail):
+            value = _assigned(following, 0)
+            if value is not None and ("secret-assignment", value) not in hits:
+                hits.append(("secret-assignment", value))
     return hits
 
 
@@ -212,8 +469,7 @@ def scan(text: str, kind: str, known: Iterable[tuple[str, str]] = ()) -> list[di
         if index + 1 < len(lines):
             # a secret split over two lines: join them (the next line without its diff marker and
             # indentation) and keep what neither line holds alone. Tokens are joined with nothing
-            # between the halves; a value is joined to its key with a space (YAML "token:" then the
-            # value on the next line), so the last word of one line never glues to the first of the next
+            # between the halves; a key that ends a line takes its value from the next one
             following = lines[index + 1]
             if kind == "diff" and following[:1] in ("+", "-", " "):
                 following = following[1:]
@@ -223,8 +479,7 @@ def scan(text: str, kind: str, known: Iterable[tuple[str, str]] = ()) -> list[di
             pieces = _variants(line) + _variants(following)
             found += [hit for hit in _line_hits(head.removesuffix("\\") + tail, known_values, assignments=False)
                       if hit not in alone and not any(hit[1] in piece for piece in pieces)]
-            found += [hit for hit in _line_hits(head + " " + tail, known_values, tokens=False)
-                      if hit not in alone]
+            found += [hit for hit in _dangling_hits(head, tail) if hit not in alone]
         for rule, value in found:
             digest = _fingerprint(value)
             if (lineno, rule, digest) in seen:
