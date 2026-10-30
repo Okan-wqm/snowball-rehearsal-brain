@@ -1,0 +1,14 @@
+{
+  "name": "textkit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "lint": "eslint --format json .",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "eslint": "10.13.0"
+  }
+}
