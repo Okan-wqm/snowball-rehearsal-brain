@@ -15,20 +15,23 @@ optionally ``cause``, ``miss_reason``, ``derived_from``, ``proposed_by``. ``row_
 
 **Row types.** ``(part, kind)`` must be one of ``ROW_TYPES``; anything else is ``unknown_row_type``: the loop
 writes no row whose shape is not written here. Each type gives its payload's keys (required and optional, no
-other key), each key's shape, and whether ``cause`` is required (a failed or reverted event, tohum/26). The
-``drill`` payloads are tohum/26's fields; ``revert_drill``'s reveal also carries ``answer`` and ``reasons``
-(MF14), which tohum/26 does not list (reported, seed-037). The ``cost`` payload is ``llm.call``'s (MF15). The
-``events`` payloads are ``status.block``'s (MF16) and ``activate``'s (MF18). Kinds no writer here produces yet
-(an ``events`` ``revert`` row, ``rival``, ``accept``, ``freeze``, ``security``, ``looks``, ``founder``) are not in
-the table, so they are refused until a writer and its shape are added.
+other key), each key's shape, and whether ``cause`` is required (a failed or reverted event, tohum/26; for a
+``decision`` only when it is a reject). The words are the seed's vector pages' choices, which tohum/26 does not
+list yet (tohum/29m, 29n, 29o: "26'ya girmelidir"): the ``drill`` ``commit`` and ``plant`` payloads and the
+``events`` ``revert`` row are ``harness.revert_drill``'s (MF14, 29m); the ``cost`` payload is ``llm.call``'s (MF15,
+its ``usd_micros`` the field 29n's brake sums); ``status`` and ``status_edited`` are ``status.block``'s (MF16, 29n);
+``genesis`` is 29o's twelve keys, and ``cycle_start``, ``integration_cut``, ``ratchet_base`` and ``decision``
+(``payload.decision`` is the field 29n reads) are ``activate``'s (MF18). Kinds no writer here produces (``rival``,
+``accept``, ``freeze``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
+writer and its shape are added.
 
 **A root row** (``root_reasons``): exactly ``{row_id, ts, root, rekor_uuid, prev_hash, row_hash}``
 (``ledger.anchor.root_row``), ``root`` 64 lowercase hex, ``rekor_uuid`` a non-empty string.
 
 **Files.** ``ledger_reasons`` and ``roots_reasons`` first verify the file as a chain (``ledger.chain``, the one
-verifier), then each row. ``status_reasons`` reads ``status.md`` and the ledger: the file starts with the block's
-``BEGIN`` line, holds its ``END`` line, and the sha256 of the region ``status.block`` owns equals
-``block_sha256`` of the ledger's last ``status`` row.
+verifier), then each row. ``status_reasons`` reads ``status.md`` and the ledger: the file has a block
+(``status.block.split``, the one reading of the markers) and its sha256 equals ``block_sha256`` of the ledger's last
+``status`` row.
 
 Each reason is a string ``<where>: <what>``; an empty list means the artifact conforms. Not checked here: the
 meaning of a value (that a hash is the hash of what it names; ``activate`` and the tests check those), and the
@@ -53,7 +56,6 @@ TRUSTS = ("verified", "observed", "inferred")
 CAUSES = ("test_regression", "contract_counterpart", "build_break", "lint_regression", "flaky_dependency",
           "conflict_with_main", "scope_violation", "imported_assumption", "impact_miss", "unknown")
 MISS_REASONS = ("map_edge_missing", "unseen_file", "wrong_property", "ref_mismatch", "not_reported", "unknown")
-DRILLS = ("lesson", "revert", "context", "genesis", "security")
 ROOT_KEYS = ("row_id", "ts", "root", "rekor_uuid", "prev_hash", "row_hash")
 INTEGRATION = "brain/integration"
 
@@ -131,6 +133,17 @@ def any_object(value: Any, where: str) -> list[str]:
     return [] if isinstance(value, dict) else _bad(where, "not an object")
 
 
+def tagged(key: str, shapes: dict[str, Check]) -> Check:
+    """An object whose ``key`` names which of ``shapes`` it has."""
+    def check(value: Any, where: str) -> list[str]:
+        if not isinstance(value, dict):
+            return _bad(where, "not an object")
+        if value.get(key) not in shapes:
+            return _bad("%s.%s" % (where, key), "not one of %s" % "|".join(shapes))
+        return shapes[value[key]](value, where)
+    return check
+
+
 def shape(required: dict[str, Check], optional: dict[str, Check] | None = None) -> Check:
     """An object with exactly the ``required`` keys and any of the ``optional`` ones, each of its shape."""
     optional = optional or {}
@@ -173,48 +186,45 @@ def evidence(value: Any, where: str) -> list[str]:
     return out
 
 
-GENESIS = shape({
-    "target": shape({"id": text, "repo": text, "kind": one_of("toy", "copy"), "base_sha": hex40}),
-    "main_sha": hex40,
-    "integration": shape({"branch": one_of(INTEGRATION), "sha": hex40}),
-    "seed_epoch": shape({"commit": hex40, "spec_tohum_sha256": hex64, "seed_sha256": hex64,
-                         "bootstrap_sha256": hex64}),
-    "import": shape({"line_sha256": hex64, "row_hash": hex64, "brain_sha": hex40, "referee_tree_sha256": hex64,
-                     "result_sha256": hex64, "toy_tree_sha256": nullable(hex64)}),
-    "result": shape({"sha256": hex64, "rekor_uuids": list_of(text, non_empty=True)}),
-    "policy_sha256": hex64,
-    "summary_sha256": hex64,
-    "profile_sha256": hex64,
-    "recipe_sha256": hex64,
-    "seed_security": shape({"ledger_sha256": hex64, "last_row_hash": hex64}),
-    "settings_sha256": shape({"rulesets": hex64, "apps": hex64, "actions": hex64}),
-    "ratchet": shape({"base_run_sha256": hex64, "counts": map_of(count)}),
-    "candidates": list_of(text, unique_sorted=True),
+GENESIS = shape({  # tohum/29o's twelve keys (activate.genesis)
+    "target": text, "base_sha": hex40, "referee_tree_sha256": hex64, "result_sha256": hex64,
+    "import_line_sha256": hex64, "seed_epoch": shape({"commit": hex40, "spec_tohum_sha256": hex64,
+                                                      "seed_sha256": hex64, "bootstrap_sha256": hex64}),
+    "policy_sha256": hex64, "summary_sha256": hex64, "seed_security_ledger_sha256": hex64,
+    "seed_security_last_row_hash": hex64, "recipe_sha256": hex64, "facts_sha256": hex64,
 })
 
-DRILL_COMMON = {"drill": one_of(*DRILLS), "question": text, "family": text, "instance_id": text,
-                "commitment_sha256": hex64, "outcome": text, "verdict": text}
+DECISION = tagged("decision", {
+    "merge": shape({"decision": one_of("merge"), "candidate": text, "path": text, "pull": positive,
+                    "head_sha": hex40, "merge_sha": hex40}),
+    "reject": shape({"decision": one_of("reject"), "candidate": text,
+                     "reasons": list_of(text, non_empty=True, unique_sorted=True)}),
+})
 
-# (part, kind) -> (payload shape, cause required)
-ROW_TYPES: dict[tuple[str, str], tuple[Check, bool]] = {
+
+def _rejected(payload: Any) -> bool:
+    return isinstance(payload, dict) and payload.get("decision") == "reject"
+
+
+# (part, kind) -> (payload shape, cause required: a bool or a test on the payload)
+ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
     ("events", "genesis"): (GENESIS, False),
-    ("events", "integration_cut"): (shape({"branch": one_of(INTEGRATION), "main_sha": hex40, "base_sha": hex40}),
-                                    False),
-    ("events", "merge"): (shape({"candidate": text, "path": text, "pull": positive, "head_sha": hex40,
-                                 "merge_sha": hex40}), False),
-    ("events", "reject"): (shape({"candidate": text, "reasons": list_of(text, non_empty=True, unique_sorted=True)}),
-                           True),
-    ("events", "status"): (shape({"cycle_id": text, "number": positive, "block_sha256": hex64}), False),
-    ("events", "status_edited"): (shape({"cycle_id": text, "found_sha256": nullable(hex64),
-                                         "expected_sha256": nullable(hex64)}), False),
-    ("cost", "cost"): (shape({"tool": one_of("llm.call"), "template": text, "budget": text, "model_requested": text,
+    ("events", "cycle_start"): (shape({"cycle_id": text}), False),
+    ("events", "integration_cut"): (shape({"branch": one_of(INTEGRATION), "base_sha": hex40}), False),
+    ("events", "ratchet_base"): (shape({"base_run_sha256": hex64, "counts": map_of(count)}), False),
+    ("events", "decision"): (DECISION, _rejected),
+    ("events", "revert"): (shape({"merge_sha": hex40}), True),
+    ("events", "status"): (shape({"block_sha256": hex64}), False),
+    ("events", "status_edited"): (shape({"found_sha256": nullable(hex64), "recorded_sha256": nullable(hex64)}),
+                                  False),
+    ("cost", "cost"): (shape({"tool": one_of("llm.call"), "template_sha256": hex64, "model_requested": text,
                               "models_served": list_of(text), "outcome": one_of(*llm_call.OUTCOMES),
-                              "reason": nullable(text), "cost_usd_micros": count, "cost_source": text,
-                              "cap_usd_micros": count, "prompt_sha256": hex64, "system_sha256": hex64,
-                              "duration_ms": count}), False),
-    ("drill", "commit"): (shape(DRILL_COMMON, {"arm": one_of("with", "without")}), False),
-    ("drill", "reveal"): (shape(dict(DRILL_COMMON, revealed_sha256=hex64, answer=any_object,
-                                     reasons=list_of(text)), {"arm": one_of("with", "without")}), False),
+                              "reason": nullable(text), "usd_micros": count, "cost_source": text,
+                              "cap_usd_micros": count, "prompt_sha256": hex64, "duration_ms": count}), False),
+    ("drill", "commit"): (shape({"drill": one_of("revert"), "family": one_of("revert"), "commitment_sha256": hex64}),
+                          False),
+    ("drill", "plant"): (shape({"drill": one_of("revert"), "family": one_of("revert"), "instance_id": text,
+                                "merge_sha": hex40}), False),
 }
 
 ROW = shape(
@@ -238,6 +248,8 @@ def row_reasons(row: Any, where: str = "row") -> list[str]:
         return out + _bad(where, "unknown_row_type %s/%s" % (row.get("part"), row.get("kind")))
     payload_shape, cause_required = typ
     out += payload_shape(row.get("payload"), where + ".payload")
+    if callable(cause_required):
+        cause_required = cause_required(row.get("payload"))
     if cause_required and "cause" not in row:
         out += _bad(where + ".cause", "missing (a failed or reverted event)")
     return out
@@ -277,21 +289,19 @@ def roots_reasons(data: bytes) -> list[str]:
 
 
 def status_reasons(status: bytes, ledger: bytes) -> list[str]:
-    from status import block  # the block's markers and its region, one source
+    from status import block  # the block's markers and its bytes, one source
 
-    lines = status.split(b"\n")
-    out = []
-    if lines[0] != block.BEGIN.encode("ascii"):
-        out += _bad("status.md", "does not start with the block's BEGIN line")
-    if block.END.encode("ascii") not in lines:
-        out += _bad("status.md", "has no END line")
-    rows, bad = _rows(ledger, "ledger")
-    out += bad
-    owned, _ = block.region(status)
-    expected = [r["payload"].get("block_sha256") for r in rows
+    rows, out = _rows(ledger, "ledger")
+    try:
+        parts = block.split(status)
+    except block.Unusable as exc:
+        return out + _bad("status.md", str(exc))
+    if parts is None:
+        return out + _bad("status.md", "has no block")
+    recorded = [r["payload"].get("block_sha256") for r in rows
                 if r.get("part") == block.PART and r.get("kind") == block.KIND and isinstance(r.get("payload"), dict)]
-    if not expected:
+    if not recorded:
         out += _bad("status.md", "the ledger has no status row")
-    elif hashlib.sha256(owned).hexdigest() != expected[-1]:
+    elif hashlib.sha256(parts[1]).hexdigest() != recorded[-1]:
         out += _bad("status.md", "block sha256 is not the last status row's block_sha256")
     return out

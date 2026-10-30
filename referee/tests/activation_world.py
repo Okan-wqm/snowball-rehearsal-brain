@@ -1,12 +1,13 @@
-"""A toy target for activation tests (tests 45 and 14): the in-process GitHub with ``main``, the operator files,
-the referee's base run and five ready candidates, the good one and asama-0/08's four bad ones (outside the fix
+"""A toy target for activation tests (tests 45 and 14): the in-process GitHub with ``main`` and the facts genesis
+reads (tohum/29o: the writer App, its installation, the three branches' rules and their rulesets, the toy's
+workflows or the copy's Actions permission, answered as ``overrides``), the operator files, the referee's base run
+and five ready candidates, the good one and asama-0/08's four bad ones (outside the fix
 range, a ratchet increase, a broken test, a forbidden path). Every input is written here by hand; hashes the
 tests expect are computed from these bytes, not by ``activate``.
 """
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 
@@ -94,6 +95,33 @@ EXPECTED_REJECTS = {
 }
 
 
+APP_ID = 4242
+
+
+def facts(kind: str) -> dict:
+    """The GitHub answers genesis reads when every precondition holds (``{(method, path): (status, body)}``)."""
+    p = "/repos/%s" % REPO
+    rule = lambda kind_, ruleset, **params: dict({"type": kind_, "ruleset_id": ruleset},  # noqa: E731
+                                                 **({"parameters": params} if params else {}))
+    out = {
+        "/app": {"id": APP_ID, "slug": "snowball-writer"},
+        "/installation/repositories": {"total_count": 1, "repositories": [{"full_name": REPO}]},
+        p + "/rules/branches/brain/state": [rule("deletion", 1), rule("non_fast_forward", 1)],
+        p + "/rules/branches/brain/integration": [
+            rule("deletion", 2), rule("non_fast_forward", 2), rule("pull_request", 2, required_approving_review_count=0),
+            rule("required_status_checks", 2, strict_required_status_checks_policy=True,
+                 required_status_checks=[{"context": GATE, "integration_id": APP_ID}])],
+        p + "/rules/branches/main": [rule("deletion", 3), rule("pull_request", 3, required_approving_review_count=1)],
+    }
+    for n in (1, 2, 3):
+        out[p + "/rulesets/%d" % n] = {"id": n, "current_user_can_bypass": "never"}
+    if kind == "toy":
+        out[p + "/actions/workflows"] = {"total_count": 0, "workflows": []}
+    else:
+        out[p + "/actions/permissions"] = {"enabled": False}
+    return {("GET", path): (200, body) for path, body in out.items()}
+
+
 class World:
     """The target and the inputs; each test may change any of them before calling ``run``."""
 
@@ -103,10 +131,11 @@ class World:
             "src/a.js": SOURCE, "test/a.test.js": TEST, "eslint.config.js": b"module.exports = [];\n",
             "package.json": b"{}\n"})
         self.gh.refs["main"] = self.main
-        self.result = json.dumps({"verdict": "accepted", "head": "c" * 40}).encode()
+        self.gh.overrides.update(facts(kind))
         self.imports = chained([{"ts": "2026-10-30T09:00:00Z", "stage": 0, "brain_sha": "b" * 40,
-                                 "referee_tree_sha256": "e" * 64, "result_sha256": sha(self.result),
-                                 "toy_tree_sha256": "f" * 64}])
+                                 "referee_tree_sha256": "e" * 64, "result_sha256": "d" * 64,
+                                 "toy_tree_sha256": "f" * 64},
+                                {"ts": "2026-10-30T10:00:00Z", "stage": 0}])  # a touch that is no transfer
         self.summary = json.dumps({
             "seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
                              "bootstrap_sha256": "4" * 64}],
@@ -117,18 +146,15 @@ class World:
                                                                "package.json"]}).encode()
         self.security = chained([{"row_id": "sec-1", "part": "security", "kind": "note", "payload": {}}])
         self.files = {"summary.json": self.summary, "imports.jsonl": self.imports, "policy.json": b'{"p": 1}\n',
-                      "result.json": self.result, "security-ledger.jsonl": self.security,
-                      "profile.json": self.profile, "recipe.json": self.recipe, "base.jsonl": BASE_RUN}
+                      "security-ledger.jsonl": self.security, "profile.json": self.profile,
+                      "recipe.json": self.recipe, "base.jsonl": BASE_RUN}
         self.candidates = candidates()
-        self.settings = {"rulesets": [{"name": "brain/state", "rules": ["deletion", "non_fast_forward"]}],
-                         "apps": [{"slug": "snowball-writer"}], "actions": {"enabled": False}}
         self.signer = anchor.FakeSigner(True, "referee@example", "rekor-1")
         self.control = {"kill_switch": False, "merge_paused": False}
-        self.budgets = {"founder": 220000000}
+        self.canary_cap = 220000000
 
     def request(self) -> dict:
-        return {"target_id": "toy", "base_run_sha256": sha(self.files["base.jsonl"]),
-                "settings": copy.deepcopy(self.settings), "rekor_uuids": ["rekor-a"], "cycle_id": CYCLE, "ts": TS,
+        return {"target_id": "toy", "base_run_sha256": sha(self.files["base.jsonl"]), "cycle_id": CYCLE, "ts": TS,
                 "snapshot_id": SNAP, "candidates": sorted(c["id"] for c in self.candidates)}
 
     def read_base(self, path: str) -> bytes | None:
@@ -147,7 +173,7 @@ class World:
         import activate
         self.wr = self.writer()
         return activate.activate(self.wr, self.files, self.request() if req is None else req, self.candidates,
-                                 self.read_base, self.signer, self.control, GATE, self.budgets)
+                                 self.read_base, self.signer, self.control, GATE, self.canary_cap)
 
     def writes(self) -> list[tuple]:
         return [(m, p) for m, p, _ in self.gh.requests if m != "GET"]

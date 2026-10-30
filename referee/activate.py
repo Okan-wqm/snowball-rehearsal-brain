@@ -1,104 +1,101 @@
 """``activate``: the operator's first cycle on a target: the genesis row, the ``brain/integration`` cut, the ratchet
 base and the ready candidates, written as one orphan ``brain/state`` commit (stage 0, MF18).
 
-Rules: asama-0/14 row 18, asama-0/09 tests 45 and 14, asama-0/10a #genesis (what genesis records) and #taban (the
-ratchet base is the referee's own tool run at genesis; the Founder cannot give it), asama-0/08 (the acceptance
-rule; cycle order rows 1 and 6), tohum/25a row 7 (``brain/state`` opened with the genesis row, ``brain/integration``
-cut from ``main``, the copy from ``targets[].base_sha``), tohum/26a (``activate``: target, ``targets[]``, ready
-candidates -> genesis row, cut, ratchet base; writes ``brain/state``), tohum/01a and tohum/24 (``brain/state`` is an
-orphan branch), tohum/26 and 26c (row, ``setup/*``, candidate shapes), tohum/29d (group ``genesis``). Calls: 2, 7
-and 8 (the decision), 9 (every write), 10, 11 and 16 (the state commit), through their modules.
+Rules: tohum/29o (``genesis``: the reads, the reasons, the twelve-key payload, the exits), asama-0/14 row 18,
+asama-0/09 tests 45 and 14, asama-0/10a #genesis (genesis reads and hashes the facts from the API) and #taban (the
+ratchet base is the referee's own tool run at genesis), asama-0/08 (the acceptance rule), tohum/25a rows 3-7 (the
+rulesets, the writer App's scope, no workflow on the toy, Actions off on the copy; ``brain/state`` opened with the
+genesis row; ``brain/integration`` cut from the toy's ``main`` or at the copy's ``targets[].base_sha``),
+tohum/01b:59-60 (``rules/branches`` and ``current_user_can_bypass``), tohum/28:37 (each reason is a hard stop),
+tohum/30e (the seed security ledger), tohum/26a (``activate``). Calls: 2, 7 and 8 (the decision), 9 (every write),
+10, 11 and 16 (the state commit), through their modules.
 
-**Inputs.** ``files``: the bytes of ``summary.json`` (``setup/summary.json``), ``imports.jsonl``
-(``setup/imports.jsonl``), ``policy.json``, ``result.json`` (the bootstrap referee's signed result the import
-verified), ``security-ledger.jsonl`` (``seed/security-ledger.jsonl``), ``profile.json`` and ``recipe.json`` (the
-referee's derived profile and verified unit recipe, MF4 and MF6) and ``base.jsonl`` (the referee's lint tool run
-three times on the base tree in ``koş``, MF3; one run record per line as ``gate.check`` reads it). ``request``
-``{target_id, base_run_sha256, settings: {rulesets, apps, actions}, rekor_uuids, cycle_id, ts, snapshot_id,
-candidates}``, exactly these keys: ``base_run_sha256`` is the hash of ``base.jsonl`` taken outside the container;
-``settings`` are the target's rulesets, installed apps and Actions permissions as the API returned them
-(asama-0/10a #hedefler; reading them is the job's); ``rekor_uuids`` the (A) result's Rekor entries; ``candidates``
-the ids of the ready candidates (``candidates/<target>/<cid>/``).
+**Genesis** (``genesis``), a dry run: it reads through a transport (``target.write``'s; the vector's is
+``target.write.Replay`` over a recorded API) and writes nothing. Inputs: ``setup/summary.json``, the
+``setup/imports.jsonl`` rows, the referee policy, ``seed/security-ledger.jsonl`` and the verified recipe, as bytes,
+and the target id.
 
-**The genesis row** (``genesis``, pure), ``part: events, kind: genesis``, row id ``<cycle_id>:genesis``. Its
-payload (``ledger.schema.GENESIS``, every key required):
+The reads, exactly these, each once (``reads``): ``GET /app``, ``GET /installation/repositories``, ``GET
+/repos/{repo}/rules/branches/{brain/state, brain/integration, main}``, then ``GET /repos/{repo}/rulesets/{id}`` for
+each ``ruleset_id`` of those three answers (in first-seen order); for a ``toy`` ``GET
+/repos/{repo}/git/ref/heads/main`` and ``GET /repos/{repo}/actions/workflows``; for a ``copy`` ``GET
+/repos/{repo}/actions/permissions``. A read answered other than 200, or a body not of the form read, is unusable:
+the list is a ceiling, nothing else is read.
 
-- ``target`` ``{id, repo, kind, base_sha}``: the ``summary.json`` ``targets[]`` entry with ``id == target_id``;
-  ``main_sha``: ``main``'s head as read; ``integration`` ``{branch: brain/integration, sha: base_sha}``.
-- ``seed_epoch``: the last ``seed_epochs[]`` entry, as written.
-- ``import``: of the last ``imports.jsonl`` row: ``line_sha256`` (sha256 of that line's bytes, newline excluded),
-  ``row_hash``, ``brain_sha``, ``referee_tree_sha256``, ``result_sha256``, ``toy_tree_sha256`` (null if absent).
-- ``result`` ``{sha256, rekor_uuids}``; ``policy_sha256``, ``summary_sha256``, ``profile_sha256``,
-  ``recipe_sha256``: sha256 of each file's bytes as given.
-- ``seed_security`` ``{ledger_sha256, last_row_hash}``: the security ledger's bytes and its last ``row_hash``.
-- ``settings_sha256`` ``{rulesets, apps, actions}``: sha256 of the RFC 8785 form of each API value.
-- ``ratchet`` ``{base_run_sha256, counts}``: ``counts`` is violations per tool in the first run record of
-  ``base.jsonl`` (``gate.check``'s count, the one the gate's ratchet compares, asama-0/08 criterion 5).
-- ``candidates``: the ready candidate ids, sorted, unique.
+Reasons, sorted; any reason is a hard stop and no payload:
 
-Files read as bytes are hashed as bytes; values read from the API are hashed in canonical form. Refusals
-(``Refused``, every reason that holds, nothing written): ``target_unknown``; ``toy_base_not_main`` (a ``toy``
-target's ``base_sha`` is not ``main``'s head: the toy is cut from ``main``, tohum/25a row 7; a ``copy`` is cut at
-its ``base_sha`` whatever ``main`` is now, since the copy's ``main`` keeps mirroring); ``imports_invalid``
-(``imports.jsonl`` is not a valid chain or is empty); ``result_not_imported`` (sha256 of ``result.json`` is not
-the last import row's ``result_sha256``); ``security_ledger_invalid`` (not a valid chain or empty);
-``base_run_hash_mismatch``; ``tool_nondeterministic`` (the three lines of ``base.jsonl`` differ: a ratchet base
-must be one count). Unusable input (``Unusable``): a file that is not the JSON it names, a request not of the
-shape above, or a payload ``ledger.schema`` refuses (a fact of the wrong form, e.g. a ``brain_sha`` that is not
-40 hex). Not checked here: that ``referee_tree_sha256`` is the tree the referee runs (the import checks it),
-that ``toy_tree_sha256`` is the toy target's tree (no tree hash is computed without git), the meaning of
-``settings`` (P1's ``drift.check``).
+- ``app_scope``: the set of ``repositories[].full_name`` is not the set of ``targets[].repo``;
+- ``state_rules_missing``: ``brain/state`` has no ``deletion`` or no ``non_fast_forward`` rule;
+- ``integration_rules_missing``: ``brain/integration`` lacks one of ``deletion``, ``non_fast_forward``,
+  ``pull_request``, ``required_status_checks``;
+- ``integration_check_not_writer``: a ``required_status_checks`` rule of ``brain/integration`` whose
+  ``strict_required_status_checks_policy`` is not ``true``, that lists no check, or one of whose checks has an
+  ``integration_id`` other than ``/app``'s ``id`` (no such rule: only the reason above);
+- ``rules_bypassable``: a ruleset a rule of ``brain/state`` or ``brain/integration`` comes from has
+  ``current_user_can_bypass`` other than ``never`` (``exempt`` and ``pull_requests_only`` included);
+- ``main_writable``: a ruleset a rule of ``main`` comes from is bypassable so, or ``main`` has neither an
+  ``update`` rule nor a ``pull_request`` rule whose ``required_approving_review_count`` is an integer >= 1;
+- ``toy_workflows``: the toy's ``workflows`` list is not empty;
+- ``copy_actions_enabled``: the copy's ``enabled`` is not ``false``;
+- ``security_ledger_broken``: the seed security ledger is empty or not a valid chain (``ledger.chain``).
 
-**Activation** (``activate``), in this order; nothing is written before step 3:
+The payload, twelve keys: ``target`` (the id); ``base_sha`` (``toy``: ``object.sha`` of the API's ``main``, the
+summary's not read; ``copy``: ``targets[].base_sha``); of the last ``imports.jsonl`` row carrying
+``referee_tree_sha256`` (a counter row that is no transfer is skipped): ``referee_tree_sha256``, ``result_sha256``
+and ``import_line_sha256`` (that line's bytes without its LF); ``seed_epoch`` (the last ``seed_epochs[]`` entry as
+written); ``policy_sha256``, ``summary_sha256``, ``seed_security_ledger_sha256`` (sha256 of each file's bytes as
+given); ``seed_security_last_row_hash``; ``recipe_sha256`` (of the recipe's RFC 8785 form); ``facts_sha256`` (of
+the RFC 8785 form of ``{"GET <path>": body}`` over the reads). Unusable (``Unusable``): the target not exactly once
+in ``targets[]`` or of another kind, a file that is not the JSON it names (``imports.jsonl`` a valid chain of
+objects), no transfer row, a read not answered or malformed (a rule without an integer ``ruleset_id`` included).
 
-1. ``genesis`` on the inputs, with ``main`` read through ``target.write``.
-2. Reads: ``brain/state`` must not exist (``already_activated``), ``brain/integration`` must not exist
+**Activation** (``activate``), in this order; nothing is written before step 4:
+
+1. ``genesis`` through the writer's transport; a reason is ``Refused`` (a hard stop: nothing is written); the
+   writer's repository must be the target's (``target_repo_mismatch``).
+2. The ratchet base (asama-0/10a #taban): ``base.jsonl`` (the referee's lint tool run three times on the base tree
+   in ``koş``) must hash to the request's ``base_run_sha256`` (``base_run_hash_mismatch``) and its three records be
+   one (``tool_nondeterministic``); ``counts`` is violations per tool in its first record (``gate.check``'s count).
+3. Reads: ``brain/state`` must not exist (``already_activated``), ``brain/integration`` must not exist
    (``integration_exists``), the ``base_sha`` commit must read. Any reason: ``Refused``.
-3. Cut: ``brain/integration`` created at ``base_sha`` (``POST git/refs``). If GitHub refuses the creation
-   (``ApiError``), nothing else is written.
-4. Each ready candidate, in id order, is decided by the acceptance rule (asama-0/08): ``gate.diffguard.check``
+4. Cut: ``brain/integration`` created at ``base_sha``. If GitHub refuses the creation, nothing else is written.
+5. Each ready candidate, in id order, is decided by the acceptance rule (asama-0/08): ``gate.diffguard.check``
    (criterion 1, with the profile's ``security_paths``/``excluded_dirs`` and the recipe's ``inputs``), then
-   ``gate.check.decide`` (criteria 2-8 on the candidate's ``koş`` results against ``base.jsonl``, with
-   ``unfinished_sentinels`` the merges this activation already made, so at most one candidate merges: criterion 8),
-   then the diff is applied to the base file (``gate.diffguard.apply``, read through ``read_base`` from the tree
-   pulled at ``base_sha``; a missing file is ``base_file_missing``, a diff that does not apply there
-   ``patch_does_not_apply``). A candidate whose files are unusable is rejected (``candidate_unusable``); one whose
-   id is not a valid branch name under ``brain/c/`` is ``candidate_id_invalid``. A merge: branch ``brain/c/<cid>``
-   at the cut, one commit with the applied file, a pull request into ``brain/integration``, a ``success`` check
-   named ``check_name`` on its head, the merge (``target.write``). A reject writes nothing on the target.
-   Rows: ``events`` ``merge`` ``{candidate, path, pull, head_sha, merge_sha}`` or ``reject`` ``{candidate,
-   reasons}`` with ``cause`` the first of ``REJECT_CAUSES`` that matches a reason, else ``unknown``.
-5. The state: rows genesis, ``integration_cut`` ``{branch, main_sha, base_sha}``, the decisions, then
-   ``status.block.plan``'s rows (MF16); every row's payload is checked by ``ledger.schema`` before it is chained,
-   the chained ledger again after; ``ledger.append.plan_cycle`` chains them (secret scan, MF2); the root is signed
-   (``ledger.anchor``, MF11) and its row written; ``ledger.jsonl``, ``chain/root.jsonl`` and ``status.md`` go in
-   one orphan commit (``Writer.open_orphan``) that opens ``brain/state``.
+   ``gate.check.decide`` (criteria 2-8 against ``base.jsonl``, with ``unfinished_sentinels`` the merges this
+   activation already made: at most one merge), then the diff applied to the base file (``read_base``; a missing
+   file ``base_file_missing``, a diff that does not apply ``patch_does_not_apply``); unusable files
+   ``candidate_unusable``; an id that is not a branch name under ``brain/c/`` ``candidate_id_invalid``. A merge:
+   branch ``brain/c/<cid>`` at the cut, one commit, a pull request into ``brain/integration``, a ``success`` check
+   named ``check_name``, the merge. A reject writes nothing on the target.
+6. The state, ``events`` rows in this order: ``genesis`` (the payload), ``cycle_start {cycle_id}``,
+   ``integration_cut {branch, base_sha}``, ``ratchet_base {base_run_sha256, counts}``, one ``decision`` per
+   candidate (``{decision: merge, candidate, path, pull, head_sha, merge_sha}`` or ``{decision: reject, candidate,
+   reasons}`` with ``cause`` the first of ``REJECT_CAUSES`` that matches a reason, else ``unknown``), then
+   ``status.block.plan``'s rows (MF16); every row's payload is checked by ``ledger.schema``, the chained ledger
+   again; ``ledger.append.plan_cycle`` chains them (secret scan); the root is signed (``ledger.anchor``) and its
+   row written; ``ledger.jsonl``, ``chain/root.jsonl`` and ``status.md`` go in one orphan commit that opens
+   ``brain/state``.
 
-A failure after step 3 (an API error, an unsignable root, a row the schema refuses) raises ``HardStop`` carrying
-the refs already written: the target holds a cut, and maybe a merge, without the state that records them, which
-tohum/25a's failure rule leaves to the operator; activation is not retried over it (step 2 refuses).
+A failure after step 4 raises ``HardStop`` carrying the refs already written (tohum/25a's failure rule leaves them
+to the operator; step 3 refuses a retry).
 
-Out of scope, stated: running the tools and tests (``koş``, MF3/MF6: their outputs are inputs here), fetching the
-settings and Rekor entries, writing ``profile.json`` into ``brain/state``, the observation rows of cycle 1 (tool
-output and ``fix`` ranges, asama-0/08), ``expect.json`` (the referee does not trust it; (B)'s #ret compares it),
-hunk coverage records, and the wiring of this function into ``loop.yml``'s ``yaz`` job (spec-036). Whether
-GitHub lets the writer App create ``brain/integration`` under tohum/25a row 3's ``pull_request`` rule is not
-known here (seed-037); the fake GitHub is tested both ways.
+Out of scope, stated: running the tools and tests (``koş``: their outputs are inputs here); (A)'s Rekor ids, the App
+declaration of tohum/25a row 5 and ``bypass_actors`` (genesis does not read them, tohum/29o); writing
+``profile.json`` into ``brain/state``; the wiring into ``loop.yml``'s ``yaz`` job (spec-036). Whether GitHub lets
+the writer App create ``brain/integration`` under tohum/25a row 3's ``pull_request`` rule is not known here
+(seed-037); the fake GitHub is tested both ways.
 
 Command line (group ``genesis``), run from ``referee/``, one JSON line on stdout, the cause on stderr::
 
-    python -m activate genesis DIR     stdin {target_id, main_sha, base_run_sha256, settings, rekor_uuids,
-                                              cycle_id, ts, snapshot_id, candidates}
-        DIR holds the eight files named above.
-        -> {ok, reasons, row, row_hash}; row_hash as the first row of a new ledger (prev_hash 64 zeros)
-        exit 0 the row; 1 refused (reasons); 2 unusable (row null, reasons [])
+    python -m activate genesis API SUMMARY IMPORTS POLICY SECURITY RECIPE   stdin {"target": id}
+        -> {ok, hard_stop, reasons, payload}
+        exit 0 planned; 1 hard stop; 2 unusable ({"ok": false, "hard_stop": true, "payload": null})
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import os
 import sys
 from typing import Any, Callable
 
@@ -111,10 +108,13 @@ STATE = "brain/state"
 INTEGRATION = schema.INTEGRATION
 MAIN = "main"
 CANDIDATE_PREFIX = "brain/c/"
-FILES = ("summary.json", "imports.jsonl", "policy.json", "result.json", "security-ledger.jsonl", "profile.json",
-         "recipe.json", "base.jsonl")
-REQUEST = {"target_id", "base_run_sha256", "settings", "rekor_uuids", "cycle_id", "ts", "snapshot_id", "candidates"}
-SETTINGS = ("rulesets", "apps", "actions")
+FILES = ("summary.json", "imports.jsonl", "policy.json", "security-ledger.jsonl", "recipe.json", "profile.json",
+         "base.jsonl")
+GENESIS_FILES = FILES[:5]
+REQUEST = {"target_id", "base_run_sha256", "cycle_id", "ts", "snapshot_id", "candidates"}
+KINDS = ("toy", "copy")
+BRANCHES = (STATE, INTEGRATION, MAIN)
+INTEGRATION_RULES = ("deletion", "non_fast_forward", "pull_request", "required_status_checks")
 CANDIDATE_FILES = ("finding.json", "diff.patch", "cand.jsonl", "checks.json", "hashes.json")
 # A reject's cause: the first entry whose test holds for some reason (tohum/26 closed set).
 REJECT_CAUSES = (
@@ -144,10 +144,12 @@ def _sha(data: bytes) -> str:
 
 
 def _json(data: bytes, name: str) -> Any:
+    """JSON with no duplicate key and no NaN or Infinity (``ledger.chain``'s reading)."""
     try:
-        return json.loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise Unusable("%s is not JSON: %s" % (name, exc)) from exc
+        return json.loads(data.decode("utf-8"), object_pairs_hook=chain._no_duplicates,
+                          parse_constant=chain._no_constant)
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
+        raise Unusable("%s is not JSON: %s" % (name, exc)) from None
 
 
 def _chain_rows(data: bytes) -> list[dict] | None:
@@ -161,16 +163,13 @@ def _chain_rows(data: bytes) -> list[dict] | None:
 def _request(req: Any) -> dict:
     if not isinstance(req, dict) or set(req) != REQUEST:
         raise Unusable("the request must have exactly the keys %s" % ", ".join(sorted(REQUEST)))
-    if not isinstance(req["settings"], dict) or set(req["settings"]) != set(SETTINGS):
-        raise Unusable("settings must have exactly the keys %s" % ", ".join(SETTINGS))
     for key in ("target_id", "cycle_id", "snapshot_id"):
         if schema.text(req[key], key):
             raise Unusable("%s must be a non-empty string" % key)
     if schema.timestamp(req["ts"], "ts") or schema.hex64(req["base_run_sha256"], "base_run_sha256"):
         raise Unusable("ts must be YYYY-MM-DDTHH:MM:SSZ and base_run_sha256 64 lowercase hex")
-    for key in ("rekor_uuids", "candidates"):
-        if schema.list_of(schema.text)(req[key], key):
-            raise Unusable("%s must be a list of non-empty strings" % key)
+    if schema.list_of(schema.text)(req["candidates"], "candidates"):
+        raise Unusable("candidates must be a list of non-empty strings")
     return req
 
 
@@ -178,7 +177,7 @@ def _canonical_sha(value: Any, name: str) -> str:
     try:
         return _sha(chain.canonical(value))
     except (chain.ChainError, ValueError, TypeError) as exc:
-        raise Unusable("%s has no canonical form: %s" % (name, exc)) from exc
+        raise Unusable("%s has no canonical form: %s" % (name, exc)) from None
 
 
 def _row(cycle: dict, suffix: str, kind: str, payload: dict, cause: str | None = None) -> dict:
@@ -195,70 +194,153 @@ def _row(cycle: dict, suffix: str, kind: str, payload: dict, cause: str | None =
 
 # ---------------------------------------------------------------- genesis
 
-def genesis(files: dict[str, bytes], req: Any, main_sha: str) -> dict:
-    """``{reasons, row, target}``: the refusal reasons (row None when any) or the genesis row; see the docstring."""
-    req = _request(req)
-    missing = [name for name in FILES if not isinstance(files.get(name), bytes)]
-    if missing:
-        raise Unusable("missing file(s): %s" % ", ".join(missing))
-    summary = _json(files["summary.json"], "summary.json")
-    for name in ("policy.json", "result.json", "profile.json", "recipe.json"):
-        _json(files[name], name)
+class Reads:
+    """The genesis reads through a transport: each a 200 answer, recorded as ``{"GET <path>": body}``."""
+
+    def __init__(self, transport: Any):
+        self.transport = transport
+        self.facts: dict[str, Any] = {}
+
+    def get(self, path: str, kind: type) -> Any:
+        key = "GET " + path
+        if key not in self.facts:
+            status, body = self.transport("GET", path, None)
+            if status != 200:
+                raise Unusable("%s answered %s" % (key, status))
+            self.facts[key] = body
+        body = self.facts[key]
+        if not isinstance(body, kind):
+            raise Unusable("%s: the body is not a JSON %s" % (key, "object" if kind is dict else "array"))
+        return body
+
+
+def _rules(body: list, where: str) -> list[dict]:
+    for rule in body:
+        if not isinstance(rule, dict) or not isinstance(rule.get("type"), str) or \
+                type(rule.get("ruleset_id")) is not int:
+            raise Unusable("%s: a rule without a type and an integer ruleset_id" % where)
+    return body
+
+
+def _bypassable(reads: Reads, repo: str, rules: list[dict]) -> bool:
+    out = False
+    for ruleset_id in dict.fromkeys(rule["ruleset_id"] for rule in rules):
+        ruleset = reads.get("/repos/%s/rulesets/%d" % (repo, ruleset_id), dict)
+        out = out or ruleset.get("current_user_can_bypass") != "never"
+    return out
+
+
+def _target(summary: Any, target_id: Any) -> dict:
     if not isinstance(summary, dict) or not isinstance(summary.get("targets"), list) \
             or not isinstance(summary.get("seed_epochs"), list) or not summary["seed_epochs"]:
         raise Unusable("summary.json must carry targets[] and a non-empty seed_epochs[]")
-    reasons = []
-    targets = [t for t in summary["targets"] if isinstance(t, dict) and t.get("id") == req["target_id"]]
-    target = None
-    if len(targets) != 1:
-        reasons.append("target_unknown")
+    found = [t for t in summary["targets"] if isinstance(t, dict) and t.get("id") == target_id]
+    if not isinstance(target_id, str) or len(found) != 1:
+        raise Unusable("target %r is not exactly once in targets[]" % (target_id,))
+    target = found[0]
+    if target.get("kind") not in KINDS or not isinstance(target.get("repo"), str) or schema.hex40(
+            target.get("base_sha"), "base_sha"):
+        raise Unusable("target %r: kind toy or copy, a repo and a 40-hex base_sha" % target_id)
+    return target
+
+
+def genesis(transport: Any, files: dict[str, bytes], target_id: Any) -> dict:
+    """``{ok, hard_stop, reasons, payload}`` (see the module docstring); reads only, writes nothing."""
+    missing = [name for name in GENESIS_FILES if not isinstance(files.get(name), bytes)]
+    if missing:
+        raise Unusable("missing file(s): %s" % ", ".join(missing))
+    summary = _json(files["summary.json"], "summary.json")
+    target = _target(summary, target_id)
+    _json(files["policy.json"], "policy.json")
+    recipe = _json(files["recipe.json"], "recipe.json")
+    imports = files["imports.jsonl"]
+    if not chain.verify_bytes(imports)["valid"]:
+        raise Unusable("imports.jsonl is not a valid chain of JSON objects")
+    lines = chain._lines(imports)
+    transfers = [i for i, line in enumerate(lines) if "referee_tree_sha256" in chain.parse_row(line.decode())]
+    if not transfers:
+        raise Unusable("imports.jsonl has no transfer row")
+    transfer = chain.parse_row(lines[transfers[-1]].decode())
+
+    repo, reads, reasons = target["repo"], Reads(transport), set()
+    app = reads.get("/app", dict)
+    installed = reads.get("/installation/repositories", dict).get("repositories")
+    if not isinstance(installed, list) or not all(isinstance(r, dict) and isinstance(r.get("full_name"), str)
+                                                  for r in installed):
+        raise Unusable("GET /installation/repositories: repositories[] of {full_name}")
+    rules = {b: _rules(reads.get("/repos/%s/rules/branches/%s" % (repo, b), list), b) for b in BRANCHES}
+    if {r["full_name"] for r in installed} != {t.get("repo") for t in summary["targets"] if isinstance(t, dict)}:
+        reasons.add("app_scope")
+    types = {b: {rule["type"] for rule in rules[b]} for b in BRANCHES}
+    if not {"deletion", "non_fast_forward"} <= types[STATE]:
+        reasons.add("state_rules_missing")
+    if not set(INTEGRATION_RULES) <= types[INTEGRATION]:
+        reasons.add("integration_rules_missing")
+    for rule in rules[INTEGRATION]:
+        if rule["type"] == "required_status_checks":
+            params = rule.get("parameters") if isinstance(rule.get("parameters"), dict) else {}
+            checks = params.get("required_status_checks")
+            if params.get("strict_required_status_checks_policy") is not True or not isinstance(checks, list) \
+                    or not checks or any(not isinstance(c, dict) or c.get("integration_id") != app.get("id")
+                                         for c in checks):
+                reasons.add("integration_check_not_writer")
+    if _bypassable(reads, repo, rules[STATE] + rules[INTEGRATION]):
+        reasons.add("rules_bypassable")
+    reviewed = any(rule["type"] == "pull_request" and isinstance(rule.get("parameters"), dict)
+                   and type(rule["parameters"].get("required_approving_review_count")) is int
+                   and rule["parameters"]["required_approving_review_count"] >= 1 for rule in rules[MAIN])
+    if _bypassable(reads, repo, rules[MAIN]) or not ("update" in types[MAIN] or reviewed):
+        reasons.add("main_writable")
+    if target["kind"] == "toy":
+        ref = reads.get("/repos/%s/git/ref/heads/main" % repo, dict).get("object")
+        base_sha = ref.get("sha") if isinstance(ref, dict) else None
+        if schema.hex40(base_sha, "main"):
+            raise Unusable("GET main: object.sha is not 40 lowercase hex")
+        workflows = reads.get("/repos/%s/actions/workflows" % repo, dict).get("workflows")
+        if not isinstance(workflows, list):
+            raise Unusable("GET actions/workflows: workflows[] missing")
+        if workflows:
+            reasons.add("toy_workflows")
     else:
-        target = {k: targets[0].get(k) for k in ("id", "repo", "kind", "base_sha")}
-        if target["kind"] == "toy" and target["base_sha"] != main_sha:
-            reasons.append("toy_base_not_main")
-    imports = _chain_rows(files["imports.jsonl"])
-    if imports is None:
-        reasons.append("imports_invalid")
-    elif imports[-1].get("result_sha256") != _sha(files["result.json"]):
-        reasons.append("result_not_imported")
+        base_sha = target["base_sha"]
+        if reads.get("/repos/%s/actions/permissions" % repo, dict).get("enabled") is not False:
+            reasons.add("copy_actions_enabled")
     security = _chain_rows(files["security-ledger.jsonl"])
     if security is None:
-        reasons.append("security_ledger_invalid")
-    base_run = files["base.jsonl"]
-    counts: dict[str, int] = {}
-    if _sha(base_run) != req["base_run_sha256"]:
-        reasons.append("base_run_hash_mismatch")
-    else:
-        try:
-            run, same = check.run_file(base_run, "base.jsonl")
-        except check.Unusable as exc:
-            raise Unusable(str(exc)) from exc
-        if not same:
-            reasons.append("tool_nondeterministic")
-        counts = {run["tool"]: len(run["violations"])}
+        reasons.add("security_ledger_broken")
     if reasons:
-        return {"reasons": sorted(reasons), "row": None, "target": target}
-    last = imports[-1]
+        return {"ok": False, "hard_stop": True, "reasons": sorted(reasons), "payload": None}
     payload = {
-        "target": target,
-        "main_sha": main_sha,
-        "integration": {"branch": INTEGRATION, "sha": target["base_sha"]},
+        "target": target_id,
+        "base_sha": base_sha,
+        "referee_tree_sha256": transfer.get("referee_tree_sha256"),
+        "result_sha256": transfer.get("result_sha256"),
+        "import_line_sha256": _sha(lines[transfers[-1]]),
         "seed_epoch": summary["seed_epochs"][-1],
-        "import": {"line_sha256": _sha(chain._lines(files["imports.jsonl"])[-1]), "row_hash": last.get("row_hash"),
-                   "brain_sha": last.get("brain_sha"), "referee_tree_sha256": last.get("referee_tree_sha256"),
-                   "result_sha256": last.get("result_sha256"), "toy_tree_sha256": last.get("toy_tree_sha256")},
-        "result": {"sha256": _sha(files["result.json"]), "rekor_uuids": req["rekor_uuids"]},
         "policy_sha256": _sha(files["policy.json"]),
         "summary_sha256": _sha(files["summary.json"]),
-        "profile_sha256": _sha(files["profile.json"]),
-        "recipe_sha256": _sha(files["recipe.json"]),
-        "seed_security": {"ledger_sha256": _sha(files["security-ledger.jsonl"]),
-                          "last_row_hash": security[-1].get("row_hash")},
-        "settings_sha256": {k: _canonical_sha(req["settings"][k], "settings." + k) for k in SETTINGS},
-        "ratchet": {"base_run_sha256": req["base_run_sha256"], "counts": counts},
-        "candidates": sorted(set(req["candidates"])),
+        "seed_security_ledger_sha256": _sha(files["security-ledger.jsonl"]),
+        "seed_security_last_row_hash": security[-1]["row_hash"],
+        "recipe_sha256": _canonical_sha(recipe, "recipe.json"),
+        "facts_sha256": _canonical_sha(reads.facts, "the facts"),
     }
-    return {"reasons": [], "row": _row(req, "genesis", "genesis", payload), "target": target}
+    bad = schema.payload_reasons("events", "genesis", payload)
+    if bad:
+        raise Unusable("genesis payload: %s" % "; ".join(bad))
+    return {"ok": True, "hard_stop": False, "reasons": [], "payload": payload}
+
+
+def ratchet_base(base_run: bytes, base_run_sha256: str) -> dict:
+    """``{reasons, counts}``: step 2 of the activation."""
+    if _sha(base_run) != base_run_sha256:
+        return {"reasons": ["base_run_hash_mismatch"], "counts": None}
+    try:
+        run, same = check.run_file(base_run, "base.jsonl")
+    except check.Unusable as exc:
+        raise Unusable(str(exc)) from None
+    if not same:
+        return {"reasons": ["tool_nondeterministic"], "counts": None}
+    return {"reasons": [], "counts": {run["tool"]: len(run["violations"])}}
 
 
 # ---------------------------------------------------------------- the ready candidates
@@ -338,19 +420,25 @@ def state_files(rows: list[dict], imports: bytes, facts: dict, signer: Any, root
 
 def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates: list[dict],
              read_base: Callable[[str], bytes | None], signer: Any, control: Any, check_name: str,
-             budgets: dict[str, int]) -> dict:
+             canary_cap_usd_micros: int) -> dict:
     """The activation; see the module docstring. ``candidates``: ``{id, <CANDIDATE_FILES>: bytes|None}`` each."""
+    req = _request(req)
     ids = [c.get("id") if isinstance(c, dict) else None for c in candidates]
-    wanted = _request(req)["candidates"]
+    wanted = req["candidates"]
     if not all(isinstance(i, str) for i in ids) or sorted(ids) != sorted(set(wanted)) or len(wanted) != len(ids):
         raise Unusable("the candidates given are not the request's candidates, each once")
-    main_sha = writer.head(MAIN)
-    gen = genesis(files, req, main_sha)
-    if gen["reasons"]:
+    missing = [name for name in FILES if not isinstance(files.get(name), bytes)]
+    if missing:
+        raise Unusable("missing file(s): %s" % ", ".join(missing))
+    gen = genesis(writer.transport, files, req["target_id"])
+    if gen["hard_stop"]:
         raise Refused(gen["reasons"])
-    target = gen["target"]
+    target = _target(_json(files["summary.json"], "summary.json"), req["target_id"])
     if writer.repo != target["repo"]:
         raise Refused(["target_repo_mismatch"])
+    base = ratchet_base(files["base.jsonl"], req["base_run_sha256"])
+    if base["reasons"]:
+        raise Refused(base["reasons"])
     reasons = []
     if writer.exists(STATE):
         reasons.append("already_activated")
@@ -358,74 +446,77 @@ def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates
         reasons.append("integration_exists")
     if reasons:
         raise Refused(reasons)
-    cut = target["base_sha"]
+    cut = gen["payload"]["base_sha"]
     writer.read_commit(cut)
     profile, recipe = _json(files["profile.json"], "profile.json"), _json(files["recipe.json"], "recipe.json")
     try:  # the shapes criterion 1 reads, checked before the first write
         diffguard.check("diff --git a/x b/x\n", profile, recipe)
     except diffguard.DiffError as exc:
-        raise Unusable(str(exc)) from exc
+        raise Unusable(str(exc)) from None
     writer.create_branch(INTEGRATION, cut)
     try:
-        rows = [gen["row"], _row(req, "cut", "integration_cut",
-                                 {"branch": INTEGRATION, "main_sha": main_sha, "base_sha": cut})]
+        rows = [_row(req, "genesis", "genesis", gen["payload"]),
+                _row(req, "start", "cycle_start", {"cycle_id": req["cycle_id"]}),
+                _row(req, "cut", "integration_cut", {"branch": INTEGRATION, "base_sha": cut}),
+                _row(req, "ratchet", "ratchet_base", {"base_run_sha256": req["base_run_sha256"],
+                                                      "counts": base["counts"]})]
         merges, decisions = [], []
         for cand in sorted(candidates, key=lambda c: c["id"]):
             got = decide(cand, files["base.jsonl"], profile, recipe, control, merges, read_base)
             if got["reasons"]:
-                rows.append(_row(req, "c:" + cand["id"], "reject", {"candidate": cand["id"], "reasons": got["reasons"]},
-                                 _cause(got["reasons"])))
-                decisions.append({"candidate": cand["id"], "decision": "reject", "reasons": got["reasons"]})
+                payload = {"decision": "reject", "candidate": cand["id"], "reasons": got["reasons"]}
+                rows.append(_row(req, "c:" + cand["id"], "decision", payload, _cause(got["reasons"])))
+                decisions.append(payload)
                 continue
             done = land(writer, cand["id"], got["path"], got["content"], cut, check_name)
             merges.append(done["merge_sha"])
-            rows.append(_row(req, "c:" + cand["id"], "merge", dict(done, candidate=cand["id"], path=got["path"])))
-            decisions.append(dict(done, candidate=cand["id"], decision="merge", reasons=[]))
-        facts = {"cycle_id": req["cycle_id"], "ts": req["ts"], "snapshot_id": req["snapshot_id"],
-                 "row_id": "%s:status" % req["cycle_id"], "budgets": budgets, "main_commits_since_cut": 0}
+            payload = dict(done, decision="merge", candidate=cand["id"], path=got["path"])
+            rows.append(_row(req, "c:" + cand["id"], "decision", payload))
+            decisions.append(payload)
+        facts = {"ts": req["ts"], "snapshot_id": req["snapshot_id"], "row_id": "%s:status" % req["cycle_id"],
+                 "canary_cap_usd_micros": canary_cap_usd_micros}
         state = state_files(rows, files["imports.jsonl"], facts, signer, "%s:root" % req["cycle_id"])
         sha = writer.open_orphan(STATE, state["files"], "genesis: cycle %s" % req["cycle_id"])
     except (write.ApiError, write.Refused, Unusable, HardStopBase, block.Unusable, anchor.Unusable) as exc:
-        raise HardStop("%s: %s" % (type(exc).__name__, exc), sorted(set(writer.written))) from exc
-    return {"state_sha": sha, "integration_sha": cut, "main_sha": main_sha, "row_hashes": state["row_hashes"],
-            "root": state["root"], "entry": state["entry"], "decisions": decisions, "files": state["files"]}
+        raise HardStop("%s: %s" % (type(exc).__name__, exc), sorted(set(writer.written))) from None
+    return {"state_sha": sha, "integration_sha": cut, "row_hashes": state["row_hashes"], "root": state["root"],
+            "entry": state["entry"], "decisions": decisions, "files": state["files"]}
 
 
 # ---------------------------------------------------------------- command line
 
-USAGE = "usage: python -m activate genesis DIR < request"
+USAGE = "usage: python -m activate genesis API SUMMARY IMPORTS POLICY SECURITY RECIPE < {\"target\": id}"
 
 
 def _emit(obj: dict) -> None:
     sys.stdout.write(json.dumps(obj, sort_keys=True) + "\n")
 
 
+def _read(path: str) -> bytes:
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise Unusable("%s: %s" % (path, exc.strerror)) from None
+
+
 def main(argv: list[str]) -> int:
     try:
-        if len(argv) != 2 or argv[0] != "genesis":
+        if len(argv) != 7 or argv[0] != "genesis":
             raise Unusable(USAGE)
-        req = json.loads(sys.stdin.read())
-        if not isinstance(req, dict) or "main_sha" not in req:
-            raise Unusable("the request must be an object with main_sha")
-        main_sha = req.pop("main_sha")
-        if schema.hex40(main_sha, "main_sha"):
-            raise Unusable("main_sha must be 40 lowercase hex")
-        files = {}
-        for name in FILES:
-            with open(os.path.join(argv[1], name), "rb") as fh:
-                files[name] = fh.read()
-        gen = genesis(files, req, main_sha)
-        if gen["reasons"]:
-            _emit({"ok": False, "reasons": gen["reasons"], "row": None, "row_hash": None})
-            return 1
-        row = dict(gen["row"], prev_hash=chain.ZERO_HASH)
-        _emit({"ok": True, "reasons": [], "row": gen["row"], "row_hash": chain.row_hash(row)})
-        return 0
-    except (Unusable, ValueError, OSError, RecursionError) as exc:
+        api = write.Replay(_json(_read(argv[1]), "the recorded API"))
+        files = dict(zip(GENESIS_FILES, (_read(path) for path in argv[2:])))
+        request = _json(sys.stdin.buffer.read(), "stdin")
+        if not isinstance(request, dict) or set(request) != {"target"}:
+            raise Unusable('stdin must be {"target"} and nothing else')
+        out = genesis(api, files, request["target"])
+        _emit(out)
+        return 1 if out["hard_stop"] else 0
+    except (Unusable, write.Unusable, chain.ChainError) as exc:
         cause = "unusable input: %s" % exc
     except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a reason
         cause = "internal error: %s: %s" % (type(exc).__name__, exc)
-    _emit({"ok": False, "reasons": [], "row": None, "row_hash": None})
+    _emit({"ok": False, "hard_stop": True, "payload": None})
     sys.stderr.write(cause + "\n")
     return 2
 

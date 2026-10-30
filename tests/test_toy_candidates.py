@@ -245,18 +245,19 @@ class Activation(unittest.TestCase):
         decisions = {d["candidate"]: d for d in out["decisions"]}
         self.assertEqual(sorted(decisions), ids())
         for cid in ids():
-            self.assertEqual(decisions[cid]["reasons"], expected(cid), cid)
+            self.assertEqual(decisions[cid].get("reasons", []), expected(cid), cid)  # a merge carries none
         merged = [cid for cid in ids() if decisions[cid]["decision"] == "merge"]
         self.assertEqual(merged, ["good"])
         path, content = patched("good")
         head = w.gh.refs[activate.INTEGRATION]
         self.assertEqual(w.gh.blobs[w.gh.trees[w.gh.commits[head]["tree"]][path]], content)
         rows = [json.loads(line) for line in out["files"]["ledger.jsonl"].decode().splitlines()]
-        genesis = next(r for r in rows if r["kind"] == "genesis")
-        self.assertEqual(genesis["payload"]["ratchet"],
+        ratchet = next(r for r in rows if r["kind"] == "ratchet_base")
+        self.assertEqual(ratchet["payload"],
                          {"base_run_sha256": load(os.path.join(CANDIDATES, "good", "finding.json"))["tool_output_sha256"],
                           "counts": {"eslint": 7}})
-        causes = {r["payload"]["candidate"]: r["cause"] for r in rows if r["kind"] == "reject"}
+        causes = {r["payload"]["candidate"]: r["cause"] for r in rows
+                  if r["kind"] == "decision" and r["payload"]["decision"] == "reject"}
         self.assertEqual(causes, {"bad-path": "scope_violation", "bad-ratchet": "lint_regression",
                                   "bad-scope": "scope_violation", "bad-test": "test_regression"})
 

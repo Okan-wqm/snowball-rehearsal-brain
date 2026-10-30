@@ -1,69 +1,61 @@
-"""``status.block``, the smallest one: the top block of ``status.md``, produced from the ledger at the end of a
-cycle; a hand edit of it is regenerated in the next cycle and written to ``events`` (stage 0, MF16).
+"""``status.block``, the smallest one: the block of ``status.md`` produced from the ledger; a hand edit of it is
+regenerated in the next cycle and written to ``events`` (stage 0, MF16).
 
-Rules: asama-0/14 row 16, asama-0/09 test 42 (cycle, last decision, base age, brake state and the number of
-human touches, from the ledger), tohum/26a (``status.block``: reads the ledger, writes the top block of
-``status.md`` on ``brain/state``, at the end of the referee's cycle), tohum/15 and tohum/01b (``status.md``'s
-block is written only by ``status.block``; a hand edit is not kept), tohum/07 (base age: time and ``main``
-commits since ``brain/integration`` was cut), tohum/20 and tohum/27 (human touches; ``setup/imports.jsonl`` is
-their counter), tohum/29d (group ``status``). Calls 10 -> 16: the rows and the file go into the cycle's one
-``brain/state`` commit through ``ledger.append``.
+Rules: tohum/29n (``status``: the fields, the block's markers and bytes, the edit rule, the rows, the exits),
+asama-0/14 row 16, asama-0/09 test 42, tohum/26a (``status.block``: reads the ledger, writes the block of
+``status.md`` on ``brain/state``), tohum/15 and tohum/01b (the block is written only by ``status.block``), tohum/26c
+and tohum/27 (``setup/imports.jsonl`` is the human touch counter). Calls 10 -> 16: the rows and the file go into the
+cycle's one ``brain/state`` commit through ``ledger.append``.
 
-**What is read.** The ledger only once it is a valid chain extending ``previous`` (``ledger.chain.verify_bytes``
-through ``dispatcher.llm_call.CostBook``; ``ledger.append.HardStop`` otherwise, before anything else is read);
-the cycle's own rows (``rows``, not yet chained; they count as the ledger's last rows); ``setup/imports.jsonl``,
-which must be a valid chain (``Unusable`` otherwise); ``facts`` ``{cycle_id, ts, snapshot_id, row_id, budgets,
-main_commits_since_cut}``, exactly these keys: ``cycle_id``, ``snapshot_id`` and ``row_id`` non-empty strings,
-``ts`` ``YYYY-MM-DDTHH:MM:SSZ``, ``budgets`` ``{name: micro-USD}`` (integers >= 0), ``main_commits_since_cut``
-an integer >= 0 or null (the ``yaz`` job reads it from the target; null is shown as unknown).
+**Fields** (``fields``), from the ledger's rows and ``imports.jsonl``'s alone; an ``events`` row is one with
+``part: events``:
 
-**The view** (``view``), each value by one rule over the ledger rows followed by ``rows``:
+- ``cycle_id``: ``payload.cycle_id`` of the last ``events`` row of kind ``cycle_start`` (null when none);
+- ``last_decision``: ``payload.decision`` of the last ``events`` row of kind ``decision`` (null when none); a later
+  ``events`` row of another kind does not replace it;
+- ``base_age_s``: ts(the last ``cycle_start``) - ts(the first ``events`` row of kind ``genesis``) in seconds, ts
+  ``YYYY-MM-DDTHH:MM:SSZ`` (UTC); null when either row is missing; a negative difference is written as it is;
+- ``brake``: ``{spent_usd_micros, cap_usd_micros, engaged}``: spent is ``dispatcher.llm_call.spent_micros`` (the sum
+  of ``payload.usd_micros`` over every ``part: cost`` row, the one rule ``llm.call``'s brake uses), cap the stage's
+  canary cap given on stdin, ``engaged`` iff spent >= cap;
+- ``human_touches``: the number of ``imports.jsonl`` rows; every row is one touch, a transfer or not.
 
-- ``cycle``: ``{id, ts, number}``; ``number`` is 1 + the count of ``part: events, kind: status`` rows.
-- ``last_decision``: the last ``part: events`` row whose ``kind`` is one of ``DECISIONS`` (``merge``, ``reject``,
-  ``revert``), as ``{kind, row_id, ts, cause}`` (missing fields null), or null when there is none.
-- ``base``: from the last ``part: events, kind: integration_cut`` row (``CUT``), ``{main_sha, cut_ts, age_s,
-  main_commits_since_cut}``; ``main_sha`` is the row's ``payload.main_sha``, ``age_s`` the whole seconds from the
-  row's ``ts`` to the cycle's ``ts`` (a ``ts`` not in the form above, or later than the cycle's, is ``Unusable``).
-  Null when there is no cut row.
-- ``brakes``: per budget name, in code point order, ``{budget, budget_usd_micros, spent_usd_micros, state}``;
-  spent is ``CostBook.spent`` (the one rule ``llm.call``'s brake uses); ``state`` is ``brake`` when spent >=
-  budget, the point from which ``llm.call`` refuses every call whatever its cap, else ``ok`` (a call whose cap is
-  above the remainder is still refused by ``llm.call``).
-- ``human_touches``: ``{count, last_ts}``, the number of ``setup/imports.jsonl`` rows and the last one's ``ts``.
+**The block** is the bytes from the one after the LF of the line that is exactly ``OPEN`` up to the first byte of
+the next line that is exactly ``CLOSE``: no marker byte, its last line with its LF. ``status.md`` without an ``OPEN``
+line has no block (``found_sha256`` null); two ``OPEN`` lines, or an ``OPEN`` with no ``CLOSE`` after it, are
+unusable. The rest of the file is ``docs.render``'s and is never read here.
 
-**The block** (``render``) is fixed English text with one line per view value, from the line ``BEGIN`` to the
-line ``END``. Every value from the ledger or the facts is written as JSON with every non-ASCII character and
-``<``, ``>``, ``&``, `````, ``|``, ``[``, ``]``, ``@`` written as ``\\uXXXX``: a value cannot add a line (so
-not an ``END`` line), HTML, a link, a mention or a code span.
+**Edits.** Every cycle records the block it writes as an ``events`` row of kind ``status``, ``payload
+{block_sha256}``. ``recorded_sha256`` is the last such row's, or null; ``edited`` iff ``found_sha256 !=
+recorded_sha256`` (both null, the first cycle, is no edit; a deleted block with a recorded one is). An edit is
+the event ``{kind: status_edited, payload: {found_sha256, recorded_sha256}}``.
 
-**Edits** (``plan``). The region the block owns is ``status.md`` from its first byte through the last line
-that is exactly ``END`` (the last, so an ``END`` line added inside the block cannot leave the old block's tail
-behind); with no such line, the whole file. The rest of the file must not hold an ``END`` line. ``expected`` is ``payload.block_sha256`` of the last
-``kind: status`` row; ``found`` is the sha256 of the region, null when there is no ``status.md``. The block is
-edited when ``expected`` is null and the region is not empty (a ``status.md`` block this module never wrote), or
-when ``expected`` is not null and ``found`` differs. Every cycle writes ``status.md`` as the new block followed
-by the bytes after the region, and appends, after ``rows``: when edited, a ``part: events, kind: status_edited``
-row ``{cycle_id, found_sha256, expected_sha256}`` (row id ``<row_id>:edited``); always a ``part: events,
-kind: status`` row ``{cycle_id, number, block_sha256}`` (row id ``row_id``).
+**The view** (``render_block``) is the Founder's (test 42; the seed compares neither its bytes nor their hash): one
+line per field, every value written as JSON with every non-ASCII character and ``<``, ``>``, ``&``, `````, ``|``,
+``[``, ``]``, ``@`` as ``\\uXXXX``, so a value cannot add a line (so not a marker line), HTML, a link, a mention or
+a code span.
 
-**The cycle** (``status_cycle``): ``plan``, then ``ledger.append.plan_cycle`` (chain, secret scan), then one
-``state.commit_files`` call with the ledger (at ``state.path``) and ``status.md``. A refusal at any step
-commits nothing.
+**Render** (``render``) reads and writes nothing else: it does not verify the ledger or ``imports.jsonl`` as chains
+(``ledger.append`` does, tohum/29i). **The cycle** (``plan``, ``status_cycle``): the ledger must be a valid chain
+extending ``previous`` (``ledger.append.HardStop`` otherwise, before anything else is read); the cycle's own rows
+count as the ledger's last rows; the new ``status.md`` is the old one with the block replaced (``regenerate``), or
+the markers and the block followed by the old file when it had no block; the rows appended after the cycle's are a
+``status_edited`` row (when edited) and the ``status`` row; then ``ledger.append.plan_cycle`` (chain, secret scan)
+and one ``state.commit_files`` call with the ledger and ``status.md``. A refusal at any step commits nothing.
 
-Out of scope here, stated: the other lines of tohum/20's top section (hard stop or freeze reason, organs outside
-the seed, regression and impact-miss rates, unseen-file share), human touches not in ``setup/imports.jsonl``
-(seed epochs, ``stage-open``, hard-stop lifts), what lies below the block (``docs.render``, stage 1), who writes
-the ``integration_cut`` and decision rows (MF18 and the gate; this module only reads them), and composing this
-commit with ``ledger.anchor``'s root (MF17 wires the cycle: ``plan`` returns the rows and the file for that).
+Out of scope here, stated: the other lines of tohum/20's top section, tohum/07's ``main`` commits since the cut (no
+stage 0 producer, asama-0/01:37), who writes ``cycle_start`` and ``decision`` rows (the cycle and the gate; this
+module only reads them), human touches outside ``imports.jsonl`` that no one writes there, and what lies outside
+the block (``docs.render``, stage 1). A hand edit is regenerated, not refused (tohum/15:16 and 01b:37 call it a
+broken chain and a rejection; the owner decides, tohum/29n).
 
 Command line, run from ``referee/``, one JSON line on stdout, the cause of an error on stderr::
 
-    python -m status.block cycle LEDGER PREVIOUS IMPORTS STATUS   stdin {rows, facts}
-        -> {ok, hard_stop, view, block_sha256, status_sha256, edited, found_sha256, expected_sha256, row_hashes,
-            commits}
-        STATUS may name a missing file (no status.md yet). exit 0 written; 1 refused (hard stop or secret);
-        2 unusable input. On 1 and 2 every field but ok and hard_stop is null and commits is 0.
+    python -m status.block render LEDGER IMPORTS STATUS   stdin {"canary_cap_usd_micros": integer}
+        -> {cycle_id, last_decision, base_age_s, brake, human_touches, edited, event, block, block_sha256}
+        exit 0 not edited; 1 edited; 2 an unreadable file, a line that is not a JSON object, a malformed ts in a
+        row used, a cost row without an integer usd_micros, a cap that is not an integer, a marker error
+        ({"edited": null}).
 """
 
 from __future__ import annotations
@@ -80,14 +72,15 @@ from dispatcher import llm_call
 from ledger import append, chain
 
 STATUS_PATH = "status.md"
-BEGIN = "<!-- status.block:begin -->"
-END = "<!-- status.block:end -->"
+OPEN = b"<!-- status.block -->"
+CLOSE = b"<!-- /status.block -->"
 PART = "events"
 KIND = "status"
 EDITED = "status_edited"
-CUT = "integration_cut"
-DECISIONS = ("merge", "reject", "revert")
-FACTS = {"cycle_id", "snapshot_id", "row_id", "ts", "budgets", "main_commits_since_cut"}
+START = "cycle_start"
+DECISION = "decision"
+GENESIS = "genesis"
+FACTS = {"ts", "snapshot_id", "row_id", "canary_cap_usd_micros"}
 TS = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
 ESCAPED = {c: "\\u%04x" % ord(c) for c in "<>&`|[]@"}
 
@@ -97,12 +90,6 @@ class Unusable(ValueError):
 
 
 # ---------------------------------------------------------------- inputs
-
-def _text(value: Any, what: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise Unusable("%s must be a non-empty string" % what)
-    return value
-
 
 def _count(value: Any, what: str) -> int:
     if type(value) is not int or not 0 <= value <= chain.MAX_SAFE_INT:
@@ -120,69 +107,81 @@ def seconds(ts: Any, what: str) -> int:
         raise Unusable("%s is not a valid time" % what) from None
 
 
-def _facts(facts: Any) -> dict:
-    if not isinstance(facts, dict) or set(facts) != FACTS:
-        raise Unusable("facts must be exactly {%s}" % ", ".join(sorted(FACTS)))
-    for name in ("cycle_id", "snapshot_id", "row_id"):
-        _text(facts[name], name)
-    seconds(facts["ts"], "facts.ts")
-    budgets = facts["budgets"]
-    if not isinstance(budgets, dict):
-        raise Unusable("budgets must be an object {name: micro-USD}")
-    for name, micros in budgets.items():
-        _text(name, "a budget name")
-        _count(micros, "budget %r" % name)
-    if facts["main_commits_since_cut"] is not None:
-        _count(facts["main_commits_since_cut"], "main_commits_since_cut")
-    return facts
+def rows_of(data: bytes, what: str) -> list[dict]:
+    """The JSON object lines of a JSONL file (no chain check); ``Unusable`` for any other line."""
+    try:
+        return [chain.parse_row(line.decode("utf-8")) for line in chain._lines(data)]
+    except (chain.ChainError, UnicodeDecodeError) as exc:
+        raise Unusable("%s: %s" % (what, exc)) from None
 
 
-def _rows(rows: Any) -> list[dict]:
-    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
-        raise Unusable("rows must be a list of JSON objects")
-    return rows
+def _events(rows: list[dict], kind: str) -> list[dict]:
+    return [row for row in rows if row.get("part") == PART and row.get("kind") == kind]
 
 
-def _imports(data: bytes) -> list[dict]:
-    verdict = chain.verify_bytes(data)
-    if not verdict["valid"]:
-        raise Unusable("setup/imports.jsonl: %s (%s)" % (verdict["reason"], verdict["broken_row"]))
-    return [chain.parse_row(line.decode("utf-8")) for line in chain._lines(data)]
+def _payload(row: dict | None, key: str) -> Any:
+    payload = row.get("payload") if row is not None else None
+    return payload.get(key) if isinstance(payload, dict) else None
 
 
-def _is(row: dict, kinds: tuple) -> bool:
-    return row.get("part") == PART and row.get("kind") in kinds
+# ---------------------------------------------------------------- fields and edits
+
+def fields(rows: list[dict], imports: list[dict], cap: Any) -> dict:
+    """The five fields (see the module docstring) over ``rows``, the ledger's rows in file order."""
+    cap = _count(cap, "canary_cap_usd_micros")
+    starts, decisions, origins = _events(rows, START), _events(rows, DECISION), _events(rows, GENESIS)
+    start = starts[-1] if starts else None
+    age = None
+    if start is not None and origins:
+        age = seconds(start.get("ts"), "the last cycle_start row's ts") - seconds(
+            origins[0].get("ts"), "the first genesis row's ts")
+    try:
+        spent = llm_call.spent_micros(rows)
+    except llm_call.Unusable as exc:
+        raise Unusable(str(exc)) from None
+    return {"cycle_id": _payload(start, "cycle_id"),
+            "last_decision": _payload(decisions[-1], "decision") if decisions else None,
+            "base_age_s": age,
+            "brake": {"spent_usd_micros": spent, "cap_usd_micros": cap, "engaged": spent >= cap},
+            "human_touches": len(imports)}
 
 
-# ---------------------------------------------------------------- the view
+def split(status: bytes) -> tuple[bytes, bytes, bytes] | None:
+    """``status.md`` as (through the ``OPEN`` line, the block, from the ``CLOSE`` line on), or None without an
+    ``OPEN`` line; ``Unusable`` for two ``OPEN`` lines or an ``OPEN`` with no ``CLOSE`` after it."""
+    lines = status.split(b"\n")
+    starts, at = [], 0
+    for line in lines:
+        starts.append(at)
+        at += len(line) + 1
+    opens = [i for i, line in enumerate(lines) if line == OPEN and starts[i] + len(line) < len(status)]
+    if [i for i, line in enumerate(lines) if line == OPEN] != opens:
+        raise Unusable("status.md: an OPEN line without its LF")
+    if not opens:
+        return None
+    if len(opens) > 1:
+        raise Unusable("status.md: two OPEN lines")
+    first = opens[0]
+    close = next((i for i in range(first + 1, len(lines)) if lines[i] == CLOSE), None)
+    if close is None:
+        raise Unusable("status.md: OPEN with no CLOSE after it")
+    body_start, body_end = starts[first + 1], starts[close]
+    return status[:body_start], status[body_start:body_end], status[body_end:]
 
-def view(book: llm_call.CostBook, rows: list[dict], imports: list[dict], facts: dict) -> dict:
-    """The five values of the block (see the module docstring); ``book`` holds the verified ledger and ``rows``."""
-    every = book.ledger + rows
-    number = 1 + sum(1 for row in every if _is(row, (KIND,)))
-    decision = None
-    for row in every:
-        if _is(row, DECISIONS):
-            decision = {"kind": row["kind"], "row_id": row.get("row_id"), "ts": row.get("ts"),
-                        "cause": row.get("cause")}
-    base = None
-    cuts = [row for row in every if _is(row, (CUT,))]
-    if cuts:
-        cut = cuts[-1]
-        payload = cut.get("payload")
-        age = seconds(facts["ts"], "facts.ts") - seconds(cut.get("ts"), "the cut row's ts")
-        if age < 0:
-            raise Unusable("the cut row's ts is later than the cycle's")
-        base = {"main_sha": payload.get("main_sha") if isinstance(payload, dict) else None, "cut_ts": cut["ts"],
-                "age_s": age, "main_commits_since_cut": facts["main_commits_since_cut"]}
-    brakes = []
-    for name in sorted(facts["budgets"]):
-        budget, spent = facts["budgets"][name], book.spent(name)
-        brakes.append({"budget": name, "budget_usd_micros": budget, "spent_usd_micros": spent,
-                       "state": "brake" if spent >= budget else "ok"})
-    touches = {"count": len(imports), "last_ts": imports[-1].get("ts") if imports else None}
-    return {"cycle": {"id": facts["cycle_id"], "ts": facts["ts"], "number": number}, "last_decision": decision,
-            "base": base, "brakes": brakes, "human_touches": touches}
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def edit(rows: list[dict], status: bytes) -> dict:
+    """``{found_sha256, recorded_sha256, edited, event}`` (see the module docstring)."""
+    parts = split(status)
+    found = None if parts is None else _sha(parts[1])
+    recorded = _events(rows, KIND)
+    recorded_sha = _payload(recorded[-1], "block_sha256") if recorded else None
+    edited = found != recorded_sha
+    event = {"kind": EDITED, "payload": {"found_sha256": found, "recorded_sha256": recorded_sha}} if edited else None
+    return {"found_sha256": found, "recorded_sha256": recorded_sha, "edited": edited, "event": event}
 
 
 # ---------------------------------------------------------------- the block
@@ -193,77 +192,72 @@ def show(value: Any) -> str:
     return "".join(ESCAPED.get(c, c) for c in text)
 
 
-def render(v: dict) -> bytes:
-    cycle, decision, base = v["cycle"], v["last_decision"], v["base"]
-    lines = [BEGIN, "## Status", "",
-             "Written by the referee's status.block from the ledger at the end of every cycle. A hand edit of this",
-             "block is replaced in the next cycle and recorded as a status_edited event.", "",
-             "- Cycle: number %d, id %s, at %s" % (cycle["number"], show(cycle["id"]), show(cycle["ts"]))]
-    if decision is None:
-        lines.append("- Last decision: none")
-    else:
-        lines.append("- Last decision: %s, row %s, at %s, cause %s" % (
-            show(decision["kind"]), show(decision["row_id"]), show(decision["ts"]), show(decision["cause"])))
-    if base is None:
-        lines.append("- Base age: brain/integration not cut")
-    else:
-        behind = base["main_commits_since_cut"]
-        lines.append("- Base age: %d s since brain/integration was cut from main %s at %s; main commits since: %s" % (
-            base["age_s"], show(base["main_sha"]), show(base["cut_ts"]), "unknown" if behind is None else behind))
-    if not v["brakes"]:
-        lines.append("- Brakes: no budget")
-    for brake in v["brakes"]:
-        lines.append("- Brake %s: %s, spent %d of %d micro-USD" % (
-            show(brake["budget"]), brake["state"], brake["spent_usd_micros"], brake["budget_usd_micros"]))
-    touches = v["human_touches"]
-    lines.append("- Human touches: %d, last at %s" % (touches["count"], show(touches["last_ts"])))
-    lines.append(END)
+def render_block(f: dict) -> bytes:
+    brake = f["brake"]
+    lines = ["## Status", "",
+             "Written by the referee's status.block from the ledger. A hand edit of this block is replaced in the",
+             "next cycle and recorded as a status_edited event.", "",
+             "- Cycle: %s" % show(f["cycle_id"]),
+             "- Last decision: %s" % show(f["last_decision"]),
+             "- Base age: %s s since genesis" % show(f["base_age_s"]),
+             "- Brake: %s, %d of %d micro-USD spent" % ("engaged" if brake["engaged"] else "released",
+                                                      brake["spent_usd_micros"], brake["cap_usd_micros"]),
+             "- Human touches: %d" % f["human_touches"]]
     return ("\n".join(lines) + "\n").encode("ascii")
 
 
-def region(status: bytes) -> tuple[bytes, bytes]:
-    """``status.md`` split into the region the block owns and the rest (see the module docstring)."""
-    at, owned = 0, len(status)
-    for line in status.split(b"\n"):
-        at += len(line) + 1
-        if line == END.encode("ascii"):
-            owned = min(at, len(status))
-    return status[:owned], status[owned:]
+def regenerate(status: bytes | None, block: bytes) -> bytes:
+    """The new ``status.md``: the block replaced between the markers, or the markers and the block before the old
+    file when it has none."""
+    parts = split(status) if status is not None else None
+    if parts is None:
+        return OPEN + b"\n" + block + CLOSE + b"\n" + (status or b"")
+    return parts[0] + block + parts[2]
 
 
-def _sha(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+def render(ledger: bytes, imports: bytes, status: bytes, cap: Any) -> dict:
+    """The command's output (see the module docstring); writes nothing."""
+    rows = rows_of(ledger, "ledger")
+    f = fields(rows, rows_of(imports, "imports.jsonl"), cap)
+    e = edit(rows, status)
+    block = render_block(f)
+    return dict(f, edited=e["edited"], event=e["event"], block=block.decode("ascii"), block_sha256=_sha(block))
+
+
+# ---------------------------------------------------------------- the cycle
+
+def _facts(facts: Any) -> dict:
+    if not isinstance(facts, dict) or set(facts) != FACTS:
+        raise Unusable("facts must be exactly {%s}" % ", ".join(sorted(FACTS)))
+    for name in ("snapshot_id", "row_id"):
+        if not isinstance(facts[name], str) or not facts[name]:
+            raise Unusable("%s must be a non-empty string" % name)
+    seconds(facts["ts"], "facts.ts")
+    _count(facts["canary_cap_usd_micros"], "canary_cap_usd_micros")
+    return facts
 
 
 def plan(ledger: bytes, previous: bytes, rows: Any, status: bytes | None, imports: bytes, facts: Any) -> dict:
-    """The cycle's status: ``{view, block, status, edited, found_sha256, expected_sha256, rows}``, where ``rows``
-    are the given rows followed by this module's rows, and ``status`` the new ``status.md``. Writes nothing."""
-    book = llm_call.CostBook(ledger, previous)
-    rows = _rows(rows)
+    """The cycle's status: ``render``'s fields plus ``{status, rows}``, where ``rows`` are the given rows followed by
+    this module's rows and ``status`` the new ``status.md``. Writes nothing."""
+    verdict = chain.verify_bytes(ledger, previous)
+    if not verdict["valid"]:
+        raise append.HardStop("ledger: %s (%s)" % (verdict["reason"], verdict["broken_row"]))
     facts = _facts(facts)
-    for row in rows:
-        book.record(row)
-    v = view(book, rows, _imports(imports), facts)
-    block = render(v)
-    owned, rest = region(status) if status is not None else (b"", b"")
-    found = None if status is None else _sha(owned)
-    expected = None
-    for row in book.ledger + rows:
-        if _is(row, (KIND,)):
-            payload = row.get("payload")
-            expected = payload.get("block_sha256") if isinstance(payload, dict) else None
-    edited = bool(owned) if expected is None else found != expected
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise Unusable("rows must be a list of JSON objects")
+    every = rows_of(ledger, "ledger") + rows
+    f = fields(every, rows_of(imports, "imports.jsonl"), facts["canary_cap_usd_micros"])
+    e = edit(every, status if status is not None else b"")
+    block = render_block(f)
     common = {"part": PART, "ts": facts["ts"], "derivation": "tool", "trust": "verified",
               "snapshot_id": facts["snapshot_id"], "evidence_refs": []}
     new = []
-    if edited:
-        new.append(dict(common, row_id=facts["row_id"] + ":edited", kind=EDITED,
-                        payload={"cycle_id": facts["cycle_id"], "found_sha256": found, "expected_sha256": expected}))
-    new.append(dict(common, row_id=facts["row_id"], kind=KIND,
-                    payload={"cycle_id": facts["cycle_id"], "number": v["cycle"]["number"],
-                             "block_sha256": _sha(block)}))
-    return {"view": v, "block": block, "status": block + rest, "edited": edited, "found_sha256": found,
-            "expected_sha256": expected, "rows": rows + new}
+    if e["edited"]:
+        new.append(dict(common, row_id=facts["row_id"] + ":edited", kind=EDITED, payload=e["event"]["payload"]))
+    new.append(dict(common, row_id=facts["row_id"], kind=KIND, payload={"block_sha256": _sha(block)}))
+    return dict(f, edited=e["edited"], event=e["event"], block=block, block_sha256=_sha(block),
+                status=regenerate(status, block), rows=rows + new)
 
 
 def status_cycle(ledger: bytes, previous: bytes, rows: Any, status: bytes | None, imports: bytes, facts: Any,
@@ -281,55 +275,37 @@ def status_cycle(ledger: bytes, previous: bytes, rows: Any, status: bytes | None
 
 # ---------------------------------------------------------------- command line
 
-USAGE = "usage: python -m status.block cycle LEDGER PREVIOUS IMPORTS STATUS < {rows, facts}"
-FIELDS = ("view", "block_sha256", "status_sha256", "edited", "found_sha256", "expected_sha256", "row_hashes")
+USAGE = "usage: python -m status.block render LEDGER IMPORTS STATUS < {\"canary_cap_usd_micros\": integer}"
 
 
-def _emit(ok: bool, hard_stop: bool, out: dict | None, commits: int) -> None:
-    line = {name: None for name in FIELDS}
-    if out is not None:
-        line.update({name: out[name] for name in FIELDS if name in out})
-        line["block_sha256"], line["status_sha256"] = _sha(out["block"]), _sha(out["status"])
-    line.update(ok=ok, hard_stop=hard_stop, commits=commits)
-    sys.stdout.write(json.dumps(line, sort_keys=True) + "\n")
-
-
-def _read(path: str, missing_ok: bool = False) -> bytes | None:
+def _read(path: str) -> bytes:
     try:
         with open(path, "rb") as fh:
             return fh.read()
-    except FileNotFoundError:
-        if missing_ok:
-            return None
-        raise
+    except OSError as exc:
+        raise Unusable("%s: %s" % (path, exc.strerror)) from None
+
+
+def _emit(obj: dict) -> None:
+    sys.stdout.write(json.dumps(obj, sort_keys=True) + "\n")
 
 
 def main(argv: list[str]) -> int:
     try:
-        if len(argv) != 5 or argv[0] != "cycle":
+        if len(argv) != 4 or argv[0] != "render":
             raise Unusable(USAGE)
-        ledger, previous, imports = (_read(path) for path in argv[1:4])
-        status = _read(argv[4], missing_ok=True)
+        ledger, imports, status = (_read(path) for path in argv[1:])
         request = chain.parse_row(sys.stdin.buffer.read().decode("utf-8"))
-        if set(request) != {"rows", "facts"}:
-            raise Unusable("stdin must be {rows, facts} and nothing else")
-        state = append.CountingState()
-        out = status_cycle(ledger, previous, request["rows"], status, imports, request["facts"], state)
-        _emit(True, False, out, state.commits)
-        return 0
-    except append.HardStop as exc:
-        sys.stderr.write("hard stop: %s\n" % exc)
-        _emit(False, True, None, 0)
-        return 1
-    except append.SecretRow as exc:
-        sys.stderr.write("run invalid: %s\n" % exc)
-        _emit(False, False, None, 0)
-        return 1
-    except (Unusable, append.Unusable, llm_call.Unusable, chain.ChainError, UnicodeDecodeError, OSError) as exc:
+        if set(request) != {"canary_cap_usd_micros"}:
+            raise Unusable('stdin must be {"canary_cap_usd_micros"} and nothing else')
+        out = render(ledger, imports, status, request["canary_cap_usd_micros"])
+        _emit(out)
+        return 1 if out["edited"] else 0
+    except (Unusable, chain.ChainError, UnicodeDecodeError) as exc:
         sys.stderr.write("unusable input: %s\n" % exc)
     except Exception as exc:  # noqa: BLE001 - never a traceback, never an exit without a reason
         sys.stderr.write("internal error: %s: %s\n" % (type(exc).__name__, exc))
-    _emit(False, False, None, 0)
+    _emit({"edited": None})
     return 2
 
 

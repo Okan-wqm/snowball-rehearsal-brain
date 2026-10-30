@@ -1,42 +1,45 @@
 """``llm.call``: one tool-less model call through the pinned ``claude`` CLI, from typed input, with its ``cost``
 row (stage 0, MF15).
 
-Rules: asama-0/14 row 15, asama-0/09 test 37, asama-0/12 (the canary's stage brake, ``canary_usd``), tohum/24
-("Araçsız çağrı", "Kaçış": 429 and other outages are not rejections, no silent retry inside a run), tohum/26a
-(``llm.call``: typed input, template, model, per-call cap -> structured output, served model, cost; writes the
-``cost`` row), tohum/06 (the cost is the CLI's list-price estimate; on a timeout the per-call cap is written),
-tohum/08 item 11 (a prompt is scanned, a match is not sent), tohum/29d (group ``prompt``).
+Rules: tohum/29m (``prompt``: the template, the typed input, dropping, placeholders, the scan, the brake, the plan's
+output), asama-0/14 row 15, asama-0/09 test 37, asama-0/12 (the stage brake), tohum/24 ("Araçsız çağrı", "Kaçış":
+429 and other outages are not rejections, no silent retry inside a run; the call cap is ``min(call cap, what the
+stage leaves)``), tohum/26a (``llm.call``), tohum/06 (the cost is the CLI's list-price estimate; on a timeout the
+cap is written), tohum/08 item 11 (a prompt is scanned, a match is not sent).
 
-**Types** (``TYPES``, one checker for input and output): a type is ``{field: kind}``, at least one field, field
-names ``[a-z][a-z0-9_]*``, kind one of ``string``, ``integer`` (a JSON integer within +-(2^53-1); ``true`` is
-not one), ``boolean``, ``strings`` (an array of strings). A value has exactly the type's fields: a missing
-field, a field outside the type and a value of another kind are refused (``Unusable``), never dropped.
+**Template** (``check_template``): ``{fields: {name: "string" | "integer"}, text: string}`` and optionally
+``output`` (the structured output's type, read only by ``call``: ``{name: kind}``, at least one field, kinds
+``string``, ``integer``, ``boolean``, ``strings``); no other key. Names match ``[A-Za-z_][A-Za-z0-9_]*``. In
+``text`` every ``{{`` starts a placeholder that must be ``{{name}}`` with a declared name; any other ``{{`` (a
+space, a bad or undeclared name, no closing ``}}``) makes the request unusable. Single braces and a ``}}`` that
+closes no placeholder are text.
 
-**Template**: exactly ``{name, system, body, input, output}``; ``name`` a non-empty string, ``system`` and
-``body`` strings, ``input`` and ``output`` types. In ``body``, ``{field}`` is a placeholder, ``{{`` and ``}}``
-are literal braces, and any other brace is refused; every placeholder is an ``input`` field and every
-``input`` field is used. The prompt is ``body`` with each placeholder replaced, in one pass, by the RFC 8785
-form of the field's value (``ledger.chain.canonical``): a string arrives quoted with its quotes, backslashes
-and line breaks escaped, so a value cannot add template text, close its own quotes or expand another
-placeholder. ``prompt_sha256`` is the sha256 of the prompt's UTF-8 bytes, ``system_sha256`` of ``system``'s.
+**Typed input** (``build``): every declared field is in ``input`` with its type (a JSON string; a JSON integer
+within +-(2^53-1), never ``true``); an input field the template does not declare is dropped, named in
+``dropped`` (sorted), and never reaches the prompt. The prompt is ``text`` with each placeholder replaced, left to
+right in one pass, by the field's RFC 8785 JSON (``ledger.chain.canonical``: a string quoted and escaped, an integer
+in digits); the inserted text is not scanned again, so a value cannot expand a placeholder, close its quotes or
+add a line. ``prompt_sha256`` is the sha256 of the prompt's UTF-8 bytes alone.
 
-**A call** (``call``), in this order; steps 1-4 start no process and write no row:
+**Plan** (``plan``), nothing run: the request is ``{model: non-empty string, input, budget:
+{stage_cap_usd_micros, spent_usd_micros, call_cap_usd_micros}}`` (integers >= 0; the caller turns the spend and
+``canary_usd`` into micro-USD). Reasons, sorted: ``secret_in_prompt`` when ``gate.secrets.scan`` (kind ``prompt``,
+MF2) matches in the built prompt; ``stage_brake`` when ``stage_cap - spent <= 0``. With no reason the call is sent
+with cap ``min(call_cap, stage_cap - spent)`` and ``max_budget_usd`` is that cap as ``"<units>.<6 digits>"`` USD;
+otherwise ``max_budget_usd`` is null. The argv is the pinned CLI's (``command``).
 
-1. The template, the input, the model (a non-empty string), the cap (integer micro-USD > 0) and the budget
-   are checked; the prompt is built.
-2. The CLI file's sha512 must equal the pin (``Unusable`` otherwise). The file is hashed, then executed by
+**A call** (``call``): the plan, with the provider token as a known value for the scan; nothing is started and no
+row is written when it is not sent (outcome ``secret`` or ``brake``). Otherwise:
+
+1. The CLI file's sha512 must equal the pin (``Unusable`` otherwise). The file is hashed, then executed by
    path: a file swapped between the two is out of reach of this check.
-3. The system text and the prompt are scanned (``gate.secrets.scan``, kind ``prompt``) with the provider
-   token as a known value: a match is outcome ``secret``, not sent.
-4. The stage brake (``CostBook``): when the cost already recorded under the budget name plus this call's
-   cap exceeds the budget, the outcome is ``brake``, not sent (the caller's cycle then fails closed).
-5. One process, no retry: ``claude -p`` with ``ARGS`` (no built-in tool, no setting source, no MCP server,
-   no slash command, no session persistence, ``--max-budget-usd`` the cap, ``--model``, ``--system-prompt``,
-   ``--json-schema`` from ``output``, JSON output); the prompt on stdin, never in argv; the working
+2. One process, no retry: ``claude -p`` with ``ARGS`` (no built-in tool, no setting source, no MCP server,
+   no slash command, no session persistence), ``--model``, ``--max-budget-usd`` the cap, and ``--json-schema``
+   from ``output`` when the template has one; JSON output; the prompt on stdin, never in argv; the working
    directory a fresh empty directory; the environment exactly ``PATH`` (inherited), ``HOME`` and
    ``CLAUDE_CONFIG_DIR`` (fresh empty directories), ``CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`` and
    ``CLAUDE_CODE_OAUTH_TOKEN`` when given. Nothing else of the caller's environment reaches it.
-6. The result is classified (``classify``, the first rule that holds):
+3. The result is classified (``classify``, the first rule that holds):
 
    - the process ran past ``timeout_s``: ``outage`` / ``timeout``, cost = cap;
    - stdout is not one JSON object with ``type: result``, a ``total_cost_usd`` number >= 0 (at most 2^53-1
@@ -51,29 +54,32 @@ placeholder. ``prompt_sha256`` is the sha256 of the prompt's UTF-8 bytes, ``syst
    - the cost is above the cap: ``unresolved`` / ``over_budget``;
    - ``stop_reason: refusal``: ``unresolved`` / ``refusal``;
    - the served models are not exactly the requested one: ``unresolved`` / ``model_mismatch``;
-   - ``structured_output`` is not a value of the ``output`` type: ``unresolved`` / ``malformed_output``;
-   - else ``ok``, the run is valid, and ``output`` is ``structured_output``.
+   - the template has an ``output`` type and ``structured_output`` is not a value of it: ``unresolved`` /
+     ``malformed_output``;
+   - else ``ok``, the run is valid, and ``output`` is ``structured_output`` (null without an ``output`` type).
 
-7. Every started process gives one ``cost`` row (part ``cost``, kind ``cost``), recorded in the ``CostBook``
+4. Every started process gives one ``cost`` row (part ``cost``, kind ``cost``), recorded in the ``CostBook``
    before ``call`` returns, whatever the outcome; the book's ``request()`` is the cycle's ``ledger.append``
-   input (calls 10 -> 15: one ``brain/state`` commit per cycle, not one per call). The row holds no float and
-   no free text from the CLI but the served model names; its budget field is ``budget``, not ``budget_key``:
-   ``ledger.append``'s scan (MF2) reads a ``*_key`` field holding 8 or more characters as an assigned secret.
+   input (calls 10 -> 15: one ``brain/state`` commit per cycle). The payload's ``usd_micros`` is the cost, the
+   field ``status.block``'s brake sums (tohum/29n). The row holds no float and no free text from the CLI but the
+   served model names.
 
 **The book** (``CostBook``) reads the ledger only once it is a valid chain extending ``previous``
-(``ledger.chain.verify_bytes``) or raises ``ledger.append.HardStop``. Spent under a key is the sum of
-``payload.cost_usd_micros`` over ``part: cost, kind: cost`` rows with that ``payload.budget``, in the ledger
-and recorded since; such a row with a cost that is not an integer >= 0 is ``Unusable`` (the brake cannot be
-computed, so no call).
+(``ledger.chain.verify_bytes``) or raises ``ledger.append.HardStop``. ``spent()`` is ``spent_micros`` over the
+ledger's rows and those recorded since: the sum of ``payload.usd_micros`` over every ``part: cost`` row, one
+rule for this module's brake and ``status.block``'s; a ``cost`` row without an integer ``usd_micros`` >= 0 is
+``Unusable`` (the brake cannot be computed, so no call).
 
 Out of scope, stated: whether the real CLI's JSON matches the shapes above (the fake here follows them; the real
 call is asama-0/10a ``#model``); a network error without a status (``cli_error``, not ``outage``); the API-key
-path for sale (tohum/24); where the template, model, cap and budget come from (``policy.json``, the caller).
+path for sale (tohum/24); where the template, model, caps and the stage's spend come from (``policy.json``, the
+caller); a system prompt (none is passed: the template's text is the whole prompt).
 
 Command line, run from ``referee/``, one JSON line on stdout, the cause of an error on stderr::
 
-    python -m dispatcher.llm_call prompt   stdin {template, input}   -> {prompt_sha256, system_sha256}
-    exit 0; 2 unusable input (both fields null).
+    python -m dispatcher.llm_call plan TEMPLATE   stdin {model, input, budget}
+        -> {send, reasons, prompt_sha256, dropped, max_budget_usd, argv}
+    exit 0 sent; 1 not sent (a stop, not a rejection); 2 unusable request ({"send": false}).
 """
 
 from __future__ import annotations
@@ -91,9 +97,15 @@ from typing import Any
 from gate import secrets
 from ledger import append, chain
 
-TYPES = ("string", "integer", "boolean", "strings")
-FIELD = re.compile(r"[a-z][a-z0-9_]*\Z")
-TEMPLATE = {"name", "system", "body", "input", "output"}
+INPUT_TYPES = ("string", "integer")
+OUTPUT_TYPES = ("string", "integer", "boolean", "strings")
+NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+PLACEHOLDER = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
+TEMPLATE = {"fields", "text"}
+TEMPLATE_OPTIONAL = {"output"}
+BUDGET = ("stage_cap_usd_micros", "spent_usd_micros", "call_cap_usd_micros")
+REQUEST = {"model", "input", "budget"}
+REASONS = ("secret_in_prompt", "stage_brake")
 TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 ARGS = ("-p", "--output-format", "json", "--tools", "", "--setting-sources", "", "--strict-mcp-config",
         "--disable-slash-commands", "--no-session-persistence")
@@ -109,16 +121,16 @@ class Unusable(ValueError):
     pass
 
 
-# ---------------------------------------------------------------- types and the prompt
+# ---------------------------------------------------------------- types, the template, the prompt
 
-def check_type(spec: Any, what: str) -> dict:
-    if not isinstance(spec, dict) or not spec:
-        raise Unusable("%s must be a non-empty object {field: kind}" % what)
+def check_type(spec: Any, kinds: tuple[str, ...], what: str, non_empty: bool) -> dict:
+    if not isinstance(spec, dict) or (non_empty and not spec):
+        raise Unusable("%s must be an object {name: kind}%s" % (what, " with a field" if non_empty else ""))
     for name, kind in spec.items():
-        if not isinstance(name, str) or not FIELD.match(name):
-            raise Unusable("%s: field name %r must match [a-z][a-z0-9_]*" % (what, name))
-        if kind not in TYPES:
-            raise Unusable("%s: field %s has kind %r, not one of %s" % (what, name, kind, ", ".join(TYPES)))
+        if not NAME.match(name):
+            raise Unusable("%s: field name %r must match [A-Za-z_][A-Za-z0-9_]*" % (what, name))
+        if kind not in kinds:
+            raise Unusable("%s: field %s has kind %r, not one of %s" % (what, name, kind, ", ".join(kinds)))
     return spec
 
 
@@ -133,55 +145,41 @@ def _of_kind(value: Any, kind: str) -> bool:
 
 
 def check_value(spec: dict, value: Any, what: str) -> dict:
-    """``value`` has exactly ``spec``'s fields, each of its kind; otherwise ``Unusable``."""
-    if not isinstance(value, dict):
-        raise Unusable("%s must be an object" % what)
-    if set(value) != set(spec):
-        extra, missing = sorted(set(value) - set(spec)), sorted(set(spec) - set(value))
-        raise Unusable("%s: fields outside the type %s, missing %s" % (what, extra, missing))
+    """``value`` has exactly ``spec``'s fields, each of its kind (the structured output); otherwise ``Unusable``."""
+    if not isinstance(value, dict) or set(value) != set(spec):
+        raise Unusable("%s must have exactly the fields %s" % (what, sorted(spec)))
     for name, kind in spec.items():
         if not _of_kind(value[name], kind):
             raise Unusable("%s: field %s is not a %s" % (what, name, kind))
     return value
 
 
-def _pieces(body: str) -> list[tuple[str, str]]:
-    """``body`` as ``("text", s)`` and ``("field", name)`` pieces; a brace that is neither ``{{``, ``}}`` nor
-    ``{name}`` is refused."""
-    pieces, text, i = [], [], 0
-    while i < len(body):
-        ch = body[i]
-        if ch in "{}" and body[i:i + 2] == ch * 2:
-            text.append(ch)
-            i += 2
-        elif ch == "{":
-            end = body.find("}", i)
-            name = body[i + 1:end] if end > 0 else ""
-            if not FIELD.match(name):
-                raise Unusable("template body: a brace at %d is not {{, }} or {field}" % i)
-            pieces += [("text", "".join(text)), ("field", name)]
-            text, i = [], end + 1
-        elif ch == "}":
-            raise Unusable("template body: a lone } at %d" % i)
-        else:
-            text.append(ch)
-            i += 1
-    return pieces + [("text", "".join(text))]
+def _pieces(text: str, fields: dict) -> list[tuple[str, str]]:
+    """``text`` as ``("text", s)`` and ``("field", name)`` pieces; every ``{{`` must open ``{{name}}`` with a
+    declared name."""
+    pieces, i = [], 0
+    while True:
+        at = text.find("{{", i)
+        if at < 0:
+            return pieces + [("text", text[i:])]
+        match = PLACEHOLDER.match(text, at)
+        if not match:
+            raise Unusable("template text: the {{ at %d is not {{name}}" % at)
+        if match.group(1) not in fields:
+            raise Unusable("template text: placeholder {{%s}} names no declared field" % match.group(1))
+        pieces += [("text", text[i:at]), ("field", match.group(1))]
+        i = match.end()
 
 
 def check_template(tmpl: Any) -> dict:
-    if not isinstance(tmpl, dict) or set(tmpl) != TEMPLATE:
-        raise Unusable("template must be {%s} and nothing else" % ", ".join(sorted(TEMPLATE)))
-    if not isinstance(tmpl["name"], str) or not tmpl["name"]:
-        raise Unusable("template name must be a non-empty string")
-    if not isinstance(tmpl["system"], str) or not isinstance(tmpl["body"], str):
-        raise Unusable("template system and body must be strings")
-    fields = check_type(tmpl["input"], "template input")
-    check_type(tmpl["output"], "template output")
-    used = {name for kind, name in _pieces(tmpl["body"]) if kind == "field"}
-    if used != set(fields):
-        raise Unusable("template body: placeholders outside the input type %s, input fields unused %s"
-                       % (sorted(used - set(fields)), sorted(set(fields) - used)))
+    if not isinstance(tmpl, dict) or not TEMPLATE <= set(tmpl) <= TEMPLATE | TEMPLATE_OPTIONAL:
+        raise Unusable("template must be {fields, text} and optionally output")
+    check_type(tmpl["fields"], INPUT_TYPES, "template fields", non_empty=False)
+    if not isinstance(tmpl["text"], str):
+        raise Unusable("template text must be a string")
+    if "output" in tmpl:
+        check_type(tmpl["output"], OUTPUT_TYPES, "template output", non_empty=True)
+    _pieces(tmpl["text"], tmpl["fields"])
     return tmpl
 
 
@@ -189,24 +187,27 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def render(tmpl: Any, value: Any) -> dict:
-    """``{prompt, prompt_sha256, system_sha256}`` from a template and a value of its input type."""
-    check_template(tmpl)
-    check_value(tmpl["input"], value, "input")
+def build(tmpl: Any, value: Any) -> dict:
+    """``{prompt, prompt_sha256, dropped}`` from a template and a typed input (see the module docstring)."""
+    fields = check_template(tmpl)["fields"]
+    if not isinstance(value, dict):
+        raise Unusable("input must be an object")
+    for name, kind in fields.items():
+        if name not in value:
+            raise Unusable("input: declared field %s is missing" % name)
+        if not _of_kind(value[name], kind):
+            raise Unusable("input: field %s is not a JSON %s" % (name, kind))
     out = []
-    for kind, piece in _pieces(tmpl["body"]):
-        if kind == "text":
-            out.append(piece)
-        else:
-            try:
-                out.append(chain.canonical(value[piece]).decode("utf-8"))
-            except chain.ChainError as exc:
-                raise Unusable("input field %s: %s" % (piece, exc)) from None
+    for kind, piece in _pieces(tmpl["text"], fields):
+        try:
+            out.append(piece if kind == "text" else chain.canonical(value[piece]).decode("utf-8"))
+        except chain.ChainError as exc:
+            raise Unusable("input field %s: %s" % (piece, exc)) from None
     try:
         prompt = "".join(out)
-        return {"prompt": prompt, "prompt_sha256": _sha256(prompt), "system_sha256": _sha256(tmpl["system"])}
+        return {"prompt": prompt, "prompt_sha256": _sha256(prompt), "dropped": sorted(set(value) - set(fields))}
     except UnicodeEncodeError:
-        raise Unusable("template text is not encodable as UTF-8") from None
+        raise Unusable("the prompt is not encodable as UTF-8") from None
 
 
 def json_schema(spec: dict) -> dict:
@@ -277,6 +278,18 @@ def _micros(value: Any, what: str, positive: bool = False) -> int:
 
 # ---------------------------------------------------------------- the book and the brake
 
+def spent_micros(rows: list[dict]) -> int:
+    """The stage's spend: the sum of ``payload.usd_micros`` over every ``part: cost`` row (``Unusable`` when one
+    has no integer ``usd_micros`` >= 0). One rule for this module's brake and ``status.block``'s."""
+    total = 0
+    for row in rows:
+        if row.get("part") == PART:
+            payload = row.get("payload")
+            total += _micros(payload.get("usd_micros") if isinstance(payload, dict) else None,
+                             "cost row %r usd_micros" % row.get("row_id"))
+    return total
+
+
 class CostBook:
     """The cost rows of a verified ledger plus the ones recorded in this cycle; the stage brake reads it."""
 
@@ -287,14 +300,8 @@ class CostBook:
         self.ledger = [chain.parse_row(line.decode("utf-8")) for line in chain._lines(ledger)]
         self.rows: list[dict] = []
 
-    def spent(self, name: str) -> int:
-        total = 0
-        for row in self.ledger + self.rows:
-            payload = row.get("payload")
-            if (row.get("part") == PART and row.get("kind") == KIND and isinstance(payload, dict)
-                    and payload.get("budget") == name):
-                total += _micros(payload.get("cost_usd_micros"), "cost row %r cost_usd_micros" % row.get("row_id"))
-        return total
+    def spent(self) -> int:
+        return spent_micros(self.ledger + self.rows)
 
     def record(self, row: dict) -> None:
         self.rows.append(row)
@@ -324,9 +331,10 @@ def _cost(value: Any) -> int | None:
     return None
 
 
-def classify(stdout: bytes | None, model: str, cap: int, output: dict) -> dict:
-    """Step 6 of the module docstring: ``{outcome, reason, cost_usd_micros, cost_source, models_served,
-    output}``; ``stdout`` None means the process ran past its timeout."""
+def classify(stdout: bytes | None, model: str, cap: int, output: dict | None) -> dict:
+    """Step 3 of a call (the module docstring): ``{outcome, reason, cost_usd_micros, cost_source, models_served,
+    output}``; ``output`` None when the template has no output type, ``stdout`` None when the process ran past its
+    timeout."""
     def done(outcome, reason, cost=cap, source="cap", served=(), out=None):
         return {"outcome": outcome, "reason": reason, "cost_usd_micros": cost, "cost_source": source,
                 "models_served": sorted(served), "output": out}
@@ -361,6 +369,8 @@ def classify(stdout: bytes | None, model: str, cap: int, output: dict) -> dict:
         return done("unresolved", "refusal", **seen)
     if list(usage) != [model]:
         return done("unresolved", "model_mismatch", **seen)
+    if output is None:
+        return done("ok", None, **seen)
     try:
         out = check_value(output, result.get("structured_output"), "structured_output")
     except Unusable:
@@ -368,7 +378,7 @@ def classify(stdout: bytes | None, model: str, cap: int, output: dict) -> dict:
     return done("ok", None, out=out, **seen)
 
 
-# ---------------------------------------------------------------- the call
+# ---------------------------------------------------------------- the plan and the call
 
 def sha512_file(path: str) -> str:
     digest = hashlib.sha512()
@@ -380,9 +390,34 @@ def sha512_file(path: str) -> str:
 
 def command(claude: str, model: str, cap: int, tmpl: dict) -> list[str]:
     """The argv of one call; the prompt is not in it."""
-    schema = chain.canonical(json_schema(tmpl["output"])).decode("utf-8")
-    return [claude, *ARGS, "--model", model, "--max-budget-usd", usd(cap), "--system-prompt", tmpl["system"],
-            "--json-schema", schema]
+    argv = [claude, *ARGS, "--model", model, "--max-budget-usd", usd(cap)]
+    if "output" in tmpl:
+        argv += ["--json-schema", chain.canonical(json_schema(tmpl["output"])).decode("utf-8")]
+    return argv
+
+
+def plan(tmpl: Any, request: Any, known: list[tuple[str, str]] = (), claude: str = "claude") -> dict:
+    """``{send, reasons, prompt, prompt_sha256, dropped, cap_micros, max_budget_usd, argv}`` (see the module
+    docstring); ``Unusable`` for an unusable request. Nothing is run."""
+    if not isinstance(request, dict) or set(request) != REQUEST:
+        raise Unusable("the request must be {model, input, budget} and nothing else")
+    model, budget = request["model"], request["budget"]
+    if not isinstance(model, str) or not model:
+        raise Unusable("model must be a non-empty string")
+    if not isinstance(budget, dict) or set(budget) != set(BUDGET):
+        raise Unusable("budget must be {%s}" % ", ".join(BUDGET))
+    stage_cap, spent, call_cap = (_micros(budget[k], "budget " + k) for k in BUDGET)
+    built = build(tmpl, request["input"])
+    reasons = []
+    if secrets.scan(built["prompt"], "prompt", known):
+        reasons.append("secret_in_prompt")
+    left = stage_cap - spent
+    if left <= 0:
+        reasons.append("stage_brake")
+    cap = min(call_cap, left) if not reasons else None
+    return dict(built, send=not reasons, reasons=reasons, cap_micros=cap,
+                max_budget_usd=None if cap is None else usd(cap),
+                argv=None if cap is None else command(claude, model, cap, tmpl))
 
 
 def _environment(root: str, token: str | None) -> dict:
@@ -395,65 +430,65 @@ def _environment(root: str, token: str | None) -> dict:
     return env
 
 
-def cost_row(tmpl: dict, built: dict, model: str, cap: int, budget_name: str, verdict: dict, duration_ms: int,
-             row_id: str, ts: str, snapshot_id: str) -> dict:
-    payload = {"tool": "llm.call", "template": tmpl["name"], "budget": budget_name, "model_requested": model,
+def template_sha256(tmpl: dict) -> str:
+    return hashlib.sha256(chain.canonical(tmpl)).hexdigest()
+
+
+def cost_row(tmpl: dict, planned: dict, model: str, verdict: dict, duration_ms: int, row_id: str, ts: str,
+             snapshot_id: str) -> dict:
+    payload = {"tool": "llm.call", "template_sha256": template_sha256(tmpl), "model_requested": model,
                "models_served": verdict["models_served"], "outcome": verdict["outcome"], "reason": verdict["reason"],
-               "cost_usd_micros": verdict["cost_usd_micros"], "cost_source": verdict["cost_source"],
-               "cap_usd_micros": cap, "prompt_sha256": built["prompt_sha256"],
-               "system_sha256": built["system_sha256"], "duration_ms": duration_ms}
+               "usd_micros": verdict["cost_usd_micros"], "cost_source": verdict["cost_source"],
+               "cap_usd_micros": planned["cap_micros"], "prompt_sha256": planned["prompt_sha256"],
+               "duration_ms": duration_ms}
     return {"row_id": row_id, "ts": ts, "part": PART, "kind": KIND, "payload": payload, "derivation": "tool",
             "trust": "observed", "snapshot_id": snapshot_id, "evidence_refs": []}
 
 
-def call(tmpl: Any, value: Any, *, claude: str, claude_sha512: str, model: str, cap_micros: int, budget_name: str,
-         budget_micros: int, book: CostBook, token: str | None, timeout_s: float, row_id: str, ts: str,
+def call(tmpl: Any, value: Any, *, claude: str, claude_sha512: str, model: str, stage_cap_micros: int,
+         call_cap_micros: int, book: CostBook, token: str | None, timeout_s: float, row_id: str, ts: str,
          snapshot_id: str) -> dict:
-    """One call (see the module docstring). Returns ``{outcome, reason, sent, run_valid, output, models_served,
-    cost_usd_micros, prompt_sha256, row}``; ``row`` is None when nothing was sent."""
-    built = render(tmpl, value)
-    if not isinstance(model, str) or not model:
-        raise Unusable("model must be a non-empty string")
-    cap = _micros(cap_micros, "cap_micros", positive=True)
-    budget = _micros(budget_micros, "budget_micros")
-    if not isinstance(budget_name, str) or not budget_name:
-        raise Unusable("budget_name must be a non-empty string")
+    """One call (see the module docstring); the spend is the book's. Returns ``{outcome, reason, sent, run_valid,
+    output, models_served, cost_usd_micros, prompt_sha256, dropped, row}``; ``row`` is None when nothing was sent."""
     if token is not None and not isinstance(token, str):
         raise Unusable("token must be a string or None")
+    request = {"model": model, "input": value, "budget": {"stage_cap_usd_micros": stage_cap_micros,
+                                                           "spent_usd_micros": book.spent(),
+                                                           "call_cap_usd_micros": call_cap_micros}}
+    planned = plan(tmpl, request, [(TOKEN_ENV, token)] if token else [], claude)
     if not isinstance(claude_sha512, str) or len(claude_sha512) != 128 or not set(claude_sha512) <= HEX:
         raise Unusable("claude_sha512 must be 128 lowercase hex characters")
     if sha512_file(claude) != claude_sha512:
         raise Unusable("the claude CLI at %s is not the pinned one" % claude)
     unsent = {"sent": False, "run_valid": False, "output": None, "models_served": [], "cost_usd_micros": 0,
-              "prompt_sha256": built["prompt_sha256"], "row": None}
-    known = [(TOKEN_ENV, token)] if token else []
-    if secrets.scan(tmpl["system"], "prompt", known) or secrets.scan(built["prompt"], "prompt", known):
+              "prompt_sha256": planned["prompt_sha256"], "dropped": planned["dropped"], "row": None}
+    if "secret_in_prompt" in planned["reasons"]:
         return dict(unsent, outcome="secret", reason="secret_in_prompt")
-    if book.spent(budget_name) + cap > budget:
-        return dict(unsent, outcome="brake", reason="stage_budget")
+    if not planned["send"]:
+        return dict(unsent, outcome="brake", reason="stage_brake")
     with tempfile.TemporaryDirectory(prefix="llm-call-") as root:
         env = _environment(root, token)
         started = time.monotonic()
         try:
-            done = subprocess.run(command(claude, model, cap, tmpl), input=built["prompt"].encode("utf-8"),
-                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=os.path.join(root, "work"),
-                                  env=env, timeout=timeout_s)
+            done = subprocess.run(planned["argv"], input=planned["prompt"].encode("utf-8"), stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, cwd=os.path.join(root, "work"), env=env,
+                                  timeout=timeout_s)
             stdout = done.stdout
         except subprocess.TimeoutExpired:
             stdout = None
         duration = int((time.monotonic() - started) * 1000)
-    verdict = classify(stdout, model, cap, tmpl["output"])
-    row = cost_row(tmpl, built, model, cap, budget_name, verdict, duration, row_id, ts, snapshot_id)
+    verdict = classify(stdout, model, planned["cap_micros"], tmpl.get("output"))
+    row = cost_row(tmpl, planned, model, verdict, duration, row_id, ts, snapshot_id)
     book.record(row)
     return {"outcome": verdict["outcome"], "reason": verdict["reason"], "sent": True,
             "run_valid": verdict["outcome"] == "ok", "output": verdict["output"],
             "models_served": verdict["models_served"], "cost_usd_micros": verdict["cost_usd_micros"],
-            "prompt_sha256": built["prompt_sha256"], "row": row}
+            "prompt_sha256": planned["prompt_sha256"], "dropped": planned["dropped"], "row": row}
 
 
 # ---------------------------------------------------------------- command line
 
-USAGE = "usage: python -m dispatcher.llm_call prompt < {template, input}"
+USAGE = "usage: python -m dispatcher.llm_call plan TEMPLATE < {model, input, budget}"
 
 
 def _emit(obj: dict) -> None:
@@ -462,19 +497,21 @@ def _emit(obj: dict) -> None:
 
 def main(argv: list[str]) -> int:
     try:
-        if argv != ["prompt"]:
+        if len(argv) != 2 or argv[0] != "plan":
             raise Unusable(USAGE)
-        request = chain.parse_row(sys.stdin.buffer.read().decode("utf-8"))
-        if set(request) != {"template", "input"}:
-            raise Unusable("stdin must be {template, input} and nothing else")
-        built = render(request["template"], request["input"])
-        _emit({"prompt_sha256": built["prompt_sha256"], "system_sha256": built["system_sha256"]})
-        return 0
+        try:
+            with open(argv[1], "rb") as fh:
+                tmpl = chain.parse_row(fh.read().decode("utf-8"))
+        except OSError as exc:
+            raise Unusable("%s: %s" % (argv[1], exc.strerror)) from None
+        planned = plan(tmpl, chain.parse_row(sys.stdin.buffer.read().decode("utf-8")))
+        _emit({k: planned[k] for k in ("send", "reasons", "prompt_sha256", "dropped", "max_budget_usd", "argv")})
+        return 0 if planned["send"] else 1
     except (Unusable, UnicodeDecodeError, chain.ChainError) as exc:
         sys.stderr.write("unusable input: %s\n" % exc)
     except Exception as exc:  # noqa: BLE001 - never a traceback, never an exit without a reason
         sys.stderr.write("internal error: %s: %s\n" % (type(exc).__name__, exc))
-    _emit({"prompt_sha256": None, "system_sha256": None})
+    _emit({"send": False})
     return 2
 
 
