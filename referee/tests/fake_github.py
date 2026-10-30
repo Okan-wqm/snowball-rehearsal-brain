@@ -1,0 +1,176 @@
+"""An in-process model of the GitHub REST routes ``target.write`` uses (tests only, asama-0/14 row 9 "Kum").
+
+State: refs (name -> sha), commits (sha -> {tree, parents}), pulls, check runs, and every request received.
+It models what the writer depends on and the target's rulesets (tohum/25a row 3), nothing more:
+
+- a ref update that is not a fast-forward is refused (422) unless ``force`` is true;
+- a branch in ``direct_push_denied`` (``brain/integration``) refuses ``POST``/``PATCH`` of its ref (422);
+  it changes only by a merge, and a merge into it needs a ``success`` check run on the head sha;
+- a merge needs the base head to be an ancestor of the pull's head (no three-way merge is modelled; else 405);
+  the merge commit has parents ``[base head, head sha]`` and the head's tree; ``sha`` must equal the head;
+- a commit's tree must already be known (from a seeded commit), its parents must exist.
+
+It also answers routes the writer must never call (``PUT contents``, ``POST merges``, ``DELETE`` of a ref), so
+a test can see that the guard, not the fake, stopped them: ``requests`` records every request received.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import re
+
+from ledger.chain import canonical
+
+SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def sha_of(obj) -> str:
+    return hashlib.sha1(canonical(obj)).hexdigest()
+
+
+class FakeGitHub:
+    def __init__(self, repo: str = "acme/toy", direct_push_denied=("brain/integration",),
+                 required_check: str = "snowball/gate"):
+        self.prefix = "/repos/%s/" % repo
+        self.refs: dict[str, str] = {}
+        self.commits: dict[str, dict] = {}
+        self.pulls: dict[int, dict] = {}
+        self.checks: list[dict] = []
+        self.requests: list[tuple] = []
+        self.direct_push_denied = set(direct_push_denied)
+        self.required_check = required_check
+        self.overrides: dict[tuple, tuple] = {}
+
+    # ---- seeding
+    def seed_commit(self, tree_name: str, parents=(), msg="seed") -> str:
+        tree = sha_of(["tree", tree_name])
+        rec = {"tree": tree, "parents": list(parents), "message": msg}
+        sha = sha_of(rec)
+        self.commits[sha] = rec
+        return sha
+
+    def ancestors(self, sha: str) -> set[str]:
+        seen, todo = set(), [sha]
+        while todo:
+            s = todo.pop()
+            if s not in seen:
+                seen.add(s)
+                todo.extend(self.commits[s]["parents"])
+        return seen
+
+    # ---- transport
+    def __call__(self, method: str, path: str, body):
+        self.requests.append((method, path, copy.deepcopy(body)))
+        if (method, path) in self.overrides:
+            return self.overrides[(method, path)]
+        if not path.startswith(self.prefix):
+            return 404, {"message": "Not Found"}
+        rest = path[len(self.prefix):]
+        handler = getattr(self, "_" + method.lower(), None)
+        return handler(rest, body) if handler else (405, {"message": "method"})
+
+    def _ref(self, name):
+        return {"ref": "refs/heads/" + name, "object": {"sha": self.refs[name], "type": "commit"}}
+
+    def _commit(self, sha):
+        rec = self.commits[sha]
+        return {"sha": sha, "tree": {"sha": rec["tree"]}, "parents": [{"sha": p} for p in rec["parents"]],
+                "message": rec["message"]}
+
+    def _pull(self, n):
+        p = self.pulls[n]
+        return {"number": n, "state": p["state"], "merged": p["merged"],
+                "base": {"ref": p["base"]}, "head": {"ref": p["head"], "sha": self.refs.get(p["head"], p["sha"])}}
+
+    def _get(self, rest, body):
+        m = re.fullmatch(r"git/ref/heads/(.+)", rest)
+        if m:
+            return (200, self._ref(m.group(1))) if m.group(1) in self.refs else (404, {"message": "Not Found"})
+        m = re.fullmatch(r"git/commits/(.+)", rest)
+        if m:
+            return (200, self._commit(m.group(1))) if m.group(1) in self.commits else (404, {})
+        m = re.fullmatch(r"pulls/(\d+)", rest)
+        if m:
+            return (200, self._pull(int(m.group(1)))) if int(m.group(1)) in self.pulls else (404, {})
+        return 404, {"message": "Not Found"}
+
+    def _set_ref(self, name, sha, force):
+        if name in self.direct_push_denied:
+            return 422, {"message": "Repository rule violations: changes must be made through a pull request"}
+        if sha not in self.commits:
+            return 422, {"message": "Object does not exist"}
+        if name in self.refs and not force and self.refs[name] not in self.ancestors(sha):
+            return 422, {"message": "Update is not a fast forward"}
+        self.refs[name] = sha
+        return 200, self._ref(name)
+
+    def _post(self, rest, body):
+        if rest == "git/refs":
+            name = body["ref"][len("refs/heads/"):]
+            if name in self.refs:
+                return 422, {"message": "Reference already exists"}
+            status, data = self._set_ref(name, body["sha"], False)
+            return (201 if status == 200 else status), data
+        if rest == "git/commits":
+            if body["tree"] not in {c["tree"] for c in self.commits.values()} or \
+                    any(p not in self.commits for p in body["parents"]):
+                return 422, {"message": "tree or parent does not exist"}
+            rec = {"tree": body["tree"], "parents": list(body["parents"]), "message": body["message"]}
+            sha = sha_of(rec)
+            self.commits[sha] = rec
+            return 201, self._commit(sha)
+        if rest == "pulls":
+            if body["head"] not in self.refs or body["base"] not in self.refs:
+                return 422, {"message": "head or base does not exist"}
+            n = len(self.pulls) + 1
+            self.pulls[n] = {"base": body["base"], "head": body["head"], "state": "open", "merged": False,
+                             "sha": self.refs[body["head"]]}
+            return 201, self._pull(n)
+        if rest == "check-runs":
+            self.checks.append(copy.deepcopy(body))
+            return 201, {"id": len(self.checks), "head_sha": body["head_sha"]}
+        if rest == "merges":  # never allowed by the guard; modelled so a test sees it was not reached
+            self.refs[body["base"]] = self.refs[body["head"]]
+            return 201, {"sha": self.refs[body["base"]]}
+        return 404, {"message": "Not Found"}
+
+    def _patch(self, rest, body):
+        m = re.fullmatch(r"git/refs/heads/(.+)", rest)
+        if not m or m.group(1) not in self.refs:
+            return 422, {"message": "Reference does not exist"}
+        return self._set_ref(m.group(1), body["sha"], bool(body.get("force")))
+
+    def _put(self, rest, body):
+        m = re.fullmatch(r"pulls/(\d+)/merge", rest)
+        if m and int(m.group(1)) in self.pulls:
+            p = self.pulls[int(m.group(1))]
+            head = self.refs[p["head"]]
+            if p["state"] != "open":
+                return 405, {"message": "Pull Request is not mergeable"}
+            if body.get("sha") != head:
+                return 409, {"message": "Head branch was modified"}
+            if p["base"] in self.direct_push_denied and not any(
+                    c["head_sha"] == head and c["name"] == self.required_check and c["conclusion"] == "success"
+                    for c in self.checks):
+                return 405, {"message": "Required status check is expected"}
+            base_head = self.refs[p["base"]]
+            if base_head not in self.ancestors(head):
+                return 405, {"message": "merge conflict (not modelled)"}
+            rec = {"tree": self.commits[head]["tree"], "parents": [base_head, head],
+                   "message": "Merge pull request #%s" % m.group(1)}
+            sha = sha_of(rec)
+            self.commits[sha] = rec
+            self.refs[p["base"]] = sha
+            p["state"], p["merged"] = "closed", True
+            return 200, {"sha": sha, "merged": True, "message": "Pull Request successfully merged"}
+        if rest.startswith("contents/"):  # never allowed by the guard
+            return 201, {"commit": {"sha": "0" * 40}}
+        return 404, {"message": "Not Found"}
+
+    def _delete(self, rest, body):  # never allowed by the guard
+        m = re.fullmatch(r"git/refs/heads/(.+)", rest)
+        if m and m.group(1) in self.refs:
+            del self.refs[m.group(1)]
+            return 204, None
+        return 422, {}

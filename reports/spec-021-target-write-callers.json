@@ -1,0 +1,7 @@
+{
+  "id": "spec-021-target-write-callers",
+  "kind": "spec_issue",
+  "ref": "spec/asama-0/14-sirali-mikro-ozellikler.md:47",
+  "state": "open",
+  "evidence_test": "grep -n 'target.write' spec/tohum/26a-arac-imzalari.md  # 26a:27 names gate.check, gate.revert, ledger.append and activation as target.write's callers; asama-0/14:47 lists 9 -> 10, 13 only; gate.check (MF8) is a pure decision and imports nothing from target (grep -n import referee/gate/check.py), and 9 -> 8 would break the order rule (8 < 9); draft: calls 9 -> 10, 13, 18 and 26a's caller column 'the yaz job after gate.check'"
+}

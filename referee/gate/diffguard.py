@@ -1,4 +1,4 @@
-"""``gate.diffguard``: a candidate diff changes only plain files, inside the unit's ``inputs``, and none of
+r"""``gate.diffguard``: a candidate diff changes only plain files, inside the unit's ``inputs``, and none of
 the paths the gate never lets an agent change (stage 0, MF7).
 
 Rules: asama-0/08 criterion 1, asama-0/09 test 23, tohum/01b (the refusal list), tohum/04a item 9,

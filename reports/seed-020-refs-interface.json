@@ -1,0 +1,7 @@
+{
+  "id": "seed-020-refs-interface",
+  "kind": "seed_issue",
+  "ref": "spec/tohum/29d-vektor-gruplari.md:37",
+  "state": "open",
+  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_write.py'  # 29d names group refs (MF9) but 29f/29g give no command, input or output for it, and 26a gives target.write no request schema; chosen interface: python -m target.write guard PLAN, PLAN = {repo, pulls?: {n: {base, head, head_sha, state}}, requests: [{method, path, body?}]} -> {ok, reasons: ['<index>:<reason>'], refs: [refs written]}; python -m target.write revert STATE, STATE = {head, merge, commits: {sha: {tree, parents}}} -> {ok, reasons, commit: {tree, parents} | null}; exit 0 allowed, 1 refused, 2 unusable; reasons route_not_allowed, ref_outside_brain, ref_invalid, body_invalid, force_update, merge_method, merge_unknown_pull, merge_not_open, merge_head_moved, revert_not_head, revert_not_merge, commit_unknown"
+}
