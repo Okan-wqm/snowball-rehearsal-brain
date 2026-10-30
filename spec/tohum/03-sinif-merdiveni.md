@@ -13,7 +13,7 @@ her sınıfın adapter'ı profildeki aracı sarar. LLM, mekanik aracın bittiği
 |---|---|---|---|
 | K0 | Lint ve format | Profildeki lint araçlarını saran adapter | Aracın yeniden koşusu |
 | K1 | Tip ve derleme hataları | Sarıcı adapter | Araç |
-| K2 | Ölü kod, kullanılmayan export, koşmayan test hedefi | Sarıcı adapter, repo invariantları | Araç; silmelerde etki kümesi testleri |
+| K2 | Ölü kod, kullanılmayan export, koşmayan test hedefi; kullanılmıyor olmak ölü olmak değildir (`07a`) | Sarıcı adapter, repo invariantları | Bulguda araç; silmede `07a`'nın kanıtları ve etki kümesi testleri |
 | K3 | Sözleşme paritesi: iki uçlu sözleşmeler | LLM'siz mekanik çapraz kontrol | Kasıtlı bozma |
 | K4 | Şema yerleşimi ve mevcut invariant testleri | Sarıcı adapter | Araç |
 | K5 | Mantık hataları: eksik await, ters koşul, yanlış sıra, yarım idempotency | LLM avcı, Opus | Test oracle'ı, avcıdan farklı model |

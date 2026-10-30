@@ -51,8 +51,8 @@ oracle'la yan yana koşar; kazananı yürütme seçer. Her öneri `origin` taş�
 | Eşik ve harness değişikliği | Dev arşivinde yeniden oynatma: geçmiş skoru yükseltmez, geri alınmışı geçirmez |
 
 **İki sınır.** Oracle yoksa panel yoktur; artefakt `blocked`'dır (Y8). Araç karar veriyorsa
-panel yoktur; K0–K2 ve K4'te yargıç aracın kendisidir, panel mekanik kararın bittiği yerde
-başlar.
+panel yoktur; K0–K2 ve K4'te bulgunun yargıcı aracın kendisidir (K2'de silme: `03`, `07a`), panel
+mekanik kararın bittiği yerde başlar.
 
 **Açık fazlar aşamaya göredir.** Aşama 0 ve 1'de yalnız faz 1 (mekanik), tek rakip (tohum rakibi)
 ve faz 5 çalışır; Aşama 1 düzeltmelerinde rakip yoktur, çünkü oracle aracın kendisidir. Bir

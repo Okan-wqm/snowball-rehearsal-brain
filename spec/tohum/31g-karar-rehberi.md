@@ -56,7 +56,7 @@ uyumluluğu (`schema-registry`) ve `contract-test`. Ödünleşim: monorepoda ato
 dağıtılmış tüketiciler kendi takvimleriyle güncellenir.
 
 **Eski bir modülün değiştirilmesi.** Önce `strangler` bir `acl` arkasında, eski ile yeni arasında
-farklılık testiyle; bitiş koşulu eskinin silinmesidir (K2).
+farklılık testiyle; bitiş koşulu eskinin silinmesidir (K2, `07a`).
 
 **Bağlamlar arası klon bildirimi.** Önce `dup-kind`; üretilmiş ve fikstür yollarını ayıkla; bağlama
 (`bounded-context`) ve birlikte değişmeye bak. Varsayılan: kanıtıyla açık iddia; birlikte değişme ya da
@@ -65,5 +65,5 @@ ayrışma kanıtı olmadan bağlamlar arasında birleştirme yapılmaz.
 **Kodla çelişen doküman.** Önce `docs-derived` ve `doc-drift`: referans koddur; bayat doküman bulgusu
 çapası ve çelişen koduyla yazılır. Doküman düzeltilir (K8), yeter ki kendi oracle'ı olan ayrı bir bulgu
 kodun yanlış olduğunu göstermesin. Doküman başvuru malzemesiyse ve arkasındaki harita doğrulanmışsa elle
-yazılmış kopyayı üretilmiş olanla değiştirmeyi düşün (`living-docs`); ödünleşim: üretim kaymayı kaldırır
-ama sahibin o sayfaya yazdığı insan inceliğini de kaldırır; gerekçe çapalı kayıtlarda kalır (`adr`).
+yazılmış kopyayı üretilmiş olanla değiştirmeyi düşün (`living-docs`, `07a`); ödünleşim: üretim kaymayı
+kaldırır ama sahibin o sayfaya yazdığı insan inceliğini de kaldırır; gerekçe çapalı kayıtlarda kalır (`adr`).

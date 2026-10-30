@@ -25,27 +25,30 @@ değil; hedef repodaki doküman, yorum ve karar kayıtları kod hakkında iddiad
 kazanır ve çelişki bir K8 bulgusudur. Merge kararına giren kanıt yalnız araç, statik analiz ya da
 test kaynaklı olabilir; LLM çıkarımı "buraya bak" ipucudur.
 
-**Y2 Koruma.** Geliştiricinin çalışma ağacına dokunulmaz. Her değişiklik izole worktree'de
-yapılır, baseline ile karşılaştırılır ve aday olarak yayımlanır; hakem adayı çeker, denetler ve
-uygular. Hiçbir ajan merge etmez: hakemin kapısı Aşama 1'den itibaren `brain/integration`'a,
-Aşama 6'dan itibaren `main`'e merge eder. `<state_root>` hedef reponun `brain/state` dalında
-yaşar; `main`'e hiçbir zaman girmez.
+**Y2 Koruma.** Geliştiricinin çalışma ağacına dokunulmaz. Her değişiklik izole worktree'de yapılır,
+baseline ile karşılaştırılır ve aday olarak yayımlanır; hakem adayı çeker, denetler ve uygular.
+Hiçbir ajan merge etmez: hakemin kapısı Aşama 1'den itibaren `brain/integration`'a, Aşama 6'dan
+itibaren `main`'e merge eder. `<state_root>` hedef reponun `brain/state` dalında yaşar; `main`'e
+hiçbir zaman girmez. **Geri dönüş her zaman vardır:** sistemin önerdiği her değişikliğin, en başta
+silmenin, geri dönüş yolu adımdan önce kanıtlanmıştır ve hiçbir sistem adımı onu sonradan kapatmaz;
+istisnası yoktur, sahibin onayı da açmaz (`07a`).
 
-**Y3 Güvenlik.** Üretime deploy yok, sır yok, müşteri verisi yok, migration yok, feature flag
-yok, bağımlılık manifesti değişikliği yok. Kill switch (`control.json`) her işte, her yazımda, her
-LLM çağrısında ve her Kurucu oturumunun başında okunur. Bütçeler serttir; aşım temiz bir duruştur.
+**Y3 Güvenlik.** Üretime deploy yok, sır yok, gerçek veri yok, migration yok, veritabanı şemasını
+değiştiren kod yok, feature flag yok, bağımlılık manifesti değişikliği yok. Hedefin verisine yalnız
+`koş`ta, migration'larından kurulmuş, gerçek kayıtsız test kopyasında dokunulur; kopyayı kuran
+migration koşusu yasağa girmez. Kill switch (`control.json`) her işte, her yazımda, her LLM
+çağrısında ve her Kurucu oturumunun başında okunur. Bütçeler serttir; aşım temiz bir duruştur.
 
-**Y4 Canlılık.** Çağıranı olmayan mekanizma, okuyucusu olmayan memory, üreticisi olmayan rol
-yoktur. Testi olan ama canlı yolda olmayan kod aynı PR'da canlı yoldan çıkar; tanımı zincirde
-kalır. Okuyucular `27` tablosundadır. Bir dosya ancak okuyucusunun bir kararı değiştirebildiği
-aşamada açılır.
+**Y4 Canlılık.** Sistemde çağıranı olmayan mekanizma, okuyucusu olmayan memory, üreticisi olmayan
+rol yoktur. Sistemin testi olan ama canlı yolda olmayan kodu aynı PR'da canlı yoldan çıkar; tanımı
+zincirde kalır. Okuyucular `27` tablosundadır. Bir dosya ancak okuyucusunun bir kararı
+değiştirebildiği aşamada açılır.
 
-**Y5 Ölçülü büyüme.** Eklenen her organ harness'te bir sayıyı anlamlı biçimde oynatmak
-zorundadır (`19`). Oynatmayan organ SHADOW'da kalır, pencere içinde oynatmazsa emekli olur.
-"Lazım olacak" gerekçe değildir; "harness şu boşluğu ölçtü" gerekçedir. Öğrenmenin ölçüsü
-hatadır: bir öğrenme organı (hafıza, ders, harita katmanı, bilgi) ancak ölçülmüş bir hata oranını
-(geri alma, regresyon, FP, etki kaçırması, unresolved) düşürüyorsa ya da aynı maliyette kaliteyi
-artırıyorsa kalır.
+**Y5 Ölçülü büyüme.** Eklenen her organ harness'te bir sayıyı anlamlı biçimde oynatmak zorundadır
+(`19`). Oynatmayan organ SHADOW'da kalır, pencere içinde oynatmazsa emekli olur. "Lazım olacak"
+gerekçe değildir; "harness şu boşluğu ölçtü" gerekçedir. Öğrenmenin ölçüsü hatadır: bir öğrenme
+organı (hafıza, ders, harita katmanı, bilgi) ancak ölçülmüş bir hata oranını (geri alma, regresyon,
+FP, etki kaçırması, unresolved) düşürüyorsa ya da aynı maliyette kaliteyi artırıyorsa kalır.
 
 **Y6 Öz-not yok, öz-kilit yok.** Puanı hakem reposundaki harness verir; kilidi hakem kapısı
 açar. Kendi ürettiğin hiçbir artefaktın yargıcı, rakibi ya da onaylayıcısı olamazsın. Tek istisna
@@ -71,8 +74,7 @@ kapalı getirilir. Ajanın tek dış bağlantısı dispatcher'ın sağlayıcı g
 taşan etki ihlaldir ve koşu geçersizdir; bildirilmeyen ihlal ajan kimliğini geçersiz kılar.
 İhlal aynı döngüde, iş büyümeden kapatılır.
 
-**Y11 Organizma.** Prosedür sabit, değer dinamiktir. Performans eşikleri kuraldır, veriyle
-değişir ve keşfi değil eylemi kapılar. Çıkış ve merge kapılarının sınıf başına bir anayasal
-tabanı vardır; prosedür yalnız bu tabanın üstünde oynar (`18`). Anayasal eşikler yalnız
-operatörün elindedir. Eylemi kapılayan eşikler (çıkış, merge, izin listesi, hayatta kalma
-penceresi) yalnız sıkılaşır.
+**Y11 Organizma.** Prosedür sabit, değer dinamiktir. Performans eşikleri kuraldır, veriyle değişir
+ve keşfi değil eylemi kapılar. Çıkış ve merge kapılarının sınıf başına bir anayasal tabanı vardır;
+prosedür yalnız bu tabanın üstünde oynar (`18`). Anayasal eşikler yalnız operatörün elindedir.
+Eylemi kapılayan eşikler (çıkış, merge, izin listesi, hayatta kalma penceresi) yalnız sıkılaşır.

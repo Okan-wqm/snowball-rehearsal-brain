@@ -11,7 +11,8 @@ Okunma: her aşama başında ve sonunda
    ayrı sayfa olabilir. Aşama özeti ön koşulu ve çıkış kapısını taşır. Tohumla gelen Aşama 0 ve 1
    spec'i Kurucu'nun ilk taslağı sayılır: listeden geçmezse Kurucu düzeltip rakibe sunar, geçerse
    incelemesini aşamanın `CHANGELOG.md`'sine tarihli satır olarak ekleyip sunar (`29b`); anayasal
-   bir değer gerektiren düzeltme `blocked` olur.
+   bir değer gerektiren düzeltme `blocked` olur. Aşama spec'i tohumla çelişirse tohum geçerlidir;
+   çelişki bir spec kusurudur: Kurucu donmamış spec'te düzeltir, donmuş spec'te bildirir (`00a`).
 2. Spec **yapısal kontrol listesinden** geçer ve tohum rakibi (`29`) onu çürütmeyi dener. Çürütme
    ancak hakemin yeniden koşturduğu bir yeniden üreticiyle sayılır; açık `not_refuted` dışındaki her
    sonuç kabul değildir. Liste temiz ve çürütme yoksa spec donar ve hash'i zincire yazılır (Aşama

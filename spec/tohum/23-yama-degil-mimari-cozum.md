@@ -47,6 +47,13 @@ neden bir adaydır ve `required_change` bu yüzden bir dizidir. Değişiklik bü
 bölünür ama kök neden bölünmez: büyük kök neden kendi aşamalı planını alır ve her parçası
 kendi başına yeşil ve geri alınabilir olur; kapsam daraltılmaz.
 
+**Sözleşme değişikliği.** Paylaşılan bir sözleşmeyi (API şeması, DTO, olay yükü, uç) değiştiren
+adayda her uç, kapsam kuralı gereği aynı değişiklikte güncellenir ve sözleşme testiyle yeşildir.
+Aynı değişiklikte güncellenemeyen, ayrı dağıtılan bir tüketiciyi kıran değişiklik yapılmaz: kırıcı
+biçim yalnız sürümlenerek eskisinin yanına gelir, eskisinin kaldırılması bir silmedir (`07a`).
+Kırıcı olmadığı kanıtlanamayan değişiklik kırıcı, ayrı dağıtılan tüketicisi olmadığı
+kanıtlanamayan sözleşme de böyle bir tüketicisi olan sayılır.
+
 **Olgunluk bir sıfat değil, ölçümdür.** "Kıdemli" ajan, deftere göre kıdemlidir: düzeltmelerinin
 hayatta kalma oranı, katman iddialarının panelde tutma oranı, geri alınma oranı ve kök neden
 başına değer / USD. Bu sayılar itibardır (`11-itibar.md`); promptta "kıdemli gibi davran"

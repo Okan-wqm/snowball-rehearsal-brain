@@ -53,6 +53,7 @@ düzeltir. Bu iş K8 sınıfıdır (`03`): bayat doküman ve davranışı deği�
 
 - **Referans koddur** (`14`). Doküman kodla çelişirse doküman düzeltilir; kodu dokümana
   uydurmak ancak kodun yanlış olduğunu gösteren ayrı bir bulguyla ve onun oracle'ıyla olur.
+  Doküman düzeltmesi de silme kurallarına uyar (`07a`).
 - **Her doküman iddiası koda çapalıdır:** `path:line` ya da sembol. Oracle mekaniktir: çapa
   çözülür; denetlenebilir iddialar (imza, CLI bayrağı, yapılandırma anahtarı, uç adı, varsayılan
   değer) koda karşı doğrulanır; çözülmeyen çapa kırmızıdır.

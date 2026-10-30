@@ -15,13 +15,14 @@ satırlarını yalnız hakem yazar.
 
 **Ret listesi.** Kapının diff-guard'ı (`gate.diffguard`) şunlara dokunan adayı reddeder:
 kökteki `.github/**`, `.gitattributes`, lint, tip ve test yapılandırmaları, bağımlılık manifestleri ve
-lockfile'lar, `<state_root>/**`; profildeki `banned_constructs`; `policy.json`'daki yasaklı
-ifadeler; tavanın üstünde brüt silme; K6 canlı olana kadar güvenlik yolları, biçimleyici dahil.
+lockfile'lar, migration'lar, `<state_root>/**`; profildeki `banned_constructs`; `policy.json`'daki
+yasaklı ifadeler; tavanın üstünde brüt silme; K6 canlı olana kadar güvenlik yolları, biçimleyici dahil.
 **Yalnız düz dosya:** sembolik bağ, alt modül, `../` içeren ya da depo kökü dışına çözülen yol
 reddedilir. Doküman yolları yalnız K8 sınıfının adaylarında geçer (`03`). Hariç yollar ve hedefin
-ajan yapılandırması (`14`) her sınıfta reddedilir. Benzer liste önyükleme hakeminin kabulünde beyin
-kodu değişikliklerine uygulanır (`29b`); `referee/` altındaki iş akışı dosyaları düz dosyadır ve
-canlıya yalnız operatör aktarımıyla girer.
+ajan yapılandırması (`14`) her sınıfta reddedilir. Veritabanı şemasının türetildiği bir tanıma
+dokunan aday da, kapı şemanın değişmediğini kanıtlamadıkça her sınıfta reddedilir (Y3). Benzer liste
+önyükleme hakeminin kabulünde beyin kodu değişikliklerine uygulanır (`29b`); `referee/` altındaki iş
+akışı dosyaları düz dosyadır ve canlıya yalnız operatör aktarımıyla girer.
 
 **`brain/state` kuralları.** Yazarı yalnız hakemin `yaz` işidir; döngü başına tek doğrudan commit,
 PR yok. Ruleset: `deletion`, `non_fast_forward`; bypass aktörü yok. Hakem commit'ten önce şunları

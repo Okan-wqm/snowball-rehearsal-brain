@@ -39,11 +39,11 @@ grupların komutları, girdileri, çıktı alanları ve vakaları `29f` ve `29g`
 | `root` | 11 | kök = bölüm uçlarının kanonik hash'i; imza doğrulaması; arayüz `29j` |
 | `flaky` | 12 | 3/3 kuralı (`07`); arayüz `29j` |
 | `cause` | 13 | mekanik `cause` (`test_regression`, `build_break`, `lint_regression`, `impact_miss`, `unknown`); arayüz `29j` |
-| `revert_drill` | 14 | taahhüt `HMAC(prova_tohumu, cycle_id)`; açılım eşleşmesi; `tampered_key` reddi |
-| `prompt` | 15 | tipli girdi → prompt sha256; tip dışı alan girmez |
-| `status` | 16 | defterden üretilen blok; elle düzenlenmiş blok yeniden üretilir |
+| `revert_drill` | 14 | taahhüt `HMAC(prova_tohumu, cycle_id)`; açılım eşleşmesi; `tampered_key` reddi; arayüz `29m` |
+| `prompt` | 15 | tipli girdi → prompt sha256; tip dışı alan girmez; arayüz `29m` |
+| `status` | 16 | defterden üretilen blok; elle düzenlenmiş blok yeniden üretilir; arayüz `29n` |
 | — (`wiring`) | 17 | vektör değil: tohumun iş akışı denetimi, her push'ta ve (A)'da (`29b`) |
-| `genesis` | 18 | genesis satırının alanları ve hash'leri |
+| `genesis` | 18 | genesis satırının alanları ve hash'leri; ruleset, bypass, `main` ve iş akışı olguları; arayüz `29o` |
 
 `chain` dışındaki on altı grup Aşama 0'la gelir. `drill` grubunun sahibi Aşama 2 partisidir (`29c`);
 `cp_lower`, `mcnemar` ve `match` P1'indir (`29a`). Sahibi olmayan grup Aşama 0'da koşmaz ve çıkışta

@@ -47,7 +47,7 @@ gelir.
 |---|---|
 | Güvenli | Yetki sınırları kanıtlı, girdi sınırda doğrulanmış, sır sızıntısı sıfır, denetim izi tam |
 | Performanslı | Ölçülmüş darboğazlar, tanımlı hedefler, kaynak sızıntısı yok |
-| Sürdürülebilir | Katman kuralları ihlalsiz, her gerçeğin tek sahibi var, ölü kod sıfır |
+| Sürdürülebilir | Katman kuralları ihlalsiz, her gerçeğin tek sahibi var, kullanılmayan her birim bildirilmiş: kopyalar birleştirilmiş, eskimiş artıklar sahibin onayıyla kalkmış, yarım iş korunmuş (`07a`) |
 | Test edilebilir | Her davranışın CI'da koşan gerçek bir testi var |
 | Dokümante | Doküman var olanı anlatır, her iddiası koda çapalıdır, bayatlaması bir kapıyı kırmızıya boyar; sistem onu kodla birlikte yazar |
 | Doğru | Sözleşmelerin iki ucu tutarlı, uçtan uca zincir kanıtlı |
