@@ -9,10 +9,11 @@ is the official toolchain image of the version in the repository's version file;
 stage 0), tohum/26a (``unit.verify``: recipe, tree and ``deps`` in; verified recipe or refusal and the
 3/3 results out; ``limit_hit:<key>``), asama-0/06 (only the unit's ``inputs`` enter the worktree; the
 container installs the dependencies without network and without scripts; a marked package's script runs
-in ``koş`` without network), asama-0/08 criterion 6, asama-0/09 test 48, tohum/18a (``operating{}``),
-tohum/29d and 29g (group ``recipe``: ``vector_check`` below). It calls MF3 (``runner.contained``), MF5
-(``runner.deps_npm``) and MF4 (``profile.derive``: the recipe's path and inputs against the derivation,
-and the exclusions while the inputs are copied).
+in ``koş`` without network), asama-0/08 criterion 6 and unit criteria 4 and 5, asama-0/09 test 48, tohum/18a
+(``operating{}``), tohum/29d and 29g (group ``recipe``: ``vector_check`` below). It calls
+``runner.lint_record`` (step 6), MF3 (``runner.contained``), MF5 (``runner.deps_npm``) and MF4
+(``profile.derive``: the recipe's path and inputs against the derivation, the exclusions while the inputs are
+copied, and criterion 5's coverage).
 
 ``verify``'s static check (``check_recipe``; every reason listed):
 
@@ -86,16 +87,24 @@ The run (``verify``), only when the static check passes:
    smaller of it and ``kos_wall_s``, and a test command stopped by that cap is ``limit_hit:test_total_s``.
    ``run.contained``'s own limits apply to every run (``limit_hit:kos_wall_s``, ``worktree_bytes``,
    ``output_bytes``; container memory).
+6. The lint output, only when 1-5 left no reason (asama-0/08's unit selection, bold criteria 4 and 5). Each
+   lint run's stdout, with the worktree it read, becomes a run record (``runner.lint_record``: ESLint's
+   ``--format json`` only; its refusals are ``lint_output:<reason>``, e.g. a parse error ``fatal:<path>``).
+   Criterion 5: some violation of the first record has a ``fix`` and a path that a ``security_paths``,
+   ``excluded_dirs`` or ``excluded_paths`` entry of the derivation does not cover and an ``inputs`` entry
+   does (29f coverage, as written); else ``no_fixable_violation``. Configuration, manifest and lock files
+   count here although the gate refuses a candidate that changes them (MF7's rule, not called here).
 
-Verdicts: ``verified`` (the recipe, its sha256 over canonical JSON, the deps address and every run's
-results); ``refused`` (a reason about the recipe or the unit: static reasons, ``lock:``,
-``install_scripts_failed``, ``test_red``, ``lint_failed``, ``lint_not_deterministic``); ``no_verdict``
+Verdicts: ``verified`` (the recipe, its sha256 over canonical JSON, the deps address, every run's
+results, and ``lint_records``: the three runs' records, the ratchet base's run file once written by
+``lint_record.run_file``); ``refused`` (a reason about the recipe or the unit: static reasons, ``lock:``,
+``install_scripts_failed``, ``test_red``, ``lint_failed``, ``lint_not_deterministic``, ``lint_output:``,
+``no_fixable_violation``); ``no_verdict``
 (nothing is learned about the recipe: ``limit_hit:<key>`` -- a limit is the operator's, not counted to the
 Founder, tohum/18a --, an invalid contained run such as ``red_control_green``, ``red_control_fault``,
 ``runner_fault``, ``breach:in_changed``, ``unreadable_output``, or a ``deps`` artifact that does not verify,
 ``deps:<reason>``, or does not belong to the tree's lock, or cannot be unpacked safely). Out of scope:
-asama-0/08 criteria 4, 5 and 7 (the lint tool's rule ids, fixes and violations, and churn: parsing the
-tool's output is not done here), and whether the tests are "well tested".
+asama-0/08 unit criterion 7 (churn) and whether the tests are "well tested".
 
 Group ``recipe``'s check (``vector_check``, tohum/29g; no tree, nothing run) is a separate, narrower
 check than ``check_recipe``: it emits only these reasons, every applicable one, sorted in code point
@@ -153,6 +162,7 @@ from typing import Any
 from profile import derive as D
 from runner import contained as C
 from runner import deps_npm as N
+from runner import lint_record as R
 
 RECIPE_FIELDS = D.RECIPE_FIELDS
 OPERATING_NAMES = ("unit_inputs_bytes", "deps_bytes", "worktree_bytes", "container_mem_bytes", "kos_wall_s",
@@ -564,7 +574,7 @@ class _Timed:
         start = time.monotonic()
         res = self.inner(argv, env, self.cap if capped else timeout)
         self.calls[C._flag_value(argv, "--name")] = {"duration_s": round(time.monotonic() - start, 3),
-                                                     "capped": capped and res.timed_out}
+                                                     "capped": capped and res.timed_out, "stdout": res.stdout}
         return res
 
 
@@ -582,11 +592,29 @@ def _one(job_cmd: list, red_cmd: list, image: str, staging: str, operating: dict
     return {"valid": report["valid"], "reasons": reasons, "exit": main["exit"], "status": main["status"],
             "stdout_sha256": main.get("stdout_sha256"), "outputs_sha256": main["outputs_sha256"],
             "duration_s": timing.get("duration_s"), "red_control_exit": report["red_control"]["exit"],
-            "run_root": main["run_root"]}
+            "run_root": main["run_root"], "stdout": timing.get("stdout")}
 
 
 def _public(run: dict) -> dict:
-    return {k: v for k, v in run.items() if k != "run_root"}
+    return {k: v for k, v in run.items() if k not in ("run_root", "stdout")}
+
+
+def lint_records(stdouts: list, staging: str, recipe: dict, derived: dict) -> tuple[list[str], list[dict]]:
+    """asama-0/08 unit criteria 4 and 5 on the lint runs' stdout: ``(reasons, one run record per run)``."""
+    records, reasons = [], []
+    for out in stdouts:
+        try:
+            records.append(R.record(out if isinstance(out, bytes) else b"", staging))
+        except R.RecordError as exc:
+            reasons += ["lint_output:" + r for r in exc.reasons if "lint_output:" + r not in reasons]
+    if reasons:
+        return reasons, []
+    closed = derived["security_paths"] + derived["excluded_dirs"] + derived["excluded_paths"]
+    if not any(v["fix"] is not None and not any(D.covers_as_written(e, v["path"]) for e in closed)
+               and any(D.covers_as_written(e, v["path"]) for e in recipe["inputs"])
+               for v in records[0]["violations"]):
+        return ["no_fixable_violation"], []
+    return [], records
 
 
 def verify(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | None = None, target: Any = None,
@@ -633,7 +661,7 @@ def verify(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | No
             if run["exit"] != 0:
                 return _verdict(["install_scripts_failed"], **result)
             staging = os.path.join(run["run_root"], "work")
-        reasons = []
+        reasons, stdouts = [], []
         cap = values["test_total_s"]
         for attempt in range(1, ATTEMPTS + 1):
             lint = _one(recipe["lint_cmd"], red_control["cmd"], recipe["env_image"], staging, operating,
@@ -641,6 +669,7 @@ def verify(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | No
             test = _one(recipe["test_cmd"], red_control["cmd"], recipe["env_image"], staging, operating,
                         runner, staging_root, cap)
             result["runs"]["lint"].append(_public(lint))
+            stdouts.append(lint["stdout"])
             result["runs"]["test"].append(_public(test))
             for run in (lint, test):
                 reasons += [r for r in run["reasons"] if r not in reasons]
@@ -651,6 +680,10 @@ def verify(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | No
         lints = result["runs"]["lint"]
         if all(r["valid"] for r in lints) and len({(r["exit"], r["stdout_sha256"]) for r in lints}) > 1:
             reasons.append("lint_not_deterministic")
+        if not reasons:
+            reasons, records = lint_records(stdouts, staging, recipe, derived)
+            if not reasons:
+                result["lint_records"] = records
         if reasons:
             return _verdict(reasons, **result)
         return dict(_verdict([], **result), recipe=recipe, recipe_sha256=hashlib.sha256(canonical(recipe)).hexdigest())

@@ -8,8 +8,11 @@ calls MF4 and MF5's lock check) passes every proposed recipe on this tree, and g
 the recipe's facts agree with the tree (version file, image tag, lock, the lint tool's path under the unit's
 ``node_modules``, test files matching ``test_cmd``); MF7 lets a one-line change of a plain source file through and
 refuses each of the toy's forbidden kinds of path, and ``gate.diffguard.apply`` applies such a change to the base
-file. Not proven here (no node in this sandbox): that ESLint finds fixable violations and the tests are green 3/3;
-that is asama-0/10a #birim, run by the referee in ``koş``.
+file. ``tests/fixtures/toy-repo-eslint.json`` is the recipe's ``lint_cmd`` output, captured once with ESLint 10.13.0
+and node 22.23.4 outside a container on this tree (the root of each ``filePath`` rewritten to ``/work``): MF6's
+``runner.lint_record`` reads it as the seven seeded violations, each with a one-line ``fix``, and unit criteria 4
+and 5 hold. Not proven here (no node in the referee's sandbox): that the contained run gives the same output and
+the tests are green 3/3; that is asama-0/10a #birim, run by the referee in ``koş``.
 
 Run from the brain root: ``python -m unittest discover -s tests -p 'test_toy_repo.py'``.
 """
@@ -30,6 +33,7 @@ from gate import diffguard  # noqa: E402
 from profile import derive as D  # noqa: E402
 from profile import unit_verify as U  # noqa: E402
 from runner import deps_npm as N  # noqa: E402
+from runner import lint_record as R  # noqa: E402
 
 TOY = os.path.join(ROOT, "tests", "fixtures", "toy-repo")
 UNITS = os.path.join(ROOT, "targets", "toy", "units.json")
@@ -158,6 +162,47 @@ class Diffguard(unittest.TestCase):
         for (path, line), reason in cases.items():
             reasons = diffguard.check(one_line_diff(path, line, "x"), self.profile, self.recipe)
             self.assertIn("%s:%s" % (reason, path), reasons, path)
+
+
+# The seeded violations: (path, rule_id, line); every fix is that one line.
+SEEDED = [
+    ("textkit/src/greet.js", "prefer-template", 2), ("textkit/src/greet.js", "dot-notation", 6),
+    ("textkit/src/permissions.js", "yoda", 2), ("textkit/src/slug.js", "prefer-const", 2),
+    ("textkit/src/stats.js", "no-var", 5), ("textkit/src/stats.js", "operator-assignment", 7),
+    ("textkit/src/stats.js", "object-shorthand", 14),
+]
+
+
+class Lint(unittest.TestCase):
+    def setUp(self):
+        with open(os.path.join(ROOT, "tests", "fixtures", "toy-repo-eslint.json"), "rb") as fh:
+            self.output = fh.read()
+
+    def test_the_seeded_violations_with_one_line_fixes(self):
+        rec = R.record(self.output, TOY)
+        self.assertEqual([(v["path"], v["rule_id"], v["line"]) for v in rec["violations"]], SEEDED)
+        self.assertTrue(all(v["fix"] == [v["line"], v["line"]] for v in rec["violations"]))
+
+    def test_the_output_was_taken_on_this_tree(self):
+        sources = [r for r in json.loads(self.output) if "source" in r]
+        self.assertEqual(len(sources), 4)
+        for r in sources:
+            self.assertEqual(r["source"].encode("utf-8"), read(r["filePath"][len("/work/"):]))
+
+    def test_unit_criteria_4_and_5(self):
+        derived = D.derive(TOY, {"excluded_paths": [], "unit_candidates": []})
+        reasons, records = U.lint_records([self.output] * 3, TOY, recipes()[0], derived)
+        self.assertEqual(reasons, [])
+        self.assertEqual(records, [R.record(self.output, TOY)] * 3)
+        results = json.loads(self.output)
+        only_security = [r for r in results if r["filePath"].endswith("/permissions.js")]
+        no_fix = [dict(r, messages=[dict(m, fix=None) for m in r["messages"]]) for r in results]
+        outside_inputs = [{"filePath": "/work/README.md", "suppressedMessages": [], "messages": [
+            {"ruleId": "r", "severity": 2, "line": 1, "column": 1, "fix": {"range": [0, 1], "text": "#"}}]}]
+        for doc in (only_security, no_fix, outside_inputs):
+            self.assertEqual(U.lint_records([json.dumps(doc).encode()], TOY, recipes()[0], derived),
+                             (["no_fixable_violation"], []))
+
 
 
 if __name__ == "__main__":

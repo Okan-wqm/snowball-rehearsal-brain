@@ -29,6 +29,7 @@ sys.path.insert(0, REFEREE)
 from profile import unit_verify as U  # noqa: E402
 from runner import contained as C  # noqa: E402
 from runner import deps_npm as N  # noqa: E402
+from runner import lint_record as R  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from test_deps_npm import sri, tgz, url  # noqa: E402
@@ -36,10 +37,20 @@ from test_deps_npm import sri, tgz, url  # noqa: E402
 DIGEST = "@sha256:" + "ab" * 32
 IMAGE = "node:20.11.1-bookworm-slim" + DIGEST
 
-LINT = """import sys
-print("pkg/a.js:1:1 no-var fix=[0,3]")
-sys.exit(1)
-"""
+NO_VAR = {"ruleId": "no-var", "severity": 2, "line": 1, "column": 1, "fix": {"range": [0, 10], "text": "let a = 1;"}}
+
+
+def lint_script(results: list, code: int = 1) -> str:
+    """A lint command printing ``results`` as ESLint's ``--format json`` does, paths under ``/work``."""
+    return "import sys\nsys.stdout.write(%r)\nsys.exit(%d)\n" % (json.dumps(results), code)
+
+
+def eslint_result(path: str, *messages, suppressed=()) -> dict:
+    return {"filePath": "/work/" + path, "messages": list(messages), "suppressedMessages": list(suppressed)}
+
+
+LINT = lint_script([eslint_result("pkg/a.js", NO_VAR)])
+RECORD = {"tool": "eslint", "violations": [{"rule_id": "no-var", "path": "pkg/a.js", "line": 1, "fix": [1, 1]}]}
 TESTS = """import os, sys
 sys.path.insert(0, "lib")
 import shared
@@ -108,7 +119,8 @@ class Base(unittest.TestCase):
             ".nvmrc": "v20.11.1\n",
             "pkg/package.json": {"name": "pkg", "version": "1.0.0"},
             "pkg/package-lock.json": self.lock,
-            "pkg/lint.py": LINT, "pkg/run_tests.py": TESTS, "pkg/affected.py": "raise SystemExit(0)\n",
+            "pkg/lint.py": LINT, "pkg/a.js": "var a = 1;\n", "pkg/token.js": "var a = 1;\n",
+            "pkg/run_tests.py": TESTS, "pkg/affected.py": "raise SystemExit(0)\n",
             "pkg/red.py": "raise SystemExit(1)\n",
             "pkg/node_modules/stale/index.js": "stale",
             "lib/shared.py": "VALUE = 42\n",
@@ -346,8 +358,40 @@ class Run(Base):
         write_tree(self.tree, {"pkg/lint.py": "raise SystemExit(2)\n"})
         report = self.verify()
         self.assertEqual(report["reasons"], ["lint_failed:1", "lint_failed:2", "lint_failed:3"])
-        write_tree(self.tree, {"pkg/lint.py": "print('clean')\n"})
+        write_tree(self.tree, {"pkg/lint.py": LINT})
         self.assertEqual(self.verify()["verdict"], "verified")
+
+    def test_lint_records_are_in_the_verified_report(self):
+        report = self.verify()
+        self.assertEqual(report["lint_records"], [RECORD] * 3)
+        self.assertEqual(R.run_file(report["lint_records"]).split(b"\n")[:3], [R.line(RECORD)] * 3)
+
+    def test_unit_criteria_4_and_5_on_the_lint_output(self):
+        """asama-0/08 unit selection: the tool gives rule, line and fix (4); a fixable violation outside the
+        security path, inside the inputs (5)."""
+        no_fix = dict(NO_VAR, fix=None)
+        cases = [
+            ("print('pkg/a.js:1:1 no-var')\nraise SystemExit(1)\n", ["lint_output:not_eslint_json"]),
+            (lint_script([], 0), ["no_fixable_violation"]),
+            (lint_script([eslint_result("pkg/a.js", no_fix)]), ["no_fixable_violation"]),
+            (lint_script([eslint_result("pkg/token.js", NO_VAR)]), ["no_fixable_violation"]),
+            (lint_script([eslint_result("pkg/a.js", dict(NO_VAR, ruleId=None, fatal=True))]),
+             ["lint_output:fatal:pkg/a.js"]),
+            (lint_script([eslint_result("other/big.txt", NO_VAR)]), ["lint_output:file_unreadable:other/big.txt"]),
+            (lint_script([eslint_result("pkg/a.js", dict(NO_VAR, line=3))]),
+             ["lint_output:message_unusable:pkg/a.js"]),
+        ]
+        for script, reasons in cases:
+            write_tree(self.tree, {"pkg/lint.py": script})
+            report = self.verify()
+            self.assertEqual((report["verdict"], report["reasons"]), ("refused", reasons), script)
+            self.assertNotIn("lint_records", report)
+        both = [eslint_result("pkg/token.js", NO_VAR), eslint_result("pkg/a.js", no_fix, suppressed=[NO_VAR])]
+        write_tree(self.tree, {"pkg/lint.py": lint_script(both)})
+        report = self.verify()
+        self.assertEqual(report["verdict"], "verified", report["reasons"])
+        self.assertEqual([v["path"] for v in report["lint_records"][0]["violations"]],
+                         ["pkg/token.js", "pkg/a.js", "pkg/a.js"])
 
     def test_an_invalid_lint_run_is_no_verdict_not_a_lint_difference(self):
         inner = FakeDocker()
