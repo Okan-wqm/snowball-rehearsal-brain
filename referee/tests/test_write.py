@@ -7,6 +7,9 @@
   a squash or rebase merge and a merge of a pull request the guard has not seen open on ``brain/`` refuse;
 - the writer against an in-process GitHub (``fake_github``) with the target's rulesets: branch, commit,
   pull request, check, merge; every attempt on ``main`` is refused before it is sent and ``main`` never moves;
+- the state commit (``commit_files``, MF10's writer): blobs and trees only for plain files at safe paths, one
+  commit on the head the caller read, a fast-forward update; a moved head or a branch outside ``brain/`` is
+  refused before any object is created;
 - revert: the revert commit's tree is the merge's first parent's tree (not its own, not the second parent's),
   its parent is the head of the branch it is made onto, it lands on a ``brain/`` branch, and after the pull
   request and merge the branch holds that tree; a merge that is not the head, a commit that is not a merge,
@@ -128,7 +131,6 @@ class RouteRule(unittest.TestCase):
             ("POST", "merges", {"base": "brain/integration", "head": "brain/c/1"}),
             ("DELETE", "git/refs/heads/brain/c/1", None), ("DELETE", "git/refs/heads/brain/integration", None),
             ("PATCH", "pulls/3", {"base": "main"}), ("POST", "pulls/3/update-branch", {}),
-            ("POST", "git/blobs", {"content": "", "encoding": "utf-8"}), ("POST", "git/trees", {"tree": []}),
             ("POST", "git/tags", {}), ("PUT", "branches/main/protection", {}), ("POST", "rulesets", {}),
             ("POST", "forks", {}), ("POST", "dispatches", {}), ("POST", "actions/workflows/x/dispatches", {}),
             ("GET", "contents/a", None), ("GET", "git/refs", None), ("HEAD", "pulls/3", None),
@@ -381,6 +383,95 @@ class WriterLoop(unittest.TestCase):
                                                      "head": {"ref": "brain/c/1", "sha": root}})
         with self.assertRaises(W.ApiError):
             wr.open_pull("brain/c/1", "brain/integration", "t")
+
+
+class StateCommit(unittest.TestCase):
+    """``POST git/blobs`` and ``git/trees`` (plain files only) and ``commit_files``, the state commit."""
+
+    def test_object_routes(self):
+        tree = {"base_tree": A, "tree": [{"path": "state/ledger.jsonl", "mode": "100644", "type": "blob", "sha": B}]}
+        self.assertEqual(check("POST", "git/blobs", {"content": "eyJhIjoxfQo=", "encoding": "base64"}), ([], []))
+        self.assertEqual(check("POST", "git/blobs", {"content": "", "encoding": "base64"}), ([], []))
+        self.assertEqual(check("POST", "git/trees", tree), ([], []))
+        entry = tree["tree"][0]
+        bad = [
+            {"content": "x", "encoding": "utf-8"}, {"content": "eyJhIjoxfQo=", "encoding": "utf-8"},
+            {"content": "eyJhIjoxfQo", "encoding": "base64"},
+            {"content": "ey JhIjoxfQo=", "encoding": "base64"}, {"content": "eyJhIjoxfQp=", "encoding": "base64"},
+            {"content": "eyJhIjoxfQo="}, {"content": 1, "encoding": "base64"},
+            {"content": "", "encoding": "base64", "sha": A},
+        ]
+        for body in bad:
+            self.assertEqual(check("POST", "git/blobs", body), (["body_invalid"], []), body)
+        bad_entries = [dict(entry, mode=m) for m in ("100755", "120000", "160000", "040000")]
+        bad_entries += [dict(entry, type=t) for t in ("tree", "commit")]
+        bad_entries += [dict(entry, path=x) for x in (
+            "", "/abs", "a//b", "a/", "./a", "a/./b", "../a", "a/../b", ".git/config", "x/.GIT/hooks/a", ".Git",
+            "a b", "a\\b", "a\nb", "ü", 7)]
+        bad_entries += [dict(entry, sha=A.upper()), dict(entry, content="x"), {k: v for k, v in entry.items() if k != "sha"}]
+        for e in bad_entries:
+            self.assertEqual(check("POST", "git/trees", {"base_tree": A, "tree": [e]}), (["body_invalid"], []), e)
+        for body in ({"base_tree": A, "tree": []}, {"tree": [entry]}, {"base_tree": A[:39], "tree": [entry]},
+                     {"base_tree": A, "tree": [entry, dict(entry, sha=A)]}, {"base_tree": A, "tree": entry},
+                     dict(tree, extra=1)):
+            self.assertEqual(check("POST", "git/trees", body), (["body_invalid"], []), body)
+        self.assertEqual(check("POST", "git/trees", {"base_tree": A, "tree": [entry, dict(entry, path="b/.gitkeep")]}),
+                         ([], []))
+
+    def state(self):
+        gh, wr, root = world()
+        state = gh.seed_commit("s0", files={"keep.txt": b"k\n", "ledger.jsonl": b"old\n"})
+        gh.refs["brain/state"] = state
+        return gh, wr, state
+
+    def test_one_commit_on_the_read_head(self):
+        gh, wr, state = self.state()
+        before = len(gh.requests)
+        sha = wr.commit_files("brain/state", state, {"ledger.jsonl": b"old\nnew\n"}, "cycle 1")
+        self.assertEqual(gh.refs["brain/state"], sha)
+        self.assertEqual(gh.commits[sha]["parents"], [state])
+        self.assertEqual(gh.read_file("brain/state", "ledger.jsonl"), b"old\nnew\n")
+        self.assertEqual(gh.read_file("brain/state", "keep.txt"), b"k\n")  # the head's tree is the base
+        sent = [(m, path[len(P):]) for m, path, _ in gh.requests[before:]]
+        self.assertEqual(sent, [("GET", "git/ref/heads/brain/state"), ("GET", "git/commits/" + state),
+                                ("POST", "git/blobs"), ("POST", "git/trees"), ("POST", "git/commits"),
+                                ("PATCH", "git/refs/heads/brain/state")])
+        self.assertEqual(gh.requests[-1][2], {"sha": sha, "force": False})
+        self.assertEqual(wr.written, ["refs/heads/brain/state"])
+        self.assertEqual(gh.refs["main"], gh.refs["brain/integration"])
+
+    def test_a_moved_head_is_refused_before_any_object(self):
+        gh, wr, state = self.state()
+        moved = gh.seed_commit("s1", [state])
+        gh.refs["brain/state"] = moved
+        before = len(gh.requests)
+        with self.assertRaises(W.Refused) as ctx:
+            wr.commit_files("brain/state", state, {"ledger.jsonl": b"x\n"}, "cycle 1")
+        self.assertEqual(ctx.exception.reasons, ["state_head_moved"])
+        self.assertEqual([r[0] for r in gh.requests[before:]], ["GET"])
+        self.assertEqual(gh.refs["brain/state"], moved)
+
+    def test_outside_brain_and_bad_paths_are_refused_before_sending(self):
+        gh, wr, state = self.state()
+        gh.refs["main"] = state
+        before = len(gh.requests)
+        for branch in ("main", "brainx/state", "brain/../main"):
+            with self.assertRaises(W.Refused):
+                wr.commit_files(branch, state, {"ledger.jsonl": b"x\n"}, "m")
+        self.assertEqual(gh.requests[before:], [])
+        with self.assertRaises(W.Refused) as ctx:
+            wr.commit_files("brain/state", state, {".git/hooks/post-checkout": b"x"}, "m")
+        self.assertEqual(ctx.exception.reasons, ["body_invalid"])
+        self.assertNotIn("POST", [r[0] for r in gh.requests[before:] if r[1].endswith("git/trees")])
+        self.assertEqual(gh.refs["brain/state"], state)
+
+    def test_responses_without_a_sha(self):
+        for route in ("git/blobs", "git/trees"):
+            gh, wr, state = self.state()
+            gh.overrides[("POST", P + route)] = (201, {"sha": None})
+            with self.assertRaises(W.ApiError):
+                wr.commit_files("brain/state", state, {"ledger.jsonl": b"x\n"}, "m")
+            self.assertEqual(gh.refs["brain/state"], state)
 
 
 class Revert(unittest.TestCase):

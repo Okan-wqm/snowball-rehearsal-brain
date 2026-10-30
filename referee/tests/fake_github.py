@@ -8,7 +8,9 @@ It models what the writer depends on and the target's rulesets (tohum/25a row 3)
   it changes only by a merge, and a merge into it needs a ``success`` check run on the head sha;
 - a merge needs the base head to be an ancestor of the pull's head (no three-way merge is modelled; else 405);
   the merge commit has parents ``[base head, head sha]`` and the head's tree; ``sha`` must equal the head;
-- a commit's tree must already be known (from a seeded commit), its parents must exist.
+- a commit's tree must already be known (from a seeded commit or ``POST git/trees``), its parents must exist;
+- blobs hold bytes and trees map paths to blobs (``base_tree`` entries kept, the new ones set on top), so
+  ``read_file`` gives a branch's file content back.
 
 It also answers routes the writer must never call (``PUT contents``, ``POST merges``, ``DELETE`` of a ref), so
 a test can see that the guard, not the fake, stopped them: ``requests`` records every request received.
@@ -16,6 +18,7 @@ a test can see that the guard, not the fake, stopped them: ``requests`` records 
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import re
@@ -35,6 +38,8 @@ class FakeGitHub:
         self.prefix = "/repos/%s/" % repo
         self.refs: dict[str, str] = {}
         self.commits: dict[str, dict] = {}
+        self.blobs: dict[str, bytes] = {}
+        self.trees: dict[str, dict[str, str]] = {}
         self.pulls: dict[int, dict] = {}
         self.checks: list[dict] = []
         self.requests: list[tuple] = []
@@ -43,12 +48,22 @@ class FakeGitHub:
         self.overrides: dict[tuple, tuple] = {}
 
     # ---- seeding
-    def seed_commit(self, tree_name: str, parents=(), msg="seed") -> str:
+    def seed_commit(self, tree_name: str, parents=(), msg="seed", files=None) -> str:
         tree = sha_of(["tree", tree_name])
+        self.trees[tree] = {path: self._blob(data) for path, data in (files or {}).items()}
         rec = {"tree": tree, "parents": list(parents), "message": msg}
         sha = sha_of(rec)
         self.commits[sha] = rec
         return sha
+
+    def _blob(self, data: bytes) -> str:
+        sha = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+        self.blobs[sha] = data
+        return sha
+
+    def read_file(self, branch: str, path: str) -> bytes | None:
+        blob = self.trees[self.commits[self.refs[branch]]["tree"]].get(path)
+        return None if blob is None else self.blobs[blob]
 
     def ancestors(self, sha: str) -> set[str]:
         seen, todo = set(), [sha]
@@ -113,13 +128,26 @@ class FakeGitHub:
             status, data = self._set_ref(name, body["sha"], False)
             return (201 if status == 200 else status), data
         if rest == "git/commits":
-            if body["tree"] not in {c["tree"] for c in self.commits.values()} or \
+            if body["tree"] not in self.trees or \
                     any(p not in self.commits for p in body["parents"]):
                 return 422, {"message": "tree or parent does not exist"}
             rec = {"tree": body["tree"], "parents": list(body["parents"]), "message": body["message"]}
             sha = sha_of(rec)
             self.commits[sha] = rec
             return 201, self._commit(sha)
+        if rest == "git/blobs":
+            return 201, {"sha": self._blob(base64.b64decode(body["content"]))}
+        if rest == "git/trees":
+            if body.get("base_tree") not in self.trees:
+                return 422, {"message": "base_tree does not exist"}
+            files = dict(self.trees[body["base_tree"]])
+            for entry in body["tree"]:
+                if entry["sha"] not in self.blobs:
+                    return 422, {"message": "blob does not exist"}
+                files[entry["path"]] = entry["sha"]
+            sha = sha_of(["tree", sorted([p, b] for p, b in files.items())])
+            self.trees[sha] = files
+            return 201, {"sha": sha}
         if rest == "pulls":
             if body["head"] not in self.refs or body["base"] not in self.refs:
                 return 422, {"message": "head or base does not exist"}

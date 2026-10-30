@@ -1,0 +1,7 @@
+{
+  "id": "seed-025-append-choices",
+  "kind": "seed_issue",
+  "ref": "spec/tohum/29i-vektor-arayuzleri-mf8-13-devam.md:46",
+  "state": "open",
+  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_append.py'  # Request.test_row_ids_are_unique, Request.test_shape, Stored.test_hand_written_canonical_hash. 29i append leaves three things open; my choices, each bound by a test: (a) 'row_id'si tekrarlanan satir' does not say against what: I refuse a row_id that another new row or any ledger row already has (a row id names one row in the whole chain). (b) an empty rows list: refused as unusable (exit 2); a cycle with nothing to write makes no commit and a request with nothing in it is more likely a fault than a no-op. (c) the bytes of a stored line are not fixed by 13, 26 or 29i: I write the RFC 8785 form of the row with prev_hash and row_hash, so a stored line is its own canonical text and a later re-serialization is detectable as a byte change (01b). Draft for 29i: '(a) row_id defterdeki ya da istekteki baska bir satirinkiyle ayni olamaz; (b) bos rows kullanilamaz girdidir; (c) saklanan satir, prev_hash ve row_hash dahil, RFC 8785 biciminde tek satirdir.' If a vector decides otherwise, the rule changes in one place (ledger/append.py _request_rows or _chained)."
+}

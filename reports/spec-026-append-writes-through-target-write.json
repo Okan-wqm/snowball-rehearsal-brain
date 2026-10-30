@@ -1,0 +1,7 @@
+{
+  "id": "spec-026-append-writes-through-target-write",
+  "kind": "spec_issue",
+  "ref": "spec/asama-0/14-sirali-mikro-ozellikler.md:47",
+  "state": "open",
+  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_append.py'  # OnTheTarget. calls '9 -> 10' is now real: ledger.append's TargetState commits through target.write's Writer.commit_files (blobs, one tree on the head's tree, one commit, a fast-forward PATCH on brain/state). That needed two routes MF9 did not allow (POST git/blobs, POST git/trees); 26a's target.write row names 'dal, PR, check, merge ya da geri alma istegi' as inputs and not a state commit. Draft for 26a target.write inputs: 'dal, PR, check, merge, geri alma ya da durum commit'i (brain/state'e tek dogrudan commit: blob, agac, commit, ileri sarma)'. 29i refs has no case for blobs or trees, so the seed's refs vectors do not see these routes; T49 StateCommit does."
+}

@@ -16,6 +16,12 @@ no other repository):
 - ``POST git/refs`` ``{ref, sha}``: ``ref`` under ``refs/heads/brain/``;
 - ``PATCH git/refs/heads/<branch>`` ``{sha, force?}``: branch under ``brain/``, ``force`` absent or false;
 - ``POST git/commits`` ``{message, tree, parents}``: one or two parents (creates an object, writes no ref);
+- ``POST git/blobs`` ``{content, encoding: base64}``: ``content`` is canonical base64 (creates an object,
+  writes no ref);
+- ``POST git/trees`` ``{base_tree, tree}``: ``tree`` is a non-empty list of ``{path, mode: 100644, type: blob,
+  sha}`` with distinct paths; a path is ``[A-Za-z0-9._/-]`` components, none empty, ``.``, ``..`` or ``.git``
+  (any case), so only plain files are set, never a link, a submodule or an executable (creates an object,
+  writes no ref);
 - ``POST pulls`` ``{title, head, base, body?}``: ``head`` and ``base`` are branches under ``brain/`` of this
   repository (a ``owner:branch`` head is not a valid name);
 - ``POST check-runs`` ``{name, head_sha, status: completed, conclusion: success|failure, output?}`` (a check
@@ -43,8 +49,14 @@ Known limits, stated: the base of a pull request is checked from the response th
 endpoint pins the head (``sha``), not the base, so a base changed between that response and the merge is not
 seen here (in write mode the target's ruleset keeps the writer App off ``main``, tohum/21). A merge is taken
 as done when the API answers ``merged: true`` with a sha; the base's new head is not read back (29i fixes
-the calls a merge makes). Rulesets are enforced by GitHub, not here. Blobs and trees (``POST git/blobs``, ``git/trees``) are not allowed yet: their
-first caller is ``ledger.append`` (MF10).
+the calls a merge makes). Rulesets are enforced by GitHub, not here.
+
+State commit (``commit_files``, caller ``ledger.append``, MF10): one direct commit on a ``brain/`` branch
+(``brain/state`` takes no pull request, tohum/01b) whose parent is the head the caller read its files at:
+the head is read first and a different head is refused (``state_head_moved``) before any object is created;
+blobs, one tree on the head's tree, the commit, then a fast-forward update (``force: false``). A head that
+moves between that read and the update makes the update a non-fast-forward, which the ruleset on
+``brain/state`` (``non_fast_forward``, tohum/25a row 3) refuses; that refusal is GitHub's, not tested here.
 
 Transport: ``HttpTransport`` sends to ``https://api.github.com`` with the token; it follows no redirect (a
 redirect would carry the token and the write elsewhere), so a 3xx is an ``ApiError``. ``Writer`` takes any
@@ -74,6 +86,8 @@ before the first call; ``onto`` is only read.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 import sys
@@ -121,6 +135,20 @@ def branch_syntax(name: Any) -> bool:
     if not isinstance(name, str) or not _NAME.fullmatch(name) or ".." in name or name.endswith("."):
         return False
     return all(part and not part.startswith(".") and not part.endswith(".lock") for part in name.split("/"))
+
+
+def file_path(path: Any) -> bool:
+    """A path a tree entry may set: ``[A-Za-z0-9._/-]`` components, none empty, ``.``, ``..`` or ``.git``."""
+    return (isinstance(path, str) and bool(_NAME.fullmatch(path))
+            and all(part not in ("", ".", "..") and part.lower() != ".git" for part in path.split("/")))
+
+
+def _b64(text: Any) -> bool:
+    """``text`` is base64 in its canonical form (what ``base64.b64encode`` writes)."""
+    try:
+        return isinstance(text, str) and base64.b64encode(base64.b64decode(text, validate=True)).decode() == text
+    except (ValueError, binascii.Error):
+        return False
 
 
 def ref_reasons(ref: Any) -> list[str]:
@@ -200,6 +228,16 @@ class Guard:
                   and isinstance(body["parents"], list) and 1 <= len(body["parents"]) <= 2
                   and all(_sha(p) for p in body["parents"]))
             return ([] if ok else ["body_invalid"]), []
+        if method == "POST" and rest == "git/blobs":
+            ok = _keys(body, {"content", "encoding"}) and body["encoding"] == "base64" and _b64(body["content"])
+            return ([] if ok else ["body_invalid"]), []
+        if method == "POST" and rest == "git/trees":
+            ok = (_keys(body, {"base_tree", "tree"}) and _sha(body["base_tree"]) and isinstance(body["tree"], list)
+                  and body["tree"] and all(_keys(e, {"path", "mode", "type", "sha"}) and e["mode"] == "100644"
+                                           and e["type"] == "blob" and _sha(e["sha"]) and file_path(e["path"])
+                                           for e in body["tree"])
+                  and len({e["path"] for e in body["tree"]}) == len(body["tree"]))
+            return ([] if ok else ["body_invalid"]), []
         if method == "POST" and rest == "pulls":
             if not _keys(body, {"title", "head", "base"}, {"body"}) or not _text(body["title"]) \
                     or not _text(body.get("body", ""), empty=True):
@@ -274,7 +312,8 @@ def revert_commit(commits: dict, head: str, merge: str) -> tuple[list[str], dict
 # ---------------------------------------------------------------- writer
 
 class Writer:
-    """Branch, commit, pull request, check, merge and revert on one repository, every request guarded."""
+    """Branch, commit, state commit, pull request, check, merge and revert on one repository, every request
+    guarded."""
 
     def __init__(self, repo: str, transport: Transport):
         self.repo = repo
@@ -327,6 +366,31 @@ class Writer:
         sha = data.get("sha") if isinstance(data, dict) else None
         if not _sha(sha):
             raise ApiError(None, "commit created without a sha")
+        return sha
+
+    def commit_files(self, branch: str, head: str, files: dict[str, bytes], message: str) -> str:
+        """One commit on ``branch`` (under ``brain/``) setting ``files`` on the tree of ``head``, the
+        commit the caller read them at; ``branch`` must still be at ``head``. Return the new commit."""
+        reasons = branch_reasons(branch)
+        if reasons:
+            raise Refused(reasons)
+        if self.head(branch) != head:
+            raise Refused(["state_head_moved"])
+        base_tree = self.read_commit(head)["tree"]
+        entries = []
+        for path in sorted(files):
+            data = self._call("POST", "git/blobs", {"content": base64.b64encode(files[path]).decode("ascii"),
+                                                    "encoding": "base64"})
+            blob = data.get("sha") if isinstance(data, dict) else None
+            if not _sha(blob):
+                raise ApiError(None, "blob created without a sha")
+            entries.append({"path": path, "mode": "100644", "type": "blob", "sha": blob})
+        data = self._call("POST", "git/trees", {"base_tree": base_tree, "tree": entries})
+        tree = data.get("sha") if isinstance(data, dict) else None
+        if not _sha(tree):
+            raise ApiError(None, "tree created without a sha")
+        sha = self.commit(message, tree, [head])
+        self.update_branch(branch, sha)
         return sha
 
     def open_pull(self, head: str, base: str, title: str, body: str = "") -> int | None:
