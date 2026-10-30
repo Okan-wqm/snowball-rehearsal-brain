@@ -27,10 +27,11 @@ A cycle, in this order (``append_cycle``):
    verified again as an append-only extension of the ledger (``HardStop`` if not), then handed to the
    state writer in one ``commit`` call: one commit per cycle.
 
-State writers: ``CountingState`` counts commits and keeps the content, touching neither disk nor network
+State writers: ``CountingState`` counts commits and keeps the last commit's files, touching neither disk nor network
 (the vector's writer, asama-0/14 "Kum"); ``TargetState`` commits the file through ``target.write``'s
-``Writer.commit_files`` on ``brain/state`` at the head the ledger was read from. Reading ``brain/state``
-is the caller's job (the ``yaz`` job's checkout); this module never reads the target.
+``Writer.commit_files`` on ``brain/state`` at the head the ledger was read from. Both also take
+``commit_files(files, message)``: one commit of several files (``ledger.anchor.anchor_cycle`` adds the root
+file). Reading ``brain/state`` is the caller's job (the ``yaz`` job's checkout); this module never reads the target.
 
 Command line (tohum/29i), run from ``referee/``, one JSON line on stdout, the cause on stderr::
 
@@ -160,19 +161,27 @@ def append_cycle(ledger: bytes, previous: bytes, read_request: Callable[[], byte
 
 @dataclass
 class CountingState:
-    """The vector's writer: counts commits, keeps the last content, touches no disk and no network."""
+    """The vector's writer: counts commits, keeps the last commit's files, touches no disk and no network."""
 
     commits: int = 0
-    content: bytes | None = None
+    files: dict | None = None
+    path: str = "ledger.jsonl"
+
+    @property
+    def content(self) -> bytes | None:
+        return None if self.files is None else self.files.get(self.path)
 
     def commit(self, content: bytes, message: str) -> None:
+        self.commit_files({self.path: content}, message)
+
+    def commit_files(self, files: dict[str, bytes], message: str) -> None:
         self.commits += 1
-        self.content = content
+        self.files = dict(files)
 
 
 @dataclass
 class TargetState:
-    """``brain/state`` on the target through ``target.write``: one commit setting ``path`` on ``head``."""
+    """``brain/state`` on the target through ``target.write``: one commit setting the files on ``head``."""
 
     writer: Any
     head: str
@@ -181,7 +190,10 @@ class TargetState:
     commits_made: list[str] = field(default_factory=list)
 
     def commit(self, content: bytes, message: str) -> None:
-        self.commits_made.append(self.writer.commit_files(self.branch, self.head, {self.path: content}, message))
+        self.commit_files({self.path: content}, message)
+
+    def commit_files(self, files: dict[str, bytes], message: str) -> None:
+        self.commits_made.append(self.writer.commit_files(self.branch, self.head, files, message))
 
 
 # ---------------------------------------------------------------- command line

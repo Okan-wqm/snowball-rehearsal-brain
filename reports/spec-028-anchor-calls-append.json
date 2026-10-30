@@ -1,0 +1,7 @@
+{
+  "id": "spec-028-anchor-calls-append",
+  "kind": "seed_issue",
+  "ref": "spec/asama-0/14-sirali-mikro-ozellikler.md:47",
+  "state": "open",
+  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_anchor.py'  # Cycle.test_one_commit_holds_the_rows_and_the_signed_root, Cycle.test_on_the_target. asama-0/14 calls '10 -> 11' (11 calls 10) and tohum/26a:29 names ledger.append as rekor.anchor's caller (10 calls 11): opposite directions. I followed the table: ledger.anchor.anchor_cycle calls ledger.append.plan_cycle, signs the new ledger's root, and hands ledger.jsonl and chain/root.jsonl to the state writer in one commit_files call, so 'one brain/state commit per cycle' (asama-0/01 D6) holds with the signed root in it. If 10 called 11 instead, append would have to import anchor and the table's order would break (11 > 10). Draft for 26a:29 caller column: 'yaz (ledger.append'in planini cagirir)'. Also: tohum/26 names '<state_root>/chain/root.jsonl' without defining state_root; I write ledger.jsonl and chain/root.jsonl at the root of brain/state's tree, as MF10 did."
+}
