@@ -34,8 +34,9 @@ does an unreadable archive (``tree_unreadable``). A leading ``/`` of a member na
 so an absolute name lands inside the directory. Modes are the filter's (no setuid, setgid or sticky bit; the
 execute bits kept). A refused tree may be partly written; the caller drops the directory.
 
-Out of scope, stated: who writes ``pulled`` in the workflow (the ``cek`` job is not wired: it still stops with
-``cycle_not_wired``; reading the bootstrap result, Sigstore and the target's heads are its D1 work), the target's
+Out of scope, stated: who writes ``pulled`` in the workflow (``loop.cek.assemble`` builds it from what ``çek``
+reads, but the ``cek`` job does not call it yet: it still stops with ``cycle_not_wired``; reading the bootstrap
+result, Sigstore, the brain checkout, the tarball and the target's heads are its D1 work), the target's
 ``brain/state`` and ``brain/integration`` heads (D1 reads them; nothing here carries them yet), and a size bound on
 the archive (the artifact's own size and the job's disk and wall clock bound it).
 """
@@ -46,10 +47,10 @@ import hashlib
 import json
 import os
 import re
-import stat
 import tarfile
 from typing import Any, NamedTuple
 
+from profile import derive as D
 from runner import kos as K
 
 SCHEMA = "snowball-pulled/1"
@@ -120,23 +121,6 @@ def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
     return manifest
 
 
-def _regular(root: str, path: str) -> bytes | None:
-    """The bytes of ``path`` under ``root`` when every component is a real directory and it is a regular file."""
-    full = root
-    for part in path.split("/"):
-        full = os.path.join(full, part)
-        try:
-            st = os.lstat(full)
-        except OSError:
-            return None
-        if stat.S_ISLNK(st.st_mode):
-            return None
-    if not stat.S_ISREG(st.st_mode):
-        return None
-    with open(full, "rb") as fh:
-        return fh.read()
-
-
 def _present(root: str) -> list[str]:
     """Every non-directory entry under ``root`` (relative, ``/``-separated), and every empty directory."""
     found = []
@@ -155,7 +139,7 @@ def _present(root: str) -> list[str]:
 
 def read(root: str) -> Pulled:
     """Check the artifact in ``root`` against its manifest; ``PulledError`` with every reason, else the content."""
-    raw = _regular(root, MANIFEST) if os.path.isdir(root) else None
+    raw = D._read_regular(root, MANIFEST) if os.path.isdir(root) else None
     try:
         manifest = json.loads(raw.decode("utf-8")) if raw is not None else None
     except (UnicodeDecodeError, ValueError, RecursionError):
@@ -178,7 +162,7 @@ def read(root: str) -> Pulled:
         if path not in TOP and cid is None:
             reasons.append("path_not_in_layout:%s" % path)
             continue
-        data = _regular(root, path)
+        data = D._read_regular(root, path)
         if data is None:
             reasons.append("file_missing:%s" % path)
         elif _sha(data) != files[path]:

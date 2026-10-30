@@ -43,8 +43,9 @@ environment (``secret_in_code_job:<NAME>``, exit 1). Then:
   then accepts only a lock without packages), writing ``$RUNNER_TEMP/out/results``. Its index is in the output
   (``index``) and ``done`` is ``["D3"]``. D7 (the sentinel) and D8 (the drill) of this job are not wired, so the
   job still ends ``cycle_not_wired``, exit 1, after D3: the upload step does not run and ``yaz`` gets nothing.
-- every other job stops at once with ``cycle_not_wired`` (exit 1): ``cek`` does not write ``pulled`` yet, so in a
-  real run ``kos`` is not reached; the D1-D8 composition inside the jobs (building each MF's input from the
+- every other job stops at once with ``cycle_not_wired`` (exit 1): ``cek`` does not write ``pulled`` yet (its assembly,
+  ``loop.cek.assemble``, is written; the reads it takes its inputs from are not), so in a real run ``kos`` is not
+  reached; the D1-D8 composition inside the jobs (building each MF's input from the
   pulled trees and the previous artifacts, and the cycle's one ``brain/state`` commit) has no MF of asama-0/14
   that owns it (reported in the founder ledger, spec-036).
 
