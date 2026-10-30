@@ -5,8 +5,8 @@ Rules: asama-0/06 and tohum/24 (``çek`` builds the target's tree from the file 
 tohum/08 item 1 (``çek`` makes its trees an artifact by content identity), ``loop.pulled`` (``tree.tar``).
 
 **Source.** An object source is a callable ``sha -> (type, content)`` that raises ``KeyError`` for an object it
-does not have. ``GitBatch`` is one over ``git cat-file --batch`` of a local git directory (the fetch that fills
-that directory is not written here); tests give a dict's ``__getitem__``. Nothing the source says is trusted:
+does not have. ``GitBatch`` is one over ``git cat-file --batch`` of a local git directory (``loop.fetch`` fills
+one with a commit); tests give a dict's ``__getitem__``. Nothing the source says is trusted:
 ``read`` recomputes every object's id, ``sha1(b"<type> <size>\\0" + content)`` (git's SHA-1 object format; a
 SHA-256 repository is out of scope, ids are 40 lowercase hex), and refuses an object whose id or type differs.
 
@@ -227,11 +227,21 @@ def tree_tar(source: Source, commit: str) -> bytes:
     return buf.getvalue()
 
 
+def git_env(environ: dict[str, str] | None) -> dict[str, str]:
+    """The environment of every git process the referee starts: ``environ`` without any ``GIT_*`` variable and
+    without ``SSH_ASKPASS`` (real git 2.47.3 runs it for a user name and password even under
+    ``GIT_TERMINAL_PROMPT=0``), then ``GIT_CONFIG_NOSYSTEM=1`` and ``GIT_CONFIG_GLOBAL=/dev/null`` (no system or
+    user configuration is read)."""
+    env = {k: v for k, v in (environ or {}).items() if not k.startswith("GIT_") and k != "SSH_ASKPASS"}
+    env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null")
+    return env
+
+
 class GitBatch:
     """An object source over ``git --git-dir=<dir> cat-file --batch`` (one process, one object per request).
 
     Use as a context manager. The git directory is the caller's (a bare repository holding the commit); the
-    process gets ``GIT_CONFIG_NOSYSTEM=1``, ``GIT_CONFIG_GLOBAL=/dev/null`` and no other ``GIT_*`` variable.
+    process's environment is ``git_env``'s.
     A ``<sha> missing`` answer is ``KeyError``; any other answer that is not ``<sha> <type> <size>`` followed
     by exactly that many bytes and a newline, or git ending before that, is
     ``PulledError(["git_batch_unreadable"])``. A git that stops answering but keeps its output open blocks the
@@ -239,10 +249,8 @@ class GitBatch:
     """
 
     def __init__(self, git_dir: str, git: str = "git", environ: dict[str, str] | None = None):
-        env = {k: v for k, v in (environ or {}).items() if not k.startswith("GIT_")}
-        env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null")
         self.argv = [git, "--git-dir=%s" % git_dir, "cat-file", "--batch"]
-        self.env = env
+        self.env = git_env(environ)
         self.proc: subprocess.Popen | None = None
 
     def __enter__(self) -> "GitBatch":

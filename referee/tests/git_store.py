@@ -7,8 +7,10 @@ that a tree built here has the id real git gave the same files.
 
 ``install_git(directory, answers)`` writes an executable ``git`` that speaks ``cat-file --batch``: for each
 requested line it writes ``answers[line]`` (raw bytes, given hex-encoded in ``answers.json`` beside it) or
-``<line> missing``, and exits after answering a line in ``exit_after``; it appends its argv and environment
-to ``calls.jsonl`` beside itself.
+``<line> missing``, and exits after answering a line in ``exit_after``; it appends its argv, environment and
+what its stdin and stdout are (``fds``) to ``calls.jsonl`` beside itself. Its ``init`` (the first argument after the options, ``-c`` taking a value)
+creates the directory named last and its ``fetch`` does nothing; each exits with ``exits[<command>]`` (0 when
+absent): the objects it then answers stand for what a fetch brought.
 """
 
 from __future__ import annotations
@@ -99,9 +101,17 @@ here = os.path.dirname(os.path.abspath(__file__))
 with open("/proc/self/environ", "rb") as fh:
     env = dict(item.decode().split("=", 1) for item in fh.read().split(b"\\0") if item)
 with open(os.path.join(here, "calls.jsonl"), "a") as fh:
-    fh.write(json.dumps({"argv": sys.argv[1:], "env": env}) + "\\n")
+    fh.write(json.dumps({"argv": sys.argv[1:], "env": env,
+                         "fds": [os.path.realpath("/proc/self/fd/" + str(fd)) for fd in (0, 1)]}) + "\\n")
 with open(os.path.join(here, "answers.json")) as fh:
     doc = json.load(fh)
+args, i = sys.argv[1:], 0
+while i < len(args) and args[i].startswith("-"):
+    i += 2 if args[i] == "-c" else 1
+if i < len(args) and args[i] in ("init", "fetch"):
+    if args[i] == "init":
+        os.makedirs(args[-1])
+    sys.exit(doc["exits"].get(args[i], 0))
 answers = {k: bytes.fromhex(v) for k, v in doc["answers"].items()}
 out = sys.stdout.buffer
 for line in sys.stdin.buffer:
@@ -113,13 +123,14 @@ for line in sys.stdin.buffer:
 '''
 
 
-def install_git(directory: str, answers: dict[str, bytes], exit_after: tuple = ()) -> str:
+def install_git(directory: str, answers: dict[str, bytes], exit_after: tuple = (), exits: dict | None = None) -> str:
     path = os.path.join(directory, "git")
     with open(path, "w") as fh:
         fh.write(SCRIPT % sys.executable)
     os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
     with open(os.path.join(directory, "answers.json"), "w") as fh:
-        json.dump({"answers": {k: v.hex() for k, v in answers.items()}, "exit_after": list(exit_after)}, fh)
+        json.dump({"answers": {k: v.hex() for k, v in answers.items()}, "exit_after": list(exit_after),
+                   "exits": exits or {}}, fh)
     return path
 
 

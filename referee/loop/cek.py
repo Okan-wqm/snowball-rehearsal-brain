@@ -40,8 +40,8 @@ Then ``loop.pulled.write`` writes the artifact and ``loop.pulled.read`` reads it
 left in ``out`` is one ``loop.pulled.read`` accepts.
 
 Out of scope, stated: the reads themselves (the bootstrap result and its Sigstore bundle, the target's
-``brain/state`` and ``brain/integration`` heads, the fetches of the brain's ``last_accepted_sha`` and of the
-target's commit into the git directories ``loop.gitobj.GitBatch`` reads) and D1's checks on them (``verify --previous``,
+``brain/state`` and ``brain/integration`` heads, and which commits are fetched: ``loop.fetch`` fills a git
+directory ``loop.gitobj.GitBatch`` reads with one commit, but nothing calls it yet) and D1's checks on them (``verify --previous``,
 the root signature, the accepted SHA's ``referee/`` hash against the last ``setup/imports.jsonl`` row: no page
 this clone has gives that hash's algorithm), and the ``profile.derive`` judgement of D1 (MF4). Which commit is
 read is the caller's choice; ``pulled`` does not record it. The tree is held in memory (on the 15134-file
