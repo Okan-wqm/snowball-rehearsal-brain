@@ -1,0 +1,7 @@
+{
+  "id": "spec-036-cycle-composition-unowned",
+  "kind": "spec_issue",
+  "ref": "spec/asama-0/14-sirali-mikro-ozellikler.md:44",
+  "state": "open",
+  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_loop_workflow.py'  # JobEntry.test_not_wired_stops_red. No MF of asama-0/14 owns the composition inside the loop's jobs: building each MF's input from the pulled trees and the previous jobs' artifacts (D1-D8 of asama-0/01), and joining status.block's plan, ledger.append and ledger.anchor's root into the cycle's one brain/state commit. MF17's module is only .github/workflows/loop.yml and its Kum column says 'statik; gerçeği (B)'; MF1-16 are each a CLI over one vector input; MF18 is activation. So (B) cannot run a cycle with the 18 MFs as written. What I did: the workflow calls one entry per job, `python3 -m loop.job run JOB` (referee/loop/job.py), which enforces the job's secret contract and then stops red with reason cycle_not_wired, so no cycle can pass green through a job that did nothing. Draft for asama-0/14: either MF17's module is `loop/` plus the workflow, with test 46 extended by a cycle on the in-process fakes (fake_github, fake_docker, fake_claude, the fake signer) that runs D1-D8 end to end, or a new row between 16 and 17 for that composition; MF17's calls then name 1-16 explicitly instead of 'hepsini' (which also closes spec-004)."
+}
