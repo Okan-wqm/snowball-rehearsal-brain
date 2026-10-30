@@ -38,8 +38,11 @@ The parser fails closed (``DiffError``, exit 2) on anything ``git apply`` could 
 module did not see: no ``diff --git`` block; any line before the first block; a header line git does not
 write (``EXTENDED``); a mode git does not write (``MODES``); paths that are not ``a/``/``b/``-prefixed,
 that differ without ``rename``/``copy`` headers, or that disagree with the ``rename``/``copy``/``---``/
-``+++`` lines; a hunk whose lines do not match its ``@@`` counts; any line after a block's hunks other
-than another hunk or the next block. A ``GIT binary patch`` body is read as base85 lines up to the next
+``+++`` lines; a hunk whose lines do not match its ``@@`` counts; a line after a side's ``\ No newline at
+end of file``; hunks of a block out of order or overlapping, or a ``+`` start other than the one git
+writes for its ``-`` start (``git apply`` places a hunk without context by its ``+`` start, so a diff whose
+starts disagree is applied elsewhere than it reads); any line after a block's hunks other than another
+hunk or the next block. A ``GIT binary patch`` body is read as base85 lines up to the next
 block; ``Binary files ... differ`` carries no body.
 """
 
@@ -93,7 +96,7 @@ EXTENDED = ("old mode ", "new mode ", "deleted file mode ", "new file mode ", "c
             "rename from ", "rename to ", "similarity index ", "dissimilarity index ", "index ")
 INDEX = re.compile(r"index [0-9a-f]+\.\.[0-9a-f]+(?: ([0-9]+))?")
 SCORE = re.compile(r"[0-9]+%")
-HUNK = re.compile(r"@@ -[0-9]+(?:,([0-9]+))? \+[0-9]+(?:,([0-9]+))? @@")
+HUNK = re.compile(r"@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@")
 BASE85_LINE = re.compile(r"[A-Za-z][0-9A-Za-z!#$%&()*+\-;<=>?@^_`{|}~]+")
 BINARY_SIZE = re.compile(r"(?:literal|delta) [0-9]+")
 GIT_HEADER = "diff --git "
@@ -180,15 +183,23 @@ def _check_mode(mode: str, line: str) -> str:
     return mode
 
 
-def _hunk(lines: list[str], i: int) -> int:
-    """Consume the hunk whose ``@@`` header is ``lines[i]``; return the index after it."""
+def _hunk(lines: list[str], i: int) -> tuple[dict, int]:
+    """Consume the hunk whose ``@@`` header is ``lines[i]``; return it and the index after it.
+
+    The hunk is ``{old_start, old_count, new_start, new_count, lines}``; each line is ``[tag, text, eol]``
+    with tag `` ``, ``-`` or ``+`` (an empty line counts as context) and ``eol`` false when git's ``\\ No
+    newline at end of file`` marker follows it."""
     m = HUNK.match(lines[i])
     if not m:
         raise DiffError("bad hunk header %r" % lines[i])
-    old = 1 if m.group(1) is None else int(m.group(1))
-    new = 1 if m.group(2) is None else int(m.group(2))
+    old = 1 if m.group(2) is None else int(m.group(2))
+    new = 1 if m.group(4) is None else int(m.group(4))
+    hunk = {"old_start": int(m.group(1)), "old_count": old, "new_start": int(m.group(3)), "new_count": new,
+            "lines": []}
+    body = hunk["lines"]
+    closed = {"-": False, "+": False}  # a side whose last line had no newline takes no further line
     i += 1
-    while old > 0 or new > 0:
+    while old > 0 or new > 0 or (i < len(lines) and lines[i].startswith("\\")):
         if i >= len(lines):
             raise DiffError("hunk ends before its counts")
         line = lines[i]
@@ -199,19 +210,53 @@ def _hunk(lines: list[str], i: int) -> int:
             old -= 1
         elif tag == "+":
             new -= 1
-        elif tag != "\\":
+        elif tag == "\\":
+            if not body or not body[-1][2]:
+                raise DiffError("misplaced %r" % line)
+            body[-1][2] = False
+            i += 1
+            continue
+        else:
             raise DiffError("line %r inside a hunk" % line)
         if old < 0 or new < 0:
             raise DiffError("hunk longer than its counts")
+        sides = ("-", "+") if tag in (" ", "") else (tag,)
+        if any(closed[s] for s in sides):
+            raise DiffError("line %r after the end of file" % line)
+        if body and not body[-1][2]:
+            for s in (("-", "+") if body[-1][0] == " " else (body[-1][0],)):
+                closed[s] = True
+        body.append([tag or " ", line[1:], True])
         i += 1
-    while i < len(lines) and lines[i].startswith("\\"):
-        i += 1
-    return i
+    return hunk, i
+
+
+def _check_positions(hunks: list[dict], header: str) -> None:
+    """The hunks of one block are in order, do not overlap, and each ``+`` start is the one git writes for
+    its ``-`` start and the line count change of the hunks before it (a start of the empty side names the
+    line before it). The mapped line (``gate.check``) reads these starts, so a diff that lies about them is
+    unusable, not mapped."""
+    delta, end = 0, 0
+    for h in hunks:
+        os_, oc, ns, nc = h["old_start"], h["old_count"], h["new_start"], h["new_count"]
+        if oc == 0 and nc == 0:
+            raise DiffError("empty hunk in %r" % header)
+        first = os_ if oc else os_ + 1  # first old line the hunk touches or the one it inserts before
+        if first <= end or (oc and os_ < 1):
+            raise DiffError("hunks out of order or overlapping in %r" % header)
+        expect = os_ + delta + (1 if oc == 0 else 0) - (1 if nc == 0 else 0)
+        if ns != expect:
+            raise DiffError("hunk '+%d' should be '+%d' in %r" % (ns, expect, header))
+        delta += nc - oc
+        end = os_ + oc - 1 if oc else os_
 
 
 def parse(text: str) -> list[dict]:
-    """The blocks of a git diff: ``{"changed": [paths], "modes": [post-image modes]}`` each; see the module
-    docstring for what makes a diff unusable."""
+    """The blocks of a git diff, each ``{changed, modes, kind, old, new, hunks, binary, headers}``:
+    ``changed`` the paths the block changes, ``modes`` its post-image modes, ``kind`` one of ``modify``,
+    ``create``, ``delete``, ``rename``, ``copy``, ``old``/``new`` the pre-/post-image path (None when
+    created/deleted), ``hunks`` as ``_hunk`` returns them, ``binary`` true for a binary patch, ``headers``
+    the extended header names. See the module docstring for what makes a diff unusable."""
     lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()
@@ -267,6 +312,8 @@ def parse(text: str) -> list[dict]:
             if a != b:
                 raise DiffError("names differ without rename/copy in %r" % header)
         deleted, created = "deleted file mode " in ext, "new file mode " in ext
+        hunks: list[dict] = []
+        binary = False
         if deleted and (created or rename or copy or "new mode " in ext):
             raise DiffError("a deletion with other changes in %r" % header)
         if i < len(lines) and lines[i].startswith("--- "):
@@ -279,17 +326,25 @@ def parse(text: str) -> list[dict]:
             if i >= len(lines) or not lines[i].startswith("@@"):
                 raise DiffError("no hunk after '+++' in %r" % header)
             while i < len(lines) and lines[i].startswith("@@"):
-                i = _hunk(lines, i)
+                hunk, i = _hunk(lines, i)
+                hunks.append(hunk)
+            _check_positions(hunks, header)
         elif i < len(lines) and lines[i] == "GIT binary patch":
+            binary = True
             i += 1
             while i < len(lines) and not lines[i].startswith(GIT_HEADER):
                 if not (lines[i] == "" or BINARY_SIZE.fullmatch(lines[i]) or BASE85_LINE.fullmatch(lines[i])):
                     raise DiffError("bad binary patch line %r" % lines[i])
                 i += 1
         elif i < len(lines) and lines[i].startswith("Binary files ") and lines[i].endswith(" differ"):
+            binary = True
             i += 1
         changed = [a] if deleted else [a, b] if rename else [b]
-        blocks.append({"changed": changed, "modes": modes})
+        kind = ("delete" if deleted else "create" if created else "rename" if rename else "copy" if copy
+                else "modify")
+        blocks.append({"changed": changed, "modes": modes, "kind": kind, "old": None if created else a,
+                       "new": None if deleted else b, "hunks": hunks, "binary": binary,
+                       "headers": sorted(k.strip() for k in ext)})
     return blocks
 
 

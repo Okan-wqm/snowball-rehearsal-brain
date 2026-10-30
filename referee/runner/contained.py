@@ -140,6 +140,7 @@ SOURCE_PATH = re.compile(r"/[A-Za-z0-9._/-]*\Z")
 DOCKER_SOCKET_NAME = "docker.sock"
 DOCKER_SOCKETS = ("/var/run/docker.sock", "/run/docker.sock")
 DOCKER_SOCKET_DIR = re.compile(r"/run/user/[^/]+/?\Z")  # rootless docker: /run/user/<uid>/docker.sock
+WORKDIR = "/work"  # the container work directory of every run; gate.check reads lint paths under it
 MOUNT_SUBDIR = {"/work": "work", "/out": "out", "/in": "in"}
 _COMPONENT = r"[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*"
 IMAGE = re.compile(
@@ -725,6 +726,18 @@ def _finish(result: dict, status: str, work_before: dict, work_after: dict, out_
     return result
 
 
+def red_control_reasons(red: dict) -> list[str]:
+    """The red control rule, one source for the run here and for ``gate.check`` (MF8), which reads the
+    recorded result: ``[]`` when the control ran (status ``ok``) and was red (an integer exit other than 0,
+    125, 126, 127), ``["red_control_green"]`` on exit 0, ``["red_control_fault"]`` otherwise."""
+    status, code = red.get("status"), red.get("exit")
+    if status != "ok" or type(code) is not int or code in (125, 126, 127):
+        return ["red_control_fault"]
+    if code == 0:
+        return ["red_control_green"]
+    return []
+
+
 def run_with_red_control(job: dict, red_control: dict, operating: dict, runner: Runner | None = None,
                          base: str | None = None) -> dict:
     """``job`` and the known bad ``red_control``, each contained; the run is valid only if the control is red."""
@@ -734,11 +747,7 @@ def run_with_red_control(job: dict, red_control: dict, operating: dict, runner: 
         raise ContainmentError("the red control runs in the job's image")
     red = run(red_control, operating, runner, base)
     main = run(job, operating, runner, base)
-    reasons = []
-    if red["status"] != "ok" or red["exit"] in (125, 126, 127) or red["exit"] is None:
-        reasons.append("red_control_fault")
-    elif red["exit"] == 0:
-        reasons.append("red_control_green")
+    reasons = red_control_reasons(red)
     if not main["valid"]:
         reasons.append(main["status"])
     return {"valid": not reasons, "reasons": reasons, "result": main, "red_control": red}

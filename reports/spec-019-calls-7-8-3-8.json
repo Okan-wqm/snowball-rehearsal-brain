@@ -1,0 +1,7 @@
+{
+  "id": "spec-019-calls-7-8-3-8",
+  "kind": "spec_issue",
+  "ref": "spec/asama-0/14-sirali-mikro-ozellikler.md:47",
+  "state": "open",
+  "evidence_test": "grep -n 'from gate import diffguard\\|from runner import contained' referee/gate/check.py  # calls lists 2 -> 8 only; tohum/26a:25 names gate.check as gate.diffguard's caller (7 -> 8), and gate.check reads the red control by MF3's rule and the run records MF3 writes (3 -> 8); order holds (3, 7 < 8), the table omits the edges"
+}
