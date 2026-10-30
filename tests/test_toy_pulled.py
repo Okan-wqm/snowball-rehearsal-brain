@@ -1,12 +1,11 @@
 """The toy target as ``çek`` would hand it to ``koş``: this brain's own ``targets/toy/units.json`` and
-``candidates/toy/`` with the toy's tree (``tests/fixtures/toy-repo``) in GitHub's tarball shape, through
-``loop.cek.assemble`` (asama-0/01 D1, tohum/26c).
+``candidates/toy/`` with the toy's tree (``tests/fixtures/toy-repo``) as git objects (git's format, built by
+``referee/tests/git_store.py``), through ``loop.cek.assemble`` (asama-0/01 D1, tohum/26c).
 
 What is proven here: the artifact ``loop.pulled.read`` accepts holds, byte for byte, the brain's ``units.json``
 (one unit, the number ``koş`` runs) and all five candidate directories, the ``targets[]`` entry as given, and a
-tree that unpacks (``extract_tree``, ``koş``'s rule) to exactly the fixture's files. Not proven here: GitHub's
-tarball of the real toy repository (the tarball is built in the shape ``git archive`` writes, see
-``referee/tests/test_loop_cek.py``), and the contained runs over it (asama-0/10a #birim, #merge, #ret).
+tree that unpacks (``extract_tree``, ``koş``'s rule) to exactly the fixture's files. Not proven here: the
+fetch of the real toy repository's objects, and the contained runs over it (asama-0/10a #birim, #merge, #ret).
 
 Run from the brain root: ``python -m unittest discover -s tests -p 'test_toy_pulled.py'``.
 """
@@ -26,10 +25,11 @@ sys.path.insert(0, os.path.join(ROOT, "referee", "tests"))
 
 from loop import cek as C  # noqa: E402
 from loop import pulled as P  # noqa: E402
-from test_loop_cek import COMMIT, github_tarball  # noqa: E402
+import git_store as S  # noqa: E402
 
 TOY = os.path.join(ROOT, "tests", "fixtures", "toy-repo")
 CANDIDATES = os.path.join(ROOT, "candidates", "toy")
+OBJECTS, COMMIT = S.store(S.from_dir(TOY))
 ENTRY = {"id": "toy", "repo": "owner/toy", "kind": "toy", "base_sha": COMMIT, "identifiers": [],
          "excluded_paths": [], "unit_candidates": []}
 
@@ -51,7 +51,7 @@ class ToyPulled(unittest.TestCase):
     def test_the_toy_as_pulled(self):
         out = os.path.join(self.tmp, "pulled")
         summary = json.dumps({"targets": [ENTRY, dict(ENTRY, id="copy", kind="copy")]}).encode()
-        C.assemble(ROOT, summary, b"{}", "toy", github_tarball(TOY, "owner-toy-aaaaaaa"), COMMIT, out)
+        C.assemble(ROOT, summary, b"{}", "toy", OBJECTS.__getitem__, COMMIT, out)
         got = P.read(out)
         self.assertEqual(got.target, ENTRY)
         with open(os.path.join(ROOT, "targets", "toy", "units.json"), "rb") as fh:

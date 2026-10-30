@@ -7,8 +7,8 @@ Rules: asama-0/01 D1 (``çek`` reads, at the SHA the bootstrap referee last acce
 
 **Inputs** (``assemble``): ``brain``, a checkout of the brain repository at the accepted SHA (a directory);
 ``summary`` and ``policy``, the bytes of the referee repository's ``setup/summary.json`` and ``policy.json``;
-``target_id``; ``tarball``, the bytes GitHub's ``GET /repos/{owner}/{repo}/tarball/{ref}`` returns; ``commit``,
-the 40-hex commit that tarball was asked for. Nothing here reads the network or a clock.
+``target_id``; ``objects``, a ``loop.gitobj`` object source holding the target's commit; ``commit``, that
+commit's 40-hex id. Nothing here reads the network or a clock.
 
 **Rules**, every reason that holds is listed (``PulledError``; ``out`` is not created):
 
@@ -23,71 +23,36 @@ the 40-hex commit that tarball was asked for. Nothing here reads the network or 
   has no ready candidates. ``candidate_invalid:<name>``: an entry of it whose name is not a candidate
   id (``runner.kos.CANDIDATE_ID``), that is not a real directory, or that does not hold exactly the three files,
   each a regular file. Every candidate directory is taken; none is skipped.
-- The tree (``tree_tar``): ``tarball_unreadable`` (not a gzip-compressed tar archive ``tarfile`` reads; it
-  also refuses a global header followed by no member);
-  ``tarball_commit_mismatch`` (the archive's pax global header ``comment``, where ``git archive`` writes the
-  commit it archived, is not ``commit``); ``tarball_layout`` (the members do not all sit under one top
-  directory, the first member, as ``git archive --prefix`` writes them, or a hard link points outside it). The
-  top directory is dropped from every name and hard-link target; symbolic link targets, modes and contents are
-  kept as they are. What the tree may hold (``..``, links leaving it, devices) is ``loop.pulled.extract_tree``'s
-  rule in ``kos``, not repeated here.
+- The tree: ``loop.gitobj.tree_tar(objects, commit)``, the commit's tree read object by object with every id
+  recomputed, so ``.gitattributes`` (``export-ignore``, ``export-subst``, filters) has no effect; its reasons
+  (``object_missing:<sha>``, ``tree_submodule:<path>``, ...) are listed with the others. What the tree may hold
+  (links leaving it, devices) is ``loop.pulled.extract_tree``'s rule in ``kos``, not repeated here.
 
 Then ``loop.pulled.write`` writes the artifact and ``loop.pulled.read`` reads it back (its refusals, e.g.
 ``json_unreadable:units.json``, are this step's too, and the written directory is removed), so an artifact
 left in ``out`` is one ``loop.pulled.read`` accepts.
 
 Out of scope, stated: the reads themselves (the bootstrap result and its Sigstore bundle, the brain checkout at
-its ``last_accepted_sha``, the target's ``brain/state`` and ``brain/integration`` heads, the tarball request) and
-D1's checks on them (``verify --previous``, the root signature, the accepted SHA's ``referee/`` hash against the
-last ``setup/imports.jsonl`` row: no page this clone has gives that hash's algorithm), and the ``profile.derive``
-judgement of D1 (MF4). Which ref the tarball is of is the caller's choice; ``pulled`` does not record it. The
-tarball is held in memory (its size is bounded by the job's memory). The ``cek`` job does not call this yet: it
-still stops with ``cycle_not_wired``. GitHub's tarball is taken to be ``git archive``'s ``tar.gz`` form (a pax
-global header with the commit, one prefix directory); this was measured on ``git archive`` output, not on a
-response of GitHub's API.
+its ``last_accepted_sha``, the target's ``brain/state`` and ``brain/integration`` heads, the fetch of the target's
+commit into the git directory ``loop.gitobj.GitBatch`` reads) and D1's checks on them (``verify --previous``,
+the root signature, the accepted SHA's ``referee/`` hash against the last ``setup/imports.jsonl`` row: no page
+this clone has gives that hash's algorithm), and the ``profile.derive`` judgement of D1 (MF4). Which commit is
+read is the caller's choice; ``pulled`` does not record it. The tree is held in memory (on the 15134-file
+target: 175 MB of ``tree.tar``, 518 MB peak). The ``cek`` job does not call this yet: it still
+stops with ``cycle_not_wired``. The brain is still read from a checkout directory, not from its objects.
 """
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import shutil
-import tarfile
 from typing import Any
 
+from loop import gitobj as G
 from loop import pulled as P
 from profile import derive as D
 from runner import kos as K
-
-
-def tree_tar(tarball: bytes, commit: str) -> bytes:
-    """GitHub's tarball of ``commit`` -> ``pulled``'s ``tree.tar`` (no top directory); ``PulledError``."""
-    try:
-        with tarfile.open(fileobj=io.BytesIO(tarball), mode="r:gz") as src:
-            members = src.getmembers()
-            comment = src.pax_headers.get("comment")
-            if comment != commit:
-                raise P.PulledError(["tarball_commit_mismatch"])
-            if not members or not members[0].isdir() or "/" in members[0].name.rstrip("/"):
-                raise P.PulledError(["tarball_layout"])
-            top = members[0].name.rstrip("/") + "/"
-            buf = io.BytesIO()
-            with tarfile.open(fileobj=buf, mode="w", format=tarfile.PAX_FORMAT) as dst:
-                for member in members[1:]:
-                    if not member.name.startswith(top):
-                        raise P.PulledError(["tarball_layout"])
-                    info = member.replace(name=member.name[len(top):], deep=False)
-                    if member.islnk():
-                        if not member.linkname.startswith(top):
-                            raise P.PulledError(["tarball_layout"])
-                        info = info.replace(linkname=member.linkname[len(top):], deep=False)
-                    dst.addfile(info, src.extractfile(member) if member.isreg() else None)
-    except P.PulledError:
-        raise
-    except (tarfile.TarError, EOFError, OSError, ValueError):
-        raise P.PulledError(["tarball_unreadable"]) from None
-    return buf.getvalue()
 
 
 def _target(summary: bytes, target_id: str) -> tuple[dict | None, list[str]]:
@@ -129,7 +94,7 @@ def _candidates(brain: str, target_id: str) -> tuple[dict[str, dict[str, bytes]]
     return found, reasons
 
 
-def assemble(brain: str, summary: bytes, policy: bytes, target_id: str, tarball: bytes, commit: str,
+def assemble(brain: str, summary: bytes, policy: bytes, target_id: str, objects: G.Source, commit: str,
              out: str) -> dict[str, Any]:
     """Write ``pulled`` into ``out`` (which must not exist) by the rules above; returns its manifest."""
     if not (isinstance(target_id, str) and K.CANDIDATE_ID.fullmatch(target_id)):
@@ -141,7 +106,7 @@ def assemble(brain: str, summary: bytes, policy: bytes, target_id: str, tarball:
     candidates, bad = _candidates(brain, target_id)
     reasons += bad
     try:
-        tree = tree_tar(tarball, commit)
+        tree = G.tree_tar(objects, commit)
     except P.PulledError as exc:
         reasons += exc.reasons
     if reasons:
