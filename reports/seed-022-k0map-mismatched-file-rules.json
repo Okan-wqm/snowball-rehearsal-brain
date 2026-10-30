@@ -1,0 +1,7 @@
+{
+  "id": "seed-022-k0map-mismatched-file-rules",
+  "kind": "seed_issue",
+  "ref": "spec/tohum/29h-vektor-arayuzleri-mf8-13.md:30",
+  "state": "open",
+  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_check.py'  # test_a_file_failing_its_hash_is_not_read. 29h:30 says every reason is written ('Nedenler, hepsi yazilir') and that a koş file whose hash fails is not trusted, but does not say whether rules that read such a file are judged. Chosen: a file that fails its hash is not read (not even parsed, so it cannot make the input unusable either); every rule over the other inputs is judged. In the 29h cases forged_candidate_run and forged_checks both readings give the same reasons; they differ when the mismatched file is the base run or holds a violation the verified files do not. Draft for 29h: 'Hash'i tutmayan dosya okunmaz; onu okuyan kosullar degerlendirilmez, digerleri degerlendirilir.'"
+}

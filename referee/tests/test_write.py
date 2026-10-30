@@ -7,13 +7,16 @@
   a squash or rebase merge and a merge of a pull request the guard has not seen open on ``brain/`` refuse;
 - the writer against an in-process GitHub (``fake_github``) with the target's rulesets: branch, commit,
   pull request, check, merge; every attempt on ``main`` is refused before it is sent and ``main`` never moves;
-- revert: the revert commit's tree is the merge's first parent's tree, it goes through a pull request and a
-  merge, and after that merge the branch holds that tree; a merge that is not the head, or a commit that is
-  not a merge, is refused;
+- revert: the revert commit's tree is the merge's first parent's tree (not its own, not the second parent's),
+  its parent is the head of the branch it is made onto, it lands on a ``brain/`` branch, and after the pull
+  request and merge the branch holds that tree; a merge that is not the head, a commit that is not a merge,
+  or a revert branch outside ``brain/`` is refused;
 - responses that do not say what was asked are errors; the HTTPS transport sends the token only to the API
   and follows no redirect;
 - one way: no other module under ``referee/`` reaches the network or pushes with git;
-- the command line: one JSON line, exit 0 / 1 / 2.
+- the command line (tohum/29i ``refs``): ``replay`` over a recorded API, each 29i case (revert first parent
+  tree, refuse main, update never forces, prefix look-alike, ``..``, merge into main read then refused, pull
+  request into main); outputs from the requests sent; exit 0 / 1 / 2, one JSON line.
 """
 
 from __future__ import annotations
@@ -211,9 +214,12 @@ class RouteRule(unittest.TestCase):
         self.assertEqual(g.pulls, {})
         with self.assertRaises(W.ApiError):
             g.observe("GET", P + "pulls/4", resp)
+        g.observe("POST", P + "pulls", resp)  # a created pull is not a record: a merge reads it again
+        g.observe("PATCH", P + "pulls/3", resp)  # only a read is
+        self.assertEqual(g.pulls, {})
         for broken in ({}, dict(resp, number="3"), dict(resp, number=True), dict(resp, head={"ref": "brain/c/1"})):
             with self.assertRaises(W.ApiError):
-                g.observe("POST", P + "pulls", broken)
+                g.observe("GET", P + "pulls/3", broken)
         g.observe("GET", P + "pulls/3", resp)
         self.assertEqual(g.pulls[3]["base"], "brain/integration")
         g.observe("GET", P + "pulls/3", dict(resp, base={"ref": "main"}))
@@ -356,9 +362,10 @@ class WriterLoop(unittest.TestCase):
         gh, wr, root = world()
         n, sha = candidate(gh, wr)
         wr.check(sha, GATE, "success")
-        gh.overrides[("PUT", P + "pulls/%d/merge" % n)] = (200, {"sha": B, "merged": True})
-        with self.assertRaises(W.ApiError):
-            wr.merge(n, sha)
+        for answer in ({"merged": True}, {"merged": True, "sha": "x"}, {"merged": "true", "sha": B}, None):
+            gh.overrides[("PUT", P + "pulls/%d/merge" % n)] = (200, answer)
+            with self.assertRaises(W.ApiError):
+                wr.merge(n, sha)
         del gh.overrides[("PUT", P + "pulls/%d/merge" % n)]
 
         def unmerged(method, path, body):  # the merge lands but the response says it did not
@@ -385,20 +392,27 @@ class Revert(unittest.TestCase):
 
     def test_revert_tree_is_the_first_parents_tree(self):
         gh, wr, root, merge = self.merged()
-        out = wr.revert("brain/integration", merge, "brain/c/revert-1", "revert: test_regression")
-        first = gh.commits[merge]["parents"][0]
+        sent = len(wr.sent)
+        out = wr.revert(merge, "brain/integration", "brain/c/revert-1", "revert: test_regression")
+        first, second = gh.commits[merge]["parents"]
+        self.assertNotEqual(gh.commits[first]["tree"], gh.commits[merge]["tree"])
         self.assertEqual(out["tree"], gh.commits[first]["tree"])
+        self.assertNotIn(out["tree"], (gh.commits[merge]["tree"], gh.commits[second]["tree"]))
         self.assertEqual(gh.commits[out["commit"]], {"tree": gh.commits[first]["tree"], "parents": [merge],
                                                      "message": "revert: test_regression"})
+        self.assertEqual([(m, p) for m, p, _ in wr.sent[sent:]], [
+            ("GET", P + "git/commits/" + merge), ("GET", P + "git/commits/" + first),
+            ("GET", P + "git/ref/heads/brain/integration"), ("POST", P + "git/commits"), ("POST", P + "git/refs")])
         self.assertEqual(gh.refs["brain/c/revert-1"], out["commit"])
-        self.assertEqual(gh.pulls[out["pull"]]["base"], "brain/integration")
-        self.assertEqual(gh.refs["brain/integration"], merge)  # the revert is a pull request, not a push
+        self.assertEqual(gh.refs["brain/integration"], merge)  # the revert is a branch, not a push
+        n = wr.open_pull("brain/c/revert-1", "brain/integration", "revert: test_regression")
         wr.check(out["commit"], GATE, "success")
-        reverted = wr.merge(out["pull"], out["commit"])
+        reverted = wr.merge(n, out["commit"])
         self.assertEqual(gh.commits[reverted]["tree"], gh.commits[root]["tree"])
         self.assertEqual(gh.commits[reverted]["parents"], [merge, out["commit"]])
         self.assertEqual(gh.refs["main"], root)
         self.assertTrue(all(r.startswith("refs/heads/brain/") for r in written_refs(gh)))
+        self.assertEqual(wr.written, written_refs(gh))
 
     def test_only_the_head_is_reverted(self):
         gh, wr, root, merge = self.merged()
@@ -407,7 +421,7 @@ class Revert(unittest.TestCase):
         wr.merge(n, sha)
         sent = len(writes(gh))
         with self.assertRaises(W.Refused) as ctx:
-            wr.revert("brain/integration", merge, "brain/c/revert-1", "revert")
+            wr.revert(merge, "brain/integration", "brain/c/revert-1", "revert")
         self.assertEqual(ctx.exception.reasons, ["revert_not_head"])
         self.assertEqual(len(writes(gh)), sent)
 
@@ -418,9 +432,17 @@ class Revert(unittest.TestCase):
         wr.update_branch("brain/integration", child)
         sent = len(writes(gh))
         with self.assertRaises(W.Refused) as ctx:
-            wr.revert("brain/integration", child, "brain/c/revert-1", "revert")
+            wr.revert(child, "brain/integration", "brain/c/revert-1", "revert")
         self.assertEqual(ctx.exception.reasons, ["revert_not_merge"])
         self.assertEqual(len(writes(gh)), sent)
+
+    def test_revert_branch_outside_brain_is_refused_before_any_call(self):
+        gh, wr, root, merge = self.merged()
+        sent = len(gh.requests)
+        for branch in ("main", "brain", "brain/../main"):
+            with self.assertRaises(W.Refused):
+                wr.revert(merge, "brain/integration", branch, "revert")
+        self.assertEqual(len(gh.requests), sent)
 
     def test_pure_rule(self):
         commits = {A: {"tree": "1" * 40, "parents": []}, B: {"tree": "2" * 40, "parents": [A, "c" * 40]},
@@ -554,53 +576,162 @@ class OneWay(unittest.TestCase):
         self.assertEqual(bad, [])
 
 
-def cli(*args, doc=None):
+def cli(*args, api=None, request=None):
+    """``python -m target.write`` with ``api`` written to a file (appended to ``args``) and ``request`` on stdin."""
     with tempfile.TemporaryDirectory() as tmp:
         argv = list(args)
-        if doc is not None:
-            path = os.path.join(tmp, "in.json")
+        if api is not None:
+            path = os.path.join(tmp, "api.json")
             with open(path, "w", encoding="utf-8") as fh:
-                fh.write(doc if isinstance(doc, str) else json.dumps(doc))
+                fh.write(api if isinstance(api, str) else json.dumps(api))
             argv.append(path)
+        stdin = request if isinstance(request, str) else json.dumps(request)
         proc = subprocess.run([sys.executable, "-m", "target.write", *argv], cwd=REFEREE, capture_output=True,
-                              text=True, timeout=60)
-    lines = proc.stdout.splitlines()
-    return proc.returncode, (json.loads(lines[-1]) if lines else None), proc.stdout, proc.stderr
+                              text=True, input=stdin, timeout=60)
+    assert "Traceback" not in proc.stderr, proc.stderr
+    assert proc.stdout.count("\n") == 1, proc.stdout
+    return proc.returncode, json.loads(proc.stdout)
+
+
+M, F1, F2, T1, T2, TM, R, H = ("1" * 40, "2" * 40, "3" * 40, "4" * 40, "5" * 40, "6" * 40, "7" * 40, "8" * 40)
+REVERT_API = {
+    "GET %sgit/commits/%s" % (P, M): {"sha": M, "tree": {"sha": TM}, "parents": [{"sha": F1}, {"sha": F2}]},
+    "GET %sgit/commits/%s" % (P, F1): {"sha": F1, "tree": {"sha": T1}, "parents": []},
+    "GET %sgit/commits/%s" % (P, F2): {"sha": F2, "tree": {"sha": T2}, "parents": [{"sha": F1}]},
+    "GET %sgit/ref/heads/brain/integration" % P: {"ref": "refs/heads/brain/integration", "object": {"sha": M}},
+    "POST %sgit/commits" % P: {"sha": R, "tree": {"sha": T1}},
+    "POST %sgit/refs" % P: {"ref": "refs/heads/brain/c/revert-1", "object": {"sha": R}},
+}
+PULL = {"number": 7, "state": "open", "base": {"ref": "brain/integration"}, "head": {"ref": "brain/c/1", "sha": H}}
+MERGE_API = {"GET %spulls/7" % P: PULL, "PUT %spulls/7/merge" % P: {"merged": True, "sha": M}}
+REFUSED = {"ok": False, "refs": [], "writes": [], "commit": None, "forced": False}
 
 
 class CommandLine(unittest.TestCase):
-    def test_guard(self):
-        plan = {"repo": REPO, "pulls": {"3": OPEN}, "requests": [
-            {"method": "POST", "path": P + "git/refs", "body": {"ref": "refs/heads/brain/c/1", "sha": A}},
-            {"method": "PUT", "path": P + "pulls/3/merge", "body": {"sha": A, "merge_method": "merge"}}]}
-        code, out, stdout, err = cli("guard", doc=plan)
-        self.assertEqual((code, out), (0, {"ok": True, "reasons": [], "refs": ["refs/heads/brain/c/1",
-                                                                            "refs/heads/brain/integration"]}))
-        self.assertEqual(stdout.count("\n"), 1)
-        plan["requests"].append({"method": "PATCH", "path": P + "git/refs/heads/main", "body": {"sha": A}})
-        plan["requests"].append({"method": "POST", "path": P + "merges", "body": {}})
-        code, out, _, _ = cli("guard", doc=plan)
-        self.assertEqual((code, out["ok"], out["reasons"]), (1, False, ["2:ref_outside_brain", "3:route_not_allowed"]))
-        self.assertEqual(out["refs"], ["refs/heads/brain/c/1", "refs/heads/brain/integration"])
+    def test_revert_first_parent_tree(self):
+        req = {"op": "revert", "repo": REPO, "merge_sha": M, "onto": "refs/heads/brain/integration",
+               "ref": "refs/heads/brain/c/revert-1"}
+        self.assertEqual(cli("replay", api=REVERT_API, request=req), (0, {
+            "ok": True, "refs": ["refs/heads/brain/c/revert-1"],
+            "writes": ["POST %sgit/commits" % P, "POST %sgit/refs" % P],
+            "commit": {"tree": T1, "parents": [M]}, "forced": False}))
+        moved = dict(REVERT_API, **{"GET %sgit/ref/heads/brain/integration" % P: {
+            "ref": "refs/heads/brain/integration", "object": {"sha": H}}})
+        code, out = cli("replay", api=moved, request=req)
+        self.assertEqual((code, out), (1, dict(REFUSED, reasons=["revert_not_head"])))
 
-    def test_revert(self):
-        state = {"head": B, "merge": B, "commits": {A: {"tree": "1" * 40, "parents": []},
-                                                    B: {"tree": "2" * 40, "parents": [A, "c" * 40]}}}
-        code, out, _, _ = cli("revert", doc=state)
-        self.assertEqual((code, out), (0, {"ok": True, "reasons": [], "commit": {"tree": "1" * 40, "parents": [B]}}))
-        code, out, _, _ = cli("revert", doc=dict(state, head=A))
-        self.assertEqual((code, out), (1, {"ok": False, "reasons": ["revert_not_head"], "commit": None}))
+    def test_refuse_main_and_lookalikes(self):
+        api = {"PATCH %sgit/refs/heads/main" % P: {"ref": "refs/heads/main"},
+               "POST %sgit/refs" % P: {"ref": "x"}, "PATCH %sgit/refs/heads/brain" % P: {}}
+        for op, ref, reason in (("update", "refs/heads/main", "ref_outside_brain"),
+                                ("branch", "refs/heads/main", "ref_outside_brain"),
+                                ("update", "refs/heads/brain", "ref_outside_brain"),
+                                ("branch", "refs/heads/brainx/y", "ref_outside_brain"),
+                                ("branch", "refs/heads/Brain/y", "ref_outside_brain"),
+                                ("branch", "refs/tags/brain/y", "ref_outside_brain"),
+                                ("branch", "brain/c/1", "ref_outside_brain"),
+                                ("branch", "refs/heads/brain/../main", "ref_invalid"),
+                                ("update", "refs/heads/brain/./x", "ref_invalid"),
+                                ("branch", "refs/heads/brain//x", "ref_invalid"),
+                                ("update", "refs/tags/xbrain/c/1", "ref_outside_brain"),  # 11 chars, then brain/
+                                ("branch", "xxxxxxxxxxxbrain/c/1", "ref_outside_brain")):
+            code, out = cli("replay", api=api, request={"op": op, "repo": REPO, "ref": ref, "sha": A})
+            self.assertEqual((code, out), (1, dict(REFUSED, reasons=[reason])), (op, ref))
+
+    def test_branch_and_update_never_force(self):
+        api = {"POST %sgit/refs" % P: {}, "PATCH %sgit/refs/heads/brain/c/x" % P: {}}
+        self.assertEqual(cli("replay", api=api, request={"op": "branch", "repo": REPO, "ref": "refs/heads/brain/c/x",
+                                                         "sha": A}),
+                         (0, {"ok": True, "refs": ["refs/heads/brain/c/x"], "writes": ["POST %sgit/refs" % P],
+                              "commit": None, "forced": False}))
+        req = {"op": "update", "repo": REPO, "ref": "refs/heads/brain/c/x", "sha": A}
+        self.assertEqual(cli("replay", api=api, request=req),
+                         (0, {"ok": True, "refs": ["refs/heads/brain/c/x"],
+                              "writes": ["PATCH %sgit/refs/heads/brain/c/x" % P], "commit": None, "forced": False}))
+        wr = W.writer_for(req, W.Replay(api))
+        W.run_request(dict(req, force=True), wr)  # a request cannot ask for force
+        self.assertEqual(wr.sent, [("PATCH", P + "git/refs/heads/brain/c/x", {"sha": A, "force": False})])
+
+    def test_forced_reports_what_was_sent(self):
+        wr = W.Writer(REPO, W.Replay({}))
+        wr.sent = [("PATCH", P + "git/refs/heads/brain/x", {"sha": A, "force": True})]
+        self.assertTrue(W.outcome(wr)["forced"])
+        wr.sent = [("PATCH", P + "git/refs/heads/brain/x", {"sha": A, "force": False}),
+                   ("POST", P + "git/refs", {"ref": "refs/heads/brain/y", "sha": A, "force": True})]
+        self.assertFalse(W.outcome(wr)["forced"])
+
+    def test_merge(self):
+        self.assertEqual(cli("replay", api=MERGE_API, request={"op": "merge", "repo": REPO, "pr": 7}),
+                         (0, {"ok": True, "refs": ["refs/heads/brain/integration"],
+                              "writes": ["PUT %spulls/7/merge" % P], "commit": None, "forced": False}))
+        wr = W.writer_for({"op": "merge", "repo": REPO, "pr": 7}, W.Replay(MERGE_API))
+        W.run_request({"op": "merge", "repo": REPO, "pr": 7}, wr)
+        self.assertEqual(wr.sent[-1][2], {"sha": H, "merge_method": "merge"})  # pinned to the head read
+
+    def test_refuse_merge_into_main(self):
+        for base, reason in (("main", "ref_outside_brain"), ("brain", "ref_outside_brain")):
+            api = dict(MERGE_API, **{"GET %spulls/7" % P: dict(PULL, base={"ref": base})})
+            self.assertEqual(cli("replay", api=api, request={"op": "merge", "repo": REPO, "pr": 7}),
+                             (1, dict(REFUSED, reasons=[reason])))
+        api = dict(MERGE_API, **{"GET %spulls/7" % P: dict(PULL, state="closed")})
+        self.assertEqual(cli("replay", api=api, request={"op": "merge", "repo": REPO, "pr": 7}),
+                         (1, dict(REFUSED, reasons=["merge_not_open"])))
+
+    def test_pull_requests(self):
+        api = {"POST %spulls" % P: {"number": 3}}
+        for head, base in (("brain/c/1", "main"), ("main", "brain/integration"), ("brain/c/1", "refs/heads/main"),
+                           ("brain/c/1", "brainx/integration")):
+            code, out = cli("replay", api=api, request={"op": "pr", "repo": REPO, "head": head, "base": base,
+                                                        "title": "t"})
+            self.assertEqual((code, out), (1, dict(REFUSED, reasons=["ref_outside_brain"])), (head, base))
+        req = {"op": "pr", "repo": REPO, "head": "refs/heads/brain/c/1", "base": "brain/integration", "title": "t"}
+        self.assertEqual(cli("replay", api=api, request=req),
+                         (0, {"ok": True, "refs": [], "writes": ["POST %spulls" % P], "commit": None, "forced": False}))
+        wr = W.writer_for(req, W.Replay(api))
+        W.run_request(req, wr)
+        self.assertEqual(wr.sent[0][2]["head"], "brain/c/1")
+
+    def test_check(self):
+        api = {"POST %scheck-runs" % P: {"id": 1}}
+        req = {"op": "check", "repo": REPO, "sha": A, "name": GATE, "conclusion": "success"}
+        self.assertEqual(cli("replay", api=api, request=req),
+                         (0, {"ok": True, "refs": [], "writes": ["POST %scheck-runs" % P], "commit": None,
+                              "forced": False}))
+
+    def test_unrecorded_call_is_unusable(self):
+        code, out = cli("replay", api={}, request={"op": "branch", "repo": REPO, "ref": "refs/heads/brain/c/1",
+                                                   "sha": A})
+        self.assertEqual((code, out["ok"], out["refs"], out["writes"]), (2, False, [], ["POST %sgit/refs" % P]))
+        self.assertIn("404", out["error"])
+        no_ref = {k: v for k, v in REVERT_API.items() if k != "POST %sgit/refs" % P}
+        code, out = cli("replay", api=no_ref,
+                        request={"op": "revert", "repo": REPO, "merge_sha": M, "onto": "refs/heads/brain/integration",
+                     "ref": "refs/heads/brain/c/revert-1"})
+        self.assertEqual((code, out["refs"], out["commit"]), (2, [], {"tree": T1, "parents": [M]}))
+        self.assertEqual(out["writes"], ["POST %sgit/commits" % P, "POST %sgit/refs" % P])
 
     def test_unusable(self):
-        for args, doc in ((("guard",), "{"), (("guard",), {"repo": REPO}), (("guard",), {"repo": "x", "requests": []}),
-                          (("guard",), {"repo": REPO, "requests": [{"method": "GET", "url": "x"}]}),
-                          (("guard",), {"repo": REPO, "pulls": {"x": {}}, "requests": []}),
-                          (("revert",), {"head": "x", "merge": B, "commits": {}}), (("push",), {}), ((), None)):
-            code, out, stdout, err = cli(*args, doc=doc)
-            self.assertEqual(code, 2, (args, doc))
+        good = {"op": "branch", "repo": REPO, "ref": "refs/heads/brain/c/1", "sha": A}
+        for args, api, req in ((("replay",), {}, "{"), (("replay",), "[", good), (("replay",), [], good),
+                               (("replay",), {}, dict(good, op="delete")), (("replay",), {}, {"op": "branch"}),
+                               (("replay",), {}, dict(good, sha="x")), (("replay",), {}, dict(good, repo="x")),
+                               (("replay",), {}, dict(good, ref=7)),
+                               (("replay",), {}, {"op": "merge", "repo": REPO, "pr": True}),
+                               (("replay",), {}, {"op": "merge", "repo": REPO, "pr": "7"}),
+                               (("replay",), {}, {"op": "check", "repo": REPO, "sha": A, "name": "n",
+                                                  "conclusion": "neutral"}),
+                               (("replay",), {}, {"op": "pr", "repo": REPO, "head": "brain/c/1",
+                                                  "base": "brain/integration", "title": ""}),
+                               (("replay",), {}, {"op": "revert", "repo": REPO, "merge_sha": M, "onto": "brain/x",
+                                                  "ref": "refs/heads/brain/c/r"}),
+                               (("replay",), REVERT_API, {"op": "revert", "repo": REPO, "merge_sha": M,
+                                                          "onto": "refs/heads/brain/integration",
+                                                          "ref": "refs/heads/brain/c/r", "message": ""}),
+                               (("guard",), {}, good), ((), None, good)):
+            code, out = cli(*args, api=api, request=req)
+            self.assertEqual(code, 2, (args, api, req))
             self.assertFalse(out["ok"])
             self.assertIn("unusable", out["error"])
-            self.assertNotIn("Traceback", err)
 
 
 if __name__ == "__main__":

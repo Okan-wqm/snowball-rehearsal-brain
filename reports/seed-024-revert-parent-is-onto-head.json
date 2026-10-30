@@ -1,0 +1,7 @@
+{
+  "id": "seed-024-revert-parent-is-onto-head",
+  "kind": "seed_issue",
+  "ref": "spec/tohum/29i-vektor-arayuzleri-mf8-13-devam.md:22",
+  "state": "open",
+  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_write.py'  # test_only_the_head_is_reverted, test_revert_first_parent_tree. 29i:20-22 makes the revert commit {tree: the merge's first parent's tree, parents: [onto's head]} without saying that onto's head is the merge. If another merge landed on onto after it, that commit's tree also drops the later merge, silently. target.write refuses that case (revert_not_head, exit 1); with merges serial and the sentinel blocking the next merge (tohum/07), onto's head is the merge in every intended run. Draft for 29i: 'onto'nun basi merge_sha degilse ret (revert_not_head).' If a refs vector reverts a merge that is not onto's head, my module and the vector disagree on this rule, and I hold that the vector should change."
+}

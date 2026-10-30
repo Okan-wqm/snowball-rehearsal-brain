@@ -1,7 +1,7 @@
 {
   "id": "seed-018-k0map-interface",
   "kind": "seed_issue",
-  "ref": "spec/tohum/29d-vektor-gruplari.md:36",
-  "state": "open",
-  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_check.py'  # 29d names group k0map (MF8) but 29f/29g give commands only up to diffguard, and 26/26c define no schema for the recorded koş outputs gate.check reads (lint output, test output, run records); chosen interface: python -m gate.check map DIFF PATH LINE -> {path, start, end}; decide RUNS DIFF CONTROL -> {decision, ok, reasons, mapped, hunk_covered}, exit 0/1/2; ledger f117 has the bundle shape"
+  "ref": "spec/tohum/29h-vektor-arayuzleri-mf8-13.md:14",
+  "state": "confirmed",
+  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_check.py'  # closed by tohum/29h (seed 38fd868); gate.check now follows it: map DIFF PATH LINE -> {mapped}, decide CAND_DIR BASE_JSONL CAND_RUN_DIR HASHES with stdin {control, unfinished_sentinels} -> {decision, reasons}, exit 2 line {\"decision\": \"reject\"}; my own interface is gone"
 }

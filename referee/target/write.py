@@ -1,6 +1,6 @@
 """``target.write``: the referee's one way to write to a target repository (stage 0, MF9).
 
-Rules: asama-0/14 row 9, asama-0/09 test 49, asama-0/02 property 13 (the target is written only through
+Rules: asama-0/14 row 9, asama-0/09 test 49, tohum/29i (group ``refs``: the replay command), asama-0/02 property 13 (the target is written only through
 the API and only under ``refs/heads/brain/**``; writes to ``main``: 0), tohum/26a (``target.write``: branch,
 PR, check, merge or revert request; GitHub REST and Git Data API), tohum/01b (``brain/integration`` takes
 changes only by pull request, merges are serial), tohum/07 (the referee reverts a merge), asama-0/09 test 25
@@ -21,8 +21,7 @@ no other repository):
 - ``POST check-runs`` ``{name, head_sha, status: completed, conclusion: success|failure, output?}`` (a check
   writes no ref; it may name any commit);
 - ``PUT pulls/<n>/merge`` ``{sha, merge_method: merge, commit_title?}``: only a pull request this guard has
-  seen in a response (``GET pulls/<n>`` or ``POST pulls``) as open, with base and head under ``brain/`` and
-  head sha equal to ``sha``. ``merge_method`` is ``merge`` so that a merge has two parents and its first
+  read (``GET pulls/<n>``) as open, with base and head under ``brain/`` and head sha equal to ``sha``. ``merge_method`` is ``merge`` so that a merge has two parents and its first
   parent is the base it was made on (the revert rule reads that).
 
 Fields outside the listed ones, a body that is not an object, a sha that is not 40 lowercase hex, and a path
@@ -32,30 +31,45 @@ rules on top: no empty component (no leading, trailing or double slash), no comp
 ending with ``.lock``, no ``..``, no trailing ``.``. Prefixes are exact and case-sensitive: ``refs/heads/Brain/x``,
 ``refs/heads/brain`` and ``refs/heads/brainx/y`` are outside.
 
-Revert (``revert_commit``): only the current head of the branch may be reverted, and only a commit with
-exactly two parents (a merge); the revert commit has tree = the first parent's tree and one parent, the merge.
-A merge that is not the head is refused (``revert_not_head``), since the first parent's tree would also undo
-every later merge. ``Writer.revert`` puts that commit on a new ``brain/c/`` branch and opens a pull request
-into the branch: ``brain/integration`` takes no direct push (tohum/01b), so the revert goes through check and
-merge like any candidate. Merging it with ``merge`` leaves the merge's first parent's tree on the branch.
+Revert (``revert_commit``): only the current head of the branch it is made onto (``onto``) may be reverted,
+and only a commit with exactly two parents (a merge); the revert commit has tree = the first parent's tree and
+one parent, ``onto``'s head (which is the merge). A merge that is not the head is refused
+(``revert_not_head``), since the first parent's tree would also undo every later merge. ``Writer.revert``
+reads the merge, its first parent and ``onto``'s head, then puts the commit on a new branch under ``brain/``;
+``brain/integration`` takes no direct push (tohum/01b), so the caller opens a pull request from that branch
+(``open_pull``) and merges it like any candidate, which leaves the first parent's tree on ``onto``.
 
 Known limits, stated: the base of a pull request is checked from the response the guard saw; GitHub's merge
 endpoint pins the head (``sha``), not the base, so a base changed between that response and the merge is not
-seen here (in write mode the target's ruleset keeps the writer App off ``main``, tohum/21). Rulesets are
-enforced by GitHub, not here. Blobs and trees (``POST git/blobs``, ``git/trees``) are not allowed yet: their
+seen here (in write mode the target's ruleset keeps the writer App off ``main``, tohum/21). A merge is taken
+as done when the API answers ``merged: true`` with a sha; the base's new head is not read back (29i fixes
+the calls a merge makes). Rulesets are enforced by GitHub, not here. Blobs and trees (``POST git/blobs``, ``git/trees``) are not allowed yet: their
 first caller is ``ledger.append`` (MF10).
 
 Transport: ``HttpTransport`` sends to ``https://api.github.com`` with the token; it follows no redirect (a
 redirect would carry the token and the write elsewhere), so a 3xx is an ``ApiError``. ``Writer`` takes any
 callable ``(method, path, body) -> (status, json)``; tests give it an in-process fake.
 
-Command line (one JSON line, exit 0 allowed, 1 refused, 2 unusable input)::
+Every request the writer sends is kept (``sent``), and the refs each successful write wrote, as the guard
+names them (``written``): the outputs below come from those, not from the responses.
 
-    python -m target.write guard PLAN    PLAN = {repo, pulls?: {n: {base, head, head_sha, state}},
-                                                 requests: [{method, path, body?}]}
-        -> {ok, reasons: ["<index>:<reason>"], refs: [refs written by the allowed requests]}
-    python -m target.write revert STATE  STATE = {head, merge, commits: {sha: {tree, parents}}}
-        -> {ok, reasons, commit: {tree, parents} | null}
+Command line (tohum/29i), one JSON line::
+
+    python -m target.write replay API_JSON     stdin: one request
+        API_JSON = {"METHOD /repos/...": response body}: a recorded API, played in process without a
+        network; a recorded call answers 200 with its body, any other call 404.
+        request = {op: branch, repo, ref, sha} | {op: update, repo, ref, sha} | {op: pr, repo, head, base,
+                  title} | {op: check, repo, sha, name, conclusion} | {op: merge, repo, pr}
+                  | {op: revert, repo, merge_sha, onto, ref, message?}
+        -> {ok, refs: [refs written, sorted], writes: ["METHOD /path" of every call but GET, in order],
+            commit: {tree, parents} of the revert's new commit | null, forced: a PATCH carried force true,
+            reasons?, error?}
+        exit 0 written; 1 refused by a rule (nothing written); 2 unusable request or a call the API
+        did not answer with 2xx (a 404 included).
+
+``ref``, ``onto`` and a pull request's ``head`` and ``base`` may be given as ``refs/heads/<branch>``; a
+``head`` or ``base`` may also be a bare branch name. Every ref the request names to be written is checked
+before the first call; ``onto`` is only read.
 """
 
 from __future__ import annotations
@@ -218,13 +232,12 @@ class Guard:
         return ["route_not_allowed"], []
 
     def observe(self, method: str, path: str, data: Any) -> None:
-        """Record a pull request from a response to ``GET pulls/<n>`` or ``POST pulls``."""
+        """Record a pull request from a response to ``GET pulls/<n>``."""
         rest = self._rest(path)
-        if rest is None or not ((method == "GET" and re.fullmatch(r"pulls/" + _N, rest))
-                                or (method == "POST" and rest == "pulls")):
+        if rest is None or method != "GET" or not re.fullmatch(r"pulls/" + _N, rest):
             return
         pull = _pull(data)
-        if method == "GET" and pull["number"] != int(rest.split("/")[1]):
+        if pull["number"] != int(rest.split("/")[1]):
             raise ApiError(None, "pull response is for another number")
         self.pulls[pull["number"]] = pull
 
@@ -243,7 +256,7 @@ def _pull(data: Any) -> dict:
 # ---------------------------------------------------------------- revert
 
 def revert_commit(commits: dict, head: str, merge: str) -> tuple[list[str], dict | None]:
-    """The revert of ``merge`` on a branch whose head is ``head``: ``{tree, parents}`` or reasons."""
+    """The revert of ``merge`` onto a branch whose head is ``head``: ``{tree, parents}`` or reasons."""
     if merge != head:
         return ["revert_not_head"], None
     rec = commits.get(merge)
@@ -267,35 +280,39 @@ class Writer:
         self.repo = repo
         self.guard = Guard(repo)
         self.transport = transport
+        self.sent: list[tuple[str, str, Any]] = []
+        self.written: list[str] = []
 
     def _call(self, method: str, rest: str, body: Any = None) -> Any:
         path = self.guard.prefix + rest
-        reasons, _ = self.guard.check(method, path, body)
+        reasons, refs = self.guard.check(method, path, body)
         if reasons:
             raise Refused(reasons)
+        self.sent.append((method, path, body))
         status, data = self.transport(method, path, body)
         if not isinstance(status, int) or not 200 <= status < 300:
             raise ApiError(status, "%s %s" % (method, path))
+        self.written += refs
         self.guard.observe(method, path, data)
         return data
 
     def head(self, branch: str) -> str:
         data = self._call("GET", "git/ref/heads/" + branch)
         try:
-            ref, sha = data["ref"], data["object"]["sha"]
+            sha = data["object"]["sha"]
         except (KeyError, TypeError):
-            raise ApiError(None, "ref response without ref or object.sha") from None
-        if ref != HEADS + branch or not _sha(sha):
-            raise ApiError(None, "ref response is for %r, not %r" % (ref, HEADS + branch))
+            raise ApiError(None, "ref response without object.sha") from None
+        if data.get("ref", HEADS + branch) != HEADS + branch or not _sha(sha):
+            raise ApiError(None, "ref response is for %r, not %r" % (data.get("ref"), HEADS + branch))
         return sha
 
     def read_commit(self, sha: str) -> dict:
         data = self._call("GET", "git/commits/" + sha)
         try:
-            got, tree, parents = data["sha"], data["tree"]["sha"], [p["sha"] for p in data["parents"]]
+            tree, parents = data["tree"]["sha"], [p["sha"] for p in data["parents"]]
         except (KeyError, TypeError):
-            raise ApiError(None, "commit response without sha, tree or parents") from None
-        if got != sha or not _sha(tree) or not all(_sha(p) for p in parents):
+            raise ApiError(None, "commit response without tree or parents") from None
+        if data.get("sha", sha) != sha or not _sha(tree) or not all(_sha(p) for p in parents):
             raise ApiError(None, "commit response is not for %s" % sha)
         return {"tree": tree, "parents": parents}
 
@@ -312,46 +329,51 @@ class Writer:
             raise ApiError(None, "commit created without a sha")
         return sha
 
-    def open_pull(self, head: str, base: str, title: str, body: str = "") -> int:
+    def open_pull(self, head: str, base: str, title: str, body: str = "") -> int | None:
+        """Open a pull request; return its number when the response gives one. A response that names
+        another base or head is an error; a merge reads the pull request again (``merge``)."""
         data = self._call("POST", "pulls", {"title": title, "head": head, "base": base, "body": body})
-        pull = self.guard.pulls.get(data["number"])
-        if pull is None or pull["base"] != base or pull["head"] != head:
-            raise ApiError(None, "pull created for another base or head")
-        return pull["number"]
+        data = data if isinstance(data, dict) else {}
+        for side, want in (("base", base), ("head", head)):
+            got = data.get(side)
+            if isinstance(got, dict) and got.get("ref", want) != want:
+                raise ApiError(None, "pull created for another %s" % side)
+        number = data.get("number")
+        return number if type(number) is int else None
 
     def check(self, head_sha: str, name: str, conclusion: str, summary: str = "") -> None:
         self._call("POST", "check-runs", {"name": name, "head_sha": head_sha, "status": "completed",
                                           "conclusion": conclusion,
                                           "output": {"title": name, "summary": summary}})
 
-    def merge(self, number: int, head_sha: str) -> str:
-        """Merge pull ``number`` at ``head_sha``; return the merge commit, verified as the base's new head."""
+    def merge(self, number: int, head_sha: str | None = None) -> str:
+        """Read pull ``number``, then merge it pinned to the head sha read (and to ``head_sha`` when given);
+        return the merge commit."""
         self._call("GET", "pulls/%d" % number)
-        data = self._call("PUT", "pulls/%d/merge" % number, {"sha": head_sha, "merge_method": "merge"})
+        pinned = self.guard.pulls[number]["head_sha"]
+        if head_sha is not None and head_sha != pinned:
+            raise Refused(["merge_head_moved"])
+        data = self._call("PUT", "pulls/%d/merge" % number, {"sha": pinned, "merge_method": "merge"})
         sha = data.get("sha") if isinstance(data, dict) else None
         if not isinstance(data, dict) or data.get("merged") is not True or not _sha(sha):
             raise ApiError(None, "merge response without merged true and a sha")
-        base = self.guard.pulls[number]["base"]
-        if self.head(base) != sha:
-            raise ApiError(None, "merge %s is not the head of %s" % (sha, base))
         return sha
 
-    def revert(self, branch: str, merge: str, revert_branch: str, title: str) -> dict:
-        """Revert ``merge``, the head of ``branch``, through a pull request from ``revert_branch``."""
-        head = self.head(branch)
-        commits: dict = {}
-        if merge == head:
-            commits[merge] = self.read_commit(merge)
-            parents = commits[merge]["parents"]
-            if len(parents) == 2:
-                commits[parents[0]] = self.read_commit(parents[0])
-        reasons, spec = revert_commit(commits, head, merge)
+    def revert(self, merge: str, onto: str, revert_branch: str, message: str) -> dict:
+        """Revert ``merge``, the head of ``onto``, with a commit on the new branch ``revert_branch``."""
+        reasons = branch_reasons(revert_branch)
         if reasons:
             raise Refused(reasons)
-        sha = self.commit(title, spec["tree"], spec["parents"])
+        commits = {merge: self.read_commit(merge)}
+        parents = commits[merge]["parents"]
+        if len(parents) == 2:
+            commits[parents[0]] = self.read_commit(parents[0])
+        reasons, spec = revert_commit(commits, self.head(onto), merge)
+        if reasons:
+            raise Refused(reasons)
+        sha = self.commit(message, spec["tree"], spec["parents"])
         self.create_branch(revert_branch, sha)
-        number = self.open_pull(revert_branch, branch, title)
-        return {"commit": sha, "tree": spec["tree"], "pull": number}
+        return {"commit": sha, "tree": spec["tree"], "parents": spec["parents"]}
 
 
 # ---------------------------------------------------------------- transport
@@ -392,35 +414,87 @@ class HttpTransport:
 
 # ---------------------------------------------------------------- command line
 
-def guard_plan(plan: Any) -> dict:
-    if not isinstance(plan, dict) or not isinstance(plan.get("requests"), list):
-        raise Unusable("PLAN must be {repo, pulls?, requests: []}")
-    pulls = {}
-    for key, pull in (plan.get("pulls") or {}).items():
-        if not re.fullmatch(_N, str(key)) or not isinstance(pull, dict):
-            raise Unusable("pulls must map a number to {base, head, head_sha, state}")
-        pulls[int(key)] = pull
-    guard = Guard(plan.get("repo"), pulls)
-    reasons: list[str] = []
-    refs: set[str] = set()
-    for i, req in enumerate(plan["requests"]):
-        if not isinstance(req, dict) or not set(req) <= {"method", "path", "body"}:
-            raise Unusable("request %d must be {method, path, body?}" % i)
-        why, wrote = guard.check(req.get("method"), req.get("path"), req.get("body"))
-        reasons += ["%d:%s" % (i, r) for r in why]
-        refs.update(wrote)
-    return {"ok": not reasons, "reasons": reasons, "refs": sorted(refs)}
+class Replay:
+    """A recorded API ``{"METHOD /path": body}``: a recorded call answers 200 with its body, any other 404."""
+
+    def __init__(self, record: Any):
+        if not isinstance(record, dict) or not all(isinstance(k, str) for k in record):
+            raise Unusable("API_JSON must map 'METHOD /path' to a response body")
+        self.record = record
+
+    def __call__(self, method: str, path: str, body: Any) -> tuple[int, Any]:
+        key = "%s %s" % (method, path)
+        return (200, self.record[key]) if key in self.record else (404, {"message": "Not Found"})
 
 
-def revert_state(state: Any) -> dict:
-    if not isinstance(state, dict) or not isinstance(state.get("commits"), dict) \
-            or not _sha(state.get("head")) or not _sha(state.get("merge")):
-        raise Unusable("STATE must be {head, merge, commits: {sha: {tree, parents}}}")
-    reasons, spec = revert_commit(state["commits"], state["head"], state["merge"])
-    return {"ok": not reasons, "reasons": reasons, "commit": spec}
+OPS = {"branch": ("ref", "sha"), "update": ("ref", "sha"), "pr": ("head", "base", "title"),
+       "check": ("sha", "name", "conclusion"), "merge": ("pr",), "revert": ("merge_sha", "onto", "ref")}
 
 
-USAGE = "usage: python -m target.write guard PLAN | revert STATE"
+def _branch(value: Any, what: str, bare: bool) -> str:
+    """The branch a request names: ``refs/heads/<branch>``, or (``bare``) the branch name itself."""
+    if isinstance(value, str) and value.startswith(HEADS):
+        return value[len(HEADS):]
+    if bare and isinstance(value, str) and value:
+        return value
+    raise Unusable("%s must be refs/heads/<branch>%s" % (what, " or a branch name" if bare else ""))
+
+
+def run_request(req: Any, wr: Writer) -> None:
+    """Carry out one request through ``wr`` (made by ``writer_for``). Raises ``Unusable``, ``Refused`` or
+    ``ApiError``; whatever was sent before is in ``wr.sent``."""
+    op = req["op"]
+    for key in ("sha", "merge_sha"):
+        if key in OPS[op] and not _sha(req[key]):
+            raise Unusable("%s must be 40 lowercase hex" % key)
+    if op in ("branch", "update", "revert"):
+        if not isinstance(req["ref"], str):
+            raise Unusable("ref must be a string")
+        reasons = ref_reasons(req["ref"])
+        if reasons:  # before the branch is cut out of the ref: only refs/heads/brain/... has one
+            raise Refused(reasons)
+        branch = req["ref"][len(HEADS):]
+        if op == "branch":
+            wr.create_branch(branch, req["sha"])
+        elif op == "update":
+            wr.update_branch(branch, req["sha"])
+        else:
+            message = req.get("message", "Revert %s" % req["merge_sha"])
+            if not _text(message):
+                raise Unusable("message must be a non-empty string")
+            wr.revert(req["merge_sha"], _branch(req["onto"], "onto", False), branch, message)
+    elif op == "pr":
+        if not _text(req["title"]):
+            raise Unusable("title must be a non-empty string")
+        wr.open_pull(_branch(req["head"], "head", True), _branch(req["base"], "base", True), req["title"])
+    elif op == "check":
+        if not _text(req["name"]) or req["conclusion"] not in _CONCLUSIONS:
+            raise Unusable("check needs a name and conclusion %s" % "|".join(_CONCLUSIONS))
+        wr.check(req["sha"], req["name"], req["conclusion"])
+    else:
+        if type(req["pr"]) is not int or not 1 <= req["pr"] < 10 ** 10:
+            raise Unusable("pr must be a pull request number")
+        wr.merge(req["pr"])
+
+
+def writer_for(req: Any, transport: Transport) -> Writer:
+    if not isinstance(req, dict) or req.get("op") not in OPS or not all(k in req for k in OPS[req["op"]]):
+        raise Unusable("the request must be {op: %s, repo, ...} with its fields" % "|".join(OPS))
+    return Writer(req.get("repo"), transport)
+
+
+def outcome(wr: Writer | None) -> dict:
+    """The outputs of tohum/29i, from the requests sent, not from the responses."""
+    sent = wr.sent if wr else []
+    commits = [body for method, path, body in sent if method == "POST" and path.endswith("/git/commits")]
+    return {"refs": sorted(set(wr.written)) if wr else [],
+            "writes": ["%s %s" % (method, path) for method, path, _ in sent if method != "GET"],
+            "commit": ({"tree": commits[-1]["tree"], "parents": commits[-1]["parents"]} if commits else None),
+            "forced": any(method == "PATCH" and isinstance(body, dict) and body.get("force") is True
+                          for method, path, body in sent)}
+
+
+USAGE = "usage: python -m target.write replay API_JSON < request"
 
 
 def _emit(obj: dict) -> None:
@@ -428,20 +502,28 @@ def _emit(obj: dict) -> None:
 
 
 def main(argv: list[str]) -> int:
+    wr: Writer | None = None
     try:
-        if len(argv) != 2 or argv[0] not in ("guard", "revert"):
+        if len(argv) != 2 or argv[0] != "replay":
             raise Unusable(USAGE)
         with open(argv[1], encoding="utf-8") as fh:
-            doc = json.load(fh)
-        result = guard_plan(doc) if argv[0] == "guard" else revert_state(doc)
-        _emit(result)
-        return 0 if result["ok"] else 1
+            transport = Replay(json.load(fh))
+        req = json.loads(sys.stdin.read())
+        wr = writer_for(req, transport)
+        run_request(req, wr)
+        _emit(dict(outcome(wr), ok=True))
+        return 0
+    except Refused as exc:
+        _emit(dict(outcome(wr), ok=False, reasons=exc.reasons))
+        return 1
+    except ApiError as exc:
+        cause = "api: %s" % exc
     except (Unusable, ValueError, OSError, RecursionError) as exc:
-        _emit({"ok": False, "error": "unusable input: %s" % exc})
-        return 2
+        cause = "unusable input: %s" % exc
     except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a reason
-        _emit({"ok": False, "error": "internal error: %s: %s" % (type(exc).__name__, exc)})
-        return 2
+        cause = "internal error: %s: %s" % (type(exc).__name__, exc)
+    _emit(dict(outcome(wr), ok=False, error=cause))
+    return 2
 
 
 if __name__ == "__main__":
