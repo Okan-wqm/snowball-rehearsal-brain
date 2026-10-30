@@ -1,0 +1,7 @@
+{
+  "id": "spec-038-expect-reason-comparison",
+  "kind": "spec_issue",
+  "ref": "spec/tohum/26c-semalar-asama-0.md:50",
+  "state": "open",
+  "evidence_test": "python -m unittest discover -s tests -p 'test_toy_candidates.py'  # Activation.test_one_activation_merges_the_good_and_rejects_each_bad_with_its_reason. tohum/26c gives expect.json {decision, reason?} with the example scope_violation, and asama-0/10a #ret says a bad candidate is rejected 'beklenen nedenle'; neither says which of the reject row's facts the reason is compared with: one of the gate's reasons (activate's row payload.reasons, e.g. ratchet_increase, security_path:textkit/src/permissions.js) or the row's cause (tohum/26's closed set: scope_violation, test_regression, lint_regression). The example is both a reason and a cause, so it does not decide. What I did: candidates/toy/*/expect.json name the gate's reason, and the test asserts the reject row's reasons equal [reason] exactly and, separately, each row's cause. A further case the comparison must fix: activate decides candidates in id order and passes the merges it already made as unfinished sentinels, so a bad candidate whose id sorts after the good one also gets sentinel_pending (criterion 8); the toy ids (bad-* before good) avoid it, the copy's two candidates must too, or the rule must say reasons contain reason. Draft for 26c: 'reason: the one gate reason the candidate is built to trigger; (B)'s #ret holds when the reject row's payload.reasons is exactly [reason]'."
+}

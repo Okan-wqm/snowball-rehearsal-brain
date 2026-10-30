@@ -1,0 +1,10 @@
+{
+ "fix_range": [
+  5,
+  5
+ ],
+ "line": 5,
+ "path": "textkit/src/stats.js",
+ "rule_id": "no-var",
+ "tool_output_sha256": "b8904ee37729dc35ad241e4c78ebf6caa094d50165dce36b5188452d380eec0c"
+}

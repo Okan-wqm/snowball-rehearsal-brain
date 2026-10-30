@@ -1,0 +1,4 @@
+{
+ "decision": "reject",
+ "reason": "security_path:textkit/src/permissions.js"
+}

@@ -1,0 +1,13 @@
+diff --git a/textkit/src/stats.js b/textkit/src/stats.js
+index a04a279..11f9670 100644
+--- a/textkit/src/stats.js
++++ b/textkit/src/stats.js
+@@ -2,7 +2,7 @@ export function mean(values) {
+   if (values.length === 0) {
+     return 0;
+   }
+-  var total = 0;
++  let total = 0;
+   for (const value of values) {
+     total = total + value;
+   }

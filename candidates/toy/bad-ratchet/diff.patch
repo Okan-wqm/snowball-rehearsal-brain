@@ -1,0 +1,11 @@
+diff --git a/textkit/src/greet.js b/textkit/src/greet.js
+index e71b220..323fc01 100644
+--- a/textkit/src/greet.js
++++ b/textkit/src/greet.js
+@@ -1,5 +1,5 @@
+ export function greet(name) {
+-  return "Hello, " + name + "!";
++  return `Hello, ${name}!`["trim"]()["toString"]();
+ }
+ 
+ export function title(item) {

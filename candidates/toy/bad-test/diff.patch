@@ -1,0 +1,10 @@
+diff --git a/textkit/src/slug.js b/textkit/src/slug.js
+index ed927ed..9b8a011 100644
+--- a/textkit/src/slug.js
++++ b/textkit/src/slug.js
+@@ -1,4 +1,4 @@
+ export function slugify(text) {
+-  let lower = text.toLowerCase();
++  const lower = text.toUpperCase();
+   return lower.trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+ }

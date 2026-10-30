@@ -1,0 +1,10 @@
+{
+ "fix_range": [
+  2,
+  2
+ ],
+ "line": 2,
+ "path": "textkit/src/slug.js",
+ "rule_id": "prefer-const",
+ "tool_output_sha256": "b8904ee37729dc35ad241e4c78ebf6caa094d50165dce36b5188452d380eec0c"
+}

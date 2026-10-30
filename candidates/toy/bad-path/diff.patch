@@ -1,0 +1,11 @@
+diff --git a/textkit/src/permissions.js b/textkit/src/permissions.js
+index 0c7f290..290372f 100644
+--- a/textkit/src/permissions.js
++++ b/textkit/src/permissions.js
+@@ -1,5 +1,5 @@
+ export function canEdit(user) {
+-  if ("admin" === user.level) {
++  if (user.level === "admin") {
+     return true;
+   }
+   return user.editor === true;
