@@ -348,6 +348,43 @@ def parse(text: str) -> list[dict]:
     return blocks
 
 
+def apply(block: dict, old: bytes) -> bytes:
+    """The post-image of one ``modify`` block of ``parse`` (a text change of a file in place: same path, no binary
+    patch, no header but ``index``) applied to ``old``, the pre-image's bytes. Every context and removed line must
+    equal the pre-image's line at the position the hunk names, newline at end of file included; otherwise
+    ``DiffError`` (the diff does not apply there). Lines are split on ``\\n`` only, as ``parse`` splits the diff,
+    and compared byte for byte (UTF-8, undecodable bytes kept as they are). Nothing is fuzzed or searched: a hunk
+    applies at its own line or not at all."""
+    if block["kind"] != "modify" or block["old"] != block["new"] or block["binary"] \
+            or set(block["headers"]) - {"index"}:
+        raise DiffError("only an in-place text change of one file is applied")
+    text = old.decode("utf-8", "surrogateescape")
+    parts = text.split("\n")
+    # [line, eol]: a file ending in a newline leaves an empty last part, which is not a line
+    base = [[p, True] for p in parts[:-1]] + ([[parts[-1], False]] if parts[-1] else [])
+    out: list[list] = []
+    pos = 0  # index of the next base line not yet copied
+    for h in block["hunks"]:
+        start = h["old_start"] - 1 if h["old_count"] else h["old_start"]
+        if start < pos or start > len(base):
+            raise DiffError("hunk at -%d does not apply: the file has %d lines" % (h["old_start"], len(base)))
+        out.extend(base[pos:start])
+        pos = start
+        for tag, line, eol in h["lines"]:
+            if tag == "+":
+                out.append([line, eol])
+                continue
+            if pos >= len(base) or base[pos] != [line, eol]:
+                raise DiffError("hunk at -%d does not apply at line %d" % (h["old_start"], pos + 1))
+            if tag == " ":
+                out.append(base[pos])
+            pos += 1
+    out.extend(base[pos:])
+    if any(not eol for _, eol in out[:-1]):
+        raise DiffError("a line without a newline would not be the last line")
+    return "".join(line + ("\n" if eol else "") for line, eol in out).encode("utf-8", "surrogateescape")
+
+
 # ---------------------------------------------------------------- rules
 
 def path_reasons(path: str, modes: list[str], profile: dict, recipe: dict) -> list[str]:

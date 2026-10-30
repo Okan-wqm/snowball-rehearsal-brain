@@ -15,10 +15,12 @@ no other repository):
   a valid branch name, it need not be under ``brain/``);
 - ``POST git/refs`` ``{ref, sha}``: ``ref`` under ``refs/heads/brain/``;
 - ``PATCH git/refs/heads/<branch>`` ``{sha, force?}``: branch under ``brain/``, ``force`` absent or false;
-- ``POST git/commits`` ``{message, tree, parents}``: one or two parents (creates an object, writes no ref);
+- ``POST git/commits`` ``{message, tree, parents}``: zero, one or two parents (creates an object, writes no ref;
+  zero parents is the root commit of the orphan ``brain/state``, tohum/01a and tohum/24);
 - ``POST git/blobs`` ``{content, encoding: base64}``: ``content`` is canonical base64 (creates an object,
   writes no ref);
-- ``POST git/trees`` ``{base_tree, tree}``: ``tree`` is a non-empty list of ``{path, mode: 100644, type: blob,
+- ``POST git/trees`` ``{base_tree?, tree}`` (no ``base_tree``: a tree holding only ``tree``, for an orphan
+  branch's root commit): ``tree`` is a non-empty list of ``{path, mode: 100644, type: blob,
   sha}`` with distinct paths; a path is ``[A-Za-z0-9._/-]`` components, none empty, ``.``, ``..`` or ``.git``
   (any case), so only plain files are set, never a link, a submodule or an executable (creates an object,
   writes no ref);
@@ -57,6 +59,10 @@ the head is read first and a different head is refused (``state_head_moved``) be
 blobs, one tree on the head's tree, the commit, then a fast-forward update (``force: false``). A head that
 moves between that read and the update makes the update a non-fast-forward, which the ruleset on
 ``brain/state`` (``non_fast_forward``, tohum/25a row 3) refuses; that refusal is GitHub's, not tested here.
+
+Orphan (``open_orphan``, caller ``activate``, MF18): genesis opens ``brain/state`` as an orphan branch (tohum/01a,
+tohum/24): the branch must not exist (``branch_exists``, read first, before any object is created); blobs, a tree
+without ``base_tree``, a commit with no parent, then ``POST git/refs``, which GitHub refuses for an existing ref.
 
 Transport: ``HttpTransport`` sends to ``https://api.github.com`` with the token; it follows no redirect (a
 redirect would carry the token and the write elsewhere), so a 3xx is an ``ApiError``. ``Writer`` takes any
@@ -225,14 +231,15 @@ class Guard:
             return reasons, ([] if reasons else [HEADS + m.group(1)])
         if method == "POST" and rest == "git/commits":
             ok = (_keys(body, {"message", "tree", "parents"}) and _text(body["message"]) and _sha(body["tree"])
-                  and isinstance(body["parents"], list) and 1 <= len(body["parents"]) <= 2
+                  and isinstance(body["parents"], list) and len(body["parents"]) <= 2
                   and all(_sha(p) for p in body["parents"]))
             return ([] if ok else ["body_invalid"]), []
         if method == "POST" and rest == "git/blobs":
             ok = _keys(body, {"content", "encoding"}) and body["encoding"] == "base64" and _b64(body["content"])
             return ([] if ok else ["body_invalid"]), []
         if method == "POST" and rest == "git/trees":
-            ok = (_keys(body, {"base_tree", "tree"}) and _sha(body["base_tree"]) and isinstance(body["tree"], list)
+            ok = (_keys(body, {"tree"}, {"base_tree"}) and ("base_tree" not in body or _sha(body["base_tree"]))
+                  and isinstance(body["tree"], list)
                   and body["tree"] and all(_keys(e, {"path", "mode", "type", "sha"}) and e["mode"] == "100644"
                                            and e["type"] == "blob" and _sha(e["sha"]) and file_path(e["path"])
                                            for e in body["tree"])
@@ -376,7 +383,22 @@ class Writer:
             raise Refused(reasons)
         if self.head(branch) != head:
             raise Refused(["state_head_moved"])
-        base_tree = self.read_commit(head)["tree"]
+        tree = self._tree(files, self.read_commit(head)["tree"])
+        sha = self.commit(message, tree, [head])
+        self.update_branch(branch, sha)
+        return sha
+
+    def exists(self, branch: str) -> bool:
+        """Whether ``branch`` exists: its ref reads, or the API answers 404. Any other error is raised."""
+        try:
+            self.head(branch)
+        except ApiError as exc:
+            if exc.status == 404:
+                return False
+            raise
+        return True
+
+    def _tree(self, files: dict[str, bytes], base_tree: str | None) -> str:
         entries = []
         for path in sorted(files):
             data = self._call("POST", "git/blobs", {"content": base64.b64encode(files[path]).decode("ascii"),
@@ -385,12 +407,28 @@ class Writer:
             if not _sha(blob):
                 raise ApiError(None, "blob created without a sha")
             entries.append({"path": path, "mode": "100644", "type": "blob", "sha": blob})
-        data = self._call("POST", "git/trees", {"base_tree": base_tree, "tree": entries})
+        body: dict[str, Any] = {"tree": entries}
+        if base_tree is not None:
+            body = {"base_tree": base_tree, "tree": entries}
+        data = self._call("POST", "git/trees", body)
         tree = data.get("sha") if isinstance(data, dict) else None
         if not _sha(tree):
             raise ApiError(None, "tree created without a sha")
-        sha = self.commit(message, tree, [head])
-        self.update_branch(branch, sha)
+        return tree
+
+    def open_orphan(self, branch: str, files: dict[str, bytes], message: str) -> str:
+        """Create ``branch`` (under ``brain/``, not existing yet) at a root commit whose tree holds only ``files``
+        (the orphan ``brain/state``, tohum/01a); return the commit. An existing branch is refused
+        (``branch_exists``) before any object is created; ``POST git/refs`` does not move an existing ref."""
+        reasons = branch_reasons(branch)
+        if reasons:
+            raise Refused(reasons)
+        if not files:
+            raise Unusable("an orphan commit needs at least one file")
+        if self.exists(branch):
+            raise Refused(["branch_exists"])
+        sha = self.commit(message, self._tree(files, None), [])
+        self.create_branch(branch, sha)
         return sha
 
     def open_pull(self, head: str, base: str, title: str, body: str = "") -> int | None:

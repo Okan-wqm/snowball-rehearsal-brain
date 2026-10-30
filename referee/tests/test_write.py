@@ -169,7 +169,6 @@ class RouteRule(unittest.TestCase):
             ("POST", "git/refs", [["ref", "refs/heads/brain/c/1"]]),
             ("PATCH", "git/refs/heads/brain/state", {"sha": A.upper()}),
             ("PATCH", "git/refs/heads/brain/state", {"sha": A, "ref": "refs/heads/main"}),
-            ("POST", "git/commits", {"message": "m", "tree": A, "parents": []}),
             ("POST", "git/commits", {"message": "m", "tree": A, "parents": [A, B, A]}),
             ("POST", "git/commits", {"message": "", "tree": A, "parents": [A]}),
             ("POST", "git/commits", {"message": "m", "tree": A, "parents": [A], "author": {}}),
@@ -411,12 +410,16 @@ class StateCommit(unittest.TestCase):
         bad_entries += [dict(entry, sha=A.upper()), dict(entry, content="x"), {k: v for k, v in entry.items() if k != "sha"}]
         for e in bad_entries:
             self.assertEqual(check("POST", "git/trees", {"base_tree": A, "tree": [e]}), (["body_invalid"], []), e)
-        for body in ({"base_tree": A, "tree": []}, {"tree": [entry]}, {"base_tree": A[:39], "tree": [entry]},
+        for body in ({"base_tree": A, "tree": []}, {"tree": []}, {"base_tree": None, "tree": [entry]},
+                     {"base_tree": A[:39], "tree": [entry]}, {"tree": [dict(entry, mode="120000")]},
                      {"base_tree": A, "tree": [entry, dict(entry, sha=A)]}, {"base_tree": A, "tree": entry},
                      dict(tree, extra=1)):
             self.assertEqual(check("POST", "git/trees", body), (["body_invalid"], []), body)
         self.assertEqual(check("POST", "git/trees", {"base_tree": A, "tree": [entry, dict(entry, path="b/.gitkeep")]}),
                          ([], []))
+        # no base_tree: a tree of only these entries, the orphan brain/state's root (tohum/01a); writes no ref
+        self.assertEqual(check("POST", "git/trees", {"tree": [entry]}), ([], []))
+        self.assertEqual(check("POST", "git/commits", {"message": "m", "tree": A, "parents": []}), ([], []))
 
     def state(self):
         gh, wr, root = world()
@@ -472,6 +475,43 @@ class StateCommit(unittest.TestCase):
             with self.assertRaises(W.ApiError):
                 wr.commit_files("brain/state", state, {"ledger.jsonl": b"x\n"}, "m")
             self.assertEqual(gh.refs["brain/state"], state)
+
+    def test_orphan_holds_only_its_files_and_has_no_parent(self):
+        gh, wr, root = world()
+        before = len(gh.requests)
+        sha = wr.open_orphan("brain/state", {"ledger.jsonl": b"g\n", "chain/root.jsonl": b"r\n"}, "genesis")
+        self.assertEqual(gh.refs["brain/state"], sha)
+        self.assertEqual(gh.commits[sha]["parents"], [])
+        self.assertEqual(gh.trees[gh.commits[sha]["tree"]].keys(), {"ledger.jsonl", "chain/root.jsonl"})
+        self.assertEqual(gh.read_file("brain/state", "chain/root.jsonl"), b"r\n")
+        sent = [(m, path[len(P):]) for m, path, _ in gh.requests[before:]]
+        self.assertEqual(sent, [("GET", "git/ref/heads/brain/state"), ("POST", "git/blobs"), ("POST", "git/blobs"),
+                                ("POST", "git/trees"), ("POST", "git/commits"), ("POST", "git/refs")])
+        self.assertNotIn("base_tree", gh.requests[before + 3][2])
+        self.assertEqual(wr.written, ["refs/heads/brain/state"])
+
+    def test_orphan_over_an_existing_branch_is_refused_before_any_object(self):
+        gh, wr, state = self.state()
+        before = len(gh.requests)
+        with self.assertRaises(W.Refused) as ctx:
+            wr.open_orphan("brain/state", {"ledger.jsonl": b"x\n"}, "genesis")
+        self.assertEqual(ctx.exception.reasons, ["branch_exists"])
+        self.assertEqual([r[0] for r in gh.requests[before:]], ["GET"])
+        self.assertEqual(gh.refs["brain/state"], state)
+        for branch in ("main", "brain/../main", "Brain/state"):
+            with self.assertRaises(W.Refused):
+                wr.open_orphan(branch, {"ledger.jsonl": b"x\n"}, "genesis")
+        with self.assertRaises(W.Unusable):
+            wr.open_orphan("brain/other", {}, "genesis")
+        self.assertEqual([r[0] for r in gh.requests[before:]], ["GET"])
+
+    def test_exists_reads_404_as_absent_and_raises_other_errors(self):
+        gh, wr, state = self.state()
+        self.assertTrue(wr.exists("brain/state"))
+        self.assertFalse(wr.exists("brain/none"))
+        gh.overrides[("GET", P + "git/ref/heads/brain/x")] = (500, {})
+        with self.assertRaises(W.ApiError):
+            wr.exists("brain/x")
 
 
 class Revert(unittest.TestCase):

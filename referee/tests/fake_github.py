@@ -4,8 +4,11 @@ State: refs (name -> sha), commits (sha -> {tree, parents}), pulls, check runs, 
 It models what the writer depends on and the target's rulesets (tohum/25a row 3), nothing more:
 
 - a ref update that is not a fast-forward is refused (422) unless ``force`` is true;
-- a branch in ``direct_push_denied`` (``brain/integration``) refuses ``POST``/``PATCH`` of its ref (422);
-  it changes only by a merge, and a merge into it needs a ``success`` check run on the head sha;
+- a branch in ``direct_push_denied`` (``brain/integration``) refuses ``PATCH`` of its ref (422); it changes only
+  by a merge, and a merge into it needs a ``success`` check run on the head sha. Creating a branch (``POST
+  git/refs``) is refused only for a name in ``create_denied`` (empty by default): tohum/25a row 3 lists no
+  creation rule for ``brain/integration``, so activation cuts it with ``POST``; whether GitHub's ``pull_request``
+  rule also refuses that creation is not modelled as known, both answers are tested (asama-0/10a #genesis);
 - a merge needs the base head to be an ancestor of the pull's head (no three-way merge is modelled; else 405);
   the merge commit has parents ``[base head, head sha]`` and the head's tree; ``sha`` must equal the head;
 - a commit's tree must already be known (from a seeded commit or ``POST git/trees``), its parents must exist;
@@ -34,7 +37,7 @@ def sha_of(obj) -> str:
 
 class FakeGitHub:
     def __init__(self, repo: str = "acme/toy", direct_push_denied=("brain/integration",),
-                 required_check: str = "snowball/gate"):
+                 required_check: str = "snowball/gate", create_denied=()):
         self.prefix = "/repos/%s/" % repo
         self.refs: dict[str, str] = {}
         self.commits: dict[str, dict] = {}
@@ -44,6 +47,7 @@ class FakeGitHub:
         self.checks: list[dict] = []
         self.requests: list[tuple] = []
         self.direct_push_denied = set(direct_push_denied)
+        self.create_denied = set(create_denied)
         self.required_check = required_check
         self.overrides: dict[tuple, tuple] = {}
 
@@ -110,8 +114,8 @@ class FakeGitHub:
             return (200, self._pull(int(m.group(1)))) if int(m.group(1)) in self.pulls else (404, {})
         return 404, {"message": "Not Found"}
 
-    def _set_ref(self, name, sha, force):
-        if name in self.direct_push_denied:
+    def _set_ref(self, name, sha, force, create=False):
+        if name in (self.create_denied if create else self.direct_push_denied):
             return 422, {"message": "Repository rule violations: changes must be made through a pull request"}
         if sha not in self.commits:
             return 422, {"message": "Object does not exist"}
@@ -125,7 +129,7 @@ class FakeGitHub:
             name = body["ref"][len("refs/heads/"):]
             if name in self.refs:
                 return 422, {"message": "Reference already exists"}
-            status, data = self._set_ref(name, body["sha"], False)
+            status, data = self._set_ref(name, body["sha"], False, create=True)
             return (201 if status == 200 else status), data
         if rest == "git/commits":
             if body["tree"] not in self.trees or \
@@ -138,9 +142,9 @@ class FakeGitHub:
         if rest == "git/blobs":
             return 201, {"sha": self._blob(base64.b64decode(body["content"]))}
         if rest == "git/trees":
-            if body.get("base_tree") not in self.trees:
+            if "base_tree" in body and body["base_tree"] not in self.trees:
                 return 422, {"message": "base_tree does not exist"}
-            files = dict(self.trees[body["base_tree"]])
+            files = dict(self.trees[body["base_tree"]]) if "base_tree" in body else {}
             for entry in body["tree"]:
                 if entry["sha"] not in self.blobs:
                     return 422, {"message": "blob does not exist"}
