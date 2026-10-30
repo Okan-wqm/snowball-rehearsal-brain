@@ -15,8 +15,9 @@
     {"id": "T40", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_anchor.py'", "stage": 0},
     {"id": "T36", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_sentinel.py'", "stage": 0},
     {"id": "T25", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_revert.py'", "stage": 0},
-    {"id": "T50", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_revert_drill.py'", "stage": 0}
+    {"id": "T50", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_revert_drill.py'", "stage": 0},
+    {"id": "T37", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_llm_call.py'", "stage": 0}
   ],
-  "done_mf": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+  "done_mf": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
   "lockfiles": []
 }
