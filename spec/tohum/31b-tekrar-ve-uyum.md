@@ -1,0 +1,35 @@
+# Mimari İlkeler II: Tekrar ve Uyum
+
+Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Okunma: bir hata iki yerde bulunduğunda; klon dedektörü bir eşleşme bildirdiğinde; ortak bir soyutlama ya da paylaşılan kütüphane önerilirken; rakip tekrar iddiası kurarken
+Çapa: beklemede: Aşama 2 — profildeki graf aracından derleme ve import grafiği (`13` (a)); git geçmişinden birlikte değişme sayımı; kaynaklar `catalog.md` bölüm B
+
+---
+
+Katalog danışmadır (`31`). Bu ailenin özü: **tekrar bir risk sinyalidir, istenmeden ayrışma kusurdur.**
+Metin benzerliği yalnız aday üretir; karar birlikte değişme geçmişi, aynı bağlamda sahiplik ve iki
+kopyanın kodladığı kuralın adı ile verilir. Rakip tekrarı açık iddia olarak bildirir; iki kopya
+yeniden üretilebilir bir kusura ayrışınca çürütmedir (`31`).
+
+| Kimlik · kanıt | İlke | Ne zaman | Bedel, yanlış uygulama | Bulma | Doğrulama |
+|---|---|---|---|---|---|
+| `dry` · consensus (klonlar empirical, karışık) | "Her bilgi parçasının sistem içinde tek, açık, otoriter bir temsili olmalıdır." Yazarlarına göre konu bilgidir (kural, karar, şema, sabit), aynı kod metni değil | Bir iş kuralını değiştirmek N yeri düzenlemeyi gerektiriyor; hata bir kopyada düzeltilmiş, ötekinde kalmış (en güçlü sinyal); ön uç ve arka uç doğrulaması aynı kalmalı | Yalnız benzer görünen kodu birleştirmek farklı değişme nedenlerini birbirine bağlar (`dup-kind`); erken soyutlama (`dry-limits`); servisler arası paylaşılan kütüphane birlikte dağıtım zorunluluğu getirir | Klon dedektörü (jscpd, PMD CPD) adayları; aynı regex, sabit ya da sihirli sayı birden çok dosyada; aynı enum üzerinde paralel `switch`'ler; birden çok depo sınıfında aynı SQL parçası | Aday: klon taraması. Belirleyici kanıt: kopyalar en az k commit'te birlikte değişmiş, ya da bir kopya düzeltilmiş, öteki değil ve yeniden üretici düzeltilmemiş kopyada kırmızı. Birleştirmeden sonra klon sayısı düşer, testler yeşil, sınır kuralı yeşil |
+| `dry-limits` · practice | Karşı ağırlıklar: üç kuralı (deseni üçüncü örnekte çıkar); "tekrar, yanlış soyutlamadan çok daha ucuzdur"; aceleci soyutlamadan kaçın (AHA) | Yalnız iki örnek var; örnekler farklı bağlamda ya da farklı ekipte; paylaşılan fonksiyonda çağırana özgü bayraklar birikmiş; gereksinim hâlâ değişiyor | Sürekli bahane yapılırsa gerçek bilgi tekrarı ayrışan hatalar üretmeye devam eder; üç kuralı bir sezgidir, yasa değil | Boolean "kip" parametreli paylaşılan fonksiyonlar, `if (caller === …)`, çok sayıda isteğe bağlı parametre; tek uygulamalı, tek çağıranlı soyutlamalar | Yanlış soyutlama sinyali: paylaşılan fonksiyonda çağırana özgü dal ve bayrak sayısı. Metz'in çaresi (soyutlamayı çağıranlara geri göm, gerçekten ortak olanı yeniden çıkar) testler yeşil kaldıkça sınanır |
+| `dup-kind` · empirical | Gerçek tekrar: birlikte değişmesi gereken tek bilginin iki temsili. Kazara tekrar: bugün aynı görünen ama farklı bilgiyi kodlayan, ayrı evrilecek kod. Klon tipleri I–IV: özdeş; yeniden adlandırılmış; düzenlenmiş kopya; aynı hesabı farklı sözdizimiyle yapan anlamsal klon | Birleştirme kararı; klon dedektörü çıktısının ayıklanması. Test sorusu: "bir kopyanın arkasındaki gereksinim değişirse öteki de değişmek zorunda mı?" | Yalnız metne bakmak yanlış pozitif verir (test fikstürleri, sürüm başına DTO, üretilmiş kod, migration) ve tehlikeli Tip IV klonları kaçırır: aynı kuralın iki farklı uygulaması (TS ve Python'da yuvarlama) metin dedektörüne görünmez | Nx uygulamaları arasındaki klonlar ile tek kütüphane içindekiler; üretilmiş, migration ve fikstür yollarının hariç tutulması; aynı alan sözlüğü (`domain_lexicon`) terimlerinin iki dilde uygulanması | Sürüm geçmişinden değişim bağı (code-maat); anlamsal klonlar için farklılık testi: iki uygulama aynı üretilmiş girdilerde koşar (property tabanlı), ayrışma en küçük karşı örnekle kusur kanıtıdır |
+| `srp` · practice | "Aynı nedenle değişenleri bir araya topla, farklı nedenle değişenleri ayır." Neden insanlardır: bir iş işlevini temsil eden grup | Bir modül ilgisiz nedenlerle değişiyor (HTTP, kalıcılık, iş kuralı, bildirim aynı NestJS servisinde); bir kuralı değiştirmek ötekini bozuyor | Aşırı bölme (küçük sınıf yığını), dolaylılık; "fonksiyon tek iş yapar" diye yanlış okumak | Pek çok ilgisiz özelliğin dokunduğu dosyalar; uzun DI kurucu listeleri; tanrı servisler | Git'ten dosya başına değişim bağı ve özellik çeşitliliği; bölmeden sonra birlikte değişme yeni modüllerin içinde toplanır; sınıf uyum ölçüleri (LCOM) zayıf vekildir |
+| `coupling` · consensus (kavram) | Yüksek uyum, düşük bağ. Connascence bağı güç (ad < tip < anlam < konum < algoritma …), yerellik ve derece ile inceltir; değişim bağı geçmişte birlikte değişen dosyalardır | Kodun yeri seçilirken; bir refaktör değerlendirilirken; gizli bağ ararken (iki servisin aynı sihirli dizgide anlaşması uzaktaki anlam bağıdır, en kötüsü) | Bağ ölçüleri oynanabilir; modül içindeki uyum da bağdır ve iyidir | Nx proje grafiği, import grafiği, git birlikte değişme; servisler arası paylaşılan sihirli dizgiler (konu adları, Redis anahtar önekleri, durum dizgileri) | Modül sınırını aşan birlikte değişme çiftleri azalır; sınır ötesi anlam bağı, üretilmiş sözleşme paketinden adlı bir sabite dönüşür (ad bağı) |
+| `shared-kernel` · practice | İki bağlamın ortak sahiplikle paylaştığı küçük model alt kümesi (kod ve şema), yalnız anlaşmayla değişir. Seçenekleri: her bağlamın kendi modeli ve çevirisi (yayımlanmış dil, ACL, ayrı yollar) | Paylaşılan parça küçük ve kararlı, sahipleri eşgüdümlü: kimlikler, değer nesneleri, `libs/contracts`'taki olay zarfı | Çekirdek "her şey paylaşılır"a büyür: her uygulamanın import ettiği `common`/`utils` kütüphanesi birlikte yayımlamayı zorlar (dağıtık monolit) | Çok bağımlısı olan Nx `libs/shared/*`; paylaşılan kütüphanede iş mantığı; her değişikliğin projelerin çoğunu etkilemesi | Paylaşılan kütüphanelerin bağımlı sayısı ve değişiklik başına etkilenen proje sayısı; çekirdek kütüphanenin yalnız sözleşme tipi taşıdığını denetleyen etiket kuralı (Nx module boundaries) |
+
+**İlişkiler.** DRY, kod bilgisi için SSOT'dir (`31a`); SRP ve bağlam sınırları (`31c`) neyin birleşeceğine
+hakemlik eder; YAGNI ve KISS (`31e`) erken soyutlamaya karşı ağırlıktır. Diller arası DRY'nin olağan biçimi
+paylaşılan kod değil, tek şemadan üretimdir (`schema-registry`). Beck'in sade tasarım sırasında "niyeti
+gösterir", "tekrar yok"tan öncedir: çatıştıklarında açıklık kazanır (`31h`).
+
+**Kanıt.** Juergens ve arkadaşları (beş sistem, geliştiricinin onayladığı 107 hata) istenmeden tutarsız
+bırakılan klon değişikliklerinin "neredeyse her ikincisinin" hataya yol açtığını buldu; Kapser ve Godfrey
+iki sistemde klonların "%71'e kadarının" bakımı olumlu etkilediğini buldu. Örneklem küçüktür; ikisi birlikte
+"tekrar sinyaldir, ayrışma kusurdur" ayrımını destekler.
+
+**Kaynaklar** (`catalog.md`): `dry` [PRAG-BOOK] [PRAG-DRY] [JUERGENS-2009] [KAPSER-2008]; `dry-limits` [METZ]
+[AHA] [WIKI-RULE3] [BECK-RULES]; `dup-kind` [ROY-CORDY] [CLEAN-ARCH-BOOK] [CODE-MAAT]; `srp` [SRP];
+`coupling` [CONNASCENCE] [CODE-MAAT]; `shared-kernel` [DDD-REF] [FOWLER-BC] [NX-BOUNDARIES]; araçlar [JSCPD] [PMD-CPD].

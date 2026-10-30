@@ -33,12 +33,12 @@ grupların komutları, girdileri, çıktı alanları ve vakaları `29f` ve `29g`
 | `npmlock` | 5 | `integrity` eşleşmesi; bir baytı değişmiş tarball, izinsiz `resolved`, git ve dosya bağımlılığı ret |
 | `recipe` | 6 | statik tarif denetimi: imaj `@sha256`, `inputs`, komutlar, sınırların `operating{}` anahtarları |
 | `diffguard` | 7 | `asama-0/08` madde 1'in her ret nedeni |
-| `k0map` | 8 | eşlenmiş satır kuralı (`asama-0/08`) ve madde 3–8'in kararları, fikstür `koş` çıktılarıyla |
-| `refs` | 9 | yazılan her ref `refs/heads/brain/` altında; `main`'e ve `brain/` dışına yazma ret; geri alma ağacı ilk ebeveynin ağacı |
-| `append` | 10 | devir başına tek commit; yazımdan önce `verify --previous` |
-| `root` | 11 | kök = bölüm uçlarının kanonik hash'i; imza doğrulaması |
-| `flaky` | 12 | 3/3 kuralı (`07`) |
-| `cause` | 13 | mekanik `cause` (`test_regression`, `build_break`, `lint_regression`, `impact_miss`, `unknown`) |
+| `k0map` | 8 | eşlenmiş satır kuralı (`asama-0/08`) ve madde 3–8'in kararları, fikstür `koş` çıktılarıyla; arayüz `29h` |
+| `refs` | 9 | yazılan her ref `refs/heads/brain/` altında; `main`'e ve `brain/` dışına yazma ret; geri alma ağacı ilk ebeveynin ağacı; arayüz `29i` |
+| `append` | 10 | devir başına tek commit; yazımdan önce `verify --previous`; arayüz `29i` |
+| `root` | 11 | kök = bölüm uçlarının kanonik hash'i; imza doğrulaması; arayüz `29j` |
+| `flaky` | 12 | 3/3 kuralı (`07`); arayüz `29j` |
+| `cause` | 13 | mekanik `cause` (`test_regression`, `build_break`, `lint_regression`, `impact_miss`, `unknown`); arayüz `29j` |
 | `revert_drill` | 14 | taahhüt `HMAC(prova_tohumu, cycle_id)`; açılım eşleşmesi; `tampered_key` reddi |
 | `prompt` | 15 | tipli girdi → prompt sha256; tip dışı alan girmez |
 | `status` | 16 | defterden üretilen blok; elle düzenlenmiş blok yeniden üretilir |
