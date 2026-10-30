@@ -1,0 +1,7 @@
+{
+  "id": "spec-032-drill-calls-9-14",
+  "kind": "seed_issue",
+  "ref": "spec/asama-0/14-sirali-mikro-ozellikler.md:47",
+  "state": "open",
+  "evidence_test": "cd referee && python -m unittest discover -s tests -p 'test_revert_drill.py'  # Run.test_each_planted_cause_is_reverted_and_matches. MF14 must plant a bad merge on the toy target (asama-0/14 row 14, tohum/22a), and the one way to write a target is target.write (MF9). The calls line lists 9 -> 10, 13 and 12 -> 13 -> 14 but not 9 -> 14. harness.revert_drill.run_drill plants through Writer (create_branch, commit_files, open_pull, check, merge), so it calls 9 directly; the order rule still holds (9 < 14). It also posts the required check on the planted head itself, with a summary saying the merge is planted by the drill and is not a gate decision; no page says whether a planted merge passes the gate's check or carries the referee's planted check (26a exit.drill says 'provaya konan organlar planted: true' only for organs). Draft for asama-0/14 calls: '9 -> 10, 13, 14' and for 22a #geri-alma: 'ekilen merge kapinin kararindan gecmez; hakemin prova check'i onu planted olarak isaretler.'"
+}
