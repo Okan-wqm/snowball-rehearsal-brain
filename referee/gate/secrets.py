@@ -99,7 +99,11 @@ RULES: list[tuple[str, re.Pattern]] = [
 # (--password VALUE); or it is a Dockerfile ENV KEY VALUE (upper-case ENV, anywhere in the line). The
 # value is read by ``_value``, not by a pattern:
 # - unquoted, it runs to the first whitespace outside brackets, so ; , ( ) [ ] { } inside it are part
-#   of it. One trailing , ; . : and closing brackets with no opening one are syntax, not value.
+#   of it. One trailing , ; . : is syntax, not value. A closing bracket with no opening one in the value
+#   closes the caller's bracket and ends the value when what follows it is (CALLER_CLOSE): the end of the
+#   text, whitespace, another closing bracket, , or ;, a : at the end or before whitespace, or a . and a
+#   letter or _ (f(sort_keys=True).encode(...) is read as True). Before anything else (ab)cd, ab)!cd) it
+#   is part of the value.
 # - quoted (" ' or `, with an optional string prefix such as f or b), it runs to the closing quote that
 #   is not escaped by a backslash, so it may hold spaces and escaped quotes. Text glued after the
 #   closing quote ("abc"def) is part of it unless it starts with , ; . : ) ] }. A quote that never
@@ -109,22 +113,40 @@ RULES: list[tuple[str, re.Pattern]] = [
 #   is glued on (abc"defghij" is also read as abcdefghij; only that first quoted part). The value is
 #   reported when either reading is.
 # - an authorization scheme word (Bearer, Basic, Token, Digest, Bot) before the value is skipped.
+# - a bracketed literal (a value that starts with ( [ or { and whose matching closer is followed by what
+#   LITERAL_END allows: the end of the text, whitespace, a closing bracket, , ; or a : at the end or before
+#   whitespace; or a quote) is judged item by item (``_literal_value``), as a row's JSON array or object is
+#   (``_secret_members``): its items are split at the , and : between its brackets (outside quotes), a
+#   nested literal is judged the same way, and each other item, with its quote characters removed, is
+#   reported by the rule below; a nested literal must be its whole item (with a glued quoted part at
+#   most): [(abc) defghijk] judges (abc) defghijk as one item
+#   (("abc", "hunter2hunter2") reports the second item; "hunter" "22abc", glued strings, are one item).
+#   The first quoted part glued after the closer is one more item (("abc")"defghijk"; in a JSON row it is
+#   the , or : between two strings); text after that part is not read (a stated boundary, as for a value
+#   cut by CALLER_CLOSE). A literal that does not close on its line is judged by the items it holds there
+#   (in a row's JSON text, scan --kind row, the line goes on past the string that holds the literal;
+#   rows reach this scanner decoded, through ``match_lines``).
+#   A value that is a template as written ({name}, {{ name }}: JSX attributes, format fields) is not a
+#   literal; {"name"} is one, so a quoted secret in braces is judged as its item. A literal followed by
+#   more value ((abc)def, [x].join()) is read whole like any unquoted value.
 # Every value of 8 or more characters is reported, weak or random, quoted or not, literal or code: there
 # is no entropy test, no placeholder list and no test for code. Text alone cannot tell a passphrase from
 # a name (correct_horse_battery, self.token, get_token(request) may each be either), so a name or
 # expression on the right of a secret-named key is reported like a literal. A value is skipped only when
 # (a) nothing is left once every template in it is removed (TEMPLATE: ${NAME}, upper case $NAME, {name},
-# {{ name }}, <word>, %(name)s, %NAME%), or (b) it is, in any case, one of NON_VALUES, the null and
-# boolean words of the languages the system reads.
+# {{ name }}, the GitHub Actions expression ${{ name }}, <word>, %(name)s, %NAME%), or (b) it is, in any
+# case, one of NON_VALUES, the null and boolean words of the languages the system reads.
 # Stated boundaries, not reported: a secret spelled exactly as a whole template or a null word, a value of
-# fewer than 8 characters, a value with no operator after its key other than a flag or Dockerfile ENV
-# (PASSWORD hunter22), a value whose first word is a scheme word ("token abc" is read as abc), and a key
+# fewer than 8 characters (in a bracketed literal: every item of fewer than 8, ["abc", "defgh"]), the text
+# after a closing bracket that ends a value by CALLER_CLOSE (a key, =, then ab).cdefghij is read as ab), a
+# value with no operator after its key other than a flag or Dockerfile ENV (PASSWORD hunter22), a value whose first word is a scheme word ("token abc" is read as abc), and a key
 # none of whose words is secret-named by the rules below (DB_CONN, DSN or LOGIN holding a password: only
 # a URL password or a Password= inside it is reported).
 # The stated cost: code that assigns a name or expression of 8 or more characters to a secret-named key
 # (self.token or request.form after a token or password key) is reported, as are example values such
 # as changeme and namespaced words after a secret-named prefix and a colon (a reason code spelled
-# secret_in_x, a colon and a word);
+# secret_in_x, a colon and a word), a GitHub expression that is not a dotted name (${{ a || b }}) and a
+# literal of field names of 8 or more characters assigned to a key ending in keys (ROW_KEYS = (...));
 # a match stops the send (tohum/08 item 11), so this scanner errs on the side of not sending.
 # Which keys are secret-named. The key is a whole word of letters, digits, _ - and . (no word character,
 # - or . before it), judged by ``_secret_key``:
@@ -164,10 +186,13 @@ FLAG = re.compile(r"(?<![\w\-])--?(?P<key>[\w\-]*\w)[ \t]+")
 ENV_FORM = re.compile(r"(?<![\w\-.])ENV[ \t]+(?P<key>[\w\-.]+)[ \t]+(?=[^\s=])")  # Dockerfile ENV KEY VALUE
 SCHEME = re.compile(r"(?i)(?:bearer|basic|token|digest|bot)[ \t]+")
 QUOTES = "\"'`"
+OPENERS = "([{"
+CALLER_CLOSE = re.compile(r"$|\s|[)\]},;]|:(?:$|\s)|\.[A-Za-z_]")  # what may follow a closer that ends a value
+LITERAL_END = re.compile(r"$|\s|[)\]},;]|:(?:$|\s)")  # what may follow a bracketed literal's own closer
 STRING_PREFIX = re.compile(r"[rRbBuUfF]{1,2}")
 NON_VALUES = {"none", "null", "nil", "true", "false", "undefined"}
 TEMPLATE = re.compile(
-    r"\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Z_][A-Z0-9_]*|\{\{[ \t]*[A-Za-z_][A-Za-z0-9_.]*[ \t]*\}\}|"
+    r"\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Z_][A-Z0-9_]*|\$?\{\{[ \t]*[A-Za-z_][A-Za-z0-9_.]*[ \t]*\}\}|"
     r"\{[A-Za-z_][A-Za-z0-9_.]*\}|<[A-Za-z][A-Za-z0-9_\- ]*>|%\([A-Za-z_][A-Za-z0-9_]*\)[sd]|%[A-Z_][A-Z0-9_]*%")
 
 ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})|\\([\"'/\\])")
@@ -241,14 +266,20 @@ def _value(text: str, pos: int, glue: bool = False) -> str | None:
             continue
         if segments and segments[-1][2] and depth == 0 and ch in ",;.:)]}":
             break  # syntax after a closing quote ("abc", or "abc"}), not a glued tail ("abc"def)
-        start = i
+        start, closed = i, False
         while i < n and text[i] not in QUOTES and not (text[i].isspace() and depth == 0):
             if text[i] in "([{":
                 depth += 1
             elif text[i] in ")]}":
+                if depth == 0 and CALLER_CLOSE.match(text, i + 1):
+                    closed = True  # the caller's bracket closes: f(sort_keys=True).encode(...)
+                    break
                 depth = max(0, depth - 1)
             i += 1
-        segments.append((text[start:i], text[start:i], False))
+        if i > start:
+            segments.append((text[start:i], text[start:i], False))
+        if closed:
+            break
     if not segments:
         return None
     if not segments[-1][2]:
@@ -323,9 +354,109 @@ def _secret_value(value: str) -> bool:
     return len(value) >= 8 and value.lower() not in NON_VALUES and bool(TEMPLATE.sub("", value))
 
 
+def _brackets(text: str, pos: int) -> dict[int, int]:
+    """One pass from the opener at ``pos``: each opener's index -> its closer's index (``len(text)`` when it
+    never closes), up to the closer that matches ``pos``; quoted text is skipped, an open quote ends it."""
+    match: dict[int, int] = {}
+    stack, i, n = [], pos, len(text)
+    while i < n:
+        ch = text[i]
+        if ch in QUOTES:
+            end = _close_quote(text, i)
+            if end < 0:
+                break
+            i = end + 1
+            continue
+        if ch in OPENERS:
+            stack.append(i)
+        elif ch in ")]}":
+            match[stack.pop()] = i
+            if not stack:
+                return match
+        i += 1
+    for opener in stack:
+        match[opener] = n
+    return match
+
+
+def _literal_items(text: str, pos: int, bound: int | None = None,
+                   match: dict[int, int] | None = None) -> list[tuple[int, int]] | None:
+    """The items, as (start, end) spans of ``text``, of the bracketed literal that starts at ``pos`` (see
+    the comment above ASSIGNMENT), or None when ``pos`` holds no opener, the brackets are a template, or
+    more value follows the literal. ``bound`` is the end of the item a nested literal must fill (with a
+    glued quoted part at most); None for the value itself, which ends as LITERAL_END says."""
+    n = len(text)
+    if pos >= n or text[pos] not in OPENERS:
+        return None
+    if match is None:
+        match = _brackets(text, pos)
+    close = match[pos]
+    if close < n and TEMPLATE.fullmatch(text, pos, close + 1):
+        return None  # {name} or {{ name }} as written is a template, not a literal
+    spans, start, i = [], pos + 1, pos + 1
+    while i < close:
+        ch = text[i]
+        if ch in QUOTES:
+            end = _close_quote(text, i)
+            if end < 0:
+                break  # an open quote runs to the end of the text: the last item holds the rest
+            i = end + 1
+        elif ch in OPENERS:
+            i = match[i] + 1  # a nested group is split when its own item is judged
+        else:
+            if ch in ",:":
+                spans.append((start, i))
+                start = i + 1
+            i += 1
+    spans.append((start, min(close, n)))
+    if close >= n:
+        return spans  # the literal goes on past the end of the text (a line of a longer one)
+    after = close + 1
+    if after < n and text[after] in QUOTES:
+        # the quoted part glued after the closer is one more item: in a JSON row its quote closes the
+        # string holding the text and the item is the , or : between strings
+        end = _close_quote(text, after)
+        if end >= 0:
+            spans.append((after, end + 1))
+        if bound is not None and (end < 0 or end + 1 < bound):
+            return None
+        return spans
+    if bound is not None:
+        return spans if after >= bound else None
+    return spans if LITERAL_END.match(text, after) else None
+
+
+def _literal_value(text: str, spans: list[tuple[int, int]], match: dict[int, int]) -> str | None:
+    """The first secret value the items of a bracketed literal hold, in order, or None. An item that is
+    itself a literal is judged item by item; any other item is its text with its quote characters removed,
+    judged by ``_secret_value``. A work list over spans of the one text: no recursion and no rescanning,
+    so the judgement is linear in the literal's length however deep it nests."""
+    work = list(reversed(spans))
+    while work:
+        start, end = work.pop()
+        while start < end and text[start].isspace():
+            start += 1
+        while end > start and text[end - 1].isspace():
+            end -= 1
+        nested = _literal_items(text, start, end, match) if start < end else None
+        if nested is not None:
+            work.extend(reversed(nested))
+            continue
+        value = "".join(ch for ch in text[start:end] if ch not in QUOTES).strip()
+        if _secret_value(value):
+            return value
+    return None
+
+
 def _assigned(text: str, pos: int) -> str | None:
     """The secret value assigned at ``pos`` (just after the operator), or None when there is none: the
-    first of the two readings of ``_value`` that ``_secret_value`` reports."""
+    first of the two readings of ``_value`` that ``_secret_value`` reports. A bracketed literal is judged
+    item by item instead (``_literal_items``)."""
+    if pos < len(text) and text[pos] in OPENERS:
+        match = _brackets(text, pos)
+        spans = _literal_items(text, pos, match=match)
+        if spans is not None:
+            return _literal_value(text, spans, match)
     for glue in (False, True):
         value = _value(text, pos, glue)
         if value is not None and _secret_value(value):

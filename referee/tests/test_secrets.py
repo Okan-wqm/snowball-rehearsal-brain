@@ -297,6 +297,55 @@ class Detection(unittest.TestCase):
         # the rival's reproducer, alone, as the referee ran it
         self.assert_caught("prompt", "%s=%s\n" % (pw, values[0]), "secret-assignment", values[0])
 
+    def test_caller_closer_and_bracketed_literals_still_report_their_value(self):
+        """Own defects f173 and f195 (false positives on the referee's own code) narrowed two readings; what
+        a secret still looks like under them is caught. A closer that ends the value leaves the value before
+        it; a closer followed by a letter, a digit or other punctuation stays part of the value; a literal
+        reports its long item by that item's own fingerprint, at any depth, glued strings as one item, and
+        on a line where it does not close; a literal followed by more value is read whole."""
+        pw, tok, sec, keys = j("pass", "word"), j("to", "ken"), j("sec", "ret"), j("signing", "_keys")
+
+        def value(n: int) -> str:
+            return body("literal%d" % n, 12)
+
+        cases = [
+            ("login(%s=%s).send()" % (pw, value(1)), value(1)),
+            ("f(%s=%s), g()" % (tok, value(2)), value(2)),
+            ("%s=%s" % (pw, j("ab)cd", "!efgh")), j("ab)cd", "!efgh")),
+            ("%s=%s" % (pw, j("ab)9", "cdefg")), j("ab)9", "cdefg")),
+            ('%s = ("abc", "%s")' % (sec, value(3)), value(3)),
+            ("%s = [abc, %s]" % (tok, value(4)), value(4)),
+            ('%s = {"db": {"main": "%s"}}' % (sec, value(5)), value(5)),
+            ('%s = ("%s" "%s")' % (pw, "hunter", "22abc"), "hunter 22abc"),
+            ('%s = ("abc")"%s"' % (pw, value(7)), value(7)),
+            # read as a whole template once its quotes were removed, this one was skipped before
+            ('%s = {"%s"}' % (pw, value(8)), value(8)),
+            # a nested group that is not its whole item is no literal: the item is read whole
+            ("%s = [(abc) %s]" % (tok, value(10)), "(abc) " + value(10)),
+            ('%s = [1, ("abc")"%s"]' % (sec, value(11)), value(11)),
+            ('%s = [("abc")"de" %s]' % (pw, value(12)), "(abc)de " + value(12)),
+            ('%s = ("abc", "def").%s()' % (pw, j("jo", "in")), j("(abc, def).", "join()")),
+            ("%s = (abc)%s" % (tok, "defgh"), "(abc)defgh"),
+        ]
+        self.assert_all_caught(cases)
+        rows = "\n".join(row_with(text) for text, _ in cases).encode()
+        code, result, raw = run_secrets(["scan", "row", rows])
+        self.assertEqual((code, result), (1, {"clean": False, "lines": list(range(1, len(cases) + 1))}), raw)
+        # a literal that does not close on its line: the item is the value in a diff and a prompt; in a
+        # row's JSON text the line goes on past the string, so the row is checked by its line
+        unclosed = '%s = ["abc", %s' % (keys, value(6))
+        self.assert_caught("diff", diff_with(unclosed), "secret-assignment", value(6), line=7)
+        self.assert_caught("prompt", prompt_with(unclosed), "secret-assignment", value(6), line=4)
+        code, result, raw = scan("row", row_with(unclosed))
+        self.assertEqual((code, {m["line"] for m in result["matches"]}), (1, {1}), raw)
+        self.assertEqual(run_secrets(["scan", "row", row_with(unclosed).encode()])[:2],
+                         (1, {"clean": False, "lines": [1]}))
+        # nesting deeper than Python's recursion limit is judged too (no RecursionError, no crash)
+        deep = "%s = %s%s%s" % (sec, "[" * 20000, value(9), "]" * 20000)
+        self.assert_caught("prompt", prompt_with(deep), "secret-assignment", value(9), line=4)
+        token = FAKES["github-token"]
+        self.assert_caught("prompt", prompt_with('%s = ("a", "%s")' % (keys, token)), "github-token", token)
+
     def test_quoted_values_hold_escaped_quotes_glued_tails_and_no_close(self):
         pw, sec = j("pass", "word"), j("sec", "ret")
         cases = [
@@ -533,6 +582,46 @@ class Clean(unittest.TestCase):
         self.assert_clean("diff", diff_with("\n+".join(lines)))
         self.assert_clean("prompt", prompt_with("\n".join(lines)))
         self.assert_clean("prompt", "")
+
+    def test_caller_closers_literals_and_github_expressions_are_not_values(self):
+        """Own defects f173 and f195: the referee's own lines were reported. A closer with no opener that
+        closes the caller's bracket ends the value (json.dumps with its sort keyword and a .encode after it
+        read on into the call's tail); a bracketed literal of short items is judged item by item, not as one
+        long value; a GitHub expression that is a dotted name is a whole template. The stated boundaries
+        are here too: short items of a literal, and the text after a closer that ends a value."""
+        tok, pw, sec, keys = j("to", "ken"), j("pass", "word"), j("sec", "ret"), j("sort", "_keys")
+        lines = [
+            'request = json.dumps({"rows": planned["rows"]}, %s=True).encode("utf-8")' % keys,
+            'line = json.dumps(record, %s=True).encode("utf-8") + b"\\n"' % keys,
+            "f(%s=abc)" % tok,
+            "if check(%s=None): pass" % pw,
+            "go(%s=x)]" % tok,
+            "%s: {value, band}" % j("anah", "tar"),
+            '%s = ("abc", "def",' % j("ROW_", "KEYS"),
+            '%s = ["abc", "defgh"]' % pw,
+            "%s = {abc: {de: fgh}}" % sec,
+            "%s = ()" % tok,
+            "%s=ab).%s" % (pw, j("cdef", "ghij")),
+            "%s: ${{ secrets.%s }}" % (j("CLAUDE_CODE_OAUTH_", "TOKEN"), j("CLAUDE_CODE_OAUTH_", "TOKEN")),
+            "%s: ${{ steps.app.outputs.%s }}" % (j("WRITER_", "TOKEN"), tok),
+            '"%s": "${{ secrets.%s }}",' % (j("private", "-key"), j("WRITER_APP_PRIVATE_", "KEY")),
+            # a template as written is not a literal: JSX attributes and format fields (the target's lines)
+            "<input onKeyDown={handleKeyDown} />",
+            'raise E(f"%s_missing:{self.purpose}")' % j("hmac_", "key"),
+            "%s = {{ %s }}" % (j("api", "Key"), j("config.api", "Key")),
+        ]
+        self.assert_clean("diff", diff_with("\n+".join(lines)))
+        self.assert_clean("prompt", prompt_with("\n".join(lines)))
+        # rows reach the scanner decoded (ledger.append calls match_lines, the seed's vector form)
+        code, result, raw = run_secrets(["scan", "row", "\n".join(row_with(line) for line in lines).encode()])
+        self.assertEqual((code, result), (0, {"clean": True, "lines": []}), raw)
+        # only a whole GitHub expression is a template; a value around one or a non-name one is reported
+        for text, value in (("%s: ${{ x }}%s" % (tok, "tail9999"), "${{ x }}tail9999"),
+                            ("%s: ${{ a || b }}" % tok, "${{ a || b }}")):
+            with self.subTest(text=text):
+                code, result, raw = scan("prompt", prompt_with(text))
+                self.assertEqual(code, 1, raw)
+                self.assertIn(sha(value), {m["sha256"] for m in result["matches"]})
 
     def test_keys_that_are_not_secret_named(self):
         """The stated boundaries and exclusions of _secret_key: the bare word key alone, PLAIN_WORDS, a
