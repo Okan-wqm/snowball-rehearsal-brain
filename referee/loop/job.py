@@ -31,15 +31,26 @@ the file regenerated with ``python -m loop.job render > .github/workflows/loop.y
 
 Every step after ``control`` runs only if ``go`` is true; no step continues on error.
 
-**What ``run`` does now.** It checks the job's environment contract and stops: a job that runs code (``getir``,
+**What ``run`` does now.** It checks the job's environment contract first: a job that runs code (``getir``,
 ``kos``) refuses to start when any secret of another job, the OIDC request variables or ``GITHUB_TOKEN`` is in its
-environment (``secret_in_code_job:<NAME>``, exit 1). The D1-D8 composition inside the jobs (building each MF's
-input from the pulled trees and the previous artifacts, and the cycle's one ``brain/state`` commit) is not wired
-yet: ``run`` prints ``{ok: false, reason: cycle_not_wired, ...}`` and exits 1, so a cycle cannot pass green
-through a job that did nothing. No MF of asama-0/14 owns that composition (reported in the founder ledger,
-spec-036). Its first part exists: ``runner.kos`` writes D3's result files (``base.jsonl`` and each candidate's
-``cand.jsonl``, ``checks.json``, ``hashes.json``) from a tree, a recipe, a ``deps`` artifact and the candidates'
-diffs; ``kos`` does not call it yet, because the ``pulled`` artifact's layout (``cek``'s) is not written.
+environment (``secret_in_code_job:<NAME>``, exit 1). Then:
+
+- ``kos`` runs D3 (``kos_d3``): it reads ``$RUNNER_TEMP/in/pulled`` with ``loop.pulled.read`` (a refusal is
+  ``pulled_invalid`` with the reasons), takes the recipe from its ``units.json`` (stage 0 runs one unit: exactly
+  one entry in ``units``, else ``units_not_one``), unpacks the tree under ``$RUNNER_TEMP/work`` and calls
+  ``runner.kos.results`` with the policy, the ``targets[]`` entry, ``RED_CONTROL``, every candidate's
+  ``diff.patch`` and ``$RUNNER_TEMP/in/deps`` (``None`` when that directory is absent or empty: ``unit_verify``
+  then accepts only a lock without packages), writing ``$RUNNER_TEMP/out/results``. Its index is in the output
+  (``index``) and ``done`` is ``["D3"]``. D7 (the sentinel) and D8 (the drill) of this job are not wired, so the
+  job still ends ``cycle_not_wired``, exit 1, after D3: the upload step does not run and ``yaz`` gets nothing.
+- every other job stops at once with ``cycle_not_wired`` (exit 1): ``cek`` does not write ``pulled`` yet, so in a
+  real run ``kos`` is not reached; the D1-D8 composition inside the jobs (building each MF's input from the
+  pulled trees and the previous artifacts, and the cycle's one ``brain/state`` commit) has no MF of asama-0/14
+  that owns it (reported in the founder ledger, spec-036).
+
+``RED_CONTROL`` is the referee's own known-bad command, ``node -e process.exit(1)`` in the unit's image (the
+image's ``node``); it is not taken from ``pulled``, so nothing the Founder writes can choose it. A known-bad
+*candidate* (tohum/08 item 3's wording) run through the unit's own test command is not what runs here.
 
 Out of scope, stated: the ``control`` command itself (the seed's, asama-1/13), whether the seed's ``wiring`` check
 accepts this file's YAML (the seed's YAML subset is not written in any page this clone has; this module writes
@@ -50,6 +61,7 @@ Command line, from ``referee/``::
 
     python -m loop.job render        # the workflow on stdout, exit 0
     python -m loop.job run JOB       # one JSON line on stdout; exit 1 (refused or not wired), 2 unusable
+                                     # (RUNNER_TEMP unset, or kos's input unusable)
 """
 
 from __future__ import annotations
@@ -58,7 +70,11 @@ import json
 import os
 import re
 import sys
+import tempfile
 from typing import Any, NamedTuple
+
+from loop import pulled as P
+from runner import kos as K
 
 USAGE = "usage: python -m loop.job render | run JOB"
 
@@ -95,6 +111,9 @@ APP_INPUTS = {
 # Names a code-running job must not see (tohum/08 item 1). GITHUB_TOKEN is not in a job's environment unless a
 # step puts it there; the OIDC pair is there whenever the job has ``id-token: write``.
 OIDC_ENV = ("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL")
+
+# The red control of every contained run in ``kos`` (tohum/08 item 3): a command known to fail in the unit's image.
+RED_CONTROL = {"cmd": ["node", "-e", "process.exit(1)"]}
 
 
 class Job(NamedTuple):
@@ -248,7 +267,43 @@ def render() -> str:
 
 # ---- the job entry -----------------------------------------------------------------------------------------------
 
-def run(name: str, environ: dict[str, str]) -> dict[str, Any]:
+def _dir(environ: dict[str, str], *parts: str) -> str:
+    temp = environ.get("RUNNER_TEMP")
+    if not temp or not os.path.isabs(temp):
+        raise Unusable("RUNNER_TEMP must be an absolute path")
+    return os.path.join(temp, *parts)
+
+
+def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None = None) -> dict[str, Any]:
+    """D3 of ``kos`` (see the module docstring): ``{reason?, reasons?, index?}``."""
+    try:
+        art = P.read(_dir(environ, "in", "pulled"))
+    except P.PulledError as exc:
+        return {"reason": "pulled_invalid", "reasons": exc.reasons}
+    units = art.units.get("units") if isinstance(art.units, dict) else None
+    if not (isinstance(units, list) and len(units) == 1):
+        return {"reason": "units_not_one"}
+    deps = _dir(environ, "in", "deps")
+    if not (os.path.isdir(deps) and os.listdir(deps)):
+        deps = None
+    work = _dir(environ, "work")
+    os.makedirs(work, exist_ok=True)
+    root = tempfile.mkdtemp(prefix="kos-", dir=work)
+    tree = os.path.join(root, "tree")
+    try:
+        P.extract_tree(art.tree_tar, tree)
+    except P.PulledError as exc:
+        return {"reason": "pulled_invalid", "reasons": exc.reasons}
+    diffs = {cid: files["diff.patch"] for cid, files in art.candidates.items()}
+    try:
+        index = K.results(units[0], tree, art.policy, red_control or RED_CONTROL, diffs, _dir(environ, "out", "results"),
+                          deps, art.target, runner, base=root)
+    except K.UNUSABLE as exc:
+        raise Unusable("kos: %s" % exc) from None
+    return {"index": index}
+
+
+def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None) -> dict[str, Any]:
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
     job = JOBS[name]
@@ -257,6 +312,11 @@ def run(name: str, environ: dict[str, str]) -> dict[str, Any]:
         present = sorted(n for n in SECRET_ENV + OIDC_ENV if n in environ)
         if present:
             return dict(result, reason="secret_in_code_job:%s" % present[0])
+    if name == "kos":
+        d3 = kos_d3(environ, runner, red_control)
+        if "reason" in d3:
+            return dict(result, **d3)
+        return dict(result, reason="cycle_not_wired", done=["D3"], index=d3["index"])
     return dict(result, reason="cycle_not_wired")
 
 

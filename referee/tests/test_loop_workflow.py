@@ -28,7 +28,7 @@ Each rule is shown to fire on a mutated copy of the committed file and not on th
 is ``loop.job.render()`` byte for byte (and the CLI's output); the parser's subset refusals; the registry covers
 D1-D8 and the step table's MFs; the gating, run under a model of Actions' step and job conditions, stops every
 job at a failing ``control`` and ends a paused job green with nothing run; ``python -m loop.job run``'s refusal
-of a secret in a code job and its ``cycle_not_wired`` stop.
+of a secret in a code job and its ``cycle_not_wired`` stop (``kos``'s, after D3, in ``test_loop_kos.py``).
 """
 
 from __future__ import annotations
@@ -449,7 +449,8 @@ class JobEntry(unittest.TestCase):
                     self.assertEqual((code, out["ok"], out["reason"]), (1, False, "secret_in_code_job:" + var))
 
     def test_not_wired_stops_red(self):
-        for name in JOBS:
+        # kos runs D3 first and then stops the same way: test_loop_kos.py
+        for name in [n for n in JOBS if n != "kos"]:
             env = {"CLAUDE_CODE_OAUTH_TOKEN": "x"} if name == "cagir" else {"WRITER_TOKEN": "x"} if name == "yaz" else {}
             with self.subTest(job=name):
                 code, out = run_job(name, env)

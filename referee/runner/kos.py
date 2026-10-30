@@ -54,8 +54,9 @@ crash or a ``Bail out!`` is red, not zero tests. Out of scope: other reporters a
 TAP line, so ``tests`` is empty and the gate's ``zero_tests`` rejects: closed, not open), and duplicate
 descriptions (each line is its own entry).
 
-Not done here, stated: the sentinel and the drill of the ``kos`` job (D7, D8), reading the ``pulled`` and ``deps``
-artifacts (their layout is ``çek``'s and ``getir``'s), and how ``yaz`` treats a candidate without files (the gate
+Caller: ``loop.job``'s ``kos`` (D3), which reads the ``pulled`` artifact (``loop.pulled``) and passes the
+``deps`` directory as it was downloaded. Not done here, stated: the sentinel and the drill of the ``kos`` job (D7,
+D8), and how ``yaz`` treats a candidate without files (the gate
 reads a missing file as ``artefact_hash_mismatch``). The hashes are taken by this process after every container
 ended, from the bytes it wrote, not from anything a container wrote.
 
@@ -289,6 +290,9 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
 # ---------------------------------------------------------------- command line
 
 USAGE = "usage: python -m runner.kos run FILE"
+# What ``results`` raises on unusable input; read by this command line and by ``loop.job``'s ``kos``.
+UNUSABLE = (KosError, U.VerifyError, D.DeriveError, C.ContainmentError, ValueError, KeyError, TypeError, OSError,
+            RecursionError)
 EXIT = {"verified": 0, "refused": 1, "no_verdict": 2}
 
 
@@ -311,8 +315,7 @@ def main(argv: list[str]) -> int:
                         req["out"], req.get("deps"), req.get("target"), base=req.get("base"))
         sys.stdout.write(json.dumps(index, sort_keys=True) + "\n")
         return EXIT[index["base"]["verdict"]]
-    except (KosError, U.VerifyError, D.DeriveError, C.ContainmentError, ValueError, KeyError, TypeError, OSError,
-            RecursionError) as exc:
+    except UNUSABLE as exc:
         cause = "unusable input: %s" % exc
     except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
         cause = "internal error: %s: %s" % (type(exc).__name__, exc)
