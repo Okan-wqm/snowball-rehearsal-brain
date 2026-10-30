@@ -11,12 +11,19 @@
   (spent plus cap above the budget; other keys and earlier calls of the same cycle counted), a broken ledger;
 - each outcome of ``classify``, one process per call (429 is not retried), and the ``cost`` row for every
   started process, rounded up, cap on a timeout, passing ``ledger.append``;
+- money: ``to_micros`` against an exact ``fractions.Fraction`` ceiling computed apart, over generated JSON number
+  texts; exponents and mantissas beyond any decimal context (huge, tiny, thousands of digits) through ``classify``
+  and through a started process, each with its one cost row; ``classify`` returns, never raises, over generated
+  results;
 - the command line's outputs and exits.
 """
 
 from __future__ import annotations
 
-import decimal
+import fractions
+import math
+import random
+import time
 import hashlib
 import json
 import os
@@ -139,8 +146,98 @@ class Prompt(unittest.TestCase):
         self.assertEqual(L.usd(500_000), "0.500000")
         self.assertEqual(L.usd(1), "0.000001")
         self.assertEqual(L.usd(12_345_678), "12.345678")
-        self.assertEqual(L.to_micros(decimal.Decimal("0.0123451")), 12346)
-        self.assertEqual(L.to_micros(decimal.Decimal("0.012345")), 12345)
+        self.assertEqual(L.to_micros("0.0123451"), 12346)
+        self.assertEqual(L.to_micros("0.012345"), 12345)
+
+
+def exact_micros(text: str):
+    """The oracle, computed apart from ``to_micros``: Fraction is exact for a moderate exponent."""
+    value = fractions.Fraction(text)
+    if value < 0:
+        return None
+    micros = math.ceil(value * 1_000_000)
+    return micros if micros <= chain.MAX_SAFE_INT else None
+
+
+def number_text(rng: random.Random) -> str:
+    whole = rng.choice(["0", str(rng.randrange(1, 10)), str(rng.randrange(1, 10**rng.randrange(1, 20)))])
+    frac = "".join(rng.choice("0000123456789") for _ in range(rng.randrange(0, 40)))
+    text = rng.choice(["", "-"]) + whole + ("." + frac if frac else "")
+    if rng.random() < 0.6:
+        text += rng.choice("eE") + rng.choice(["", "+", "-"]) + "0" * rng.randrange(0, 3) + str(rng.randrange(0, 40))
+    return text
+
+
+class Money(unittest.TestCase):
+    def test_to_micros_is_the_exact_ceiling(self):
+        rng = random.Random(15)
+        for _ in range(20_000):
+            text = number_text(rng)
+            self.assertEqual(L.to_micros(text), exact_micros(text), text)
+
+    def test_boundaries(self):
+        cases = {"9007199254.740991": chain.MAX_SAFE_INT, "9007199254.7409911": None, "9007199254.741": None,
+                 "0.000001": 1, "0.0000010000000000000000000000000001": 2, "1e-7": 1, "0": 0, "-0.0": 0,
+                 "-0e5": 0, "-1e-30": None, "0.0e-0": 0, "1E+3": 1_000_000_000, "1.5e0": 1_500_000}
+        for text, micros in cases.items():
+            with self.subTest(text):
+                self.assertEqual(L.to_micros(text), micros)
+                self.assertEqual(exact_micros(text), micros)
+
+    def test_any_exponent_and_any_length(self):
+        long_one = "1" + "0" * 5000
+        cases = {"1e999999": None, "1e9999999": None, "1e99999999999999999999": None, "1e" + "9" * 5000: None,
+                 "1e-9999999": 1, "1e-99999999999999999999": 1, "1e-" + "9" * 5000: 1, "0e" + "9" * 5000: 0,
+                 "0." + "0" * 5000 + "1": 1, long_one: None, long_one + "e-5000": 1_000_000,
+                 long_one + ".000001e-5006": 2, "1e-" + "0" * 5000 + "7": 1, "1e" + "0" * 5000 + "3": 1_000_000_000}
+        for text, micros in cases.items():
+            with self.subTest(text[:40]):
+                started = time.monotonic()
+                self.assertEqual(L.to_micros(text), micros)
+                self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_not_a_json_number_is_refused(self):
+        for text in ["", "+1", "01", "1.", ".5", "1e", "NaN", "Infinity", "1_0", "0x10", " 1", "1 "]:
+            with self.subTest(text), self.assertRaises(L.Unusable):
+                L.to_micros(text)
+
+    def test_classify_returns_for_every_generated_result(self):
+        rng = random.Random(16)
+        base = result().replace("0.0123451", "COST")
+        extremes = ["1e999999", "1e9999999", "1e99999999999999999999", "1e-9999999", "-1e999999", "1" * 5000,
+                    "1e" + "9" * 5000, "0.0e99999999999"]
+        for i in range(3000):
+            cost = extremes[i] if i < len(extremes) else number_text(rng)
+            stdout = base.replace("COST", cost).encode()
+            if i % 3 == 2:
+                stdout = stdout[:rng.randrange(len(stdout) + 1)]
+            verdict = L.classify(stdout, MODEL, 500_000, TEMPLATE["output"])
+            self.assertIn(verdict["outcome"], L.OUTCOMES)
+            self.assertIs(type(verdict["cost_usd_micros"]), int)
+            if i % 3 != 2:
+                micros = exact_micros(cost) if len(cost) < 100 and "99999" not in cost else L.to_micros(cost)
+                expected = 500_000 if micros is None else micros
+                self.assertEqual(verdict["cost_usd_micros"], expected, cost[:40])
+
+    def test_rival_reproducers(self):
+        for cost in ["1e999999", "1e9999999"]:
+            stdout = ('{"type":"result","total_cost_usd":%s,"modelUsage":{}}' % cost).encode()
+            verdict = L.classify(stdout, "m", 500_000, {"a": "string"})
+            self.assertEqual((verdict["outcome"], verdict["reason"], verdict["cost_usd_micros"]),
+                             ("unresolved", "malformed_result", 500_000))
+
+    def test_a_long_integer_is_neither_a_cost_nor_an_integer_field(self):
+        big = "9" * 5000
+        verdict = L.classify(result(structured_output=...).replace('"modelUsage"', '"structured_output": '
+                             '{"answer": "yes", "score": %s}, "modelUsage"' % big).encode(), MODEL, 500_000,
+                             TEMPLATE["output"])
+        self.assertEqual((verdict["outcome"], verdict["reason"]), ("unresolved", "malformed_output"))
+        verdict = L.classify(result(structured_output={"answer": "yes", "score": 1.0}).encode(), MODEL, 500_000,
+                             TEMPLATE["output"])
+        self.assertEqual((verdict["outcome"], verdict["reason"]), ("unresolved", "malformed_output"))
+        verdict = L.classify(result(structured_output={"answer": 7, "score": 7}).encode(), MODEL, 500_000,
+                             TEMPLATE["output"])
+        self.assertEqual(verdict["reason"], "malformed_output")
 
 
 # ---------------------------------------------------------------- the process
@@ -322,6 +419,20 @@ class Outcomes(Fake):
                        '{"type": "result", "type": "result"}', result(total_cost_usd=float("nan"))]:
             with self.subTest(stdout=stdout[:60]):
                 self.assertEqual(self.outcome(stdout), ("unresolved", "malformed_result", 500_000))
+
+    def test_any_cost_number_after_a_started_process_gives_one_row(self):
+        base = result().replace("0.0123451", "COST")
+        cases = {"1e999999": ("unresolved", "malformed_result", 500_000),
+                 "1e99999999999999999999": ("unresolved", "malformed_result", 500_000),
+                 "9" * 5000: ("unresolved", "malformed_result", 500_000),
+                 "1e-9999999": ("ok", None, 1), "0.0000010000000000000000000000000001": ("ok", None, 2)}
+        for cost, expected in cases.items():
+            with self.subTest(cost[:40]):
+                before = len(self.calls())
+                self.assertEqual(self.outcome(base.replace("COST", cost)), expected)
+                self.assertEqual(len(self.calls()), before + 1)
+                self.assertEqual([r["payload"]["cost_usd_micros"] for r in self.book.rows], [expected[2]])
+                append.plan_cycle(b"", b"", self.book.request)
 
     def test_malformed_output(self):
         for structured in [None, ..., {"answer": "yes"}, dict(OUTPUT, extra=1), {"answer": "yes", "score": 7.0},

@@ -41,8 +41,9 @@ placeholder. ``prompt_sha256`` is the sha256 of the prompt's UTF-8 bytes, ``syst
    - the process ran past ``timeout_s``: ``outage`` / ``timeout``, cost = cap;
    - stdout is not one JSON object with ``type: result``, a ``total_cost_usd`` number >= 0 (at most 2^53-1
      micro-USD once rounded up) and a ``modelUsage`` object: ``unresolved`` / ``malformed_result``, cost = cap;
-   - otherwise the cost is ``total_cost_usd`` rounded up to a micro-USD, read as a decimal (never a float),
-     and the served models are ``modelUsage``'s keys;
+   - otherwise the cost is ``total_cost_usd`` rounded up to a micro-USD, computed exactly from the number's
+     JSON text (``to_micros``: never a float, no decimal context, any exponent), and the served models are
+     ``modelUsage``'s keys;
    - ``subtype: error_max_budget_usd``: ``unresolved`` / ``over_budget``;
    - ``is_error`` anything but ``false``, or another ``subtype``: by the status in ``API Error: NNN`` of ``result``: 429
      ``outage`` / ``quota``; 401 and 403 ``outage`` / ``identity``; 5xx ``outage`` / ``server``; 400, 404, 413,
@@ -77,7 +78,6 @@ Command line, run from ``referee/``, one JSON line on stdout, the cause of an er
 
 from __future__ import annotations
 
-import decimal
 import hashlib
 import json
 import os
@@ -224,9 +224,49 @@ def usd(micros: int) -> str:
     return "%d.%06d" % divmod(micros, 1_000_000)
 
 
-def to_micros(amount: decimal.Decimal) -> int:
-    """A USD amount rounded up to a micro-USD."""
-    return int((amount * 1_000_000).to_integral_value(rounding=decimal.ROUND_CEILING))
+NUMBER = re.compile(r"(-?)(0|[1-9][0-9]*)(?:\.([0-9]+))?(?:[eE]([+-]?)([0-9]+))?\Z")
+
+
+class JsonNumber:
+    """A JSON number kept as its text (``_strict_json``): a fraction or exponent, or an integer of more than
+    ``INT_DIGITS`` digits. It is no ``int`` and no ``str``, so no type check takes it for either."""
+
+    __slots__ = ("text",)
+
+    def __init__(self, text: str):
+        self.text = text
+
+
+INT_DIGITS = 18  # 2^53-1 has 16 digits: a longer integer is outside every range read here
+
+
+def to_micros(text: str) -> int | None:
+    """The JSON number ``text`` (USD) rounded up to a micro-USD, exactly, by integer arithmetic on its digits;
+    None when it is negative and not zero, or above 2^53-1 micro-USD. No decimal context: no precision, no
+    exponent limit, no rounding before the ceiling; work is bounded by the text's length, whatever the exponent."""
+    match = NUMBER.match(text)
+    if not match:
+        raise Unusable("not a JSON number: %r" % text[:40])
+    minus, whole, frac, exp_sign, exp = match.groups()
+    frac = frac or ""
+    digits = (whole + frac).lstrip("0")
+    if not digits:
+        return 0
+    if minus:
+        return None
+    exp = (exp or "0").lstrip("0") or "0"
+    if len(exp) > INT_DIGITS:  # |exponent| >= 10^18: astronomically large, or below any micro and above zero
+        return 1 if exp_sign == "-" else None
+    # value = int(digits) * 10^scale micro-USD; its leading digit sits at 10^(len(digits) - 1 + scale)
+    scale = (-int(exp) if exp_sign == "-" else int(exp)) - len(frac) + 6
+    if len(digits) - 1 + scale >= 16:  # >= 10^16 > 2^53-1
+        return None
+    if scale >= 0:
+        micros = int(digits) * 10 ** scale
+    else:
+        cut = len(digits) + scale  # digits at or above one micro
+        micros = 1 if cut <= 0 else int(digits[:cut]) + (1 if digits[cut:].strip("0") else 0)
+    return micros if micros <= chain.MAX_SAFE_INT else None
 
 
 def _micros(value: Any, what: str, positive: bool = False) -> int:
@@ -266,16 +306,22 @@ class CostBook:
 
 # ---------------------------------------------------------------- the result
 
+def _json_int(text: str) -> int | JsonNumber:
+    return int(text) if len(text.lstrip("-")) <= INT_DIGITS else JsonNumber(text)
+
+
 def _strict_json(text: str) -> Any:
-    return json.loads(text, parse_float=decimal.Decimal, object_pairs_hook=chain._no_duplicates,
+    return json.loads(text, parse_float=JsonNumber, parse_int=_json_int, object_pairs_hook=chain._no_duplicates,
                       parse_constant=chain._no_constant)
 
 
-def _amount(value: Any) -> bool:
-    """A JSON number >= 0 read without floats: an integer (not ``true``) or a finite decimal."""
-    if type(value) is int or (isinstance(value, decimal.Decimal) and value.is_finite()):
-        return value >= 0
-    return False
+def _cost(value: Any) -> int | None:
+    """A JSON number >= 0 (an integer, not ``true``, or a ``JsonNumber``) as micro-USD rounded up; else None."""
+    if type(value) is int:
+        return to_micros(str(value))
+    if isinstance(value, JsonNumber):
+        return to_micros(value.text)
+    return None
 
 
 def classify(stdout: bytes | None, model: str, cap: int, output: dict) -> dict:
@@ -291,13 +337,10 @@ def classify(stdout: bytes | None, model: str, cap: int, output: dict) -> dict:
         result = _strict_json(stdout.decode("utf-8").strip())
     except (UnicodeDecodeError, ValueError, chain.ChainError, RecursionError):
         result = None
-    if (not isinstance(result, dict) or result.get("type") != "result" or not _amount(result.get("total_cost_usd"))
-            or not isinstance(result.get("modelUsage"), dict)):
+    measured = _cost(result.get("total_cost_usd")) if isinstance(result, dict) else None
+    if (measured is None or result.get("type") != "result" or not isinstance(result.get("modelUsage"), dict)):
         return done("unresolved", "malformed_result")
     usage = result["modelUsage"]
-    measured = to_micros(decimal.Decimal(result["total_cost_usd"]))
-    if measured > chain.MAX_SAFE_INT:
-        return done("unresolved", "malformed_result")
     seen = dict(cost=measured, source="cli_estimate", served=list(usage))
     if result.get("subtype") == "error_max_budget_usd":
         return done("unresolved", "over_budget", **seen)
