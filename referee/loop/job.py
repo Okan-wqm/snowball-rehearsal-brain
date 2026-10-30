@@ -36,7 +36,10 @@ Every step after ``control`` runs only if ``go`` is true; no step continues on e
 environment (``secret_in_code_job:<NAME>``, exit 1). The D1-D8 composition inside the jobs (building each MF's
 input from the pulled trees and the previous artifacts, and the cycle's one ``brain/state`` commit) is not wired
 yet: ``run`` prints ``{ok: false, reason: cycle_not_wired, ...}`` and exits 1, so a cycle cannot pass green
-through a job that did nothing. No MF of asama-0/14 owns that composition (reported in the founder ledger).
+through a job that did nothing. No MF of asama-0/14 owns that composition (reported in the founder ledger,
+spec-036). Its first part exists: ``runner.kos`` writes D3's result files (``base.jsonl`` and each candidate's
+``cand.jsonl``, ``checks.json``, ``hashes.json``) from a tree, a recipe, a ``deps`` artifact and the candidates'
+diffs; ``kos`` does not call it yet, because the ``pulled`` artifact's layout (``cek``'s) is not written.
 
 Out of scope, stated: the ``control`` command itself (the seed's, asama-1/13), whether the seed's ``wiring`` check
 accepts this file's YAML (the seed's YAML subset is not written in any page this clone has; this module writes

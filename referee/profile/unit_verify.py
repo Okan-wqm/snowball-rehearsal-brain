@@ -48,7 +48,8 @@ copied, and criterion 5's coverage).
   a regular file with no symlink on its way (``lockfile_missing``) and pass MF5's static check with the
   recipe's marks (``lock:<reason>``).
 
-The run (``verify``), only when the static check passes:
+The run (``verify``), only when the static check passes (steps 1-3 are ``stage``, which ``runner.kos`` shares, so
+``koş``'s results come from the same worktree):
 
 1. Worktree. The inputs are copied from the tree into a fresh staging directory, topmost input first,
    without following symlinks (a symlink is copied as a symlink; its target is not; a FIFO, socket or
@@ -617,52 +618,63 @@ def lint_records(stdouts: list, staging: str, recipe: dict, derived: dict) -> tu
     return [], records
 
 
-def verify(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | None = None, target: Any = None,
-           runner: C.Runner | None = None, base: str | None = None) -> dict:
-    """The static check, then the 3/3 run; ``{verdict, ok, reasons, ...}`` (see the module docstring)."""
-    runner = runner or C.docker_runner
+def stage(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | None, target: Any, runner: C.Runner,
+          staging_root: str) -> tuple[list[str], dict, dict]:
+    """Steps 1-3 under ``staging_root``, after the static check: ``(reasons, result, context)``. ``context`` is
+    ``{staging, derived, values, operating}`` (empty when there is a reason): ``staging`` the worktree every run
+    starts from. Shared by ``verify`` and ``runner.kos`` so both run the same worktree."""
     if not (isinstance(red_control, dict) and _argv_ok(red_control.get("cmd"))):
         raise VerifyError("red_control must be {cmd: [argv]}")
     if not os.path.isdir(tree) or os.path.islink(tree):
         raise VerifyError("tree is not a directory")
     reasons = check_recipe(recipe, policy, tree, target)
     if reasons:
-        return _verdict(reasons)
+        return reasons, {}, {}
     values, operating = _effective(policy, recipe["limits"])
     derived = D.derive(tree, target, policy if isinstance(policy, dict) and "constitutional" in policy else None)
     lock = D.norm_path(recipe["lockfiles"][0])
+    staging = os.path.join(staging_root, "tree")
+    os.mkdir(staging)
+    size = copy_inputs(tree, recipe["inputs"], derived, staging, values["unit_inputs_bytes"])
+    if size > values["unit_inputs_bytes"]:
+        return ["limit_hit:unit_inputs_bytes"], {"inputs_bytes": size}, {}
+    if os.path.lexists(os.path.join(staging, RESERVED)):
+        return ["reserved_path"], {}, {}
+    bad, deps_info = install_deps(staging, lock, deps, D._read_regular(tree, lock), values["worktree_bytes"] - size)
+    if bad:
+        return bad, {"inputs_bytes": size}, {}
+    for sub in ("home", "tmp"):
+        os.makedirs(os.path.join(staging, RESERVED, sub))
+    result: dict[str, Any] = {"inputs_bytes": size, "deps_address": deps_info["address"],
+                              "deps_bytes_unpacked": deps_info["bytes"], "bin_links": deps_info["links"],
+                              "skipped_members": deps_info["skipped"], "install": None,
+                              "runs": {"lint": [], "test": []}}
+    scripted = sorted({r["name"] for r in deps_info["rows"] if r.get("install_script")})
+    if scripted:
+        prefix = "/work" if posixpath.dirname(lock) in ("", ".") else "/work/" + posixpath.dirname(lock)
+        cmd = ["npm", "--prefix", prefix, "rebuild", "--offline", "--foreground-scripts"] + scripted
+        run = _one(cmd, red_control["cmd"], recipe["env_image"], staging, operating, runner, staging_root)
+        result["install"] = _public(run)
+        if not run["valid"]:
+            return run["reasons"], result, {}
+        if run["exit"] != 0:
+            return ["install_scripts_failed"], result, {}
+        staging = os.path.join(run["run_root"], "work")
+    return [], result, {"staging": staging, "derived": derived, "values": values, "operating": operating}
+
+
+def verify(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | None = None, target: Any = None,
+           runner: C.Runner | None = None, base: str | None = None) -> dict:
+    """The static check, then the 3/3 run; ``{verdict, ok, reasons, ...}`` (see the module docstring)."""
+    runner = runner or C.docker_runner
     staging_root = tempfile.mkdtemp(prefix="snowball-unit-", dir=base)
     try:
-        staging = os.path.join(staging_root, "tree")
-        os.mkdir(staging)
-        size = copy_inputs(tree, recipe["inputs"], derived, staging, values["unit_inputs_bytes"])
-        if size > values["unit_inputs_bytes"]:
-            return _verdict(["limit_hit:unit_inputs_bytes"], inputs_bytes=size)
-        if os.path.lexists(os.path.join(staging, RESERVED)):
-            return _verdict(["reserved_path"])
-        bad, deps_info = install_deps(staging, lock, deps, D._read_regular(tree, lock),
-                                      values["worktree_bytes"] - size)
+        bad, result, ctx = stage(recipe, tree, policy, red_control, deps, target, runner, staging_root)
         if bad:
-            return _verdict(bad, inputs_bytes=size)
-        for sub in ("home", "tmp"):
-            os.makedirs(os.path.join(staging, RESERVED, sub))
-        result: dict[str, Any] = {"inputs_bytes": size, "deps_address": deps_info["address"],
-                                  "deps_bytes_unpacked": deps_info["bytes"], "bin_links": deps_info["links"],
-                                  "skipped_members": deps_info["skipped"], "install": None,
-                                  "runs": {"lint": [], "test": []}}
-        scripted = sorted({r["name"] for r in deps_info["rows"] if r.get("install_script")})
-        if scripted:
-            prefix = "/work" if posixpath.dirname(lock) in ("", ".") else "/work/" + posixpath.dirname(lock)
-            cmd = ["npm", "--prefix", prefix, "rebuild", "--offline", "--foreground-scripts"] + scripted
-            run = _one(cmd, red_control["cmd"], recipe["env_image"], staging, operating, runner, staging_root)
-            result["install"] = _public(run)
-            if not run["valid"]:
-                return _verdict(run["reasons"], **result)
-            if run["exit"] != 0:
-                return _verdict(["install_scripts_failed"], **result)
-            staging = os.path.join(run["run_root"], "work")
+            return _verdict(bad, **result)
+        staging, derived, operating = ctx["staging"], ctx["derived"], ctx["operating"]
         reasons, stdouts = [], []
-        cap = values["test_total_s"]
+        cap = ctx["values"]["test_total_s"]
         for attempt in range(1, ATTEMPTS + 1):
             lint = _one(recipe["lint_cmd"], red_control["cmd"], recipe["env_image"], staging, operating,
                         runner, staging_root)

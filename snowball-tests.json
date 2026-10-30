@@ -7,7 +7,7 @@
     {"id": "T19", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_profile.py'", "stage": 0},
     {"id": "T47", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_profile_units.py'", "stage": 0},
     {"id": "T34", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_deps_npm.py'", "stage": 0},
-    {"id": "T48", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_unit_verify.py' && python -m unittest discover -s tests -p 'test_lint_record.py' && cd .. && python -m unittest discover -s tests -p 'test_toy_repo.py'", "stage": 0},
+    {"id": "T48", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_unit_verify.py' && python -m unittest discover -s tests -p 'test_lint_record.py' && python -m unittest discover -s tests -p 'test_kos.py' && cd .. && python -m unittest discover -s tests -p 'test_toy_repo.py'", "stage": 0},
     {"id": "T23", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_diffguard.py'", "stage": 0},
     {"id": "T35", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_check.py'", "stage": 0},
     {"id": "T49", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_write.py'", "stage": 0},

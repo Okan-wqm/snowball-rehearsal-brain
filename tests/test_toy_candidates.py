@@ -13,8 +13,8 @@ patched file.
 
 Inputs that are not the referee's, stated: the fixtures were captured by ``tests/capture_toy_candidates.py``
 with ESLint 10.13.0 and node 22.23.4 outside a container (the recipe's own commands); ``checks.json`` is built
-here from ``node --test``'s TAP lines (one entry per top-level test), because no stage 0 module turns a test
-run into ``checks.json`` yet (spec-036); the red control is given as ``fail`` (its result is ``koş``'s, MF3).
+from ``node --test``'s TAP and exit code by the referee's own ``runner.kos.checks`` (the file ``koş`` writes); the
+red control is given as ``fail`` (its result is ``koş``'s contained run, MF3).
 Not proven here: that ``koş``'s contained runs give the same outputs (asama-0/10a #birim, #merge, #ret).
 
 Run from the brain root: ``python -m unittest discover -s tests -p 'test_toy_candidates.py'``.
@@ -25,7 +25,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import shutil
 import sys
 import tempfile
@@ -39,6 +38,7 @@ import activate  # noqa: E402
 import activation_world as AW  # noqa: E402
 from gate import diffguard  # noqa: E402
 from profile import derive as D  # noqa: E402
+from runner import kos as K  # noqa: E402
 from runner import lint_record as R  # noqa: E402
 
 TOY = os.path.join(ROOT, "tests", "fixtures", "toy-repo")
@@ -49,9 +49,6 @@ FINDING_FIELDS = {"rule_id", "path", "line", "fix_range", "tool_output_sha256"}
 CONTROL = {"kill_switch": False, "merge_paused": False}
 # asama-0/08 row 2's four bad kinds, each as the gate's reason
 BAD_KINDS = {"scope_violation", "ratchet_increase", "tests_red"}
-TAP_TOP = re.compile(r"^(ok|not ok) \d+ - (.+)$")
-
-
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -94,10 +91,8 @@ def patched(cid: str) -> tuple[str, bytes]:
     return blocks[0]["old"], diffguard.apply(blocks[0], raw(os.path.join(TOY, blocks[0]["old"])))
 
 
-def checks(test_stdout: str) -> bytes:
-    tests = [{"id": m.group(2), "status": "pass" if m.group(1) == "ok" else "fail"}
-             for m in map(TAP_TOP.match, test_stdout.splitlines()) if m]
-    return json.dumps({"tests": tests, "red_control": "fail"}).encode()
+def checks(test_stdout: str, test_exit: int) -> bytes:
+    return K.checks(test_stdout.encode("utf-8"), test_exit, False)
 
 
 def candidate(cid: str) -> dict:
@@ -115,7 +110,7 @@ def candidate(cid: str) -> dict:
         shutil.rmtree(work)
     cand = {"id": cid, "finding.json": raw(os.path.join(CANDIDATES, cid, "finding.json")),
             "diff.patch": raw(os.path.join(CANDIDATES, cid, "diff.patch")),
-            "cand.jsonl": R.run_file([rec] * 3), "checks.json": checks(got["test_stdout"])}
+            "cand.jsonl": R.run_file([rec] * 3), "checks.json": checks(got["test_stdout"], got["test_exit"])}
     cand["hashes.json"] = json.dumps({"base.jsonl": sha(base_run()), "cand.jsonl": sha(cand["cand.jsonl"]),
                                       "checks.json": sha(cand["checks.json"])}).encode()
     return cand
