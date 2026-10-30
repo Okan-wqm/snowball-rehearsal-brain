@@ -9,12 +9,17 @@
 - ``GitBatch`` over a fake ``git`` on PATH that answers with real git's records: its argv, its environment
   (no inherited ``GIT_*``), a missing object, an answer that is not the protocol;
 - every refusal of the walk, listed together; a lying source (content or type changed) is refused;
+- modes: ``canonical`` reads each mode of ``fixtures/git-modes.json`` (real git 2.47.3's ``ls-tree`` of a tree
+  holding it, made by ``capture_git_modes.py``) as git does, and the walk takes legacy modes as git's files,
+  links and trees;
+- ``lookup``: only the trees on a path are read; absent, through a non-tree, malformed, duplicate;
 - ``tree_tar`` is deterministic and unpacks with ``loop.pulled.extract_tree``, empty directories included.
 """
 
 from __future__ import annotations
 
 import io
+import json
 import os
 import shutil
 import sys
@@ -31,6 +36,9 @@ from profile_tree import writable_base  # noqa: E402
 import git_store as S  # noqa: E402
 
 FIXTURE = os.path.join(REFEREE, "tests", "fixtures", "git-objects.batch")
+MODES = os.path.join(REFEREE, "tests", "fixtures", "git-modes.json")
+PRINTED = {("file", 0o644): "100644", ("file", 0o755): "100755", ("link", 0o777): "120000",
+           ("dir", 0o755): "040000", ("submodule", 0): "160000"}  # how git ls-tree prints each kind
 # git init -b main; files as below; chmod +x x.sh; ln -s d/a.txt link; git add -A;
 # GIT_AUTHOR_DATE=GIT_COMMITTER_DATE='1700000000 +0000' git -c user.name=A -c user.email=a@example.org commit -m fixture
 REAL = {
@@ -164,13 +172,13 @@ class Walk(unittest.TestCase):
         root = S.tree(objects, [
             (b"100644", b"", blob), (b"100644", b".", blob), (b"100644", b".GIT", blob), (b"100644", b"a/b", blob),
             (b"100644", b"\xfe", blob), (b"100644", b"dup", blob), (b"100755", b"dup", blob),
-            (b"100664", b"legacy", blob), (b"160000", b"mod", blob), (b"120000", b"odd", odd_link),
+            (b"1006x4", b"malformed", blob), (b"160000", b"mod", blob), (b"120000", b"odd", odd_link),
             (b"40000", b"sub", sub), (b"40000", b"broken", broken), (b"100644", b"gone", "c" * 40),
         ])
         commit = S.commit(objects, root)
         self.assertEqual(self.refused(objects, commit), sorted([
             "tree_name:", "tree_name:.", "tree_name:.GIT", "tree_name:a/b", "tree_name:�",
-            "tree_duplicate:dup", "tree_mode:legacy:100664", "tree_submodule:mod", "tree_link:odd",
+            "tree_duplicate:dup", "tree_mode:malformed:1006x4", "tree_submodule:mod", "tree_link:odd",
             "tree_name:sub/..", "tree_unreadable:%s" % broken, "object_missing:%s" % ("c" * 40)]))
 
     def test_entries_need_their_own_type(self):
@@ -180,6 +188,91 @@ class Walk(unittest.TestCase):
         root = S.tree(objects, [(b"40000", b"d", blob), (b"100644", b"f", tree_sha)])
         self.assertEqual(self.refused(objects, S.commit(objects, root)),
                          sorted(["object_mismatch:%s" % blob, "object_mismatch:%s" % tree_sha]))
+
+
+class Modes(unittest.TestCase):
+    def setUp(self) -> None:
+        with open(MODES) as fh:
+            self.git = json.load(fh)
+
+    def test_canonical_is_how_real_git_reads_a_mode(self):
+        self.assertEqual(len(self.git["modes"]), 35)
+        for mode, printed in self.git["modes"].items():
+            with self.subTest(mode=mode):
+                got = G.canonical(mode.encode())
+                self.assertEqual(None if got is None else PRINTED[got], printed)
+
+    def test_the_walk_reads_legacy_modes_as_git_does(self):
+        objects: dict = {}
+        blob = S.put(objects, "blob", b"hi\n")
+        inner = S.tree(objects, [(b"100644", b"in", blob)])
+        files = [(m, "f%d" % i) for i, (m, p) in enumerate(self.git["modes"].items()) if p in ("100644", "100755")]
+        links = [(m, "l%d" % i) for i, (m, p) in enumerate(self.git["modes"].items()) if p == "120000"]
+        dirs = [(m, "d%d" % i) for i, (m, p) in enumerate(self.git["modes"].items()) if p == "040000"]
+        root = S.tree(objects, [(m.encode(), n.encode(), blob) for m, n in files + links]
+                      + [(m.encode(), n.encode(), inner) for m, n in dirs])
+        got = {e.path: (e.kind, e.mode, e.data) for e in G.entries(objects.__getitem__, S.commit(objects, root))}
+        want = {n: ("file", int(self.git["modes"][m][-3:], 8), b"hi\n") for m, n in files}
+        want.update({n: ("link", 0o777, b"hi\n") for _, n in links})
+        want.update({n: ("dir", 0o755, b"") for _, n in dirs})
+        want.update({n + "/in": ("file", 0o644, b"hi\n") for _, n in dirs})
+        self.assertEqual(got, want)
+        self.assertEqual(want["f5"], ("file", 0o644, b"hi\n"))  # 100664, the rival's case
+
+    def test_every_gitlink_reading_is_a_submodule(self):
+        objects: dict = {}
+        blob = S.put(objects, "blob", b"hi\n")
+        subs = [m for m, p in self.git["modes"].items() if p == "160000"]
+        root = S.tree(objects, [(m.encode(), b"s%d" % i, blob) for i, m in enumerate(subs)])
+        with self.assertRaises(P.PulledError) as ctx:
+            G.entries(objects.__getitem__, S.commit(objects, root))
+        self.assertEqual(ctx.exception.reasons, sorted("tree_submodule:s%d" % i for i in range(len(subs))))
+
+
+class Lookup(unittest.TestCase):
+    def setUp(self) -> None:
+        self.objects: dict = {}
+        o = self.objects
+        self.blob = S.put(o, "blob", b"x")
+        self.d = S.tree(o, [(b"100644", b"f", self.blob)])
+        self.broken = S.put(o, "tree", b"100644 cut\0" + bytes(5))
+        root = S.tree(o, [(b"100644", b"..", self.blob), (b"040000", b"a", self.d), (b"40000", b"b", self.broken),
+                          (b"100664", b"file", self.blob), (b"120000", b"link", S.put(o, "blob", b"a")),
+                          (b"1x", b"odd", self.blob), (b"160000", b"sub", self.blob),
+                          (b"40000", b"two", self.d), (b"40000", b"two", self.d),
+                          (b"40000", b"gone", "c" * 40)])
+        self.commit = S.commit(o, root)
+
+    def look(self, path, objects=None):
+        return G.lookup((objects or self.objects).__getitem__, self.commit, path)
+
+    def test_found_and_absent(self):
+        # the root holds a bad name, a broken tree and a gitlink; looking up other paths does not judge them
+        self.assertEqual(self.look("a"), ("dir", self.d))
+        self.assertEqual(self.look("a/f"), ("file", self.blob))
+        self.assertEqual(self.look("file"), ("file", self.blob))
+        self.assertEqual(self.look("sub"), ("submodule", self.blob))
+        self.assertEqual(self.look("odd"), ("malformed", self.blob))
+        for path in ("none", "a/none", "a/f/x", "link/f", "file/x", "sub/x", "odd/x", "", "a/", "a//f", "A/f", "FILE"):
+            with self.subTest(path=path):
+                self.assertIsNone(self.look(path))
+
+    def test_what_the_way_refuses(self):
+        with self.assertRaises(P.PulledError) as ctx:
+            self.look("two/f")
+        self.assertEqual(ctx.exception.reasons, ["tree_duplicate:two"])
+        with self.assertRaises(P.PulledError) as ctx:
+            self.look("b/x")
+        self.assertEqual(ctx.exception.reasons, ["tree_unreadable:%s" % self.broken])
+        with self.assertRaises(P.PulledError) as ctx:
+            self.look("gone/x")
+        self.assertEqual(ctx.exception.reasons, ["object_missing:%s" % ("c" * 40)])
+        with self.assertRaises(P.PulledError) as ctx:
+            self.look("a/f", dict(self.objects, **{self.d: ("blob", self.objects[self.d][1])}))
+        self.assertEqual(ctx.exception.reasons, ["object_mismatch:%s" % self.d])
+        with self.assertRaises(P.PulledError) as ctx:
+            G.lookup(self.objects.__getitem__, "a" * 39, "a")
+        self.assertEqual(ctx.exception.reasons, ["commit_unreadable"])
 
 
 class TreeTar(unittest.TestCase):

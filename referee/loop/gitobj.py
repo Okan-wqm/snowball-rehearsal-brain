@@ -10,24 +10,37 @@ that directory is not written here); tests give a dict's ``__getitem__``. Nothin
 ``read`` recomputes every object's id, ``sha1(b"<type> <size>\\0" + content)`` (git's SHA-1 object format; a
 SHA-256 repository is out of scope, ids are 40 lowercase hex), and refuses an object whose id or type differs.
 
-**Walk** (``entries``): the commit object -> its ``tree`` line -> each tree object, depth first, every entry read
-and verified. Reasons (``PulledError``; every one found is listed, sorted, the walk goes on past a bad entry):
+**Modes** (``canonical``): a tree entry's mode is read as git reads it (``tree-walk.c``: ``get_mode`` then
+``canon_mode``): octal digits, nothing else and at least one; then by its type bits (``mode & 0o170000``):
+``0o100000`` a regular file, ``0o755`` when ``mode & 0o100`` else ``0o644`` (so the legacy ``100664`` is
+``100644``); ``0o120000`` a symbolic link (its blob is the target); ``0o040000`` a tree (``40000`` and ``040000``
+alike); anything else a gitlink (git reads ``644`` or ``140000`` as ``160000``). Only these low bits are read, so
+git's accumulation in a 32-bit ``unsigned int`` (higher digits fall off) reads the same. ``fixtures/git-modes.json``
+is real git's reading of 35 such modes.
+
+**Walk** (``entries`` from a commit, ``walk`` from a tree): each tree object, depth first, every entry read and
+verified. Reasons (``PulledError``; every one found is listed, sorted, the walk goes on past a bad entry):
 
 - ``object_missing:<sha>`` (the source has no such object), ``object_mismatch:<sha>`` (its id or type is not
-  the one asked for), ``commit_unreadable`` (no ``tree <sha>`` first line), ``tree_unreadable:<sha>`` (not a
-  sequence of ``<mode> <name>\\0<20 bytes>``);
+  the one asked for, e.g. a tree entry naming a blob), ``commit_unreadable`` (no ``tree <sha>`` first line),
+  ``tree_unreadable:<sha>`` (not a sequence of ``<mode> <name>\\0<20 bytes>`` with a non-empty mode);
 - ``tree_name:<path>``: an entry name git's own ``fsck`` refuses: empty, ``.``, ``..``, ``.git`` in any case,
   or holding ``/``; also a name that is not UTF-8 (``tarfile`` writes UTF-8 names; such a path is reported
   with replacement characters); ``tree_duplicate:<path>``: a name twice in one tree;
-- ``tree_mode:<path>:<mode>``: a mode other than ``40000`` (tree), ``100644``, ``100755`` (regular files),
-  ``120000`` (symbolic link, its blob is the target) and ``160000``;
+- ``tree_mode:<path>:<mode>``: a mode that is not octal digits (git: ``malformed mode in tree entry``);
 - ``tree_link:<path>``: a symbolic link whose target is not UTF-8;
-- ``tree_submodule:<path>``: a ``160000`` entry (a submodule's commit; its content is not in this repository,
-  so a tree with one is refused rather than handed on without it).
+- ``tree_submodule:<path>``: a gitlink (a submodule's commit; its content is not in this repository, so a tree
+  with one is refused rather than handed on without it).
+
+**Lookup** (``lookup``): the entry at a ``/``-separated path, reading only the trees on the way: its kind
+(``canonical``'s, or ``malformed`` for a mode that is not octal digits, so a malformed entry is not taken for an
+absent one) and object id; ``None`` when a component is absent or one before the last is not a tree (a symbolic link
+on the way is not followed). The trees on the way give ``tree_unreadable``, ``object_missing`` and
+``object_mismatch``, and ``tree_duplicate`` for a component named twice; their other entries are not judged.
 
 ``tree_tar`` writes the walked tree as ``pulled``'s ``tree.tar`` (PAX): a directory per tree (``0o755``), a
-regular file per blob (``0o644`` or ``0o755``, the blob's bytes as they are: no end-of-line, ``export-subst``
-or filter conversion), a symbolic link per ``120000`` entry (its target as written, not checked here), ordered
+regular file per file entry (``0o644`` or ``0o755``, the blob's bytes as they are: no end-of-line, ``export-subst``
+or filter conversion), a symbolic link per link entry (its target as written, not checked here), ordered
 by path, with mtime 0, uid and gid 0 and no owner names, so the same commit gives the same bytes. What a
 link may point at, and what the tree may hold beyond the names above, stays ``loop.pulled.extract_tree``'s
 rule in ``kos``. The whole tree is held in memory.
@@ -50,8 +63,7 @@ from loop.pulled import PulledError
 SHA = re.compile(r"[0-9a-f]{40}")
 Source = Callable[[str], "tuple[str, bytes]"]
 
-REGULAR = {b"100644": 0o644, b"100755": 0o755}
-LINK, TREE, SUBMODULE = b"120000", b"40000", b"160000"
+OCTAL = re.compile(rb"[0-7]+")
 
 
 class Entry(NamedTuple):
@@ -96,6 +108,22 @@ def parse_tree(data: bytes, sha: str) -> list[tuple[bytes, bytes, str]]:
     return out
 
 
+def canonical(mode: bytes) -> tuple[str, int] | None:
+    """``(kind, permission)`` git reads ``mode`` as: ``file``, ``link``, ``dir`` or ``submodule``; ``None`` when
+    it is not octal digits (see the module)."""
+    if not OCTAL.fullmatch(mode):
+        return None
+    value = int(mode, 8)
+    kind = value & 0o170000
+    if kind == 0o100000:
+        return "file", 0o755 if value & 0o100 else 0o644
+    if kind == 0o120000:
+        return "link", 0o777
+    if kind == 0o040000:
+        return "dir", 0o755
+    return "submodule", 0
+
+
 def _name(raw: bytes) -> tuple[str, bool]:
     try:
         name = raw.decode("utf-8")
@@ -104,13 +132,18 @@ def _name(raw: bytes) -> tuple[str, bool]:
     return name, name not in ("", ".", "..") and name.lower() != ".git" and "/" not in name
 
 
-def entries(source: Source, commit: str) -> list[Entry]:
-    """Every directory, file and link of ``commit``'s tree, sorted by path; ``PulledError`` (see the module)."""
+def tree_of(source: Source, commit: str) -> str:
+    """The id of ``commit``'s tree; ``PulledError`` (``commit_unreadable``, ``object_*``)."""
     if not (isinstance(commit, str) and SHA.fullmatch(commit)):
         raise PulledError(["commit_unreadable"])
+    return _tree_sha(read(source, commit, "commit"))
+
+
+def walk(source: Source, tree: str) -> list[Entry]:
+    """Every directory, file and link under tree ``tree``, paths relative to it, sorted; ``PulledError``."""
     out: list[Entry] = []
     reasons: list[str] = []
-    stack = [("", _tree_sha(read(source, commit, "commit")))]
+    stack = [("", tree)]
     while stack:
         prefix, tree = stack.pop()
         try:
@@ -129,21 +162,22 @@ def entries(source: Source, commit: str) -> list[Entry]:
                 reasons.append("tree_duplicate:%s" % path)
                 continue
             seen.add(raw)
+            kind, perm = canonical(mode) or (None, 0)
             try:
-                if mode == TREE:
-                    out.append(Entry(path, "dir", 0o755, b""))
+                if kind == "dir":
+                    out.append(Entry(path, "dir", perm, b""))
                     stack.append((path + "/", sha))
-                elif mode in REGULAR:
-                    out.append(Entry(path, "file", REGULAR[mode], read(source, sha, "blob")))
-                elif mode == LINK:
+                elif kind == "file":
+                    out.append(Entry(path, "file", perm, read(source, sha, "blob")))
+                elif kind == "link":
                     target = read(source, sha, "blob")
                     try:
                         target.decode("utf-8")
                     except UnicodeDecodeError:
                         reasons.append("tree_link:%s" % path)
                         continue
-                    out.append(Entry(path, "link", 0o777, target))
-                elif mode == SUBMODULE:
+                    out.append(Entry(path, "link", perm, target))
+                elif kind == "submodule":
                     reasons.append("tree_submodule:%s" % path)
                 else:
                     reasons.append("tree_mode:%s:%s" % (path, mode.decode("ascii", "replace")))
@@ -152,6 +186,26 @@ def entries(source: Source, commit: str) -> list[Entry]:
     if reasons:
         raise PulledError(sorted(set(reasons)))
     return sorted(out, key=lambda e: e.path)
+
+
+def entries(source: Source, commit: str) -> list[Entry]:
+    """Every directory, file and link of ``commit``'s tree, sorted by path; ``PulledError`` (see the module)."""
+    return walk(source, tree_of(source, commit))
+
+
+def lookup(source: Source, commit: str, path: str) -> tuple[str, str] | None:
+    """``(kind, sha)`` of the entry at ``path`` in ``commit``'s tree, or ``None`` (see the module)."""
+    kind, sha = "dir", tree_of(source, commit)
+    for i, part in enumerate(path.split("/")):
+        if kind != "dir":
+            return None
+        found = [(mode, s) for mode, raw, s in parse_tree(read(source, sha, "tree"), sha) if raw == part.encode()]
+        if len(found) > 1:
+            raise PulledError(["tree_duplicate:%s" % "/".join(path.split("/")[:i + 1])])
+        if not found:
+            return None
+        kind, sha = (canonical(found[0][0]) or ("malformed", 0))[0], found[0][1]
+    return kind, sha
 
 
 def tree_tar(source: Source, commit: str) -> bytes:

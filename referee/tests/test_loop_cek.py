@@ -2,9 +2,11 @@
 
 - the tree: the target's git objects (``git_store``) through ``loop.gitobj.tree_tar`` (its own rules are
   ``test_gitobj.py``'s); a commit the source lacks is listed with the brain's reasons;
-- the brain: the ``targets[]`` entry, ``units.json`` and every candidate directory, each refusal listed together
-  and nothing written; an id that is not one path component reads nothing;
-- end to end: the target's git objects + a brain checkout -> ``assemble`` -> ``loop.job run kos`` -> ``gate.check
+- the brain, as git objects too (``git_store``): the ``targets[]`` entry, ``units.json`` and every candidate
+  directory, read as committed (links, gitlinks, trees where a file belongs, legacy modes), each refusal listed
+  together and nothing written, the brain's own object reasons marked ``brain:``; an id that is not one path
+  component reads nothing;
+- end to end: the target's and the brain's git objects -> ``assemble`` -> ``loop.job run kos`` -> ``gate.check
   decide``: the good candidate merges, the test-breaking one is rejected (``tests_red``).
 """
 
@@ -45,25 +47,31 @@ def target_objects(root: str) -> tuple[dict, str]:
     return S.store(S.from_dir(root))
 
 
+def brain_files() -> dict:
+    """The brain at its accepted commit: ``units.json`` and two ready candidates (``git_store`` input)."""
+    files: dict = {"targets/t1/units.json": json.dumps({"units": [recipe()]}).encode()}
+    for cid, diff in (("good", GOOD), ("breaks", BREAKS_TEST)):
+        for f, data in candidate(diff).items():
+            files["candidates/t1/%s/%s" % (cid, f)] = data
+    return files
+
+
 class Brain(unittest.TestCase):
     def setUp(self) -> None:
         self.base = writable_base("t-cek-brain-")
         self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
-        self.brain = os.path.join(self.base, "brain")
         self.src = os.path.join(self.base, "src")
         write_tree(self.src, TREE)
-        self.units = {"units": [recipe()]}
-        write_tree(self.brain, {"targets/t1/units.json": self.units})
-        for cid, diff in (("good", GOOD), ("breaks", BREAKS_TEST)):
-            for f, data in candidate(diff).items():
-                write_tree(self.brain, {"candidates/t1/%s/%s" % (cid, f): data.decode()})
+        self.brain = brain_files()
         self.out = os.path.join(self.base, "pulled")
 
-    def assemble(self, target_id="t1", summary=None, commit=None, policy=POLICY):
+    def assemble(self, target_id="t1", summary=None, commit=None, policy=POLICY, brain_commit=None):
         summary = json.dumps(SUMMARY if summary is None else summary).encode() if not isinstance(summary, bytes) \
             else summary
         objects, own = target_objects(self.src)
-        return C.assemble(self.brain, summary, policy, target_id, objects.__getitem__, commit or own, self.out)
+        brain, brain_own = S.store(self.brain)
+        return C.assemble(brain.__getitem__, brain_commit or brain_own, summary, policy, target_id,
+                          objects.__getitem__, commit or own, self.out)
 
     def refused(self, **kw) -> list[str]:
         with self.assertRaises(P.PulledError) as ctx:
@@ -71,33 +79,62 @@ class Brain(unittest.TestCase):
         self.assertFalse(os.path.lexists(self.out))
         return ctx.exception.reasons
 
+    def drop(self, prefix: str) -> None:
+        for path in [p for p in self.brain if p == prefix or p.startswith(prefix + "/")]:
+            del self.brain[path]
+
     def test_the_artifact(self):
         self.assemble()
         got = P.read(self.out)
         self.assertEqual(got.target, SUMMARY["targets"][0])
-        self.assertEqual(got.units, self.units)
+        self.assertEqual(got.units, {"units": [recipe()]})
         self.assertEqual(got.policy, json.loads(POLICY))
         self.assertEqual(got.candidates, {"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
         with open(got.tree_tar, "rb") as fh:
             self.assertEqual(sorted(n[0] for n in names(fh.read()) if n[1] == tarfile.REGTYPE), sorted(TREE))
 
+    def test_the_brain_as_committed(self):
+        # blob bytes as they are (no checkout: .gitattributes cannot touch a diff.patch); git's legacy 100664
+        # mode is a file; other targets' and other top-level entries are not read
+        self.brain[".gitattributes"] = b"* text eol=lf\n*.patch filter=x\n"
+        self.brain["candidates/t1/good/diff.patch"] = ("100664", candidate(GOOD)["diff.patch"].replace(b"\n", b"\r\n"))
+        self.brain["targets/t1/units.json"] = ("100755", self.brain["targets/t1/units.json"])
+        self.brain["targets/t9/units.json"] = ("160000", b"x")
+        self.brain["other"] = ("160000", b"x")
+        # a candidate id that extends another's is its own directory
+        self.brain.update({"candidates/t1/good-2/" + f: data for f, data in candidate(GOOD).items()})
+        self.assemble()
+        got = P.read(self.out)
+        self.assertEqual(sorted(got.candidates), ["breaks", "good", "good-2"])
+        self.assertEqual(got.candidates["good"]["diff.patch"], candidate(GOOD)["diff.patch"].replace(b"\n", b"\r\n"))
+        self.assertEqual(got.units, {"units": [recipe()]})
+
     def test_no_candidates(self):
-        shutil.rmtree(os.path.join(self.brain, "candidates", "t1"))
+        self.drop("candidates/t1")
+        self.brain["candidates/t2/x/diff.patch"] = b"x"  # another target's are not read
         self.assemble()
         self.assertEqual(P.read(self.out).candidates, {})
         shutil.rmtree(self.out)
-        shutil.rmtree(os.path.join(self.brain, "candidates"))
+        self.drop("candidates")
         self.assemble()
         self.assertEqual(P.read(self.out).candidates, {})
 
     def test_every_reason_together_and_nothing_written(self):
-        write_tree(self.brain, {"candidates/t1/good/notes.md": "x"})
-        os.remove(os.path.join(self.brain, "targets/t1/units.json"))
+        self.brain["candidates/t1/good/notes.md"] = b"x"
+        del self.brain["targets/t1/units.json"]
+        self.brain["targets/t1/other.json"] = b"{}"
         self.assertEqual(self.refused(summary={"targets": []}, commit="b" * 40),
                          ["target_unknown", "units_missing", "candidate_invalid:good", "object_missing:%s" % ("b" * 40)])
 
+    def test_the_brains_own_reasons_are_marked(self):
+        self.assertEqual(self.refused(brain_commit="a" * 39), ["brain:commit_unreadable"])
+        self.assertEqual(self.refused(brain_commit="a" * 40), ["brain:object_missing:%s" % ("a" * 40)])
+        self.brain["candidates/t1/good/sub"] = ("160000", b"x")
+        self.brain["candidates/t1/breaks/odd"] = ("1x", b"x")
+        self.assertEqual(self.refused(), ["brain:tree_mode:breaks/odd:1x", "brain:tree_submodule:good/sub"])
+
     def test_the_target_id_is_one_path_component(self):
-        os.makedirs(os.path.join(self.base, "targets", "x"))
+        self.brain["targets/x/units.json"] = b"{}"
         for bad in ("", "../x", "a/b", ".", "..", ".hidden", "t1\n", None, "x" * 129):
             with self.subTest(bad=bad):
                 self.assertEqual(self.refused(target_id=bad), ["target_id_unsafe"])
@@ -109,55 +146,60 @@ class Brain(unittest.TestCase):
             with self.subTest(reason=reason, summary=str(summary)[:30]):
                 self.assertEqual(self.refused(summary=summary), [reason])
 
-    def test_units_must_be_a_regular_file(self):
-        units = os.path.join(self.brain, "targets/t1/units.json")
-        outside = os.path.join(self.base, "units.json")
-        shutil.move(units, outside)
-        os.symlink(outside, units)
-        self.assertEqual(self.refused(), ["units_missing"])
-        os.remove(units)
-        shutil.move(os.path.join(self.brain, "targets", "t1"), os.path.join(self.base, "t1"))
-        os.symlink(os.path.join(self.base, "t1"), os.path.join(self.brain, "targets", "t1"))
-        self.assertEqual(self.refused(), ["units_missing"])
+    def test_units_must_be_a_file_reached_through_trees(self):
+        units = self.brain["targets/t1/units.json"]
+        for name, change in (
+                ("a link", {"targets/t1/units.json": ("120000", b"../../elsewhere/units.json")}),
+                ("a gitlink", {"targets/t1/units.json": ("160000", units)}),
+                ("a tree", {"targets/t1/units.json/x": units}),
+                ("a link on the way", {"targets/t1": ("120000", b"../elsewhere"), "elsewhere/units.json": units}),
+                ("a file on the way", {"targets/t1": units}),
+                ("a link for targets", {"targets": ("120000", b"elsewhere"), "elsewhere/t1/units.json": units})):
+            with self.subTest(name):
+                self.drop("targets")
+                self.drop("elsewhere")
+                self.brain.update(change)
+                self.assertEqual(self.refused(), ["units_missing"])
 
     def test_candidate_directories(self):
-        root = os.path.join(self.brain, "candidates", "t1")
+        root = "candidates/t1/"
+        breaks = {f: self.brain[root + "breaks/" + f] for f in P.CANDIDATE_FILES}
         cases = []
-        os.remove(os.path.join(root, "good", "expect.json"))
+        del self.brain[root + "good/expect.json"]
         cases.append(("a file missing", "good"))
-        write_tree(root, {"loose.patch": "x"})
+        self.brain[root + "loose.patch"] = b"x"
         cases.append(("a file in candidates/<id>", "loose.patch"))
-        write_tree(root, {".hidden/diff.patch": "x", ".hidden/expect.json": "{}", ".hidden/finding.json": "{}"})
+        self.brain.update({root + ".hidden/" + f: data for f, data in breaks.items()})
         cases.append(("not a candidate id", ".hidden"))
-        shutil.copytree(os.path.join(root, "breaks"), os.path.join(self.base, "linked"))
-        os.symlink(os.path.join(self.base, "linked"), os.path.join(root, "linked"))
-        cases.append(("a symlinked candidate", "linked"))
-        os.makedirs(os.path.join(root, "filelink"))
-        for f in ("diff.patch", "expect.json"):
-            shutil.copy(os.path.join(root, "breaks", f), os.path.join(root, "filelink", f))
-        os.symlink(os.path.join(root, "breaks", "finding.json"), os.path.join(root, "filelink", "finding.json"))
-        cases.append(("a symlinked file", "filelink"))
-        os.makedirs(os.path.join(root, "subdir", "diff.patch"))
-        for f in ("expect.json", "finding.json"):
-            shutil.copy(os.path.join(root, "breaks", f), os.path.join(root, "subdir", f))
-        cases.append(("a directory for a file", "subdir"))
+        self.brain[root + "linked"] = ("120000", b"breaks")
+        cases.append(("a linked candidate", "linked"))
+        self.brain.update({root + "filelink/" + f: data for f, data in breaks.items()})
+        self.brain[root + "filelink/finding.json"] = ("120000", b"../breaks/finding.json")
+        cases.append(("a linked file", "filelink"))
+        self.brain.update({root + "subdir/" + f: data for f, data in breaks.items() if f != "diff.patch"})
+        self.brain[root + "subdir/diff.patch/x"] = b"x"
+        cases.append(("a tree for a file", "subdir"))
+        self.brain.update({root + "extra/" + f: data for f, data in breaks.items()})
+        self.brain[root + "extra/notes.md"] = b"x"
+        cases.append(("a fourth file", "extra"))
         self.assertEqual(self.refused(), sorted("candidate_invalid:%s" % name for _, name in cases))
 
-    def test_candidates_must_be_a_real_directory(self):
-        root = os.path.join(self.brain, "candidates")
-        shutil.move(root, os.path.join(self.base, "cands"))
-        os.symlink(os.path.join(self.base, "cands"), root)
-        self.assertEqual(self.refused(), ["candidates_not_directory"])
-        os.remove(root)
-        os.makedirs(root)
-        os.symlink(os.path.join(self.base, "cands", "t1"), os.path.join(root, "t1"))
-        self.assertEqual(self.refused(), ["candidates_not_directory"])
-        os.remove(os.path.join(root, "t1"))
-        write_tree(root, {"t1": "a file"})
-        self.assertEqual(self.refused(), ["candidates_not_directory"])
+    def test_candidates_must_be_trees(self):
+        cands = {p: v for p, v in self.brain.items() if p.startswith("candidates/")}
+        for name, change in (("candidates a link", {"candidates": ("120000", b"cands")}),
+                             ("candidates/<id> a link", {"candidates/t1": ("120000", b"../cands/t1")}),
+                             ("candidates/<id> a file", {"candidates/t1": b"a file"}),
+                             ("candidates a gitlink", {"candidates": ("160000", b"x")}),
+                             ("candidates/<id> malformed", {"candidates/t1": ("1x", b"x")})):
+            with self.subTest(name):
+                self.drop("candidates")
+                self.drop("cands")
+                self.brain.update({"cands/" + p[len("candidates/"):]: v for p, v in cands.items()})
+                self.brain.update(change)
+                self.assertEqual(self.refused(), ["candidates_not_directory"])
 
     def test_the_read_back_refuses_and_removes(self):
-        write_tree(self.brain, {"targets/t1/units.json": "not json"})
+        self.brain["targets/t1/units.json"] = b"not json"
         self.assertEqual(self.refused(), ["json_unreadable:units.json"])
         self.assertEqual(self.refused(policy=b"\xff"), ["json_unreadable:units.json", "json_unreadable:policy.json"])
 
@@ -168,18 +210,15 @@ class Brain(unittest.TestCase):
 
 
 class EndToEnd(LK.Base):
-    """The target's git objects and a brain checkout -> cek's assembly -> the kos job -> MF8's decision."""
+    """The target's and the brain's git objects -> cek's assembly -> the kos job -> MF8's decision."""
 
     run_kos, results, decide = LK.KosJob.run_kos, LK.KosJob.results, LK.KosJob.decide
 
     def test_cek_to_kos_to_the_gate(self):
-        brain = os.path.join(self.base, "brain")
-        write_tree(brain, {"targets/t1/units.json": {"units": [recipe()]}})
-        for cid, diff in (("good", GOOD), ("breaks", BREAKS_TEST)):
-            for f, data in candidate(diff).items():
-                write_tree(brain, {"candidates/t1/%s/%s" % (cid, f): data.decode()})
+        brain, brain_commit = S.store(brain_files())
         objects, commit = target_objects(self.src)
-        C.assemble(brain, json.dumps(SUMMARY).encode(), POLICY, "t1", objects.__getitem__, commit, self.pulled)
+        C.assemble(brain.__getitem__, brain_commit, json.dumps(SUMMARY).encode(), POLICY, "t1", objects.__getitem__,
+                   commit, self.pulled)
         out = self.run_kos()
         self.assertEqual((out["reason"], out["done"]), ("cycle_not_wired", ["D3"]))
         self.assertEqual(out["index"]["base"], {"verdict": "verified", "reasons": []})

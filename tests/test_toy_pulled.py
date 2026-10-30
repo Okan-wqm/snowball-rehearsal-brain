@@ -1,6 +1,7 @@
 """The toy target as ``çek`` would hand it to ``koş``: this brain's own ``targets/toy/units.json`` and
-``candidates/toy/`` with the toy's tree (``tests/fixtures/toy-repo``) as git objects (git's format, built by
-``referee/tests/git_store.py``), through ``loop.cek.assemble`` (asama-0/01 D1, tohum/26c).
+``candidates/toy/`` and the toy's tree (``tests/fixtures/toy-repo``), both as git objects (git's format, built by
+``referee/tests/git_store.py`` from the files on disk: the bootstrap sandbox has no git), through
+``loop.cek.assemble`` (asama-0/01 D1, tohum/26c).
 
 What is proven here: the artifact ``loop.pulled.read`` accepts holds, byte for byte, the brain's ``units.json``
 (one unit, the number ``koş`` runs) and all five candidate directories, the ``targets[]`` entry as given, and a
@@ -30,6 +31,8 @@ import git_store as S  # noqa: E402
 TOY = os.path.join(ROOT, "tests", "fixtures", "toy-repo")
 CANDIDATES = os.path.join(ROOT, "candidates", "toy")
 OBJECTS, COMMIT = S.store(S.from_dir(TOY))
+BRAIN, BRAIN_COMMIT = S.store({"%s/%s" % (top, path): value for top in ("targets/toy", "candidates/toy")
+                               for path, value in S.from_dir(os.path.join(ROOT, top)).items()})
 ENTRY = {"id": "toy", "repo": "owner/toy", "kind": "toy", "base_sha": COMMIT, "identifiers": [],
          "excluded_paths": [], "unit_candidates": []}
 
@@ -51,7 +54,7 @@ class ToyPulled(unittest.TestCase):
     def test_the_toy_as_pulled(self):
         out = os.path.join(self.tmp, "pulled")
         summary = json.dumps({"targets": [ENTRY, dict(ENTRY, id="copy", kind="copy")]}).encode()
-        C.assemble(ROOT, summary, b"{}", "toy", OBJECTS.__getitem__, COMMIT, out)
+        C.assemble(BRAIN.__getitem__, BRAIN_COMMIT, summary, b"{}", "toy", OBJECTS.__getitem__, COMMIT, out)
         got = P.read(out)
         self.assertEqual(got.target, ENTRY)
         with open(os.path.join(ROOT, "targets", "toy", "units.json"), "rb") as fh:

@@ -36,7 +36,7 @@ execute bits kept). A refused tree may be partly written; the caller drops the d
 
 Out of scope, stated: who writes ``pulled`` in the workflow (``loop.cek.assemble`` builds it from what ``çek``
 reads, but the ``cek`` job does not call it yet: it still stops with ``cycle_not_wired``; reading the bootstrap
-result, Sigstore, the brain checkout, the target's objects and heads are its D1 work), the target's
+result, Sigstore, the fetch of the brain's objects, the target's objects and heads are its D1 work), the target's
 ``brain/state`` and ``brain/integration`` heads (D1 reads them; nothing here carries them yet), and a size bound on
 the archive (the artifact's own size and the job's disk and wall clock bound it).
 """
