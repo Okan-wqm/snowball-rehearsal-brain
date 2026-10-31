@@ -209,7 +209,7 @@ def _operating(policy: Any, keys) -> dict:
     try:
         values = C.limits(operating, tuple(keys))
     except C.ContainmentError as exc:
-        raise VerifyError("policy: %s" % exc) from None
+        raise VerifyError("policy: %s" % cli.cause(exc)) from None
     return {k: (values[k], operating[k]["band"]) for k in keys}
 
 
@@ -758,7 +758,7 @@ def main(argv: list[str]) -> int:
         return 2
     except (VerifyError, D.DeriveError, C.ContainmentError, ValueError, KeyError, TypeError, OSError,
             RecursionError) as exc:
-        _emit({"ok": False, "error": "unusable input: %s" % exc})
+        _emit({"ok": False, "error": "unusable input: %s" % cli.cause(exc)})
         return 2
 
 

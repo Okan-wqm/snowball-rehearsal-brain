@@ -209,7 +209,7 @@ def pattern_regex(pattern: str) -> re.Pattern:
     try:
         return re.compile(("" if anchored else "(?:.*/)?") + "".join(out) + "(?:/.*)?\\Z", re.DOTALL)
     except re.error as exc:
-        raise DeriveError("invalid pattern %r: %s" % (pattern, exc)) from None
+        raise DeriveError("invalid pattern %r: %s" % (pattern, cli.cause(exc))) from None
 
 
 def pattern_matches(pattern: str, path: str) -> bool:
@@ -311,7 +311,7 @@ def _walk(root: str):
         try:
             names = sorted(os.listdir(full))
         except OSError as exc:
-            raise DeriveError("cannot list %s: %s" % (rel or ".", exc.strerror)) from None
+            raise DeriveError("cannot list %s: %s" % (rel or ".", cli.cause(exc))) from None
         return iter([posixpath.join(rel, n) if rel else n for n in names if n != ".git"])
 
     stack = [listing("")]
@@ -323,7 +323,7 @@ def _walk(root: str):
         try:
             st = os.lstat(os.path.join(root, child))
         except OSError as exc:
-            raise DeriveError("cannot stat %s: %s" % (child, exc.strerror)) from None
+            raise DeriveError("cannot stat %s: %s" % (child, cli.cause(exc))) from None
         descend = yield child, st
         if descend is not False and stat.S_ISDIR(st.st_mode):
             stack.append(listing(child))
@@ -711,7 +711,7 @@ def read_tree(path: str) -> list[str]:
                     raise DeriveError("tree member %r is not a relative POSIX path" % member.name)
                 names.add(name)
     except (tarfile.TarError, EOFError, zlib.error) as exc:
-        raise DeriveError("tree is not a readable gzip tar: %s" % exc) from None
+        raise DeriveError("tree is not a readable gzip tar: %s" % cli.cause(exc)) from None
     return sorted(names)
 
 
@@ -792,7 +792,7 @@ def main(argv: list[str]) -> int:
         _emit(dict(fail, error=USAGE))
         return 2
     except (DeriveError, ValueError, OSError) as exc:
-        _emit(dict(fail, error="unusable input: %s" % exc))
+        _emit(dict(fail, error="unusable input: %s" % cli.cause(exc)))
         return 2
 
 

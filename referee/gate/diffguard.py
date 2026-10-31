@@ -463,7 +463,7 @@ def main(argv: list[str]) -> int:
         _emit({"ok": not reasons, "reasons": reasons})
         return 0 if not reasons else 1
     except (DiffError, ValueError, OSError, RecursionError) as exc:
-        _emit({"ok": False, "error": "unusable input: %s" % exc})
+        _emit({"ok": False, "error": "unusable input: %s" % cli.cause(exc)})
         return 2
 
 

@@ -134,7 +134,7 @@ def parse_row(text: str) -> dict:
     except RecursionError:
         raise ChainError("line nested too deeply") from None
     except ValueError as exc:
-        raise ChainError("not JSON: %s" % exc) from None
+        raise ChainError("not JSON: %s" % cli.cause(exc)) from None
     if not isinstance(row, dict):
         raise ChainError("row is not a JSON object")
     return row
@@ -190,7 +190,7 @@ def verify_bytes(data: bytes, previous: bytes | None = None) -> dict:
         except UnicodeDecodeError:
             return _result(False, "line:%d" % lineno, lineno, "line is not UTF-8")
         except ChainError as exc:
-            return _result(False, _row_name(row, lineno), lineno, str(exc))
+            return _result(False, _row_name(row, lineno), lineno, cli.cause(exc))
         expected_prev = stored
 
     if previous is not None:
@@ -234,13 +234,13 @@ def main(argv: list[str]) -> int:
             _emit({"row_hash": row_hash(parse_row(lines[0].decode("utf-8")))})
             return 0
         except (ChainError, UnicodeDecodeError) as exc:
-            _emit({"error": str(exc)})
+            _emit({"error": cli.cause(exc)})
             return 2
     if argv[:1] == ["verify"] and (len(argv) == 2 or (len(argv) == 4 and argv[2] == "--previous")):
         try:
             result = verify_file(argv[1], argv[3] if len(argv) == 4 else None)
         except OSError as exc:
-            _emit({"error": "cannot read: %s" % exc.strerror})
+            _emit({"error": "cannot read: %s" % cli.cause(exc)})
             return 2
         _emit(result)
         return 0 if result["valid"] else 1

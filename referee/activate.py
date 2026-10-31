@@ -150,7 +150,7 @@ def _json(data: bytes, name: str) -> Any:
         return json.loads(data.decode("utf-8"), object_pairs_hook=chain._no_duplicates,
                           parse_constant=chain._no_constant)
     except (UnicodeDecodeError, ValueError, RecursionError) as exc:
-        raise Unusable("%s is not JSON: %s" % (name, exc)) from None
+        raise Unusable("%s is not JSON: %s" % (name, cli.cause(exc))) from None
 
 
 def _chain_rows(data: bytes) -> list[dict] | None:
@@ -178,7 +178,7 @@ def _canonical_sha(value: Any, name: str) -> str:
     try:
         return _sha(chain.canonical(value))
     except (chain.ChainError, ValueError, TypeError) as exc:
-        raise Unusable("%s has no canonical form: %s" % (name, exc)) from None
+        raise Unusable("%s has no canonical form: %s" % (name, cli.cause(exc))) from None
 
 
 def _row(cycle: dict, suffix: str, kind: str, payload: dict, cause: str | None = None) -> dict:
@@ -338,7 +338,7 @@ def ratchet_base(base_run: bytes, base_run_sha256: str) -> dict:
     try:
         run, same = check.run_file(base_run, "base.jsonl")
     except check.Unusable as exc:
-        raise Unusable(str(exc)) from None
+        raise Unusable(cli.cause(exc)) from None
     if not same:
         return {"reasons": ["tool_nondeterministic"], "counts": None}
     return {"reasons": [], "counts": {run["tool"]: len(run["violations"])}}
@@ -453,7 +453,7 @@ def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates
     try:  # the shapes criterion 1 reads, checked before the first write
         diffguard.check("diff --git a/x b/x\n", profile, recipe)
     except diffguard.DiffError as exc:
-        raise Unusable(str(exc)) from None
+        raise Unusable(cli.cause(exc)) from None
     writer.create_branch(INTEGRATION, cut)
     try:
         rows = [_row(req, "genesis", "genesis", gen["payload"]),
@@ -479,7 +479,7 @@ def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates
         state = state_files(rows, files["imports.jsonl"], facts, signer, "%s:root" % req["cycle_id"])
         sha = writer.open_orphan(STATE, state["files"], "genesis: cycle %s" % req["cycle_id"])
     except (write.ApiError, write.Refused, Unusable, HardStopBase, block.Unusable, anchor.Unusable) as exc:
-        raise HardStop("%s: %s" % (type(exc).__name__, exc), sorted(set(writer.written))) from None
+        raise HardStop("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     return {"state_sha": sha, "integration_sha": cut, "row_hashes": state["row_hashes"], "root": state["root"],
             "entry": state["entry"], "decisions": decisions, "files": state["files"]}
 
@@ -498,7 +498,7 @@ def _read(path: str) -> bytes:
         with open(path, "rb") as fh:
             return fh.read()
     except OSError as exc:
-        raise Unusable("%s: %s" % (path, exc.strerror)) from None
+        raise Unusable("%s: %s" % (path, cli.cause(exc))) from None
 
 
 def main(argv: list[str]) -> int:
@@ -514,7 +514,7 @@ def main(argv: list[str]) -> int:
         _emit(out)
         return 1 if out["hard_stop"] else 0
     except (Unusable, write.Unusable, chain.ChainError) as exc:
-        cause = "unusable input: %s" % exc
+        cause = "unusable input: %s" % cli.cause(exc)
     _emit({"ok": False, "hard_stop": True, "payload": None})
     sys.stderr.write(cause + "\n")
     return 2

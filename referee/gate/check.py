@@ -196,7 +196,7 @@ def run_file(raw: bytes, name: str) -> tuple[dict, bool]:
     try:
         rec = json.loads(lines[0].decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
-        raise Unusable("%s line 1 is not JSON: %s" % (name, exc)) from exc
+        raise Unusable("%s line 1 is not JSON: %s" % (name, cli.cause(exc))) from exc
     if not isinstance(rec, dict) or not isinstance(rec.get("violations"), list):
         raise Unusable("%s line 1 must be {tool, violations: []}" % name)
     run = {"tool": _rule(rec.get("tool"), name + ".tool"),
@@ -208,7 +208,7 @@ def checks_file(raw: bytes) -> dict:
     try:
         doc = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
-        raise Unusable("checks.json is not JSON: %s" % exc) from exc
+        raise Unusable("checks.json is not JSON: %s" % cli.cause(exc)) from exc
     if not isinstance(doc, dict) or not isinstance(doc.get("tests"), list) or doc.get("red_control") not in STATUSES:
         raise Unusable("checks.json must be {tests: [], red_control: pass|fail}")
     for i, t in enumerate(doc["tests"]):
@@ -323,7 +323,7 @@ def _decide_cli(cand_dir: str, base_jsonl: str, cand_run_dir: str, hashes_path: 
     try:
         stdin = json.loads(sys.stdin.read())
     except ValueError as exc:
-        raise Unusable("stdin is not JSON: %s" % exc) from exc
+        raise Unusable("stdin is not JSON: %s" % cli.cause(exc)) from exc
     files = {"base.jsonl": _bytes_or_none(base_jsonl),
              "cand.jsonl": _bytes_or_none(os.path.join(cand_run_dir, "cand.jsonl")),
              "checks.json": _bytes_or_none(os.path.join(cand_run_dir, "checks.json"))}
@@ -345,7 +345,7 @@ def main(argv: list[str]) -> int:
             return 0 if result["decision"] == "merge" else 1
         raise Unusable(USAGE)
     except (Unusable, DiffError, ValueError, OSError, RecursionError) as exc:
-        cause = "unusable input: %s" % exc
+        cause = "unusable input: %s" % cli.cause(exc)
     _emit({"decision": "reject"} if mode == "decide" else {"error": cause})
     sys.stderr.write(cause + "\n")
     return 2

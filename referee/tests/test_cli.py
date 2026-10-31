@@ -12,6 +12,12 @@ a verdict, and ``gate.secrets``' exit 1 is "match").
 - Handlers (rule 6): every catch-all handler in every source file re-raises or reports through
   ``cli.internal_error`` (only ``target.write`` reports); the register is shown red on eleven ways a handler can
   leak a message or swallow a fault, and green on the allowed shapes.
+- Causes (rule 7): every use of a caught exception in every source file is ``cli.cause``, ``cli.internal_error``,
+  ``raise ... from`` or a kept attribute (the register is shown red on fifteen ways a message can leak and green on
+  the allowed shapes); ``CauseOf`` gives ``cli.cause``'s text for referee and other exceptions, the mark never in
+  the latter; ``Injected`` runs every command in-process with ``json.loads`` or ``open`` raising a builtin exception
+  that carries the mark (228 runs reach a patched read, measured) and finds no mark in any output, while the same
+  runs with ``cli.cause`` replaced by ``str`` leak it in 139 runs of 19 commands.
 - Process: every command, started the way the referee starts it, exits 2 when stdout is closed or a broken pipe
   (before this boundary: 20 of 22 exited 1 with stdout closed, and most 120 on a broken pipe); and ``gate.secrets
   scan`` on a clean file and on a file with a fake token exits 0 and 1 with a working stdout and 2 with either
@@ -127,6 +133,45 @@ def catch_all_faults(source: str) -> list[str]:
         reraises = isinstance(handler.body[-1], ast.Raise) and handler.body[-1].exc is None
         if not reraises and not reported:
             faults.append("%d: neither re-raised nor reported through cli.internal_error" % handler.lineno)
+    return faults
+
+
+ACTIVE_READS = ("exc_info", "format_exc", "print_exc", "print_exception", "format_exception", "__context__",
+                "__cause__", "__traceback__")
+
+
+def _allowed_use(node: ast.Name, parents: dict) -> bool:
+    """Rule 7's allowed uses of a caught exception's name: ``cli.cause(exc)``, ``cli.internal_error(exc)``,
+    ``raise ... from exc``, ``exc.<a KEPT_ATTRIBUTES name>`` and ``type(exc).__name__``."""
+    parent = parents[node]
+    if isinstance(parent, ast.Call) and parent.args == [node] and not parent.keywords:
+        called = ast.unparse(parent.func)
+        if called in ("cli.cause", "cli.internal_error"):
+            return True
+        return called == "type" and isinstance(parents[parent], ast.Attribute) and parents[parent].attr == "__name__"
+    if isinstance(parent, ast.Raise) and parent.cause is node:
+        return True
+    return isinstance(parent, ast.Attribute) and parent.value is node and parent.attr in cli.KEPT_ATTRIBUTES
+
+
+def caught_uses(source: str) -> list[str]:
+    """cli's rule 7 over one module: every load of a name bound by ``except ... as name`` is an allowed use
+    (``_allowed_use``), and nothing reads ``traceback`` or the active exception. Returns ``line: reason``."""
+    tree = ast.parse(source)
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    faults = []
+    for handler in ast.walk(tree):
+        if not isinstance(handler, ast.ExceptHandler) or not handler.name:
+            continue
+        for node in ast.walk(ast.Module(body=handler.body, type_ignores=[])):
+            if (isinstance(node, ast.Name) and node.id == handler.name and isinstance(node.ctx, ast.Load)
+                    and not _allowed_use(node, parents)):
+                faults.append("%d: %s uses the caught exception" % (node.lineno, ast.unparse(parents[node])))
+    for node in ast.walk(tree):
+        if ((isinstance(node, ast.Name) and node.id == "traceback")
+                or (isinstance(node, ast.alias) and node.name.split(".")[0] == "traceback")
+                or (isinstance(node, ast.Attribute) and node.attr in ACTIVE_READS)):
+            faults.append("%d: reads the traceback or the active exception" % node.lineno)
     return faults
 
 
@@ -260,6 +305,47 @@ class Register(unittest.TestCase):
         for why, handler in good.items():
             self.assertEqual(catch_all_faults(head + handler), [], why)
 
+    def test_every_caught_exception_reaches_output_only_through_cause(self):
+        found = sources()
+        self.assertGreaterEqual(len(found), 37, sorted(found))
+        faults = {path: caught_uses(src) for path, src in found.items()}
+        self.assertEqual({p: f for p, f in faults.items() if f}, {})
+        users = sorted(p for p, src in found.items() if "cli.cause(" in src)
+        self.assertGreaterEqual(len(users), 22, users)
+
+    def test_the_cause_register_sees_each_way_a_message_can_leak(self):
+        head = "import cli, sys\nimport traceback as tb\ndef f():\n    try:\n        g()\n"
+        bad = {
+            "in a format": "    except ValueError as exc:\n        print('unusable input: %s' % exc)\n",
+            "in a tuple of a format": "    except OSError as exc:\n        raise U('%s: %s' % (p, exc)) from None\n",
+            "str of it": "    except KeyError as exc:\n        return str(exc)\n",
+            "an f-string": "    except ValueError as exc:\n        return f'{exc}'\n",
+            "its args": "    except ValueError as exc:\n        return exc.args[0]\n",
+            "its filename": "    except OSError as exc:\n        return exc.filename\n",
+            "its object": "    except UnicodeDecodeError as exc:\n        return exc.object\n",
+            "a new exception of it": "    except ValueError as exc:\n        raise U(exc)\n",
+            "kept for later": "    except ValueError as exc:\n        saved = exc\n",
+            "cause of something else": "    except ValueError as exc:\n        return cli.cause(exc.__context__)\n",
+            "a keyword to cause": "    except ValueError as exc:\n        return cli.cause(exc=exc)\n",
+            "type, not its name": "    except ValueError as exc:\n        return type(exc)\n",
+            "nested handler": "    except ValueError as exc:\n        try:\n            h()\n        except OSError as err:\n"
+                              "            print(err, cli.cause(exc))\n",
+            "a traceback module alias": "    except ValueError:\n        tb.print_exc()\n        raise\n",
+            "exc_info": "    except ValueError:\n        print(sys.exc_info()[1])\n        raise\n",
+        }
+        for why, handler in bad.items():
+            self.assertNotEqual(caught_uses(head + handler), [], why)
+        good = {
+            "cause": "    except ValueError as exc:\n        print('unusable input: %s' % cli.cause(exc))\n",
+            "chained": "    except ValueError as exc:\n        raise U(cli.cause(exc)) from exc\n",
+            "internal_error": "    except Exception as exc:\n        print(cli.internal_error(exc))\n",
+            "reason codes and status": "    except E as exc:\n        return exc.reasons, exc.status, exc.code\n",
+            "the type's name": "    except E as exc:\n        return '%s: %s' % (type(exc).__name__, cli.cause(exc))\n",
+            "unnamed": "    except ValueError:\n        return 2\n",
+        }
+        for why, handler in good.items():
+            self.assertEqual(caught_uses(head.replace("import traceback as tb\n", "") + handler), [], why)
+
     def test_every_fault_line_is_a_json_object_for_any_argv(self):
         for module in commands():
             line = importlib.import_module(module).FAULT_LINE
@@ -268,6 +354,153 @@ class Register(unittest.TestCase):
                 got = line(argv) if callable(line) else line
                 self.assertIsInstance(got, dict, (module, argv))
                 self.assertEqual(json.loads(json.dumps(got)), got, (module, argv))
+
+
+class CauseOf(unittest.TestCase):
+    """``cli.cause``: a referee exception keeps its message; of any other, no character of the message."""
+
+    def test_a_referee_exception_keeps_its_message(self):
+        from gate import secrets
+        from ledger import chain
+        for exc in (chain.ChainError(MARK), secrets.ScanError(MARK), cli.Fault(MARK)):
+            self.assertEqual(cli.cause(exc), MARK, type(exc))
+
+    def test_an_exception_defined_outside_referee_gives_its_type(self):
+        import importlib.util
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "elsewhere.py")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("class Unusable(ValueError):\n    pass\n")
+            spec = importlib.util.spec_from_file_location("elsewhere", path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["elsewhere"] = module
+            try:
+                spec.loader.exec_module(module)
+                self.assertEqual(cli.cause(module.Unusable(MARK)), "Unusable")
+            finally:
+                del sys.modules["elsewhere"]
+
+    def test_builtin_messages_never_reach_the_text(self):
+        import errno
+        import re
+        import tarfile
+        data = (MARK + "\xff").encode("latin-1")
+        try:
+            json.loads('{"' + MARK)
+        except json.JSONDecodeError as exc:
+            decoded = exc
+        cases = [
+            (ValueError(MARK), "ValueError"),
+            (KeyError(MARK), "KeyError"),
+            (TypeError(MARK), "TypeError"),
+            (RecursionError(MARK), "RecursionError"),
+            (OSError(MARK), "OSError"),
+            (OSError(errno.ENOENT, os.strerror(errno.ENOENT), MARK), os.strerror(errno.ENOENT)),
+            (FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), MARK, None, MARK), os.strerror(errno.ENOENT)),
+            (decoded, "JSONDecodeError at line 1 column 2"),
+            (json.JSONDecodeError("Invalid \\escape: %r" % MARK, MARK, 3), "JSONDecodeError at line 1 column 4"),
+            (UnicodeDecodeError("utf-8", data, len(MARK), len(MARK) + 1, "invalid start byte"),
+             "UnicodeDecodeError at position %d (utf-8)" % len(MARK)),
+            (UnicodeEncodeError("ascii", MARK + "\u00e9", len(MARK), len(MARK) + 1, MARK),
+             "UnicodeEncodeError at position %d (ascii)" % len(MARK)),
+            (UnicodeError(MARK), "UnicodeError"),
+            (tarfile.ReadError(MARK), "ReadError"),
+            (re.error(MARK), "error"),
+        ]
+        for exc, text in cases:
+            self.assertEqual(cli.cause(exc), text, repr(exc)[:80])
+            self.assertNotIn(MARK, cli.cause(exc))
+
+    def test_a_referee_exception_raised_under_python_m_keeps_its_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "rows.jsonl")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write('{"a": \n')
+            proc = subprocess.run([sys.executable, "-m", "ledger.chain", "verify", path], cwd=REFEREE,
+                                  capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["reason"], "not JSON: JSONDecodeError at line 1 column 7")
+
+
+def _inject_argv(f: str, d: str) -> dict:
+    """Argument lists that reach each command's reads (``f`` a file holding ``{}``, ``d`` a directory)."""
+    return {
+        "activate": [["genesis", f, f, f, f, f, f]],
+        "dispatcher.llm_call": [["plan", f]],
+        "gate.check": [["map", f, "a", "1"], ["decide", d, f, d, f]],
+        "gate.diffguard": [["check", f, f, f]],
+        "gate.revert": [["cause"]],
+        "gate.secrets": [["scan", "diff", f], ["scan", "row", f], ["scan", "prompt", f], ["scan", "--kind", "diff", f]],
+        "gate.sentinel": [["decide"]],
+        "harness.revert_drill": [["commit", f, f], ["reveal", f, f], ["judge", f, f]],
+        "ledger.anchor": [["root", f], ["anchor", f], ["verify", f, f, f]],
+        "ledger.append": [["cycle", f, f]],
+        "ledger.chain": [["hash"], ["verify", f], ["verify", f, "--previous", f]],
+        "ledger.founder": [["check", "--ledger", f], ["open", "--ledger", f, "--reports", d]],
+        "loop.job": [["run", f]],
+        "profile.derive": [["derive", f, f], ["check", f, f, f]],
+        "profile.unit_verify": [["check", f, f], ["verify", f]],
+        "runner.contained": [["argv", f], ["check", f], ["run", f]],
+        "runner.deps_npm": [["check", f], ["fetch", f, d], ["verify", d]],
+        "runner.kos": [["run", f]],
+        "runner.lint_record": [[d]],
+        "status.block": [["render", f, f, f]],
+        "status.depmap": [["brain", d], ["check", d], ["coverage", d], ["target", d, "--source", "x"]],
+        "target.write": [["replay", f]],
+    }
+
+
+class Injected(unittest.TestCase):
+    """Every command, in-process through ``cli.run``, with the reads every command uses (``json.loads``, which
+    ``json.load`` calls, and ``open``) raising a builtin exception whose message, file name or object is the mark:
+    the mark reaches neither stdout nor stderr. The same runs with ``cli.cause`` replaced by ``str`` leak it, so the
+    test sees the class it guards."""
+
+    INJECTED = {
+        "ValueError": lambda: ValueError(MARK),
+        "KeyError": lambda: KeyError(MARK),
+        "OSError": lambda: OSError(5, "Input/output error", MARK),
+        "UnicodeDecodeError": lambda: UnicodeDecodeError("utf-8", MARK.encode(), 0, 1, MARK),
+    }
+
+    def runs(self, cause=None) -> tuple[int, list[str]]:
+        from unittest import mock
+        reached, leaks = 0, []
+        with tempfile.TemporaryDirectory() as tmp:
+            f = os.path.join(tmp, "in.json")
+            with open(f, "w", encoding="utf-8") as fh:
+                fh.write("{}")
+            table = _inject_argv(f, tmp)
+            self.assertEqual(set(table), set(commands()))
+            for module, argvs in sorted(table.items()):
+                main = importlib.import_module(module).main
+                line = importlib.import_module(module).FAULT_LINE
+                for argv in argvs:
+                    for kind, make in self.INJECTED.items():
+                        for target in ("json.loads", "builtins.open", "io.open"):
+                            patches = [mock.patch(target, side_effect=make()),
+                                       mock.patch("sys.stdin", io.TextIOWrapper(io.BytesIO(b"{}")))]
+                            if cause is not None:
+                                patches.append(mock.patch.object(cli, "cause", cause))
+                            with contextlib.ExitStack() as stack:
+                                fakes = [stack.enter_context(p) for p in patches]
+                                code, out, err = run_boundary(main, argv, line)
+                            if fakes[0].called:
+                                reached += 1
+                            if MARK in out + err:
+                                leaks.append("%s %s %s %s" % (module, argv[:1], kind, target))
+                            self.assertIn(code, cli.EXITS)
+        return reached, leaks
+
+    def test_no_command_writes_an_injected_message(self):
+        reached, leaks = self.runs()
+        self.assertEqual(leaks, [])
+        self.assertGreaterEqual(reached, 228)
+
+    def test_the_same_runs_leak_when_cause_writes_the_message(self):
+        reached, leaks = self.runs(cause=str)
+        self.assertGreaterEqual(len(leaks), 139)
+        self.assertGreaterEqual(len({leak.split()[0] for leak in leaks}), 19)
 
 
 class Process(unittest.TestCase):

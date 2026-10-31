@@ -138,7 +138,7 @@ def main(argv: list[str]) -> int:
         _emit({"cause": cause(chain.parse_row(sys.stdin.buffer.read().decode("utf-8")))})
         return 0
     except (Unusable, UnicodeDecodeError, chain.ChainError) as exc:
-        sys.stderr.write("unusable input: %s\n" % exc)
+        sys.stderr.write("unusable input: %s\n" % cli.cause(exc))
     _emit({"cause": None})
     return 2
 

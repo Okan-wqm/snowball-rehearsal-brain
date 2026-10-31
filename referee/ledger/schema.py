@@ -45,6 +45,7 @@ import hashlib
 import re
 from typing import Any, Callable
 
+import cli
 from dispatcher import llm_call
 from ledger import chain
 
@@ -295,7 +296,7 @@ def status_reasons(status: bytes, ledger: bytes) -> list[str]:
     try:
         parts = block.split(status)
     except block.Unusable as exc:
-        return out + _bad("status.md", str(exc))
+        return out + _bad("status.md", cli.cause(exc))
     if parts is None:
         return out + _bad("status.md", "has no block")
     recorded = [r["payload"].get("block_sha256") for r in rows

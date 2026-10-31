@@ -462,7 +462,7 @@ def mirror_fetcher(root: str) -> Callable[[str, int | None], bytes]:
             with open(path, "rb") as fh:
                 return fh.read() if cap is None else fh.read(cap + 1)
         except OSError as exc:
-            raise DepsError("fetch failed: %s: %s" % (url, exc.strerror or exc)) from None
+            raise DepsError("fetch failed: %s: %s" % (url, cli.cause(exc))) from None
     return fetch
 
 
@@ -479,7 +479,7 @@ def https_fetcher(url: str, cap: int | None) -> bytes:  # pragma: no cover - nee
                 raise DepsError("fetch failed: %s: HTTP %s" % (url, resp.status))
             return resp.read() if cap is None else resp.read(cap + 1)
     except OSError as exc:
-        raise DepsError("fetch failed: %s: %s" % (url, exc)) from None
+        raise DepsError("fetch failed: %s: %s" % (url, cli.cause(exc))) from None
 
 
 def _policy_values(policy: Any) -> tuple[list[str], dict, int | None]:
@@ -750,7 +750,7 @@ def _vector_tarball(data: bytes, where: str) -> dict:
                     fh = tar.extractfile(member)
                     found.append(fh.read() if fh else b"")
     except (tarfile.TarError, EOFError, zlib.error, OSError) as exc:
-        raise DepsError("%s: tarball unreadable: %s" % (where, exc)) from None
+        raise DepsError("%s: tarball unreadable: %s" % (where, cli.cause(exc))) from None
     if len(found) != 1:
         raise DepsError("%s: %d package/package.json members" % (where, len(found)))
     manifest = _parse(found[0], where + ":package/package.json")
@@ -766,7 +766,7 @@ def npmlock(lock_path: str, mirror: str, registries: list[str], marks: list[str]
     try:
         os.listdir(mirror)
     except OSError as exc:
-        raise DepsError("mirror unreadable: %s" % (exc.strerror or exc)) from None
+        raise DepsError("mirror unreadable: %s" % (cli.cause(exc))) from None
     rejected, rows, licenses, cache = [], [], [], {}
     for path in sorted(packages):
         if path == "":
@@ -792,7 +792,7 @@ def npmlock(lock_path: str, mirror: str, registries: list[str], marks: list[str]
                     try:
                         cache[fpath] = _read(fpath)
                     except OSError as exc:
-                        raise DepsError("mirror unreadable: %s: %s" % (fpath, exc.strerror or exc)) from None
+                        raise DepsError("mirror unreadable: %s: %s" % (fpath, cli.cause(exc))) from None
                 data = cache[fpath]
                 want = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode("ascii")
                 hashes = _sha512_tokens(entry.get("integrity"))
@@ -835,7 +835,7 @@ def _parse(data: bytes, path: str) -> Any:
     except RecursionError:
         raise DepsError("%s: JSON nested too deeply" % path) from None
     except (UnicodeDecodeError, ValueError) as exc:
-        raise DepsError("%s: not JSON: %s" % (path, exc)) from None
+        raise DepsError("%s: not JSON: %s" % (path, cli.cause(exc))) from None
 
 
 def _marks(recipe: Any) -> list[str]:
@@ -901,7 +901,7 @@ def main(argv: list[str]) -> int:
         _emit({"ok": False, "error": USAGE})
         return 2
     except (DepsError, ValueError, OSError) as exc:
-        _emit({"ok": False, "error": "unusable input: %s" % exc})
+        _emit({"ok": False, "error": "unusable input: %s" % cli.cause(exc)})
         return 2
 
 

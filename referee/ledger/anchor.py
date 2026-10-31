@@ -139,7 +139,7 @@ def _last_root_row(roots: bytes) -> dict:
     try:
         row = chain.parse_row(lines[-1].decode("utf-8"))
     except (UnicodeDecodeError, chain.ChainError) as exc:
-        raise Unusable("last root row: %s" % exc) from None
+        raise Unusable("last root row: %s" % cli.cause(exc)) from None
     _root_text(row.get("root"))
     if not isinstance(row.get("rekor_uuid"), str) or not row["rekor_uuid"]:
         raise Unusable("last root row: rekor_uuid must be a non-empty string")
@@ -225,7 +225,7 @@ def _json(data: bytes, what: str) -> Any:
     try:
         return chain.parse_row(data.decode("utf-8"))
     except (UnicodeDecodeError, chain.ChainError) as exc:
-        raise Unusable("%s: %s" % (what, exc)) from None
+        raise Unusable("%s: %s" % (what, cli.cause(exc))) from None
 
 
 def _stdin_value(key: str) -> Any:
@@ -252,7 +252,7 @@ def main(argv: list[str]) -> int:
             try:
                 entry = anchor(root, signer)
             except Unsignable as exc:
-                sys.stderr.write("hard stop: %s\n" % exc)
+                sys.stderr.write("hard stop: %s\n" % cli.cause(exc))
                 _emit({"ok": False, "hard_stop": True, "entry": None})
                 return 1
             _emit({"ok": True, "hard_stop": False, "entry": entry})
@@ -265,7 +265,7 @@ def main(argv: list[str]) -> int:
         command = ""
         raise Unusable(USAGE)
     except (Unusable, OSError, UnicodeDecodeError, chain.ChainError) as exc:
-        sys.stderr.write("unusable input: %s\n" % exc)
+        sys.stderr.write("unusable input: %s\n" % cli.cause(exc))
     _emit(EMPTY.get(command, {"error": "usage"}))
     return 2
 

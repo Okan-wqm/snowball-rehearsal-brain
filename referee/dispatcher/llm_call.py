@@ -203,7 +203,7 @@ def build(tmpl: Any, value: Any) -> dict:
         try:
             out.append(piece if kind == "text" else chain.canonical(value[piece]).decode("utf-8"))
         except chain.ChainError as exc:
-            raise Unusable("input field %s: %s" % (piece, exc)) from None
+            raise Unusable("input field %s: %s" % (piece, cli.cause(exc))) from None
     try:
         prompt = "".join(out)
         return {"prompt": prompt, "prompt_sha256": _sha256(prompt), "dropped": sorted(set(value) - set(fields))}
@@ -504,12 +504,12 @@ def main(argv: list[str]) -> int:
             with open(argv[1], "rb") as fh:
                 tmpl = chain.parse_row(fh.read().decode("utf-8"))
         except OSError as exc:
-            raise Unusable("%s: %s" % (argv[1], exc.strerror)) from None
+            raise Unusable("%s: %s" % (argv[1], cli.cause(exc))) from None
         planned = plan(tmpl, chain.parse_row(sys.stdin.buffer.read().decode("utf-8")))
         _emit({k: planned[k] for k in ("send", "reasons", "prompt_sha256", "dropped", "max_budget_usd", "argv")})
         return 0 if planned["send"] else 1
     except (Unusable, UnicodeDecodeError, chain.ChainError) as exc:
-        sys.stderr.write("unusable input: %s\n" % exc)
+        sys.stderr.write("unusable input: %s\n" % cli.cause(exc))
     _emit({"send": False})
     return 2
 

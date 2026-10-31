@@ -175,7 +175,7 @@ def read_reports(directory: str = REPORTS) -> list[dict]:
             with open(os.path.join(directory, name), encoding="utf-8") as fh:
                 report = json.load(fh)
         except (OSError, ValueError) as exc:
-            raise Unusable("report %s: %s" % (name, exc)) from None
+            raise Unusable("report %s: %s" % (name, cli.cause(exc))) from None
         if not isinstance(report, dict) or report.get("id") != name[:-len(".json")] \
                 or not isinstance(report.get("state"), str) or not report["state"]:
             raise Unusable("report %s: not an object with id %r and a state" % (name, name[:-len(".json")]))
@@ -291,7 +291,7 @@ def main(argv: list[str], stdin=None) -> int:
             with open(args.ledger, "rb") as fh:
                 data = fh.read()
         except (OSError, AssertionError, UnicodeDecodeError) as exc:
-            raise Unusable(str(exc)) from None
+            raise Unusable(cli.cause(exc)) from None
         if args.command == "check":
             found = problems(data, kinds)
             _emit({"ok": not found, "problems": found})
@@ -312,10 +312,10 @@ def main(argv: list[str], stdin=None) -> int:
             row = next_row(data, args.kind, summary, args.ref, args.snapshot, ts, args.derivation, args.trust,
                            args.supersedes)
         except (chain.ChainError, UnicodeDecodeError) as exc:
-            raise Unusable("ledger_unusable: %s" % exc) from None
+            raise Unusable("ledger_unusable: %s" % cli.cause(exc)) from None
         reasons = append(args.ledger, row, kinds)
     except Unusable as exc:
-        _emit({"ok": False, "error": str(exc)})
+        _emit({"ok": False, "error": cli.cause(exc)})
         return 2
     if reasons:
         _emit({"ok": False, "reasons": reasons})

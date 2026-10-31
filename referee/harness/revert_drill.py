@@ -259,7 +259,7 @@ def _read(path: str) -> bytes:
         with open(path, "rb") as handle:
             return handle.read()
     except OSError as exc:
-        raise Unusable("%s: %s" % (path, exc.strerror)) from None
+        raise Unusable("%s: %s" % (path, cli.cause(exc))) from None
 
 
 def _json(data: bytes) -> dict:
@@ -289,7 +289,7 @@ def main(argv: list[str]) -> int:
               else {"key": answer, "revealed_sha256": commitment(answer)})
         return 0
     except (Unusable, UnicodeDecodeError, chain.ChainError) as exc:
-        sys.stderr.write("unusable input: %s\n" % exc)
+        sys.stderr.write("unusable input: %s\n" % cli.cause(exc))
     _emit(EMPTY.get(command, {"verdict": "FAIL"}))
     return 2
 

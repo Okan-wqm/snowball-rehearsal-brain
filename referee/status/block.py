@@ -113,7 +113,7 @@ def rows_of(data: bytes, what: str) -> list[dict]:
     try:
         return [chain.parse_row(line.decode("utf-8")) for line in chain._lines(data)]
     except (chain.ChainError, UnicodeDecodeError) as exc:
-        raise Unusable("%s: %s" % (what, exc)) from None
+        raise Unusable("%s: %s" % (what, cli.cause(exc))) from None
 
 
 def _events(rows: list[dict], kind: str) -> list[dict]:
@@ -139,7 +139,7 @@ def fields(rows: list[dict], imports: list[dict], cap: Any) -> dict:
     try:
         spent = llm_call.spent_micros(rows)
     except llm_call.Unusable as exc:
-        raise Unusable(str(exc)) from None
+        raise Unusable(cli.cause(exc)) from None
     return {"cycle_id": _payload(start, "cycle_id"),
             "last_decision": _payload(decisions[-1], "decision") if decisions else None,
             "base_age_s": age,
@@ -284,7 +284,7 @@ def _read(path: str) -> bytes:
         with open(path, "rb") as fh:
             return fh.read()
     except OSError as exc:
-        raise Unusable("%s: %s" % (path, exc.strerror)) from None
+        raise Unusable("%s: %s" % (path, cli.cause(exc))) from None
 
 
 def _emit(obj: dict) -> None:
@@ -303,7 +303,7 @@ def main(argv: list[str]) -> int:
         _emit(out)
         return 1 if out["edited"] else 0
     except (Unusable, chain.ChainError, UnicodeDecodeError) as exc:
-        sys.stderr.write("unusable input: %s\n" % exc)
+        sys.stderr.write("unusable input: %s\n" % cli.cause(exc))
     _emit({"edited": None})
     return 2
 

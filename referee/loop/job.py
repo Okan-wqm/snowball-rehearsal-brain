@@ -344,7 +344,7 @@ def getir_d2(environ: dict[str, str], fetcher: Any = None) -> dict[str, Any]:
     try:
         reasons = U.check_recipe(unit, art.policy, tree, art.target)
     except (U.VerifyError, D.DeriveError) as exc:
-        raise Unusable("getir: %s" % exc) from None
+        raise Unusable("getir: %s" % cli.cause(exc)) from None
     if reasons:
         return {"reason": "recipe_refused", "reasons": reasons}
     out = _dir(environ, "out", "deps")
@@ -357,7 +357,7 @@ def getir_d2(environ: dict[str, str], fetcher: Any = None) -> dict[str, Any]:
                          N.DEFAULT_REGISTRIES, unit["install_scripts_required"], art.policy,
                          cap=unit["limits"].get("deps_bytes"))
     except N.DepsError as exc:
-        raise Unusable("getir: %s" % exc) from None
+        raise Unusable("getir: %s" % cli.cause(exc)) from None
     if not report["ok"]:
         return {"reason": "deps_refused", "reasons": report["reasons"]}
     return {"deps": {k: report[k] for k in ("address", "packages", "bytes", "artefact")},
@@ -376,7 +376,7 @@ def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None
         try:
             deps = N.artifact_in(deps)
         except N.DepsError as exc:
-            return {"reason": "deps_invalid", "reasons": [str(exc)]}
+            return {"reason": "deps_invalid", "reasons": [cli.cause(exc)]}
     root, tree, refused = _pulled_tree(environ, art, "kos")
     if refused:
         return refused
@@ -385,7 +385,7 @@ def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None
         index = K.results(unit, tree, art.policy, red_control or RED_CONTROL, diffs, _dir(environ, "out", "results"),
                           deps, art.target, runner, base=root)
     except K.UNUSABLE as exc:
-        raise Unusable("kos: %s" % exc) from None
+        raise Unusable("kos: %s" % cli.cause(exc)) from None
     return {"index": index}
 
 
@@ -395,7 +395,7 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
         with open(_dir(environ, "control", "control.json"), encoding="utf-8") as fh:
             control = json.load(fh)
     except (OSError, ValueError) as exc:
-        raise Unusable("yaz: control.json unreadable: %s" % exc) from None
+        raise Unusable("yaz: control.json unreadable: %s" % cli.cause(exc)) from None
     art, unit, refused = _pulled_unit(environ)
     if refused:
         return refused
@@ -406,7 +406,7 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
         # the cycle's state (brain/state: which merges' sentinels are unfinished) is D1's read, not wired: None
         return E.decide(art, unit, tree, _dir(environ, "in", "results"), control, None)
     except (E.Unusable, D.DeriveError) as exc:
-        raise Unusable("yaz: %s" % exc) from None
+        raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
 def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None,
@@ -448,7 +448,7 @@ def main(argv: list[str]) -> int:
             return 0 if out["ok"] else 1
         raise Unusable(USAGE)
     except Unusable as exc:
-        sys.stderr.write("unusable input: %s\n" % exc)
+        sys.stderr.write("unusable input: %s\n" % cli.cause(exc))
         sys.stdout.write(json.dumps({"ok": False, "reason": None}) + "\n")
         return 2
 

@@ -82,7 +82,7 @@ def _request_rows(raw: bytes, taken: set) -> list[dict]:
     try:
         request = chain.parse_row(raw.decode("utf-8"))
     except (UnicodeDecodeError, chain.ChainError) as exc:
-        raise Unusable("request: %s" % exc) from None
+        raise Unusable("request: %s" % cli.cause(exc)) from None
     if set(request) != {"rows"} or not isinstance(request["rows"], list) or not request["rows"]:
         raise Unusable('request must be {"rows": [row, ...]} with at least one row')
     ids = set(taken)
@@ -104,7 +104,7 @@ def _scan(rows: list[dict]) -> None:
     try:
         found = secrets.match_lines(text, "row")
     except secrets.ScanError as exc:
-        raise Unusable("rows cannot be scanned: %s" % exc) from None
+        raise Unusable("rows cannot be scanned: %s" % cli.cause(exc)) from None
     if found:
         raise SecretRow(found)
 
@@ -120,7 +120,7 @@ def _chained(rows: list[dict], tip: str) -> tuple[list[bytes], list[str]]:
             stored["row_hash"] = tip = chain.row_hash(stored)
             lines.append(chain.canonical(stored))
         except chain.ChainError as exc:
-            raise Unusable("row %s: %s" % (len(lines) + 1, exc)) from None
+            raise Unusable("row %s: %s" % (len(lines) + 1, cli.cause(exc))) from None
         hashes.append(tip)
     return lines, hashes
 
@@ -220,15 +220,15 @@ def main(argv: list[str]) -> int:
         _emit(True, hashes, state.commits, False)
         return 0
     except HardStop as exc:
-        sys.stderr.write("hard stop: %s\n" % exc)
+        sys.stderr.write("hard stop: %s\n" % cli.cause(exc))
         _emit(False, [], 0, True)
         return 1
     except SecretRow as exc:
-        sys.stderr.write("run invalid: %s\n" % exc)
+        sys.stderr.write("run invalid: %s\n" % cli.cause(exc))
         _emit(False, [], 0, False)
         return 1
     except (Unusable, OSError) as exc:
-        sys.stderr.write("unusable input: %s\n" % exc)
+        sys.stderr.write("unusable input: %s\n" % cli.cause(exc))
     _emit(False, [], 0, False)
     return 2
 

@@ -28,8 +28,23 @@ Rules ``run`` keeps (each bound by a test in ``tests/test_cli.py``):
    ends with a bare ``raise`` (cleanup) or reports through ``internal_error(<its exception>)``, and uses the
    exception nowhere else; so the last-resort text is this module's, type only. Every command but ``target.write``
    leaves the fault to ``run``; ``target.write`` keeps one handler, because its line says what was already sent. Bound by a register over every source file in ``tests/test_cli.py``. Not this rule's: the narrower
-   handlers (``unusable input: <message>`` for ``ValueError``, ``OSError`` ...), whose messages are kept to say
-   what was wrong with the input.
+   handlers, which are rule 7's.
+7. Outside this module, every handler that names its exception (``except ... as exc``) uses that name only as
+   ``cause(exc)``, ``internal_error(exc)``, ``raise ... from exc`` (a chained cause is never printed: rule 5 prints
+   the type), or one of the attributes in ``KEPT_ATTRIBUTES``; and no source reads ``traceback``, ``exc_info``,
+   ``__context__``, ``__cause__`` or ``__traceback__``. So the only text of a caught exception that can reach an
+   output is ``cause``'s, and ``cause`` writes the message only of an exception whose class is defined in a
+   source file under ``referee/`` (its text is built at a referee raise site); of any other exception it writes
+   no character of the message: only the type's name, a JSON or Unicode position with the encoding's name, or an
+   ``OSError``'s ``strerror`` (the text set with its errno; for a system call, the OS's), never its file name.
+   Bound in ``tests/test_cli.py`` by a register over every source file, by ``CauseOf`` and by ``Injected`` (every
+   command run with its reads raising a builtin exception that carries a mark). Measured before this rule: the
+   register finds 78 uses of a caught exception in 22 modules, among them ``"unusable input: %s" % exc`` over
+   ``ValueError``, ``KeyError`` and ``OSError``, whose messages quote their input (``int('...')`` quotes its
+   argument, a ``KeyError`` its key, an ``OSError`` its path, a ``UnicodeDecodeError`` the byte).
+   Out of scope, stated: what a referee raise site itself puts in its own exception's text (a field name, a path
+   from argv, a value of the request; rule 7 makes such a site the only author, it does not review what it
+   quotes); a child process's own stderr.
 
 Out of scope, stated: a fault while the module is imported (``python -m`` runs the module's top level before this
 boundary exists; ``tests/test_cli.py`` imports every command module, so a broken import is red before a push); signals and
@@ -62,6 +77,46 @@ def internal_error(exc: BaseException) -> str:
     by the one module handler that reports a fault itself (``target.write``: it knows what it already wrote).
     """
     return "internal error: %s" % (str(exc) if isinstance(exc, Fault) else type(exc).__name__)
+
+
+KEPT_ATTRIBUTES = ("reasons", "status", "code")
+"""Attributes of a caught exception a handler may read (rule 7). Each is set by its raiser as a code, not a message:
+``reasons``, a referee exception's list of reason codes (``loop.pulled``, ``runner.lint_record``, ``target.write``);
+``status``, ``target.write.ApiError``'s HTTP status; ``code``, ``urllib.error.HTTPError``'s HTTP status."""
+
+_HOME = os.path.dirname(os.path.abspath(__file__)) + os.sep
+
+
+def _own(exc: BaseException) -> bool:
+    """True when ``exc``'s class is defined in a source file under ``referee/`` (``__main__`` included when the
+    command was started with ``python -m``)."""
+    module = sys.modules.get(type(exc).__module__)
+    path = getattr(module, "__file__", None)
+    return isinstance(path, str) and os.path.abspath(path).startswith(_HOME)
+
+
+def cause(exc: BaseException) -> str:
+    """The one text of a caught exception that may reach an output (rule 7).
+
+    - A referee exception (its class is defined under ``referee/``): its message, written at a referee raise site.
+    - ``json.JSONDecodeError``: ``JSONDecodeError at line L column C``, the type and the position (the decoder's
+      message can quote a character of the input).
+    - ``UnicodeError`` with a position: ``<type> at position N (<encoding>)`` (the default text quotes the byte).
+    - ``OSError`` with an error text (``strerror``, set with an errno; for a system call the OS's text,
+      ``No such file or directory``): that text, never the file name.
+    - Anything else: the type's name alone (``KeyError``, ``ValueError``, ``TarError``).
+    """
+    if _own(exc):
+        return str(exc)
+    if isinstance(exc, json.JSONDecodeError):
+        return "JSONDecodeError at line %d column %d" % (exc.lineno, exc.colno)
+    if isinstance(exc, UnicodeError) and isinstance(getattr(exc, "start", None), int):
+        encoding = getattr(exc, "encoding", None)
+        return "%s at position %d (%s)" % (type(exc).__name__, exc.start,
+                                           encoding if isinstance(encoding, str) else "unknown encoding")
+    if isinstance(exc, OSError) and isinstance(exc.strerror, str):
+        return exc.strerror
+    return type(exc).__name__
 
 
 def _call(main: Callable[[list[str]], Any], argv: list[str]) -> tuple[int, str]:

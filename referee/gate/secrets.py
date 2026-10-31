@@ -748,7 +748,7 @@ def _scan_vector(kind: str, path: str) -> int:
         with open(path, "rb") as fh:
             lines = match_lines(fh.read(), kind)
     except (ScanError, OSError) as exc:
-        _emit({"clean": False, "error": str(exc)})
+        _emit({"clean": False, "error": cli.cause(exc)})
         return 2
     _emit({"clean": not lines, "lines": lines})
     return 0 if not lines else 1
@@ -767,7 +767,7 @@ def main(argv: list[str]) -> int:
         kind = opts["kind"] if command == "scan" else "prompt"
         matches = scan(text, kind, known)
     except (ScanError, OSError) as exc:
-        _emit({"error": str(exc)})
+        _emit({"error": cli.cause(exc)})
         return 2
     clean = not matches
     if command == "scan":
@@ -779,7 +779,7 @@ def main(argv: list[str]) -> int:
     try:
         proc = subprocess.run(opts["cmd"], input=text.encode("utf-8"), stdout=sys.stderr.buffer)
     except OSError as exc:
-        _emit({"error": "sender could not start: %s" % exc})
+        _emit({"error": "sender could not start: %s" % cli.cause(exc)})
         return 2
     _emit({"clean": True, "run_valid": True, "sent": True, "sender_exit": proc.returncode, "matches": []})
     return 0

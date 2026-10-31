@@ -125,7 +125,7 @@ def main(argv: list[str]) -> int:
         _emit(result)
         return 0 if result["verdict"] == "green" else 1
     except (Unusable, UnicodeDecodeError, chain.ChainError) as exc:
-        sys.stderr.write("unusable input: %s\n" % exc)
+        sys.stderr.write("unusable input: %s\n" % cli.cause(exc))
     _emit(EMPTY)
     return 2
 

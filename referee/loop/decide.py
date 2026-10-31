@@ -47,6 +47,7 @@ import json
 import os
 from typing import Any
 
+import cli
 from gate import check as C
 from gate import diffguard as G
 from loop import pulled as P
@@ -132,7 +133,7 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
         try:
             reasons = G.check(diff_text, profile, recipe)
         except G.DiffError as exc:  # the diff parsed: the recipe's inputs or the profile is not usable
-            raise Unusable("decide: %s" % exc) from None
+            raise Unusable("decide: %s" % cli.cause(exc)) from None
         reasons += _kos_reasons(index.get(cid))
         reasons += _gate(files, results, cid, control, pending + ([merge] if merge else []))
         if unfinished is None:

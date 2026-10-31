@@ -317,7 +317,7 @@ def main(argv: list[str]) -> int:
         sys.stdout.write(json.dumps(index, sort_keys=True) + "\n")
         return EXIT[index["base"]["verdict"]]
     except UNUSABLE as exc:
-        cause = "unusable input: %s" % exc
+        cause = "unusable input: %s" % cli.cause(exc)
     sys.stdout.write(json.dumps({"ok": False, "error": cause}) + "\n")
     return 2
 

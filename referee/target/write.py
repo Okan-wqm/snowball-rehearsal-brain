@@ -294,7 +294,8 @@ def _pull(data: Any) -> dict:
         number, state = data["number"], data["state"]
         base, head, head_sha = data["base"]["ref"], data["head"]["ref"], data["head"]["sha"]
     except (KeyError, TypeError) as exc:
-        raise ApiError(None, "pull response without %s" % exc) from None
+        raise ApiError(None, "pull response without one of number, state, base.ref, head.ref, head.sha: %s"
+                       % cli.cause(exc)) from None
     if not isinstance(number, int) or isinstance(number, bool) or not _sha(head_sha):
         raise ApiError(None, "pull response with a bad number or head sha")
     return {"number": number, "state": state, "base": base, "head": head, "head_sha": head_sha}
@@ -621,9 +622,9 @@ def main(argv: list[str]) -> int:
         _emit(dict(outcome(wr), ok=False, reasons=exc.reasons))
         return 1
     except ApiError as exc:
-        cause = "api: %s" % exc
+        cause = "api: %s" % cli.cause(exc)
     except (Unusable, ValueError, OSError, RecursionError) as exc:
-        cause = "unusable input: %s" % exc
+        cause = "unusable input: %s" % cli.cause(exc)
     except Exception as exc:  # noqa: BLE001 - kept, unlike other modules: outcome(wr) says what was already written
         cause = cli.internal_error(exc)
     _emit(dict(outcome(wr), ok=False, error=cause))

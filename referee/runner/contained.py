@@ -778,10 +778,10 @@ def main(argv: list[str]) -> int:
         _emit({"error": "usage: python -m runner.contained argv|check|run FILE"})
         return 2
     except ContainmentError as exc:
-        _emit({"error": str(exc)})
+        _emit({"error": cli.cause(exc)})
         return 1
     except (ValueError, KeyError, TypeError, OSError, RecursionError) as exc:
-        _emit({"error": "unusable input: %s" % exc})
+        _emit({"error": "unusable input: %s" % cli.cause(exc)})
         return 2
 
 
@@ -792,10 +792,10 @@ def _main_argv() -> int:
         _emit(project_argv(argv))
         return 0
     except ContainmentError as exc:
-        _emit({"ok": False, "reason": str(exc)})
+        _emit({"ok": False, "reason": cli.cause(exc)})
         return 1
     except (ValueError, RecursionError) as exc:  # UnusableInput, JSON errors
-        _emit({"ok": False, "reason": "unusable input: %s" % exc})
+        _emit({"ok": False, "reason": "unusable input: %s" % cli.cause(exc)})
         return 2
 
 
