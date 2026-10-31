@@ -34,7 +34,10 @@ The lock (``check``, before anything is fetched; every reason listed as ``<reaso
   strict base64 of the digest's length, or ``sha1-`` which is ignored as weak; any other token is
   ``integrity_malformed``. No strong token is ``integrity_weak``; none at all ``integrity_missing``.
 - ``hasInstallScript: true`` needs the package marked in the recipe's ``install_scripts_required``
-  (``install_script_not_marked``); a mark is the exact lock key or exactly ``name@version``.
+  (``install_script_not_marked``). A mark is a key of this lock's ``packages`` other than ``""`` or exactly
+  ``name@version`` (an npm name, a semver version; one the lock does not hold marks nothing); any other
+  element (a bare name, a path the lock does not hold, ``""``, a range or tag) is ``mark_not_usable:<element>``
+  here and unusable input (exit 2) for ``store`` and ``fetch`` (tohum/26c; class ``Marks``).
 
 The artifact fetch (``store``), only when the lock passes: each distinct ``resolved`` is fetched once and every
 strong ``integrity`` token must equal the bytes' digest (``integrity_mismatch``; one changed byte is
@@ -76,7 +79,7 @@ cannot be fetched is no verdict (exit 2), not a refusal: an outage says nothing 
 
 Group ``npmlock`` (tohum/29g, the vector interface; ``fetch``, a report, nothing written): stdin
 ``{registry_egress[], install_scripts_required[]}``, each registry ``https://<host>/...`` ending with ``/``,
-each mark ``name@version``. The lock must be ``lockfileVersion`` 3 with a ``packages`` object of objects.
+each element a mark as above (a lock key of this lock or ``name@version``; any other element is exit 2). The lock must be ``lockfileVersion`` 3 with a ``packages`` object of objects.
 Every ``packages`` entry other than ``""`` is a package, a link or an entry without ``resolved`` too, and
 gets the first of these reasons that holds, in this order:
 
@@ -91,20 +94,21 @@ gets the first of these reasons that holds, in this order:
 - ``integrity_mismatch``: the lock's ``integrity`` has no ``sha512-`` token, or one differs from
   ``sha512-`` + base64 of the sha512 of the raw ``.tgz`` bytes (other tokens are not read);
 - ``install_script_unmarked``: ``package/package.json`` has ``preinstall``, ``install`` or ``postinstall``
-  in ``scripts``, or ``package/binding.gyp`` exists, or the lock entry has ``hasInstallScript: true``; and the
-  tarball's ``name@version`` is not in ``install_scripts_required``.
+  in ``scripts``, or ``package/binding.gyp`` exists, or the lock entry has ``hasInstallScript: true``; and
+  neither the lock path nor the tarball's ``name@version`` is in ``install_scripts_required``.
 
 The tarball is read in memory. Out: ``{ok, rejected, artefact, licenses}``; ``rejected`` the sorted
 ``<reason>:<lock path>``; ``artefact`` ``sha256:`` + the hex sha256 of the canonical JSON (RFC 8785 for
 strings: sorted keys, no spaces, UTF-8) of ``[{integrity, path}]`` sorted by path, ``integrity`` as the
 lock writes it, so a lock written another way gives the same address; ``licenses`` sorted by path
 ``{path, name, version, license}`` from ``package/package.json`` (each ``null`` unless a string; a report,
-no gate). With a refusal ``artefact`` and ``licenses`` are ``null``. Exit 2: a lock or stdin that is not as
-above, a mirror that is not a readable directory, a mirror file that cannot be read, and a tarball that
-passes ``integrity`` but is not gzip tar with exactly one ``package/package.json`` JSON object.
+no gate). With a refusal ``artefact`` and ``licenses`` are ``null``. Exit 2 (nothing fetched): a lock or
+stdin that is not as above (an element of ``install_scripts_required`` that is not a mark included), a
+mirror that is not a readable directory, a mirror file that cannot be read, and a tarball that passes
+``integrity`` but is not gzip tar with exactly one ``package/package.json`` JSON object.
 
 Command line, run from ``referee/`` (one JSON line on stdout; exit 0 fine, 1 refused, 2 no verdict). Exit
-1 comes only from a report with ``ok`` false; every other failure is exit 2 with an ``error`` line:
+1 comes only from a report with ``ok`` false; every other failure is exit 2 with an ``{ok: false, error}`` line:
 unusable input (a missing or non-JSON lock, recipe or policy, JSON nested too deeply, a value of the
 wrong shape, a lock file not named as above, a fetch that failed, an existing artifact directory that
 does not verify) and, as a last resort, any other exception (``internal error: <type>``). Out of scope:
@@ -210,8 +214,43 @@ def parse_integrity(value: Any) -> tuple[str | None, list[tuple[str, bytes]]]:
     return None, strong
 
 
-def _marked(marks: list[str], key: str, name: str, version: Any) -> bool:
-    return key in marks or (isinstance(version, str) and "%s@%s" % (name, version) in marks)
+class Marks:
+    """``install_scripts_required`` read against one lock (tohum/26c, 29g).
+
+    An element is a mark when it is a key of the lock's ``packages`` other than the root ``""`` (it marks that
+    entry) or ``name@version`` with an npm name (scoped or not, as in a lock key) and a semver version (it marks
+    the package of that name and version; one the lock does not hold marks nothing). Every other element (a
+    bare name, scoped or not; a path the lock does not hold; ``""``; a range or tag after ``@``) is not a mark
+    and lands in ``bad``, in the request's order: it would otherwise be ignored or mark every version.
+    """
+
+    def __init__(self, marks: list[str], keys) -> None:
+        keys = {k for k in keys if k != ""}
+        self.keys, self.versions, self.bad = set(), set(), []
+        for mark in marks:
+            name, at, version = mark.rpartition("@")
+            if mark in keys:
+                self.keys.add(mark)
+            elif at and NAME_RE.fullmatch(name) and VERSION_RE.fullmatch(version):
+                self.versions.add(mark)
+            else:
+                self.bad.append(mark)
+
+    def require(self) -> None:
+        if self.bad:
+            raise DepsError("install_scripts_required: not a lock key or name@version: %s"
+                            % ", ".join(json.dumps(m) for m in self.bad))
+
+    def marked(self, key: str, name: Any, version: Any) -> bool:
+        return key in self.keys or (isinstance(name, str) and isinstance(version, str)
+                                    and "%s@%s" % (name, version) in self.versions)
+
+
+def read_marks(marks: list[str], keys) -> Marks:
+    """``Marks`` of a request that must be usable: an element that is not a mark is unusable input (exit 2)."""
+    found = Marks(marks, keys)
+    found.require()
+    return found
 
 
 def _source_reason(entry: dict) -> str | None:
@@ -276,8 +315,12 @@ def entries(lock: Any) -> tuple[list[str], list[dict]]:
 def check(lock: Any, registries=DEFAULT_REGISTRIES, marks: list[str] | None = None) -> dict:
     """The static check of the lock; nothing is fetched."""
     regs = _registries(registries)
-    marks = list(marks or [])
     reasons, items = entries(lock)
+    packages = lock.get("packages") if isinstance(lock, dict) else None
+    found = Marks(list(marks or []), packages if isinstance(packages, dict) else ())
+    if not isinstance(packages, dict):  # no lock to read the marks against: the lock's reason only
+        return {"ok": False, "reasons": reasons, "items": items, "marks": found}
+    reasons += ["mark_not_usable:%s" % m for m in found.bad]
     for item in items:
         key, entry = item["key"], item["entry"]
         source = _source_reason(entry)
@@ -294,9 +337,9 @@ def check(lock: Any, registries=DEFAULT_REGISTRIES, marks: list[str] | None = No
         bad, item["strong"] = parse_integrity(entry.get("integrity"))
         if bad:
             reasons.append("%s:%s" % (bad, key))
-        if entry.get("hasInstallScript") is True and not _marked(marks, key, item["name"], version):
+        if entry.get("hasInstallScript") is True and not found.marked(key, item["name"], version):
             reasons.append("install_script_not_marked:%s" % key)
-    return {"ok": not reasons, "reasons": reasons, "items": items}
+    return {"ok": not reasons, "reasons": reasons, "items": items, "marks": found}
 
 
 # ---------------------------------------------------------------- tarball
@@ -466,6 +509,7 @@ def fetch(lock_path: str, out: str, fetcher: Callable[[str, int | None], bytes],
     lock_bytes = _read(lock_path)
     lock = _parse(lock_bytes, lock_path)
     report = check(lock, registries, marks)
+    report["marks"].require()
     if not report["ok"]:
         return {"ok": False, "reasons": report["reasons"]}
     reasons, blobs, total = [], {}, 0
@@ -495,7 +539,7 @@ def fetch(lock_path: str, out: str, fetcher: Callable[[str, int | None], bytes],
         scripts = manifest.get("scripts")
         script = info["binding_gyp"] or entry.get("hasInstallScript") is True or (
             isinstance(scripts, dict) and any(s in scripts for s in INSTALL_SCRIPTS))
-        if script and not _marked(list(marks or []), key, item["name"], entry["version"]):
+        if script and not report["marks"].marked(key, item["name"], entry["version"]):
             reasons.append("install_script_not_marked:%s" % key)
         found = licenses_of(manifest)
         pinned = "%s==%s" % (item["name"], entry["version"])
@@ -692,6 +736,7 @@ def _vector_tarball(data: bytes, where: str) -> dict:
 def npmlock(lock_path: str, mirror: str, registries: list[str], marks: list[str]) -> dict:
     """The ``npmlock`` report ``{ok, rejected, artefact, licenses}``; DepsError is unusable input."""
     packages = _vector_lock(lock_path)
+    found = read_marks(marks, packages)
     try:
         os.listdir(mirror)
     except OSError as exc:
@@ -734,8 +779,7 @@ def npmlock(lock_path: str, mirror: str, registries: list[str], marks: list[str]
                     scripts = manifest.get("scripts")
                     script = (info["binding_gyp"] or entry.get("hasInstallScript") is True
                               or (isinstance(scripts, dict) and any(s in scripts for s in INSTALL_SCRIPTS)))
-                    marked = isinstance(name, str) and isinstance(version, str) and "%s@%s" % (name, version) in marks
-                    if script and not marked:
+                    if script and not found.marked(path, name, version):
                         reason = "install_script_unmarked"
                     else:
                         rows.append({"integrity": entry["integrity"], "path": path})
@@ -828,13 +872,13 @@ def main(argv: list[str]) -> int:
             report = verify(args[1], opts.get("--address"))
             _emit(report)
             return 0 if report["ok"] else 1
-        _emit({"error": USAGE})
+        _emit({"ok": False, "error": USAGE})
         return 2
     except (DepsError, ValueError, OSError) as exc:
-        _emit({"error": "unusable input: %s" % exc})
+        _emit({"ok": False, "error": "unusable input: %s" % exc})
         return 2
     except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
-        _emit({"error": "internal error: %s: %s" % (type(exc).__name__, exc)})
+        _emit({"ok": False, "error": "internal error: %s: %s" % (type(exc).__name__, exc)})
         return 2
 
 

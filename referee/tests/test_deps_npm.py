@@ -5,7 +5,10 @@ tarballs served by a mirror directory (the sandbox has no network; the HTTPS pat
 - ``resolved`` off the allowed registry (host, scheme, user, port, query, path, name), git and file
   dependencies, bundled entries and workspace keys are refused before anything is fetched;
 - a package that needs an install script (lock flag, ``scripts``, ``binding.gyp``) is refused unless the
-  recipe marks it by exact key or ``name@version``;
+  recipe marks it by a key of this lock or ``name@version`` (tohum/26c); every other element of
+  ``install_scripts_required`` (bare name, scoped bare name, a path this lock does not hold, ``""``, a range
+  or tag) is ``mark_not_usable`` for ``check`` and unusable input for ``store`` and ``fetch``, before any
+  tarball is fetched; a ``name@version`` the lock does not hold marks nothing;
 - the same lock gives the same content address, one changed lock byte another; ``verify`` takes the
   artifact by its hash and refuses a changed tarball, lock or manifest and an extra file;
 - the license report is written; with ``--product`` an unlisted or missing license is refused;
@@ -311,10 +314,38 @@ class TestInstallScripts(Base):
         report, calls = self.fx.fetch()
         self.assertEqual(report["reasons"], ["install_script_not_marked:node_modules/left-pad"])
         self.assertEqual(calls, [])
-        for marks in (["node_modules/left-pad"], ["left-pad@1.3.0"]):
+        for marks in (["node_modules/left-pad"], ["left-pad@1.3.0"], ["left-pad@1.3.0", "node_modules/left-pad"]):
             self.assertTrue(self.fx.fetch(marks=marks)[0]["ok"], marks)
-        for marks in (["left-pad"], ["left-pad@1.3.1"], ["node_modules/left-pad/"], ["LEFT-PAD@1.3.0"]):
-            self.assertFalse(self.fx.fetch(marks=marks)[0]["ok"], marks)
+        # a mark that marks nothing: another version, another name (case counts), another key of this lock
+        for marks in (["left-pad@1.3.1"], ["LEFT-PAD@1.3.0"], ["node_modules/@scope/util"], ["absent@1.0.0"],
+                      ["@scope/util@2.0.0"]):
+            report, calls = self.fx.fetch(marks=marks)
+            self.assertEqual((report["reasons"], calls), (["install_script_not_marked:node_modules/left-pad"], []),
+                             marks)
+
+    def test_an_element_that_is_not_a_mark_makes_the_request_unusable(self):
+        self.fx.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
+        lock = copy.deepcopy(self.fx.lock)
+        for bad in ("left-pad", "absent", "@scope/util", "node_modules/left-pad/", "node_modules/absent",
+                    "", "left-pad@^1.3.0", "left-pad@latest", "left-pad@", "@1.3.0", "left pad@1.3.0",
+                    "left-pad@1.3"):
+            marks = ["left-pad@1.3.0", bad]
+            calls = []
+            with self.assertRaises(N.DepsError, msg=bad):
+                N.fetch(self.fx.write_lock(), self.fx.out, lambda u, cap: calls.append(u), marks=marks)
+            self.assertEqual((calls, self.fx.artifacts()), ([], []), bad)
+            self.assertEqual(N.check(lock, marks=marks)["reasons"], ["mark_not_usable:%s" % bad], bad)
+            self.assertEqual(N.check(lock, marks=[bad, "node_modules/left-pad"])["reasons"],
+                             ["mark_not_usable:%s" % bad], bad)
+        # every element that is not a mark, in the request's order; the lock's own reasons still follow
+        self.assertEqual(N.check(lock, marks=["x", "node_modules/zz"])["reasons"],
+                         ["mark_not_usable:x", "mark_not_usable:node_modules/zz",
+                          "install_script_not_marked:node_modules/left-pad"])
+        # the root key is no package's path; a lock that cannot be read gives its own reason only
+        self.assertEqual(N.check({"lockfileVersion": 3, "packages": {"": {}}}, marks=[""])["reasons"],
+                         ["mark_not_usable:"])
+        self.assertEqual(N.check([], marks=["x"])["reasons"], ["lock_unparsable"])
+        self.assertEqual(N.check({"lockfileVersion": 3}, marks=["x"])["reasons"], ["lock_version_unsupported"])
 
     def test_tarball_scripts_and_binding_gyp_need_a_mark_even_when_lock_is_silent(self):
         for script in N.INSTALL_SCRIPTS:
@@ -585,9 +616,14 @@ class TestCli(Base):
         for args in cases:
             code, out = self.run_cli(*args)
             self.assertEqual(code, 2, (args, out))
-            self.assertEqual(list(out), ["error"], args)
+            self.assertEqual(out, {"ok": False, "error": out["error"]}, args)
             self.assertFalse(out["error"].startswith("internal error"), (args, out))
         self.assertEqual(self.run_cli("check", lock)[0], 0)
+        bare = self.write("r3.json", {"install_scripts_required": ["left-pad"]})
+        self.assertEqual(self.run_cli("check", lock, "--recipe", bare), (1, {"ok": False,
+                                                                           "reasons": ["mark_not_usable:left-pad"]}))
+        code, out = self.run_cli("store", lock, self.fx.out, "--mirror", self.fx.mirror, "--recipe", bare)
+        self.assertEqual((code, out["ok"], self.fx.artifacts()), (2, False, []), out)
 
     def test_unexpected_exception_is_exit_2_not_refusal(self):
         lock = self.fx.write_lock()
@@ -717,10 +753,12 @@ class TestNpmlock(unittest.TestCase):
         self.add("node_modules/gyp", "gyp", "1.0.0", {}, extra={"binding.gyp": b"{}"})
         self.add("node_modules/flag", "flag", "1.0.0", {}, hasInstallScript=True)
         self.add("node_modules/test-only", "test-only", "1.0.0", {"scripts": {"test": "x", "prepare": "y"}})
-        stdin = dict(self.stdin, install_scripts_required=["gyp-thing@1.2.0", "node_modules/post", "pre", "inst@2.0.0"])
+        # post by its lock path; pre@2.0.0 and inst@2.0.0 mark nothing (another version); gyp by another's path
+        stdin = dict(self.stdin, install_scripts_required=["gyp-thing@1.2.0", "node_modules/post", "pre@2.0.0",
+                                                           "inst@2.0.0", "node_modules/zeta"])
         code, out = self.run_fetch(stdin=stdin)
         self.assertEqual((code, out["rejected"]), (1, ["install_script_unmarked:node_modules/%s" % n
-                                                       for n in ("flag", "gyp", "inst", "post", "pre")]))
+                                                       for n in ("flag", "gyp", "inst", "pre")]))
         self.assertIsNone(out["artefact"])
         stdin["install_scripts_required"] += ["post@1.0.0", "pre@1.0.0", "inst@1.0.0", "gyp@1.0.0", "flag@1.0.0"]
         self.assertEqual(self.run_fetch(stdin=stdin)[0], 0)
@@ -861,6 +899,34 @@ class TestNpmlock(unittest.TestCase):
         self.assertEqual(stored["artefact"], self.run_fetch(lock)[1]["artefact"])
         self.assertEqual(os.listdir(out_dir), [stored["address"]])
 
+    def test_marks_are_lock_keys_or_name_at_version(self):
+        self.add("node_modules/post", "post", "1.0.0", {"scripts": {"postinstall": "node x.js"}})
+        self.add("node_modules/zeta/node_modules/post", "post", "2.0.0", {"scripts": {"postinstall": "x"}})
+        # a nested lock key marks only its entry; name@version marks every entry of that name and version
+        code, out = self.run_fetch(stdin=dict(self.stdin, install_scripts_required=[
+            "gyp-thing@1.2.0", "node_modules/zeta/node_modules/post"]))
+        self.assertEqual((code, out["rejected"]), (1, ["install_script_unmarked:node_modules/post"]))
+        for marks in (["node_modules/gyp-thing", "post@1.0.0", "post@2.0.0"],
+                      ["node_modules/gyp-thing", "node_modules/post", "node_modules/zeta/node_modules/post",
+                       "left-pad@1.3.0"]):
+            self.assertEqual(self.run_fetch(stdin=dict(self.stdin, install_scripts_required=marks))[0], 0, marks)
+        # name@version is read from the tarball, as 29g says (the lock's own version field is not the mark)
+        self.packages["node_modules/post"]["version"] = "9.9.9"
+        code, out = self.run_fetch(stdin=dict(self.stdin, install_scripts_required=[
+            "gyp-thing@1.2.0", "post@9.9.9", "post@2.0.0"]))
+        self.assertEqual((code, out["rejected"]), (1, ["install_script_unmarked:node_modules/post"]))
+
+    def test_an_element_that_is_not_a_mark_is_exit_2_and_nothing_is_read(self):
+        # a corrupt tarball: had anything been read, the answer would be integrity_mismatch (exit 1)
+        self.put(url("zeta", "1.0.0"), b"corrupt")
+        for bad in ("zeta", "left-pad", "@scope/util", "node_modules/left-pad", "node_modules/zeta/",
+                    "", "zeta@^1.0.0", "zeta@latest", "zeta@", "@1.0.0", "zeta@1.0"):
+            code, out = self.run_fetch(stdin=dict(self.stdin, install_scripts_required=["gyp-thing@1.2.0", bad]))
+            self.assertEqual((code, out), (2, {"ok": False, "error": out["error"]}), bad)
+        code, out = self.run_fetch(stdin=dict(self.stdin, install_scripts_required=["gyp-thing@1.2.0",
+                                                                                    "node_modules/zeta"]))
+        self.assertEqual((code, out["rejected"]), (1, ["integrity_mismatch:node_modules/zeta"]))
+
     def test_unusable_input_is_exit_2(self):
         good = self.lock_text()
         not_dir = self.write("x", "file")
@@ -887,7 +953,7 @@ class TestNpmlock(unittest.TestCase):
         for case in cases:
             code, out = self.run_fetch(**case)
             self.assertEqual(code, 2, (case, out))
-            self.assertEqual(list(out), ["error"], case)
+            self.assertEqual(out, {"ok": False, "error": out["error"]}, case)
             self.assertFalse(out["error"].startswith("internal error"), (case, out))
         # a tarball that matches its integrity but cannot be read: no verdict, not a pass
         for name, data in (("raw", b"not gzip"), ("nopkg", vtgz({"index.js": b"x"})),
@@ -896,7 +962,7 @@ class TestNpmlock(unittest.TestCase):
             self.packages = packages
             self.add("node_modules/" + name, name, "1.0.0", {}, data=data)
             code, out = self.run_fetch()
-            self.assertEqual((code, list(out)), (2, ["error"]), (name, out))
+            self.assertEqual((code, out), (2, {"ok": False, "error": out["error"]}), (name, out))
         if hasattr(os, "geteuid") and os.geteuid() != 0:
             self.packages = {"": {}}
             path = self.put(url("zeta", "1.0.0"), b"x")

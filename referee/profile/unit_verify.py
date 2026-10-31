@@ -29,7 +29,8 @@ copied, and criterion 5's coverage).
 - ``lockfiles`` is exactly one path named ``package-lock.json`` or ``npm-shrinkwrap.json``
   (``invalid:lockfiles``), covered by an input (``lockfile_not_in_inputs``), in the unit's directory or
   one of its ancestors (``lockfile_not_for_unit``).
-- ``install_scripts_required`` a list of strings (their form is MF5's: exact lock key or ``name@version``).
+- ``install_scripts_required`` a list of strings (their form is MF5's ``runner.deps_npm.Marks``, read against
+  the lock below: a key of the lock or ``name@version``; any other element is ``lock:mark_not_usable:<element>``).
 - ``lint_cmd``, ``test_cmd`` and ``affected_test_cmd`` non-empty lists of non-empty strings without NUL
   (``invalid:<field>``; an empty ``affected_test_cmd`` is refused as group ``recipe`` refuses it,
   tohum/29g). ``affected_test_cmd`` is not run here (stage 0's affected set is the unit's whole

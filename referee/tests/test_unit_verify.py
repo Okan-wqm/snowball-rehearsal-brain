@@ -278,6 +278,9 @@ class StaticCheck(Base):
         self.write_lock(lock)
         self.assertEqual(self.reasons(tree=True), ["lock:install_script_not_marked:node_modules/left-pad"])
         self.assertEqual(self.reasons(tree=True, install_scripts_required=["left-pad@1.3.0"]), [])
+        self.assertEqual(self.reasons(tree=True, install_scripts_required=["node_modules/left-pad"]), [])
+        self.assertEqual(self.reasons(tree=True, install_scripts_required=["left-pad@1.3.0", "left-pad"]),
+                         ["lock:mark_not_usable:left-pad"])
         os.remove(os.path.join(self.tree, "pkg/package-lock.json"))
         os.symlink("../lib/shared.py", os.path.join(self.tree, "pkg/package-lock.json"))
         self.assertIn("lockfile_missing", self.reasons(tree=True))
