@@ -304,8 +304,6 @@ def main(argv: list[str]) -> int:
         return 1 if out["edited"] else 0
     except (Unusable, chain.ChainError, UnicodeDecodeError) as exc:
         sys.stderr.write("unusable input: %s\n" % exc)
-    except Exception as exc:  # noqa: BLE001 - never a traceback, never an exit without a reason
-        sys.stderr.write("internal error: %s: %s\n" % (type(exc).__name__, exc))
     _emit({"edited": None})
     return 2
 

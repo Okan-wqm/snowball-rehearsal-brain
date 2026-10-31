@@ -624,8 +624,8 @@ def main(argv: list[str]) -> int:
         cause = "api: %s" % exc
     except (Unusable, ValueError, OSError, RecursionError) as exc:
         cause = "unusable input: %s" % exc
-    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a reason
-        cause = "internal error: %s: %s" % (type(exc).__name__, exc)
+    except Exception as exc:  # noqa: BLE001 - kept, unlike other modules: outcome(wr) says what was already written
+        cause = cli.internal_error(exc)
     _emit(dict(outcome(wr), ok=False, error=cause))
     return 2
 

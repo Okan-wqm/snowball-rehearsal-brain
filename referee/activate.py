@@ -515,8 +515,6 @@ def main(argv: list[str]) -> int:
         return 1 if out["hard_stop"] else 0
     except (Unusable, write.Unusable, chain.ChainError) as exc:
         cause = "unusable input: %s" % exc
-    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a reason
-        cause = "internal error: %s: %s" % (type(exc).__name__, exc)
     _emit({"ok": False, "hard_stop": True, "payload": None})
     sys.stderr.write(cause + "\n")
     return 2

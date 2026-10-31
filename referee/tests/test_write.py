@@ -841,6 +841,30 @@ class CommandLine(unittest.TestCase):
         self.assertEqual((code, out["refs"], out["commit"]), (2, [], {"tree": T1, "parents": [M]}))
         self.assertEqual(out["writes"], ["POST %sgit/commits" % P, "POST %sgit/refs" % P])
 
+    def test_a_fault_after_a_write_reports_the_writes_and_the_type_only(self):
+        """The one module handler kept (cli's rule 6): it knows what was sent, and writes the type, not the message."""
+        from unittest import mock
+        from test_cli import MARK, run_boundary
+        real = W.run_request
+
+        def faulty(req, wr):
+            real(req, wr)
+            raise RuntimeError(MARK)
+        req = {"op": "revert", "repo": REPO, "merge_sha": M, "onto": "refs/heads/brain/integration",
+               "ref": "refs/heads/brain/c/revert-1"}
+        with tempfile.TemporaryDirectory() as tmp:
+            api = os.path.join(tmp, "api.json")
+            with open(api, "w", encoding="utf-8") as fh:
+                json.dump(REVERT_API, fh)
+            with mock.patch.object(W, "run_request", faulty), mock.patch.object(W.sys, "stdin", io.StringIO(json.dumps(req))):
+                code, out, err = run_boundary(W.main, ["replay", api], W.FAULT_LINE)
+        self.assertEqual((code, err), (2, ""))
+        self.assertNotIn(MARK, out)
+        self.assertEqual(json.loads(out), {"ok": False, "error": "internal error: RuntimeError",
+                                           "refs": ["refs/heads/brain/c/revert-1"],
+                                           "writes": ["POST %sgit/commits" % P, "POST %sgit/refs" % P],
+                                           "commit": {"tree": T1, "parents": [M]}, "forced": False})
+
     def test_unusable(self):
         good = {"op": "branch", "repo": REPO, "ref": "refs/heads/brain/c/1", "sha": A}
         for args, api, req in ((("replay",), {}, "{"), (("replay",), "[", good), (("replay",), [], good),

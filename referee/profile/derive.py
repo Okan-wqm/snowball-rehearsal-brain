@@ -117,7 +117,7 @@ allows widening (29f notes that its general sentence would refuse it; no vector 
 
 Exit: ``derive`` 0, or 2 when an input is unusable; ``check`` 0 accepted, 1 refused, 2 unusable input.
 On exit 2 the line is ``{"error": ...}`` (``check`` adds ``"accepted": false``), never a traceback; any
-other exception is exit 2 as ``internal error: <type>``. Out of scope: signals and the interpreter being
+other exception is exit 2 at ``cli.run``'s boundary (``FAULT_LINE``, the type alone on stderr). Out of scope: signals and the interpreter being
 killed.
 """
 
@@ -793,9 +793,6 @@ def main(argv: list[str]) -> int:
         return 2
     except (DeriveError, ValueError, OSError) as exc:
         _emit(dict(fail, error="unusable input: %s" % exc))
-        return 2
-    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
-        _emit(dict(fail, error="internal error: %s: %s" % (type(exc).__name__, exc)))
         return 2
 
 

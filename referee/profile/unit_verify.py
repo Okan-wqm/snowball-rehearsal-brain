@@ -133,8 +133,8 @@ object. Other recipe fields are not looked at.
 Command line, run from ``referee/``, no stdin; the last stdout line is one JSON line. ``check``: ``{ok,
 reasons}``, exit 0 when ``reasons`` is empty, else 1. ``verify``: the report, exit 0 verified, 1 refused, 2
 no verdict. Unusable input (missing or non-JSON files, JSON nested too deeply, wrong shapes, a policy
-without the needed ``operating`` keys) and, as a last resort, any other exception (``internal error:
-<type>``) are exit 2 with ``{ok: false, error}``. Out of scope: signals and the interpreter being killed.
+without the needed ``operating`` keys) are exit 2 with ``{ok: false, error}``; any other exception is exit 2 at
+``cli.run``'s boundary (``FAULT_LINE``, the type alone on stderr). Out of scope: signals and the interpreter being killed.
 
     python -m profile.unit_verify check RECIPE POLICY
     python -m profile.unit_verify verify FILE
@@ -759,9 +759,6 @@ def main(argv: list[str]) -> int:
     except (VerifyError, D.DeriveError, C.ContainmentError, ValueError, KeyError, TypeError, OSError,
             RecursionError) as exc:
         _emit({"ok": False, "error": "unusable input: %s" % exc})
-        return 2
-    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
-        _emit({"ok": False, "error": "internal error: %s: %s" % (type(exc).__name__, exc)})
         return 2
 
 

@@ -282,15 +282,18 @@ class ArgvTest(unittest.TestCase):
                 self.assertIn("error", line, args)
 
     def test_unexpected_exception_is_exit_2_not_refusal(self):
+        """No module catch-all: the exception reaches ``cli.run``, which writes the type and never the message."""
         from unittest import mock
         import io
-        out = io.StringIO()
-        with mock.patch.object(contained, "check_argv", side_effect=AttributeError("boom")), \
-                mock.patch.object(contained.sys, "stdin", io.StringIO("[]")), \
-                mock.patch.object(contained.sys, "stdout", out):
-            code = contained.main(["check"])
-        self.assertEqual(code, 2)
-        self.assertEqual(json.loads(out.getvalue()), {"error": "internal error: AttributeError: boom"})
+        from test_cli import MARK, run_boundary
+        with mock.patch.object(contained, "check_argv", side_effect=AttributeError(MARK)), \
+                mock.patch.object(contained.sys, "stdin", io.StringIO("[]")):
+            got = run_boundary(contained.main, ["check"], contained.FAULT_LINE)
+        self.assertEqual(got, (2, '{"error": "internal error"}\n', "internal error: AttributeError\n"))
+        with mock.patch.object(contained, "request_argv", side_effect=AttributeError(MARK)), \
+                mock.patch.object(contained.sys, "stdin", io.StringIO("{}")):
+            got = run_boundary(contained.main, ["argv"], contained.FAULT_LINE)
+        self.assertEqual(got, (2, '{"ok": false, "reason": "internal error"}\n', "internal error: AttributeError\n"))
 
 
 # ---------------------------------------------------------------- the argv command (tohum/29f, group contained)

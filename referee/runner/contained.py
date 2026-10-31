@@ -68,8 +68,8 @@ invalid (``red_control_green``); a control that could not run is ``red_control_f
 
 Command line, run from ``referee/`` (stdout is one JSON line; exit 0 fine, 1 refused or invalid, 2
 unusable input). Exit 1 comes only from a refusal (``ContainmentError``, ``check`` not ok, ``run`` not
-valid); input that is not JSON, nested too deeply to parse, or of the wrong shape is exit 2, and so, as a
-last resort, is any other exception (``internal error: <type>``), never a traceback. Out of scope:
+valid); input that is not JSON, nested too deeply to parse, or of the wrong shape is exit 2, and so is any
+other exception, at ``cli.run``'s boundary (``FAULT_LINE``, the type alone on stderr), never a traceback. Out of scope:
 signals and the interpreter being killed.
 
     python -m runner.contained argv      stdin {image, cmd, uid, worktree, outdir, artefacts, env, services,
@@ -783,9 +783,6 @@ def main(argv: list[str]) -> int:
     except (ValueError, KeyError, TypeError, OSError, RecursionError) as exc:
         _emit({"error": "unusable input: %s" % exc})
         return 2
-    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
-        _emit({"error": "internal error: %s: %s" % (type(exc).__name__, exc)})
-        return 2
 
 
 def _main_argv() -> int:
@@ -799,9 +796,6 @@ def _main_argv() -> int:
         return 1
     except (ValueError, RecursionError) as exc:  # UnusableInput, JSON errors
         _emit({"ok": False, "reason": "unusable input: %s" % exc})
-        return 2
-    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
-        _emit({"ok": False, "reason": "internal error: %s: %s" % (type(exc).__name__, exc)})
         return 2
 
 

@@ -24,6 +24,13 @@ Rules ``run`` keeps (each bound by a test in ``tests/test_cli.py``):
    ``/dev/null`` so the interpreter's own flush at shutdown cannot turn the exit into 120. When the real stdout
    breaks part way through (rule 4), the bytes it took before breaking stay where they went; the exit is 2.
 
+6. Outside this module, a handler that catches every exception (bare, ``Exception`` or ``BaseException``) either
+   ends with a bare ``raise`` (cleanup) or reports through ``internal_error(<its exception>)``, and uses the
+   exception nowhere else; so the last-resort text is this module's, type only. Every command but ``target.write``
+   leaves the fault to ``run``; ``target.write`` keeps one handler, because its line says what was already sent. Bound by a register over every source file in ``tests/test_cli.py``. Not this rule's: the narrower
+   handlers (``unusable input: <message>`` for ``ValueError``, ``OSError`` ...), whose messages are kept to say
+   what was wrong with the input.
+
 Out of scope, stated: a fault while the module is imported (``python -m`` runs the module's top level before this
 boundary exists; ``tests/test_cli.py`` imports every command module, so a broken import is red before a push); signals and
 ``KeyboardInterrupt`` (they end the process with their own codes, never 1); the interpreter being killed;
@@ -46,6 +53,15 @@ GENERIC_LINE = {"error": "internal error"}
 
 class Fault(Exception):
     """``main`` broke the boundary's contract (rule 2, 3 or 4)."""
+
+
+def internal_error(exc: BaseException) -> str:
+    """The one text of an unexpected exception (rule 5): ``internal error: <type>``, never the message.
+
+    A ``Fault``'s text is written here, by this module, so it is kept (``exit 3``, ``stdout``). Used by ``run`` and
+    by the one module handler that reports a fault itself (``target.write``: it knows what it already wrote).
+    """
+    return "internal error: %s" % (str(exc) if isinstance(exc, Fault) else type(exc).__name__)
 
 
 def _call(main: Callable[[list[str]], Any], argv: list[str]) -> tuple[int, str]:
@@ -106,9 +122,8 @@ def run(main: Callable[[list[str]], Any], argv: list[str], fault_line: Any) -> i
             raise Fault("stdout")
         return code
     except Exception as exc:  # noqa: BLE001 - rule 5: a fault is exit 2 with a reason, never exit 1
-        cause = str(exc) if isinstance(exc, Fault) else type(exc).__name__
         # The exit code is the answer; the two lines below are best effort, a closed stream cannot change it.
-        _say(sys.stderr, "internal error: %s\n" % cause)
+        _say(sys.stderr, internal_error(exc) + "\n")
         if not _say(sys.stdout, json.dumps(_line(fault_line, argv), sort_keys=True) + "\n"):
             _quiet_stdout()
         return FAULT_EXIT

@@ -510,8 +510,6 @@ def main(argv: list[str]) -> int:
         return 0 if planned["send"] else 1
     except (Unusable, UnicodeDecodeError, chain.ChainError) as exc:
         sys.stderr.write("unusable input: %s\n" % exc)
-    except Exception as exc:  # noqa: BLE001 - never a traceback, never an exit without a reason
-        sys.stderr.write("internal error: %s: %s\n" % (type(exc).__name__, exc))
     _emit({"send": False})
     return 2
 

@@ -626,12 +626,11 @@ class Cli(Base):
         self.assertEqual((code, out["verdict"], out["reasons"]), (1, "refused", ["services_not_empty"]))
 
     def test_unexpected_exception_is_exit_2_not_a_traceback(self):
-        out = __import__("io").StringIO()
-        with mock.patch.object(U, "vector_check", side_effect=ZeroDivisionError("boom")), \
-                mock.patch.object(sys, "stdout", out):
-            code = U.main(["check", self.file("r.json", recipe()), self.file("p.json", policy())])
-        self.assertEqual(code, 2)
-        self.assertIn("internal error: ZeroDivisionError", out.getvalue())
+        from test_cli import MARK, run_boundary
+        with mock.patch.object(U, "vector_check", side_effect=ZeroDivisionError(MARK)):
+            got = run_boundary(U.main, ["check", self.file("r.json", recipe()), self.file("p.json", policy())],
+                               U.FAULT_LINE)
+        self.assertEqual(got, (2, '{"error": "internal error", "ok": false}\n', "internal error: ZeroDivisionError\n"))
 
 
 # ---------------------------------------------------------------- group recipe (tohum/29g), vector form

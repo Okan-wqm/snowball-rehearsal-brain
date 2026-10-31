@@ -674,11 +674,10 @@ class TestCli(Base):
 
     def test_unexpected_exception_is_exit_2_not_refusal(self):
         lock = self.fx.write_lock()
-        buf = io.StringIO()
-        with mock.patch.object(N, "check", side_effect=KeyError("boom")), mock.patch.object(sys, "stdout", buf):
-            code = N.main(["check", lock])
-        self.assertEqual(code, 2)
-        self.assertTrue(json.loads(buf.getvalue())["error"].startswith("internal error: KeyError"))
+        from test_cli import MARK, run_boundary
+        with mock.patch.object(N, "check", side_effect=KeyError(MARK)):
+            got = run_boundary(N.main, ["check", lock], N.FAULT_LINE)
+        self.assertEqual(got, (2, '{"error": "internal error", "ok": false}\n', "internal error: KeyError\n"))
 
 
 def vtgz(files: dict, gz_mtime: int = 0) -> bytes:

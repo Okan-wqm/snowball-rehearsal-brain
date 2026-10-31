@@ -346,8 +346,6 @@ def main(argv: list[str]) -> int:
         raise Unusable(USAGE)
     except (Unusable, DiffError, ValueError, OSError, RecursionError) as exc:
         cause = "unusable input: %s" % exc
-    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a reason
-        cause = "internal error: %s: %s" % (type(exc).__name__, exc)
     _emit({"decision": "reject"} if mode == "decide" else {"error": cause})
     sys.stderr.write(cause + "\n")
     return 2

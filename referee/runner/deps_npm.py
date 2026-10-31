@@ -115,7 +115,8 @@ Command line, run from ``referee/`` (one JSON line on stdout; exit 0 fine, 1 ref
 1 comes only from a report with ``ok`` false; every other failure is exit 2 with an ``{ok: false, error}`` line:
 unusable input (a missing or non-JSON lock, recipe or policy, JSON nested too deeply, a value of the
 wrong shape, a lock file not named as above, a fetch that failed, an existing artifact directory that
-does not verify) and, as a last resort, any other exception (``internal error: <type>``). Out of scope:
+does not verify); any other exception is exit 2 at ``cli.run``'s boundary (``FAULT_LINE``, the type alone on
+stderr). Out of scope:
 signals and the interpreter being killed.
 
     python -m runner.deps_npm fetch LOCK MIRROR < {"registry_egress": [...], "install_scripts_required": [...]}
@@ -901,9 +902,6 @@ def main(argv: list[str]) -> int:
         return 2
     except (DepsError, ValueError, OSError) as exc:
         _emit({"ok": False, "error": "unusable input: %s" % exc})
-        return 2
-    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
-        _emit({"ok": False, "error": "internal error: %s: %s" % (type(exc).__name__, exc)})
         return 2
 
 

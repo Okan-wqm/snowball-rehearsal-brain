@@ -492,15 +492,13 @@ class VectorTest(unittest.TestCase):
     def test_unexpected_exception_is_exit_2_not_refusal(self):
         tree, op, prop = self.tar(self.TREE), self.json_file(self.OP), self.json_file(self.proposal())
         for args in (["derive", tree, op], ["check", tree, op, prop]):
-            out = io.StringIO()
-            with mock.patch.object(D, "derive_vector", side_effect=TypeError("boom")), \
-                    mock.patch.object(D.sys, "stdout", out):
-                code = D.main(args)
-            self.assertEqual(code, 2)
-            want = {"error": "internal error: TypeError: boom"}
+            from test_cli import MARK, run_boundary
+            with mock.patch.object(D, "derive_vector", side_effect=TypeError(MARK)):
+                code, out, err = run_boundary(D.main, args, D.FAULT_LINE)
+            want = {"error": "internal error"}
             if args[0] == "check":
                 want["accepted"] = False
-            self.assertEqual(json.loads(out.getvalue()), want)
+            self.assertEqual((code, json.loads(out), err), (2, want, "internal error: TypeError\n"))
 
 
 if __name__ == "__main__":

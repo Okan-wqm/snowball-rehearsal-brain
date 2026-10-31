@@ -318,8 +318,6 @@ def main(argv: list[str]) -> int:
         return EXIT[index["base"]["verdict"]]
     except UNUSABLE as exc:
         cause = "unusable input: %s" % exc
-    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a refusal
-        cause = "internal error: %s: %s" % (type(exc).__name__, exc)
     sys.stdout.write(json.dumps({"ok": False, "error": cause}) + "\n")
     return 2
 

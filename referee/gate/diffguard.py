@@ -465,9 +465,6 @@ def main(argv: list[str]) -> int:
     except (DiffError, ValueError, OSError, RecursionError) as exc:
         _emit({"ok": False, "error": "unusable input: %s" % exc})
         return 2
-    except Exception as exc:  # noqa: BLE001 - no traceback and no exit 1 without a reason
-        _emit({"ok": False, "error": "internal error: %s: %s" % (type(exc).__name__, exc)})
-        return 2
 
 
 FAULT_LINE = {"ok": False, "error": "internal error"}
