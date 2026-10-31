@@ -618,6 +618,13 @@ def lint_records(stdouts: list, staging: str, recipe: dict, derived: dict) -> tu
     return [], records
 
 
+def derived_profile(tree: str, target: Any, policy: Any) -> dict:
+    """The derivation the staging copies inputs under (``profile.derive`` with the policy's security keywords when
+    the policy has a ``constitutional`` part, the seed's default list otherwise). One call for every reader of the
+    staged tree: ``stage`` here and the gate's path rules in ``yaz`` (``loop.decide``) judge the same profile."""
+    return D.derive(tree, target, policy if isinstance(policy, dict) and "constitutional" in policy else None)
+
+
 def stage(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | None, target: Any, runner: C.Runner,
           staging_root: str) -> tuple[list[str], dict, dict]:
     """Steps 1-3 under ``staging_root``, after the static check: ``(reasons, result, context)``. ``context`` is
@@ -631,7 +638,7 @@ def stage(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | Non
     if reasons:
         return reasons, {}, {}
     values, operating = _effective(policy, recipe["limits"])
-    derived = D.derive(tree, target, policy if isinstance(policy, dict) and "constitutional" in policy else None)
+    derived = derived_profile(tree, target, policy)
     lock = D.norm_path(recipe["lockfiles"][0])
     staging = os.path.join(staging_root, "tree")
     os.mkdir(staging)

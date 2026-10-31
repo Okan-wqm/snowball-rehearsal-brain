@@ -43,7 +43,14 @@ environment (``secret_in_code_job:<NAME>``, exit 1). Then:
   then accepts only a lock without packages), writing ``$RUNNER_TEMP/out/results``. Its index is in the output
   (``index``) and ``done`` is ``["D3"]``. D7 (the sentinel) and D8 (the drill) of this job are not wired, so the
   job still ends ``cycle_not_wired``, exit 1, after D3: the upload step does not run and ``yaz`` gets nothing.
-- every other job stops at once with ``cycle_not_wired`` (exit 1): ``cek`` does not write ``pulled`` yet (its assembly,
+- ``yaz`` runs D5 (``yaz_d5``): it reads ``control.json`` from the ``control`` step's clone
+  (``$RUNNER_TEMP/control/control.json``; unreadable is unusable, exit 2), ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
+  (the same refusals, the same one unit), extracts the tree under ``$RUNNER_TEMP/work`` and calls ``loop.decide``
+  on ``$RUNNER_TEMP/in/results``: ``decisions`` (every candidate's ``decision`` and ``reasons``) and ``merge`` are in
+  the output and ``done`` is ``["D5"]``. The cycle's state (which merges' sentinels are unfinished) is D1's read of
+  ``brain/state``, not wired, so D5 is given ``None`` and every candidate carries ``sentinel_state_unread``: no
+  candidate merges. D6-D8 are not wired, so the job ends ``cycle_not_wired``, exit 1, after D5, writing nothing.
+- ``cek``, ``getir`` and ``cagir`` stop at once with ``cycle_not_wired`` (exit 1): ``cek`` does not write ``pulled`` yet (its assembly,
   ``loop.cek.assemble``, and the fetch of one commit, ``loop.fetch``, are written; the reads that choose the
   commits are not), so in a real run ``kos`` is not
   reached; the D1-D8 composition inside the jobs (building each MF's input from the
@@ -75,7 +82,9 @@ import sys
 import tempfile
 from typing import Any, NamedTuple
 
+from loop import decide as E
 from loop import pulled as P
+from profile import derive as D
 from runner import kos as K
 
 USAGE = "usage: python -m loop.job render | run JOB"
@@ -276,15 +285,25 @@ def _dir(environ: dict[str, str], *parts: str) -> str:
     return os.path.join(temp, *parts)
 
 
-def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None = None) -> dict[str, Any]:
-    """D3 of ``kos`` (see the module docstring): ``{reason?, reasons?, index?}``."""
+def _pulled_unit(environ: dict[str, str]) -> tuple[Any, Any, dict | None]:
+    """``$RUNNER_TEMP/in/pulled`` read by ``loop.pulled.read`` and its one unit (stage 0 runs exactly one entry of
+    ``units``): ``(artifact, unit, None)``, or ``(None, None, {reason, reasons?})`` (``pulled_invalid``,
+    ``units_not_one``). Shared by ``kos`` and ``yaz``, so both read the same artifact the same way."""
     try:
         art = P.read(_dir(environ, "in", "pulled"))
     except P.PulledError as exc:
-        return {"reason": "pulled_invalid", "reasons": exc.reasons}
+        return None, None, {"reason": "pulled_invalid", "reasons": exc.reasons}
     units = art.units.get("units") if isinstance(art.units, dict) else None
     if not (isinstance(units, list) and len(units) == 1):
-        return {"reason": "units_not_one"}
+        return None, None, {"reason": "units_not_one"}
+    return art, units[0], None
+
+
+def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None = None) -> dict[str, Any]:
+    """D3 of ``kos`` (see the module docstring): ``{reason?, reasons?, index?}``."""
+    art, unit, refused = _pulled_unit(environ)
+    if refused:
+        return refused
     deps = _dir(environ, "in", "deps")
     if not (os.path.isdir(deps) and os.listdir(deps)):
         deps = None
@@ -298,11 +317,35 @@ def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None
         return {"reason": "pulled_invalid", "reasons": exc.reasons}
     diffs = {cid: files["diff.patch"] for cid, files in art.candidates.items()}
     try:
-        index = K.results(units[0], tree, art.policy, red_control or RED_CONTROL, diffs, _dir(environ, "out", "results"),
+        index = K.results(unit, tree, art.policy, red_control or RED_CONTROL, diffs, _dir(environ, "out", "results"),
                           deps, art.target, runner, base=root)
     except K.UNUSABLE as exc:
         raise Unusable("kos: %s" % exc) from None
     return {"index": index}
+
+
+def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
+    """D5 of ``yaz`` (see the module docstring): ``{reason?, reasons?, decisions?, merge?}``."""
+    try:
+        with open(_dir(environ, "control", "control.json"), encoding="utf-8") as fh:
+            control = json.load(fh)
+    except (OSError, ValueError) as exc:
+        raise Unusable("yaz: control.json unreadable: %s" % exc) from None
+    art, unit, refused = _pulled_unit(environ)
+    if refused:
+        return refused
+    work = _dir(environ, "work")
+    os.makedirs(work, exist_ok=True)
+    tree = os.path.join(tempfile.mkdtemp(prefix="yaz-", dir=work), "tree")
+    try:
+        P.extract_tree(art.tree_tar, tree)
+    except P.PulledError as exc:
+        return {"reason": "pulled_invalid", "reasons": exc.reasons}
+    try:
+        # the cycle's state (brain/state: which merges' sentinels are unfinished) is D1's read, not wired: None
+        return E.decide(art, unit, tree, _dir(environ, "in", "results"), control, None)
+    except (E.Unusable, D.DeriveError) as exc:
+        raise Unusable("yaz: %s" % exc) from None
 
 
 def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None) -> dict[str, Any]:
@@ -319,6 +362,11 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         if "reason" in d3:
             return dict(result, **d3)
         return dict(result, reason="cycle_not_wired", done=["D3"], index=d3["index"])
+    if name == "yaz":
+        d5 = yaz_d5(environ)
+        if "reason" in d5:
+            return dict(result, **d5)
+        return dict(result, reason="cycle_not_wired", done=["D5"], **d5)
     return dict(result, reason="cycle_not_wired")
 
 

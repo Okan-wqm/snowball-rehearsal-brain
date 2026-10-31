@@ -18,7 +18,7 @@
     {"id": "T50", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_revert_drill.py'", "stage": 0},
     {"id": "T37", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_llm_call.py'", "stage": 0},
     {"id": "T42", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_status_block.py' && python -m unittest discover -s tests -p 'test_depmap.py'", "stage": 0},
-    {"id": "T46", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_loop_workflow.py' && python -m unittest discover -s tests -p 'test_loop_kos.py' && python -m unittest discover -s tests -p 'test_loop_cek.py' && python -m unittest discover -s tests -p 'test_gitobj.py' && python -m unittest discover -s tests -p 'test_fetch.py' && cd .. && python -m unittest discover -s tests -p 'test_toy_pulled.py'", "stage": 0},
+    {"id": "T46", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_loop_workflow.py' && python -m unittest discover -s tests -p 'test_loop_kos.py' && python -m unittest discover -s tests -p 'test_loop_yaz.py' && python -m unittest discover -s tests -p 'test_loop_cek.py' && python -m unittest discover -s tests -p 'test_gitobj.py' && python -m unittest discover -s tests -p 'test_fetch.py' && cd .. && python -m unittest discover -s tests -p 'test_toy_pulled.py'", "stage": 0},
     {"id": "T45", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_activate.py' && cd .. && python -m unittest discover -s tests -p 'test_toy_candidates.py'", "stage": 0},
     {"id": "T14", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_schema.py'", "stage": 0}
   ],

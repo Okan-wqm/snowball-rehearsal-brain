@@ -7,17 +7,9 @@
     "kind": "unwired",
     "why": "MF15, D4 in job cagir: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
   },
-  "gate.check": {
-    "kind": "unwired",
-    "why": "MF8, D5 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
-  },
   "gate.revert": {
     "kind": "unwired",
     "why": "MF13, D7 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
-  },
-  "gate.secrets": {
-    "kind": "unwired",
-    "why": "MF2, D4-D6 in jobs cagir and yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
   },
   "gate.sentinel": {
     "kind": "unwired",
