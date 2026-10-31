@@ -14,7 +14,20 @@ Rules checked by ``problems``:
   set tohum/26 lists after "**`founder` satırı:** `kind` ∈", read from the page (``spec_kinds``), not copied;
   ``supersedes`` names the ``row_hash`` of an earlier row of this file that breaks a meaning rule;
 - a row that breaks a meaning rule is a problem unless a later row that breaks none and has the row shape names its
-  ``row_hash`` in ``supersedes`` (the row is closed).
+  ``row_hash`` in ``supersedes`` (the row is closed);
+- a ref ``closes:<row_id>`` (this brain's rule, not tohum's: an item is not a broken row, so ``supersedes`` cannot
+  close it) names an earlier row of kind ``seed_issue`` or ``blocked`` (an item) that no earlier valid closer has
+  closed, once per row; anything else is a problem, and it is not closable. A row closes the items it names only when
+  it breaks no meaning rule and has the row shape.
+
+**Open items** (``open``): what this brain has reported and not closed, generated instead of copied into a session's
+summary. The items are (1) every ``seed_issue`` or ``blocked`` row no valid ``closes:`` ref names, with its
+``row_id``, kind, ``ts`` and the first 200 characters of its summary, in ledger order; then (2) every
+``reports/<id>.json`` (tohum/26c; the report's ``state`` is its one source, a ledger row does not close it) whose
+``state`` is not ``confirmed``, by id, with kind, state and ref. A report that is not a JSON object with ``id`` equal
+to its file's stem and a non-empty string ``state`` makes the list unusable (exit 2); a ledger with any problem gives
+no list (exit 1). Whether an item is still true is not checked: a session closes it with the evidence in the
+closer's summary.
 
 Not checked: ``snapshot_id`` being the brain's SHA at that moment (one accepted row, f58, carries a short SHA;
 tohum/13 does not count it among the meaning rules a row can be closed for); whether a closed row was accepted
@@ -36,6 +49,7 @@ between the read and the rename (a session is one writer).
 Command line, run from ``referee/`` (stdout one JSON line; exit 0 ok, 1 problem or refusal, 2 unusable input):
 
     python -m ledger.founder check [--ledger FILE] [--page FILE]
+    python -m ledger.founder open [--ledger FILE] [--page FILE] [--reports DIR]
     python -m ledger.founder append --kind KIND --summary TEXT|- --snapshot SHA [--ref PATH ...]
         [--derivation D] [--trust T] [--supersedes HASH] [--ts TS] [--ledger FILE] [--page FILE]
 
@@ -59,8 +73,13 @@ from ledger import chain, schema
 BRAIN = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LEDGER = os.path.join(BRAIN, "founder-ledger.jsonl")
 PAGE = os.path.join(BRAIN, "spec", "tohum", "26-semalar.md")
+REPORTS = os.path.join(BRAIN, "reports")
 FOUNDER = "founder"
 ROW_ID = re.compile(r"f(\d+)\Z")
+ITEM_KINDS = frozenset({"seed_issue", "blocked"})  # the founder kinds that report something to be closed
+CLOSES = "closes:"
+CLOSED_REPORT_STATES = frozenset({"confirmed"})  # tohum/26c: the Founder confirms what a seed epoch fixed
+HEAD = 200
 
 PAYLOAD = schema.shape({"summary": schema.text, "refs": schema.list_of(schema.text)})
 # part and kind are meaning rules (closable), so the shape takes any non-empty string there
@@ -84,10 +103,12 @@ def spec_kinds(page: str = PAGE) -> frozenset:
     return frozenset(kinds)
 
 
-def problems(data: bytes, kinds: frozenset) -> list[str]:
+def _judge(data: bytes, kinds: frozenset) -> tuple[list[dict], list[str], list[list[str]], dict[str, str]]:
+    """The rows of ``data`` (a chain), the problems found, each row's meaning-rule breaks, and the open items each
+    valid closer closed (item row_id -> closer row_id). A broken chain is the only problem then, with no rows."""
     verdict = chain.verify_bytes(data)
     if not verdict["valid"]:
-        return ["chain: %s (line %s)" % (verdict["reason"], verdict["line"])]
+        return [], ["chain: %s (line %s)" % (verdict["reason"], verdict["line"])], [], {}
     rows = [chain.parse_row(line.decode("utf-8")) for line in chain._lines(data)]
     out: list[str] = []
     breaks: list[list[str]] = []
@@ -108,12 +129,71 @@ def problems(data: bytes, kinds: frozenset) -> list[str]:
                 broken.append("supersedes names line %d, which breaks no meaning rule" % (j + 1))
         breaks.append(broken)
         earlier[row.get("row_hash")] = i
+    items: dict[str, int] = {}  # row_id of an earlier seed_issue or blocked row -> its index
+    closed: dict[str, str] = {}
+    for i, row in enumerate(rows):
+        where = "line %d (%s)" % (i + 1, row.get("row_id"))
+        refs = row.get("payload", {}).get("refs") if isinstance(row.get("payload"), dict) else None
+        names = [r[len(CLOSES):] for r in refs if isinstance(r, str) and r.startswith(CLOSES)] \
+            if isinstance(refs, list) else []
+        counts = not breaks[i] and not FOUNDER_ROW(row, "")
+        for n, name in enumerate(names):
+            if name not in items:
+                out.append("%s: %s%s names no earlier seed_issue or blocked row" % (where, CLOSES, name))
+            elif name in names[:n]:
+                out.append("%s: %s%s is named twice" % (where, CLOSES, name))
+            elif name in closed:
+                out.append("%s: %s%s, already closed by %s" % (where, CLOSES, name, closed[name]))
+            elif counts:
+                closed[name] = row.get("row_id")
+        if row.get("kind") in ITEM_KINDS and isinstance(row.get("row_id"), str):
+            items.setdefault(row["row_id"], i)
+    return rows, out, breaks, closed
+
+
+def problems(data: bytes, kinds: frozenset) -> list[str]:
+    rows, out, breaks, _ = _judge(data, kinds)
     closed = {row["supersedes"] for row, broken in zip(rows, breaks)
               if not broken and "supersedes" in row and not FOUNDER_ROW(row, "")}
     for i, (row, broken) in enumerate(zip(rows, breaks)):
         if broken and row.get("row_hash") not in closed:
             out += ["line %d (%s): %s, not closed" % (i + 1, row.get("row_id"), b) for b in broken]
     return out
+
+
+def read_reports(directory: str = REPORTS) -> list[dict]:
+    """Every ``<id>.json`` of the reports directory (tohum/26c), sorted by id; Unusable when one is not a JSON object
+    with a string ``id`` equal to its file name's stem and a non-empty string ``state``. A missing directory has none."""
+    if not os.path.isdir(directory):
+        return []
+    out = []
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(directory, name), encoding="utf-8") as fh:
+                report = json.load(fh)
+        except (OSError, ValueError) as exc:
+            raise Unusable("report %s: %s" % (name, exc)) from None
+        if not isinstance(report, dict) or report.get("id") != name[:-len(".json")] \
+                or not isinstance(report.get("state"), str) or not report["state"]:
+            raise Unusable("report %s: not an object with id %r and a state" % (name, name[:-len(".json")]))
+        out.append(report)
+    return out
+
+
+def open_items(data: bytes, kinds: frozenset, reports: list[dict]) -> tuple[list[dict], list[str]]:
+    """The open items (see the module docstring) and the ledger's problems; no item is listed when there is one."""
+    rows, _, _, closed = _judge(data, kinds)
+    found = problems(data, kinds)
+    if found:
+        return [], found
+    items = [{"id": row["row_id"], "source": "ledger", "kind": row["kind"], "ts": row["ts"],
+              "head": row["payload"]["summary"][:HEAD]}
+             for row in rows if row["kind"] in ITEM_KINDS and row["row_id"] not in closed]
+    items += [{"id": r["id"], "source": "report", "kind": r.get("kind"), "state": r["state"], "ref": r.get("ref")}
+              for r in reports if r["state"] not in CLOSED_REPORT_STATES]
+    return items, []
 
 
 def next_row(data: bytes, kind: str, summary: str, refs: list[str], snapshot: str, ts: str,
@@ -181,10 +261,11 @@ class _Parser(argparse.ArgumentParser):
 def _parser() -> argparse.ArgumentParser:
     p = _Parser(prog="python -m ledger.founder", add_help=False)
     sub = p.add_subparsers(dest="command", required=True, parser_class=_Parser)
-    for name in ("check", "append"):
+    for name in ("check", "append", "open"):
         s = sub.add_parser(name, add_help=False)
         s.add_argument("--ledger", default=LEDGER)
         s.add_argument("--page", default=PAGE)
+    sub.choices["open"].add_argument("--reports", default=REPORTS)
     a = sub.choices["append"]
     a.add_argument("--kind", required=True)
     a.add_argument("--summary", required=True)
@@ -213,6 +294,10 @@ def main(argv: list[str], stdin=None) -> int:
         if args.command == "check":
             found = problems(data, kinds)
             _emit({"ok": not found, "problems": found})
+            return 1 if found else 0
+        if args.command == "open":
+            items, found = open_items(data, kinds, read_reports(args.reports))
+            _emit({"ok": not found, "open": items, "problems": found})
             return 1 if found else 0
         summary = args.summary
         if summary == "-":

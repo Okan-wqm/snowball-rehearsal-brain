@@ -161,9 +161,8 @@ class ThisLedger(unittest.TestCase):
         self.assertEqual(sorted(int(p.split()[1]) for p in found), expected)
 
 
-class Append(unittest.TestCase):
-    """``ledger.founder.append`` and its command line: a row is written only when MF2's row scan is clean and the
-    new file has no problem the old one had not; a refused row leaves the file's bytes as they were."""
+class Cli(unittest.TestCase):
+    """The command line's helpers, shared by the test classes below; no test of its own."""
 
     SHA = "c" * 40
 
@@ -194,6 +193,11 @@ class Append(unittest.TestCase):
     def read(self, path: str) -> bytes:
         with open(path, "rb") as fh:
             return fh.read()
+
+
+class Append(Cli):
+    """``ledger.founder.append`` and its command line: a row is written only when MF2's row scan is clean and the
+    new file has no problem the old one had not; a refused row leaves the file's bytes as they were."""
 
     def test_first_row_of_an_empty_file(self):
         path = self.ledger(b"")
@@ -331,6 +335,131 @@ class Append(unittest.TestCase):
         proc = subprocess.run([sys.executable, "-m", "ledger.founder", "check"], cwd=os.path.join(ROOT, "referee"),
                               capture_output=True)
         self.assertEqual((proc.returncode, json.loads(proc.stdout)), (0, {"ok": True, "problems": []}))
+
+
+class Items(Cli):
+    """``closes:`` refs (checked by ``problems``) and ``open``: which reported items are still open."""
+
+    def closer(self, *names: str, **spec) -> dict:
+        return {"payload": {"summary": "closes", "refs": ["a.py"] + ["closes:" + n for n in names]}, **spec}
+
+    def reports(self, *reports) -> str:
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: [os.unlink(os.path.join(d, n)) for n in os.listdir(d)] and None or os.rmdir(d))
+        for name, body in reports:
+            with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+                fh.write(body if isinstance(body, str) else json.dumps(body))
+        return d
+
+    def listed(self, data: bytes, reports: str | None = None) -> tuple[int, dict]:
+        path = self.ledger(data)
+        return self.run_cli(path, "open", "--reports", reports or self.reports())
+
+    def ids(self, data: bytes, reports: str | None = None) -> list[str]:
+        code, out = self.listed(data, reports)
+        self.assertEqual((code, out["problems"]), (0, []), out)
+        return [item["id"] for item in out["open"]]
+
+    def test_seed_issue_and_blocked_rows_are_items_until_closed(self):
+        rows = [{"kind": k} for k in sorted(KINDS)]  # blocked f0, build f1, cost f2, decision f3, seed_issue f4
+        self.assertEqual(self.ids(build(rows)[0]), ["f0", "f4"])
+        self.assertEqual(self.ids(build(rows + [self.closer("f4")])[0]), ["f0"])
+        self.assertEqual(self.ids(build(rows + [self.closer("f0", "f4")])[0]), [])
+        self.assertEqual(self.ids(build(rows + [self.closer("f0"), self.closer("f4", kind="seed_issue")])[0]),
+                         ["f8"])
+        code, out = self.listed(build([{"kind": "seed_issue", "payload": {"summary": "x" * 300, "refs": []}}])[0])
+        self.assertEqual(out["open"], [{"id": "f0", "source": "ledger", "kind": "seed_issue",
+                                        "ts": "2026-10-31T00:00:00Z", "head": "x" * 200}])
+
+    def test_bad_closes_refs_are_problems(self):
+        item = {"kind": "seed_issue"}
+        for rows, what in (([item, self.closer("f9")], "names no earlier seed_issue or blocked row"),
+                           ([{}, self.closer("f0")], "names no earlier seed_issue or blocked row"),
+                           ([self.closer("f1"), item], "names no earlier seed_issue or blocked row"),
+                           ([self.closer("f0", kind="seed_issue")], "names no earlier seed_issue or blocked row"),
+                           ([item, self.closer("seed-040")], "names no earlier seed_issue or blocked row"),
+                           ([item, self.closer("f0", "f0")], "is named twice"),
+                           ([item, self.closer("f0"), self.closer("f0")], "already closed by f1")):
+            with self.subTest(what=what, rows=len(rows)):
+                found = problems(build(rows)[0], KINDS)
+                self.assertEqual(len(found), 1, found)
+                self.assertIn(what, found[0])
+                code, out = self.listed(build(rows)[0])
+                self.assertEqual((code, out["open"]), (1, []))
+
+    def test_a_broken_closer_closes_nothing(self):
+        item = {"kind": "seed_issue"}
+        for spec in ({"kind": "learning"}, {"derivation": "guess"}):
+            with self.subTest(spec=spec):
+                data = build([item, self.closer("f0", **spec)])[0]
+                self.assertEqual(len(problems(data, KINDS)), 1)
+                data = build([item, self.closer("f0", **spec), self.closer("f0")])[0]
+                found = problems(data, KINDS)
+                self.assertFalse(any("already closed" in p for p in found), found)
+        # the broken closer closed by supersedes: the item is closed only by the later valid closer
+        data = build([item, self.closer("f0", kind="learning"), {"supersedes": 1}])[0]
+        self.assertEqual(self.ids(data), ["f0"])
+        data = build([item, self.closer("f0", kind="learning"), {"supersedes": 1}, self.closer("f0")])[0]
+        self.assertEqual(self.ids(data), [])
+
+    def test_append_refuses_a_bad_closer_and_writes_a_good_one(self):
+        data = build([{"kind": "seed_issue"}, {}])[0]
+        for name in ("f1", "f7", "seed-040"):
+            with self.subTest(name=name):
+                path = self.ledger(data)
+                code, out = self.add(path, "--ref", "closes:" + name)
+                self.assertEqual(code, 1)
+                self.assertTrue(any(r.startswith("problem:") and "closes:" + name in r for r in out["reasons"]))
+                self.assertEqual(self.read(path), data)
+        path = self.ledger(data)
+        self.assertEqual(self.add(path, "--ref", "closes:f0")[0], 0)
+        self.assertEqual(self.add(path, "--ref", "closes:f0")[0], 1)
+        self.assertEqual(self.run_cli(path, "open", "--reports", self.reports())[1]["open"], [])
+
+    def test_reports_are_open_unless_confirmed(self):
+        def report(rid, state):
+            return rid + ".json", {"id": rid, "kind": "spec_issue", "ref": "spec/x.md:1", "state": state}
+        d = self.reports(report("b-2", "open"), report("a-1", "answered"), report("c-3", "confirmed"),
+                         ("notes.txt", "not a report"))
+        code, out = self.listed(build([{"kind": "blocked"}])[0], d)
+        self.assertEqual(code, 0)
+        self.assertEqual(out["open"][0]["id"], "f0")
+        self.assertEqual(out["open"][1:], [
+            {"id": "a-1", "source": "report", "kind": "spec_issue", "state": "answered", "ref": "spec/x.md:1"},
+            {"id": "b-2", "source": "report", "kind": "spec_issue", "state": "open", "ref": "spec/x.md:1"}])
+        # a ledger row does not close a report: the report's state is its one source
+        self.assertEqual(problems(build([{"kind": "seed_issue"}, self.closer("b-2")])[0], KINDS)[0][-30:],
+                         "names no earlier seed_issue or blocked row"[-30:])
+        missing = os.path.join(d, "no-such-dir")
+        self.assertEqual(self.ids(build([{}])[0], missing), [])
+
+    def test_a_bad_report_makes_the_list_unusable(self):
+        for name, body in (("x.json", "{"), ("x.json", [1]), ("x.json", {"id": "y", "state": "open"}),
+                           ("x.json", {"id": "x"}), ("x.json", {"id": "x", "state": ""}),
+                           ("x.json", {"id": "x", "state": 1})):
+            with self.subTest(body=body):
+                code, out = self.listed(build([{}])[0], self.reports((name, body)))
+                self.assertEqual((code, out["ok"]), (2, False), out)
+                self.assertIn("x.json", out["error"])
+
+    def test_this_ledger_lists_every_open_item_once(self):
+        import subprocess
+        proc = subprocess.run([sys.executable, "-m", "ledger.founder", "open"], cwd=os.path.join(ROOT, "referee"),
+                              capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        out = json.loads(proc.stdout)
+        ids = [item["id"] for item in out["open"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        with open(LEDGER, "rb") as fh:
+            rows = [chain.parse_row(line.decode("utf-8")) for line in chain._lines(fh.read())]
+        closed = {r[len("closes:"):] for row in rows for r in row["payload"]["refs"] if r.startswith("closes:")}
+        items = [row["row_id"] for row in rows if row["kind"] in ("seed_issue", "blocked")]
+        self.assertEqual([i["id"] for i in out["open"] if i["source"] == "ledger"],
+                         [i for i in items if i not in closed])
+        for item in out["open"]:
+            if item["source"] == "report":
+                with open(os.path.join(ROOT, "reports", item["id"] + ".json"), encoding="utf-8") as fh:
+                    self.assertNotEqual(json.load(fh)["state"], "confirmed")
 
 
 if __name__ == "__main__":
