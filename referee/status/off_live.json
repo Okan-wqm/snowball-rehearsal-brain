@@ -1,0 +1,70 @@
+{
+  "activate": {
+    "kind": "unwired",
+    "why": "MF18, step (B): the operator's activation of a target; no workflow under referee/.github/workflows starts it yet"
+  },
+  "dispatcher.llm_call": {
+    "kind": "unwired",
+    "why": "MF15, D4 in job cagir: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  },
+  "gate.check": {
+    "kind": "unwired",
+    "why": "MF8, D5 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  },
+  "gate.revert": {
+    "kind": "unwired",
+    "why": "MF13, D7 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  },
+  "gate.secrets": {
+    "kind": "unwired",
+    "why": "MF2, D4-D6 in jobs cagir and yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  },
+  "gate.sentinel": {
+    "kind": "unwired",
+    "why": "MF12, D7 in job kos: kos stops after D3 with cycle_not_wired; the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  },
+  "harness.revert_drill": {
+    "kind": "unwired",
+    "why": "MF14, D8 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  },
+  "ledger.anchor": {
+    "kind": "unwired",
+    "why": "MF11, D1 in job cek and D6 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  },
+  "ledger.append": {
+    "kind": "unwired",
+    "why": "MF10, D6 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  },
+  "ledger.chain": {
+    "kind": "unwired",
+    "why": "MF1, D1 in job cek: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  },
+  "ledger.schema": {
+    "kind": "unwired",
+    "why": "the row shapes the D6 writers produce (test 14); imported by activate only, which is off the live path"
+  },
+  "loop.cek": {
+    "kind": "unwired",
+    "why": "D1's assembly of pulled: job cek stops with cycle_not_wired because D1's reads are not written (the bootstrap referee's signed result: no page this clone has gives the command that reads and verifies it), so nothing calls assemble (rival claim e68f29ca3f75)"
+  },
+  "loop.fetch": {
+    "kind": "unwired",
+    "why": "D1's fetch of one commit by id: its caller is job cek's read of the accepted SHA and the target's heads, not written (see loop.cek; rival claim e68f29ca3f75)"
+  },
+  "loop.gitobj": {
+    "kind": "unwired",
+    "why": "D1's tree reader: imported by loop.cek and loop.fetch only, both off the live path"
+  },
+  "status.block": {
+    "kind": "unwired",
+    "why": "MF16, D6 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  },
+  "status.depmap": {
+    "kind": "session_tool",
+    "why": "the dependency drawings, run in a session and by test 42; the loop never runs it"
+  },
+  "target.write": {
+    "kind": "unwired",
+    "why": "MF9, D6 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
+  }
+}

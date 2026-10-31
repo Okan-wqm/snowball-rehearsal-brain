@@ -8,6 +8,8 @@ Modules 35, arrows 51, live roots loop.job, live 13, off the live path 22.
 
 Started by a workflow but not under the root (not drawn): snowball_bootstrap.
 
+Every module off the live path is named, with its reason, in `referee/status/off_live.json` (the last column); a wired module leaves it in the same push. Register problems: none.
+
 ```mermaid
 flowchart LR
     n0["activate"]
@@ -120,40 +122,40 @@ flowchart LR
   class n0,n1,n2,n4,n6,n7,n8,n9,n10,n11,n12,n13,n14,n15,n17,n18,n19,n30,n31,n32,n33,n34 off
 ```
 
-| module | file | live | `__main__` | imports | imported by |
-|---|---|---|---|---|---|
-| activate | activate.py | no | yes | gate.check, gate.diffguard, ledger.anchor, ledger.append, ledger.chain, ledger.schema, status.block, target.write |  |
-| dispatcher | dispatcher/__init__.py | no |  |  |  |
-| dispatcher.llm_call | dispatcher/llm_call.py | no | yes | gate.secrets, ledger.append, ledger.chain | ledger.schema, status.block |
-| gate | gate/__init__.py | yes |  |  |  |
-| gate.check | gate/check.py | no | yes | gate.diffguard, gate.secrets | activate |
-| gate.diffguard | gate/diffguard.py | yes | yes | profile.derive | activate, gate.check, runner.kos |
-| gate.revert | gate/revert.py | no | yes | gate.sentinel, ledger.chain | harness.revert_drill |
-| gate.secrets | gate/secrets.py | no | yes |  | dispatcher.llm_call, gate.check, ledger.append |
-| gate.sentinel | gate/sentinel.py | no | yes | ledger.chain | gate.revert |
-| harness | harness/__init__.py | no |  |  |  |
-| harness.revert_drill | harness/revert_drill.py | no | yes | gate.revert, ledger.append, ledger.chain, target.write |  |
-| ledger | ledger/__init__.py | no |  |  |  |
-| ledger.anchor | ledger/anchor.py | no | yes | ledger.append, ledger.chain | activate |
-| ledger.append | ledger/append.py | no | yes | gate.secrets, ledger.chain | activate, dispatcher.llm_call, harness.revert_drill, ledger.anchor, status.block |
-| ledger.chain | ledger/chain.py | no | yes |  | activate, dispatcher.llm_call, gate.revert, gate.sentinel, harness.revert_drill, ledger.anchor, ledger.append, ledger.schema, status.block |
-| ledger.schema | ledger/schema.py | no |  | dispatcher.llm_call, ledger.chain, status.block | activate |
-| loop | loop/__init__.py | yes |  |  |  |
-| loop.cek | loop/cek.py | no |  | loop.gitobj, loop.pulled, runner.kos |  |
-| loop.fetch | loop/fetch.py | no |  | loop.gitobj, loop.pulled |  |
-| loop.gitobj | loop/gitobj.py | no |  | loop.pulled | loop.cek, loop.fetch |
-| loop.job | loop/job.py | root | yes | loop.pulled, runner.kos |  |
-| loop.pulled | loop/pulled.py | yes |  | profile.derive, runner.kos | loop.cek, loop.fetch, loop.gitobj, loop.job |
-| profile | profile/__init__.py | yes |  |  |  |
-| profile.derive | profile/derive.py | yes | yes |  | gate.diffguard, loop.pulled, profile.unit_verify, runner.kos, runner.lint_record |
-| profile.unit_verify | profile/unit_verify.py | yes | yes | profile.derive, runner.contained, runner.deps_npm, runner.lint_record | runner.kos |
-| runner | runner/__init__.py | yes |  |  |  |
-| runner.contained | runner/contained.py | yes | yes |  | profile.unit_verify, runner.kos |
-| runner.deps_npm | runner/deps_npm.py | yes | yes |  | profile.unit_verify |
-| runner.kos | runner/kos.py | yes | yes | gate.diffguard, profile.derive, profile.unit_verify, runner.contained, runner.lint_record | loop.cek, loop.job, loop.pulled |
-| runner.lint_record | runner/lint_record.py | yes | yes | profile.derive | profile.unit_verify, runner.kos |
-| status | status/__init__.py | no |  |  |  |
-| status.block | status/block.py | no | yes | dispatcher.llm_call, ledger.append, ledger.chain | activate, ledger.schema |
-| status.depmap | status/depmap.py | no | yes |  |  |
-| target | target/__init__.py | no |  |  |  |
-| target.write | target/write.py | no | yes |  | activate, harness.revert_drill |
+| module | file | live | `__main__` | imports | imported by | off the live path because |
+|---|---|---|---|---|---|---|
+| activate | activate.py | no | yes | gate.check, gate.diffguard, ledger.anchor, ledger.append, ledger.chain, ledger.schema, status.block, target.write |  | unwired: MF18, step (B): the operator's activation of a target; no workflow under referee/.github/workflows starts it yet |
+| dispatcher | dispatcher/__init__.py | no |  |  |  | empty package |
+| dispatcher.llm_call | dispatcher/llm_call.py | no | yes | gate.secrets, ledger.append, ledger.chain | ledger.schema, status.block | unwired: MF15, D4 in job cagir: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |
+| gate | gate/__init__.py | yes |  |  |  |  |
+| gate.check | gate/check.py | no | yes | gate.diffguard, gate.secrets | activate | unwired: MF8, D5 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |
+| gate.diffguard | gate/diffguard.py | yes | yes | profile.derive | activate, gate.check, runner.kos |  |
+| gate.revert | gate/revert.py | no | yes | gate.sentinel, ledger.chain | harness.revert_drill | unwired: MF13, D7 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |
+| gate.secrets | gate/secrets.py | no | yes |  | dispatcher.llm_call, gate.check, ledger.append | unwired: MF2, D4-D6 in jobs cagir and yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |
+| gate.sentinel | gate/sentinel.py | no | yes | ledger.chain | gate.revert | unwired: MF12, D7 in job kos: kos stops after D3 with cycle_not_wired; the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |
+| harness | harness/__init__.py | no |  |  |  | empty package |
+| harness.revert_drill | harness/revert_drill.py | no | yes | gate.revert, ledger.append, ledger.chain, target.write |  | unwired: MF14, D8 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |
+| ledger | ledger/__init__.py | no |  |  |  | empty package |
+| ledger.anchor | ledger/anchor.py | no | yes | ledger.append, ledger.chain | activate | unwired: MF11, D1 in job cek and D6 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |
+| ledger.append | ledger/append.py | no | yes | gate.secrets, ledger.chain | activate, dispatcher.llm_call, harness.revert_drill, ledger.anchor, status.block | unwired: MF10, D6 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |
+| ledger.chain | ledger/chain.py | no | yes |  | activate, dispatcher.llm_call, gate.revert, gate.sentinel, harness.revert_drill, ledger.anchor, ledger.append, ledger.schema, status.block | unwired: MF1, D1 in job cek: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |
+| ledger.schema | ledger/schema.py | no |  | dispatcher.llm_call, ledger.chain, status.block | activate | unwired: the row shapes the D6 writers produce (test 14); imported by activate only, which is off the live path |
+| loop | loop/__init__.py | yes |  |  |  |  |
+| loop.cek | loop/cek.py | no |  | loop.gitobj, loop.pulled, runner.kos |  | unwired: D1's assembly of pulled: job cek stops with cycle_not_wired because D1's reads are not written (the bootstrap referee's signed result: no page this clone has gives the command that reads and verifies it), so nothing calls assemble (rival claim e68f29ca3f75) |
+| loop.fetch | loop/fetch.py | no |  | loop.gitobj, loop.pulled |  | unwired: D1's fetch of one commit by id: its caller is job cek's read of the accepted SHA and the target's heads, not written (see loop.cek; rival claim e68f29ca3f75) |
+| loop.gitobj | loop/gitobj.py | no |  | loop.pulled | loop.cek, loop.fetch | unwired: D1's tree reader: imported by loop.cek and loop.fetch only, both off the live path |
+| loop.job | loop/job.py | root | yes | loop.pulled, runner.kos |  |  |
+| loop.pulled | loop/pulled.py | yes |  | profile.derive, runner.kos | loop.cek, loop.fetch, loop.gitobj, loop.job |  |
+| profile | profile/__init__.py | yes |  |  |  |  |
+| profile.derive | profile/derive.py | yes | yes |  | gate.diffguard, loop.pulled, profile.unit_verify, runner.kos, runner.lint_record |  |
+| profile.unit_verify | profile/unit_verify.py | yes | yes | profile.derive, runner.contained, runner.deps_npm, runner.lint_record | runner.kos |  |
+| runner | runner/__init__.py | yes |  |  |  |  |
+| runner.contained | runner/contained.py | yes | yes |  | profile.unit_verify, runner.kos |  |
+| runner.deps_npm | runner/deps_npm.py | yes | yes |  | profile.unit_verify |  |
+| runner.kos | runner/kos.py | yes | yes | gate.diffguard, profile.derive, profile.unit_verify, runner.contained, runner.lint_record | loop.cek, loop.job, loop.pulled |  |
+| runner.lint_record | runner/lint_record.py | yes | yes | profile.derive | profile.unit_verify, runner.kos |  |
+| status | status/__init__.py | no |  |  |  | empty package |
+| status.block | status/block.py | no | yes | dispatcher.llm_call, ledger.append, ledger.chain | activate, ledger.schema | unwired: MF16, D6 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |
+| status.depmap | status/depmap.py | no | yes |  |  | session_tool: the dependency drawings, run in a session and by test 42; the loop never runs it |
+| target | target/__init__.py | no |  |  |  | empty package |
+| target.write | target/write.py | no | yes |  | activate, harness.revert_drill | unwired: MF9, D6 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it |

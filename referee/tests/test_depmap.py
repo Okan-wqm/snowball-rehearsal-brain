@@ -7,13 +7,16 @@ the brain's committed drawing is the one its code gives today.
   top); ``tests/``, hidden directories and ``__pycache__`` are not read; a file that does not parse is listed;
 - live: the roots are the modules a workflow starts with ``python -m``/``python3 -m``, a started module that is
   not under the root is external, live is reachability by imports plus the packages holding a live module;
+- the register of the off-live: the brain's ``status/off_live.json`` has no problem; each problem
+  (``off_live_unnamed``, ``named_but_live``, ``named_unknown``, ``entry_invalid``, ``register_unreadable``) on a
+  tree made for it, an empty package (docstring only) not named and one with code named; the drawing's last column;
 - the target: projects from the root's npm workspaces (globs, ``**``, negation), Nx ``project.json``, the root
   Cargo workspace (members minus exclude) and ``pyproject.toml``; ``SKIP_DIRS`` and symbolic links not entered;
   arrows ``npm``, ``cargo`` (``path`` and ``workspace = true``), ``import`` (relative, bare workspace name and
   subpath, tsconfig alias exact and wildcard with ``baseUrl``, a commented tsconfig) and ``python``; the deepest
   project owns a file; the coverage counts each specifier's outcome;
 - the helpers: segment globs, the tsconfig dialect keeps ``//`` inside strings;
-- the command line: exits 0 and 2.
+- the command line: exits 0, 1 (``check`` with a problem) and 2.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from typing import Any
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BRAIN = os.path.dirname(REFEREE)
@@ -109,10 +113,94 @@ class Brain(unittest.TestCase):
         self.assertIn('[["pkg.a"]]', text)          # the root's double border
         self.assertIn("outside.mod", text)
         self.assertIn("broken.py", text)
-        for line in ("| pkg.a | pkg/a.py | root |  | pkg.b | pkg.sub, top |",
-                     "| lone | lone.py | no | yes |  |  |",
-                     "| top | top.py | yes |  | pkg, pkg.a | pkg.d |"):
+        for line in ("| pkg.a | pkg/a.py | root |  | pkg.b | pkg.sub, top |  |",
+                     "| lone | lone.py | no | yes |  |  |  |",
+                     "| top | top.py | yes |  | pkg, pkg.a | pkg.d |  |"):
             self.assertIn(line, text)
+
+
+class Register(unittest.TestCase):
+    """The register of the off-live (``status/off_live.json``): every module off the live path is named with its
+    reason, a named module is not live, and an empty package is not named."""
+
+    def test_the_brains_register_has_no_problem(self):
+        m = D.brain_map(REFEREE)
+        self.assertEqual(D.register_problems(m), [])
+        self.assertTrue(m["off_live"])      # the check is not vacuous today
+
+    def tree(self, register: Any = None, raw: bytes | None = None) -> dict:
+        root = tempfile.mkdtemp()
+        write(root, {
+            "pkg/__init__.py": "",
+            "pkg/a.py": "import pkg.b\n",
+            "pkg/b.py": "",
+            "tool.py": "",
+            "doc/__init__.py": '"""Only a docstring."""\n',
+            "doc/m.py": "",
+            "code/__init__.py": "X = 1\n",
+            "code2/__init__.py": '"""A docstring, then code."""\nX = 1\n',
+            "num/__init__.py": "1\n",
+            "status/__init__.py": "",
+            ".github/workflows/w.yml": "run: python -m pkg.a\n",
+        })
+        if raw is not None or register is not None:
+            with open(os.path.join(root, "status", "off_live.json"), "wb") as f:
+                f.write(raw if raw is not None else json.dumps(register).encode())
+        return D.brain_map(root)
+
+    OK = {"kind": "unwired", "why": "waits for its caller"}
+
+    def test_off_live_modules_must_be_named_and_empty_packages_need_not(self):
+        m = self.tree()
+        self.assertEqual(m["empty_packages"], ["doc", "pkg", "status"])
+        self.assertEqual(m["off_live"], ["code", "code2", "doc", "doc.m", "num", "status", "tool"])
+        # absent file: an empty register; doc and status are empty packages; code, code2 (a docstring and code)
+        # and num (a constant that is not a string) hold code
+        self.assertEqual(D.register_problems(m), ["off_live_unnamed:code", "off_live_unnamed:code2",
+                                                  "off_live_unnamed:doc.m", "off_live_unnamed:num",
+                                                  "off_live_unnamed:tool"])
+        named = {"code": self.OK, "code2": self.OK, "doc.m": self.OK, "num": self.OK,
+                 "tool": {"kind": "session_tool", "why": "run by hand"}}
+        self.assertEqual(D.register_problems(self.tree(named)), [])
+        for missing in named:
+            self.assertEqual(D.register_problems(self.tree({k: v for k, v in named.items() if k != missing})),
+                             ["off_live_unnamed:%s" % missing])
+
+    def test_named_but_live_unknown_and_empty_package(self):
+        base = {"code": self.OK, "code2": self.OK, "doc.m": self.OK, "num": self.OK, "tool": self.OK}
+        for name, problem in (("pkg.a", "named_but_live:pkg.a"), ("pkg.b", "named_but_live:pkg.b"),
+                              ("pkg", "named_unknown:pkg"), ("gone", "named_unknown:gone"),
+                              ("doc", "named_unknown:doc"), ("status", "named_unknown:status")):
+            self.assertEqual(D.register_problems(self.tree(dict(base, **{name: self.OK}))), [problem], name)
+
+    def test_entry_shape(self):
+        base = {"code": self.OK, "code2": self.OK, "doc.m": self.OK, "num": self.OK}
+        for entry in ("unwired", None, {"kind": "unwired"}, {"why": "x"}, dict(self.OK, extra=1),
+                      {"kind": "package", "why": "x"}, {"kind": "Unwired", "why": "x"}, {"kind": "unwired", "why": ""},
+                      {"kind": "unwired", "why": " \n\t"}, {"kind": "unwired", "why": 3}, {"kind": 1, "why": "x"}):
+            self.assertEqual(D.register_problems(self.tree(dict(base, tool=entry))), ["entry_invalid:tool"], entry)
+        # an invalid entry for a live or unknown name is reported twice, sorted
+        self.assertEqual(D.register_problems(self.tree(dict(base, tool=self.OK, **{"pkg.a": None}))),
+                         ["entry_invalid:pkg.a", "named_but_live:pkg.a"])
+
+    def test_unreadable_register_stops_the_check(self):
+        for raw in (b"[]", b"{", b"\xff\xfe", b"null", b'"x"', b"[" * 100000):
+            self.assertEqual(D.register_problems(self.tree(raw=raw)), ["register_unreadable"], raw[:8])
+
+    def test_drawing_shows_each_reason(self):
+        m = self.tree({"code": self.OK, "code2": self.OK, "num": self.OK,
+                       "doc.m": {"kind": "unwired", "why": "a | b\nc"},
+                       "tool": {"kind": "session_tool", "why": "by hand"}})
+        text = D.render_brain(m, "a tree")
+        self.assertIn("Register problems: none.", text)
+        for line in ("| tool | tool.py | no |  |  |  | session_tool: by hand |",
+                     "| doc.m | doc/m.py | no |  |  |  | unwired: a \\| b c |",
+                     "| doc | doc/__init__.py | no |  |  |  | empty package |",
+                     "| pkg | pkg/__init__.py | yes |  |  |  |  |"):
+            self.assertIn(line, text)
+        self.assertIn("Register problems: off_live_unnamed:code, off_live_unnamed:code2, off_live_unnamed:doc.m, "
+                      "off_live_unnamed:num, off_live_unnamed:tool.",
+                      D.render_brain(self.tree(), "a tree"))
 
 
 class Target(unittest.TestCase):
@@ -265,7 +353,13 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(cov.returncode, 0)
         self.assertEqual(json.loads(cov.stdout)["files"], 2)
         self.assertEqual(self.run_cli("target", root, "--source", "x").returncode, 0)
-        for argv in ([], ["brain"], ["brain", os.path.join(root, "nope")], ["target", root], ["other", root],
+        bad = self.run_cli("check", root)
+        self.assertEqual((bad.returncode, json.loads(bad.stdout)),
+                         (1, {"ok": False, "problems": ["off_live_unnamed:a", "off_live_unnamed:b"]}))
+        write(root, {"status/off_live.json": json.dumps({n: {"kind": "unwired", "why": "w"} for n in "ab"})})
+        good = self.run_cli("check", root)
+        self.assertEqual((good.returncode, json.loads(good.stdout)), (0, {"ok": True, "problems": []}))
+        for argv in ([], ["brain"], ["check"], ["check", root, "extra"], ["brain", os.path.join(root, "nope")], ["target", root], ["other", root],
                      ["brain", root, "extra"]):
             self.assertEqual(self.run_cli(*argv).returncode, 2, argv)
 
