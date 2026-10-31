@@ -16,6 +16,9 @@ sys.path.insert(0, os.path.join(ROOT, "referee"))
 from ledger import chain, founder  # noqa: E402
 from ledger.founder import FOUNDER, LEDGER, PAGE, problems, spec_kinds  # noqa: E402
 
+sys.path.insert(0, os.path.join(ROOT, "referee", "tests"))
+from git_store import HistoryGit  # noqa: E402
+
 
 # ---------------------------------------------------------------- a synthetic ledger
 
@@ -419,9 +422,13 @@ class Items(Cli):
     def test_reports_are_open_unless_confirmed(self):
         def report(rid, state):
             return rid + ".json", {"id": rid, "kind": "spec_issue", "ref": "spec/x.md:1", "state": state}
+        from unittest import mock
         d = self.reports(report("b-2", "open"), report("a-1", "answered"), report("c-3", "confirmed"),
                          ("notes.txt", "not a report"))
-        code, out = self.listed(build([{"kind": "blocked"}])[0], d)
+        git = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, git)
+        with mock.patch.dict(os.environ, {"PATH": HistoryGit(git).directory}):  # a git is there; d is no work tree
+            code, out = self.listed(build([{"kind": "blocked"}])[0], d)
         self.assertEqual(code, 0)
         self.assertEqual(out["open"][0]["id"], "f0")
         self.assertEqual(out["open"][1:], [
@@ -464,21 +471,30 @@ class Items(Cli):
                     self.assertNotEqual(json.load(fh)["state"], "confirmed")
 
 
-class RefSince(Cli):
-    """``ref_checks`` (each report item's ``ref_check`` in ``open``): whether the page lines a report's ref names
-    changed since the commit that last changed the report, read from a real git repository built here."""
+class Repos(Cli):
+    """A repository built here and read by ``ref_checks`` through ``git``: ``repos`` builds it (real git in
+    ``tests/capture_ref_since.py``; ``git_store.HistoryGit``, first and alone on ``PATH``, when None). Every
+    check's answer is kept in ``answers``, ``filed`` as the index of the commit it names."""
 
     PAGE = b"one\ntwo\nthree\nfour\n"
+    REAL = os.path.join(ROOT, "tests", "fixtures", "ref-since-real-git.json")
+    repos = None  # the capture script's real git; HistoryGit when None
 
-    def git(self, top: str, *args: str) -> str:
-        import subprocess
-        from loop.gitobj import git_env
-        env = git_env(dict(os.environ))
-        env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t.invalid", GIT_COMMITTER_NAME="t",
-                   GIT_COMMITTER_EMAIL="t@t.invalid")
-        proc = subprocess.run(["git", "-C", top, *args], capture_output=True, env=env)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        return proc.stdout.decode().strip()
+    def setUp(self):
+        from unittest import mock
+        if self.repos is None:
+            self.repos = HistoryGit(self.tmp())
+            patch = mock.patch.dict(os.environ, {"PATH": self.repos.directory})
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.commits: list[str] = []
+        self.answers: list[dict] = []
+
+    def tmp(self) -> str:
+        import shutil
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        return d
 
     def write(self, top: str, path: str, data: bytes) -> None:
         os.makedirs(os.path.dirname(os.path.join(top, path)), exist_ok=True)
@@ -486,19 +502,19 @@ class RefSince(Cli):
             fh.write(data)
 
     def commit(self, top: str) -> str:
-        self.git(top, "add", "-A")
-        self.git(top, "commit", "-q", "--allow-empty", "-m", "m")
-        return self.git(top, "rev-parse", "HEAD")
+        sha = self.repos.commit(top)
+        self.commits.append(sha)
+        return sha
 
-    def repo(self, ref="spec/p.md:2", page: bytes | None = None) -> tuple[str, str]:
-        """A repository whose last commit files report r (ref ``ref``) beside spec/p.md; (top, that commit)."""
-        import shutil
-        top = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, top)
-        self.git(top, "init", "-q", "-b", "main")
+    def repo(self, ref="spec/p.md:2", page: bytes | None = None, rid: str = "r") -> tuple[str, str]:
+        """A repository whose last commit files report ``rid`` (ref ``ref``) beside spec/p.md; (top, that
+        commit)."""
+        top = self.tmp()
+        self.commits = []
+        self.repos.init(top)
         self.write(top, "spec/p.md", self.PAGE if page is None else page)
         self.commit(top)
-        self.report(top, ref)
+        self.report(top, ref, rid)
         return top, self.commit(top)
 
     def report(self, top: str, ref, rid: str = "r") -> None:
@@ -507,7 +523,28 @@ class RefSince(Cli):
 
     def check(self, top: str, rid: str = "r") -> dict:
         d = os.path.join(top, "reports")
-        return founder.ref_checks(d, founder.read_reports(d))[rid]
+        got = founder.ref_checks(d, founder.read_reports(d))[rid]
+        self.answers.append({k: self.commits.index(v) if k == "filed" and v in self.commits else v
+                             for k, v in got.items()})
+        return got
+
+
+class RefSince(Repos):
+    """``ref_checks`` (each report item's ``ref_check`` in ``open``): whether the page lines a report's ref names
+    changed since the commit that last changed the report, read through ``git`` from a repository built here.
+
+    The referee's sandbox has no git, so ``git`` here is ``git_store.HistoryGit`` (``repos``), first on ``PATH``;
+    ``tests/capture_ref_since.py`` runs these same tests on real git (a ``repos`` that runs git) and keeps every
+    check's answer, with ``filed`` as the index of the commit it names, in ``tests/fixtures/ref-since-real-git.json``.
+    Each test's answers here must be real git's (``tearDown``): a rule of the double that real git does not keep,
+    or a test that was never run on real git, is red."""
+
+    def tearDown(self):
+        if type(self).repos is None:
+            with open(self.REAL, encoding="utf-8") as fh:
+                real = json.load(fh)["answers"]
+            self.assertIn(self._testMethodName, real, "never run on real git: python3 tests/capture_ref_since.py")
+            self.assertEqual(self.answers, real[self._testMethodName], "real git answered otherwise")
 
     def test_the_page_after_filing(self):
         for name, page, status, extra in (
@@ -551,6 +588,13 @@ class RefSince(Cli):
         self.assertNotIn(refiled, (first, later))
         self.assertEqual(self.check(top), {"status": "page_unchanged", "filed": refiled, "bounded": False})
 
+    def test_a_report_path_is_literal(self):
+        # report r* is filed; a later commit changes only reports/rx.json, which the glob r* would match
+        top, filed = self.repo(rid="r*")
+        self.report(top, "spec/p.md:1", "rx")
+        self.commit(top)
+        self.assertEqual(self.check(top, "r*"), {"status": "page_unchanged", "filed": filed, "bounded": False})
+
     def test_uncommitted_reports(self):
         top, _ = self.repo()
         self.report(top, "spec/p.md:1", "s")  # never committed
@@ -584,19 +628,42 @@ class RefSince(Cli):
         os.makedirs(os.path.join(top, "spec/p.md"))  # a directory where the page was is no page
         self.assertEqual(self.check(top)["status"], "page_gone")
 
+    def test_no_file_at_filing_is_no_page(self):
+        # a directory or a symbolic link at the path when the report was filed is no page, whatever is there today
+        # (git lists a directory's entries for a path ending in "/": its first entry is no answer either)
+        for name, ref, link in (("a directory", "spec:1", True), ("a link to the page", "spec/l.md:1", True),
+                                ("a directory named with a slash", "spec/:1", False)):
+            with self.subTest(name=name):
+                top = self.tmp()
+                self.commits = []
+                self.repos.init(top)
+                self.write(top, "spec/p.md", self.PAGE)
+                if link:
+                    os.symlink("p.md", os.path.join(top, "spec/l.md"))
+                self.report(top, ref)
+                filed = self.commit(top)
+                self.assertEqual(self.check(top), {"status": "unknown", "why": "page_absent_at_filing",
+                                                   "filed": filed, "bounded": False})
+        # the report itself: committed as a link, today a file with the bytes it pointed at, is not committed
+        top, _ = self.repo()
+        os.rename(os.path.join(top, "reports/r.json"), os.path.join(top, "spec/r.json"))
+        os.symlink("../spec/r.json", os.path.join(top, "reports/r.json"))
+        self.commit(top)
+        os.unlink(os.path.join(top, "reports/r.json"))
+        os.rename(os.path.join(top, "spec/r.json"), os.path.join(top, "reports/r.json"))
+        self.assertEqual(self.check(top), {"status": "uncommitted"})
+
     def test_a_shallow_boundary_is_bounded(self):
-        import shutil
         top, filed = self.repo()
         self.write(top, "other.txt", b"x")
         tip = self.commit(top)
         # depth 1: the report seems filed at the tip, the boundary; depth 2: at its real commit, now the boundary
         # (an earlier filing would not be seen); depth 3: at its real commit, whose parent is there
-        for depth, seen, bounded in (("1", tip, True), ("2", filed, True), ("3", filed, False)):
+        for depth, seen, bounded in ((1, tip, True), (2, filed, True), (3, filed, False)):
             with self.subTest(depth=depth):
-                clone = tempfile.mkdtemp()
-                self.addCleanup(shutil.rmtree, clone)
-                self.git(clone, "clone", "-q", "--depth", depth, "file://" + top, "c")
-                got = self.check(os.path.join(clone, "c"))
+                clone = os.path.join(self.tmp(), "c")
+                self.repos.clone(top, depth, clone)
+                got = self.check(clone)
                 self.assertEqual(got, {"status": "page_unchanged", "filed": seen, "bounded": bounded})
 
     def test_no_repository_or_no_git(self):
@@ -607,9 +674,7 @@ class RefSince(Cli):
         self.assertEqual(founder.ref_checks(os.path.join(d, "absent"), [{"id": "r"}]),
                          {"r": {"status": "unknown", "why": "not_in_git"}})
         top, _ = self.repo()
-        empty = tempfile.mkdtemp()
-        self.addCleanup(os.rmdir, empty)
-        with mock.patch.dict(os.environ, {"PATH": empty}):
+        with mock.patch.dict(os.environ, {"PATH": self.tmp()}):
             self.assertEqual(self.check(top), {"status": "unknown", "why": "git_unavailable"})
 
     def test_git_runs_with_the_referee_environment_and_trusts_only_the_ancestors(self):
@@ -640,6 +705,35 @@ class RefSince(Cli):
         self.assertEqual(code, 0)
         self.assertNotIn("ref_check", out["open"][0])
         self.assertEqual(out["open"][1]["ref_check"], {"status": "page_unchanged", "filed": filed, "bounded": False})
+        self.answers.append(out["open"][1]["ref_check"] | {"filed": self.commits.index(filed)})
+
+
+class HistoryGitCalls(Repos):
+    """What ``ref_checks`` asks git, seen by ``HistoryGit``: every call is ``git <trust> --literal-pathspecs -C
+    <top> <command>`` with ``loop.gitobj.git_env``'s environment, and only the five commands it answers."""
+
+    def test_every_call(self):
+        from unittest import mock
+        from loop.gitobj import git_env
+        top, _ = self.repo()
+        self.write(top, "spec/p.md", b"one\nTWO\n")
+        with mock.patch.dict(os.environ, {"GIT_DIR": "/x", "GIT_WORK_TREE": "/y"}):
+            self.check(top)
+            want_env = git_env(dict(os.environ))
+        calls = self.repos.calls()
+        trust = founder._trust(os.path.join(top, "reports"))
+        real = os.path.realpath(top)
+        self.assertEqual([c["argv"][:len(trust) + 1] for c in calls], [trust + ["--literal-pathspecs"]] * len(calls))
+        commands = [c["argv"][len(trust) + 1:] for c in calls]
+        self.assertEqual(commands[0], ["-C", os.path.join(top, "reports"), "rev-parse", "--show-toplevel"])
+        self.assertTrue(all(c[:2] == ["-C", real] for c in commands[1:]), commands)
+        self.assertEqual(sorted({tuple(c[2:4]) for c in commands}),
+                         [("cat-file", "blob"), ("log", "-1"), ("ls-tree", "-z"), ("rev-parse", "--git-path"),
+                          ("rev-parse", "--show-toplevel")])
+        for c in calls:
+            env = {k: v for k, v in c["env"].items() if k in want_env or k.startswith("GIT_")}
+            self.assertEqual(env, {k: v for k, v in want_env.items() if k in c["env"]})
+            self.assertEqual({k for k in c["env"] if k.startswith("GIT_")}, {"GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL"})
 
 
 PAGE_SAME = object()

@@ -186,7 +186,7 @@ flowchart LR
 | loop.cek | loop/cek.py | no |  | loop.gitobj, loop.pulled, runner.kos |  | unwired: D1's assembly of pulled: job cek stops with cycle_not_wired because D1's reads are not written (the bootstrap referee's signed result: no page this clone has gives the command that reads and verifies it), so nothing calls assemble (rival claim e68f29ca3f75) |
 | loop.decide | loop/decide.py | yes |  | cli, gate.check, gate.diffguard, loop.pulled, profile.derive, profile.unit_verify | loop.job |  |
 | loop.fetch | loop/fetch.py | no |  | loop.gitobj, loop.pulled |  | unwired: D1's fetch of one commit by id: its caller is job cek's read of the accepted SHA and the target's heads, not written (see loop.cek; rival claim e68f29ca3f75) |
-| loop.gitobj | loop/gitobj.py | no |  | loop.pulled | ledger.founder, loop.cek, loop.fetch | unwired: D1's tree reader: imported by loop.cek and loop.fetch, both off the live path, and by the session tool ledger.founder for git_env only |
+| loop.gitobj | loop/gitobj.py | no |  | loop.pulled | ledger.founder, loop.cek, loop.fetch | unwired: D1's tree reader: imported by loop.cek and loop.fetch, both off the live path, and by the session tool ledger.founder for git_env, SHA and canonical (the mode of a file at a commit) |
 | loop.job | loop/job.py | root | yes | cli, loop.decide, loop.pulled, profile.derive, profile.unit_verify, runner.deps_npm, runner.kos |  |  |
 | loop.pulled | loop/pulled.py | yes |  | profile.derive, runner.kos | loop.cek, loop.decide, loop.fetch, loop.gitobj, loop.job |  |
 | profile | profile/__init__.py | yes |  |  |  |  |

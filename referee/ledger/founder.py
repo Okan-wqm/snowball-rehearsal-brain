@@ -34,17 +34,19 @@ names has changed since the report was filed, so that after a seed epoch a sessi
 first. It reads text, not meaning: a re-wrapped paragraph is ``line_changed`` and a changed meaning on an untouched
 line is not seen. Read from the git repository holding the reports directory (``git`` with ``loop.gitobj.git_env``,
 the one rule for a referee git process; git's ownership check is passed for the named directory and its
-ancestors only, ``safe.directory`` on the command line, since that is the repository the caller asks about); the
-commands run are ``rev-parse``, ``log -1 --format=%H`` and ``show <commit>:<path>``; nothing is written. Rules, in
-this order:
+ancestors only, ``safe.directory`` on the command line, since that is the repository the caller asks about; paths
+are literal, ``--literal-pathspecs``); the commands run are ``rev-parse``, ``log -1 --format=%H``, ``ls-tree`` and
+``cat-file blob``; nothing is written. A file "at" a commit is a regular file there (its mode read as
+``loop.gitobj.canonical`` reads it): a directory, symbolic link or submodule at the path is none. Rules, in this
+order:
 - ``unknown`` with ``why``: ``git_unavailable`` (git cannot be started), ``not_in_git`` (the directory is in no
   work tree), ``ref_unreadable`` (``ref`` is not ``<path>:<n>`` or ``<path>:<n>-<m>`` with 1 <= n <= m and a
   relative path with no ``..`` component);
-- ``uncommitted``: no commit holds the report, or the report's file differs from its last commit (its ref was
-  written against today's page or is being rewritten; there is nothing to compare);
+- ``uncommitted``: no commit holds the report, or the report's file differs from its file at its last commit (its
+  ref was written against today's page or is being rewritten; there is nothing to compare);
 - otherwise ``filed`` is the last commit that changed the report's file, and ``bounded`` is true when that commit is
   a boundary of a shallow clone (the report may have been filed earlier; a change before it is not seen); then
-  ``unknown`` ``page_absent_at_filing`` (the path is not a file of that commit) or ``line_out_of_range`` (the
+  ``unknown`` ``page_absent_at_filing`` (no file at the path at that commit) or ``line_out_of_range`` (the
   lines are not in it), ``page_gone`` (no regular file at the path in the work tree today; a symbolic link is followed), ``page_unchanged`` (the work tree's
   file has the filed bytes), ``line_same`` (the file changed, the named lines did not: same bytes at the same
   numbers), ``line_moved`` with ``lines`` (those lines, as one block, are elsewhere; every start line), or
@@ -94,7 +96,7 @@ import tempfile
 
 from gate import secrets
 from ledger import chain, schema
-from loop.gitobj import git_env
+from loop.gitobj import SHA, canonical, git_env
 import cli
 
 BRAIN = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -218,8 +220,8 @@ def _git(trust: list[str], top: str, *args: str) -> bytes | None:
     """git's stdout for ``git <trust> -C top args``, or None when git exits non-zero; _NoGit when git cannot
     start."""
     try:
-        proc = subprocess.run(["git", *trust, "-C", top, *args], stdin=subprocess.DEVNULL, capture_output=True,
-                              env=git_env(dict(os.environ)))
+        proc = subprocess.run(["git", *trust, "--literal-pathspecs", "-C", top, *args], stdin=subprocess.DEVNULL,
+                              capture_output=True, env=git_env(dict(os.environ)))
     except OSError:
         raise _NoGit() from None
     return proc.stdout if proc.returncode == 0 else None
@@ -249,6 +251,21 @@ def _read(path: str) -> bytes | None:
         return fh.read()
 
 
+def _file_at(trust: list[str], top: str, commit: str, path: str) -> bytes | None:
+    """The bytes of the regular file at ``path`` in ``commit``'s tree, or None when there is none there (absent, a
+    directory, a symbolic link, a submodule): the entry's mode from ``ls-tree``, read as ``loop.gitobj.canonical``
+    reads it, then its blob."""
+    listed = _git(trust, top, "ls-tree", "-z", "--full-tree", commit, "--", path) or b""
+    entry = listed.split(b"\0")[0]
+    meta, tab, name = entry.partition(b"\t")
+    fields = meta.split(b" ")
+    sha = fields[-1].decode("ascii", "replace")
+    if not tab or name != path.encode("utf-8") or len(fields) != 3 or not SHA.fullmatch(sha) \
+            or (canonical(fields[0]) or ("",))[0] != "file":
+        return None
+    return _git(trust, top, "cat-file", "blob", sha)
+
+
 def _ref_check(trust: list[str], top: str, shallow: set[str], report_path: str, ref) -> dict:
     m = REF.match(ref) if isinstance(ref, str) else None
     path = m.group(1) if m else ""
@@ -258,10 +275,10 @@ def _ref_check(trust: list[str], top: str, shallow: set[str], report_path: str, 
         return {"status": "unknown", "why": "ref_unreadable"}
     report = os.path.relpath(report_path, top)
     filed = (_git(trust, top, "log", "-1", "--format=%H", "--", report) or b"").decode("ascii").strip()
-    if not filed or _git(trust, top, "show", "%s:%s" % (filed, report)) != _read(report_path):
+    if not filed or _file_at(trust, top, filed, report) != _read(report_path):
         return {"status": "uncommitted"}
     out = {"filed": filed, "bounded": filed in shallow}
-    then = _git(trust, top, "show", "%s:%s" % (filed, path))
+    then = _file_at(trust, top, filed, path)
     if then is None:
         return {"status": "unknown", "why": "page_absent_at_filing", **out}
     block = _lines(then)[first - 1:last]

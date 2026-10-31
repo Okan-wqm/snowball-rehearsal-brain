@@ -1,0 +1,272 @@
+{
+ "answers": {
+  "test_a_range_is_one_block": [
+   {
+    "bounded": false,
+    "filed": 1,
+    "lines": [
+     5
+    ],
+    "status": "line_moved"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "line_changed"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "line_same"
+   }
+  ],
+  "test_a_report_path_is_literal": [
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "page_unchanged"
+   }
+  ],
+  "test_a_shallow_boundary_is_bounded": [
+   {
+    "bounded": true,
+    "filed": 2,
+    "status": "page_unchanged"
+   },
+   {
+    "bounded": true,
+    "filed": 1,
+    "status": "page_unchanged"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "page_unchanged"
+   }
+  ],
+  "test_filed_is_the_last_commit_that_changed_the_report": [
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "line_changed"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "line_changed"
+   },
+   {
+    "bounded": false,
+    "filed": 4,
+    "status": "page_unchanged"
+   }
+  ],
+  "test_git_runs_with_the_referee_environment_and_trusts_only_the_ancestors": [
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "page_unchanged"
+   }
+  ],
+  "test_no_file_at_filing_is_no_page": [
+   {
+    "bounded": false,
+    "filed": 0,
+    "status": "unknown",
+    "why": "page_absent_at_filing"
+   },
+   {
+    "bounded": false,
+    "filed": 0,
+    "status": "unknown",
+    "why": "page_absent_at_filing"
+   },
+   {
+    "bounded": false,
+    "filed": 0,
+    "status": "unknown",
+    "why": "page_absent_at_filing"
+   },
+   {
+    "status": "uncommitted"
+   }
+  ],
+  "test_no_repository_or_no_git": [
+   {
+    "status": "unknown",
+    "why": "git_unavailable"
+   }
+  ],
+  "test_open_lists_the_check_on_report_items_only": [
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "page_unchanged"
+   }
+  ],
+  "test_the_page_after_filing": [
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "page_unchanged"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "line_same"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "line_same"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "line_same"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "lines": [
+     3
+    ],
+    "status": "line_moved"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "lines": [
+     1,
+     4
+    ],
+    "status": "line_moved"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "line_changed"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "line_changed"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "line_changed"
+   }
+  ],
+  "test_the_page_at_filing_and_today": [
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "unknown",
+    "why": "page_absent_at_filing"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "unknown",
+    "why": "page_absent_at_filing"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "unknown",
+    "why": "line_out_of_range"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "unknown",
+    "why": "line_out_of_range"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "unknown",
+    "why": "line_out_of_range"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "page_unchanged"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "page_gone"
+   },
+   {
+    "bounded": false,
+    "filed": 1,
+    "status": "page_gone"
+   }
+  ],
+  "test_uncommitted_reports": [
+   {
+    "status": "uncommitted"
+   },
+   {
+    "status": "uncommitted"
+   }
+  ],
+  "test_unreadable_refs": [
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   },
+   {
+    "status": "unknown",
+    "why": "ref_unreadable"
+   }
+  ]
+ },
+ "git": "git version 2.47.3"
+}
