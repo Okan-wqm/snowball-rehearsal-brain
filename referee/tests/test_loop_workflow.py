@@ -3,15 +3,20 @@
 The rules are read from the spec, not from ``loop.job`` (``violations`` below does not import it), so a mistake
 in the registry or the emitter shows as a violation of the committed file:
 
-- ``top_permissions``: the top-level ``permissions`` is ``{}``; ``workflow_env``/``job_env``: no ``env`` above a
-  step (a secret there would reach every step);
+- ``top_permissions``: the top-level ``permissions`` is ``{}``;
+- ``workflow_control_context`` (tohum/29p, by allow-list): the workflow has only the keys of ``WORKFLOW_KEYS``
+  (``:workflow``) and each job only those of ``JOB_KEYS`` (``:<job>``), a job without ``steps`` also ``uses``,
+  ``with`` and ``secrets`` (such a job fails ``workflow_control_step``). So ``env``, ``defaults``, ``container``,
+  ``services`` and every unnamed key are refused;
 - ``trigger``: ``on`` is only ``schedule`` and ``workflow_dispatch`` (so never ``pull_request_target``,
   ``workflow_run``, ``issue_comment``, ``push``, ``pull_request``);
 - ``job_set``: exactly the five jobs of tohum/08 (``cek``, ``getir``, ``kos``, ``cagir``, ``yaz``);
 - ``job_not_main``: every job's ``if`` is exactly ``github.ref == 'refs/heads/main'``;
-- ``first_step_control``: every job's first step has id ``control``, no ``uses`` and no ``if``, and runs the
-  seed's ``python3 -m snowball_bootstrap control``; ``control_elsewhere``: no later step runs it;
-- ``step_not_gated``: every later step's ``if`` is exactly ``steps.control.outputs.go == 'true'``, and
+- ``workflow_control_step`` (tohum/29p): every job's first step is, as parsed, exactly ``control_step(job)``, 29p's
+  step with ``LOOP_JOB`` the job's own name and no other key; ``control_elsewhere``: no later step runs the
+  seed's ``python3 -m snowball_bootstrap control``;
+- ``workflow_control_gate`` (tohum/29p): every later step's ``if`` is exactly ``steps.control.outputs.go == 'true'``,
+  and
   ``continue_on_error``: nothing continues on error, so a failing ``control`` (kill switch) stops the job;
 - ``github_expr_in_run``: no ``${{`` holding ``github`` in any ``run:`` (``expr_in_run``: no ``${{`` at all);
 - ``unpinned_action``: every ``uses`` is ``owner/repo@<40 hex>``; ``persist_credentials``: every checkout has
@@ -23,6 +28,10 @@ in the registry or the emitter shows as a violation of the committed file:
 - ``secret_job_runs_code``: a job holding a secret or a permission uses only checkout of its own commit
   (``foreign_checkout`` otherwise), the artifact actions and (``yaz``) the App token action, and runs only
   ``control`` and its ``python3 -m loop.job run <job>``; ``unknown_run``: the same for the code jobs.
+
+Stricter than 29p, on purpose: a job's ``if`` must be ``job_not_main``'s and no job or step continues on error
+(29p allows both keys). ``control_step`` is a copy of 29p's text; ``tests/test_control_step_spec.py`` at the
+brain's root compares it with the block in ``spec/tohum/29p-kontrol-komutu.md``, so the copy cannot drift.
 
 Each rule is shown to fire on a mutated copy of the committed file and not on the file itself. Also: the file
 is ``loop.job.render()`` byte for byte (and the CLI's output); the parser's subset refusals; the registry covers
@@ -60,6 +69,26 @@ SECRET_EXPR = re.compile(r"\$\{\{\s*(secrets\.([A-Za-z0-9_]+)|github\.token)")
 SECRET_JOB_ACTIONS = ("actions/checkout@", "actions/download-artifact@", "actions/upload-artifact@")
 APP_ACTION = "actions/create-github-app-token@"
 
+# tohum/29p "Adım": every job's first step, byte for byte; ``LOOP_JOB`` is the job's name.
+CONTROL_RUN = (
+    'set -eu\n'
+    'git clone --quiet --depth 1 --branch main --filter=blob:none --sparse "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"'
+    ' "$RUNNER_TEMP/control"\n'
+    'git -C "$RUNNER_TEMP/control" sparse-checkout set bootstrap\n'
+    'cd "$RUNNER_TEMP/control/bootstrap"\n'
+    'python3 -m snowball_bootstrap control --control ../control.json --job "$LOOP_JOB" --event "$GITHUB_EVENT_NAME"'
+    ' --github-output "$GITHUB_OUTPUT"\n'
+)
+# tohum/29p "wiring kuralı": the keys allowed, everything else refused.
+WORKFLOW_KEYS = {"name", "run-name", "on", "permissions", "concurrency", "jobs"}
+JOB_KEYS = {"name", "if", "needs", "runs-on", "permissions", "environment", "concurrency", "outputs",
+            "timeout-minutes", "strategy", "continue-on-error", "steps"}
+CALL_KEYS = {"uses", "with", "secrets"}  # a workflow call: allowed keys, refused by the first-step rule
+
+
+def control_step(job: str) -> dict:
+    return {"name": "control", "id": "control", "env": {"LOOP_JOB": job}, "run": CONTROL_RUN}
+
 
 def committed() -> str:
     with open(WORKFLOW, encoding="utf-8") as fh:
@@ -81,8 +110,8 @@ def violations(doc: dict) -> list[str]:
     out: list[str] = []
     if doc.get("permissions") != {}:
         out.append("top_permissions")
-    if "env" in doc:
-        out.append("workflow_env")
+    if set(doc) - WORKFLOW_KEYS:
+        out.append("workflow_control_context:workflow")
     triggers = doc.get("on")
     if not isinstance(triggers, dict) or not triggers or set(triggers) - {"schedule", "workflow_dispatch"}:
         out.append("trigger")
@@ -96,8 +125,8 @@ def violations(doc: dict) -> list[str]:
             continue
         if job.get("if") != MAIN:
             out.append("job_not_main" + where)
-        if "env" in job:
-            out.append("job_env" + where)
+        if set(job) - JOB_KEYS - (CALL_KEYS if "steps" not in job else set()):
+            out.append("workflow_control_context" + where)
         if "continue-on-error" in job:
             out.append("continue_on_error" + where)
         if "permissions" not in job:
@@ -116,12 +145,10 @@ def violations(doc: dict) -> list[str]:
                 out.append("secret_outside" + where)
         steps = job.get("steps")
         if not isinstance(steps, list) or not steps:
-            out.append("first_step_control" + where)
+            out.append("workflow_control_step" + where)
             continue
-        first = steps[0]
-        if not (isinstance(first, dict) and first.get("id") == "control" and "uses" not in first
-                and "if" not in first and isinstance(first.get("run"), str) and CONTROL.search(first["run"])):
-            out.append("first_step_control" + where)
+        if steps[0] != control_step(name):
+            out.append("workflow_control_step" + where)
         for index, step in enumerate(steps):
             at = "%s:%d" % (where, index)
             if not isinstance(step, dict):
@@ -135,7 +162,7 @@ def violations(doc: dict) -> list[str]:
             if index == 0:
                 continue
             if step.get("if") != GATE:
-                out.append("step_not_gated" + at)
+                out.append("workflow_control_gate" + at)
             if isinstance(run, str):
                 if CONTROL.search(run):
                     out.append("control_elsewhere" + at)
@@ -216,10 +243,31 @@ class EachRuleFires(unittest.TestCase):
                                            "permissions:\n  contents: write\nconcurrency"))
         self.fires("top_permissions", _sub(committed(), "permissions: {}\nconcurrency", "concurrency"))
 
-    def test_env_above_steps(self):
-        self.fires("workflow_env", _sub(committed(), "permissions: {}\n",
-                                        "permissions: {}\nenv:\n  T: ${{ secrets.T }}\n"))
-        self.fires("job_env", _in_job(committed(), "cek", "    runs-on:", "    env:\n      A: b\n    runs-on:"))
+    def test_context_allow_list(self):
+        for added in ("env:\n  T: ${{ secrets.T }}\n", "defaults:\n  run:\n    shell: bash\n", "x-extra: y\n"):
+            with self.subTest(workflow=added):
+                self.fires("workflow_control_context", _sub(committed(), "permissions: {}\n", "permissions: {}\n" + added))
+        for added in ("env:\n      A: b\n", "defaults:\n      run:\n        working-directory: x\n",
+                      "container: node:22\n", "services:\n      db:\n        image: postgres\n", "steps-x: y\n",
+                      "uses: o/r/.github/workflows/w.yml@" + "0" * 40 + "\n"):
+            with self.subTest(job=added):
+                self.fires("workflow_control_context",
+                           _in_job(committed(), "cek", "    runs-on:", "    " + added + "    runs-on:"))
+        # The allowed keys pass the rule (``continue-on-error`` is allowed here, refused by continue_on_error).
+        for added in ("environment: loop\n", "strategy:\n      fail-fast: 'false'\n", "name: cek\n",
+                      "concurrency: x\n", "continue-on-error: 'false'\n"):
+            with self.subTest(allowed=added):
+                text = _in_job(committed(), "kos", "    runs-on:", "    " + added + "    runs-on:")
+                self.assertNotIn("workflow_control_context", rules(text))
+        self.assertNotIn("workflow_control_context", rules(_sub(committed(), "on:\n", "run-name: loop\non:\n")))
+
+    def test_workflow_call_job(self):
+        # A job that calls a workflow has no steps: its uses/with/secrets are allowed keys, the first step is missing.
+        start, end = _job(committed(), "cagir")
+        call = "  cagir:\n    if: github.ref == 'refs/heads/main'\n    permissions: {}\n    uses: o/r/.github/workflows/w.yml@%s\n    with:\n      a: b\n    secrets:\n      t: x\n" % ("0" * 40)
+        found = violations(parse(committed()[:start] + call + committed()[end:]))
+        self.assertIn("workflow_control_step:cagir", found)
+        self.assertNotIn("workflow_control_context:cagir", found)
 
     def test_triggers(self):
         for event in ("pull_request_target", "workflow_run", "issue_comment", "push", "pull_request"):
@@ -244,21 +292,49 @@ class EachRuleFires(unittest.TestCase):
         control = block[block.index("      - name: control\n"):block.index("      - name: checkout\n")]
         checkout = block[block.index("      - name: checkout\n"):block.index("      - name: download pulled\n")]
         swapped = block.replace(control + checkout, checkout + control)
-        self.fires("first_step_control", text[:start] + swapped + text[end:])
-        self.fires("first_step_control", _in_job(text, "cagir", "python3 -m snowball_bootstrap control",
-                                                 "python3 -m snowball_bootstrap status"))
-        self.fires("first_step_control", _in_job(text, "cek", "        id: control\n",
-                                                 "        id: control\n        if: always()\n"))
+        self.fires("workflow_control_step", text[:start] + swapped + text[end:])
+        self.fires("workflow_control_step", _in_job(text, "cagir", "python3 -m snowball_bootstrap control",
+                                                    "python3 -m snowball_bootstrap status"))
+        self.fires("workflow_control_step", _in_job(text, "cek", "        id: control\n",
+                                                    "        id: control\n        if: always()\n"))
+
+    def test_control_step_exact(self):
+        text = committed()
+        mutants = {
+            "other job's name": ("cek", "          LOOP_JOB: cek\n", "          LOOP_JOB: kos\n"),
+            "extra env": ("getir", "          LOOP_JOB: getir\n", "          LOOP_JOB: getir\n          X: y\n"),
+            "shell": ("kos", "        id: control\n", "        id: control\n        shell: bash\n"),
+            "other name": ("yaz", "      - name: control\n", "      - name: kontrol\n"),
+            "no name": ("yaz", "      - name: control\n        id: control\n", "      - id: control\n"),
+            "line before": ("cagir", "          set -eu\n", "          echo '{}' > ../control.json\n          set -eu\n"),
+            "no set -eu": ("cek", "          set -eu\n", ""),
+            "other branch": ("kos", "--branch main", "--branch dev"),
+            "other control file": ("getir", "--control ../control.json", "--control ./control.json"),
+            "spacing": ("yaz", "--job \"$LOOP_JOB\"", "--job  \"$LOOP_JOB\""),
+            "job by literal": ("cek", "--job \"$LOOP_JOB\"", "--job cek"),
+        }
+        for label, (job, old, new) in mutants.items():
+            with self.subTest(mutant=label):
+                found = violations(parse(_in_job(text, job, old, new)))
+                self.assertIn("workflow_control_step:" + job, found)
+                self.assertEqual([v for v in found if v.startswith("workflow_control_step")],
+                                 ["workflow_control_step:" + job])
 
     def test_control_only_first(self):
         self.fires("control_elsewhere", _in_job(committed(), "kos", "python3 -m loop.job run kos\n",
                                                 "python3 -m loop.job run kos\n          python3 -m snowball_bootstrap control\n"))
 
     def test_later_steps_gated_and_nothing_continues(self):
-        self.fires("step_not_gated", _in_job(committed(), "yaz", "      - name: checkout\n        if: steps.control.outputs.go == 'true'\n",
+        self.fires("workflow_control_gate", _in_job(committed(), "yaz", "      - name: checkout\n        if: steps.control.outputs.go == 'true'\n",
                                              "      - name: checkout\n"))
-        self.fires("step_not_gated", _in_job(committed(), "kos", "      - name: kos\n        if: steps.control.outputs.go == 'true'\n",
+        self.fires("workflow_control_gate", _in_job(committed(), "kos", "      - name: kos\n        if: steps.control.outputs.go == 'true'\n",
                                              "      - name: kos\n        if: always()\n"))
+        for form in ("${{ steps.control.outputs.go == 'true' }}", "always() && steps.control.outputs.go == 'true'",
+                     "steps.control.outputs.go != 'false'"):
+            with self.subTest(form=form):
+                self.fires("workflow_control_gate", _in_job(committed(), "getir",
+                                                            "      - name: getir\n        if: steps.control.outputs.go == 'true'\n",
+                                                            "      - name: getir\n        if: %s\n" % form))
         self.fires("continue_on_error", _in_job(committed(), "cek", "        id: control\n",
                                                 "        id: control\n        continue-on-error: true\n"))
         self.fires("continue_on_error", _in_job(committed(), "kos", "    timeout-minutes: 60\n",
