@@ -13,7 +13,9 @@ loop.job`` from the checkout's root).
 **One source.** ``JOBS`` holds each job's steps, the MFs it calls, its permissions, the secrets it receives, the
 jobs it needs, the artifacts it downloads and the one it uploads. ``render()`` writes the workflow from it, byte
 for byte the committed ``referee/.github/workflows/loop.yml`` (test 46 compares them); a change is made here and
-the file regenerated with ``python -m loop.job render > .github/workflows/loop.yml`` from ``referee/``.
+the file regenerated with ``python -m loop.job render > .github/workflows/loop.yml`` from ``referee/``. Every
+artifact edge of ``JOBS`` (an upload and a download of it) has one status in ``tests/test_loop_handover.py``: a test
+that runs both jobs on the handed-over bytes, a stated unread download, or a producer that stops unwired.
 
 **The shape of every job**, in this order:
 
