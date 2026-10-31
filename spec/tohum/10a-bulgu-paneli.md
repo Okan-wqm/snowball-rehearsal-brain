@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: K5 ve üstü bulgu değerlendirirken
-Çapa: beklemede: aşama 4 — faz ölüm sayıları; yargıç kalibrasyon defteri
+Çapa: beklemede: Panel — faz ölüm sayıları; yargıç kalibrasyon defteri
 
 ---
 

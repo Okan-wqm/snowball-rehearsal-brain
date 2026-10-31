@@ -1,6 +1,6 @@
 # Ders Provası: Öğrenmenin ve Kullanmanın Testi
 
-Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
+Tarih: 2026-10-30 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: ders görünümünü, merge'ü ya da çok repolu terfiyi getiren aşamanın spec'i yazılırken
 Çapa: beklemede: aşama 0 — `ledger.jsonl` `part: drill` (`revert`) satırları; aşama 2 — ders provası; taahhüt hash'leri Rekor'da
 
@@ -14,30 +14,37 @@ tuzaklarla, günler içinde sorar. Prova mekanizmayı sınar, canlı ölçümün
 **Örnekler.** Hakemin `exit.drill` işi oyuncak hedefte bir **tuzak ailesinin** örneklerini üretir:
 aynı gizli nedenle kırılan değişiklikler, örneğin adı değişen bir alanı metinle çağıran ve içe
 aktarma grafında görünmeyen bir tüketici. Örnekler hakem sırrındaki gizli tohumdan koşu anında
-üretilir. Cevap anahtarı (her örneğin gizli testi ve doğru `cause` kategorisi) koşudan önce hash'lenir,
-hash zincire ve Rekor'a girer, koşudan sonra açılır. Oyuncu üreticiyi koşturmaz, tohumu görmez. Aile
-listesi aşama spec'indedir ve donar. Sonuç, açılan gizli testin adayın worktree'sindeki koşusudur.
+üretilir. Cevap anahtarı (her örneğin gizli testi, doğru `cause` kategorisi, saklama tohumu ve
+denemenin sırası) koşudan önce hash'lenir, hash zincire ve Rekor'a girer, koşudan sonra açılır.
+Oyuncu üreticiyi koşturmaz, tohumu görmez. Ailelerin **sözleşmesi** donar, aileler donmaz: aileler
+operatörün ders görünümünü getiren aşamanın spec isteğinden önce taahhüt ettiği gizli havuzdan gelir,
+açılan aile bir daha kullanılmaz (`22b`). Beyin bir ailenin adını hiç görmez; bir işin yalnız açık
+gözlemlerini görür (yollar, sınıf, property). Sonuç, açılan gizli testin adayın worktree'sindeki koşusudur.
 
 ## Ders provası (`#ders-*`)
 
 | Soru | Nasıl sorulur | Geçme koşulu |
 |---|---|---|
-| Doğuş | Ailenin ilk örneği tohumlanmış kötü bir merge'tür; nöbetçi kırmızıyı görür | `gate.revert` geri alır; `cause` cevap anahtarındaki kategoriyle aynı; ders `origin_event` ile o satıra bağlı ve `scope` aileyi taşıyor |
-| Kullanım | Ailenin sonraki örnekleri ve başka bir ailenin örnekleri | Dispatcher dersi uygun her koşuya verir, öteki aileye vermez; `run_meta.lessons_injected` ve `prompt_sha256` bunu gösterir; planlayıcı ve düzeltici alır, test-yazıcı ve oracle almaz |
-| Etki | `k` örnek, her biri dersli ve derssiz iki kolda | Eşli, tam tek yönlü McNemar; en az 8 uyuşmaz çift; p < 0,10; yön dersten yana (`gate_rules.lesson_drill`) |
+| Doğuş | Ailenin ilk örneği tohumlanmış kötü bir merge'tür; nöbetçi kırmızıyı görür | `gate.revert` geri alır; `cause` cevap anahtarındaki kategoriyle aynı; ders `origin_event` ile o satıra bağlı; `scope` yalnız açık gözlemlerle yazılı, doğduğu örneği ve ailenin örneklerinin en az %80'ini kapsıyor, başka ailenin hiçbir örneğini kapsamıyor (E64) |
+| Kullanım | Ailenin sonraki örnekleri ve başka bir ailenin örnekleri | Dispatcher dersi kapsamının kapsadığı her ders okuyan koltuğa verir, başkasına vermez; `run_meta.lessons_injected` ve `prompt_sha256` bunu gösterir; planlayıcı ve düzeltici alır, test-yazıcı ve oracle almaz |
+| Etki | `k` örnek, her biri dersli ve derssiz iki kolda; iki kol aynı model, çaba, tur ve bütçeyle koşar, ayarlar bütün çiftlerde aynıdır; ders bloğu çıkarılmış promptun hash'i iki kolda aynıdır ve ikisini hakem kaydeder (E65, E321) | Kollar eşit; eşli, tam tek yönlü McNemar; en az 8 uyuşmaz çift; `i`'nci denemede p < 0,10 · 2^-i (`22c`, E323); yön dersten yana (`gate_rules.lesson_drill`) |
 | Yanlış ders | İkinci ailede `llm_prior` kökenli, bir koşulda zararlı bir ders hipotez olarak verilir | O koşulda örneğin kendi tuzak testi kırılınca ders `superseded_at` alır ya da koşul dışlanır, ders kaydına yazılır; o koşuldaki sonraki örneklere verilmez |
-| Plasebo | Ham isabeti dersinkinden yüksek, kolay bir ailede doğru ama ilgisiz bir ders aynı rastgele saklamayla verilir | Beynin bildirdiği kredi hakemin Newcombe alt sınırına eşit; plasebonun kredisi sıfırı geçmez; sıralama krediyi izler, ham orana göre sıralayan yakalanır |
+| Doğru ders | Üçüncü ailede `llm_prior` kökenli yararlı bir ders; hakem bazı örneklere dersle ilgisiz kırmızı bir test eker | İlgisiz kırmızıdan sonra ders geri çekilmez, daraltılmaz ve ailenin sonraki örneklerine verilir (E318) |
+| Plasebo | Ham isabeti dersinkinden yüksek, kolay bir ailede doğru ama ilgisiz bir ders, dersle aynı saklamayla verilir | Kim alır hakemin çekilişidir: taahhüt edilen tohumun `HMAC`'i, dispatcher ona uyar ve bir dersin iki kolu aynı model, çaba, tur ve bütçeyle koşar (E65); beynin bildirdiği kredi hakemin Newcombe alt sınırına eşit; plasebonun kredisi sıfırı geçmez; sıralama krediyi izler, ham orana göre sıralayan yakalanır |
 | Kalıcılık | Görünüm silinir; yeni oturum açılır | Görünüm defterden bayt bayt aynı kurulur; sonraki örnekte aynı ders aynı hash'le verilir |
 
-Provada kollar rastgele saklama yerine eşlidir: her örnek iki kez koşar. Canlıdaki rastgele saklama
-kuralı (`22`) değişmez. Aileyi bilen Kurucu bir kestirme yazsa da prova geçmez: dersten bağımsız bir
-kestirme iki kolu birlikte geçirir ve uyuşmaz çift üretmez.
+Provada etkinin kolları rastgele saklama yerine eşlidir: her örnek iki kez koşar. Canlıdaki rastgele
+saklama kuralı (`22`) değişmez. Aileyi bilen Kurucu bir kestirme yazsa da prova geçmez: dersten
+bağımsız bir kestirme iki kolu birlikte geçirir ve uyuşmaz çift üretmez. Provadaki her `llm_prior`
+ders ekilmiştir; yalnız yanlış ders olsaydı "her `llm_prior` dersi ilk kırmızıda at" kuralı geçerdi.
+Doğru ders bu yüzden vardır: yanlışı yanlış bilmek, doğruyu doğru bilmekle birlikte sınanır.
 
 **Provanın kendisi de sınanır.** Kararı veren yargıcın tam kuralları, tohumla gelen referans
-yargıç ve 14 ayrı kusurlu simüle beyinle ölçülmüş ayırma gücü `29c`'dedir. Ders provası yargıcı
-(`harness.drill`) ve `drill` vektörleri ders görünümünden önceki Aşama 2 partisiyle gelir
+yargıç ve 20 ayrı kusurlu simüle beyinle ölçülmüş ayırma gücü `29c` ve `29q`'dadır. Ders provası
+yargıcı (`harness.drill`) ve `drill` vektörleri ders görünümünden önceki Aşama 2 partisiyle gelir
 (`asama-1/13`); Kurucu'nun yazdığı yargıç vektörlerde referansla aynı kararı vermezse o parti kabul
-edilmez. Derssiz kolun da kırılmadığı aile ölçülemez; prova `UNMEASURABLE` olur ve aile değiştirilir.
+edilmez. Derssiz kolun da kırılmadığı aile ölçülemez; prova `UNMEASURABLE` olur ve aile değiştirilir;
+bu yüzden aile havuza girmeden derssiz kolda kalibre edilir (`22b`).
 
 ## Geri alma provası (`#geri-alma`)
 

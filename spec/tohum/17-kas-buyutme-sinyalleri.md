@@ -70,4 +70,4 @@ hesaplanmaz; önce vaka arzı sinyali gelir.
 **Keşfin ölçüsü.** Sistemin gerçekten keşfettiğinin ölçüsü "tohum dışı organ"dır (`20`): tohumda
 adı geçmeyen ve ablasyonda katkısı kanıtlanmış organ sayısı. Sıfırsa sistem kendini geliştirmiyor,
 yalnız verileni koşuyordur. Sinyaller doğru yere bakmayı sağlar, keşfi garanti etmez; cevabı
-Aşama 5'in genesis'i verir.
+genesis'in bütün organ türlerine açılması verir (`03`).

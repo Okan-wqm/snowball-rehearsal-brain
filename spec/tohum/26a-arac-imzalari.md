@@ -44,7 +44,7 @@ ilk okuyucusundan hemen önceki partiyle gelir, Aşama 0'da çağrılmaz.
 | `security.run` | Hakem | `koş` | profilin testleri, avcının kanıtları, ağaçlar | kural durumları, doğrulanmış ve reddedilmiş bildirimler | `security` satırları `yaz`'da | her döngü (`30d`, `30f`) | P2 |
 | `exit.sample` | Hakem | `çek` | sınıf, gizli tohum, profil | çıkış vakaları (kural sayımı) | yok; aktarımında donar | hakem exit | Aşama 1 çıkışı |
 | `spec.lint` | Hakem | `koş` | spec dizini, `required_exit_rows` | ihlal listesi | yok | Kurucu, aşama kilidi | Aşama 1 çıkışı (Aşama 0'da tohumun spec denetimi) |
-| `harness.baseline` | Hakem | `çek` | `snapshot_id`, property | bulgu dosyası | yok | hakem | Aşama 4 |
+| `harness.baseline` | Hakem | `çek` | `snapshot_id`, property | bulgu dosyası | yok | hakem | LLM avcı |
 | `lock.check`, `brain.accept` | Önyükleme hakemi | `çek`, `yaz` | aşama, spec hash, `setup/stage.json`; beyin SHA'sı, testler, rakip | kilit; kabul / ret | imzalı sonuç | her push (`29b`) | tohum; Kurucu yazmaz |
 | `profile.propose` | Beyin | `koş` | hedef ağacı | profil önerisi | yok | Kurucu | Aşama 1+ oyuncu |
 | `lint.discover` | Beyin | `koş` | `snapshot_id`, profil | bulgu dosyası | yok | hakem döngüsü | Aşama 1 |
@@ -60,7 +60,7 @@ işinin çıktı ağacındaki `candidates/<id>/`'ye yazılır ve hakem onu artef
 hiçbir adaya yeniden koşturmadan güvenmez.
 
 **İlk çağıranıyla açılanlar.** `chain.asof` (ilk zamansal sorgu okuyucusu), `map.build` (ilk
-`impact_miss` sinyali ya da K2 silmeleri), `oracle.run` (Aşama 4, K5 test oracle'ı),
+`impact_miss` sinyali ya da K2 silmeleri), `oracle.run` (LLM avcıyla, K5 test oracle'ı),
 `reputation.score` (bir sınıfta ≥ 2 aday organ), `lessons.view` (Aşama 2 planlayıcısı),
 `genesis.queue` (bir sınıfta ≥ 2 aday), `main.sync` (Aşama 2), `seal.rotate` (ilk held-out havuzu),
 `harness.drill` (ders provası, Aşama 2 partisi), `security.*` ve güvenlik avcısının `agent.dispatch`'i

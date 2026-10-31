@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: iki ilke aynı durumda farklı yön gösterdiğinde; bir repo ilkeler açısından taranırken; rakip bir tasarımı çürütmeye çalışırken
-Çapa: beklemede: Aşama 3 — repo haritasının (b) katmanı ve sinyallerin kontrolleri; kaynaklar `catalog.md` "Where principles conflict" ve "Scan signals" bölümleri
+Çapa: beklemede: K3 ve K4 açılışı — repo haritasının (b) katmanı ve sinyallerin kontrolleri; kaynaklar `catalog.md` "Where principles conflict" ve "Scan signals" bölümleri
 
 ---
 

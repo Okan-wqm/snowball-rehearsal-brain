@@ -15,7 +15,7 @@ oyuncu kendi reposu dışına hiçbir şey yazmaz: aday yayımlar, hakem çeker 
 | **Beyin reposu** (oyuncu; iç kullanımda açık; `snowball-mcp`'den ayrı, yeni repo) | MCP sunucusu, CLI, adapter'lar, düzelticiler, avcılar, planlayıcı, doküman üreticisi; `candidates/`, `targets/`, `reports/`; `founder-ledger.jsonl`; spec ve tohum; döngü hakeminin ve partilerin adayı `referee/` | Kurucu kimliği; `workflows` izni yok |
 | **Hakem reposu** (iç kullanımda açık) | Önyükleme hakemi (`bootstrap/`, `bootstrap.yml`; `29b`): beyin reposunun itme yargıcı, Aşama 0'dan sonra da kalır. Aktarılmış döngü hakemi (kapı, nöbetçi, defter, `loop.yml`; partilerle harness, dispatcher, Gözcü), koltuk promptları, tohum vektörleri; anayasal `policy.json`, `control.json`, kurulum özeti | Yalnız operatör; yazma izinli App kurulu değil; iş akışı varsayılan izni salt okunur |
 | **Hedef repo** | `brain/state` (yetim dal, `<state_root>`), `brain/integration`, `brain/c/<id>` aday dalları | Yazar App'i, yalnız hakemin `yaz` işinden |
-| **Mühürlü depo** (özel) | Held-out havuzu, mühür, mühürlü görünümler, held-out koşularının ham çıktıları, K6 artefaktları | Yalnız mühür App'i; ilk held-out havuzuyla açılır (Aşama 4 ön koşulu) |
+| **Mühürlü depo** (özel) | Held-out havuzu, mühür, mühürlü görünümler, held-out koşularının ham çıktıları, K6 artefaktları | Yalnız mühür App'i; ilk held-out havuzuyla açılır (K5 ön koşulu, `03`) |
 
 Eğitim modundaki hedeflerin durumu operatörün özel **eğitim deposunda**, hedef başına bir dalda
 durur; yazarı yazar App'idir, bütünlüğü Rekor köküdür; ilk eğitim hedefiyle açılır (`21`).
@@ -41,7 +41,7 @@ App'i yalnız mühürlü depodadır. Beyin App'i yoktur.
 | `koş` | Sır yok, `permissions: {}`; ağ yok | Artefaktlar | Sonuç dosyaları; hash'leri konteyner dışında | Evet, iç içe konteynerde |
 | `çağır` | Sağlayıcı kimliği | Tipli girdi | Yanıt, sunulan model, maliyet | Hayır |
 | `yaz` | Yazar App'i, Sigstore OIDC | `koş`, `çağır` çıktıları, kimlikle | `brain/state`, `brain/integration`, check, Rekor | Hayır |
-| Held-out exit (Aşama 4'ten) | Mühür App'i | Mühürlü depo | Mühürlü görünüm | Hayır; oyuncu koşusu `koş`ta |
+| Held-out exit (ilk held-out havuzundan) | Mühür App'i | Mühürlü depo | Mühürlü görünüm | Hayır; oyuncu koşusu `koş`ta |
 
 **Hakem, oyuncudan ayrıdır.** Hedefte beynin hiçbir kimliği ve iş akışı yoktur. Hakem reposunun
 zamanlayıcısı beyin reposunu ve hedefi yoklar, adayı çeker, sırsız işte yeniden koşturur ve kararı

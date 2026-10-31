@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: bir gerçek birden çok yerde durduğunda; ikinci servis aynı veriyi istediğinde; rapor kaynakla çeliştiğinde; iki yazar ya da iki tanım bulunduğunda
-Çapa: beklemede: Aşama 3 — repo haritasının (b) katmanı (`13`: tablo sahipleri, mesaj konuları, env değişkenleri); kaynaklar `catalog.md` bölüm A
+Çapa: beklemede: K3 ve K4 açılışı — repo haritasının (b) katmanı (`13`: tablo sahipleri, mesaj konuları, env değişkenleri); kaynaklar `catalog.md` bölüm A
 
 ---
 

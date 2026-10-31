@@ -9,7 +9,7 @@ Okunma: her güvenlik işinde, her bildirimde ve yeni bir hedefe bağlanırken
 **Neden var.** Repoyu öğrenmenin bir amacı güvenlik açığı açmamaktır (`05`); güvenlik K6 sınıfıdır
 (`03`). Katalog bilinen açık sınıflarını tek yerde toplar ki her ajan neye bakacağını bilsin: Kurucu
 beyin ve hakem kodunu yazarken, güvenlik avcısı (`30f`) ararken, rakip bir artefaktı çürütürken (ilgili
-tohum sayfası olarak, `29`), K6 organları Aşama 5'ten düzeltirken. Test-yazıcıya katalog girdisi property
+tohum sayfası olarak, `29`), K6 organları önkoşulları kapanınca (`03`) düzeltirken. Test-yazıcıya katalog girdisi property
 tanımının parçası olarak gider, bulgunun iddiası gitmez (`04a` 2). Katalog bir hipotez listesidir, bulgu
 değildir (Y1): bir sınıfın bu kodda var olduğunu yalnız yürütme söyler.
 
@@ -39,7 +39,7 @@ profildeki yerel servistir; kurulamayan test `blocked`'dır ve kapsama boşluğu
 |---|---|
 | Bulmak, kanıtlamak, bildirmek; `security` satırı (`30e`) | Aşama 1'den (etkinleştirme) |
 | Bir kuralı bekçi testine bağlamak: bugün yeşil, ekilmiş ihlali yakalar | Aşama 1'den; test `<state_root>/security/tests/`'tedir, hedefin `main`'ine girmez (`30d`) |
-| Hedefin koduna güvenlik düzeltmesi; bekçi testini hedefin test yoluna önermek | K6 canlı olunca, yalnız K6 kapısından (`05`, `04a` 10); Aşama 5 |
+| Hedefin koduna güvenlik düzeltmesi; bekçi testini hedefin test yoluna önermek | K6 canlı olunca, yalnız K6 kapısından (`05`, `04a` 10); önkoşulları `03`'te |
 | Migration (ör. RLS), bağımlılık manifesti, sır döndürme, yapılandırma, iş akışı | Hiçbir zaman sistem (Y3, `04a` 9): hedefin sahibi düzeltir, sistem testi yeniden koşar ve `verification` yazar |
 
 Katalog tablolarındaki "Düzeltme" sütunu bu satırların kısaltmasıdır: `K6` ya da `sahip` (nedeni

@@ -11,7 +11,7 @@ Okunma: her sayfa yazarken, her döngüde doküman üretilirken ve her K8 işind
 2. **Tarih başlıkta.** Tarih, sürüm, durum ve sahibi; sürüm yalnız başlıkta yaşar.
 3. **Her sayfanın çapası vardır.** Sayfayı kanıtlayan dosya, defter ya da test. Çapası
    çözülmeyen sayfa bayattır ve bir kapıyı kırmızıya boyar. Tek istisna: `taslak` ya da
-   `hedef taslak` sayfada "beklemede: aşama N" çapası; aşama N PASS alınca çözülmelidir.
+   `hedef taslak` sayfada "beklemede: <olay>" çapası; olayın PASS satırı yazılınca çözülmelidir (`02`).
 4. **Üretilebilen sayfa üretilir.** Defterden türetilebilen her şey elle yazılmaz; her döngüde
    yeniden üretilir. Üretilmiş sayfa elle düzenlenemez; düzenleme zincir kırığıdır. Hedefin ve
    sistemin kendi kodunun haritası (neyin neye bağlı olduğu, `13`) insanın okuyacağı bir çizim

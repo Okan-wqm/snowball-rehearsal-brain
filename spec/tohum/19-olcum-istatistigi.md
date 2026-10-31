@@ -35,7 +35,7 @@ Koşu bütçesi daha çok snapshot'a harcanır; aynı snapshot'ın tekrarı vaka
 gürültüsünü ölçer.
 
 **Held-out kaynağı.** Held-out, Kurucu'nun hesaplayamayacağı bir havuzdan gelir ve ilk havuzla
-mühürlü depo açılır (Aşama 4 ön koşulu); K0 çıkışı ise taze, gizli tohumlu bir örneklemdir
+mühürlü depo açılır (K5 ön koşulu, `03`); K0 çıkışı ise taze, gizli tohumlu bir örneklemdir
 (`exit.sample`). Havuz kaynakları: (1) mutasyonlar, gizli tohumla çok büyük bir aday havuzundan;
 (2) insan düzeltmeleri **ileriye dönük**: exit talebinde avcının `prompt_sha256`'sı mühürlenir ve
 yalnız mühürden sonra merge edilen insan düzeltmeleri sayılır, çünkü canlı hedefte kesim sonrası

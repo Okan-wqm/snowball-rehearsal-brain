@@ -7,7 +7,7 @@ Okunma: P2 aktarımında (koltuk), her güvenlik koşusunda ve avcının kanarya
 ---
 
 **Kimdir.** Hakemin bir koltuğudur: açık bulur, kanıtlar ve bildirir; kod yazmaz, hiçbir şey düzeltmez.
-`03`'teki K6 avcısının yerine geçmez: o, Aşama 5'te açılan ve düzeltme adayı üreten bir oyuncu organıdır;
+`03`'teki K6 avcısının yerine geçmez: o, önkoşulları kapanınca (`03`) açılan ve düzeltme adayı üreten bir oyuncu organıdır;
 bu koltuk Aşama 1'de P2 partisinin aktarımından (`asama-1/13`) çalışır ve onların çıktısını da denetler.
 
 **Bağımsızlık.**

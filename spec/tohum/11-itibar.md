@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: dispatch ve yeniden yazım kararlarında
-Çapa: beklemede: bir sınıfta ikinci aday organ — itibar görünümü; puanlayıcı deterministik koddur
+Çapa: beklemede: Genesis yaşam döngüsü — bir sınıfta ikinci aday organla itibar görünümü; puanlayıcı deterministik koddur
 
 ---
 

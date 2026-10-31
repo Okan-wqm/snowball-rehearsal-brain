@@ -6,12 +6,11 @@ Okunma: her aşama başında ve sonunda
 
 ---
 
-1. Kurucu spec'i taslaklar. En az şu sekiz bölümü vardır: amaç, doğruluk özellikleri, roller,
-   sıralı mikro özellikler, çıkış testi, yasaklar, bütçe, teslim listesi; aşamaya özgü ek bölüm
-   ayrı sayfa olabilir. Aşama özeti ön koşulu ve çıkış kapısını taşır. Tohumla gelen Aşama 0 ve 1
-   spec'i Kurucu'nun ilk taslağı sayılır: listeden geçmezse Kurucu düzeltip rakibe sunar, geçerse
-   incelemesini aşamanın `CHANGELOG.md`'sine tarihli satır olarak ekleyip sunar (`29b`); anayasal
-   bir değer gerektiren düzeltme `blocked` olur. Aşama spec'i tohumla çelişirse tohum geçerlidir;
+1. Kurucu spec'i taslaklar. En az şu sekiz bölümü vardır: amaç, doğruluk özellikleri, roller, sıralı mikro özellikler,
+   çıkış testi, yasaklar, bütçe, teslim listesi; aşamaya özgü ek bölüm ayrı sayfa olabilir. Aşama özeti ön koşulu ve
+   çıkış kapısını taşır. Tohumla gelen Aşama 0 ve 1 spec'i Kurucu'nun ilk taslağı sayılır: listeden geçmezse Kurucu
+   düzeltip rakibe sunar, geçerse incelemesini aşamanın `CHANGELOG.md`'sine tarihli satır olarak ekleyip sunar
+   (`29b`); anayasal bir değer gerektiren düzeltme `blocked` olur. Aşama spec'i tohumla çelişirse tohum geçerlidir;
    çelişki bir spec kusurudur: Kurucu donmamış spec'te düzeltir, donmuş spec'te bildirir (`00a`).
 2. Spec **yapısal kontrol listesinden** geçer ve tohum rakibi (`29`) onu çürütmeyi dener. Çürütme
    ancak hakemin yeniden koşturduğu bir yeniden üreticiyle sayılır; açık `not_refuted` dışındaki her
@@ -22,14 +21,15 @@ Okunma: her aşama başında ve sonunda
    - sekiz bölüm var ve boş değil;
    - her eşik ya `policy.json`'a ya da anayasal tabana atıf;
    - bütçe `policy.json` tavanının altında;
-   - aşama özeti getirdiği yetenekleri `18`'deki adlarla listeler ("Her aşama" her zaman); listedeki
-     her yeteneğin her `#kimlik`'i çıkış testinde bir satırın başında var; biri eksikse spec
-     reddedilir;
+   - aşama özeti getirdiği yetenekleri `18`'deki adlarla listeler ("Her aşama" her zaman) ve `03`'te
+     o aşamanın satırında `18` atfıyla geçen her yeteneği listeye alır (Kurucu'nun taslağı tohumun
+     hedefini düşüremez); listedeki her yeteneğin her `#kimlik`'i çıkış testinde bir satırın başında
+     var; biri eksikse spec reddedilir;
    - her mikro özellik tek mekanizma getirir (`04`);
    - property spec'lerinde kalıp yok (`asama-4/06`);
    - hedef repoya özgü yol, araç ya da karar belgesi adı yok;
    - her yeni dosyanın okuyucusu `27`'de ve okuyucu bu aşamada bir kararı değiştiriyor (Y4);
-   - her çapa ya çözülüyor ya da "beklemede: aşama N".
+   - her çapa ya çözülüyor ya da "beklemede: <olay>"; olay aşama, parti aktarımı, sınıf açılışı ya da `18`'deki yetenektir.
 3. Kurucu inşa eder; takımı bu aşamanın bütçesi içinde kurar.
 4. Hakem harness'i ölçer. Çıkış testi canlı ve uçtan ucadır; birim testi ve taklit çıkış kanıtı
    değildir, yalnız ön provadır. Verdict `PASS`, `FAIL` ya da `UNMEASURABLE`'dır (`19`).
@@ -48,17 +48,17 @@ Okunma: her aşama başında ve sonunda
    partinin mikro özellikleri bitince parti çıkış isteği (A), operatör aktarımı, (B)'de partinin ilk
    okuyucusunun canlı koşusu. Her aktarım bir insan dokunuşudur; aşama kilidi değişmez.
 
-**Sahip istisnası.** Bir çıkış koşulunun ölçümü aşama başlamadan yapılacak bir işe dayanır ve o iş yapılmadıysa,
-koşul o aşamada ne ölçülür ne geçer; aşama hiç kapanmasın diye sahip onu adıyla istisna edebilir. Bugün yalnız
-#durustluk böyledir (ekim Kurucu başlamadan, `asama-0/10`, `25` 10c). İstisna `setup/summary.json`'daki
-`honesty_exception`'dır (`26c`): bir koşul, bir aşama, bir taşıma hedefi. Yanındaki `honesty_commitment` taşıma hedefinin
-ekimidir; o yoksa istisna koşulu kaldırmaz, çıkış `not_checked` kalır, Kurucu'ya sayılmaz (taşıma hedefi de ölçemezdi).
-Önyükleme hakemi (A) sonucuna `owner_exception {anchor, stage, carry_to, reason, carry_commitment, measured: false}`
-yazar; koşul geçmiş ya da `UNMEASURABLE` sayılmaz, öbür koşulların hepsi geçerse çıkış "sahip istisnasıyla PASS"tır.
-PASS satırı ve çıkış raporu istisnayı adıyla taşır; istisna insan dokunuşudur (`27`). Koşul bir sonraki aşamanın (A)
-çıkışına taşınır: o çıkış onu ölçülmüş ister, ikinci istisna yoktur; o aşamanın spec'i bunu yazmasa da tohum geçerlidir
-(madde 1). Önyükleme hakemi bugün yalnız Aşama 0 çıkışını yargılar (başka aşamanın isteği `exit_request_wrong_stage`);
-taşınan koşulun denetimi Aşama 1 çıkışını yargılayan koduyla gelir.
+**Sahip istisnası.** Bir çıkış koşulunun ölçümü aşama başlamadan yapılacak bir işe dayanır ve o iş yapılmadıysa, koşul o aşamada ne
+ölçülür ne geçer; aşama hiç kapanmasın diye sahip onu adıyla istisna edebilir. Bugün yalnız #durustluk böyledir (ekim Kurucu
+başlamadan, `asama-0/10`, `25` 10c). İstisna `setup/summary.json`'daki `honesty_exception`'dır (`26c`): bir koşul, bir aşama, bir
+taşıma hedefi. Yanındaki `honesty_commitment` taşıma hedefinin taahhüdüdür: ekimin ya da, ekim üretilemiyorsa, aşama başlamadan
+kaydedilmiş değişmez bir ölçüm planının hash'i (`25` 10c); o yoksa istisna koşulu kaldırmaz, çıkış `not_checked` kalır, Kurucu'ya
+sayılmaz (taşıma hedefi de ölçemezdi). Önyükleme hakemi (A) sonucuna `owner_exception {anchor, stage, carry_to, reason,
+carry_commitment, measured: false}` yazar; koşul geçmiş ya da `UNMEASURABLE` sayılmaz, öbür koşulların hepsi geçerse çıkış "sahip
+istisnasıyla PASS"tır. PASS satırı ve çıkış raporu istisnayı adıyla taşır; istisna insan dokunuşudur (`27`). Koşul bir sonraki
+aşamanın (A) çıkışına taşınır: o çıkış onu ölçülmüş ister, ikinci istisna yoktur; o aşamanın spec'i bunu yazmasa da tohum geçerlidir
+(madde 1). Önyükleme hakemi bugün yalnız Aşama 0 çıkışını yargılar (başka aşamanın isteği `exit_request_wrong_stage`); taşınan
+koşulun denetimi Aşama 1 çıkışını yargılayan koduyla gelir.
 
 **Dikey dilim kuralı.** Hiçbir aşama döngünün tek bir fazını "tamamen" kurmaz. Her aşama
 döngünün tamamını daha dar bir kapsamda canlı çalıştırır, sonra kapsam genişler.
@@ -68,8 +68,8 @@ sayfaları "hedef taslak" durumundadır: okunur, sırası gelince yeniden yazıl
 Donmuş bir aşama dizinine dokunan spec isteği reddedilir (`spec_already_frozen`); donmuş spec yalnız
 operatör kararıyla açılır.
 
-**Çapa kuralı.** `taslak` ya da `hedef taslak` durumundaki sayfada çapa "beklemede: aşama N"
-olarak yazılabilir. Aşama N PASS alınca çapa çözülmelidir; çözülmeyen çapa bayatlıktır.
+**Çapa kuralı.** `taslak` ya da `hedef taslak` durumundaki sayfada çapa "beklemede: <olay>"
+olarak yazılabilir. Olayın PASS satırı yazılınca çapa çözülmelidir; çözülmeyen çapa bayatlıktır.
 
 **Harness şeridi.** Harness ve donmuş koltuklar hakem reposundadır (`01a`). Değişiklik adayını
 yalnız şerit yazarı yazar ve beyin reposunda `referee/` altında yayımlar. Aday hatayı gösteren yeni

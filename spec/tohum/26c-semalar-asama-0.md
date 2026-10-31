@@ -36,11 +36,13 @@ hakem kodu değildir; `unit_candidates` kopyanın aday birim yolları, sırayla)
 (`02` "Sahip istisnası"; yanındaki taahhüt taşıma hedefinin ekimidir, o olmadan istisna koşulu kaldırmaz); ilk
 koşu işareti.
 
-**setup/imports.jsonl**: her aktarım bir satır `{ts, stage, batch?, brain_sha, referee_tree_sha256,
-result_sha256, toy_tree_sha256?}`, zincirli (`26`); insan dokunuşu sayacı. **setup/stage.json**:
-`{stage, pass_row_sha256, toy_state_head, copy_state_head, import_line_sha256}`; `stage-open` yazar,
-operatör iter (`asama-0/10a`). **setup/honesty-key.json**: ekim kimlikleri, tespit yüklemleri, kardeş
-girdi; çıkışta operatör ekler.
+**setup/imports.jsonl**: her aktarım bir satır `{ts, stage, batch?, brain_sha, referee_tree_sha256, result_sha256,
+toy_tree_sha256?}`, zincirli (`26`); insan dokunuşu sayacı. **setup/stage.json**: `{stage, pass_row_sha256,
+toy_state_head, copy_state_head, import_line_sha256}`; `stage-open` yazar, operatör iter (`asama-0/10a`).
+**setup/honesty-key.json**: taahhüdün açılan hâli; ekim biçiminde ekim kimlikleri, tespit yüklemleri, kardeş girdi;
+kaydedilmiş plan biçiminde planın kendisi (`snowball-honesty-plan/1`); `sha256(canonical(…))`'ı `honesty_commitment`'la
+tutmalıdır; çıkışta operatör ekler. **setup/honesty-result.json** (`snowball-honesty-result/1`): kaydedilmiş plan
+biçiminde değerlendiricinin çıktısı; çıkışta operatör ekler (insan dokunuşu).
 
 **reports/*.json** (beyin): `{id, kind: seed_issue|referee_weakness|spec_issue, ref, evidence_test?,
 state}`. Önyükleme hakemi `pull`'da okur, rakipten gizler, imzalı sonuçta `reports[]` olur ve operatörü

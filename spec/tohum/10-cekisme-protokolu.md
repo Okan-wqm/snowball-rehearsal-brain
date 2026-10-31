@@ -21,9 +21,10 @@ koltuklardan hiçbirine oturamaz (Y6); koltuk modelleri `09a`'ya uyar.
 düzeltmenin biçimi, doküman yapısı) ve tek bir kaynaktan geliyorsa (başka bir repodan kalıp ya da
 bir modelin önerisi), Savunma yalnız çürütmekle kalmaz: kendi bilgisinden, referanslı en az bir
 alternatif önerir. Soru "hangisi doğru" değil "ikisinden daha iyisi var mı"dır. Adaylar aynı
-oracle'la yan yana koşar; kazananı yürütme seçer. Her öneri `origin` taşır (`repo_pattern`,
-`llm_prior`, `synthesis`, `own_outcome`) ve hayatta kalma oranı kaynak ve koşul başına ölçülür
-(`11`, `21`). Kopyalanan şey ölçülmemiş bir tercihtir.
+oracle'la yan yana koşar; kazananı yürütme seçer. Aşama spec'inin sınıf seçimi böyle koşmaz (`03`): iki
+aşama yan yana koşamaz, varsayılan satır koşmaz; seçimi hakemin tahmini ve çıkış sınavı tartar (`18`
+Varsayılandan sapma). Her öneri `origin` taşır (`repo_pattern`, `llm_prior`, `synthesis`, `own_outcome`) ve
+hayatta kalma oranı kaynak ve koşul başına ölçülür (`11`, `21`). Kopyalanan şey ölçülmemiş bir tercihtir.
 
 | Faz | Soru |
 |---|---|

@@ -32,7 +32,7 @@ Okunma: yeni terim ya da dosya eklerken
 | Fren | Olağan işi durdurmayacak kadar yüksek, döngüyü kesen bütçe ya da kaynak tavanı; takılmak ret değil, uyarıdır (`asama-0/12`) |
 | Lisans kapısı | Ürüne giren bağımlılığın lisansını tekerleğin kendisinden okuyup `license_allowlist`'e karşı denetleyen kapı (`24`) |
 | Harness puanı | Hakem harness'inin bir koşuya verdiği rapor |
-| Taban avcı | Hakemin property başına sabit grep kümesi; maliyeti sıfır; Aşama 4 partisiyle gelir |
+| Taban avcı | Hakemin property başına sabit grep kümesi; maliyeti sıfır; LLM avcıyı getiren aşamanın partisiyle gelir |
 | Sınıf tabanı | `policy.json` anayasal bölümündeki çıkış alt sınırı |
 | Düzeltici, implementer | Bulguyu kalıcı düzeltmeye çeviren organ; K5 ve üstünde kök nedeni tasarlayan Opus organı |
 | Oracle düzelticisi | Testi yeşile çeviren asgari düzeltme; kanıttır, merge edilmez |

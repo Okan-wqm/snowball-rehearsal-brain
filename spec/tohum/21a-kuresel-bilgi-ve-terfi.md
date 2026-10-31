@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: ikinci repo bağlanınca, ithal bilgi kullanılırken ve bir bilgi ya da organ terfi edilirken
-Çapa: beklemede: ikinci repo — `knowledge` ve `proposal` satırları (`26b`); `gate_rules.promotion`
+Çapa: beklemede: Çok repolu terfi — ikinci repoyla `knowledge` ve `proposal` satırları (`26b`); `gate_rules.promotion`
 
 ---
 

@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: bir işleyici hem veritabanına yazıp hem mesaj yayımladığında; en az bir kez teslim edilen mesaj tüketilirken; birden çok servisi kapsayan iş akışında; defter ve değişmez veri tasarlanırken
-Çapa: beklemede: Aşama 3 — repo haritasının (b) katmanı (event üretici ve tüketicileri, konular); tohum vektörleri V1–V3 (`29a`); kaynaklar `catalog.md` bölüm D
+Çapa: beklemede: K3 ve K4 açılışı — repo haritasının (b) katmanı (event üretici ve tüketicileri, konular); tohum vektörleri V1–V3 (`29a`); kaynaklar `catalog.md` bölüm D
 
 ---
 

@@ -16,7 +16,7 @@ Sıra, kazancın büyüklüğüne göredir:
    basamağın maliyeti bu takas edilmiş modellerle hesaplanır. Ayrıklığı bozan iniş yapılmaz.
 3. **Kısa prompt.**
 4. **Mekanik dedektör.** Bulunan sınıf için LLM'siz dedektör; tek büyük tasarruf budur
-   (Aşama 3'ten itibaren).
+   (Daha ucuz basamak yeteneğiyle, `18`).
 5. **Dar kapsam, kapsama tabanıyla.** Yalnız dev koşularının okuduğu dosyalardan türetilen glob;
    görülmeyen dosya payı artıyorsa bu basamak reddedilir, çünkü kör noktayı pekiştirir.
 

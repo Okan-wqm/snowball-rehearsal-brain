@@ -2,13 +2,13 @@
 
 Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: her oracle koşusunda ve test-yazıcı tasarlarken
-Çapa: beklemede: aşama 4 — oracle koşu kayıtları
+Çapa: beklemede: LLM avcı — oracle koşu kayıtları
 
 ---
 
 Yürütme oracle'ı sistemin son sözüdür; bu yüzden en çok burada oyun aranır. K0–K2 ve K4'te
 oracle sınıfın aracının yeniden koşusudur (Y8, `03`); 1–6 ve 11–13 test oracle'ı içindir ve
-`oracle.run` ile Aşama 4'te açılır. 7–10 her sınıfta geçerlidir.
+`oracle.run` ile, LLM avcıyla (`18`) açılır. 7–10 her sınıfta geçerlidir.
 
 1. **Test önce mühürlenir.** Test-yazıcının testi, düzeltici görmeden hash'lenir ve zincire
    yazılır. Test yolları profildeki `test_path_rules`'dur ve satır içi test modüllerini de kapsar.

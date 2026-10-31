@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: her güvenlik bulgusunda, düzeltmesinde, testinde ve feragatinde; yeni bir hedefe bağlanırken
-Çapa: `seed/security-ledger.jsonl` (`python -m ledger.chain verify`); beklemede: etkinleştirme — `ledger.jsonl` `part: security`
+Çapa: `seed/security-ledger.jsonl` (`python -m ledger.chain verify`); beklemede: aşama 0 — etkinleştirmeden `ledger.jsonl` `part: security`
 
 ---
 

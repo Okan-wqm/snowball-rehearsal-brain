@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: plan yaparken, düzeltme yazarken
-Çapa: beklemede: aşama 2 — ders görünümü; `run_meta.lessons_injected`; defterdeki `cause` satırları
+Çapa: beklemede: Ders görünümü ve enjeksiyonu — ders görünümü; `run_meta.lessons_injected`; defterdeki `cause` satırları
 
 ---
 

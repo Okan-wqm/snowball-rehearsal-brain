@@ -31,7 +31,7 @@ yine operatörün işidir ve insan dokunuşu sayacında görünür.
 satır 3–4 yerine: operatörün özel **eğitim deposunu** (ilk eğitim hedefinde) aç, yazar App'ini yalnız oraya
 kur, hedef başına bir dal ayır; üçüncü kişi repolarına hiçbir App kurulmaz, hakem onları kimliksiz klonlar.
 
-**Mühürlü depo (Aşama 4 ön koşulu).** Aşama 3 PASS'ten sonra, ilk held-out havuzundan önce:
+**Mühürlü depo (K5 ön koşulu, `03`).** Held-out havuzunu getiren aşama açılınca, ilk held-out havuzundan önce:
 özel mühürlü depoyu aç; **mühür App'ini** yalnız oraya kur (içerik yazma); mühür App anahtarını ve
 HMAC mühür anahtarını hakem reposunun sırlarına ekle. Bu, aşama çıkışındaki aktarım gibi bir insan
 dokunuşudur ve sayaçta görünür.

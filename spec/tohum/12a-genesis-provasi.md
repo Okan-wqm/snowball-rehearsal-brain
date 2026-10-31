@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-28 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: bir sınıfta organ yaşam döngüsünü canlıya alan aşamanın spec'i yazılırken
-Çapa: beklemede: aşama 4 — `ledger.jsonl` `part: drill` satırları; taahhüt hash'leri Rekor'da
+Çapa: beklemede: Genesis yaşam döngüsü — `ledger.jsonl` `part: drill` satırları; taahhüt hash'leri Rekor'da
 
 ---
 

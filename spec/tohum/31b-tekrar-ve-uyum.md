@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: bir hata iki yerde bulunduğunda; klon dedektörü bir eşleşme bildirdiğinde; ortak bir soyutlama ya da paylaşılan kütüphane önerilirken; rakip tekrar iddiası kurarken
-Çapa: beklemede: Aşama 2 — profildeki graf aracından derleme ve import grafiği (`13` (a)); git geçmişinden birlikte değişme sayımı; kaynaklar `catalog.md` bölüm B
+Çapa: beklemede: K2 silme — harita (a): profildeki graf aracından derleme ve import grafiği (`13` (a)); git geçmişinden birlikte değişme sayımı; kaynaklar `catalog.md` bölüm B
 
 ---
 

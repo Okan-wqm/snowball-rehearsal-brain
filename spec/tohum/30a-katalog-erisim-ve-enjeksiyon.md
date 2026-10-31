@@ -1,7 +1,7 @@
 # Güvenlik Kataloğu I: Erişim, Kimlik, Enjeksiyon, Web
 
 Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
-Okunma: kapsam bu sınıflara dokunduğunda; güvenlik avcısı, Kurucu ve Aşama 5'ten K6 işinde
+Okunma: kapsam bu sınıflara dokunduğunda; güvenlik avcısı, Kurucu ve K6 düzeltme işinde
 Çapa: beklemede: Aşama 1 — `<state_root>/security/profile.json` `classes[]` ve `security/tests/`
 
 ---

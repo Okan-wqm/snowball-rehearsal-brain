@@ -2,7 +2,7 @@
 
 Tarih: 2026-10-30 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
 Okunma: koda, dokümana ya da veriye dokunan her adayda; silen, birleştiren ya da veriyi yok eden adayda baştan sona
-Çapa: beklemede: aşama 2 — silme adaylarının kapı kararları, sahibin onay kayıtları, geri almalar
+Çapa: beklemede: K2 silme — silme adaylarının kapı kararları, sahibin onay kayıtları, geri almalar
 
 ---
 

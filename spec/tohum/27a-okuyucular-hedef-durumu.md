@@ -33,5 +33,5 @@ Okunma: yeni durum dosyası, bölüm ya da görünüm eklerken
 | İtibar görünümü, organ yaşam döngüsü, `genesis-queue.jsonl` | puanlayıcı, hakem, sinyaller | dispatcher, genesis, Kurucu | Sıra, yeniden yazım, taslak | Bir sınıfta ≥ 2 aday organ |
 | Ders görünümü | `lessons.view` | planlayıcı, düzeltici | Yaklaşım | Aşama 2 |
 | `contracts/` | organlar | organlar, kapı | Arayüz | İkinci ortak arayüz |
-| `prompt-ledger.jsonl`, `fp-corpus.jsonl` | dispatcher, oracle | Kurucu, şerit yazarı, rakip kanaryası | Prompt sürümü, koltuk geri dönüşü | Aşama 4 |
+| `prompt-ledger.jsonl`, `fp-corpus.jsonl` | dispatcher, oracle | Kurucu, şerit yazarı, rakip kanaryası | Prompt sürümü, koltuk geri dönüşü | LLM avcı |
 | Eğitim deposu dalları | `yaz` | bilgi ve koşul görünümleri | Hipotez sırası | İlk eğitim hedefi |

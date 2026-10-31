@@ -14,7 +14,7 @@ Okunma: Aşama 0 inşasından önce ve her dispatch değişikliğinde
 | İki yüzey | **CLI** deterministik, CI'nın çağırdığı yüzey. **MCP** ajanlara açılan yüzey (Aşama 1'den, beyin `mcp/`; sunucu adı `snowball`, hedefte aynı adlı sunucu varsa profil çakışmayı raporlar); CI bir MCP sunucusunu doğrudan çağıramaz |
 | Tetik | Önyükleme hakeminin zamanlayıcısı beyin reposunu kimliksiz yoklar; döngü hakemi (`loop.yml`) hedefleri yoklar, zamanlayıcısı `control.json` `loop_schedule` ile açılır, (B)'de devirleri operatör elle tetikler. Hedefte beynin iş akışı ve kimliği yoktur (`01b`) |
 | İşler | `çek`, `getir`, `koş`, `çağır`, `yaz` (`08` 1; önyükleme hakeminde ayrıca yeniden üreticiler için `yeniden`); hedef ve oyuncu kodu yalnız `koş`ta (ve `yeniden`de), iç içe ağsız konteynerde |
-| Kimlikler | Kurucu belirteci, yazar App'i, özel hedef gelince okuyucu App'i, Aşama 4'ten mühür App'i (`25`). Beyin App'i yoktur |
+| Kimlikler | Kurucu belirteci, yazar App'i, özel hedef gelince okuyucu App'i, ilk held-out havuzundan mühür App'i (`25`). Beyin App'i yoktur |
 | Hedefe yazım | Yalnız `yaz` işinde, yazar App belirteciyle, GitHub REST ve Git Data API'siyle ve yalnız `refs/heads/brain/**` altına (`target.write`, `26a`); hedefte git push ve `main`'e yazım yoktur |
 | Model kimlikleri | Yüksek: `claude-opus-5-5`. Düşük: `claude-sonnet-5-5`. En ucuz: `policy.json`'da adlandırılır. Effort rol başına `policy.json`'da |
 | Model kaydı | Sunulan model ve maliyeti ajan değil `çağır` işi ya da sağlayıcı geçidi yanıttan yazar; istenenden farklıysa koşu geçersizdir |
@@ -64,6 +64,6 @@ Hakem, Aşama 0 (`asama-0/14`): `ledger.chain`, `chain.verify`, `secrets.scan`, 
 `ledger.append`, `rekor.anchor`, `sentinel.run`, `gate.revert`, `exit.drill` (yalnız geri alma),
 `llm.call`, `status.block`, `activate`. Partilerle (`asama-1/13`): `snapshot.make`, `cases.build`,
 `harness.score`, `drift.check`, `gozcu.evaluate` (P1); `agent.dispatch`, `security.*` (P2); `exit.sample`,
-`spec.lint` (Aşama 1 çıkışı); `harness.drill` (Aşama 2); `harness.baseline` (Aşama 4). Push kabulü ve
+`spec.lint` (Aşama 1 çıkışı); `harness.drill` (Aşama 2); `harness.baseline` (LLM avcıyla). Push kabulü ve
 aşama kilidi önyükleme hakemindedir (`29b`). Beyin, Aşama 1: `profile.propose`, `lint.discover`,
 `fixer.range`, `fixer.llm`, `candidate.publish`, `docs.render`, `docs.index`. İmzalar `26a`'da.

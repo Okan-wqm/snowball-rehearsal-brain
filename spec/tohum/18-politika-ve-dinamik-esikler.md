@@ -17,8 +17,8 @@ Her kapı kararı onu okur.
 
 | Bölüm | İçerik | Kim değiştirir |
 |---|---|---|
-| Anayasal | Aylık USD ve CI dakikası tavanları, oturum tavanı ve paylar (iç kullanımda kaçak freni, `06`); `operating{}` kaynak sınırları ve bantları; **sınıf başına çıkış ve merge tabanları**; `required_exit_rows`; non-inferiority marjı ve eşli test asgarileri; hayatta kalma pencereleri; regresyon dondurma kuralı; döngü ve gün tavanları; güvenlik anahtar kelimeleri; yasaklı ifadeler; aşama sırası; bakış bütçesi; güven düzeyi | Yalnız operatör, hakem reposunda. Hash'i her kök kaydında ve Rekor'dadır; `drift.check` doğrular |
-| Performans | SHADOW, genesis ve sıralama eşikleri; pencere uzunlukları; merdiven sırası; itibar parametreleri; sinyal eşikleri | Prosedür; değişiklik çekişme protokolünden geçer |
+| Anayasal | Aylık USD ve CI dakikası tavanları, oturum tavanı ve paylar (iç kullanımda kaçak freni, `06`); `operating{}` kaynak sınırları ve bantları; **sınıf başına çıkış ve merge tabanları**; `required_exit_rows`; non-inferiority marjı ve eşli test asgarileri; hayatta kalma pencereleri; regresyon dondurma kuralı; döngü ve gün tavanları; güvenlik anahtar kelimeleri; yasaklı ifadeler; aşama sırası ve sınıf önkoşulları (`03`); bakış bütçesi; güven düzeyi | Yalnız operatör, hakem reposunda. Hash'i her kök kaydında ve Rekor'dadır; `drift.check` doğrular |
+| Performans | SHADOW, genesis ve sıralama eşikleri; pencere uzunlukları; maliyet merdiveni basamak sırası; itibar parametreleri; sinyal eşikleri | Prosedür; değişiklik çekişme protokolünden geçer |
 
 Performans eşikleri kural olarak yazılır, örnek:
 
@@ -63,9 +63,10 @@ spec denetimidir, #lock (A)'da (aşama, donmuş spec hash) çifti ve açılışt
 | Güvenlik yoluna dokunma | #k6 K6 kapısı; #ayna özel, çatallanmamış ayna (`15`) |
 | Güvenlik avcısı ve bekçi testleri | #guvenlik-kanarya ekilmiş açık provası, aile başına recall alt sınırı `class_floors.K6`'da ve temiz kanaryada yanlış bildirim 0 (`30f`); #guvenlik-dogrulama her bildirim hakemde yürütülmüş, avcının sözüyle değişen karar yok; #guvenlik-bag her kural bir teste bağlı, `blocked` ve `unbound` boşluk olarak sayılı (`30d`); #guvenlik-defter `security` bölümü zincirde, düzeltilmemiş açığın ayrıntısı açık yüzeyde yok (`30e`) |
 | Daha ucuz basamak | #non-inferiority tam non-inferiority testi, δ ve n ≥ 45 (`19`) |
-| Ders görünümü ve enjeksiyonu | #ders-dogus doğuş; #ders-kullanim kullanım; #ders-etki etki; #ders-yanlis yanlış ders; #ders-plasebo plasebo; #ders-kalicilik kalıcılık (`22a`) |
+| Ders görünümü ve enjeksiyonu | #ders-dogus doğuş; #ders-kullanim kullanım; #ders-etki etki; #ders-yanlis yanlış ders; #ders-dogru doğru ders; #ders-plasebo plasebo; #ders-kalicilik kalıcılık (`22a`) |
 | Genesis yaşam döngüsü | #genesis-buyume büyüme; #genesis-budama budama; #genesis-yeniden yeniden yazım; #genesis-sessizlik gereksiz büyümeme (`12a`) |
 | Çok repolu terfi | #baglam bağlam provası (`22a`); #terfi terfi testi (`21a`) |
+| Varsayılandan sapma | #sira-tahmin seçilen ve varsayılan sınıfın değer / USD alt sınırı, yalnız yasal düzeltmesi olan bulgulardan, aşama açılmadan hakem satırı olarak zincirde ve Rekor'da, Kurucu yazımı sayı 0, `UNMEASURABLE` tahmin sapma getirmez (`19`); #sira-denetim çıkışta seçilen sınıfın gerçek harcamayla değer / USD'si kendi alt sınırının altındaysa ya da `UNMEASURABLE`'sa (`19`) sonraki seçim varsayılandır |
 
 ## Eşik değişikliği bir artefakttır
 

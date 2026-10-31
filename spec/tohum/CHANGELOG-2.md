@@ -1,9 +1,12 @@
-# Değişiklik Günlüğü — Tohum, 2.2'nin İlk Kaydı
+# Değişiklik Günlüğü — Tohum, 2.2'nin İlk Kayıtları
 
 Tarih: 2026-10-30 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-10-29): iç kullanımda beyin ve hakem repoları açıktır (operatör kararı; satışta özel olur). Önyükleme
+  hakeminde okuyucu App'i yoktur: açık beyin kimliksiz okunur, App yalnız özel hedef gelince kurulur. Standart
+  koşucu dakikası açık repoda ücretsizdir; 60 gün etkinlik yoksa zamanlayıcı kapanır (`25`).
 - 2.2 (2026-10-28): üçüncü inceleme (altı inceleyici, iki tur, birbirlerinin bulgularını kanıtla
   çapraz denetleyerek) sonrası. Çekme modeli: oyuncu yalnız kendi reposuna yazar ve aday yayımlar;
   hakem reposu özel ve yalnız operatörün yazdığı yerdir; hedefe yalnız yazar App'i yazar; GitHub
