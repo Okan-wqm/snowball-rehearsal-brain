@@ -67,6 +67,8 @@ import unicodedata
 import urllib.parse
 from typing import Callable, Iterable
 
+import cli
+
 KINDS = ("diff", "row", "prompt")
 MIN_KNOWN = 8  # shorter "known" values would match everywhere and mean nothing
 
@@ -783,5 +785,8 @@ def main(argv: list[str]) -> int:
     return 0
 
 
+FAULT_LINE = {"clean": False, "error": "internal error"}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

@@ -147,6 +147,8 @@ import urllib.request
 import zlib
 from typing import Any, Callable
 
+import cli
+
 DEFAULT_REGISTRIES = ("https://registry.npmjs.org/",)
 LICENSE_ALLOWLIST = ("MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "0BSD", "Apache-2.0", "ISC", "PSF-2.0",
                      "Python-2.0", "Unlicense", "CC0-1.0", "Zlib", "MPL-2.0")
@@ -905,5 +907,8 @@ def main(argv: list[str]) -> int:
         return 2
 
 
+FAULT_LINE = {"ok": False, "error": "internal error"}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

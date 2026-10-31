@@ -70,6 +70,7 @@ from typing import Any
 
 from dispatcher import llm_call
 from ledger import append, chain
+import cli
 
 STATUS_PATH = "status.md"
 OPEN = b"<!-- status.block -->"
@@ -309,5 +310,8 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+FAULT_LINE = {"edited": None}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

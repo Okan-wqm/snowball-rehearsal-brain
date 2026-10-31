@@ -109,6 +109,8 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any, Callable
 
+import cli
+
 DEFAULT_UID = 65534
 DEFAULT_GID = 65534
 MIN_MEMORY = 6 * 1024 * 1024
@@ -803,5 +805,9 @@ def _main_argv() -> int:
         return 2
 
 
+def FAULT_LINE(argv: list[str]) -> dict:  # noqa: N802 - cli.run's fault line, by command
+    return {"ok": False, "reason": "internal error"} if argv == ["argv"] else cli.GENERIC_LINE
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

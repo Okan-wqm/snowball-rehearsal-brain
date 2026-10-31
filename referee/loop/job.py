@@ -104,6 +104,7 @@ from profile import derive as D
 from profile import unit_verify as U
 from runner import deps_npm as N
 from runner import kos as K
+import cli
 
 USAGE = "usage: python -m loop.job render | run JOB"
 
@@ -452,5 +453,8 @@ def main(argv: list[str]) -> int:
         return 2
 
 
+FAULT_LINE = {"ok": False, "reason": None}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

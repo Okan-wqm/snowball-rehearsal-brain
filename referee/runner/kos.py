@@ -84,6 +84,7 @@ from profile import derive as D
 from profile import unit_verify as U
 from runner import contained as C
 from runner import lint_record as R
+import cli
 
 LINT_RUNS = 3
 CANDIDATE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
@@ -323,5 +324,8 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+FAULT_LINE = {"ok": False, "error": "internal error"}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

@@ -56,6 +56,7 @@ import sys
 from typing import Any
 
 from profile import derive as D
+import cli
 
 # The name rules, one table per reason. ``SEED`` rows are tohum/29g's lists; ``MEASURED`` rows are names the
 # target's own tree uses for the same things (missing_capability f111): tool configuration of the lint, type
@@ -469,5 +470,8 @@ def main(argv: list[str]) -> int:
         return 2
 
 
+FAULT_LINE = {"ok": False, "error": "internal error"}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

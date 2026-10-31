@@ -51,6 +51,7 @@ from typing import Any, Callable
 
 from gate import secrets
 from ledger import chain
+import cli
 
 STATE_BRANCH = "brain/state"
 
@@ -234,5 +235,8 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+FAULT_LINE = {"ok": False, "error": "internal error"}  # not row_hashes [] and commits 0: a fault cannot say what was committed
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

@@ -41,6 +41,7 @@ import sys
 from typing import Any, Callable
 
 from ledger import chain
+import cli
 
 RERUNS = 3
 JUDGED = 1 + RERUNS
@@ -131,5 +132,8 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+FAULT_LINE = EMPTY
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

@@ -28,6 +28,8 @@ import re
 import sys
 from typing import Any
 
+import cli
+
 ZERO_HASH = "0" * 64
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 MAX_SAFE_INT = 2**53 - 1
@@ -247,5 +249,8 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+FAULT_LINE = cli.GENERIC_LINE
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

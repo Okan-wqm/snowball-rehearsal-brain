@@ -64,6 +64,7 @@ import sys
 from typing import Any
 
 from profile import derive as D
+import cli
 
 TOOL = "eslint"
 NO_RULE = "eslint:no-rule-id"
@@ -230,5 +231,8 @@ def main(argv: list[str]) -> int:
     return 0
 
 
+FAULT_LINE = cli.GENERIC_LINE
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

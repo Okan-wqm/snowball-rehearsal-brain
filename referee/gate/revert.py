@@ -50,6 +50,7 @@ from typing import Any
 
 from gate import sentinel
 from ledger import chain
+import cli
 
 CAUSES = ("build_break", "lint_regression", "test_regression", "impact_miss", "unknown")
 REQUEST = {"red_tests", "impact", "build_ok", "lint"}
@@ -144,5 +145,8 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+FAULT_LINE = {"cause": None}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

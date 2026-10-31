@@ -103,6 +103,7 @@ from gate import check, diffguard
 from ledger import anchor, append, chain, schema
 from status import block
 from target import write
+import cli
 
 STATE = "brain/state"
 INTEGRATION = schema.INTEGRATION
@@ -521,5 +522,8 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+FAULT_LINE = {"ok": False, "hard_stop": True, "payload": None}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

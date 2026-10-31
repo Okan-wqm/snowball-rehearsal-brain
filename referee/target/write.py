@@ -101,6 +101,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable
 
+import cli
+
 API = "https://api.github.com"
 HEADS = "refs/heads/"
 BRAIN = "refs/heads/brain/"
@@ -628,5 +630,8 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+FAULT_LINE = {"ok": False, "error": "internal error"}  # not outcome(): a fault cannot say what was written
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

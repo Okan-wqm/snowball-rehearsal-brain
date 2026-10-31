@@ -81,6 +81,7 @@ from typing import Any
 
 from gate import diffguard
 from gate import secrets
+import cli
 
 DiffError = diffguard.DiffError
 RUN_LINES = 3
@@ -352,5 +353,9 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+def FAULT_LINE(argv: list[str]) -> dict:  # noqa: N802 - cli.run's fault line, by command
+    return {"decision": "reject"} if argv[:1] == ["decide"] else cli.GENERIC_LINE
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

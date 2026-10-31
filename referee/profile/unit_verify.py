@@ -165,6 +165,7 @@ from profile import derive as D
 from runner import contained as C
 from runner import deps_npm as N
 from runner import lint_record as R
+import cli
 
 RECIPE_FIELDS = D.RECIPE_FIELDS
 OPERATING_NAMES = ("unit_inputs_bytes", "deps_bytes", "worktree_bytes", "container_mem_bytes", "kos_wall_s",
@@ -764,5 +765,8 @@ def main(argv: list[str]) -> int:
         return 2
 
 
+FAULT_LINE = {"ok": False, "error": "internal error"}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

@@ -69,6 +69,7 @@ import tempfile
 
 from gate import secrets
 from ledger import chain, schema
+import cli
 
 BRAIN = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LEDGER = os.path.join(BRAIN, "founder-ledger.jsonl")
@@ -323,5 +324,8 @@ def main(argv: list[str], stdin=None) -> int:
     return 0
 
 
+FAULT_LINE = {"ok": False, "error": "internal error"}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

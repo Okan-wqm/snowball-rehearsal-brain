@@ -77,6 +77,7 @@ from typing import Any, Callable
 from gate import revert
 from ledger import append, chain
 from target import write
+import cli
 
 DRILL = "revert"
 KEY = ("cycle_id", "selection", "instance_id", "cause")
@@ -295,5 +296,9 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+def FAULT_LINE(argv: list[str]) -> dict:  # noqa: N802 - cli.run's fault line, by command
+    return EMPTY.get(argv[0] if len(argv) == 3 else None, {"verdict": "FAIL"})
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

@@ -134,6 +134,8 @@ import tarfile
 import zlib
 from typing import Any
 
+import cli
+
 AGENT_CONFIG = (".claude", "CLAUDE.md", "AGENTS.md", ".mcp.json", ".vscode", ".envrc", ".devcontainer")
 EXCLUDED_DIR_NAMES = (
     "node_modules", "bower_components", "jspm_packages", "dist", "coverage", ".nyc_output", ".next", ".nuxt",
@@ -797,5 +799,9 @@ def main(argv: list[str]) -> int:
         return 2
 
 
+def FAULT_LINE(argv: list[str]) -> dict:  # noqa: N802 - cli.run's fault line, by command
+    return dict({"accepted": False} if argv[:1] == ["check"] else {}, error="internal error")
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

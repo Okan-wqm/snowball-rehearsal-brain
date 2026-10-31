@@ -96,6 +96,7 @@ from typing import Any
 
 from gate import secrets
 from ledger import append, chain
+import cli
 
 INPUT_TYPES = ("string", "integer")
 OUTPUT_TYPES = ("string", "integer", "boolean", "strings")
@@ -515,5 +516,8 @@ def main(argv: list[str]) -> int:
     return 2
 
 
+FAULT_LINE = {"send": False}
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))
