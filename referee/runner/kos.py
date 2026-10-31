@@ -54,8 +54,8 @@ crash or a ``Bail out!`` is red, not zero tests. Out of scope: other reporters a
 TAP line, so ``tests`` is empty and the gate's ``zero_tests`` rejects: closed, not open), and duplicate
 descriptions (each line is its own entry).
 
-Caller: ``loop.job``'s ``kos`` (D3), which reads the ``pulled`` artifact (``loop.pulled``) and passes the
-``deps`` directory as it was downloaded. Not done here, stated: the sentinel and the drill of the ``kos`` job (D7,
+Caller: ``loop.job``'s ``kos`` (D3), which reads the ``pulled`` artifact (``loop.pulled``) and passes the one
+``deps`` artifact directory under the download (``runner.deps_npm.artifact_in``). Not done here, stated: the sentinel and the drill of the ``kos`` job (D7,
 D8), and how ``yaz`` treats a candidate without files (the gate
 reads a missing file as ``artefact_hash_mismatch``). The hashes are taken by this process after every container
 ended, from the bytes it wrote, not from anything a container wrote.

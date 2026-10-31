@@ -8,8 +8,8 @@
 - the job: from ``$RUNNER_TEMP/in/pulled`` (and ``in/deps``) to ``$RUNNER_TEMP/out/results``, which ``gate.check
   decide`` (MF8's own command) reads: the good candidate merges, a test-breaking and a ratchet-raising one are
   rejected for their own reasons; the red control is the job's own ``RED_CONTROL`` (a green one blocks the base),
-  not something the artifact holds; a refused artifact, two units or an unsafe tree run nothing; a non-empty
-  ``in/deps`` reaches ``unit.verify``; the job still ends ``cycle_not_wired`` after D3 (D7, D8 not wired).
+  not something the artifact holds; a refused artifact, two units or an unsafe tree run nothing; ``in/deps`` is
+  taken as one ``<address>/`` directory, which reaches ``unit.verify``; the job still ends ``cycle_not_wired`` after D3 (D7, D8 not wired).
 """
 
 from __future__ import annotations
@@ -327,12 +327,19 @@ class KosJob(Base):
         self.assertEqual((out["reason"], out["reasons"]), ("pulled_invalid", ["tree_unsafe"]))
         self.assertEqual(runner.calls, [])
 
-    def test_a_non_empty_deps_directory_reaches_unit_verify(self):
+    def test_the_deps_artifact_is_taken_by_its_address(self):
+        # in/deps is the download of getir's out/deps: one <address>/ directory, which unit.verify takes by its
+        # hash (the whole hand-over is test_loop_getir.py); an artifact laid out flat runs nothing
         self.write_pulled()
         write_tree(os.path.join(self.temp, "in", "deps"), {"manifest.json": "{}"})
+        runner = RedAs()
+        self.assertEqual(self.run_kos(runner)["reason"], "deps_invalid")
+        self.assertEqual(runner.calls, [])
+        shutil.rmtree(os.path.join(self.temp, "in", "deps"))
+        write_tree(os.path.join(self.temp, "in", "deps"), {"ab" * 32 + "/manifest.json": "{}"})
         out = self.run_kos()
-        self.assertEqual(out["index"]["base"]["verdict"], "no_verdict")
-        self.assertTrue(all(r.startswith("deps:") for r in out["index"]["base"]["reasons"]), out["index"]["base"])
+        self.assertEqual((out["index"]["base"]["verdict"], out["index"]["base"]["reasons"]),
+                         ("no_verdict", ["deps:address_mismatch"]))
         shutil.rmtree(self.results())
         shutil.rmtree(os.path.join(self.temp, "in", "deps"))
         os.makedirs(os.path.join(self.temp, "in", "deps"))

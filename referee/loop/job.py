@@ -33,14 +33,27 @@ Every step after ``control`` runs only if ``go`` is true; no step continues on e
 
 **What ``run`` does now.** It checks the job's environment contract first: a job that runs code (``getir``,
 ``kos``) refuses to start when any secret of another job, the OIDC request variables or ``GITHUB_TOKEN`` is in its
-environment (``secret_in_code_job:<NAME>``, exit 1). Then:
+environment (``secret_in_code_job:<NAME>``, exit 1). Every job that reads the tree extracts it from ``pulled`` into
+a fresh ``$RUNNER_TEMP/work/<job>-*/tree`` (``_pulled_tree``; a refused tree is ``pulled_invalid``). Then:
 
-- ``kos`` runs D3 (``kos_d3``): it reads ``$RUNNER_TEMP/in/pulled`` with ``loop.pulled.read`` (a refusal is
+- ``getir`` runs D2 (``getir_d2``), and with it the whole job: it reads ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
+  (the same refusals, the same one unit), runs the recipe's static check (``profile.unit_verify.check_recipe``,
+  the one ``kos`` runs again before staging; a reason is ``recipe_refused`` with the reasons, nothing fetched) and
+  then MF5's ``runner.deps_npm.fetch`` on the recipe's lock in the tree, with the default registry (the one the
+  static check allows; stage 0 reads no ``registry_egress``), the recipe's ``install_scripts_required``, the
+  policy's license lists and ``deps_bytes`` tightened by the recipe's ``limits.deps_bytes``, fetching over HTTPS.
+  The artifact is written to ``$RUNNER_TEMP/out/deps/<address>/``, which must not exist before (exit 2). A refusal
+  is ``deps_refused`` with MF5's reasons (exit 1, nothing uploaded); a fetch that fails is no verdict (exit 2). On
+  success the line has ``ok`` true, ``done`` ``["D2"]``, ``deps`` (``address``, ``packages``, ``bytes``,
+  ``artefact``) and ``licenses`` (the report, not gated: the target's dependencies do not enter the product), exit
+  0, so the upload step runs. A lock with no packages gives an artifact with none. (``kos_d3``): it reads ``$RUNNER_TEMP/in/pulled`` with ``loop.pulled.read`` (a refusal is
   ``pulled_invalid`` with the reasons), takes the recipe from its ``units.json`` (stage 0 runs one unit: exactly
   one entry in ``units``, else ``units_not_one``), unpacks the tree under ``$RUNNER_TEMP/work`` and calls
   ``runner.kos.results`` with the policy, the ``targets[]`` entry, ``RED_CONTROL``, every candidate's
-  ``diff.patch`` and ``$RUNNER_TEMP/in/deps`` (``None`` when that directory is absent or empty: ``unit_verify``
-  then accepts only a lock without packages), writing ``$RUNNER_TEMP/out/results``. Its index is in the output
+  ``diff.patch`` and the ``deps`` artifact, ``runner.deps_npm.artifact_in`` of ``$RUNNER_TEMP/in/deps`` (the
+  download of ``getir``'s ``out/deps``; a root that is not exactly one ``<address>/`` directory is ``deps_invalid``,
+  nothing run; ``None`` when ``in/deps`` is absent or empty: ``unit_verify`` then accepts only a lock without
+  packages), writing ``$RUNNER_TEMP/out/results``. Its index is in the output
   (``index``) and ``done`` is ``["D3"]``. D7 (the sentinel) and D8 (the drill) of this job are not wired, so the
   job still ends ``cycle_not_wired``, exit 1, after D3: the upload step does not run and ``yaz`` gets nothing.
 - ``yaz`` runs D5 (``yaz_d5``): it reads ``control.json`` from the ``control`` step's clone
@@ -50,7 +63,7 @@ environment (``secret_in_code_job:<NAME>``, exit 1). Then:
   the output and ``done`` is ``["D5"]``. The cycle's state (which merges' sentinels are unfinished) is D1's read of
   ``brain/state``, not wired, so D5 is given ``None`` and every candidate carries ``sentinel_state_unread``: no
   candidate merges. D6-D8 are not wired, so the job ends ``cycle_not_wired``, exit 1, after D5, writing nothing.
-- ``cek``, ``getir`` and ``cagir`` stop at once with ``cycle_not_wired`` (exit 1): ``cek`` does not write ``pulled`` yet (its assembly,
+- ``cek`` and ``cagir`` stop at once with ``cycle_not_wired`` (exit 1): ``cek`` does not write ``pulled`` yet (its assembly,
   ``loop.cek.assemble``, and the fetch of one commit, ``loop.fetch``, are written; the reads that choose the
   commits are not), so in a real run ``kos`` is not
   reached; the D1-D8 composition inside the jobs (building each MF's input from the
@@ -69,8 +82,9 @@ behaviour of the pinned actions (their tags were resolved to the SHAs below on 2
 Command line, from ``referee/``::
 
     python -m loop.job render        # the workflow on stdout, exit 0
-    python -m loop.job run JOB       # one JSON line on stdout; exit 1 (refused or not wired), 2 unusable
-                                     # (RUNNER_TEMP unset, or kos's input unusable)
+    python -m loop.job run JOB       # one JSON line on stdout; exit 0 the job's steps all done (``ok`` true),
+                                     # 1 refused or not wired, 2 unusable (RUNNER_TEMP unset, an input
+                                     # unusable, getir's fetch failed)
 """
 
 from __future__ import annotations
@@ -85,6 +99,8 @@ from typing import Any, NamedTuple
 from loop import decide as E
 from loop import pulled as P
 from profile import derive as D
+from profile import unit_verify as U
+from runner import deps_npm as N
 from runner import kos as K
 
 USAGE = "usage: python -m loop.job render | run JOB"
@@ -299,6 +315,52 @@ def _pulled_unit(environ: dict[str, str]) -> tuple[Any, Any, dict | None]:
     return art, units[0], None
 
 
+def _pulled_tree(environ: dict[str, str], art: Any, job: str) -> tuple[str, str, dict | None]:
+    """``pulled``'s tree extracted into a fresh ``$RUNNER_TEMP/work/<job>-*/tree``: ``(root, tree, None)``, or
+    ``(root, tree, {reason: pulled_invalid, reasons})`` for a tree ``loop.pulled.extract_tree`` refuses. Shared by
+    every job that reads the tree, so each reads it the same way."""
+    work = _dir(environ, "work")
+    os.makedirs(work, exist_ok=True)
+    root = tempfile.mkdtemp(prefix=job + "-", dir=work)
+    tree = os.path.join(root, "tree")
+    try:
+        P.extract_tree(art.tree_tar, tree)
+    except P.PulledError as exc:
+        return root, tree, {"reason": "pulled_invalid", "reasons": exc.reasons}
+    return root, tree, None
+
+
+def getir_d2(environ: dict[str, str], fetcher: Any = None) -> dict[str, Any]:
+    """D2 of ``getir`` (see the module docstring): ``{reason?, reasons?, deps?, licenses?}``."""
+    art, unit, refused = _pulled_unit(environ)
+    if refused:
+        return refused
+    _, tree, refused = _pulled_tree(environ, art, "getir")
+    if refused:
+        return refused
+    try:
+        reasons = U.check_recipe(unit, art.policy, tree, art.target)
+    except (U.VerifyError, D.DeriveError) as exc:
+        raise Unusable("getir: %s" % exc) from None
+    if reasons:
+        return {"reason": "recipe_refused", "reasons": reasons}
+    out = _dir(environ, "out", "deps")
+    try:
+        os.makedirs(out)
+    except FileExistsError:
+        raise Unusable("getir: %s exists" % out) from None
+    try:
+        report = N.fetch(os.path.join(tree, D.norm_path(unit["lockfiles"][0])), out, fetcher or N.https_fetcher,
+                         N.DEFAULT_REGISTRIES, unit["install_scripts_required"], art.policy,
+                         cap=unit["limits"].get("deps_bytes"))
+    except N.DepsError as exc:
+        raise Unusable("getir: %s" % exc) from None
+    if not report["ok"]:
+        return {"reason": "deps_refused", "reasons": report["reasons"]}
+    return {"deps": {k: report[k] for k in ("address", "packages", "bytes", "artefact")},
+            "licenses": report["licenses"]}
+
+
 def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None = None) -> dict[str, Any]:
     """D3 of ``kos`` (see the module docstring): ``{reason?, reasons?, index?}``."""
     art, unit, refused = _pulled_unit(environ)
@@ -307,14 +369,14 @@ def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None
     deps = _dir(environ, "in", "deps")
     if not (os.path.isdir(deps) and os.listdir(deps)):
         deps = None
-    work = _dir(environ, "work")
-    os.makedirs(work, exist_ok=True)
-    root = tempfile.mkdtemp(prefix="kos-", dir=work)
-    tree = os.path.join(root, "tree")
-    try:
-        P.extract_tree(art.tree_tar, tree)
-    except P.PulledError as exc:
-        return {"reason": "pulled_invalid", "reasons": exc.reasons}
+    else:
+        try:
+            deps = N.artifact_in(deps)
+        except N.DepsError as exc:
+            return {"reason": "deps_invalid", "reasons": [str(exc)]}
+    root, tree, refused = _pulled_tree(environ, art, "kos")
+    if refused:
+        return refused
     diffs = {cid: files["diff.patch"] for cid, files in art.candidates.items()}
     try:
         index = K.results(unit, tree, art.policy, red_control or RED_CONTROL, diffs, _dir(environ, "out", "results"),
@@ -334,13 +396,9 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
     art, unit, refused = _pulled_unit(environ)
     if refused:
         return refused
-    work = _dir(environ, "work")
-    os.makedirs(work, exist_ok=True)
-    tree = os.path.join(tempfile.mkdtemp(prefix="yaz-", dir=work), "tree")
-    try:
-        P.extract_tree(art.tree_tar, tree)
-    except P.PulledError as exc:
-        return {"reason": "pulled_invalid", "reasons": exc.reasons}
+    _, tree, refused = _pulled_tree(environ, art, "yaz")
+    if refused:
+        return refused
     try:
         # the cycle's state (brain/state: which merges' sentinels are unfinished) is D1's read, not wired: None
         return E.decide(art, unit, tree, _dir(environ, "in", "results"), control, None)
@@ -348,7 +406,8 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
         raise Unusable("yaz: %s" % exc) from None
 
 
-def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None) -> dict[str, Any]:
+def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None,
+        fetcher: Any = None) -> dict[str, Any]:
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
     job = JOBS[name]
@@ -357,6 +416,11 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         present = sorted(n for n in SECRET_ENV + OIDC_ENV if n in environ)
         if present:
             return dict(result, reason="secret_in_code_job:%s" % present[0])
+    if name == "getir":
+        d2 = getir_d2(environ, fetcher)
+        if "reason" in d2:
+            return dict(result, **d2)
+        return dict(result, ok=True, done=["D2"], **d2)
     if name == "kos":
         d3 = kos_d3(environ, runner, red_control)
         if "reason" in d3:
@@ -376,8 +440,9 @@ def main(argv: list[str]) -> int:
             sys.stdout.write(render())
             return 0
         if len(argv) == 2 and argv[0] == "run":
-            sys.stdout.write(json.dumps(run(argv[1], dict(os.environ)), sort_keys=True) + "\n")
-            return 1
+            out = run(argv[1], dict(os.environ))
+            sys.stdout.write(json.dumps(out, sort_keys=True) + "\n")
+            return 0 if out["ok"] else 1
         raise Unusable(USAGE)
     except Unusable as exc:
         sys.stderr.write("unusable input: %s\n" % exc)

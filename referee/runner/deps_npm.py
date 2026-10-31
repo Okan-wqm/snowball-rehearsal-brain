@@ -49,7 +49,8 @@ whose ``name`` and ``version`` equal the lock's (``tarball_manifest_mismatch``),
 ``install`` or ``postinstall`` key in its ``scripts``, or a ``<top>/binding.gyp`` member (npm's implicit
 ``node-gyp rebuild``), needs the same recipe mark as ``hasInstallScript``. The tarball's decompression
 time is bounded only by the job's wall clock. ``operating.deps_bytes`` (from ``--policy``) bounds the
-total bytes of distinct tarballs; going over it stops the fetch with ``limit_hit:deps_bytes``.
+total bytes of distinct tarballs, or ``cap`` when it is smaller (a recipe's ``limits.deps_bytes``, which may only
+tighten the operator's value); going over it stops the fetch with ``limit_hit:deps_bytes``.
 
 Licenses: every place in the tarball's ``package.json`` that states one (``license`` as a string or an
 object's ``type``; each entry of ``licenses``) is listed in the report; license files are not read, and a
@@ -71,6 +72,9 @@ address and a changed lock byte gives another. ``verify`` takes it by that hash:
 hash to the address, each tarball must be a regular file with its sha512 and must match its
 ``integrity``, the lock copy must hash to ``lock_sha256``, and no other file may be there
 (``unexpected_file``). ``store`` also prints the ``npmlock`` ``artefact`` of the same packages (below).
+A job that hands the artifact on uploads ``OUT`` and the next job downloads it whole: ``artifact_in`` takes the
+one ``<address>/`` directory under the downloaded root (exactly one entry, a directory named 64 lowercase hex),
+so the downloader passes ``verify`` the directory whose name is the address (``loop.job``'s ``getir`` and ``kos``).
 
 Fetching: ``--mirror DIR`` reads ``DIR/<host>/<path>`` (the referee's fixtures and tests); without it
 the tarball is fetched over HTTPS with redirects refused and the read capped. The HTTPS path is not
@@ -501,11 +505,15 @@ def _policy_values(policy: Any) -> tuple[list[str], dict, int | None]:
 
 
 def fetch(lock_path: str, out: str, fetcher: Callable[[str, int | None], bytes], registries=DEFAULT_REGISTRIES,
-          marks: list[str] | None = None, policy: Any = None, product: bool = False) -> dict:
+          marks: list[str] | None = None, policy: Any = None, product: bool = False, cap: int | None = None) -> dict:
     name = os.path.basename(lock_path)
     if name not in LOCK_NAMES:
         raise DepsError("lock file must be named %s" % " or ".join(LOCK_NAMES))
     allow, exceptions, limit = _policy_values(policy)
+    if cap is not None:
+        if not isinstance(cap, int) or isinstance(cap, bool) or cap < 0:
+            raise DepsError("cap is not a non-negative integer")
+        limit = cap if limit is None else min(limit, cap)
     lock_bytes = _read(lock_path)
     lock = _parse(lock_bytes, lock_path)
     report = check(lock, registries, marks)
@@ -588,6 +596,21 @@ def _write_artifact(out: str, address: str, lock_name: str, lock_bytes: bytes, m
 
 
 # ---------------------------------------------------------------- verify
+
+def artifact_in(root: str) -> str:
+    """The one artifact ``fetch`` wrote under ``root``: ``root/<address>``, the path ``verify`` takes. ``root`` must
+    be a directory (no symlink) holding exactly one entry, a directory (no symlink) named 64 lowercase hex; else
+    ``DepsError``. Whether that directory is the artifact its name says is ``verify``'s question, not this one's."""
+    if os.path.islink(root) or not os.path.isdir(root):
+        raise DepsError("deps root is not a directory")
+    names = sorted(os.listdir(root))
+    if len(names) != 1:
+        raise DepsError("deps root holds %d entries, not one artifact" % len(names))
+    path = os.path.join(root, names[0])
+    if not re.fullmatch(r"[0-9a-f]{64}", names[0]) or os.path.islink(path) or not os.path.isdir(path):
+        raise DepsError("deps root's entry is not an artifact directory named by its address")
+    return path
+
 
 def _regular(path: str) -> bytes | None:
     try:

@@ -38,7 +38,7 @@ is ``loop.job.render()`` byte for byte (and the CLI's output); the parser's subs
 D1-D8 and the step table's MFs; the gating, run under a model of Actions' step and job conditions, stops every
 job at a failing ``control`` and ends a paused job green with nothing run; ``python -m loop.job run``'s refusal
 of a secret in a code job and its ``cycle_not_wired`` stop (``kos``'s, after D3, in ``test_loop_kos.py``; ``yaz``'s,
-after D5, in ``test_loop_yaz.py``).
+after D5, in ``test_loop_yaz.py``; ``getir`` is wired whole, D2, in ``test_loop_getir.py``).
 """
 
 from __future__ import annotations
@@ -526,8 +526,9 @@ class JobEntry(unittest.TestCase):
                     self.assertEqual((code, out["ok"], out["reason"]), (1, False, "secret_in_code_job:" + var))
 
     def test_not_wired_stops_red(self):
-        # kos runs D3 first and yaz D5 first, then each stops the same way: test_loop_kos.py, test_loop_yaz.py
-        for name in [n for n in JOBS if n not in ("kos", "yaz")]:
+        # kos runs D3 first and yaz D5 first, then each stops the same way: test_loop_kos.py, test_loop_yaz.py;
+        # getir is wired whole (D2): test_loop_getir.py
+        for name in [n for n in JOBS if n not in ("getir", "kos", "yaz")]:
             env = {"CLAUDE_CODE_OAUTH_TOKEN": "x"} if name == "cagir" else {}
             with self.subTest(job=name):
                 code, out = run_job(name, env)

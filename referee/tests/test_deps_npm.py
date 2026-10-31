@@ -480,6 +480,53 @@ class TestLimitAndVerify(Base):
         over = {"operating": {"deps_bytes": {"value": total - 1, "band": [0, total]}}}
         self.assertEqual(self.fx.fetch(policy=over)[0], {"ok": False, "reasons": ["limit_hit:deps_bytes"]})
 
+    def test_cap_only_tightens(self):
+        total = sum(len(b) for b in self.fx.blobs.values())
+        hit = {"ok": False, "reasons": ["limit_hit:deps_bytes"]}
+        ok = {"operating": {"deps_bytes": {"value": total, "band": [0, total]}}}
+        over = {"operating": {"deps_bytes": {"value": total - 1, "band": [0, total]}}}
+        self.assertEqual(self.fx.fetch(cap=total - 1)[0], hit)                     # no policy: the cap binds
+        self.assertEqual(self.fx.fetch(policy=ok, cap=total - 1)[0], hit)          # smaller than the policy's
+        self.assertEqual(self.fx.fetch(policy=over, cap=total * 2)[0], hit)        # a larger cap loosens nothing
+        self.assertTrue(self.fx.fetch(policy=ok, cap=total)[0]["ok"])
+        for bad in (-1, True, 1.5, "1"):
+            with self.subTest(cap=bad), self.assertRaises(N.DepsError):
+                self.fx.fetch(cap=bad)
+
+    def test_artifact_in_takes_the_one_address_directory(self):
+        address = self.fx.fetch()[0]["address"]
+        self.assertEqual(N.artifact_in(self.fx.out), os.path.join(self.fx.out, address))
+        self.assertTrue(N.verify(N.artifact_in(self.fx.out))["ok"])
+        cases = {
+            "a second entry": lambda: open(os.path.join(self.fx.out, "x"), "w").close(),
+            "not hex": lambda: os.rename(os.path.join(self.fx.out, address),
+                                         os.path.join(self.fx.out, address[:-1] + "g")),
+            "upper case": lambda: os.rename(os.path.join(self.fx.out, address),
+                                            os.path.join(self.fx.out, address.upper())),
+            "short": lambda: os.rename(os.path.join(self.fx.out, address), os.path.join(self.fx.out, address[:-1])),
+            "a symlink": lambda: (os.rename(os.path.join(self.fx.out, address), os.path.join(self.base, "moved")),
+                                  os.symlink(os.path.join(self.base, "moved"), os.path.join(self.fx.out, address))),
+            "a file": lambda: (shutil.rmtree(os.path.join(self.fx.out, address)),
+                               open(os.path.join(self.fx.out, address), "w").close()),
+            "empty": lambda: shutil.rmtree(os.path.join(self.fx.out, address)),
+        }
+        for name, change in cases.items():
+            with self.subTest(name):
+                shutil.rmtree(self.fx.out)
+                shutil.rmtree(os.path.join(self.base, "moved"), ignore_errors=True)
+                os.makedirs(self.fx.out)
+                self.fx.fetch()
+                change()
+                with self.assertRaises(N.DepsError):
+                    N.artifact_in(self.fx.out)
+        for root in (os.path.join(self.base, "absent"), os.path.join(self.fx.mirror, "registry.npmjs.org", "left-pad",
+                                                                     "-", "left-pad-1.3.0.tgz")):
+            with self.subTest(root=root), self.assertRaises(N.DepsError):
+                N.artifact_in(root)
+        os.symlink(self.fx.out, os.path.join(self.base, "root-link"))
+        with self.assertRaises(N.DepsError):
+            N.artifact_in(os.path.join(self.base, "root-link"))
+
     def test_verify_refuses_every_change(self):
         report = self.fx.fetch()[0]
         art = os.path.join(self.fx.out, report["address"])
