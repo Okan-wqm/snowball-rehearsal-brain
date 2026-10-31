@@ -31,6 +31,10 @@
     "kind": "unwired",
     "why": "MF1, D1 in job cek: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
   },
+  "ledger.founder": {
+    "kind": "session_tool",
+    "why": "the founder ledger's rules and its append command, run by a session and by test 14 (tests/test_founder_ledger.py); the loop never writes founder rows"
+  },
   "ledger.schema": {
     "kind": "unwired",
     "why": "the row shapes the D6 writers produce (test 14); imported by activate only, which is off the live path"

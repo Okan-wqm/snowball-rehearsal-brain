@@ -23,7 +23,8 @@ its ``usd_micros`` the field 29n's brake sums); ``status`` and ``status_edited``
 ``genesis`` is 29o's twelve keys, and ``cycle_start``, ``integration_cut``, ``ratchet_base`` and ``decision``
 (``payload.decision`` is the field 29n reads) are ``activate``'s (MF18). Kinds no writer here produces (``rival``,
 ``accept``, ``freeze``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
-writer and its shape are added.
+writer and its shape are added. The founder row is a session's, not the loop's: its shape and writer are
+``ledger.founder``'s, built on ``ROW_FIELDS`` below.
 
 **A root row** (``root_reasons``): exactly ``{row_id, ts, root, rekor_uuid, prev_hash, row_hash}``
 (``ledger.anchor.root_row``), ``root`` 64 lowercase hex, ``rekor_uuid`` a non-empty string.

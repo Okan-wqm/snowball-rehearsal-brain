@@ -1,30 +1,11 @@
-"""The founder ledger (``founder-ledger.jsonl``) against the founder row of tohum/26 and the closing rule of tohum/13
-("Kurucu defterinde kapatma"), run on every push so a row that breaks them is red in the push that writes it.
-
-Rules checked by ``problems``, each bound by a test below:
-- the file is one chain (``ledger.chain.verify_bytes``, the one verifier); a broken chain is the only problem
-  reported, since rows are not read from a file that is not a chain;
-- every row has tohum/26's row fields (``ledger.schema.ROW_FIELDS`` and ``ROW_OPTIONAL_FIELDS``, the one source),
-  plus the founder row's optional ``supersedes`` (64 lowercase hex) and no other field (a float is refused by the
-  chain itself); ``payload`` is
-  exactly ``{summary, refs[]}``, summary a non-empty string and refs a list of non-empty strings;
-- the meaning rules tohum/13 names (``part``, ``kind``, ``supersedes``): ``part`` is ``founder``; ``kind`` is in the
-  set tohum/26 lists after "**`founder` satırı:** `kind` ∈", read from the page (``spec_kinds``), not copied;
-  ``supersedes`` names the ``row_hash`` of an earlier row of this file that breaks a meaning rule;
-- a row that breaks a meaning rule is a problem unless a later row that breaks none and has the row shape names its
-  ``row_hash`` in ``supersedes`` (the row is closed).
-
-Not checked here: ``snapshot_id`` being the brain's SHA at that moment (one accepted row, f58, carries a short SHA;
-tohum/13 does not count it among the meaning rules a row can be closed for, ledger rows f312 and f316); whether a
-closed row was accepted before it was closed (tohum/13: a row a push adds broken is refused even if closed; that
-needs the last accepted SHA, which the bootstrap referee holds); append-only against an earlier version (the
-bootstrap referee checks it against the last accepted SHA). Run from the brain's root."""
+"""Test 14's check of the founder ledger (``founder-ledger.jsonl``): the rules are ``ledger.founder``'s (tohum/26's
+founder row, tohum/13's closing rule; listed in its docstring, the one source), each bound by a test below, and this
+ledger is held to them on every push. Run from the brain's root."""
 
 from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import tempfile
 import unittest
@@ -32,60 +13,8 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "referee"))
 
-from ledger import chain, schema  # noqa: E402
-
-LEDGER = os.path.join(ROOT, "founder-ledger.jsonl")
-PAGE = os.path.join(ROOT, "spec", "tohum", "26-semalar.md")
-FOUNDER = "founder"
-
-PAYLOAD = schema.shape({"summary": schema.text, "refs": schema.list_of(schema.text)})
-# part and kind are meaning rules (closable), so the shape takes any non-empty string there
-FOUNDER_ROW = schema.shape({**schema.ROW_FIELDS, "part": schema.text, "kind": schema.text, "payload": PAYLOAD},
-                           {**schema.ROW_OPTIONAL_FIELDS, "supersedes": schema.hex64})
-
-
-def spec_kinds(page: str = PAGE) -> frozenset:
-    """The founder kinds tohum/26 lists; exactly one such list, or AssertionError rather than a guess."""
-    with open(page, encoding="utf-8") as fh:
-        found = re.findall(r"\*\*`founder` satırı:\*\*\s+`kind`\s+∈\s+\{([^}]*)\}", fh.read())
-    if len(found) != 1:
-        raise AssertionError("26 has %d founder kind lists, expected 1" % len(found))
-    kinds = re.findall(r"`([^`]+)`", found[0])
-    if not kinds or len(set(kinds)) != len(kinds):
-        raise AssertionError("26's founder kind list is empty or repeats a kind: %r" % found[0])
-    return frozenset(kinds)
-
-
-def problems(data: bytes, kinds: frozenset) -> list[str]:
-    verdict = chain.verify_bytes(data)
-    if not verdict["valid"]:
-        return ["chain: %s (line %s)" % (verdict["reason"], verdict["line"])]
-    rows = [chain.parse_row(line.decode("utf-8")) for line in chain._lines(data)]
-    out: list[str] = []
-    breaks: list[list[str]] = []
-    earlier: dict[str, int] = {}  # row_hash -> index of an earlier row
-    for i, row in enumerate(rows):
-        where = "line %d (%s)" % (i + 1, row.get("row_id"))
-        out += FOUNDER_ROW(row, where)
-        broken = []
-        if row.get("part") != FOUNDER:
-            broken.append("part %r is not founder" % row.get("part"))
-        if row.get("kind") not in kinds:
-            broken.append("kind %r is not one of 26's founder kinds" % row.get("kind"))
-        if "supersedes" in row:
-            j = earlier.get(row["supersedes"])
-            if j is None:
-                broken.append("supersedes names no earlier row")
-            elif not breaks[j]:
-                broken.append("supersedes names line %d, which breaks no meaning rule" % (j + 1))
-        breaks.append(broken)
-        earlier[row.get("row_hash")] = i
-    closed = {row["supersedes"] for row, broken in zip(rows, breaks)
-              if not broken and "supersedes" in row and not FOUNDER_ROW(row, "")}
-    for i, (row, broken) in enumerate(zip(rows, breaks)):
-        if broken and row.get("row_hash") not in closed:
-            out += ["line %d (%s): %s, not closed" % (i + 1, row.get("row_id"), b) for b in broken]
-    return out
+from ledger import chain, founder  # noqa: E402
+from ledger.founder import FOUNDER, LEDGER, PAGE, problems, spec_kinds  # noqa: E402
 
 
 # ---------------------------------------------------------------- a synthetic ledger
@@ -230,6 +159,178 @@ class ThisLedger(unittest.TestCase):
         found = problems(b"".join(line + b"\n" for line in lines[:first]), spec_kinds())
         expected = sorted(i + 1 for i, row in enumerate(rows[:first]) if row["row_hash"] in named)
         self.assertEqual(sorted(int(p.split()[1]) for p in found), expected)
+
+
+class Append(unittest.TestCase):
+    """``ledger.founder.append`` and its command line: a row is written only when MF2's row scan is clean and the
+    new file has no problem the old one had not; a refused row leaves the file's bytes as they were."""
+
+    SHA = "c" * 40
+
+    def ledger(self, data: bytes) -> str:
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: [os.unlink(os.path.join(d, n)) for n in os.listdir(d)] and None or os.rmdir(d))
+        path = os.path.join(d, "founder-ledger.jsonl")
+        with open(path, "wb") as fh:
+            fh.write(data)
+        return path
+
+    def run_cli(self, path: str, *argv: str, stdin: bytes = b"") -> tuple[int, dict]:
+        import io
+        out = io.StringIO()
+        old, sys.stdout = sys.stdout, out
+        try:
+            code = founder.main([argv[0], "--ledger", path, *argv[1:]], stdin=io.BytesIO(stdin))
+        finally:
+            sys.stdout = old
+        lines = out.getvalue().splitlines()
+        self.assertEqual(len(lines), 1)
+        return code, json.loads(lines[0])
+
+    def add(self, path: str, *extra: str, kind: str = "decision", summary: str = "a row") -> tuple[int, dict]:
+        return self.run_cli(path, "append", "--kind", kind, "--summary", summary, "--snapshot", self.SHA,
+                            "--ts", "2026-10-31T23:00:00Z", *extra)
+
+    def read(self, path: str) -> bytes:
+        with open(path, "rb") as fh:
+            return fh.read()
+
+    def test_first_row_of_an_empty_file(self):
+        path = self.ledger(b"")
+        code, out = self.add(path, "--ref", "a.py", "--ref", "b.py")
+        self.assertEqual((code, out["ok"], out["row_id"]), (0, True, "f1"))
+        row = chain.parse_row(self.read(path).decode("utf-8"))
+        self.assertEqual(row["prev_hash"], chain.ZERO_HASH)
+        self.assertEqual(row["payload"], {"summary": "a row", "refs": ["a.py", "b.py"]})
+        self.assertEqual((row["part"], row["snapshot_id"], row["ts"]), (FOUNDER, self.SHA, "2026-10-31T23:00:00Z"))
+        self.assertEqual(problems(self.read(path), KINDS), [])
+
+    def test_a_row_follows_the_last_and_keeps_the_old_bytes(self):
+        data, hashes = build([{}, {"kind": "build"}])
+        path = self.ledger(data)
+        code, out = self.add(path, "--derivation", "test_verified", "--trust", "verified")
+        self.assertEqual((code, out["row_id"]), (0, "f2"))
+        new = self.read(path)
+        self.assertTrue(new.startswith(data))
+        row = chain.parse_row(new[len(data):].decode("utf-8"))
+        self.assertEqual(row["prev_hash"], hashes[-1])
+        self.assertEqual(row["row_hash"], out["row_hash"])
+        self.assertEqual((row["derivation"], row["trust"]), ("test_verified", "verified"))
+        self.assertTrue(chain.verify_bytes(new, data)["valid"])
+        self.assertEqual(problems(new, KINDS), [])
+
+    def test_a_row_that_breaks_a_rule_is_not_written(self):
+        data = build([{}])[0]
+        for extra, kind, what in ((), "learning", "kind 'learning'"),\
+                                 (("--derivation", "guess"), "decision", "derivation"),\
+                                 (("--trust", "sure"), "decision", "trust"),\
+                                 (("--supersedes", "B" * 64), "decision", "supersedes"),\
+                                 (("--supersedes", "b" * 64), "decision", "names no earlier row"),\
+                                 (("--ts", "2026-10-31"), "decision", "ts"),\
+                                 (("--ref", ""), "decision", "refs"):
+            with self.subTest(extra=extra, kind=kind):
+                path = self.ledger(data)
+                code, out = self.add(path, *extra, kind=kind)
+                self.assertEqual((code, out["ok"]), (1, False))
+                self.assertTrue(any(r.startswith("problem:") and what in r for r in out["reasons"]), out)
+                self.assertEqual(self.read(path), data)
+        path = self.ledger(data)
+        code, out = self.run_cli(path, "append", "--kind", "decision", "--summary", "", "--snapshot", self.SHA)
+        self.assertEqual((code, self.read(path)), (1, data))
+        code, out = self.run_cli(path, "append", "--kind", "decision", "--summary", "x", "--snapshot", "")
+        self.assertEqual((code, self.read(path)), (1, data))
+
+    def test_closing_an_open_row_is_written_and_naming_a_valid_row_is_not(self):
+        data, hashes = build([{}, {"kind": "learning"}])
+        path = self.ledger(data)
+        self.assertEqual(len(problems(data, KINDS)), 1)
+        code, out = self.add(path, "--supersedes", hashes[0])
+        self.assertEqual(code, 1)
+        self.assertTrue(any("breaks no meaning rule" in r for r in out["reasons"]))
+        code, out = self.add(path, "--supersedes", hashes[1])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(problems(self.read(path), KINDS), [])
+
+    def test_only_new_problems_refuse(self):
+        # an open problem already in the file does not block a valid row, and does not excuse a second break
+        data = build([{"kind": "learning"}])[0]
+        path = self.ledger(data)
+        self.assertEqual(self.add(path)[0], 0)
+        code, out = self.add(path, kind="learning")
+        self.assertEqual(code, 1)
+        self.assertEqual([r for r in out["reasons"]],
+                         ["problem:line 3 (f2): kind 'learning' is not one of 26's founder kinds, not closed"])
+
+    def test_a_secret_shaped_summary_is_not_written(self):
+        data = build([{}])[0]
+        token = "gh" + "p_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+        for summary in ("the token " + token, "pass" + "word = " + "'" + "hunter2hunter2" + "'"):
+            with self.subTest(summary=summary[:8]):
+                path = self.ledger(data)
+                code, out = self.add(path, summary=summary)
+                self.assertEqual(code, 1)
+                self.assertTrue(out["reasons"] and all(r.startswith("row_scan:") for r in out["reasons"]), out)
+                self.assertNotIn(token, json.dumps(out))
+                self.assertNotIn("hunter2", json.dumps(out))
+                self.assertEqual(self.read(path), data)
+
+    def test_summary_from_stdin(self):
+        path = self.ledger(b"")
+        text = "line one, \"quoted\" and ü\nline two"
+        code, out = self.run_cli(path, "append", "--kind", "build", "--summary", "-", "--snapshot", self.SHA,
+                                 stdin=(text + "\n").encode("utf-8"))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(chain.parse_row(self.read(path).decode("utf-8"))["payload"]["summary"], text)
+        code, out = self.run_cli(path, "append", "--kind", "build", "--summary", "-", "--snapshot", self.SHA,
+                                 stdin=b"\xff")
+        self.assertEqual(code, 2)
+
+    def test_unusable_inputs_write_nothing(self):
+        good = build([{}])[0]
+        broken = good.replace(b"row 0", b"row X")
+        cases = [(broken, ("append", "--kind", "decision", "--summary", "x", "--snapshot", self.SHA)),
+                 (build([{"row_id": "r7"}])[0], ("append", "--kind", "decision", "--summary", "x",
+                                                 "--snapshot", self.SHA)),
+                 (good + b"{", ("append", "--kind", "decision", "--summary", "x", "--snapshot", self.SHA)),
+                 (good, ("append", "--kind", "decision", "--summary", "x")),
+                 (good, ("append", "--kind", "decision", "--summary", "x", "--snapshot", self.SHA, "--page",
+                         os.path.join(ROOT, "no-such-page.md"))),
+                 (good, ("rewrite",))]
+        for data, argv in cases:
+            with self.subTest(argv=argv):
+                path = self.ledger(data)
+                code, out = self.run_cli(path, *argv)
+                self.assertEqual((code, out["ok"]), (2, False), out)
+                self.assertEqual(self.read(path), data)
+                self.assertEqual(os.listdir(os.path.dirname(path)), ["founder-ledger.jsonl"])
+        code, out = self.run_cli(os.path.join(ROOT, "no-such-ledger.jsonl"), "check")
+        self.assertEqual(code, 2)
+
+    def test_check(self):
+        self.assertEqual(self.run_cli(self.ledger(build([{}])[0]), "check"), (0, {"ok": True, "problems": []}))
+        code, out = self.run_cli(self.ledger(build([{"kind": "learning"}])[0]), "check")
+        self.assertEqual((code, len(out["problems"])), (1, 1))
+        # a broken chain is the file's one problem, reported, not an unusable input
+        code, out = self.run_cli(self.ledger(build([{}])[0].replace(b"row 0", b"row X")), "check")
+        self.assertEqual((code, out["problems"]), (1, ["chain: row_hash does not match the row (line 1)"]))
+
+    def test_no_temporary_file_is_left(self):
+        path = self.ledger(build([{}])[0])
+        self.add(path)
+        self.add(path, kind="learning")
+        self.assertEqual(os.listdir(os.path.dirname(path)), ["founder-ledger.jsonl"])
+
+    def test_the_command_runs_from_referee(self):
+        import subprocess
+        path = self.ledger(b"")
+        proc = subprocess.run([sys.executable, "-m", "ledger.founder", "append", "--ledger", path, "--kind",
+                               "session_start", "--summary", "-", "--snapshot", self.SHA],
+                              cwd=os.path.join(ROOT, "referee"), input=b"started", capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["row_id"], "f1")
+        proc = subprocess.run([sys.executable, "-m", "ledger.founder", "check"], cwd=os.path.join(ROOT, "referee"),
+                              capture_output=True)
+        self.assertEqual((proc.returncode, json.loads(proc.stdout)), (0, {"ok": True, "problems": []}))
 
 
 if __name__ == "__main__":
