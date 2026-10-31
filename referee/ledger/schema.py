@@ -47,9 +47,6 @@ from typing import Any, Callable
 from dispatcher import llm_call
 from ledger import chain
 
-ROW_KEYS = ("row_id", "ts", "part", "kind", "payload", "derivation", "trust", "snapshot_id", "evidence_refs",
-            "prev_hash", "row_hash")
-ROW_OPTIONAL = ("cause", "miss_reason", "derived_from", "proposed_by")
 PARTS = ("founder", "events", "cost", "drill", "freeze", "rival", "accept", "security", "looks")
 DERIVATIONS = ("tool", "static_analysis", "test_verified", "llm_inference", "name_similarity", "imported")
 TRUSTS = ("verified", "observed", "inferred")
@@ -227,12 +224,14 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
                                 "merge_sha": hex40}), False),
 }
 
-ROW = shape(
-    {"row_id": text, "ts": timestamp,
-     "part": one_of(*PARTS), "kind": text, "payload": any_object, "derivation": one_of(*DERIVATIONS),
-     "trust": one_of(*TRUSTS), "snapshot_id": text, "evidence_refs": list_of(evidence), "prev_hash": hex64,
-     "row_hash": hex64},
-    {"cause": one_of(*CAUSES), "miss_reason": one_of(*MISS_REASONS), "derived_from": text, "proposed_by": text})
+# tohum/26's row fields, one source for ROW and for a part with extra optional fields (the founder row's supersedes)
+ROW_FIELDS: dict[str, Check] = {
+    "row_id": text, "ts": timestamp, "part": one_of(*PARTS), "kind": text, "payload": any_object,
+    "derivation": one_of(*DERIVATIONS), "trust": one_of(*TRUSTS), "snapshot_id": text,
+    "evidence_refs": list_of(evidence), "prev_hash": hex64, "row_hash": hex64}
+ROW_OPTIONAL_FIELDS: dict[str, Check] = {
+    "cause": one_of(*CAUSES), "miss_reason": one_of(*MISS_REASONS), "derived_from": text, "proposed_by": text}
+ROW = shape(ROW_FIELDS, ROW_OPTIONAL_FIELDS)
 
 ROOT = shape({"row_id": text, "ts": timestamp, "root": hex64, "rekor_uuid": text, "prev_hash": hex64, "row_hash": hex64})
 
