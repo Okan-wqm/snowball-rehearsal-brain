@@ -29,6 +29,30 @@ to its file's stem and a non-empty string ``state`` makes the list unusable (exi
 no list (exit 1). Whether an item is still true is not checked: a session closes it with the evidence in the
 closer's summary.
 
+**Ref since filing** (``ref_checks``; each report item's ``ref_check``): whether the page text a report's ``ref``
+names has changed since the report was filed, so that after a seed epoch a session knows which reports to re-test
+first. It reads text, not meaning: a re-wrapped paragraph is ``line_changed`` and a changed meaning on an untouched
+line is not seen. Read from the git repository holding the reports directory (``git`` with ``loop.gitobj.git_env``,
+the one rule for a referee git process; git's ownership check is passed for the named directory and its
+ancestors only, ``safe.directory`` on the command line, since that is the repository the caller asks about); the
+commands run are ``rev-parse``, ``log -1 --format=%H`` and ``show <commit>:<path>``; nothing is written. Rules, in
+this order:
+- ``unknown`` with ``why``: ``git_unavailable`` (git cannot be started), ``not_in_git`` (the directory is in no
+  work tree), ``ref_unreadable`` (``ref`` is not ``<path>:<n>`` or ``<path>:<n>-<m>`` with 1 <= n <= m and a
+  relative path with no ``..`` component);
+- ``uncommitted``: no commit holds the report, or the report's file differs from its last commit (its ref was
+  written against today's page or is being rewritten; there is nothing to compare);
+- otherwise ``filed`` is the last commit that changed the report's file, and ``bounded`` is true when that commit is
+  a boundary of a shallow clone (the report may have been filed earlier; a change before it is not seen); then
+  ``unknown`` ``page_absent_at_filing`` (the path is not a file of that commit) or ``line_out_of_range`` (the
+  lines are not in it), ``page_gone`` (no regular file at the path in the work tree today; a symbolic link is followed), ``page_unchanged`` (the work tree's
+  file has the filed bytes), ``line_same`` (the file changed, the named lines did not: same bytes at the same
+  numbers), ``line_moved`` with ``lines`` (those lines, as one block, are elsewhere; every start line), or
+  ``line_changed`` (that block is nowhere in today's file: re-test this report first).
+Lines are split on ``\n`` and compared as bytes. A block that moved to another page is ``line_changed``: only the
+named page is read. A page that is a file but cannot be read is a fault (exit 2, ``cli.run``), not a status. Ledger
+items carry no ref this can read and get no ``ref_check``.
+
 Not checked: ``snapshot_id`` being the brain's SHA at that moment (one accepted row, f58, carries a short SHA;
 tohum/13 does not count it among the meaning rules a row can be closed for); whether a closed row was accepted
 before it was closed (tohum/13: a row a push adds broken is refused even if closed; that needs the last accepted
@@ -64,11 +88,13 @@ import datetime
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 
 from gate import secrets
 from ledger import chain, schema
+from loop.gitobj import git_env
 import cli
 
 BRAIN = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -81,6 +107,7 @@ ITEM_KINDS = frozenset({"seed_issue", "blocked"})  # the founder kinds that repo
 CLOSES = "closes:"
 CLOSED_REPORT_STATES = frozenset({"confirmed"})  # tohum/26c: the Founder confirms what a seed epoch fixed
 HEAD = 200
+REF = re.compile(r"([^:\s]+):([1-9][0-9]*)(?:-([1-9][0-9]*))?\Z")
 
 PAYLOAD = schema.shape({"summary": schema.text, "refs": schema.list_of(schema.text)})
 # part and kind are meaning rules (closable), so the shape takes any non-empty string there
@@ -183,8 +210,99 @@ def read_reports(directory: str = REPORTS) -> list[dict]:
     return out
 
 
-def open_items(data: bytes, kinds: frozenset, reports: list[dict]) -> tuple[list[dict], list[str]]:
-    """The open items (see the module docstring) and the ledger's problems; no item is listed when there is one."""
+class _NoGit(Exception):
+    """git cannot be started."""
+
+
+def _git(trust: list[str], top: str, *args: str) -> bytes | None:
+    """git's stdout for ``git <trust> -C top args``, or None when git exits non-zero; _NoGit when git cannot
+    start."""
+    try:
+        proc = subprocess.run(["git", *trust, "-C", top, *args], stdin=subprocess.DEVNULL, capture_output=True,
+                              env=git_env(dict(os.environ)))
+    except OSError:
+        raise _NoGit() from None
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def _trust(directory: str) -> list[str]:
+    """``-c safe.directory=<d>`` for the directory and each of its ancestors: git's ownership check passes for the
+    repository holding the named directory and for no other."""
+    out, d = [], os.path.realpath(directory)
+    while True:
+        out += ["-c", "safe.directory=%s" % d]
+        if os.path.dirname(d) == d:
+            return out
+        d = os.path.dirname(d)
+
+
+def _lines(data: bytes) -> list[bytes]:
+    lines = data.split(b"\n")
+    return lines[:-1] if lines[-1] == b"" else lines
+
+
+def _read(path: str) -> bytes | None:
+    """The file's bytes, or None when ``path`` is not a regular file (absent, a directory)."""
+    if not os.path.isfile(path):
+        return None
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def _ref_check(trust: list[str], top: str, shallow: set[str], report_path: str, ref) -> dict:
+    m = REF.match(ref) if isinstance(ref, str) else None
+    path = m.group(1) if m else ""
+    first = int(m.group(2)) if m else 0
+    last = int(m.group(3) or first) if m else 0
+    if not m or last < first or path.startswith("/") or ".." in path.split("/"):
+        return {"status": "unknown", "why": "ref_unreadable"}
+    report = os.path.relpath(report_path, top)
+    filed = (_git(trust, top, "log", "-1", "--format=%H", "--", report) or b"").decode("ascii").strip()
+    if not filed or _git(trust, top, "show", "%s:%s" % (filed, report)) != _read(report_path):
+        return {"status": "uncommitted"}
+    out = {"filed": filed, "bounded": filed in shallow}
+    then = _git(trust, top, "show", "%s:%s" % (filed, path))
+    if then is None:
+        return {"status": "unknown", "why": "page_absent_at_filing", **out}
+    block = _lines(then)[first - 1:last]
+    if len(block) != last - first + 1:
+        return {"status": "unknown", "why": "line_out_of_range", **out}
+    now = _read(os.path.join(top, path))
+    if now is None:
+        return {"status": "page_gone", **out}
+    if now == then:
+        return {"status": "page_unchanged", **out}
+    lines = _lines(now)
+    if lines[first - 1:last] == block:
+        return {"status": "line_same", **out}
+    starts = [i + 1 for i in range(len(lines) - len(block) + 1) if lines[i:i + len(block)] == block]
+    if starts:
+        return {"status": "line_moved", "lines": starts, **out}
+    return {"status": "line_changed", **out}
+
+
+def ref_checks(directory: str, reports: list[dict]) -> dict[str, dict]:
+    """Each report's ``ref_check`` by id (see the module docstring, "Ref since filing")."""
+    try:
+        trust = _trust(directory)
+        top = _git(trust, directory, "rev-parse", "--show-toplevel") if os.path.isdir(directory) else None
+        if top is None:
+            return {r["id"]: {"status": "unknown", "why": "not_in_git"} for r in reports}
+        top = top.decode("utf-8").rstrip("\n")
+        marks = _git(trust, top, "rev-parse", "--git-path", "shallow")
+        shallow = set((_read(os.path.join(top, marks.decode("utf-8").rstrip("\n"))) or b"").decode("ascii").split()
+                      ) if marks else set()
+        base = os.path.realpath(directory)
+        return {r["id"]: _ref_check(trust, top, shallow, os.path.join(base, r["id"] + ".json"), r.get("ref"))
+                for r in reports}
+    except _NoGit:
+        return {r["id"]: {"status": "unknown", "why": "git_unavailable"} for r in reports}
+
+
+def open_items(data: bytes, kinds: frozenset, reports: list[dict],
+               checks: dict[str, dict] | None = None) -> tuple[list[dict], list[str]]:
+    """The open items (see the module docstring) and the ledger's problems; no item is listed when there is one.
+    ``checks`` (``ref_checks``'s) adds each report item's ``ref_check``."""
     rows, _, _, closed = _judge(data, kinds)
     found = problems(data, kinds)
     if found:
@@ -192,7 +310,8 @@ def open_items(data: bytes, kinds: frozenset, reports: list[dict]) -> tuple[list
     items = [{"id": row["row_id"], "source": "ledger", "kind": row["kind"], "ts": row["ts"],
               "head": row["payload"]["summary"][:HEAD]}
              for row in rows if row["kind"] in ITEM_KINDS and row["row_id"] not in closed]
-    items += [{"id": r["id"], "source": "report", "kind": r.get("kind"), "state": r["state"], "ref": r.get("ref")}
+    items += [{"id": r["id"], "source": "report", "kind": r.get("kind"), "state": r["state"], "ref": r.get("ref"),
+               **({"ref_check": checks[r["id"]]} if checks is not None else {})}
               for r in reports if r["state"] not in CLOSED_REPORT_STATES]
     return items, []
 
@@ -297,7 +416,8 @@ def main(argv: list[str], stdin=None) -> int:
             _emit({"ok": not found, "problems": found})
             return 1 if found else 0
         if args.command == "open":
-            items, found = open_items(data, kinds, read_reports(args.reports))
+            reports = read_reports(args.reports)
+            items, found = open_items(data, kinds, reports, ref_checks(args.reports, reports))
             _emit({"ok": not found, "open": items, "problems": found})
             return 1 if found else 0
         summary = args.summary

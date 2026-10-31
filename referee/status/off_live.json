@@ -49,7 +49,7 @@
   },
   "loop.gitobj": {
     "kind": "unwired",
-    "why": "D1's tree reader: imported by loop.cek and loop.fetch only, both off the live path"
+    "why": "D1's tree reader: imported by loop.cek and loop.fetch, both off the live path, and by the session tool ledger.founder for git_env only"
   },
   "status.block": {
     "kind": "unwired",

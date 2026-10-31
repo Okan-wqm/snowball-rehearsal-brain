@@ -194,6 +194,14 @@ class Cli(unittest.TestCase):
         with open(path, "rb") as fh:
             return fh.read()
 
+    def reports(self, *reports) -> str:
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: [os.unlink(os.path.join(d, n)) for n in os.listdir(d)] and None or os.rmdir(d))
+        for name, body in reports:
+            with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+                fh.write(body if isinstance(body, str) else json.dumps(body))
+        return d
+
 
 class Append(Cli):
     """``ledger.founder.append`` and its command line: a row is written only when MF2's row scan is clean and the
@@ -343,14 +351,6 @@ class Items(Cli):
     def closer(self, *names: str, **spec) -> dict:
         return {"payload": {"summary": "closes", "refs": ["a.py"] + ["closes:" + n for n in names]}, **spec}
 
-    def reports(self, *reports) -> str:
-        d = tempfile.mkdtemp()
-        self.addCleanup(lambda: [os.unlink(os.path.join(d, n)) for n in os.listdir(d)] and None or os.rmdir(d))
-        for name, body in reports:
-            with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
-                fh.write(body if isinstance(body, str) else json.dumps(body))
-        return d
-
     def listed(self, data: bytes, reports: str | None = None) -> tuple[int, dict]:
         path = self.ledger(data)
         return self.run_cli(path, "open", "--reports", reports or self.reports())
@@ -425,8 +425,10 @@ class Items(Cli):
         self.assertEqual(code, 0)
         self.assertEqual(out["open"][0]["id"], "f0")
         self.assertEqual(out["open"][1:], [
-            {"id": "a-1", "source": "report", "kind": "spec_issue", "state": "answered", "ref": "spec/x.md:1"},
-            {"id": "b-2", "source": "report", "kind": "spec_issue", "state": "open", "ref": "spec/x.md:1"}])
+            {"id": "a-1", "source": "report", "kind": "spec_issue", "state": "answered", "ref": "spec/x.md:1",
+             "ref_check": {"status": "unknown", "why": "not_in_git"}},
+            {"id": "b-2", "source": "report", "kind": "spec_issue", "state": "open", "ref": "spec/x.md:1",
+             "ref_check": {"status": "unknown", "why": "not_in_git"}}])
         # a ledger row does not close a report: the report's state is its one source
         self.assertEqual(problems(build([{"kind": "seed_issue"}, self.closer("b-2")])[0], KINDS)[0][-30:],
                          "names no earlier seed_issue or blocked row"[-30:])
@@ -460,6 +462,187 @@ class Items(Cli):
             if item["source"] == "report":
                 with open(os.path.join(ROOT, "reports", item["id"] + ".json"), encoding="utf-8") as fh:
                     self.assertNotEqual(json.load(fh)["state"], "confirmed")
+
+
+class RefSince(Cli):
+    """``ref_checks`` (each report item's ``ref_check`` in ``open``): whether the page lines a report's ref names
+    changed since the commit that last changed the report, read from a real git repository built here."""
+
+    PAGE = b"one\ntwo\nthree\nfour\n"
+
+    def git(self, top: str, *args: str) -> str:
+        import subprocess
+        from loop.gitobj import git_env
+        env = git_env(dict(os.environ))
+        env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t.invalid", GIT_COMMITTER_NAME="t",
+                   GIT_COMMITTER_EMAIL="t@t.invalid")
+        proc = subprocess.run(["git", "-C", top, *args], capture_output=True, env=env)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout.decode().strip()
+
+    def write(self, top: str, path: str, data: bytes) -> None:
+        os.makedirs(os.path.dirname(os.path.join(top, path)), exist_ok=True)
+        with open(os.path.join(top, path), "wb") as fh:
+            fh.write(data)
+
+    def commit(self, top: str) -> str:
+        self.git(top, "add", "-A")
+        self.git(top, "commit", "-q", "--allow-empty", "-m", "m")
+        return self.git(top, "rev-parse", "HEAD")
+
+    def repo(self, ref="spec/p.md:2", page: bytes | None = None) -> tuple[str, str]:
+        """A repository whose last commit files report r (ref ``ref``) beside spec/p.md; (top, that commit)."""
+        import shutil
+        top = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, top)
+        self.git(top, "init", "-q", "-b", "main")
+        self.write(top, "spec/p.md", self.PAGE if page is None else page)
+        self.commit(top)
+        self.report(top, ref)
+        return top, self.commit(top)
+
+    def report(self, top: str, ref, rid: str = "r") -> None:
+        self.write(top, "reports/%s.json" % rid,
+                   json.dumps({"id": rid, "kind": "seed_issue", "ref": ref, "state": "open"}).encode())
+
+    def check(self, top: str, rid: str = "r") -> dict:
+        d = os.path.join(top, "reports")
+        return founder.ref_checks(d, founder.read_reports(d))[rid]
+
+    def test_the_page_after_filing(self):
+        for name, page, status, extra in (
+                ("untouched", PAGE_SAME, "page_unchanged", {}),
+                ("another line changed", b"one\ntwo\nthree\nFOUR\n", "line_same", {}),
+                ("a line added at the end", b"one\ntwo\nthree\nfour\nfive\n", "line_same", {}),
+                ("only the final newline dropped", b"one\ntwo\nthree\nfour", "line_same", {}),
+                ("a line inserted above", b"zero\none\ntwo\nthree\nfour\n", "line_moved", {"lines": [3]}),
+                ("the line twice elsewhere", b"two\nx\nthree\ntwo\n", "line_moved", {"lines": [1, 4]}),
+                ("the line rewritten", b"one\ntwo!\nthree\nfour\n", "line_changed", {}),
+                ("the line re-wrapped", b"one\ntwo three\nfour\n", "line_changed", {}),
+                ("the line deleted", b"one\nthree\nfour\n", "line_changed", {})):
+            with self.subTest(name=name):
+                top, filed = self.repo()
+                if page is not PAGE_SAME:
+                    self.write(top, "spec/p.md", page)
+                    if name != "another line changed":  # committed or not, the work tree is what is read
+                        self.commit(top)
+                self.assertEqual(self.check(top), {"status": status, "filed": filed, "bounded": False, **extra})
+
+    def test_a_range_is_one_block(self):
+        top, filed = self.repo("spec/p.md:2-3")
+        self.write(top, "spec/p.md", b"two\nx\nthree\none\ntwo\nthree\n")
+        self.assertEqual(self.check(top), {"status": "line_moved", "lines": [5], "filed": filed, "bounded": False})
+        self.write(top, "spec/p.md", b"one\ntwo\nx\nthree\n")
+        self.assertEqual(self.check(top)["status"], "line_changed")
+        self.write(top, "spec/p.md", b"one\ntwo\nthree\nFOUR\n")
+        self.assertEqual(self.check(top)["status"], "line_same")
+
+    def test_filed_is_the_last_commit_that_changed_the_report(self):
+        top, first = self.repo()
+        self.write(top, "spec/p.md", b"one\nTWO\nthree\nfour\n")
+        self.commit(top)
+        self.assertEqual(self.check(top)["status"], "line_changed")
+        self.write(top, "other.txt", b"x")
+        later = self.commit(top)  # a commit that does not touch the report does not refile it
+        self.assertEqual(self.check(top)["filed"], first)
+        self.report(top, "spec/p.md:2")
+        self.write(top, "reports/r.json", self.read(os.path.join(top, "reports/r.json")) + b"\n")
+        refiled = self.commit(top)
+        self.assertNotIn(refiled, (first, later))
+        self.assertEqual(self.check(top), {"status": "page_unchanged", "filed": refiled, "bounded": False})
+
+    def test_uncommitted_reports(self):
+        top, _ = self.repo()
+        self.report(top, "spec/p.md:1", "s")  # never committed
+        self.assertEqual(self.check(top, "s"), {"status": "uncommitted"})
+        self.write(top, "reports/r.json", self.read(os.path.join(top, "reports/r.json")).replace(b"open", b"opened"))
+        self.write(top, "spec/p.md", b"x\n")  # the page changed too, but the report is being rewritten
+        self.assertEqual(self.check(top), {"status": "uncommitted"})
+
+    def test_unreadable_refs(self):
+        for ref in ("spec/p.md", "spec/p.md:0", "spec/p.md:3-2", "spec/p.md:1x", "spec/p.md:-1", "/etc/p.md:1",
+                    "../p.md:1", "spec/../p.md:1", "", 5, None, ["spec/p.md:1"], "spec/p.md:1 "):
+            with self.subTest(ref=ref):
+                top, _ = self.repo(ref)
+                self.assertEqual(self.check(top), {"status": "unknown", "why": "ref_unreadable"})
+
+    def test_the_page_at_filing_and_today(self):
+        top, filed = self.repo("spec/q.md:1")
+        self.assertEqual(self.check(top), {"status": "unknown", "why": "page_absent_at_filing", "filed": filed,
+                                           "bounded": False})
+        self.write(top, "spec/q.md", b"later\n")  # added after filing: still absent at filing
+        self.assertEqual(self.check(top)["why"], "page_absent_at_filing")
+        for ref in ("spec/p.md:5", "spec/p.md:4-5", "spec/p.md:99"):
+            with self.subTest(ref=ref):
+                top, filed = self.repo(ref)
+                self.assertEqual(self.check(top), {"status": "unknown", "why": "line_out_of_range", "filed": filed,
+                                                   "bounded": False})
+        top, filed = self.repo("spec/p.md:4")
+        self.assertEqual(self.check(top)["status"], "page_unchanged")
+        os.unlink(os.path.join(top, "spec/p.md"))
+        self.assertEqual(self.check(top), {"status": "page_gone", "filed": filed, "bounded": False})
+        os.makedirs(os.path.join(top, "spec/p.md"))  # a directory where the page was is no page
+        self.assertEqual(self.check(top)["status"], "page_gone")
+
+    def test_a_shallow_boundary_is_bounded(self):
+        import shutil
+        top, filed = self.repo()
+        self.write(top, "other.txt", b"x")
+        tip = self.commit(top)
+        # depth 1: the report seems filed at the tip, the boundary; depth 2: at its real commit, now the boundary
+        # (an earlier filing would not be seen); depth 3: at its real commit, whose parent is there
+        for depth, seen, bounded in (("1", tip, True), ("2", filed, True), ("3", filed, False)):
+            with self.subTest(depth=depth):
+                clone = tempfile.mkdtemp()
+                self.addCleanup(shutil.rmtree, clone)
+                self.git(clone, "clone", "-q", "--depth", depth, "file://" + top, "c")
+                got = self.check(os.path.join(clone, "c"))
+                self.assertEqual(got, {"status": "page_unchanged", "filed": seen, "bounded": bounded})
+
+    def test_no_repository_or_no_git(self):
+        from unittest import mock
+        d = self.reports(("r.json", {"id": "r", "ref": "spec/p.md:1", "state": "open"}))
+        self.assertEqual(founder.ref_checks(d, founder.read_reports(d)),
+                         {"r": {"status": "unknown", "why": "not_in_git"}})
+        self.assertEqual(founder.ref_checks(os.path.join(d, "absent"), [{"id": "r"}]),
+                         {"r": {"status": "unknown", "why": "not_in_git"}})
+        top, _ = self.repo()
+        empty = tempfile.mkdtemp()
+        self.addCleanup(os.rmdir, empty)
+        with mock.patch.dict(os.environ, {"PATH": empty}):
+            self.assertEqual(self.check(top), {"status": "unknown", "why": "git_unavailable"})
+
+    def test_git_runs_with_the_referee_environment_and_trusts_only_the_ancestors(self):
+        from unittest import mock
+        top, filed = self.repo()
+        d = os.path.join(top, "reports")
+        trusted = founder._trust(d)
+        real = os.path.realpath(d)
+        self.assertEqual(trusted[1::2], ["safe.directory=" + p for p in
+                                         [real, os.path.dirname(real)] + self.ancestors(os.path.dirname(real))])
+        self.assertEqual(set(trusted[0::2]), {"-c"})
+        # a GIT_DIR in the caller's environment does not redirect the reading (loop.gitobj.git_env drops it)
+        with mock.patch.dict(os.environ, {"GIT_DIR": os.path.join(tempfile.gettempdir(), "no-such-git")}):
+            self.assertEqual(self.check(top)["filed"], filed)
+
+    @staticmethod
+    def ancestors(path: str) -> list[str]:
+        out = []
+        while os.path.dirname(path) != path:
+            path = os.path.dirname(path)
+            out.append(path)
+        return out
+
+    def test_open_lists_the_check_on_report_items_only(self):
+        top, filed = self.repo()
+        code, out = self.run_cli(self.ledger(build([{"kind": "seed_issue"}])[0]), "open", "--reports",
+                                 os.path.join(top, "reports"))
+        self.assertEqual(code, 0)
+        self.assertNotIn("ref_check", out["open"][0])
+        self.assertEqual(out["open"][1]["ref_check"], {"status": "page_unchanged", "filed": filed, "bounded": False})
+
+
+PAGE_SAME = object()
 
 
 if __name__ == "__main__":
