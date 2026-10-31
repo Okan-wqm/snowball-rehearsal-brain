@@ -9,7 +9,7 @@ Okunma: her hakem işi tasarlanırken ve her ajan dispatch'inde
 1. **Beş iş** (önyükleme hakeminde altıncısı `yeniden`: rakibin yeniden üreticileri, `koş` gibi sırsız
    ve ağsız; `29b`). Bir işin süreçleri o işin bütün sırlarını okuyabilir; bu yüzden kod yürüten hiçbir
    iş sır taşımaz ve sır taşıyan hiçbir iş kod yürütmez. Döngü hakeminin işleri tek iş akışındadır,
-   `loop.yml`: üst düzey `permissions: {}`; her işin ilk adımı tohumun `control` komutudur; `run:` içinde
+   `loop.yml`: üst düzey `permissions: {}`; her işin ilk adımı tohumun `control` adımıdır (`29p`); `run:` içinde
    `${{ github.* }}` yok; action'lar SHA pinli, `persist-credentials: false`; `pull_request_target`,
    `workflow_run`, `issue_comment` yok; işler yalnız `main`'de koşar. Kurallar `asama-0/09` test 46'da ve
    tohumun `wiring` denetimindedir; aktarım iş akışını yerine koyar, önyükleme hakemininkine dokunmaz.

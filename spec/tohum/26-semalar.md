@@ -30,9 +30,9 @@ ile işaretlenir ve `trust: inferred` saklanır. Kanonik biçim RFC 8785; `row_h
 sha256(canonical(row − row_hash) ‖ prev_hash)`, küçük harf onaltılık; ilk satırın `prev_hash`'i
 64 sıfır. Vektörler `29a`'da. **Sayılar:** hash'lenen hiçbir artefaktta kayan nokta yoktur;
 tamsayı (para `*_micros`, süre `*_ms`) ya da en çok altı ondalıklı sabit ondalık dizgi
-(`"0.962400"`) kullanılır. **`founder` satırı:** `kind` ∈ {`session_start`, `decision`, `build`, `blocked`,
-`seed_issue`, `cost`, `session_end`}, `payload` `{summary, refs[]}`, `snapshot_id` beyin reposunun o anki
-SHA'sı. `findings.jsonl` ve `unresolved.jsonl` satırları da `prev_hash`, `row_hash` taşır.
+(`"0.962400"`) kullanılır. **`founder` satırı:** `kind` ∈ {`session_start`, `decision`, `build`, `blocked`, `seed_issue`,
+`cost`, `session_end`}, `payload` `{summary, refs[]}`, `snapshot_id` beyin reposunun o anki SHA'sı, `supersedes?` aynı dosyada
+anlamı bozuk önceki satırın `row_hash`'i (`13`). `findings.jsonl` ve `unresolved.jsonl` satırları da `prev_hash`, `row_hash` taşır.
 
 **derivation** (kapalı küme): `tool`, `static_analysis`, `test_verified`, `llm_inference`,
 `name_similarity`, `imported`. **trust**: `verified`, `observed`, `inferred`. Merge kararına

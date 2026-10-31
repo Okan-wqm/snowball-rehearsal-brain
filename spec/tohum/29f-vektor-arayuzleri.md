@@ -1,14 +1,15 @@
-# Vektör Arayüzleri: `secrets`, `contained`, `profile`
+# Vektör Arayüzleri: `secrets`, `contained`
 
 Tarih: 2026-10-29 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
-Okunma: Aşama 0'ın MF2, MF3 ve MF4'ünü yazarken; bu grupların komutu, girdisi ya da çıktısı değişirken
-Çapa: `seed/bootstrap/vectors/vectors.json` (`secrets`, `contained`, `profile`) ve `vectors/<grup>/` fikstürleri
+Okunma: Aşama 0'ın MF2 ve MF3'ünü yazarken; bu grupların komutu, girdisi ya da çıktısı değişirken
+Çapa: `seed/bootstrap/vectors/vectors.json` (`secrets`, `contained`) ve `vectors/<grup>/` fikstürleri
 
 ---
 
-`29d`'nin veri gruplarının Kurucu'ya dönük arayüzü; devamı (`npmlock`, `recipe`, `diffguard`) `29g`'dedir. Her
-grubun komutu, girdisi, karşılaştırılan alanları, çıkış kodları ve vakalarının neyi yakaladığı burada; beklenen
-değerler burada değildir (`29a`: vektörler tabandır, yeter değildir). Karşılaştırma kuralları `29d`'dedir.
+`29d`'nin veri gruplarının Kurucu'ya dönük arayüzü; devamı `29g` (`npmlock`, `recipe`) ve `29k`'dedir (`profile`,
+`diffguard`). Her grubun komutu, girdisi, karşılaştırılan alanları, çıkış kodları ve vakalarının neyi yakaladığı
+burada; beklenen değerler burada değildir (`29a`: vektörler tabandır, yeter değildir). Karşılaştırma kuralları
+`29d`'dedir.
 
 - **Ajan yapılandırması** (`14`): büyük-küçük harf gözetmeden bir bileşeni `.claude`, `.vscode` ya da
   `.devcontainer`, ya da son bileşeni `CLAUDE.md`, `AGENTS.md`, `.mcp.json` ya da `.envrc` olan yol.
@@ -55,26 +56,3 @@ Vakalar: `argv_baseline` geçerli istek zorunlu bayrakları, istekten okunan bel
 dizini, salt okunur artefaktı, isteğin ortamını ve pinli imajı taşır; `argv_second_request` başka bir istek kendi
 izdüşümünü verir, sabit bir argv ikisini tutamaz; `refuse_unpinned_image`, `refuse_actions_env`,
 `refuse_docker_socket`, `refuse_services` ve `refuse_missing_mem_limit` adlarındaki istekler reddedilir.
-
-## `profile` (MF4, `profile/derive.py`)
-
-`python -m profile.derive derive <ağaç.tar.gz> <operator.json>` ve `python -m profile.derive check <ağaç.tar.gz>
-<operator.json> <öneri.json>`; stdin yok. `referee/profile/` düzenli pakettir (`__init__.py`; yoksa standart
-kütüphanenin `profile` modülü kazanır). Ağaç, üyeleri göreli POSIX adlı dosyalar olan gzip tar'dır (dizin üyeleri
-yok sayılır), bellekte okunur. `operator.json`: `{security_keywords[], excluded_paths[], unit_candidates[]}`
-(`18a`, `26c` `targets[]`). Dosya ajan yapılandırmasıysa ya da bir `excluded_paths` girdisinin kapsamındaysa
-hariçtir. Diller hariç olmayan dosyaların uzantısından: `.py` python; `.js .mjs .cjs` javascript; `.ts .tsx .mts
-.cts` typescript; başkası yok. Güvenlik dosyası: küçük harfli göreli yolu küçük harfli bir anahtar kelimeyi alt
-dizgi olarak içeren, hariç olmayan dosya. Birim adayı operatörün sırasıyla kalır, kendisi (dosya kuralıyla) hariç
-değilse ve ağaçta bir dosyayı (hariç olsa da) kapsıyorsa. `derive`: `languages`, `security_paths`,
-`excluded_paths` (sıralı), `unit_candidates`. `check` aynı dört listeli öneriyi türetimle karşılaştırır:
-`accepted` (`reasons` boşsa doğru), sıralı `reasons`: `differs:languages` (kümeler farklı),
-`differs:unit_candidates` (listeler farklı), `narrows:security_paths`, `narrows:excluded_paths` (türetilen bir yol
-öneride yok). Yalnız genişleten önerinin vakası yok: `14`'ün genel cümlesi farklı her öneriyi reddeder, özel kuralı
-genişletmeye izin verir; ikisi hizalanana kadar her okuma geçer. Çıkış: `derive` 0, okunamayan girdide 2; `check` 0
-kabul, 1 ret, 2 kullanılamaz girdi. Vakalar: `agent_config_case_insensitive` ajan yapılandırması her derinlikte ve
-harf büyüklüğünde hariç; `operator_excluded_paths` operatörün hariç yolu dil eklemez, adayını düşürür;
-`security_keyword_substring` anahtar kelime yol ve dosya adlarında alt dizgi olarak aranır;
-`unit_candidates_order_and_filter` adaylar operatörün sırasını korur, olmayan, ajan yapılandırması ve hariç aday
-düşer; `reject_narrowed_excluded` hariç listesini daraltan öneri ret; `reject_different_languages` dilleri farklı
-öneri ret.

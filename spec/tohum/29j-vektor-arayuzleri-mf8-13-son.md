@@ -6,8 +6,8 @@ Okunma: Aşama 0'ın MF11, MF12 ve MF13'ünü yazarken; bu grupların komutu, gi
 
 ---
 
-`29i`'nin devamıdır; kuralları `29f` ve `29g`'ninkidir, beklenen değerler burada yok (`29a`). Üretimde dış dünyaya
-dokunan mekanizma vektörde fikstür bir taklittir (`asama-0/14` Kum).
+`29i`'nin devamıdır; kuralları `29f`, `29g` ve `29k`'ninkidir, beklenen değerler burada yok (`29a`). Üretimde dış
+dünyaya dokunan mekanizma vektörde fikstür bir taklittir (`asama-0/14` Kum).
 
 ## `root` (MF11, `ledger/anchor.py`)
 

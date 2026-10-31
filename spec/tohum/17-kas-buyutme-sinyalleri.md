@@ -28,6 +28,7 @@ durum mimarisine kendi başına varır; varamıyorsa ölçüm o parçanın gerek
 | `unresolved`, nedeni "test yazılamadı", birikiyor | Pencerede ≥ 5 | Okuyarak hipotez üreten organ |
 | Aynı ders ya da bilgi bir bağlamda hit, öbüründe miss | ≥ 1 çelişki | Koşul araştırması organı (`21a`) |
 | İkinci repo bağlandı | 1 | Küresel katman ve taşıma organı (`21a`) |
+| Eskimiş bulgu oranı: açık bulgulardan, kanıt yolu dalın kesildiği SHA'dan bu yana sahibin `main`'inde değişenlerin payı (`07`) | Pencerede > %20 | `main` senkronu: organ değil izin kararı; yalnız Aşama 2 spec'inde ve kendi güvenlik kararıyla (`07`) |
 | Bir repodaki gap ile başka repoda hayatta kalmış bir organın bağlamı eşleşiyor | ≥ 1 | Örüntü önerisi (`21a`) |
 | Oracle maliyeti / okuma maliyeti | Medyanın 3 katı | Okuma basamağı (maliyet merdiveni) |
 | Aynı `origin`'den gelen öneriler bir sınıfta geri alınıyor | Pencerede ≥ 3 | Sentez organı (`10`, `21a`) |

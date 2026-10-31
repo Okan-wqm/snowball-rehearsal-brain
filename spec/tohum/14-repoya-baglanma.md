@@ -11,11 +11,13 @@ Okunma: yeni repoda ve property eklerken
   yolları profilde durur.
 - **Profil: beyin önerir, hakem türetir.** Hakem `profile.derive` ile profili hedef repodan kendisi
   türetir; beyin bir öneri yayımlar (Aşama 0'da yalnız birim tarifi `targets/<hedef>/units.json`;
-  `profile.propose` sonraki oyuncu partisinde, `asama-1/13`) ve hakem iki çıktıyı karşılaştırır. Hakem
-  türetmesinden farklı her öneri reddedilir: `banned_constructs`'tan silmek, `registry_egress`'i
-  genişletmek, güvenlik yollarını, hariç dizinleri, etkilenen-test komutunu ya da test yolu
-  kurallarını değiştirmek dahil (`01b`). `brain/state`'e yalnız hakemin türettiği profil ve doğrulanmış
-  tarif girer.
+  `profile.propose` sonraki oyuncu partisinde, `asama-1/13`) ve hakem iki çıktıyı karşılaştırır. Öneri
+  türetmeyi yalnız genişletebilir: güvenlik yollarına ve hariç yollara türetilmemiş yol eklemek kabul
+  edilir (aşağıdaki iki madde; `30d`'nin güvenlik profili de böyle); türetilen bir güvenlik ya da hariç
+  yolu düşüren, yani daraltan öneri reddedilir. Başka her farkta da öneri reddedilir: `banned_constructs`'tan
+  silmek, `registry_egress`'i genişletmek, dilleri, birim adaylarını, etkilenen-test komutunu ya da test
+  yolu kurallarını değiştirmek dahil (`01b`). `brain/state`'e yalnız hakemin türettiği profil ve
+  doğrulanmış tarif girer.
 - **Birimler (`units[]`).** Profil bağlanan birimleri listeler: `{unit_id, path, inputs[], toolchain,
   env_image (@sha256), lockfiles[], install_scripts_required[], lint_cmd[], test_cmd[],
   affected_test_cmd[], services: [], limits{}}` (`26b`). `inputs` birimin dizini, kullandığı ortak

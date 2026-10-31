@@ -6,13 +6,14 @@ Okunma: Aşama 0'ın MF8'ini yazarken; bu grubun komutu, girdisi ya da çıktıs
 
 ---
 
-`29f` ve `29g`'nin devamıdır, kuralları onlarınki (`refs`, `append`: `29i`; `root`, `flaky`, `cause`: `29j`); beklenen
-değerler burada yok (`29a`). Üretimde dış dünyaya dokunan mekanizma vektörde fikstür bir taklittir (`asama-0/14` Kum).
+`29f`, `29g` ve `29k`'nin devamıdır, kuralları onlarınki (`refs`, `append`: `29i`; `root`, `flaky`, `cause`: `29j`);
+beklenen değerler burada yok (`29a`). Üretimde dış dünyaya dokunan mekanizma vektörde fikstür bir taklittir
+(`asama-0/14` Kum).
 
 ## `k0map` (MF8, `gate/check.py`)
 
 `python -m gate.check map <diff.patch> <yol> <satır>` (stdin yok) ve `python -m gate.check decide <aday_dizini>
-<taban.jsonl> <aday_koşu_dizini> <hashes.json>` (stdin tek JSON nesnesi). Diff `29g`'deki gibi okunur (`diff --git
+<taban.jsonl> <aday_koşu_dizini> <hashes.json>` (stdin tek JSON nesnesi). Diff `29k`'deki gibi okunur (`diff --git
 a/A b/B` bloğu B'yi değiştirir); yalnız `<yol>`'un hunk'ları sayılır. **Eşlenmiş satır** (`asama-0/08`): hunk
 `@@ -a,b +c,d @@` (sayı yoksa 1); taban aralığı bağlam dahil `[a, a+b-1]`, aday aralığı `[c, c+d-1]`. Bir taban
 aralığındaki `L` o hunk'ın aday aralığının tamamına eşlenir (`d = 0` ise `[]`); başka her `L` `[m, m]`'ye,

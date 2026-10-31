@@ -48,6 +48,18 @@ Okunma: her aşama başında ve sonunda
    partinin mikro özellikleri bitince parti çıkış isteği (A), operatör aktarımı, (B)'de partinin ilk
    okuyucusunun canlı koşusu. Her aktarım bir insan dokunuşudur; aşama kilidi değişmez.
 
+**Sahip istisnası.** Bir çıkış koşulunun ölçümü aşama başlamadan yapılacak bir işe dayanır ve o iş yapılmadıysa,
+koşul o aşamada ne ölçülür ne geçer; aşama hiç kapanmasın diye sahip onu adıyla istisna edebilir. Bugün yalnız
+#durustluk böyledir (ekim Kurucu başlamadan, `asama-0/10`, `25` 10c). İstisna `setup/summary.json`'daki
+`honesty_exception`'dır (`26c`): bir koşul, bir aşama, bir taşıma hedefi. Yanındaki `honesty_commitment` taşıma hedefinin
+ekimidir; o yoksa istisna koşulu kaldırmaz, çıkış `not_checked` kalır, Kurucu'ya sayılmaz (taşıma hedefi de ölçemezdi).
+Önyükleme hakemi (A) sonucuna `owner_exception {anchor, stage, carry_to, reason, carry_commitment, measured: false}`
+yazar; koşul geçmiş ya da `UNMEASURABLE` sayılmaz, öbür koşulların hepsi geçerse çıkış "sahip istisnasıyla PASS"tır.
+PASS satırı ve çıkış raporu istisnayı adıyla taşır; istisna insan dokunuşudur (`27`). Koşul bir sonraki aşamanın (A)
+çıkışına taşınır: o çıkış onu ölçülmüş ister, ikinci istisna yoktur; o aşamanın spec'i bunu yazmasa da tohum geçerlidir
+(madde 1). Önyükleme hakemi bugün yalnız Aşama 0 çıkışını yargılar (başka aşamanın isteği `exit_request_wrong_stage`);
+taşınan koşulun denetimi Aşama 1 çıkışını yargılayan koduyla gelir.
+
 **Dikey dilim kuralı.** Hiçbir aşama döngünün tek bir fazını "tamamen" kurmaz. Her aşama
 döngünün tamamını daha dar bir kapsamda canlı çalıştırır, sonra kapsam genişler.
 

@@ -15,6 +15,10 @@ ve kendi güvenlik kararıyla Aşama 2 spec'inde açılır; açıldığında sen
 bir `main` SHA'sı olmalı ve `git merge-tree` sonucuna eşit olmalıdır. Çakışma çözülmez: çakışan
 beyin değişikliği geri alınır, `blocked` yazılır ve yeni bir mikro görev olur. Zorla itme yoktur.
 
+**`main`'i okumak dokunmak değildir.** Senkron yokken de sahibin `main`'i salt okunur, yeni izin ya da
+kimlik istemeden okunur; taban yaşının commit sayısı ve eskimiş bulgu oranı (`17`) bu okumayla ölçülür.
+Okuma `main`'e ya da `brain/integration`'a yazmaz, senkron değildir; sahibin işi her zaman kazanır.
+
 **Taban ve mandal.** Beyin bir repoya bağlandığında her aracın mevcut ihlallerinden bir taban
 çıkarır; hakem bunu kendi koşusuyla doğrular ve deftere yazar. Keşif tabandaki ve sonradan doğan
 tüm ihlalleri bulgu sayar; mevcut borç kapsam içindedir. Mandal kuralı: hiçbir merge bir aracın

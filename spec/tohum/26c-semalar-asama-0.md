@@ -32,7 +32,9 @@ yalnız adlandırdığı koşudan sonra bir kez geçerlidir (`24a`).
 bootstrap_sha256}`; `targets[]` `{id, repo, kind: toy|copy, base_sha, identifiers[], excluded_paths[],
 unit_candidates[]}` (`identifiers` genellik denetiminin ad listesidir; `excluded_paths` operatör verisidir,
 hakem kodu değildir; `unit_candidates` kopyanın aday birim yolları, sırayla); `honesty_commitment`
-(`sha256(canonical(anahtar))`); ilk koşu işareti.
+(`sha256(canonical(anahtar))`); ekim kaçırıldıysa sahibin `honesty_exception` `{stage: 0, carry_to: 1, reason}`'ı
+(`02` "Sahip istisnası"; yanındaki taahhüt taşıma hedefinin ekimidir, o olmadan istisna koşulu kaldırmaz); ilk
+koşu işareti.
 
 **setup/imports.jsonl**: her aktarım bir satır `{ts, stage, batch?, brain_sha, referee_tree_sha256,
 result_sha256, toy_tree_sha256?}`, zincirli (`26`); insan dokunuşu sayacı. **setup/stage.json**:
@@ -54,7 +56,15 @@ dosya); `expect.json` `{decision: merge|reject, reason?}` (kötü adayın beklen
 `{unit_id, path, inputs[], toolchain, env_image (@sha256), lockfiles[], install_scripts_required[],
 lint_cmd[], test_cmd[], affected_test_cmd[], services: [], limits{}}`. `inputs` birimin dizini, kullandığı
 ortak kütüphaneler ve kök yapılandırmalardır; yeterliliğinin kanıtı yalnız bu girdilerle HEAD'in 3/3
-yeşil koşmasıdır (`unit.verify`). İmaj resmi araç zinciri imajıdır, depodaki sürüm dosyasıyla aynı sürüm.
+yeşil koşmasıdır (`unit.verify`). Lint için yeşil: `lint_cmd` üç koşunun her birinde 0 ya da 1 ile biter ve
+üç koşunun çıkış kodu ve stdout'u bayt bayt aynıdır (ESLint'te 1 bulunan ihlaldir; `asama-0/08` ölçüt 5 ihlal
+ister, ölçüt 6 yeşil). `toolchain` `node@X.Y.Z`'dir: kesin sürüm (üç ondalık bileşen; aralık ya da `lts` gibi
+takma ad değil), birimin en yakın sürüm dosyasındaki sürüm. İmaj resmi araç zinciri imajıdır, etiketindeki
+sürüm de `X.Y.Z`'dir. `install_scripts_required[]`'in her elemanı kilitteki tam paket yolu (kök `""` dışında
+bir `packages` anahtarı, ör. `node_modules/x`) ya da `ad@sürüm`'dür; `ad@sürüm` tarball'ının adı ve sürümü
+eşleşen paketi işaretler, kilitte eşleşeni yoksa hiçbir şeyi. Başka bir eleman, ör. çıplak ad (her sürümü
+işaretlerdi) ya da kilitte olmayan bir yol, işaret değildir ve isteği kullanılamaz yapar: `deps.fetch` onu
+reddeder (çıkış 2, `29g`).
 `services` Aşama 0'da boştur. Önerinin hariç yolları ya da güvenlik yollarını daraltması reddedilir.
 
 **policy.json `operating{}`**: `{key: {value, band: [min, max]}}`; anahtarlar `unit_inputs_bytes`,

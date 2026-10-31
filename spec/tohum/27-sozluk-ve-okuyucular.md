@@ -16,7 +16,7 @@ Okunma: yeni terim ya da dosya eklerken
 | Parti | Aşama ortasında (A) → aktarım → (B) ile gelen MF kümesi: P1, P2 ve çıkış partileri (`asama-1/13`) |
 | Operatör aktarımı | Hakem kodunun tek değişme yolu: aşama ya da parti çıkışında pinli beyin SHA'sındaki `referee/` ağacının hash doğrulamalı kopyası; önyükleme hakemine dokunmaz (`25a`) |
 | Tohum dönemi | Tohumun (`spec/tohum`, `seed/`, `bootstrap/`) değişebildiği, özetin `seed_epochs[]`'inde adlı commit (`25` 10b) |
-| İnsan dokunuşu | Aktarımlar, tohum dönemleri, `stage-open`, dürüstlük anahtarı ve sert duruş kalkışlarının sayacı; `status.md` üst bloğunda |
+| İnsan dokunuşu | Aktarımlar, tohum dönemleri, `stage-open`, dürüstlük anahtarı, sahip istisnası (`02`) ve sert duruş kalkışlarının sayacı; `status.md` üst bloğunda |
 | Kopya hedef | Gerçek hedefin açık, çatal olmayan, Actions'ı kapalı kopyası; `main`'i yalnız operatörün aynalama işi ilerletir (`25` 10a) |
 | Kırmızı kontrol | Her `koş` işinde koşan bilinen kötü aday; kırmızı çıkmazsa o koşunun hiçbir sonucu sayılmaz |
 | Yazma modu, eğitim modu | Hedefe PR ve merge yapılabilen bağlanma; yapılamayan, yalnız okuyan ve deneyen bağlanma (`21`) |

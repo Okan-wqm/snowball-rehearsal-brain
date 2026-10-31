@@ -43,7 +43,9 @@ ilk satırın `prev_hash`'i 64 sıfırdır. Uygulama tohum vektörleri V1–V3'�
 - **Satırları yalnız hakem yazar.** Oyuncunun önerdiği her satır `trust: inferred` olarak saklanır;
   hakem kendi ölçümünden yazmadıkça hiçbir oyuncu iddiası durum olmaz. Hakemin `yaz` işi döngü
   başına `brain/state`'e tek commit atar (`08`, `26a`). Kurucu'nun `founder-ledger.jsonl`'ı beyin
-  reposundadır, aynı zincir kuralına uyar ve hiçbir kapı kararına girmez.
+  reposundadır ve aynı zincir kuralına uyar. İçeriği hiçbir kapı kararına girmez; yapısını (zincir, yalnız
+  ekleme, `26`'nın `founder` satırı) önyükleme hakemi yargıladığı her push'ta ve çıkışta denetler
+  (`asama-0/10` #kurucu-defteri).
 - **Kök ve dış günlük.** Her döngü sonunda tüm bölümlerin son hash'lerinden bir kök hash türetilir,
   `chain/root.jsonl`'a eklenir ve `rekor.anchor` ile Sigstore Rekor'a yazılır. Kök kaydı hakem
   ağacı hash'ini, kabul edilmiş beyin SHA'sını, koltuk özetlerini, tohum hash'ini ve anayasal
@@ -60,3 +62,12 @@ ilk satırın `prev_hash`'i 64 sıfırdır. Uygulama tohum vektörleri V1–V3'�
 - **Silme yoktur, emeklilik vardır.** Hiçbir organ tanımı, bulgu, ders ya da puan zincirden
   silinmez; RETIRED, `withdrawn` ya da `superseded` satırıyla kapatılır. Eski satırlar değişmez
   blob olarak arşivlenir, hash'i zincirde kalır; arşivleme de bir satırdır.
+- **Kurucu defterinde kapatma** (emekliliğin Kurucu defterindeki karşılığı). Hakemin kabul ettiği ama
+  `26`'nın anlam kurallarından birini (`part`, `kind`, `supersedes`) bozan Kurucu satırı silinmez ve
+  değiştirilmez: sonraki geçerli bir Kurucu satırı `supersedes` alanında onun `row_hash`'ini taşıyarak onu
+  kapatır. `supersedes` başka bir satırı (geçerli, bilinmeyen ya da sonraki) adlandıran satır geçersizdir.
+  Yalnız kabul edilmiş satır kapanır; bir push'un eklediği bozuk satır, ardından kapatılsa da reddedilir.
+  Bayt, JSON ve zincir kırığı (`prev_hash`, `row_hash`) kapanmaz: kurcalama kanıtıdır, operatörün işidir ve
+  Kurucu'ya sayılmaz. Kapatan satır çıkış isteğiyle birlikte de gelebilir; çıkış kapanan her satırı onu
+  kapatanın yanında imzalı sonuca yazar. Kapatılmamış anlam kırığı çıkışı kapalı tutar ve Kurucu'nundur
+  (`29b` "Ret hafızası").

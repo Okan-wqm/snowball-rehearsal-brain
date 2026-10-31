@@ -6,8 +6,8 @@ Okunma: Aşama 0'ın MF9 ve MF10'unu yazarken; bu grupların komutu, girdisi ya 
 
 ---
 
-`29h`'nin devamıdır (`root`, `flaky`, `cause`: `29j`); kuralları `29f` ve `29g`'ninkidir, beklenen değerler burada yok
-(`29a`). Üretimde dış dünyaya dokunan mekanizma vektörde fikstür bir taklittir (`asama-0/14` Kum).
+`29h`'nin devamıdır (`root`, `flaky`, `cause`: `29j`); kuralları `29f`, `29g` ve `29k`'ninkidir, beklenen değerler
+burada yok (`29a`). Üretimde dış dünyaya dokunan mekanizma vektörde fikstür bir taklittir (`asama-0/14` Kum).
 
 ## `refs` (MF9, `target/write.py`)
 

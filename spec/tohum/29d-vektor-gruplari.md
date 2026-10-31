@@ -22,17 +22,17 @@ Hakem stdout'un son satırını okur ve yalnız `expect`'in adlandırdığı ala
 komutundur. Değerler JSON olarak karşılaştırılır: `true` `1` değildir, `1` `1.0` değildir. `changed` aynı
 alanları vermeli ve `expect_not`'u vermemelidir; cevap vermeyen ya da alanı eksik bırakan da kırmızıdır.
 `chain`, P1'in ve provanın grupları kendi yargıçlarıyla koşar (`29a`, `29c`). `secrets`'tan `diffguard`'a
-grupların komutları, girdileri, çıktı alanları ve vakaları `29f` ve `29g`'dedir.
+grupların komutları, girdileri, çıktı alanları ve vakaları `29f`, `29g` ve `29k`'dedir.
 
 | Grup | MF | Bağladığı |
 |---|---|---|
 | `chain` | 1, 10 | V1–V3 (`29a`); `hash`, `verify --previous` |
 | `secrets` | 2 | diff, defter satırı ve promptta gömülü sahte sır yakalanır; temiz girdi geçer |
 | `contained` | 3 | üretilen `docker run` argv'si zorunlu bayrakları (`--network none`, `--cap-drop ALL`, `--read-only`, kullanıcı) taşır, yasaklıları taşımaz |
-| `profile` | 4 | fikstür ağaçlarda diller, birim adayları, güvenlik ve hariç yollar; ajan yapılandırması büyük-küçük harf duyarsız hariç; daraltan öneri ret |
-| `npmlock` | 5 | `integrity` eşleşmesi; bir baytı değişmiş tarball, izinsiz `resolved`, git ve dosya bağımlılığı ret |
+| `profile` | 4 | fikstür ağaçlarda diller, birim adayları, güvenlik ve hariç yollar; ajan yapılandırması büyük-küçük harf duyarsız hariç; yalnız genişleten öneri kabul, daraltan ret |
+| `npmlock` | 5 | `integrity` eşleşmesi; bir baytı değişmiş tarball, izinsiz `resolved`, git ve dosya bağımlılığı ret; kurulum betiği kilit yolu ya da `ad@sürüm` ile işaretlenir, çıplak ad isteği kullanılamaz yapar |
 | `recipe` | 6 | statik tarif denetimi: imaj `@sha256`, `inputs`, komutlar, sınırların `operating{}` anahtarları |
-| `diffguard` | 7 | `asama-0/08` madde 1'in her ret nedeni |
+| `diffguard` | 7 | `asama-0/08` madde 1'in her ret nedeni; diff'in `brain/integration` başına uygulanması hariç: o `gate.check`'in (MF8) işidir |
 | `k0map` | 8 | eşlenmiş satır kuralı (`asama-0/08`) ve madde 3–8'in kararları, fikstür `koş` çıktılarıyla; arayüz `29h` |
 | `refs` | 9 | yazılan her ref `refs/heads/brain/` altında; `main`'e ve `brain/` dışına yazma ret; geri alma ağacı ilk ebeveynin ağacı; arayüz `29i` |
 | `append` | 10 | devir başına tek commit; yazımdan önce `verify --previous`; arayüz `29i` |

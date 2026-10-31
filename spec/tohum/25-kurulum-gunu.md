@@ -26,7 +26,7 @@ olmayan hiçbir şey sonradan insandan istenmez. Ön şart: tohumla gelen önyü
 | 10 | Oyuncak hedef: boş, herkese açık bir repo aç; içeriği Aşama 0 çıkışında aktarılır (`25a`) | Döngünün ilk koştuğu hedef; geri alma provası burada |
 | 10a | **Kopya hedef.** Gerçek hedefin yalnız `main`'ini yeni, açık, çatal olmayan bir repoya it; **Actions kopyada tamamen kapalı** (hedefin sır kullanan iş akışları koşmaz); `main` güncellemesi yalnız operatör rolüne açık. **Aynalama:** operatörün ayrı bir işi, yalnız kopyanın içeriğine yazan ince taneli belirteçle orijinalin `main`'ini hızlı ileri sarar, `brain/*`'a dokunmaz, ileri sarılamazsa durur; (B) PASS olana kadar duraklatılır (`base_sha` sabit), sonra günde bir. Özete `targets[]` (`26c`): kimlik, repo, tür, `base_sha`, `identifiers`, `excluded_paths` (hedefin ajan yapılandırması ve kapsam dışı paketler; beyin listeyi yalnız genişletebilir), `unit_candidates` (kopyanın aday birim yolları, sırayla; ölçütler `asama-0/08`) | Aşama 0'ın iki hedefi ve birimi veri olarak adlı olsun; insan düzeltmeleri kopyaya aksın |
 | 10b | **Tohum dönemi.** Özetin `seed_epochs[]`'ine `{commit, spec_tohum_sha256, seed_sha256, bootstrap_sha256}` satırı. Runbook: `snowball-mcp` `main`'i yeşil → kill switch aç → aynı commit'ten `bootstrap/`, `vectors/`, `seats/`'i hakem reposuna kopyala → döneme satır ekle → aynı `spec/tohum` ve `seed/`'i beyin `main`'ine tek commit'le it → kill switch kapat → dokunuş satırı. İlk dönem kurulumdadır | Tohum güncellemesi Kurucu'nun ihlali sayılmasın (`seed_update`, `29b`) |
-| 10c | **Dürüstlük ekimi.** Kurucu başlamadan, Kurucu olmayan bir ajanla imkânsız vektörü ve bal küpünü ek; anahtarı hiçbir açık metne yazma, `sha256(canonical(anahtar))`'ı özete `honesty_commitment` olarak yaz (`asama-0/10`) | Kurucu'nun dürüstlüğü ölçülsün |
+| 10c | **Dürüstlük ekimi.** Kurucu başlamadan, Kurucu olmayan bir ajanla imkânsız vektörü ve bal küpünü ek; anahtarı hiçbir açık metne yazma, `sha256(canonical(anahtar))`'ı özete `honesty_commitment` olarak yaz (`asama-0/10`). Ekim kaçırıldıysa yalnız sahibin adlı istisnası (`honesty_exception`, `02` "Sahip istisnası") ve yanında taşıma hedefinin ekiminin `honesty_commitment`'ı | Kurucu'nun dürüstlüğü ölçülsün |
 | 11 | **İlk koşu ve Kurucu.** Özete ilk koşu işaretini koy, önyükleme hakemini bir kez tetikle, imzalı başlangıç durumunu doğrula, işareti kaldır; sonra Kurucu'yu başlatıcıyla başlat: kapsülde ya da ayrı Windows kullanıcısında, çalışma dizini beyin reposu, hedef salt okunur klon (`24a`) | Aşama 0 inşası |
 
 **Actions dakikası hesabı.** Açık repoda standart koşucu dakikası ücretsizdir; `monthly_cap_ci_minutes`
@@ -62,4 +62,6 @@ ve izinleri, iş akışı varsayılan izni, vektör ve koltuk hash'leri, anayasa
 reposuna yazılır. Önyükleme hakemi her imzalı sonuca `setup/summary.json`'un, `vectors/`'ün, `seats/`'in
 ve anayasal `policy.json`'un hash'lerini yazar (böylece Rekor'a girerler); vektör ya da koltuk hash'i
 özetle uyuşmazsa durur. Hash'ler git blob'ları üzerinden hesaplanır, satır sonundan bağımsızdır. Aşama 0
-bu özet olmadan başlamaz.
+bu özet olmadan başlamaz: önyükleme hakemi ilk durumunu, özet kopya hedefin `identifiers`'ını taşıyan `targets[]`'ı
+(10a) ve `honesty_commitment`'ı (10c; sahibin istisnası varsa taşıma hedefinin ekimi) adlandırmadıkça kurmaz, durum
+kaybolunca da; var olan durum buna tabi değildir.

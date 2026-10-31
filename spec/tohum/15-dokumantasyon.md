@@ -13,7 +13,9 @@ Okunma: her sayfa yazarken, her döngüde doküman üretilirken ve her K8 işind
    çözülmeyen sayfa bayattır ve bir kapıyı kırmızıya boyar. Tek istisna: `taslak` ya da
    `hedef taslak` sayfada "beklemede: aşama N" çapası; aşama N PASS alınca çözülmelidir.
 4. **Üretilebilen sayfa üretilir.** Defterden türetilebilen her şey elle yazılmaz; her döngüde
-   yeniden üretilir. Üretilmiş sayfa elle düzenlenemez; düzenleme zincir kırığıdır.
+   yeniden üretilir. Üretilmiş sayfa elle düzenlenemez; düzenleme zincir kırığıdır. Hedefin ve
+   sistemin kendi kodunun haritası (neyin neye bağlı olduğu, `13`) insanın okuyacağı bir çizim
+   olarak da üretilir ve ilgili kod değişince yeniden üretilir; bayat çizim bayat sayfadır (E301).
 5. **Dizin mekaniktir.** `INDEX.md` başlıklardan `docs.index` ile üretilir. Görev haritası elle
    yazılan ayrı bir sayfadır (`00b`).
 6. **Aşama spec'i sayfadır.** Her bölüm ayrı sayfa; özet sayfası ön koşulu, çıkış kapısını ve

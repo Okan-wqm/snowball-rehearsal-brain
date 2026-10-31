@@ -33,7 +33,7 @@ denetler; tutmazsa yazmaz ve sert durur:
 | `chain/*`, `ledger.jsonl` | Yalnız ekleme: önceki satırlar bayt düzeyinde aynı, yeni satırlar zincire bağlı, kök Rekor'da |
 | `cases/` | Yalnız ekleme; `provenance` zorunlu; dev vakası silinmez, `withdrawn` satırıyla kapanır |
 | `policy.json` | Anayasal bölümü yalnız operatör, hakem reposunda yazar; buradaki kopyanın hash'i onunla aynı. Performans bölümü yalnız `18`'deki prosedürle ve dev arşivi yeniden oynatma raporuyla |
-| `profile.json` | Hakem profili hedeften yeniden türetir (`profile.derive`); oyuncunun önerisi türetmeden farklıysa reddedilir: `banned_constructs` silme, `registry_egress` genişletme, güvenlik yolu, hariç dizin ve test yolu daralması dahil |
+| `profile.json` | Hakem profili hedeften yeniden türetir (`profile.derive`); oyuncunun önerisi türetmeyi yalnız genişletebilir (güvenlik yollarına ve hariç dizinlere eklemek, `14`), başka her farkta reddedilir: `banned_constructs` silme, `registry_egress` genişletme, güvenlik yolu, hariç dizin ve test yolu daralması dahil |
 | `docs/`, `status.md` | Yalnız `docs.render` çıktısı ve hakemin `status.block` bloğu; elle düzenleme ret |
 
 **`brain/integration` kuralları.** Ruleset: `deletion`, `non_fast_forward`, `pull_request`, zorunlu
