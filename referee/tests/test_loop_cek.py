@@ -14,10 +14,14 @@
   read by ``loop.fetch.heads`` (the fake ``git``'s ``ls-remote`` answer), ``brain/state``'s head and its parent
   fetched into their own git directories and verified (``loop.state``'s rules are ``test_loop_state.py``'s; here a
   genesis head without parent, a rewritten ledger, a missing file and a merge head are ``state_refused`` before the
-  target is fetched, a state commit the fetch did not bring is unusable), ``brain/integration``'s head fetched and
-  ``loop.cek.assemble`` run on both repositories' objects, then MF4's judgement of the read-back artifact: agreeing
-  hashes and a recipe the check accepts end ``cycle_not_wired`` with ``accepted``, ``heads``, ``state``,
-  ``assembled`` and ``profile``, the artifact in the job's work directory (``loop.pulled.read`` takes it) and none in ``out/pulled``;
+  target is fetched, a state commit the fetch did not bring is unusable), then MF11's verify of the head's root
+  with a fake Rekor (``FakeRekor``; ``loop.rekor``'s own rules are ``test_rekor.py``'s) and the same fake verifier:
+  the root row anchoring the head's ledger and its entry verified against ``loop.yml``'s identity; a ledger row no
+  root anchors, no entry, another root's entry, an entry the verifier refuses and a last root row without a root
+  are ``root_refused`` before the target is fetched, Rekor unreadable is unusable; ``brain/integration``'s head
+  fetched and ``loop.cek.assemble`` run on both repositories' objects, then MF4's judgement of the read-back
+  artifact: agreeing hashes and a recipe the check accepts end ``cycle_not_wired`` with ``accepted``, ``heads``,
+  ``state``, ``root``, ``assembled`` and ``profile``, the artifact in the job's work directory (``loop.pulled.read`` takes it) and none in ``out/pulled``;
   a different or refused ``referee/``, a broken import, an unknown target or one without a safe ``repo``, a missing
   head, what ``assemble`` refuses, a ``units`` that is not exactly one recipe, a recipe the derivation of the
   assembled tree refuses (no eligible candidate, a path that is none, an input excluded by the agent-configuration
@@ -45,6 +49,10 @@ from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from loop import treehash as T  # noqa: E402
 import git_store as S  # noqa: E402
+from ledger import anchor as AN  # noqa: E402
+from loop import accepted as A  # noqa: E402
+from loop import rekor as RK  # noqa: E402
+from test_rekor import entry_for  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, operating, recipe  # noqa: E402
 import test_loop_kos as LK  # noqa: E402
@@ -245,6 +253,19 @@ class EndToEnd(LK.Base):
                          ("reject", ["tests_red"]))
 
 
+class FakeRekor:
+    """``entry(uuid)`` from ``entries``, recording each uuid asked for."""
+
+    def __init__(self) -> None:
+        self.entries: dict = {}
+        self.calls: list = []
+        self.last: dict = {}  # a state commit -> the uuid of its last root row (the tests' bookkeeping)
+
+    def entry(self, uuid):
+        self.calls.append(uuid)
+        return self.entries.get(uuid)
+
+
 class CekJob(unittest.TestCase):
     """``loop.job run cek`` up to the assembled ``pulled``: D1's accepted-SHA check, the target's heads, its fetch."""
 
@@ -253,6 +274,7 @@ class CekJob(unittest.TestCase):
                  **{"candidates/t1/good/%s" % f: d for f, d in candidate(GOOD).items()})
     TARGET = {p: (json.dumps(v) if isinstance(v, dict) else v).encode() for p, v in TREE.items()}
     STATE = {"ledger.jsonl": [2, 5], "chain/root.jsonl": [1, 2]}  # rows at genesis, at the head on top of it
+    ANCHORED = (2, 5, 8)  # root row i anchors the first ANCHORED[i] ledger rows (so genesis's and the head's agree)
 
     def setUp(self) -> None:
         import test_accepted as TA
@@ -268,15 +290,33 @@ class CekJob(unittest.TestCase):
                                      "unit_candidates": []}]}
         with open(os.path.join(self.work, "policy.json"), "wb") as fh:
             fh.write(POLICY)
+        self.setUp_state()
+
+    def setUp_state(self) -> None:
         self.state_objects: dict = {}
+        self.rekor = FakeRekor()
         self.state_genesis = self.state_commit({p: n[0] for p, n in self.STATE.items()}, ())
         self.state_head = self.state_commit({p: n[1] for p, n in self.STATE.items()}, (self.state_genesis,))
 
     def state_commit(self, counts: dict, parents: tuple, extra: dict | None = None) -> str:
-        """A ``brain/state`` commit whose chained files hold ``counts`` rows (``loop.state``'s rules)."""
-        content = {p: self.TA.chained([{"row_id": "%s%d" % (p, i), "part": "p"} for i in range(n)])
-                   for p, n in counts.items()}
-        return S.store(dict(content, **(extra or {})), parents, self.state_objects)[1]
+        """A ``brain/state`` commit whose chained files hold ``counts`` rows (``loop.state``'s rules); root row ``i``
+        anchors the ledger's first ``ANCHORED[i]`` rows, its entry in the fake Rekor (``ledger.anchor``'s rules)."""
+        ledger = [{"row_id": "l%d" % i, "part": "p"} for i in range(max(self.ANCHORED))]
+        content = {}
+        if "ledger.jsonl" in counts:
+            content["ledger.jsonl"] = self.TA.chained(ledger[:counts["ledger.jsonl"]])
+        if "chain/root.jsonl" in counts:
+            roots = b""
+            for i in range(counts["chain/root.jsonl"]):
+                root = AN.root_of(AN.tips(self.TA.chained(ledger[:self.ANCHORED[i]])))
+                uuid, entry = entry_for(RK.payload_digest(root))
+                self.rekor.entries[uuid] = entry
+                roots = AN.root_row(roots, "r%d" % i, "2026-11-01T00:00:00Z", root, uuid)
+            content["chain/root.jsonl"] = roots
+        commit = S.store(dict(content, **(extra or {})), parents, self.state_objects)[1]
+        if "chain/root.jsonl" in counts:
+            self.rekor.last[commit] = uuid
+        return commit
 
     def listing(self, integration: str | None, state: str | None = "head") -> bytes:
         state = self.state_head if state == "head" else state
@@ -284,7 +324,7 @@ class CekJob(unittest.TestCase):
         return b"".join(b"%s\t%s\n" % (sha.encode(), ref.encode()) for sha, ref in rows if sha)
 
     def run_cek(self, brain=None, imported=None, verifier=None, exits=None, env=None, http=None, listing=None,
-                target=None, summary=None):
+                target=None, summary=None, rekor=None):
         objects, commit = S.store(self.BRAIN if brain is None else brain)
         tobjects, self.target_commit = S.store(self.TARGET)
         if target is not None:
@@ -310,8 +350,9 @@ class CekJob(unittest.TestCase):
         def verify(argv):
             self.verified.append(argv)
             return 0
+        self.rekor.calls = []
         out = J.run("cek", {k: v for k, v in environ.items() if v is not None}, http=api,
-                    verifier=verifier or verify, git=git)
+                    verifier=verifier or verify, git=git, rekor=rekor or self.rekor)
         self.assertFalse(os.path.lexists(os.path.join(self.temp, "out", "pulled")))  # nothing for the upload step
         return out, commit, tree
 
@@ -324,7 +365,8 @@ class CekJob(unittest.TestCase):
         out, commit, tree = self.run_cek()
         self.assertEqual(out["reason"], "cycle_not_wired")
         self.assertEqual((out["ok"], out["checked"]),
-                         (False, ["accepted_sha", "referee_tree", "heads", "state_previous", "assembled", "profile"]))
+                         (False, ["accepted_sha", "referee_tree", "heads", "state_previous", "root", "assembled",
+                                  "profile"]))
         self.assertEqual(out["state"], {"head": self.state_head, "previous": self.state_genesis,
                                         "rows": {"ledger.jsonl": 5, "chain/root.jsonl": 2}})
         self.assertEqual(out["profile"], {"unit_id": "pkg"})
@@ -332,6 +374,14 @@ class CekJob(unittest.TestCase):
         self.assertEqual(out["accepted"]["referee_tree_sha256"], tree)
         self.assertEqual(out["accepted"]["artifact_id"], 11)
         self.assertIn("https://github.com/o/referee/.github/workflows/bootstrap.yml@refs/heads/main", self.verified[0])
+        # MF11: the head's root (its ledger's, the last root row's) and its Rekor entry, verified against loop.yml
+        root = AN.root_of(AN.tips(self.TA.chained([{"row_id": "l%d" % i, "part": "p"} for i in range(5)])))
+        uuid = entry_for(RK.payload_digest(root))[0]
+        self.assertEqual((out["root"], self.rekor.calls), ({"root": root, "rekor_uuid": uuid}, [uuid]))
+        self.assertEqual(len(self.verified), 2)
+        self.assertEqual(self.verified[1], A.identity_argv(
+            "sigstore", self.verified[1][4], "https://github.com/o/referee/.github/workflows/loop.yml@refs/heads/main",
+            "sha256:" + RK.payload_digest(root)))
         argvs = [c["argv"] for c in S.calls(self.bin)]
         fetches = [a for a in argvs if "fetch" in a]
         self.assertEqual([(f[-2], f[-1]) for f in fetches],
@@ -431,6 +481,50 @@ class CekJob(unittest.TestCase):
                 self.assertNotIn("checked", out)
                 self.assertFalse(self.target_fetched())
                 self.assertEqual(self.assembled(), [])
+
+    def test_a_root_that_does_not_verify_is_a_refusal_before_the_target_is_fetched(self):
+        def last_uuid():
+            return self.rekor.last[self.state_head]
+
+        def other_entry():
+            self.rekor.entries[last_uuid()] = entry_for(RK.payload_digest("2" * 64))[1]
+
+        def refuse_root(argv):
+            return 1 if argv[-1].startswith("sha256:") else 0
+        for name, head, setup, kw, reasons in (
+                # the ledger has a row the last root does not anchor: one more commit than the last cycle wrote
+                ("unanchored row", lambda: self.state_commit({"ledger.jsonl": 6, "chain/root.jsonl": 2},
+                                                             (self.state_genesis,)), None, {}, ["root_mismatch"]),
+                ("no entry", None, lambda: self.rekor.entries.pop(last_uuid()), {}, ["entry_missing"]),
+                ("another root's entry", None, other_entry, {}, ["entry_root_mismatch"]),
+                ("unverified", None, None, {"verifier": refuse_root}, ["entry_unverified"]),
+                ("no root in the last row", lambda: self.state_commit(
+                    {"ledger.jsonl": 2}, (), {"chain/root.jsonl": self.TA.chained([{"row_id": "r0", "part": "p"}])}),
+                 None, {}, ["root_unreadable"])):
+            with self.subTest(name):
+                shutil.rmtree(self.temp)
+                os.makedirs(self.temp)
+                if os.path.exists(os.path.join(self.bin, "calls.jsonl")):
+                    os.remove(os.path.join(self.bin, "calls.jsonl"))
+                self.setUp_state()
+                if head:
+                    self.state_head = head()
+                if setup:
+                    setup()
+                out, _, _ = self.run_cek(**kw)
+                self.assertEqual((out["ok"], out["reason"], out["reasons"]), (False, "root_refused", reasons))
+                self.assertEqual(out["heads"]["brain/state"], self.state_head)
+                self.assertEqual(out["state"]["head"], self.state_head)  # the state verified, its root not
+                self.assertNotIn("checked", out)
+                self.assertFalse(self.target_fetched())
+                self.assertEqual(self.assembled(), [])
+
+    def test_rekor_unreadable_is_no_verdict(self):
+        class Down:
+            def entry(self, uuid):
+                raise RK.RekorError("rekor unreadable: URLError")
+        with self.assertRaisesRegex(J.Unusable, "rekor unreadable"):
+            self.run_cek(rekor=Down())
 
     def test_a_state_commit_the_fetch_did_not_bring_is_no_verdict(self):
         everything = dict(self.state_objects)

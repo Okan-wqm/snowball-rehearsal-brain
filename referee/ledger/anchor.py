@@ -21,7 +21,8 @@ chain break or a root that cannot be written to Rekor is a hard stop), tohum/26 
   judged); ``entry_root_mismatch`` (the entry's ``hash`` is not the recorded root); ``identity_mismatch`` (the
   entry's ``identity`` is not the pin). Valid only with no reason. Not judged here: the chain of
   ``chain/root.jsonl`` itself (``ledger.chain verify`` reads it, tohum/27a) and how the entries were fetched
-  from Rekor.
+  from Rekor. The order and the root rule are ``judge``'s, which the next cycle's D1 calls with the entry it reads
+  from Rekor itself (``loop.rekor``: there the entry's hash and identity are judged by ``sigstore``).
 - **The cycle** (``anchor_cycle``, calls 10 -> 11): ``chain/root.jsonl`` is checked as an append-only valid chain
   of its previous version, then ``ledger.append.plan_cycle`` (which checks the ledger before it reads the
   request), then the root of the new ledger is signed, then one chained root row ``{row_id, ts, root,
@@ -157,24 +158,31 @@ def _entries(rekor: Any) -> dict:
     return entries
 
 
+def judge(ledger: bytes, roots: bytes, entry_reasons: Callable[[str, str], list[str] | None]) -> dict:
+    """The root check with the Rekor entry judged by ``entry_reasons(rekor_uuid, recorded_root)``: ``None`` when
+    there is no entry under the uuid, else the entry's reasons in order. ``verify`` gives it the recorded entries;
+    the next cycle's D1 (``loop.rekor``) gives it the entry read from Rekor. Returns ``{valid, reasons, root,
+    rekor_uuid}`` (the last root row's)."""
+    current = root_of(tips(ledger))
+    last = _last_root_row(roots)
+    reasons = ["root_mismatch"] if current != last["root"] else []
+    found = entry_reasons(last["rekor_uuid"], last["root"])
+    reasons += ["entry_missing"] if found is None else found
+    return {"valid": not reasons, "reasons": reasons, "root": last["root"], "rekor_uuid": last["rekor_uuid"]}
+
+
 def verify(ledger: bytes, roots: bytes, rekor: Any, pin: str) -> dict:
     if not isinstance(pin, str) or not pin:
         raise Unusable("identity pin must be a non-empty string")
-    current = root_of(tips(ledger))
-    last = _last_root_row(roots)
-    entries = _entries(rekor)
-    reasons = []
-    if current != last["root"]:
-        reasons.append("root_mismatch")
-    entry = entries.get(last["rekor_uuid"])
-    if entry is None:
-        reasons.append("entry_missing")
-    else:
-        if entry["hash"] != last["root"]:
-            reasons.append("entry_root_mismatch")
-        if entry["identity"] != pin:
-            reasons.append("identity_mismatch")
-    return {"valid": not reasons, "reasons": reasons}
+
+    def recorded(uuid: str, root: str) -> list[str] | None:
+        entry = _entries(rekor).get(uuid)
+        if entry is None:
+            return None
+        return [reason for reason, wrong in (("entry_root_mismatch", entry["hash"] != root),
+                                             ("identity_mismatch", entry["identity"] != pin)) if wrong]
+    found = judge(ledger, roots, recorded)
+    return {"valid": found["valid"], "reasons": found["reasons"]}
 
 
 # ---------------------------------------------------------------- the cycle (calls 10 -> 11)

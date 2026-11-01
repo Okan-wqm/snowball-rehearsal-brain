@@ -91,20 +91,29 @@ refused tree is ``pulled_invalid``). Then:
   parent (the version the previous cycle verified and extended), when it has one, into
   ``cek-*/state-previous.git``, and ``ledger.jsonl`` and ``chain/root.jsonl`` each verified as a chain and as an
   append-only extension of the parent's (a genesis head without parent: as chains only); a refusal is
-  ``state_refused`` with ``loop.state``'s reasons and carries ``heads``. Then ``pulled_refused`` with
+  ``state_refused`` with ``loop.state``'s reasons and carries ``heads``. Then MF11's verify of the head's root,
+  still before the target is fetched: ``ledger.anchor.judge`` of the head's ``ledger.jsonl`` against the last row
+  of its ``chain/root.jsonl`` (``root_mismatch``: the ledger holds rows no signed root anchors, e.g. a commit pushed
+  on top of the last cycle's) and that row's Rekor entry, read from the public Rekor by ``loop.rekor.RekorHttp``
+  (``entry_missing``) and judged by ``loop.rekor.entry_reasons`` (``entry_root_mismatch``; ``entry_unverified``:
+  ``sigstore verify identity`` of the bundle made from the entry, with the same ``verifier`` as the bootstrap
+  state's, against ``loop.yml`` on ``$GITHUB_REPOSITORY``'s ``main``, ``loop.accepted.workflow_identity``); a
+  refusal is ``root_refused`` with those reasons, or ``root_unreadable`` when the ledger or the last root row is
+  not of the form ``ledger.anchor`` reads, and carries ``heads`` and ``state``; Rekor unreadable, or an answer that
+  is not the entry asked for, is unusable. Then ``pulled_refused`` with
   ``assemble``'s reasons. Then MF4's judgement: the
   assembled artifact is read back as the other jobs read their download (``loop.pulled.read``, exactly one entry of
   ``units``, else ``units_not_one``; the tree extracted by ``loop.pulled.extract_tree`` into ``cek-*/tree``, a tree
   it refuses is ``pulled_invalid``) and the unit gets the static check ``getir`` runs
   (``profile.unit_verify.check_recipe`` with the artifact's policy and ``targets[]`` entry: MF6's recipe rules and,
   on the tree, ``profile.derive check`` of the recipe against the referee's own derivation of that tree; a reason
-  is ``recipe_refused`` with the reasons). A refusal after the assembly carries ``heads``, ``state`` and
-  ``assembled``. When all of it holds, the line has ``accepted`` (``brain_sha``, ``referee_tree_sha256``,
+  is ``recipe_refused`` with the reasons). A refusal after the assembly carries ``heads``, ``state``, ``root``
+  and ``assembled``. When all of it holds, the line has ``accepted`` (``brain_sha``, ``referee_tree_sha256``,
   ``result_sha256``, ``artifact_id``), ``heads`` (branch to commit), ``state`` (``head``, ``previous``, ``rows``),
-  ``assembled`` (``target``, ``commit``, ``candidates``), ``profile`` (``unit_id``) and ``checked``
-  ``CEK_CHECKED``, and the job still ends ``cycle_not_wired``, exit 1: the rest of D1 (MF11's root signature: the
-  ledger's root against the last root row and its Rekor entry, which says whether the head is the commit the last
-  cycle wrote) is not wired, so nothing is uploaded and in a real run ``kos`` is not reached. The proposal stage 0 judges is the recipe alone
+  ``root`` (``root``, ``rekor_uuid``), ``assembled`` (``target``, ``commit``, ``candidates``), ``profile``
+  (``unit_id``) and ``checked`` ``CEK_CHECKED``: every check of D1's row has run. The job still ends
+  ``cycle_not_wired``, exit 1: the artifact is not moved into ``out/pulled``, so nothing is uploaded and in a real
+  run ``kos`` is not reached. The proposal stage 0 judges is the recipe alone
   (tohum/14); no other profile field is proposed, so none is compared.
 - ``cagir`` stops at once with ``cycle_not_wired`` (exit 1). The D1-D8 composition inside the jobs (building each
   MF's input from the pulled trees and the previous artifacts, and the cycle's one ``brain/state`` commit) has no
@@ -137,12 +146,14 @@ import sys
 import tempfile
 from typing import Any, NamedTuple
 
+from ledger import anchor as AN
 from loop import accepted as A
 from loop import cek as C
 from loop import decide as E
 from loop import fetch as F
 from loop import gitobj as G
 from loop import pulled as P
+from loop import rekor as RK
 from loop import state as ST
 from profile import derive as D
 from profile import unit_verify as U
@@ -222,7 +233,7 @@ JOBS: dict[str, Job] = {
 CEK_FILES = ("setup/imports.jsonl", "setup/summary.json", "policy.json")
 TARGET_REFS = {b: "refs/heads/" + b for b in (B.STATE, B.INTEGRATION)}
 # What cek's line lists as checked when D1 holds as far as it is wired.
-CEK_CHECKED = ("accepted_sha", "referee_tree", "heads", "state_previous", "assembled", "profile")
+CEK_CHECKED = ("accepted_sha", "referee_tree", "heads", "state_previous", "root", "assembled", "profile")
 
 SECRET_ENV = tuple(sorted({name for job in JOBS.values() for name in job.secrets} | {"GITHUB_TOKEN"}))
 
@@ -484,9 +495,11 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
-def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git: str = "git") -> dict[str, Any]:
+def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git: str = "git",
+           rekor: Any = None) -> dict[str, Any]:
     """D1 of ``cek`` as far as it is wired (see the module docstring): ``{reason?, reasons?, accepted?, heads?,
-    assembled?}``."""
+    state?, root?, assembled?, profile?}``. ``rekor`` reads Rekor entries (``entry(uuid)``; ``loop.rekor.RekorHttp``
+    when ``None``); ``verifier`` runs both Sigstore checks."""
     for name in ("GITHUB_REPOSITORY", "GITHUB_TOKEN", "GITHUB_WORKSPACE", "LOOP_BRAIN_REPO", "LOOP_TARGET"):
         if not environ.get(name):
             raise Unusable("cek: %s is not set" % name)
@@ -520,7 +533,12 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
         return _refused(exc.reasons)
     accepted = {"brain_sha": sha, "referee_tree_sha256": tree, "result_sha256": state["result_sha256"],
                 "artifact_id": state["artifact_id"]}
-    pulled = _cek_target(environ, files, brain_dir, sha, root, git)
+    try:
+        pin = A.workflow_identity(environ["GITHUB_REPOSITORY"], A.LOOP_WORKFLOW)
+    except A.StateError as exc:
+        raise Unusable("cek: %s" % cli.cause(exc)) from None
+    entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, verifier=verifier or A.run_verifier)
+    pulled = _cek_target(environ, files, brain_dir, sha, root, git, entries)
     return dict(pulled, accepted=accepted)
 
 
@@ -529,8 +547,9 @@ def _refused(reasons: list[str]) -> dict[str, Any]:
 
 
 def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str, brain_sha: str, root: str,
-                git: str) -> dict[str, Any]:
-    """The target half of D1 (see the module docstring): ``{reason?, reasons?, heads?, assembled?}``."""
+                git: str, entries: Any) -> dict[str, Any]:
+    """The target half of D1 (see the module docstring): ``{reason?, reasons?, heads?, state?, root?, assembled?,
+    profile?}``."""
     target_id = environ["LOOP_TARGET"]
     target, reasons = C.target_entry(files["setup/summary.json"], target_id)
     if reasons:
@@ -547,9 +566,12 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
     missing = ["head_missing:%s" % b for b, head in heads.items() if head is None]
     if missing:
         return dict(_refused(missing), heads=heads)
-    state = _cek_state(url, heads[B.STATE], root, git, environ)
+    state, chains = _cek_state(url, heads[B.STATE], root, git, environ)
     if "reason" in state:
         return dict(state, heads=heads)
+    anchored = _cek_root(chains, entries)
+    if "reason" in anchored:
+        return dict(anchored, heads=heads, state=state)
     target_dir = os.path.join(root, "target.git")
     commit = heads[B.INTEGRATION]
     try:
@@ -573,29 +595,44 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
     if not refused:
         refused = _extract(art, tree) or _recipe_refused(art, unit, tree, "cek")
     if refused:
-        return dict(refused, heads=heads, state=state, assembled=assembled)
-    return {"heads": heads, "state": state, "assembled": assembled, "profile": {"unit_id": unit["unit_id"]}}
+        return dict(refused, heads=heads, state=state, root=anchored, assembled=assembled)
+    return {"heads": heads, "state": state, "root": anchored, "assembled": assembled,
+            "profile": {"unit_id": unit["unit_id"]}}
 
 
-def _cek_state(url: str, head: str, root: str, git: str, environ: dict[str, str]) -> dict[str, Any]:
+def _cek_state(url: str, head: str, root: str, git: str,
+               environ: dict[str, str]) -> tuple[dict[str, Any], dict[str, bytes | None]]:
     """MF1's ``verify --previous`` of the target's ``brain/state`` (``loop.state``): its head fetched into
-    ``cek-*/state.git``, its parent, when it has one, into ``cek-*/state-previous.git``; ``loop.state.verify``'s
-    line or ``{reason: state_refused, reasons}``."""
+    ``cek-*/state.git``, its parent, when it has one, into ``cek-*/state-previous.git``; ``(loop.state.verify``'s
+    line or ``{reason: state_refused, reasons}``, the head's chained files)``."""
     dirs = [os.path.join(root, d) for d in ("state.git", "state-previous.git")]
     _fetch_state(dirs[0], url, head, git, environ)
     with G.GitBatch(dirs[0], git=git, environ=environ) as source:
         try:
             prev = ST.parent(source, head)
             if prev is None:
-                return ST.verify(source, head)
+                line = ST.verify(source, head)
+            else:
+                _fetch_state(dirs[1], url, prev, git, environ)
+                with G.GitBatch(dirs[1], git=git, environ=environ) as previous:
+                    line = ST.verify(source, head, previous, prev)
+            return line, ST.chains(source, head)
         except P.PulledError as exc:
-            return {"reason": "state_refused", "reasons": exc.reasons}
-        _fetch_state(dirs[1], url, prev, git, environ)
-        with G.GitBatch(dirs[1], git=git, environ=environ) as previous:
-            try:
-                return ST.verify(source, head, previous, prev)
-            except P.PulledError as exc:
-                return {"reason": "state_refused", "reasons": exc.reasons}
+            return {"reason": "state_refused", "reasons": exc.reasons}, {}
+
+
+def _cek_root(chains: dict[str, bytes | None], entries: Any) -> dict[str, Any]:
+    """MF11's verify of the root (``ledger.anchor.judge`` with the entry read from Rekor, ``loop.rekor``) on the
+    verified head's files: ``{root, rekor_uuid}`` or ``{reason: root_refused, reasons}``."""
+    try:
+        found = AN.judge(chains[B.STATE_LEDGER], chains[B.STATE_ROOTS], entries)
+    except AN.Unusable:
+        return {"reason": "root_refused", "reasons": ["root_unreadable"]}
+    except RK.RekorError as exc:
+        raise Unusable("cek: %s" % cli.cause(exc)) from None
+    if not found["valid"]:
+        return {"reason": "root_refused", "reasons": found["reasons"]}
+    return {"root": found["root"], "rekor_uuid": found["rekor_uuid"]}
 
 
 def _fetch_state(git_dir: str, url: str, sha: str, git: str, environ: dict[str, str]) -> None:
@@ -606,7 +643,8 @@ def _fetch_state(git_dir: str, url: str, sha: str, git: str, environ: dict[str, 
 
 
 def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None,
-        fetcher: Any = None, http: Any = None, verifier: Any = None, git: str = "git") -> dict[str, Any]:
+        fetcher: Any = None, http: Any = None, verifier: Any = None, git: str = "git",
+        rekor: Any = None) -> dict[str, Any]:
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
     job = JOBS[name]
@@ -616,7 +654,7 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         if present:
             return dict(result, reason="secret_in_code_job:%s" % present[0])
     if name == "cek":
-        d1 = cek_d1(environ, http, verifier, git)
+        d1 = cek_d1(environ, http, verifier, git, rekor)
         if "reason" in d1:
             return dict(result, **d1)
         return dict(result, reason="cycle_not_wired", checked=list(CEK_CHECKED),

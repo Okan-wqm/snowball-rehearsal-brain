@@ -651,9 +651,10 @@ NET_MODULES = {"urllib.request", "http.client", "socket", "ssl", "requests", "ht
 # The modules that may open a connection, each for one job (tohum/01a): ``yaz`` writes the target through
 # ``target.write``; ``getir`` reads registry tarballs through ``deps.fetch`` and sends nothing (no request body,
 # no method, no header: ``ReadOnlyFetch`` below); ``cek`` reads the bootstrap referee's state through the Actions API
-# with ``loop.accepted`` (GET only, no body: ``test_actions_read_is_get_only``).
+# with ``loop.accepted`` (GET only, no body: ``test_actions_read_is_get_only``) and the root's Rekor entry with
+# ``loop.rekor`` (GET only, no token: ``test_actions_read_is_get_only`` too).
 NET_ALLOWED = {os.path.join("target", "write.py"), os.path.join("runner", "deps_npm.py"),
-               os.path.join("loop", "accepted.py")}
+               os.path.join("loop", "accepted.py"), os.path.join("loop", "rekor.py")}
 # The modules that may name GitHub's hosts: the writer, and cek's reader (the API, the brain's URL, the bootstrap
 # workflow's certificate identity).
 GITHUB_NAMED = {os.path.join("target", "write.py"), os.path.join("loop", "accepted.py")}
@@ -716,6 +717,14 @@ class OneWay(unittest.TestCase):
                          ["loop/accepted.py: 'push'"])
         self.assertEqual(scan(os.path.join("loop", "job.py"), "U = 'https://github.com/%s'\n"),
                          ["loop/job.py: 'https://github.com/%s'"])
+        # loop.rekor: one Request of one argument, and no token, header or body anywhere in it
+        src = dict(referee_modules())[os.path.join("loop", "rekor.py")]
+        calls = [n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Call)
+                 and isinstance(n.func, ast.Attribute) and n.func.attr == "Request"]
+        self.assertEqual([(len(c.args), c.keywords) for c in calls], [(1, [])])
+        for word in ("add_data", "add_header", "add_unredirected_header", "Authorization", "headers="):
+            self.assertNotIn(word, src)
+        self.assertEqual(scan(os.path.join("loop", "rekor.py"), src), [])
 
     def test_read_only_fetch(self):
         """``deps.fetch`` opens a bare URL: no ``Request``, no ``data``/``method``/``headers`` anywhere."""

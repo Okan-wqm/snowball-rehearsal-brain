@@ -72,7 +72,9 @@ RESULT = "result.json"
 BUNDLE = "result.json.sigstore.json"
 MAX_FILE = 16 * 1024 * 1024
 ISSUER = "https://token.actions.githubusercontent.com"
-IDENTITY = "https://github.com/%s/.github/workflows/bootstrap.yml@refs/heads/main"
+IDENTITY = "https://github.com/%s/.github/workflows/%s@refs/heads/main"
+BOOTSTRAP_WORKFLOW = "bootstrap.yml"  # signs the bootstrap referee's state (tohum/29b)
+LOOP_WORKFLOW = "loop.yml"  # its ``yaz`` signs each cycle's root (tohum/01a: yaz holds the Sigstore OIDC identity)
 REPO = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}")
 SHA40 = re.compile(r"[0-9a-f]{40}")
 HEX64 = re.compile(r"[0-9a-f]{64}")
@@ -149,10 +151,21 @@ def unpack(data: bytes) -> tuple[bytes, bytes]:
     return files[RESULT], files[BUNDLE]
 
 
+def workflow_identity(repo: str, workflow: str) -> str:
+    """The certificate identity of ``workflow`` run on the repository ``repo``'s ``main`` (``repo_unsafe``)."""
+    return IDENTITY % (repo_name(repo), workflow)
+
+
+def identity_argv(sigstore: str, bundle: str, identity: str, artifact: str) -> list[str]:
+    """``sigstore verify identity`` of ``artifact`` (a path, or ``sha256:<hex>``) with ``bundle`` against
+    ``identity`` and GitHub Actions' issuer: the one form both of the loop's Sigstore checks run."""
+    return [sigstore, "verify", "identity", "--bundle", bundle, "--cert-identity", identity,
+            "--cert-oidc-issuer", ISSUER, artifact]
+
+
 def verify_argv(sigstore: str, repo: str, directory: str) -> list[str]:
-    return [sigstore, "verify", "identity", "--bundle", os.path.join(directory, BUNDLE),
-            "--cert-identity", IDENTITY % repo_name(repo), "--cert-oidc-issuer", ISSUER,
-            os.path.join(directory, RESULT)]
+    return identity_argv(sigstore, os.path.join(directory, BUNDLE), workflow_identity(repo, BOOTSTRAP_WORKFLOW),
+                         os.path.join(directory, RESULT))
 
 
 def run_verifier(argv: list[str]) -> int:

@@ -29,10 +29,9 @@ has no previous version: its files are verified as chains only. A head with more
 On success: ``{"head", "previous" (the parent or ``None``), "rows" (path -> its number of rows)}``.
 
 Out of scope, stated: whether the head is the commit the last cycle wrote and not one more pushed on top of it,
-which is the root's question (MF11's ``ledger.anchor.verify`` of the ledger's root against the last row of
-``chain/root.jsonl`` and its Rekor entry; not wired, the real Sigstore signer and its pins are asama-0/10a #kok);
-the other files of ``brain/state`` (``status.md``, ``profile.json``); the row payloads (``ledger.schema``'s);
-the reads themselves (the job's ``loop.fetch``). Both versions are held in memory.
+which is the root's question (MF11's ``ledger.anchor.judge`` of the ledger's root against the last row of
+``chain/root.jsonl`` and its Rekor entry, run by the job on ``chains``' bytes after ``verify``); the other files
+of ``brain/state`` (``status.md``, ``profile.json``); the row payloads (``ledger.schema``'s); the reads themselves (the job's ``loop.fetch``). Both versions are held in memory.
 """
 
 from __future__ import annotations
@@ -59,6 +58,12 @@ def parent(source: G.Source, head: str) -> str | None:
 def _file(source: G.Source, commit: str, path: str) -> bytes | None:
     found = G.lookup(source, commit, path)
     return G.read(source, found[1], "blob") if found is not None and found[0] == "file" else None
+
+
+def chains(source: G.Source, commit: str) -> dict[str, bytes | None]:
+    """``commit``'s chained files (``STATE_CHAINS``), each its bytes or ``None`` where no file entry is; ``PulledError``
+    for a git object reason, unmarked. Read by ``verify`` and by D1's root check (``loop.job``)."""
+    return {path: _file(source, commit, path) for path in branches.STATE_CHAINS}
 
 
 def verify(source: G.Source, head: str, previous: G.Source | None = None, prev: str | None = None) -> dict[str, Any]:
