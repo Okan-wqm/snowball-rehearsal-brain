@@ -165,9 +165,9 @@
    ]
   },
   {
-   "id": "job_red_not_passed",
+   "id": "job_end_not_passed",
    "file": "loop/job.py",
-   "old": "d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, red)",
+   "old": "d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, end)",
    "new": "d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, None)",
    "tests": [
     "test_loop_write.py"

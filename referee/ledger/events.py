@@ -2,13 +2,14 @@
 ``yaz``).
 
 Rules: tohum/26 (the ledger row; ``cause`` from its closed set on a failed or reverted event: a reject, a revert),
-``ledger.schema`` (``events`` ``cycle_start``, ``ratchet_base``, ``decision`` and ``revert``: the shapes these rows
+``ledger.schema`` (``events`` ``cycle_start``, ``ratchet_base``, ``decision``, ``revert`` and ``sentinel``: the shapes these rows
 must have; ``ledger.cycle`` checks them before anything is signed), asama-0/08 (a reject's reasons).
 
 ``row(cycle, suffix, kind, payload, cause)``: ``row_id`` ``<cycle_id>:<suffix>``, ``ts`` and ``snapshot_id`` the
 cycle's, ``part`` ``events``, ``derivation`` ``tool``, ``trust`` ``verified``, no evidence refs; ``cause`` only when
 given. ``ratchet_base(cycle, base_run_sha256, counts)`` (row suffix ``ratchet``) and ``revert(cycle, merge_sha,
-cause)`` (suffix ``revert``, with the cause). ``decision(cycle, cid, reasons, merged)``: a reject (``{decision:
+cause)`` (suffix ``revert``, with the cause), ``sentinel(cycle, merge_sha, verdict, flaky, sentinel_sha256)`` (suffix
+``sentinel``, no cause). ``decision(cycle, cid, reasons, merged)``: a reject (``{decision:
 reject, candidate, reasons}``, row suffix ``c:<cid>``) with ``cause(reasons)``, or a merge (``{decision: merge,
 candidate, path, pull, head_sha, merge_sha}`` from ``merged``, ``target.land``'s answer and the path) without cause.
 
@@ -70,6 +71,13 @@ def revert(cycle: dict, merge_sha: str, cause: str) -> dict:
     """D7's revert of ``merge_sha`` with ``gate.revert``'s cause: the row that finishes its sentinel
     (``ledger.serial``)."""
     return row(cycle, "revert", "revert", {"merge_sha": merge_sha}, cause)
+
+
+def sentinel(cycle: dict, merge_sha: str, verdict: str, flaky: list[str], sentinel_sha256: str) -> dict:
+    """D7's end of a green or flaky sentinel of ``merge_sha`` (``loop.watch.read``'s verdict, ``sentinel.json``'s
+    hash): the row that finishes its sentinel without a revert (``ledger.serial``)."""
+    return row(cycle, "sentinel", "sentinel", {"merge_sha": merge_sha, "verdict": verdict, "flaky": flaky,
+                                               "sentinel_sha256": sentinel_sha256})
 
 
 def decision(cycle: dict, cid: str, reasons: list[str], merged: Any = None) -> dict:

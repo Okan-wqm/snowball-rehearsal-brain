@@ -2,9 +2,11 @@
 written by ``ledger.append`` (the cycle's writer) with rows of ``ledger.schema``.
 
 - no merge (a genesis without a ready candidate): nothing unfinished; a reject is no merge;
-- a gate merge and a planted drill merge are unfinished until a later revert names them; order is file order;
+- a gate merge and a planted drill merge are unfinished until a later revert or sentinel end row (green or flaky,
+  seed-043's draft) names them; order is file order;
 - a ledger that is not a chain, or holds a row of no known type or of a wrong shape, answers nothing (``Unusable``);
-- a revert of no earlier merge (also one written before its merge) and the same SHA merged twice answer nothing;
+- a revert or end row of no earlier merge (also one written before its merge), a second finisher of one merge (a
+  revert after an end, two ends) and the same SHA merged twice answer nothing;
 - the reasons are all collected;
 - ``lint_before``: the merge's own cycle's last ratchet base before it; none for another cycle's, a later one, a
   merge without a cycle start or a planted merge; a SHA no merge row names and an unreadable ledger answer nothing.
@@ -32,6 +34,11 @@ def merge(row_id: str, sha: str) -> dict:
                                               "pull": 1, "head_sha": "f" * 40, "merge_sha": sha})
 
 
+def ended(row_id: str, sha: str, verdict: str = "green") -> dict:
+    return row(row_id, "events", "sentinel", {"merge_sha": sha, "verdict": verdict,
+                                              "flaky": ["a"] if verdict == "flaky" else [], "sentinel_sha256": "d" * 64})
+
+
 def reject(row_id: str) -> dict:
     return row(row_id, "events", "decision", {"decision": "reject", "candidate": row_id, "reasons": ["tests_red"]},
                "test_regression")
@@ -53,6 +60,14 @@ class Unfinished(unittest.TestCase):
     def test_a_merge_is_unfinished_until_its_revert(self):
         self.assertEqual(self.unfinished(START, merge("c1", M1)), [M1])
         self.assertEqual(self.unfinished(START, merge("c1", M1), reverted("r1", M1, "test_regression")), [])
+
+    def test_a_green_or_flaky_end_row_finishes_a_merge(self):
+        for verdict in ("green", "flaky"):
+            with self.subTest(verdict=verdict):
+                self.assertEqual(self.unfinished(START, merge("c1", M1), ended("e1", M1, verdict)), [])
+                self.assertEqual(self.unfinished(START, plant("p1", "i1", M2), ended("e1", M2, verdict)), [])
+                self.assertEqual(self.unfinished(START, merge("c1", M1), ended("e1", M1, verdict), merge("c2", M2)),
+                                 [M2])
 
     def test_a_planted_merge_counts(self):
         self.assertEqual(self.unfinished(START, plant("p1", "i1", M2)), [M2])
@@ -77,6 +92,17 @@ class Unfinished(unittest.TestCase):
                          ["finish_without_merge:%s" % M1])
         self.assertEqual(self.refused(ledger_with([START, reverted("r1", M1, "unknown"), merge("c1", M1)])),
                          ["finish_without_merge:%s" % M1])
+
+    def test_an_end_row_of_no_merge_or_a_second_finisher(self):
+        self.assertEqual(self.refused(ledger_with([START, ended("e1", M1)])), ["finish_without_merge:%s" % M1])
+        self.assertEqual(self.refused(ledger_with([START, ended("e1", M1), merge("c1", M1)])),
+                         ["finish_without_merge:%s" % M1])
+        for second in (reverted("r1", M1, "unknown"), ended("e2", M1, "flaky")):
+            with self.subTest(second=second["kind"]):
+                self.assertEqual(self.refused(ledger_with([START, merge("c1", M1), ended("e1", M1), second])),
+                                 ["finished_twice:%s" % M1])
+        self.assertEqual(self.refused(ledger_with([START, merge("c1", M1), reverted("r1", M1, "unknown"),
+                                                   ended("e1", M1)])), ["finished_twice:%s" % M1])
 
     def test_merged_twice_and_all_reasons_together(self):
         self.assertEqual(self.refused(ledger_with([merge("c1", M1), plant("p1", "i1", M1)])), ["merged_twice:%s" % M1])

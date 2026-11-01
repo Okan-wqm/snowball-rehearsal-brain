@@ -21,7 +21,9 @@ list yet (tohum/29m, 29n, 29o: "26'ya girmelidir"): the ``drill`` ``commit`` and
 ``events`` ``revert`` row are ``harness.revert_drill``'s (MF14, 29m; the loop's D7 writes the same revert row,
 ``ledger.events.revert``); the ``cost`` payload is ``llm.call``'s (MF15,
 its ``usd_micros`` the field 29n's brake sums); ``status`` and ``status_edited`` are ``status.block``'s (MF16, 29n);
-``genesis`` is 29o's twelve keys, and ``cycle_start``, ``integration_cut``, ``ratchet_base`` and ``decision``
+``genesis`` is 29o's twelve keys; ``sentinel`` (the end of a green or flaky sentinel run, which no seed page names:
+seed-043's draft, taken as this brain's stated assumption, without ``red``, since a red ends at its ``revert``) is
+D7's (``ledger.events.sentinel``); and ``cycle_start``, ``integration_cut``, ``ratchet_base`` and ``decision``
 (``payload.decision`` is the field 29n reads) are ``activate``'s (MF18; D6 writes ``cycle_start``, ``ratchet_base``
 and ``decision`` with the same builders, ``ledger.events``). Kinds no writer here produces (``rival``,
 ``accept``, ``freeze``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
@@ -208,6 +210,9 @@ def _rejected(payload: Any) -> bool:
     return isinstance(payload, dict) and payload.get("decision") == "reject"
 
 
+# the sentinel verdicts that end a merge's sentinel without a revert (``events``/``sentinel``, seed-043)
+SENTINEL_ENDS = ("green", "flaky")
+
 # (part, kind) -> (payload shape, cause required: a bool or a test on the payload)
 ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
     ("events", "genesis"): (GENESIS, False),
@@ -216,6 +221,8 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
     ("events", "ratchet_base"): (shape({"base_run_sha256": hex64, "counts": map_of(count)}), False),
     ("events", "decision"): (DECISION, _rejected),
     ("events", "revert"): (shape({"merge_sha": hex40}), True),
+    ("events", "sentinel"): (shape({"merge_sha": hex40, "verdict": one_of(*SENTINEL_ENDS), "sentinel_sha256": hex64,
+                                    "flaky": list_of(text, unique_sorted=True)}), False),
     ("events", "status"): (shape({"block_sha256": hex64}), False),
     ("events", "status_edited"): (shape({"found_sha256": nullable(hex64), "recorded_sha256": nullable(hex64)}),
                                   False),

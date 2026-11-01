@@ -29,7 +29,7 @@ import activate  # noqa: E402
 import activation_world as AW  # noqa: E402
 from dispatcher import llm_call  # noqa: E402
 from harness import revert_drill  # noqa: E402
-from ledger import chain, cycle, schema  # noqa: E402
+from ledger import chain, cycle, events, schema  # noqa: E402
 from status import block  # noqa: E402
 
 
@@ -142,6 +142,25 @@ class Artifacts(unittest.TestCase):
         self.assert_reason(dict(cost, payload=dict(cost["payload"], usd_micros=0.5)), "a float")
         self.assert_reason(dict(cost, payload={k: v for k, v in cost["payload"].items() if k != "usd_micros"}),
                            "payload.usd_micros: missing")
+
+    def test_sentinel_end_row_rules(self):
+        """D7's end of a green or flaky sentinel (seed-043's draft): ``ledger.events.sentinel`` conforms, without a
+        cause; a red (which ends at its revert), a rerun, a missing hash and an unsorted flaky list do not."""
+        cyc = {"cycle_id": "43", "ts": AW.TS, "snapshot_id": AW.SNAP}
+        for verdict, flaky in (("green", []), ("flaky", ["a", "b"])):
+            end = events.sentinel(cyc, "a" * 40, verdict, flaky, "b" * 64)
+            self.assertEqual((end["part"], end["kind"], end["row_id"], "cause" in end),
+                             ("events", "sentinel", "43:sentinel", False))
+            self.assertEqual(schema.row_reasons(stored(end)), [])
+        end = events.sentinel(cyc, "a" * 40, "green", [], "b" * 64)
+        for payload, fragment in ((dict(end["payload"], verdict="red"), "payload.verdict: not one of"),
+                                  (dict(end["payload"], verdict="rerun"), "payload.verdict: not one of"),
+                                  ({k: v for k, v in end["payload"].items() if k != "sentinel_sha256"},
+                                   "payload.sentinel_sha256: missing"),
+                                  (dict(end["payload"], flaky=["b", "a"]), "payload.flaky"),
+                                  (dict(end["payload"], red=[]), "payload.red: not a field")):
+            with self.subTest(fragment=fragment):
+                self.assert_reason(dict(end, payload=payload), fragment)
 
     def test_genesis_payload_rules(self):
         gen = self.row("genesis")

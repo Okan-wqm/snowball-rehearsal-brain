@@ -13,18 +13,20 @@ the cost rows of this cycle's ``response`` (``loop.cagir.read_response``); ``wri
 the target's repository; ``signer``, the root's signer (``loop.sign.SigstoreSigner`` in the job); ``imports``,
 ``setup/imports.jsonl``'s bytes (``status.block``'s human-touch count); ``cycle_id`` and ``ts``; ``base_lint``,
 the lint totals of the base this cycle's ``kos`` ran (``loop.watch.base_lint``: ``{base_run_sha256, counts}``,
-required when D5 chose a merge, else ``Unusable``); ``red``, D7's red to revert, ``{merge_sha, runs, facts}``
-(``loop.watch``: the sentinel's verified runs at ``brain/integration``'s head and ``gate.revert``'s facts), or
-``None``.
+required when D5 chose a merge, else ``Unusable``); ``end``, D7's sentinel to end, ``{merge_sha, verdict, runs,
+flaky, sha256, facts?}`` (``loop.watch.read``'s verified answer at ``brain/integration``'s head, with
+``loop.watch.facts`` on a red), or ``None``.
 
 **Order.** Nothing is written on the target before every check holds, and nothing is signed before the rows are
 planned:
 
 1. the merge, when D5 chose one: its diff applied to the tree (``target.land.applied``, the one application
-   ``activate`` makes); a reason here means D5 chose a candidate that cannot be written, ``Unusable``. A ``red``
+   ``activate`` makes); a reason here means D5 chose a candidate that cannot be written, ``Unusable``. An ``end``
    must be of ``brain/integration``'s head in a cycle with no merge (D5 merges nothing while a sentinel is
-   unfinished) and ``gate.revert.assess`` of its runs and facts must be a revert: its cause is known before any
-   write; else ``Unusable``;
+   unfinished), and MF12's ``gate.sentinel.decide`` of its runs must give its ``verdict`` (and ``flaky``): a red's
+   ``gate.revert.assess`` of its runs and facts must be a revert, so its cause is known before any write; a green
+   or flaky one is ended by a row (``ledger.serial``); anything else (a ``rerun``, a verdict its runs do not give)
+   is ``Unusable``;
 2. both heads read from the target equal ``pulled``'s (``head_moved:<branch>``, ``Refused``): the state this cycle
    decided on is still the state it writes on, so a second run of the same cycle (a rerun of ``yaz`` after its
    first run wrote) writes nothing;
@@ -34,8 +36,8 @@ planned:
    the root row's id. A failure is ``Refused`` with ``state_unwritable`` (a ``ledger.append.HardStop`` stays a hard
    stop, ``target.land.HardStop`` with nothing written);
 4. the merge landed (``target.land.land``) on ``brain/integration``'s head with the check ``target.branches.CHECK``,
-   or the red reverted (``target.land.revert``: the revert commit on ``brain/revert/<merge_sha>``, its pull request,
-   the same check and the merge);
+   or a red ``end`` reverted (``target.land.revert``: the revert commit on ``brain/revert/<merge_sha>``, its pull
+   request, the same check and the merge); a green or flaky ``end`` writes nothing on ``brain/integration``;
 5. ``ledger.cycle.commit`` on ``brain/state`` at ``pulled``'s head (``ledger.append.TargetState``: the writer
    refuses a moved head before creating anything): the rows, ``status.md``'s block and the signed root, one commit.
 
@@ -46,11 +48,13 @@ A failure after the first write of step 4 or 5 is ``target.land.HardStop`` namin
 counts}`` when the cycle merges (``base_lint``: the merge's lint before, which a later revert reads with
 ``ledger.serial.lint_before``); one ``decision`` per candidate in code-point order of its id (a reject with D5's
 reasons and ``ledger.events.cause``; the merge with ``path`` and ``target.land.land``'s ``{pull, head_sha,
-merge_sha}``); ``revert {merge_sha}`` with ``gate.revert``'s cause when ``red`` is given (the row that finishes the
-merge's sentinel, ``ledger.serial``); the response's cost rows as they are; then
+merge_sha}``); ``revert {merge_sha}`` with ``gate.revert``'s cause for a red ``end``, or ``sentinel {merge_sha,
+verdict, flaky, sentinel_sha256}`` for a green or flaky one (the row that finishes the merge's sentinel,
+``ledger.serial``); the response's cost rows as they are; then
 ``status.block``'s rows (``ledger.cycle``). ``ts`` is the given time; ``snapshot_id`` is ``brain/integration``'s
 head in ``pulled`` (the snapshot D3 ran on and D5 judged; the cost row carries the same, ``loop.cagir``). Row ids are
-``<cycle_id>:start``, ``<cycle_id>:ratchet``, ``<cycle_id>:c:<cid>``, ``<cycle_id>:revert``, ``<cycle_id>:status``
+``<cycle_id>:start``, ``<cycle_id>:ratchet``, ``<cycle_id>:c:<cid>``, ``<cycle_id>:revert`` or
+``<cycle_id>:sentinel``, ``<cycle_id>:status``
 and the root row's ``<cycle_id>:root``. The
 status facts' ``canary_cap_usd_micros`` is ``canary_usd`` of ``pulled``'s policy (``loop.cagir.CANARY_USD``, the
 cap D4 called with).
@@ -58,7 +62,7 @@ cap D4 called with).
 Returns ``{merge: {candidate, path, pull, head_sha, merge_sha} | None, revert: {reverted, cause, pull, commit,
 merge_sha} | None, state_sha, root, rekor_uuid, rows, edited}``.
 
-Out of scope, stated: the end of a green or flaky sentinel (no row names it, seed-043) and D8's drill (not wired);
+Out of scope, stated: D8's drill (not wired);
 whether GitHub's ruleset accepts the writes (``target.write``'s known limits); the signer's program (``loop.sign``).
 """
 
@@ -69,7 +73,7 @@ from typing import Any
 from dispatcher import llm_call
 from gate import revert as gate_revert
 from gate import sentinel
-from ledger import append, cycle, events
+from ledger import append, cycle, events, schema
 from loop import cagir
 from loop import pulled as P
 from target import branches as B
@@ -102,8 +106,8 @@ DRY = _Dry()
 
 def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.Writer, signer: Any,
           imports: bytes, cycle_id: str, ts: str, base_lint: dict | None = None,
-          red: dict | None = None) -> dict[str, Any]:
-    """D6, and D7's revert (see the module docstring)."""
+          end: dict | None = None) -> dict[str, Any]:
+    """D6, and D7's end of a sentinel (see the module docstring)."""
     cyc = {"cycle_id": cycle_id, "ts": ts, "snapshot_id": art.heads[B.INTEGRATION]}
     merge = decided["merge"]
     change = None
@@ -113,17 +117,23 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         change = land.applied(tree, art.candidates[merge]["diff.patch"].decode("utf-8", "surrogateescape"))
         if change["reasons"]:
             raise Unusable("merge %s cannot be written: %s" % (merge, ", ".join(change["reasons"])))
-    cause = None
-    if red is not None:
-        if merge is not None or red["merge_sha"] != art.heads[B.INTEGRATION]:
-            raise Unusable("a revert is of brain/integration's head, in a cycle that merges nothing")
+    cause = red = None
+    if end is not None:
+        if merge is not None or end["merge_sha"] != art.heads[B.INTEGRATION]:
+            raise Unusable("a sentinel's end is of brain/integration's head, in a cycle that merges nothing")
         try:
-            judged = gate_revert.assess(red["runs"], red["facts"])
+            judged = sentinel.decide(end["runs"])
+            if (judged["verdict"], judged["flaky"]) != (end["verdict"], end["flaky"]):
+                raise Unusable("sentinel: its runs give %s, not %s" % (judged["verdict"], end["verdict"]))
+            if judged["verdict"] == "red":
+                red, assessed = end, gate_revert.assess(end["runs"], end["facts"])
+                if not assessed["revert"]:
+                    raise Unusable("revert: the sentinel's runs are not a verified red")
+                cause = assessed["cause"]
+            elif judged["verdict"] not in schema.SENTINEL_ENDS:
+                raise Unusable("sentinel: %s ends nothing" % judged["verdict"])
         except (gate_revert.Unusable, sentinel.Unusable) as exc:
-            raise Unusable("revert: %s" % cli.cause(exc)) from None
-        if not judged["revert"]:
-            raise Unusable("revert: the sentinel's runs are not a verified red")
-        cause = judged["cause"]
+            raise Unusable("sentinel: %s" % cli.cause(exc)) from None
     moved = ["head_moved:%s" % b for b in P.HEAD_BRANCHES if writer.head(b) != art.heads[b]]
     if moved:
         raise Refused(moved)
@@ -142,6 +152,8 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
             out.append(events.decision(cyc, cid, decided["decisions"][cid]["reasons"], merged if cid == merge else None))
         if red is not None:
             out.append(events.revert(cyc, red["merge_sha"], cause))
+        elif end is not None:
+            out.append(events.sentinel(cyc, end["merge_sha"], end["verdict"], end["flaky"], end["sha256"]))
         return out + list(cost)
 
     ledger, roots = art.state[B.STATE_LEDGER], art.state[B.STATE_ROOTS]

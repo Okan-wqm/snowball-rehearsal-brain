@@ -69,8 +69,8 @@ the verdict, ``reasons`` ``[]`` and the file's sha256. No verdict (``verdict`` a
 base did not stage (the staging's reasons), when a run tells nothing (any reason of the contained run,
 ``red_control_green`` included: a sandbox a known bad command passed judges no test), or when the runs are not
 ``gate.sentinel``'s shape (``sentinel_unusable``: two top-level TAP lines with one description); the runs stop at
-the first run that tells nothing. Who reads the verdict is ``yaz``'s half of D7 (``loop.watch``: the revert on red;
-the row that ends a green or flaky run is not named, seed-043), not this module.
+the first run that tells nothing. Who reads the verdict is ``yaz``'s half of D7 (``loop.watch``: the revert on red,
+the ``events``/``sentinel`` end row on green or flaky, ``loop.write_cycle``), not this module.
 
 Caller: ``loop.job``'s ``kos`` (D3, D7), which reads the ``pulled`` artifact (``loop.pulled``) and passes the one
 ``deps`` artifact directory under the download (``runner.deps_npm.artifact_in``), and ``watch`` from

@@ -16,9 +16,12 @@ pieces D6 shares with ``activate`` (``ledger.events``, ``target.land``).
   cycle's ``kos`` watches the merge at the head and its sentinel is red; ``yaz`` reverts it (the revert commit has
   the first parent's tree, its pull request is checked and merged) and writes the ``revert`` row with the cause from
   the facts (the impact set, the lint before from the merge's ``ratchet_base`` row and after from the base run),
-  which finishes the merge; a green sentinel is left and stays unfinished (seed-043); a sentinel file that is
-  missing, changed or not its index's hash is refused before any write; ``target.land.revert`` of runs that are
-  not red (green, too few, flaky) writes nothing;
+  which finishes the merge; a green sentinel leaves the merge on ``brain/integration`` and writes the ``sentinel``
+  end row (seed-043's draft) with the verified file's hash, which finishes the merge, so the cycle after it merges
+  the next candidate; a sentinel file that is missing, changed or not its index's hash is refused before any
+  write; ``loop.write_cycle.write`` given an end whose runs do not give its verdict (a green claimed of failing runs,
+  a red claimed of passing runs, runs that ask for a rerun, a flaky list that differs) or of another merge than the
+  head writes nothing; ``target.land.revert`` of runs that are not red (green, too few, flaky) writes nothing;
 - ``target.land.applied``: one file applied; more than one file, a missing or linked base, a hunk that does not
   apply, a creation and an unusable diff each refused with their reason.
 """
@@ -32,6 +35,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
@@ -46,12 +50,13 @@ from ledger import schema as SC  # noqa: E402
 from ledger import serial as SE  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
+from loop import watch as WT  # noqa: E402
 from status import block as SB  # noqa: E402
 from target import branches as B  # noqa: E402
 from target import land as LN  # noqa: E402
 from target import write as W  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
-from test_kos import BREAKS_TEST, GOOD, diff, recipe  # noqa: E402
+from test_kos import BREAKS_TEST, FINDING, GOOD, diff, recipe  # noqa: E402
 from test_loop_kos import A_JS, HEADS, candidate  # noqa: E402
 from test_loop_yaz import OPEN, YazBase  # noqa: E402
 import yaz_world as YW  # noqa: E402
@@ -355,7 +360,7 @@ class D7(StateBase):
         (name, before), = ratchet["payload"]["counts"].items()
         self.assertEqual(out["sentinel"], {
             "merge_sha": merge_sha, "verdict": "red", "red": ["a holds at the head"], "flaky": [],
-            "facts": {"impact": ["a holds at the head", "a loads"], "build_ok": True,
+            "sha256": out["sentinel"]["sha256"], "facts": {"impact": ["a holds at the head", "a loads"], "build_ok": True,
                       "lint": {name: {"before": before, "after": 0}}}})
         self.assertEqual(before, 1)  # the base's var; the merged a.js has none
         revert = out["written"]["revert"]
@@ -381,12 +386,60 @@ class D7(StateBase):
         self.assertEqual(SE.unfinished(new), [])
         self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [heads[B.STATE]])
 
-    def test_a_green_merge_is_left_and_stays_unfinished(self):
-        _, heads = self.merged_then_watched(GOOD)
+    def test_a_green_merge_is_ended_and_the_next_cycle_merges(self):
+        write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})  # the next candidate's finding
+        first, heads = self.merged_then_watched(GOOD)
+        merge_sha = first["merge"]["merge_sha"]
+        old_ledger = self.state[B.STATE_LEDGER]
+        with open(self.results("sentinel.json"), "rb") as fh:
+            file_sha = hashlib.sha256(fh.read()).hexdigest()
         out = self.run_yaz(GITHUB_RUN_ID="10")
-        self.assertEqual((out["sentinel"]["verdict"], out["written"]["revert"]), ("green", None))
-        self.assertEqual(self.gh.refs[B.INTEGRATION], heads[B.INTEGRATION])
-        self.assertEqual(len(SE.unfinished(self.state_file(B.STATE_LEDGER))), 1)  # seed-043: no row ends a green
+        self.assertEqual((out["sentinel"]["verdict"], out["written"]["revert"], out["merge"]), ("green", None, None))
+        self.assertEqual(self.gh.refs[B.INTEGRATION], heads[B.INTEGRATION])  # the merge is left
+        new = self.state_file(B.STATE_LEDGER)
+        self.assertTrue(CH.verify_bytes(new, old_ledger)["valid"])
+        self.assertEqual(SC.ledger_reasons(new), [])
+        added = rows_of(new)[len(rows_of(old_ledger)):]
+        self.assertEqual([(r["row_id"], r["kind"]) for r in added],
+                         [("10-1:start", "cycle_start"), ("10-1:sentinel", "sentinel"), ("cagir-10-1", "cost"),
+                          ("10-1:status", "status")])
+        self.assertEqual((added[1]["payload"], "cause" in added[1]),
+                         ({"merge_sha": merge_sha, "verdict": "green", "flaky": [], "sentinel_sha256": file_sha},
+                          False))
+        self.assertEqual(SE.unfinished(new), [])
+        # cycle 11-1: nothing is watched, and the next ready candidate merges on the green merge
+        self.state = {p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}
+        heads = {b: self.gh.refs[b] for b in P.HEAD_BRANCHES}
+        shutil.rmtree(self.pulled)
+        shutil.rmtree(self.results())
+        nxt = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
+                   **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})
+        watched = self.kos({"d": nxt}, heads=heads, units=SENTINEL_UNITS)
+        self.assertEqual((watched["done"], watched["index"]["sentinel"]), (["D3"], None))
+        art = P.read(self.pulled)
+        YW.write_response(self.temp, "t1", art.heads, [YW.cost_row("cagir-11-1", art.heads[B.INTEGRATION])])
+        third = self.run_yaz(GITHUB_RUN_ID="11")
+        self.assertEqual((third["merge"], third["sentinel"]), ("d", None), third)
+        self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [third["written"]["merge"]["merge_sha"]])
+
+    def test_an_end_its_runs_do_not_give_writes_nothing(self):
+        """``loop.write_cycle`` judges the end it is handed again (``loop.watch.read``'s answer replaced here, after
+        the real read of a green sentinel), so a wrong verdict reaching it writes nothing."""
+        self.merged_then_watched(GOOD)
+        real = WT.read
+        fail = {"results": [{"id": "a loads", "status": "pass"}, {"id": "a holds at the head", "status": "fail"}]}
+        facts = {"impact": ["a holds at the head", "a loads"], "build_ok": True, "lint": None}
+        for name, change in (("red of green runs", lambda g: dict(g, verdict="red", facts=facts)),
+                             ("green of a failing run", lambda g: dict(g, runs=[fail])),
+                             ("a rerun", lambda g: dict(g, runs=[fail], verdict="rerun")),
+                             ("another flaky list", lambda g: dict(g, flaky=["a loads"])),
+                             ("another merge", lambda g: dict(g, merge_sha="0" * 40))):
+            with self.subTest(name), mock.patch.object(J.WT, "read", lambda r, w: change(real(r, w))):
+                writes = len(self.writes())
+                with self.assertRaises(J.Unusable):
+                    self.run_yaz(GITHUB_RUN_ID="10")
+                self.assertEqual(len(self.writes()), writes)
+        self.assertEqual(self.run_yaz(GITHUB_RUN_ID="10")["sentinel"]["verdict"], "green")  # unchanged, it ends
 
     def test_a_sentinel_it_cannot_verify_writes_nothing(self):
         self.merged_then_watched(RED_AT_HEAD)

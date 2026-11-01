@@ -14,9 +14,12 @@ a chain). **Rules** (``unfinished``):
 2. A **merge** is a row of ``MERGES``: ``events``/``decision`` with ``payload.decision == "merge"`` (the gate's
    merge, ``activate`` and D6) and ``drill``/``plant`` (the revert drill's planted merge, which the sentinel must
    see red, tohum/22a). Its id is ``payload.merge_sha``. The same SHA merged twice is ``merged_twice:<sha>``.
-3. A merge **finishes** at a row of ``FINISHERS``, read in file order: ``events``/``revert`` naming its
-   ``merge_sha``. A finisher naming a SHA that no earlier row merged is ``finish_without_merge:<sha>`` (the
-   ledger is append-only, so a revert before its merge is a broken state, not an unknown one).
+3. A merge **finishes** at a row of ``FINISHERS``, read in file order, naming its ``merge_sha``: ``events``/``revert``
+   (D7's revert of a red) or ``events``/``sentinel`` (D7's end of a green or flaky sentinel, seed-043's draft as
+   this brain's stated assumption). A finisher naming a SHA that no earlier row merged is
+   ``finish_without_merge:<sha>`` (the ledger is append-only, so a revert before its merge is a broken state, not
+   an unknown one); a second finisher of one merge is ``finished_twice:<sha>`` (a merge's sentinel ends once: a
+   revert after a green end, or two ends, is a broken state).
 4. ``unfinished`` is every merge without a finisher, in file order.
 
 Reasons 2 and 3 are all collected, sorted, and raised together as ``Unusable``.
@@ -29,11 +32,8 @@ is the merge's first parent (``activate`` and D6 write that row before their dec
 the merge's cycle has no ratchet base row.
 The same schema check as ``unfinished`` first; a SHA no merge row names is ``Unusable`` (``not_merged:<sha>``).
 
-Out of scope, stated: the end of a **green** (or flaky) sentinel run has no row type in ``ledger.schema`` and no
-writer yet (seed-043; D7's half in ``yaz`` writes only the revert of a red; tohum/07's anchor leaves the merge and
-revert rows to stage 1): until one exists, a merge that is never reverted stays unfinished, so after the first merge
-no candidate merges (fail closed). Here only the revert ends a red. Whether a merge row's SHA is on
-``brain/integration`` is D1's and D6's, not read here.
+Out of scope, stated: whether a finisher's verdict is true (D7 writes it from a sentinel ``loop.watch`` verified;
+this reader reads rows); whether a merge row's SHA is on ``brain/integration`` (D1's and D6's).
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from ledger import chain
 from ledger import schema
 
 MERGES = (("events", "decision"), ("drill", "plant"))
-FINISHERS = (("events", "revert"),)
+FINISHERS = (("events", "revert"), ("events", "sentinel"))
 CYCLE_START = ("events", "cycle_start")
 RATCHET_BASE = ("events", "ratchet_base")
 
@@ -87,6 +87,8 @@ def unfinished(ledger: bytes) -> list[str]:
         elif _type(row) in FINISHERS:
             if sha not in open_:
                 bad.add("finish_without_merge:%s" % sha)
+            elif not open_[sha]:
+                bad.add("finished_twice:%s" % sha)
             else:
                 open_[sha] = False
     if bad:

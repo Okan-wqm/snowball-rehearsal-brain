@@ -18,7 +18,8 @@ by the rule ``kos`` uses (``loop.job._watched``: the one unfinished merge, at ``
   included), be ``{merge_sha, runs, verdict, red, flaky}`` naming ``watch`` (``sentinel_unreadable``), and MF12's
   own ``gate.sentinel.decide`` on its ``runs`` must give its ``verdict``, ``red`` and ``flaky`` and the index's
   verdict (``sentinel_verdict_mismatch``; runs ``decide`` refuses are ``sentinel_unreadable``). The answer is
-  ``{merge_sha, verdict, runs, red, flaky}``.
+  ``{merge_sha, verdict, runs, red, flaky, sha256}`` (``sha256`` the verified ``sentinel.json``'s, which D7's end
+  row of a green or flaky verdict carries, ``ledger.events.sentinel``).
 
 Any reason is ``Refused`` with it; nothing is decided from a sentinel this reader did not verify.
 
@@ -42,8 +43,7 @@ merge's lint before) and D7 reads it as a red's lint after.
   ``after`` ``base_lint``'s counts; ``None`` when either is missing (``gate.revert.assess``'s rule then).
 
 Caller: ``loop.job``'s ``yaz`` (D7, before D6's writes); the revert itself and its row are ``loop.write_cycle``'s.
-Out of scope, stated: the row that ends a green or flaky sentinel (seed-043: no page names it; until one does, a
-merge whose sentinel is green stays unfinished), the drill's merges (D8).
+Out of scope, stated: the drill's merges (D8).
 """
 
 from __future__ import annotations
@@ -109,7 +109,7 @@ def read(results: str, watch: str | None) -> dict | None:
             or doc["verdict"] != entry["verdict"]:
         raise Refused(["sentinel_verdict_mismatch"])
     return {"merge_sha": watch, "verdict": doc["verdict"], "runs": doc["runs"], "red": doc["red"],
-            "flaky": doc["flaky"]}
+            "flaky": doc["flaky"], "sha256": entry["sha256"]}
 
 
 def base_lint(results: str) -> dict | None:

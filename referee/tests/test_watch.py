@@ -4,7 +4,8 @@ facts of a red (asama-0/01 D7, tohum/07, tohum/29j).
 - ``read``: nothing watched and no entry is ``None``; an entry while nothing is watched, an entry for another merge
   or none, a file that is missing, changed or not the index's hash, a document of another shape or merge, and a
   verdict MF12's ``decide`` does not give on its runs (or the index does not) are each refused with their reason;
-  an entry without a verdict is passed on with its reasons; a verified red, green and flaky are read;
+  an entry without a verdict is passed on with its reasons; a verified red, green and flaky are read with the
+  verified file's hash;
 - ``base_lint``: the base run's counts when its hash is the index's and its three records one; ``None`` for a
   missing file, another hash, three records that differ, a record ``gate.check`` refuses, no hash in the index;
 - ``facts``: the impact set is every id the runs report; ``build_ok`` is true; lint per tool in either side, an
@@ -87,7 +88,10 @@ class Read(Results):
                                           ([FAIL, PASS, PASS, PASS], "flaky", [], ["a"])):
             with self.subTest(verdict=verdict):
                 got = WT.read(self.results(runs), M)
-                self.assertEqual(got, {"merge_sha": M, "verdict": verdict, "runs": runs, "red": red, "flaky": flaky})
+                with open(os.path.join(self.dir, K.SENTINEL), "rb") as fh:
+                    file_sha = sha(fh.read())
+                self.assertEqual(got, {"merge_sha": M, "verdict": verdict, "runs": runs, "red": red, "flaky": flaky,
+                                       "sha256": file_sha})
 
     def test_nothing_watched(self):
         self.assertIsNone(WT.read(self.results(), None))
