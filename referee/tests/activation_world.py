@@ -9,7 +9,11 @@ tests expect are computed from these bytes, not by ``activate``.
 from __future__ import annotations
 
 import hashlib
+import atexit
 import json
+import os
+import shutil
+import tempfile
 
 from fake_github import FakeGitHub
 from ledger import anchor, chain
@@ -122,6 +126,17 @@ def facts(kind: str) -> dict:
     return {("GET", path): (200, body) for path, body in out.items()}
 
 
+_TREES: list[str] = []
+
+
+def _trees() -> str:
+    """One directory for every base tree of the process, removed at exit."""
+    if not _TREES:
+        _TREES.append(tempfile.mkdtemp(prefix="activation-trees-"))
+        atexit.register(shutil.rmtree, _TREES[0], True)
+    return _TREES[0]
+
+
 class World:
     """The target and the inputs; each test may change any of them before calling ``run``."""
 
@@ -129,7 +144,8 @@ class World:
         self.gh = FakeGitHub(REPO, required_check=GATE, create_denied=create_denied)
         self.main = self.gh.seed_commit("toy-main", files={
             "src/a.js": SOURCE, "test/a.test.js": TEST, "eslint.config.js": b"module.exports = [];\n",
-            "package.json": b"{}\n"})
+            "package.json": b"{}\n", "src/auth/session.js": b"module.exports = {};\n",
+            "src/feeder/valve.js": b"module.exports = {};\n"})
         self.gh.refs["main"] = self.main
         self.gh.overrides.update(facts(kind))
         self.imports = chained([{"ts": "2026-10-30T09:00:00Z", "stage": 0, "brain_sha": "b" * 40,
@@ -141,26 +157,32 @@ class World:
                              "bootstrap_sha256": "4" * 64}],
             "targets": [{"id": "toy", "repo": REPO, "kind": kind, "base_sha": self.main, "identifiers": [],
                          "excluded_paths": [], "unit_candidates": []}]}).encode()
-        self.profile = json.dumps({"security_paths": ["src/auth/"], "excluded_dirs": ["vendor/"]}).encode()
         self.recipe = json.dumps({"unit_id": "toy", "inputs": ["src/", "test/", "eslint.config.js",
                                                                "package.json"]}).encode()
         self.security = chained([{"row_id": "sec-1", "part": "security", "kind": "note", "payload": {}}])
         self.files = {"summary.json": self.summary, "imports.jsonl": self.imports, "policy.json": b'{"p": 1}\n',
-                      "security-ledger.jsonl": self.security, "profile.json": self.profile,
+                      "security-ledger.jsonl": self.security,
                       "recipe.json": self.recipe, "base.jsonl": BASE_RUN}
         self.candidates = candidates()
         self.signer = anchor.FakeSigner(True, "referee@example", "rekor-1")
         self.control = {"kill_switch": False, "merge_paused": False}
         self.canary_cap = 220000000
+        self.tree = None  # the base tree's directory; None: base_tree() at run
 
     def request(self) -> dict:
         return {"target_id": "toy", "base_run_sha256": sha(self.files["base.jsonl"]), "cycle_id": CYCLE, "ts": TS,
                 "snapshot_id": SNAP, "candidates": sorted(c["id"] for c in self.candidates)}
 
-    def read_base(self, path: str) -> bytes | None:
-        """The file in the tree pulled at the base commit (D1's checkout), not at ``main``'s head."""
-        blob = self.gh.trees[self.gh.commits[self.main]["tree"]].get(path)
-        return None if blob is None else self.gh.blobs[blob]
+    def base_tree(self) -> str:
+        """A new directory holding the base commit's tree (D1's checkout), not ``main``'s head; removed when the
+        test process exits. Each call writes a fresh one."""
+        root = tempfile.mkdtemp(dir=_trees())
+        for path, blob in self.gh.trees[self.gh.commits[self.main]["tree"]].items():
+            full = os.path.join(root, *path.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "wb") as fh:
+                fh.write(self.gh.blobs[blob])
+        return root
 
     def cand(self, cid: str) -> dict:
         return next(c for c in self.candidates if c["id"] == cid)
@@ -173,7 +195,7 @@ class World:
         import activate
         self.wr = self.writer()
         return activate.activate(self.wr, self.files, self.request() if req is None else req, self.candidates,
-                                 self.read_base, self.signer, self.control, GATE, self.canary_cap)
+                                 self.tree or self.base_tree(), self.signer, self.control, GATE, self.canary_cap)
 
     def writes(self) -> list[tuple]:
         return [(m, p) for m, p, _ in self.gh.requests if m != "GET"]

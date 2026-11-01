@@ -13,11 +13,9 @@ the cycle's state was not read.
 
 **Rules.** Candidates are judged in code-point order of their id. Each one's ``reasons`` are, sorted and unique:
 
-- the path reasons of ``gate.diffguard.check`` (criterion 1, ``<reason>:<path>``) under the profile
-  ``profile.unit_verify.derived_profile`` gives for ``tree`` (the one ``kos`` staged with): ``security_paths`` as
-  derived, ``excluded_dirs`` the derived ``excluded_dirs`` and ``excluded_paths`` (the operator's and the agent
-  configuration found), so 29g's rule that ``excluded_dirs`` carries the operator's excluded paths holds. A diff
-  the parser refuses is ``diff_unusable``, and nothing else is judged for it;
+- the path reasons of ``gate.diffguard.check`` (criterion 1, ``<reason>:<path>``) under
+  ``profile.unit_verify.guard_profile`` for ``tree`` (derived from the tree ``kos`` staged with; the activation
+  judges with the same function). A diff the parser refuses is ``diff_unusable``, and nothing else is judged for it;
 - ``kos:<reason>`` for each reason ``index.json`` gives a candidate that ``kos`` did not verify (``kos:<verdict>``
   when it gives none; ``kos:missing`` when the index has no entry for it), so a refusal of D3 (the patch does not
   apply to the tree, a file outside the worktree, a limit) is the candidate's reason, not lost;
@@ -51,19 +49,11 @@ import cli
 from gate import check as C
 from gate import diffguard as G
 from loop import pulled as P
-from profile import derive as D
 from profile import unit_verify as V
 
 
 class Unusable(ValueError):
     """The cycle's own inputs (the recipe, the profile) cannot be used: no candidate is judged."""
-
-
-def guard_profile(tree: str, art: P.Pulled) -> dict:
-    """``gate.diffguard``'s profile for the pulled tree (see the module docstring)."""
-    derived = V.derived_profile(tree, art.target, art.policy)
-    return {"security_paths": list(derived["security_paths"]),
-            "excluded_dirs": D.minimal(derived["excluded_dirs"] + derived["excluded_paths"])}
 
 
 def _bytes_or_none(path: str) -> bytes | None:
@@ -116,7 +106,7 @@ def _gate(files: dict[str, bytes], results: str, cid: str, control: Any, unfinis
 def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
            unfinished: list[str] | None) -> dict[str, Any]:
     """D5 over every candidate; see the module docstring."""
-    profile = guard_profile(tree, art)
+    profile = V.guard_profile(tree, art.target, art.policy)
     index = _index(results)
     control = control if isinstance(control, dict) else {}
     pending = list(unfinished) if unfinished is not None else []

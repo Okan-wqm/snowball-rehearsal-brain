@@ -58,13 +58,17 @@ objects), no transfer row or one whose ``referee_tree_sha256`` is not 64 lowerca
    in ``koş``) must hash to the request's ``base_run_sha256`` (``base_run_hash_mismatch``) and its three records be
    one (``tool_nondeterministic``); ``counts`` is violations per tool in its first record (``gate.check``'s count).
 3. Reads: ``brain/state`` must not exist (``already_activated``), ``brain/integration`` must not exist
-   (``integration_exists``), the ``base_sha`` commit must read. Any reason: ``Refused``.
+   (``integration_exists``), the ``base_sha`` commit must read. Any reason: ``Refused``. Then criterion 1's
+   profile, ``profile.unit_verify.guard_profile`` over ``tree`` with the target's ``targets[]`` entry and the
+   policy (the one function ``yaz``'s ``loop.decide`` judges with, so the physical safety paths of tohum/05 and
+   the security paths derived from the tree guard the activation's merges too), and the recipe's ``inputs``; a
+   tree ``profile.derive`` refuses (``tree: <cause>``) or an unusable recipe is ``Unusable``.
 4. Cut: ``brain/integration`` created at ``base_sha``. If GitHub refuses the creation, nothing else is written.
 5. Each ready candidate, in id order, is decided by the acceptance rule (asama-0/08): ``gate.diffguard.check``
-   (criterion 1, with the profile's ``security_paths``/``excluded_dirs`` and the recipe's ``inputs``), then
+   (criterion 1, with that profile's ``security_paths``/``excluded_dirs`` and the recipe's ``inputs``), then
    ``gate.check.decide`` (criteria 2-8 against ``base.jsonl``, with ``unfinished_sentinels`` the merges this
-   activation already made: at most one merge), then the diff applied to the base file (``read_base``; a missing
-   file ``base_file_missing``, a diff that does not apply ``patch_does_not_apply``); unusable files
+   activation already made: at most one merge), then the diff applied to the base file read from ``tree`` (a
+   missing file, one that is not regular or one under a symbolic link ``base_file_missing``, a diff that does not apply ``patch_does_not_apply``); unusable files
    ``candidate_unusable``; an id that is not a branch name under ``brain/c/`` ``candidate_id_invalid``. A merge:
    branch ``brain/c/<cid>`` at the cut, one commit, a pull request into ``brain/integration``, a ``success`` check
    named ``check_name``, the merge. A reject writes nothing on the target.
@@ -79,6 +83,9 @@ objects), no transfer row or one whose ``referee_tree_sha256`` is not 64 lowerca
 
 A failure after step 4 raises ``HardStop`` carrying the refs already written (tohum/25a's failure rule leaves them
 to the operator; step 3 refuses a retry).
+
+``tree`` is the directory of the ``base_sha`` commit's tree (D1's checkout of the pulled tree), the one source of
+the guard profile and of the base files; that it is that commit's tree is the caller's (D1's), not checked here.
 
 Out of scope, stated: running the tools and tests (``koş``: their outputs are inputs here); (A)'s Rekor ids, the App
 declaration of tohum/25a row 5 and ``bypass_actors`` (genesis does not read them, tohum/29o); writing
@@ -98,11 +105,12 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from typing import Any, Callable
+from typing import Any
 
 from gate import check, diffguard
 from ledger import anchor, append, chain, schema
 from loop import accepted
+from profile import derive, unit_verify
 from status import block
 from target import branches, write
 import cli
@@ -111,8 +119,7 @@ STATE = branches.STATE
 INTEGRATION = branches.INTEGRATION
 MAIN = "main"
 CANDIDATE_PREFIX = "brain/c/"
-FILES = ("summary.json", "imports.jsonl", "policy.json", "security-ledger.jsonl", "recipe.json", "profile.json",
-         "base.jsonl")
+FILES = ("summary.json", "imports.jsonl", "policy.json", "security-ledger.jsonl", "recipe.json", "base.jsonl")
 GENESIS_FILES = FILES[:5]
 REQUEST = {"target_id", "base_run_sha256", "cycle_id", "ts", "snapshot_id", "candidates"}
 KINDS = ("toy", "copy")
@@ -352,9 +359,10 @@ def _cause(reasons: list[str]) -> str:
 
 
 def decide(cand: dict, base_run: bytes, profile: Any, recipe: Any, control: Any, pending: list[str],
-           read_base: Callable[[str], bytes | None]) -> dict:
+           tree: str) -> dict:
     """The acceptance rule on one candidate: ``{reasons, path, content}``; ``content`` is the applied file when
-    there is no reason. ``cand`` maps ``CANDIDATE_FILES`` to bytes (a missing run file is None)."""
+    there is no reason. ``cand`` maps ``CANDIDATE_FILES`` to bytes (a missing run file is None); the base file is
+    read from ``tree`` (a regular file, no symbolic link on its way, else ``base_file_missing``)."""
     if write.branch_reasons(CANDIDATE_PREFIX + cand["id"]) or "/" in cand["id"]:
         return {"reasons": ["candidate_id_invalid"], "path": None, "content": None}
     try:
@@ -370,7 +378,7 @@ def decide(cand: dict, base_run: bytes, profile: Any, recipe: Any, control: Any,
     reasons = sorted(set(reasons + decided["reasons"]))
     if reasons:
         return {"reasons": reasons, "path": found["path"], "content": None}
-    old = read_base(found["path"])
+    old = derive._read_regular(tree, found["path"])
     if old is None:
         return {"reasons": ["base_file_missing"], "path": found["path"], "content": None}
     try:
@@ -417,8 +425,7 @@ def state_files(rows: list[dict], imports: bytes, facts: dict, signer: Any, root
 
 # ---------------------------------------------------------------- activation
 
-def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates: list[dict],
-             read_base: Callable[[str], bytes | None], signer: Any, control: Any, check_name: str,
+def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates: list[dict], tree: str, signer: Any, control: Any, check_name: str,
              canary_cap_usd_micros: int) -> dict:
     """The activation; see the module docstring. ``candidates``: ``{id, <CANDIDATE_FILES>: bytes|None}`` each."""
     req = _request(req)
@@ -447,8 +454,12 @@ def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates
         raise Refused(reasons)
     cut = gen["payload"]["base_sha"]
     writer.read_commit(cut)
-    profile, recipe = _json(files["profile.json"], "profile.json"), _json(files["recipe.json"], "recipe.json")
-    try:  # the shapes criterion 1 reads, checked before the first write
+    try:  # criterion 1's profile, derived from the base tree, and the recipe, checked before the first write
+        profile = unit_verify.guard_profile(tree, target, _json(files["policy.json"], "policy.json"))
+    except derive.DeriveError as exc:
+        raise Unusable("tree: %s" % cli.cause(exc)) from None
+    recipe = _json(files["recipe.json"], "recipe.json")
+    try:
         diffguard.check("diff --git a/x b/x\n", profile, recipe)
     except diffguard.DiffError as exc:
         raise Unusable(cli.cause(exc)) from None
@@ -461,7 +472,7 @@ def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates
                                                       "counts": base["counts"]})]
         merges, decisions = [], []
         for cand in sorted(candidates, key=lambda c: c["id"]):
-            got = decide(cand, files["base.jsonl"], profile, recipe, control, merges, read_base)
+            got = decide(cand, files["base.jsonl"], profile, recipe, control, merges, tree)
             if got["reasons"]:
                 payload = {"decision": "reject", "candidate": cand["id"], "reasons": got["reasons"]}
                 rows.append(_row(req, "c:" + cand["id"], "decision", payload, _cause(got["reasons"])))

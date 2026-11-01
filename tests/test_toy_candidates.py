@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.join(ROOT, "referee", "tests"))
 import activate  # noqa: E402
 import activation_world as AW  # noqa: E402
 from gate import diffguard  # noqa: E402
-from profile import derive as D  # noqa: E402
+from profile import unit_verify as V  # noqa: E402
 from runner import kos as K  # noqa: E402
 from runner import lint_record as R  # noqa: E402
 
@@ -72,8 +72,8 @@ def recipe() -> dict:
 
 
 def profile() -> dict:
-    d = D.derive(TOY, None, None)
-    return {"security_paths": d["security_paths"], "excluded_dirs": d["excluded_dirs"]}
+    """Criterion 1's profile for the toy's tree: the activation's own (``guard_profile``), seed defaults."""
+    return V.guard_profile(TOY, None, None)
 
 
 def base_record() -> dict:
@@ -195,8 +195,7 @@ class Capture(unittest.TestCase):
 class Decision(unittest.TestCase):
     def test_each_alone_gets_exactly_its_expected_reasons(self):
         for cid in ids():
-            got = activate.decide(candidate(cid), base_run(), profile(), recipe(), CONTROL, [], lambda p: raw(
-                os.path.join(TOY, p)))
+            got = activate.decide(candidate(cid), base_run(), profile(), recipe(), CONTROL, [], TOY)
             self.assertEqual(got["reasons"], expected(cid), cid)
             if not got["reasons"]:
                 self.assertEqual(got["content"], patched(cid)[1])
@@ -212,10 +211,9 @@ class Decision(unittest.TestCase):
         cand["checks.json"] = candidate("good")["checks.json"]
         cand["hashes.json"] = json.dumps({"base.jsonl": sha(base_run()), "cand.jsonl": sha(cand["cand.jsonl"]),
                                           "checks.json": sha(cand["checks.json"])}).encode()
-        read = lambda p: raw(os.path.join(TOY, p))  # noqa: E731
-        self.assertEqual(activate.decide(cand, base_run(), profile(), recipe(), CONTROL, [], read)["reasons"], [])
+        self.assertEqual(activate.decide(cand, base_run(), profile(), recipe(), CONTROL, [], TOY)["reasons"], [])
         loose = dict(profile(), security_paths=[])
-        self.assertEqual(activate.decide(candidate("bad-path"), base_run(), loose, recipe(), CONTROL, [], read)
+        self.assertEqual(activate.decide(candidate("bad-path"), base_run(), loose, recipe(), CONTROL, [], TOY)
                          ["reasons"], [])
 
 
@@ -233,8 +231,7 @@ class ToyWorld(AW.World):
         self.gh.refs["main"] = self.main
         summary = json.loads(self.summary)
         summary["targets"][0]["base_sha"] = self.main
-        self.files.update({"summary.json": json.dumps(summary).encode(), "profile.json": json.dumps(profile()).encode(),
-                           "recipe.json": json.dumps(recipe()).encode(), "base.jsonl": base_run()})
+        self.files.update({"summary.json": json.dumps(summary).encode(), "recipe.json": json.dumps(recipe()).encode(), "base.jsonl": base_run()})
         self.candidates = [candidate(cid) for cid in ids()]
 
 

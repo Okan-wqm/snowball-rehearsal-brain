@@ -837,6 +837,17 @@ def derived_profile(tree: str, target: Any, policy: Any) -> dict:
     return D.derive(tree, target, policy if isinstance(policy, dict) and "constitutional" in policy else None)
 
 
+def guard_profile(tree: str, target: Any, policy: Any) -> dict:
+    """``gate.diffguard``'s profile ``{security_paths, excluded_dirs}`` for ``tree``, from ``derived_profile``:
+    ``security_paths`` as derived (the physical safety paths among them, tohum/05), ``excluded_dirs`` the derived
+    ``excluded_dirs`` and ``excluded_paths`` (the operator's and the agent configuration found), so tohum/29g's rule
+    that ``excluded_dirs`` carries the operator's excluded paths holds. The one guard profile of every acceptance
+    decision: ``yaz``'s (``loop.decide``) and the activation's (``activate``). Raises ``DeriveError`` as ``derive``."""
+    derived = derived_profile(tree, target, policy)
+    return {"security_paths": list(derived["security_paths"]),
+            "excluded_dirs": D.minimal(derived["excluded_dirs"] + derived["excluded_paths"])}
+
+
 def stage(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | None, target: Any, runner: C.Runner,
           staging_root: str) -> tuple[list[str], dict, dict]:
     """Steps 1-3 under ``staging_root``, after the static check: ``(reasons, result, context)``. ``context`` is

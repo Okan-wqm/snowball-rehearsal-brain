@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from loop import decide as E  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
+from profile import unit_verify as V  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, RAISES, diff, recipe  # noqa: E402
 from test_loop_kos import TARGET, Base, RedAs, candidate  # noqa: E402
@@ -106,7 +107,7 @@ class Criteria(Cycle):
         write_tree(self.src, {"pkg/c.js": "const d = 5;\n"})
         self.kos({"edit": candidate(C_JS)}, target=dict(TARGET, excluded_paths=["pkg/c.js"]))
         art = P.read(self.pulled)
-        self.assertIn("pkg/c.js", E.guard_profile(self.tree(), art)["excluded_dirs"])
+        self.assertIn("pkg/c.js", V.guard_profile(self.tree(), art.target, art.policy)["excluded_dirs"])
         reasons = self.reasons(self.decide())["edit"]
         self.assertIn("excluded_path:pkg/c.js", reasons)
         self.assertIn("kos:base_file_missing", reasons)  # the staging left it out of the worktree too
@@ -121,7 +122,7 @@ class Criteria(Cycle):
         write_tree(self.src, {"pkg/auth.js": "var s = 1;\n"})
         self.kos({"sec": candidate(diff("pkg/auth.js", ["var s = 1;"], ["let s = 1;"]))})
         art = P.read(self.pulled)
-        self.assertIn("pkg/auth.js", E.guard_profile(self.tree(), art)["security_paths"])
+        self.assertIn("pkg/auth.js", V.guard_profile(self.tree(), art.target, art.policy)["security_paths"])
         self.assertIn("security_path:pkg/auth.js", self.reasons(self.decide())["sec"])
 
     def test_criterion_2_a_secret_in_the_diff(self):

@@ -395,10 +395,27 @@ class Activation(unittest.TestCase):
         out = w.run()
         self.assertEqual(out["decisions"][0]["reasons"], ["patch_does_not_apply"])
         self.assertEqual(w.gh.refs["brain/integration"], w.main)
-        w2 = AW.World()
-        w2.candidates = [w2.cand("good")]
-        w2.read_base = lambda path: None
-        self.assertEqual(w2.run()["decisions"][0]["reasons"], ["base_file_missing"])
+        # the base file is read from the base tree: absent, a directory, or reached through a symbolic link
+        # (the file itself or a directory on its way) is base_file_missing, and nothing outside the tree is read
+        for case in ("absent", "directory", "file_link", "dir_link"):
+            w2 = AW.World()
+            w2.candidates = [w2.cand("good")]
+            tree = w2.base_tree()
+            src = os.path.join(tree, "src")
+            os.remove(os.path.join(src, "a.js"))
+            if case == "directory":
+                os.mkdir(os.path.join(src, "a.js"))
+            elif case == "file_link":
+                outside = os.path.join(w2.base_tree(), "src", "a.js")  # the right bytes, outside this tree
+                os.symlink(outside, os.path.join(src, "a.js"))
+            elif case == "dir_link":
+                os.rename(src, src + "-real")
+                with open(os.path.join(src + "-real", "a.js"), "wb") as fh:
+                    fh.write(AW.SOURCE)
+                os.symlink(src + "-real", src)
+            w2.tree = tree
+            self.assertEqual(w2.run()["decisions"][0]["reasons"], ["base_file_missing"], case)
+            self.assertEqual(w2.gh.refs["brain/integration"], w2.main, case)
 
     def test_unusable_candidate_and_bad_id_are_rejected(self):
         w = AW.World()
@@ -421,6 +438,105 @@ class Activation(unittest.TestCase):
         w.run()
         self.assertEqual(w.gh.commits[w.gh.refs["brain/integration"]]["parents"][0], w.main)
         self.assertEqual(w.gh.refs["main"], later)
+
+
+class GuardProfile(unittest.TestCase):
+    """Criterion 1's profile is derived from the base tree by ``profile.unit_verify.guard_profile`` (``yaz``'s
+    function): no input file lists the guarded paths, the tree, the target entry and the policy do."""
+
+    def good_only(self, change=None) -> tuple[AW.World, dict]:
+        w = AW.World()
+        w.candidates = [w.cand("good")]
+        w.tree = w.base_tree()
+        if change:
+            change(w)
+        out = w.run()
+        return w, out["decisions"][0]
+
+    def assert_not_merged(self, w: AW.World, decision: dict, reason: str):
+        self.assertEqual(decision["decision"], "reject")
+        self.assertIn(reason, decision["reasons"])
+        self.assertEqual(w.gh.refs["brain/integration"], w.main)
+        self.assertNotIn("brain/c/good", w.gh.refs)
+
+    def summary_target(self, w: AW.World, **fields):
+        summary = json.loads(w.files["summary.json"])
+        summary["targets"][0].update(fields)
+        w.files["summary.json"] = json.dumps(summary).encode()
+
+    def test_unguarded_control_merges(self):
+        w, d = self.good_only()
+        self.assertEqual(d["decision"], "merge")
+
+    def test_paths_named_in_the_tree_are_guarded(self):
+        """A security word (``auth``) and a physical safety word (``feeder``, tohum/05) in the base tree's names."""
+        for path in ("src/auth/session.js", "src/feeder/valve.js"):
+            w = AW.World()
+            cand = AW.candidate("named", AW.diff(path, 1, ["module.exports = {};"], ["module.exports = { a: 1 };"]),
+                                AW.run_file({"tool": "eslint", "violations": [AW.violation(3)]}), AW.CHECKS_GREEN,
+                                line=1, path=path)
+            w.candidates = [cand]
+            out = w.run()
+            self.assert_not_merged(w, out["decisions"][0], "security_path:" + path)
+            self.assertEqual(w.gh.refs["brain/integration"], w.main)
+
+    def test_codeowners_safety_owner_in_the_tree(self):
+        def owners(w):
+            with open(os.path.join(w.tree, "CODEOWNERS"), "w") as fh:
+                fh.write("src/ @acme/scada-team\n")
+        w, d = self.good_only(owners)
+        self.assert_not_merged(w, d, "security_path:src/a.js")
+
+    def test_owners_safety_paths_widen(self):
+        w, d = self.good_only(lambda w: self.summary_target(w, safety_paths=["src/a.js"]))
+        self.assert_not_merged(w, d, "security_path:src/a.js")
+
+    def test_operators_excluded_paths(self):
+        w, d = self.good_only(lambda w: self.summary_target(w, excluded_paths=["src/"]))
+        self.assert_not_merged(w, d, "excluded_path:src/a.js")
+
+    def test_policy_security_keywords(self):
+        policy = {"constitutional": {"security_keywords": ["a.js"]}}
+        w, d = self.good_only(lambda w: w.files.update({"policy.json": json.dumps(policy).encode()}))
+        self.assert_not_merged(w, d, "security_path:src/a.js")
+
+    def test_the_activation_and_yaz_judge_with_one_profile(self):
+        """The profile ``activate`` passes to criterion 1 is ``guard_profile``'s for the same tree and inputs."""
+        from profile import unit_verify as V
+        seen = []
+        real = activate.diffguard.check
+
+        def spy(text, profile, recipe):
+            seen.append(profile)
+            return real(text, profile, recipe)
+        w = AW.World()
+        w.tree = w.base_tree()
+        activate.diffguard.check = spy
+        try:
+            w.run()
+        finally:
+            activate.diffguard.check = real
+        target = json.loads(w.files["summary.json"])["targets"][0]
+        want = V.guard_profile(w.tree, target, json.loads(w.files["policy.json"]))
+        self.assertTrue(seen)
+        self.assertTrue(all(p == want for p in seen))
+        self.assertEqual(want["security_paths"], ["src/auth", "src/feeder"])
+
+    def test_a_tree_or_target_the_derivation_refuses_writes_nothing(self):
+        cases = {"not_a_directory": lambda w: setattr(w, "tree", os.path.join(w.base_tree(), "package.json")),
+                 "tree_is_a_link": lambda w: (os.symlink(w.base_tree(), w.tree + "-link"),
+                                              setattr(w, "tree", w.tree + "-link")),
+                 "safety_paths_malformed": lambda w: self.summary_target(w, safety_paths=[""]),
+                 "policy_keywords_malformed": lambda w: w.files.update(
+                     {"policy.json": b'{"constitutional": {"security_keywords": []}}'})}
+        for name, change in cases.items():
+            w = AW.World()
+            w.tree = w.base_tree()
+            change(w)
+            with self.assertRaises(activate.Unusable, msg=name) as ctx:
+                w.run()
+            self.assertTrue(str(ctx.exception).startswith("tree: "), name)
+            self.assertEqual(w.writes(), [], name)
 
 
 class Refusals(unittest.TestCase):
@@ -495,12 +611,11 @@ class Refusals(unittest.TestCase):
         w.candidates.pop()
         with self.assertRaises(activate.Unusable):
             w.run(req)
-        for name, data in (("profile.json", b'{"security_paths": []}'), ("recipe.json", b'{"inputs": "src/"}')):
-            w = AW.World()
-            w.files[name] = data
-            with self.assertRaises(activate.Unusable, msg=name):
-                w.run()
-            self.assert_nothing_written(w)
+        w = AW.World()
+        w.files["recipe.json"] = b'{"inputs": "src/"}'
+        with self.assertRaises(activate.Unusable):
+            w.run()
+        self.assert_nothing_written(w)
         w = AW.World()
         req = w.request()
         w.candidates[0] = dict(w.candidates[0], id=None)

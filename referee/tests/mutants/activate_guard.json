@@ -1,0 +1,59 @@
+{
+ "mutants": [
+  {
+   "id": "policy_not_passed",
+   "file": "activate.py",
+   "old": "unit_verify.guard_profile(tree, target, _json(files[\"policy.json\"], \"policy.json\"))",
+   "new": "unit_verify.guard_profile(tree, target, None)",
+   "tests": [
+    "test_activate.py"
+   ]
+  },
+  {
+   "id": "target_not_passed",
+   "file": "activate.py",
+   "old": "unit_verify.guard_profile(tree, target, _json(files[\"policy.json\"], \"policy.json\"))",
+   "new": "unit_verify.guard_profile(tree, None, _json(files[\"policy.json\"], \"policy.json\"))",
+   "tests": [
+    "test_activate.py"
+   ]
+  },
+  {
+   "id": "profile_not_derived",
+   "file": "activate.py",
+   "old": "        profile = unit_verify.guard_profile(tree, target, _json(files[\"policy.json\"], \"policy.json\"))",
+   "new": "        profile = {\"security_paths\": [], \"excluded_dirs\": []}",
+   "tests": [
+    "test_activate.py"
+   ]
+  },
+  {
+   "id": "derive_refusal_not_unusable",
+   "file": "activate.py",
+   "old": "    except derive.DeriveError as exc:\n        raise Unusable(\"tree: %s\"",
+   "new": "    except KeyError as exc:\n        raise Unusable(\"tree: %s\"",
+   "tests": [
+    "test_activate.py"
+   ]
+  },
+  {
+   "id": "base_read_follows_links",
+   "file": "activate.py",
+   "old": "    old = derive._read_regular(tree, found[\"path\"])",
+   "new": "    old = open(tree + \"/\" + found[\"path\"], \"rb\").read() if __import__(\"os\").path.isfile(tree + \"/\" + found[\"path\"]) else None",
+   "tests": [
+    "test_activate.py"
+   ]
+  },
+  {
+   "id": "guard_drops_excluded_paths",
+   "file": "profile/unit_verify.py",
+   "old": "\"excluded_dirs\": D.minimal(derived[\"excluded_dirs\"] + derived[\"excluded_paths\"])}",
+   "new": "\"excluded_dirs\": D.minimal(derived[\"excluded_dirs\"])}",
+   "tests": [
+    "test_activate.py",
+    "test_loop_yaz.py"
+   ]
+  }
+ ]
+}
