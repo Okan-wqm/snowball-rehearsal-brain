@@ -39,14 +39,11 @@ Then ``loop.pulled.write`` writes the artifact and ``loop.pulled.read`` reads it
 ``json_unreadable:units.json``, are this step's too, and the written directory is removed), so an artifact
 left in ``out`` is one ``loop.pulled.read`` accepts.
 
-Out of scope, stated: the reads themselves (the bootstrap result and its Sigstore bundle, the target's
-``brain/state`` and ``brain/integration`` heads, and which commits are fetched: ``loop.fetch`` fills a git
-directory ``loop.gitobj.GitBatch`` reads with one commit, but nothing calls it yet) and D1's checks on them (``verify --previous``,
-the root signature, the accepted SHA's ``referee/`` hash against the last ``setup/imports.jsonl`` row: no page
-this clone has gives that hash's algorithm), and the ``profile.derive`` judgement of D1 (MF4). Which commit is
-read is the caller's choice; ``pulled`` does not record it. The tree is held in memory (on the 15134-file
-target: 175 MB of ``tree.tar``, 518 MB peak). The ``cek`` job does not call this yet: it still
-stops with ``cycle_not_wired``.
+Out of scope, stated: the reads themselves (the bootstrap result, the target's heads, the fetches: the ``cek`` job's,
+``loop.job.cek_d1``, with ``loop.accepted`` and ``loop.fetch``) and D1's checks that are not wired yet
+(``verify --previous`` of ``brain/state``'s ledger, the root signature, the ``profile.derive`` judgement of MF4).
+Which commit is read is the caller's choice; ``pulled`` does not record it. The tree is held in memory (on the
+15134-file target: 175 MB of ``tree.tar``, 518 MB peak).
 """
 
 from __future__ import annotations
@@ -60,7 +57,7 @@ from loop import pulled as P
 from runner import kos as K
 
 
-def _target(summary: bytes, target_id: str) -> tuple[dict | None, list[str]]:
+def target_entry(summary: bytes, target_id: str) -> tuple[dict | None, list[str]]:
     try:
         doc = json.loads(summary.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
@@ -104,7 +101,7 @@ def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, 
     """Write ``pulled`` into ``out`` (which must not exist) by the rules above; returns its manifest."""
     if not (isinstance(target_id, str) and K.CANDIDATE_ID.fullmatch(target_id)):
         raise P.PulledError(["target_id_unsafe"])
-    target, reasons = _target(summary, target_id)
+    target, reasons = target_entry(summary, target_id)
     units, candidates = None, {}
     try:
         units = _units(brain, brain_commit, target_id)

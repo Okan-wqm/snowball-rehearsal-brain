@@ -162,8 +162,8 @@ class Verify(unittest.TestCase):
                     A.verify_argv("sigstore", repo, "/d")
                 self.assertEqual(ctx.exception.reasons, ["repo_unsafe"])
                 with self.assertRaises(A.StateError):
-                    A.brain_url(repo)
-        self.assertEqual(A.brain_url("o/brain.x"), "https://github.com/o/brain.x")
+                    A.repo_url(repo)
+        self.assertEqual(A.repo_url("o/brain.x"), "https://github.com/o/brain.x")
 
     def test_the_verifier_sees_both_files_first(self):
         seen = []

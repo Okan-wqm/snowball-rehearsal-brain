@@ -42,7 +42,7 @@ Out of scope, stated: which ``sigstore`` program runs (the seed's pinned require
 serve the loop too, asama-0/01; the file that pins it for this job is not named in any page this clone has, so the
 caller gives the program); the bundle's transparency-log checks beyond what ``sigstore verify identity`` does; the
 other fields of ``result.json`` (its previous result's hash, the frozen specs); which repository the accepted brain
-commit is fetched from (``brain_url`` makes the URL of the name its caller gives); the artifact's retention.
+commit is fetched from (``repo_url`` makes the URL of the name its caller gives); the artifact's retention.
 
 Network: this module and ``target.write`` are the two that name GitHub's hosts; it only reads (every request is a GET
 without a body, ``tests/test_write.py`` ``OneWay``), and the token goes only to the API host.
@@ -91,8 +91,9 @@ class StateError(Exception):
         super().__init__(", ".join(self.reasons))
 
 
-def brain_url(repo: Any) -> str:
-    """The HTTPS URL ``loop.fetch`` reads the brain repository ``owner/name`` from (``repo_unsafe`` otherwise)."""
+def repo_url(repo: Any) -> str:
+    """The HTTPS URL ``loop.fetch`` reads the GitHub repository ``owner/name`` from (``repo_unsafe`` otherwise): the
+    brain's and a target's (``targets[].repo``)."""
     return "https://github.com/%s" % repo_name(repo)
 
 

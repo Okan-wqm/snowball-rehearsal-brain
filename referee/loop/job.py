@@ -65,20 +65,31 @@ a fresh ``$RUNNER_TEMP/work/<job>-*/tree`` (``_pulled_tree``; a refused tree is 
   the output and ``done`` is ``["D5"]``. The cycle's state (which merges' sentinels are unfinished) is D1's read of
   ``brain/state``, not wired, so D5 is given ``None`` and every candidate carries ``sentinel_state_unread``: no
   candidate merges. D6-D8 are not wired, so the job ends ``cycle_not_wired``, exit 1, after D5, writing nothing.
-- ``cek`` runs D1's accepted-SHA check (``cek_d1``): it reads the bootstrap referee's last signed state with
-  ``loop.accepted.read_state`` (the Actions API of ``$GITHUB_REPOSITORY`` with the job's ``GITHUB_TOKEN``,
-  ``actions: read``; the artifact verified by ``sigstore`` on PATH), fetches the accepted brain commit with
-  ``loop.fetch`` from ``loop.accepted.brain_url`` of ``$LOOP_BRAIN_REPO`` (the operator's repository variable ``BRAIN_REPO``, an
-  assumption: no page this clone has names where the loop finds the brain repository's name) into
-  ``$RUNNER_TEMP/work/cek-*/brain.git``, and compares its ``referee/`` hash with the last row of the checkout's
-  ``setup/imports.jsonl`` (``loop.accepted.last_import``, ``check_tree``). An unset variable, a state that is absent,
-  unreadable or unverified, an unreadable ``imports.jsonl`` and a failed fetch are unusable (exit 2: 29b's reader
-  stops); ``imports_broken``, ``imports_no_transfer``, ``imports_invalid``, ``referee_tree_refused`` (with the hash's
-  reasons) and ``referee_tree_mismatch`` are refusals (exit 1). When the hashes agree the line has ``accepted``
-  (``brain_sha``, ``referee_tree_sha256``, ``result_sha256``, ``artifact_id``) and ``checked``
-  ``["accepted_sha", "referee_tree"]``, and the job still ends ``cycle_not_wired``, exit 1: the rest of D1 (the
-  target's ``brain/state`` and ``brain/integration`` heads, ``verify --previous``, the root signature, MF4's
-  profile, and ``loop.cek.assemble`` writing ``pulled``) is not wired, so in a real run ``kos`` is not reached.
+- ``cek`` runs D1 as far as it is wired (``cek_d1``). First the accepted-SHA check: it reads the bootstrap
+  referee's last signed state with ``loop.accepted.read_state`` (the Actions API of ``$GITHUB_REPOSITORY`` with the
+  job's ``GITHUB_TOKEN``, ``actions: read``; the artifact verified by ``sigstore`` on PATH), fetches the accepted
+  brain commit with ``loop.fetch`` from ``loop.accepted.repo_url`` of ``$LOOP_BRAIN_REPO`` (the operator's
+  repository variable ``BRAIN_REPO``, an assumption: no page this clone has names where the loop finds the brain
+  repository's name) into ``$RUNNER_TEMP/work/cek-*/brain.git``, and compares its ``referee/`` hash with the last
+  transfer row of the checkout's ``setup/imports.jsonl`` (``loop.accepted.last_import``, ``check_tree``). Then the
+  target half, for the target ``$LOOP_TARGET`` (the operator's repository variable ``LOOP_TARGET``, an assumption
+  too: no page says which of ``targets[]`` a run serves): its ``targets[]`` entry in the checkout's
+  ``setup/summary.json`` (``loop.cek.target_entry``, the reader ``assemble`` uses), its ``repo`` made a URL by
+  ``loop.accepted.repo_url``, the heads of ``brain/state`` and ``brain/integration`` read credential-less with
+  ``loop.fetch.heads``, ``brain/integration``'s head fetched with ``loop.fetch`` into ``cek-*/target.git``, and
+  ``loop.cek.assemble`` run on the two repositories' objects with the checkout's ``policy.json``, writing ``pulled``
+  into ``cek-*/pulled``, not into ``out/pulled``: the upload takes the artifact only once D1's other checks pass.
+  An unset variable, a state that is absent, unreadable or unverified, an unreadable checkout file, a failed
+  listing and a failed fetch are unusable (exit 2: 29b's reader stops). Refusals (exit 1): ``imports_broken``,
+  ``imports_no_transfer``, ``imports_invalid``, ``referee_tree_refused`` (with the hash's reasons),
+  ``referee_tree_mismatch``; ``summary_unreadable``, ``target_unknown``, ``target_ambiguous``,
+  ``target_repo_unsafe``; ``head_missing:<branch>`` for each head the target lacks (before genesis it has neither;
+  nothing of the target is fetched); ``pulled_refused`` with ``assemble``'s reasons. When all of it holds, the line
+  has ``accepted`` (``brain_sha``, ``referee_tree_sha256``, ``result_sha256``, ``artifact_id``), ``heads`` (branch
+  to commit), ``assembled`` (``target``, ``commit``, ``candidates``) and ``checked`` ``["accepted_sha",
+  "referee_tree", "heads", "assembled"]``, and the job still ends ``cycle_not_wired``, exit 1: the rest of D1
+  (``verify --previous`` of ``brain/state``'s ledger, the root signature, MF4's profile) is not wired, so nothing
+  is uploaded and in a real run ``kos`` is not reached.
 - ``cagir`` stops at once with ``cycle_not_wired`` (exit 1). The D1-D8 composition inside the jobs (building each
   MF's input from the pulled trees and the previous artifacts, and the cycle's one ``brain/state`` commit) has no
   MF of asama-0/14 that owns it (reported in the founder ledger, spec-036).
@@ -111,6 +122,7 @@ import tempfile
 from typing import Any, NamedTuple
 
 from loop import accepted as A
+from loop import cek as C
 from loop import decide as E
 from loop import fetch as F
 from loop import gitobj as G
@@ -119,6 +131,7 @@ from profile import derive as D
 from profile import unit_verify as U
 from runner import deps_npm as N
 from runner import kos as K
+from target import branches as B
 import cli
 
 USAGE = "usage: python -m loop.job render | run JOB"
@@ -174,7 +187,8 @@ class Job(NamedTuple):
 
 JOBS: dict[str, Job] = {
     "cek": Job(("D1",), (1, 4, 11), False, {"contents": "read", "actions": "read"},
-               {"GITHUB_TOKEN": "${{ github.token }}", "LOOP_BRAIN_REPO": "${{ vars.BRAIN_REPO }}"},
+               {"GITHUB_TOKEN": "${{ github.token }}", "LOOP_BRAIN_REPO": "${{ vars.BRAIN_REPO }}",
+                "LOOP_TARGET": "${{ vars.LOOP_TARGET }}"},
                (), (), "pulled"),
     "getir": Job(("D2",), (5,), True, {}, {}, ("cek",), ("pulled",), "deps"),
     "kos": Job(("D3", "D7", "D8"), (3, 6, 12), True, {}, {}, ("cek", "getir"), ("pulled", "deps"), "results"),
@@ -186,6 +200,10 @@ JOBS: dict[str, Job] = {
                {"WRITER_TOKEN": "${{ steps.app.outputs.token }}"},
                ("cek", "getir", "kos", "cagir"), ("pulled", "deps", "results", "response"), None),
 }
+
+# What cek reads from the referee repository's checkout, and the target branches whose heads it reads (asama-0/01 D1).
+CEK_FILES = ("setup/imports.jsonl", "setup/summary.json", "policy.json")
+TARGET_REFS = {b: "refs/heads/" + b for b in (B.STATE, B.INTEGRATION)}
 
 SECRET_ENV = tuple(sorted({name for job in JOBS.values() for name in job.secrets} | {"GITHUB_TOKEN"}))
 
@@ -427,37 +445,85 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
 
 
 def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git: str = "git") -> dict[str, Any]:
-    """D1's accepted-SHA check in ``cek`` (see the module docstring): ``{reason?, accepted?}``."""
-    for name in ("GITHUB_REPOSITORY", "GITHUB_TOKEN", "GITHUB_WORKSPACE", "LOOP_BRAIN_REPO"):
+    """D1 of ``cek`` as far as it is wired (see the module docstring): ``{reason?, reasons?, accepted?, heads?,
+    assembled?}``."""
+    for name in ("GITHUB_REPOSITORY", "GITHUB_TOKEN", "GITHUB_WORKSPACE", "LOOP_BRAIN_REPO", "LOOP_TARGET"):
         if not environ.get(name):
             raise Unusable("cek: %s is not set" % name)
     try:
         state = A.read_state(http or A.ActionsHttp(environ["GITHUB_TOKEN"]), environ["GITHUB_REPOSITORY"],
                              verifier=verifier or A.run_verifier)
-        brain_url = A.brain_url(environ["LOOP_BRAIN_REPO"])
+        brain_url = A.repo_url(environ["LOOP_BRAIN_REPO"])
     except A.StateError as exc:
         raise Unusable("cek: %s" % cli.cause(exc)) from None
-    try:
-        with open(os.path.join(environ["GITHUB_WORKSPACE"], "setup", "imports.jsonl"), "rb") as fh:
-            imports = fh.read()
-    except OSError as exc:
-        raise Unusable("cek: setup/imports.jsonl unreadable: %s" % cli.cause(exc)) from None
+    files = {}
+    for name in CEK_FILES:
+        try:
+            with open(os.path.join(environ["GITHUB_WORKSPACE"], *name.split("/")), "rb") as fh:
+                files[name] = fh.read()
+        except OSError as exc:
+            raise Unusable("cek: %s unreadable: %s" % (name, cli.cause(exc))) from None
     work = _dir(environ, "work")
     os.makedirs(work, exist_ok=True)
-    git_dir = os.path.join(tempfile.mkdtemp(prefix="cek-", dir=work), "brain.git")
+    root = tempfile.mkdtemp(prefix="cek-", dir=work)
+    brain_dir = os.path.join(root, "brain.git")
     sha = state["last_accepted_sha"]
     try:
-        F.fetch(git_dir, brain_url, sha, git=git, environ=environ)
+        F.fetch(brain_dir, brain_url, sha, git=git, environ=environ)
     except P.PulledError as exc:
         raise Unusable("cek: brain fetch: %s" % ", ".join(exc.reasons)) from None
     try:
-        imported, _ = A.last_import(imports)
-        with G.GitBatch(git_dir, git=git, environ=environ) as source:
-            tree = A.check_tree(source, sha, imported)
+        imported, _ = A.last_import(files["setup/imports.jsonl"])
+        with G.GitBatch(brain_dir, git=git, environ=environ) as brain:
+            tree = A.check_tree(brain, sha, imported)
     except A.StateError as exc:
-        return dict({"reason": exc.reasons[0]}, **({"reasons": exc.reasons[1:]} if exc.reasons[1:] else {}))
-    return {"accepted": {"brain_sha": sha, "referee_tree_sha256": tree, "result_sha256": state["result_sha256"],
-                         "artifact_id": state["artifact_id"]}}
+        return _refused(exc.reasons)
+    accepted = {"brain_sha": sha, "referee_tree_sha256": tree, "result_sha256": state["result_sha256"],
+                "artifact_id": state["artifact_id"]}
+    pulled = _cek_target(environ, files, brain_dir, sha, root, git)
+    return dict(pulled, accepted=accepted)
+
+
+def _refused(reasons: list[str]) -> dict[str, Any]:
+    return dict({"reason": reasons[0]}, **({"reasons": reasons[1:]} if reasons[1:] else {}))
+
+
+def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str, brain_sha: str, root: str,
+                git: str) -> dict[str, Any]:
+    """The target half of D1 (see the module docstring): ``{reason?, reasons?, heads?, assembled?}``."""
+    target_id = environ["LOOP_TARGET"]
+    target, reasons = C.target_entry(files["setup/summary.json"], target_id)
+    if reasons:
+        return _refused(reasons)
+    try:
+        url = A.repo_url(target.get("repo"))
+    except A.StateError:
+        return {"reason": "target_repo_unsafe"}
+    try:
+        found = F.heads(os.path.join(root, "heads.git"), url, list(TARGET_REFS.values()), git=git, environ=environ)
+    except P.PulledError as exc:
+        raise Unusable("cek: target heads: %s" % ", ".join(exc.reasons)) from None
+    heads = {branch: found[ref] for branch, ref in TARGET_REFS.items()}
+    missing = ["head_missing:%s" % b for b, head in heads.items() if head is None]
+    if missing:
+        return dict(_refused(missing), heads=heads)
+    target_dir = os.path.join(root, "target.git")
+    commit = heads[B.INTEGRATION]
+    try:
+        F.fetch(target_dir, url, commit, git=git, environ=environ)
+    except P.PulledError as exc:
+        raise Unusable("cek: target fetch: %s" % ", ".join(exc.reasons)) from None
+    out = os.path.join(root, "pulled")
+    try:
+        with G.GitBatch(brain_dir, git=git, environ=environ) as brain, \
+                G.GitBatch(target_dir, git=git, environ=environ) as objects:
+            manifest = C.assemble(brain, brain_sha, files["setup/summary.json"], files["policy.json"], target_id,
+                                  objects, commit, out)
+    except P.PulledError as exc:
+        return dict({"reason": "pulled_refused", "reasons": exc.reasons}, heads=heads)
+    return {"heads": heads, "assembled": {"target": target_id, "commit": commit,
+                                          "candidates": sorted({p.split("/")[1] for p in manifest["files"]
+                                                                if p.startswith(P.CANDIDATES + "/")})}}
 
 
 def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None,
@@ -474,7 +540,8 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         d1 = cek_d1(environ, http, verifier, git)
         if "reason" in d1:
             return dict(result, **d1)
-        return dict(result, reason="cycle_not_wired", checked=["accepted_sha", "referee_tree"], **d1)
+        return dict(result, reason="cycle_not_wired", checked=["accepted_sha", "referee_tree", "heads", "assembled"],
+                    **d1)
     if name == "getir":
         d2 = getir_d2(environ, fetcher)
         if "reason" in d2:

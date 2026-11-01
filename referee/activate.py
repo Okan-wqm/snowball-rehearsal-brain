@@ -104,11 +104,11 @@ from gate import check, diffguard
 from ledger import anchor, append, chain, schema
 from loop import accepted
 from status import block
-from target import write
+from target import branches, write
 import cli
 
-STATE = "brain/state"
-INTEGRATION = schema.INTEGRATION
+STATE = branches.STATE
+INTEGRATION = branches.INTEGRATION
 MAIN = "main"
 CANDIDATE_PREFIX = "brain/c/"
 FILES = ("summary.json", "imports.jsonl", "policy.json", "security-ledger.jsonl", "recipe.json", "profile.json",

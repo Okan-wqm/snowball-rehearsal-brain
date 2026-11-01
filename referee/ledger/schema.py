@@ -48,6 +48,7 @@ from typing import Any, Callable
 import cli
 from dispatcher import llm_call
 from ledger import chain
+from target import branches
 
 PARTS = ("founder", "events", "cost", "drill", "freeze", "rival", "accept", "security", "looks")
 DERIVATIONS = ("tool", "static_analysis", "test_verified", "llm_inference", "name_similarity", "imported")
@@ -56,7 +57,7 @@ CAUSES = ("test_regression", "contract_counterpart", "build_break", "lint_regres
           "conflict_with_main", "scope_violation", "imported_assumption", "impact_miss", "unknown")
 MISS_REASONS = ("map_edge_missing", "unseen_file", "wrong_property", "ref_mismatch", "not_reported", "unknown")
 ROOT_KEYS = ("row_id", "ts", "root", "rekor_uuid", "prev_hash", "row_hash")
-INTEGRATION = "brain/integration"
+INTEGRATION = branches.INTEGRATION
 
 TS = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")

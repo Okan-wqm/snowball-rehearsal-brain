@@ -39,6 +39,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           LOOP_BRAIN_REPO: ${{ vars.BRAIN_REPO }}
+          LOOP_TARGET: ${{ vars.LOOP_TARGET }}
         run: |
           python3 -m loop.job run cek
       - name: upload pulled

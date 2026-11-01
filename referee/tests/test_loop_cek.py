@@ -10,9 +10,13 @@
   decide``: the good candidate merges, the test-breaking one is rejected (``tests_red``);
 - the ``cek`` job's D1 accepted-SHA check (``loop.job.cek_d1``): a fake Actions API and verifier, the real
   ``loop.fetch`` and ``loop.gitobj.GitBatch`` with ``git_store``'s test ``git`` holding the brain's commit, the
-  checkout's ``setup/imports.jsonl``: agreeing hashes end ``cycle_not_wired`` with ``accepted`` and no ``pulled``
-  written; a different or refused ``referee/`` and a broken import are refusals (exit 1); an unset variable, an
-  unverified state and a failed fetch are unusable (exit 2).
+  checkout's ``setup/imports.jsonl``, ``setup/summary.json`` and ``policy.json``; then the target half: the heads
+  read by ``loop.fetch.heads`` (the fake ``git``'s ``ls-remote`` answer), ``brain/integration``'s head fetched and
+  ``loop.cek.assemble`` run on both repositories' objects: agreeing hashes end ``cycle_not_wired`` with
+  ``accepted``, ``heads`` and ``assembled``, the artifact in the job's work directory (``loop.pulled.read`` takes it)
+  and none in ``out/pulled``; a different or refused ``referee/``, a broken import, an unknown target or one
+  without a safe ``repo``, a missing head and what ``assemble`` refuses are refusals (exit 1); an unset variable, an
+  unverified state, an unreadable checkout file, a failed listing or fetch are unusable (exit 2).
 """
 
 from __future__ import annotations
@@ -235,9 +239,13 @@ class EndToEnd(LK.Base):
 
 
 class CekJob(unittest.TestCase):
-    """``loop.job run cek`` up to D1's accepted-SHA check."""
+    """``loop.job run cek`` up to the assembled ``pulled``: D1's accepted-SHA check, the target's heads, its fetch."""
 
-    BRAIN = {"referee/loop/job.py": b"x = 1\n", "referee/a.py": b"a\n", "targets/t1/units.json": b"{}"}
+    BRAIN = dict({"referee/loop/job.py": b"x = 1\n", "referee/a.py": b"a\n",
+                  "targets/t1/units.json": b'{"units": []}'},
+                 **{"candidates/t1/good/%s" % f: d for f, d in candidate(GOOD).items()})
+    TARGET = {"a.js": b"const a = 1;\n", "lib/b.js": b"b\n"}
+    STATE_HEAD = "5" * 40
 
     def setUp(self) -> None:
         import test_accepted as TA
@@ -249,19 +257,35 @@ class CekJob(unittest.TestCase):
         self.bin = os.path.join(self.base, "bin")
         for d in (self.temp, os.path.join(self.work, "setup"), self.bin):
             os.makedirs(d)
+        self.summary = {"targets": [{"id": "t1", "kind": "toy", "repo": "o/target", "excluded_paths": [],
+                                     "unit_candidates": []}]}
+        with open(os.path.join(self.work, "policy.json"), "wb") as fh:
+            fh.write(POLICY)
 
-    def run_cek(self, brain=None, imported=None, verifier=None, exits=None, env=None, http=None):
+    def listing(self, integration: str | None, state: str | None = STATE_HEAD) -> bytes:
+        rows = [(state, "refs/heads/brain/state"), (integration, "refs/heads/brain/integration")]
+        return b"".join(b"%s\t%s\n" % (sha.encode(), ref.encode()) for sha, ref in rows if sha)
+
+    def run_cek(self, brain=None, imported=None, verifier=None, exits=None, env=None, http=None, listing=None,
+                target=None, summary=None):
         objects, commit = S.store(self.BRAIN if brain is None else brain)
-        git = S.install_git(self.bin, {sha: S.batch_record(sha, kind, data) for sha, (kind, data) in objects.items()},
-                            exits=exits)
+        tobjects, self.target_commit = S.store(self.TARGET)
+        if target is not None:
+            tobjects = target
+        answers = {sha: S.batch_record(sha, kind, data) for sha, (kind, data) in dict(objects, **tobjects).items()}
+        git = S.install_git(self.bin, answers, exits=exits,
+                            listing=self.listing(self.target_commit) if listing is None else listing)
         tree = T.digest([(p, "file", d) for p, d in self.BRAIN.items()])
         with open(os.path.join(self.work, "setup", "imports.jsonl"), "wb") as fh:
             fh.write(self.TA.chained([self.TA.import_row(tree if imported is None else imported, commit)])
                      if imported != "" else b"")
+        with open(os.path.join(self.work, "setup", "summary.json"), "wb") as fh:
+            fh.write(json.dumps(self.summary if summary is None else summary).encode())
         zip_bytes = self.TA.zip_of({"result.json": self.TA.result(commit), "result.json.sigstore.json": b"{}"})
         api = http or self.TA.FakeApi([self.TA.artifact(11, "2026-11-01T00:00:00Z")], zip_bytes)
         environ = {"RUNNER_TEMP": self.temp, "GITHUB_REPOSITORY": "o/referee", "GITHUB_TOKEN": "t",
-                   "GITHUB_WORKSPACE": self.work, "LOOP_BRAIN_REPO": "o/brain", "PATH": os.environ.get("PATH", "")}
+                   "GITHUB_WORKSPACE": self.work, "LOOP_BRAIN_REPO": "o/brain", "LOOP_TARGET": "t1",
+                   "PATH": os.environ.get("PATH", "")}
         environ.update(env or {})
         self.verified: list = []
 
@@ -270,21 +294,44 @@ class CekJob(unittest.TestCase):
             return 0
         out = J.run("cek", {k: v for k, v in environ.items() if v is not None}, http=api,
                     verifier=verifier or verify, git=git)
-        self.assertFalse(os.path.lexists(os.path.join(self.temp, "out", "pulled")))
+        self.assertFalse(os.path.lexists(os.path.join(self.temp, "out", "pulled")))  # nothing for the upload step
         return out, commit, tree
+
+    def assembled(self) -> list[str]:
+        work = os.path.join(self.temp, "work")
+        return [os.path.join(work, d, "pulled") for d in sorted(os.listdir(work))
+                if os.path.isdir(os.path.join(work, d, "pulled"))] if os.path.isdir(work) else []
 
     def test_the_job_checks_the_accepted_sha_and_writes_no_pulled(self):
         out, commit, tree = self.run_cek()
         self.assertEqual(out["reason"], "cycle_not_wired")
-        self.assertEqual((out["ok"], out["checked"]), (False, ["accepted_sha", "referee_tree"]))
+        self.assertEqual((out["ok"], out["checked"]), (False, ["accepted_sha", "referee_tree", "heads", "assembled"]))
         self.assertEqual(out["accepted"]["brain_sha"], commit)
         self.assertEqual(out["accepted"]["referee_tree_sha256"], tree)
         self.assertEqual(out["accepted"]["artifact_id"], 11)
         self.assertIn("https://github.com/o/referee/.github/workflows/bootstrap.yml@refs/heads/main", self.verified[0])
-        fetches = [c["argv"] for c in S.calls(self.bin) if "fetch" in c["argv"]]
-        self.assertEqual(len(fetches), 1)
-        self.assertIn("https://github.com/o/brain", fetches[0])
-        self.assertEqual(fetches[0][-1], "%s:refs/pulled" % commit)
+        argvs = [c["argv"] for c in S.calls(self.bin)]
+        fetches = [a for a in argvs if "fetch" in a]
+        self.assertEqual([(f[-2], f[-1]) for f in fetches],
+                         [("https://github.com/o/brain", "%s:refs/pulled" % commit),
+                          ("https://github.com/o/target", "%s:refs/pulled" % self.target_commit)])
+        listings = [a for a in argvs if "ls-remote" in a]
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(listings[0][-4:], ["--", "https://github.com/o/target", "refs/heads/brain/state",
+                                            "refs/heads/brain/integration"])
+        self.assertEqual(out["heads"], {"brain/state": self.STATE_HEAD, "brain/integration": self.target_commit})
+        self.assertEqual(out["assembled"], {"target": "t1", "commit": self.target_commit, "candidates": ["good"]})
+        # the artifact is assembled in the job's work directory, and loop.pulled reads it: the target's tree at
+        # brain/integration's head, the brain's units.json and candidate at the accepted commit
+        [path] = self.assembled()
+        art = P.read(path)
+        with open(art.tree_tar, "rb") as fh:
+            members = names(fh.read())
+        self.assertEqual(sorted(n for n, t, _, _ in members if t == tarfile.REGTYPE),
+                         ["a.js", "lib/b.js"])
+        self.assertEqual(art.units, {"units": []})
+        self.assertEqual(sorted(art.candidates), ["good"])
+        self.assertEqual(art.target["repo"], "o/target")
 
     def test_a_referee_tree_that_is_not_the_imported_one(self):
         out, _, _ = self.run_cek(imported="0" * 64)
@@ -293,6 +340,7 @@ class CekJob(unittest.TestCase):
         changed = dict(self.BRAIN, **{"referee/a.py": b"b\n"})
         out, _, _ = self.run_cek(brain=changed)
         self.assertEqual(out["reason"], "referee_tree_mismatch")
+        self.assertFalse([a for c in S.calls(self.bin) for a in c["argv"] if a == "ls-remote"])  # nothing after it
 
     def test_a_refused_tree_and_a_broken_import(self):
         out, _, _ = self.run_cek(brain=dict(self.BRAIN, **{"referee/Setup": b""}))
@@ -300,21 +348,65 @@ class CekJob(unittest.TestCase):
         out, _, _ = self.run_cek(imported="")
         self.assertEqual(out["reason"], "imports_no_transfer")
 
+    def test_a_missing_head_is_a_refusal_and_nothing_is_fetched(self):
+        for listing, reasons in ((self.listing(None), ["head_missing:brain/integration"]),
+                                 (self.listing("6" * 40, None), ["head_missing:brain/state"]),
+                                 (b"", ["head_missing:brain/state", "head_missing:brain/integration"])):
+            with self.subTest(reasons=reasons):
+                os.remove(os.path.join(self.bin, "calls.jsonl")) if os.path.exists(
+                    os.path.join(self.bin, "calls.jsonl")) else None
+                out, _, _ = self.run_cek(listing=listing)
+                self.assertEqual([out["reason"]] + out.get("reasons", []), reasons)
+                self.assertIn("accepted", out)
+                self.assertEqual(len([c for c in S.calls(self.bin) if "fetch" in c["argv"]]), 1)  # the brain's only
+                self.assertEqual(self.assembled(), [])
+
+    def test_the_target_entry(self):
+        for summary, reason in (({"targets": []}, "target_unknown"), ({"x": 1}, "summary_unreadable"),
+                                ({"targets": [{"id": "t1", "repo": "o/target"}] * 2}, "target_ambiguous"),
+                                ({"targets": [{"id": "t1"}]}, "target_repo_unsafe"),
+                                ({"targets": [{"id": "t1", "repo": "o/../x"}]}, "target_repo_unsafe"),
+                                ({"targets": [{"id": "t1", "repo": "https://github.com/o/t"}]}, "target_repo_unsafe")):
+            with self.subTest(reason=reason, summary=summary):
+                out, _, _ = self.run_cek(summary=summary)
+                self.assertEqual(out["reason"], reason)
+                self.assertNotIn("heads", out)
+        out, _, _ = self.run_cek(env={"LOOP_TARGET": "t2"})
+        self.assertEqual(out["reason"], "target_unknown")
+
+    def test_what_assemble_refuses_is_a_refusal(self):
+        brain = {p: d for p, d in self.BRAIN.items() if p != "targets/t1/units.json"}
+        brain["candidates/t1/bad name/x"] = b""
+        self.BRAIN = brain
+        out, _, _ = self.run_cek()
+        self.assertEqual((out["reason"], out["reasons"]), ("pulled_refused", ["units_missing",
+                                                                               "candidate_invalid:bad name"]))
+        self.assertEqual(out["heads"]["brain/integration"], self.target_commit)
+        self.assertEqual(self.assembled(), [])
+
     def test_no_verdict(self):
         for kw in ({"env": {"GITHUB_TOKEN": None}}, {"env": {"LOOP_BRAIN_REPO": None}},
-                   {"env": {"LOOP_BRAIN_REPO": "o/brain/x"}}, {"verifier": lambda argv: 1},
-                   {"exits": {"fetch": 128}}, {"http": self.TA.FakeApi([], b"")}):
+                   {"env": {"LOOP_TARGET": None}}, {"env": {"LOOP_BRAIN_REPO": "o/brain/x"}},
+                   {"verifier": lambda argv: 1}, {"exits": {"fetch": 128}}, {"http": self.TA.FakeApi([], b"")},
+                   {"exits": {"ls-remote": 128}}, {"listing": b"garbage\n"},
+                   {"target": {}}):  # the target's fetch brings no commit: its read-back fails
             with self.subTest(kw=kw):
                 shutil.rmtree(self.temp)
                 os.makedirs(self.temp)
                 with self.assertRaises(J.Unusable):
                     self.run_cek(**kw)
-        os.remove(os.path.join(self.work, "setup", "imports.jsonl"))
-        with self.assertRaises(J.Unusable):
-            J.run("cek", {"RUNNER_TEMP": self.temp, "GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t",
-                          "GITHUB_WORKSPACE": self.work, "LOOP_BRAIN_REPO": "o/b"},
-                  http=self.TA.FakeApi([self.TA.artifact(1, "2026-11-01T00:00:00Z")],
-                                       self.TA.zip_of(self.TA.GOOD_ZIP)), verifier=lambda argv: 0)
+        for name in ("setup/imports.jsonl", "setup/summary.json", "policy.json"):
+            with self.subTest(missing=name):
+                self.run_cek()  # writes the checkout's files
+                os.remove(os.path.join(self.work, *name.split("/")))
+                with self.assertRaisesRegex(J.Unusable, name):
+                    J.run("cek", {"RUNNER_TEMP": self.temp, "GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t",
+                                  "GITHUB_WORKSPACE": self.work, "LOOP_BRAIN_REPO": "o/b", "LOOP_TARGET": "t1"},
+                          http=self.TA.FakeApi([self.TA.artifact(1, "2026-11-01T00:00:00Z")],
+                                               self.TA.zip_of(self.TA.GOOD_ZIP)), verifier=lambda argv: 0)
+                if name == "policy.json":
+                    with open(os.path.join(self.work, "policy.json"), "wb") as fh:
+                        fh.write(POLICY)
 
 
 if __name__ == "__main__":

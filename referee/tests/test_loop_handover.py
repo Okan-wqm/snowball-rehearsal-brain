@@ -48,10 +48,10 @@ KOS_TO_YAZ = "test_loop_yaz.YazJob.test_the_job_runs_d5_and_merges_nothing_witho
 
 # (artifact, consumer) -> (status, test id | why)
 HANDOVER: dict[tuple[str, str], tuple[str, str]] = {
-    ("pulled", "getir"): ("unwritten", CEK_D1),  # cek checks the accepted SHA, then stops before assemble
-    ("pulled", "kos"): ("unwritten", CEK_D1),  # cek checks the accepted SHA, then stops before assemble
-    ("pulled", "cagir"): ("unwritten", CEK_D1),  # cek checks the accepted SHA, then stops before assemble
-    ("pulled", "yaz"): ("unwritten", CEK_D1),  # cek checks the accepted SHA, then stops before assemble
+    ("pulled", "getir"): ("unwritten", CEK_D1),  # cek assembles pulled in its work dir, stops before out/pulled
+    ("pulled", "kos"): ("unwritten", CEK_D1),  # cek assembles pulled in its work dir, stops before out/pulled
+    ("pulled", "cagir"): ("unwritten", CEK_D1),  # cek assembles pulled in its work dir, stops before out/pulled
+    ("pulled", "yaz"): ("unwritten", CEK_D1),  # cek assembles pulled in its work dir, stops before out/pulled
     ("deps", "kos"): ("handover", GETIR_TO_KOS),
     ("deps", "yaz"): ("unread", KOS_TO_YAZ),  # D5 reads D3's and D4's artifacts (asama-0/01); no wired step reads deps
     ("results", "yaz"): ("handover", KOS_TO_YAZ),

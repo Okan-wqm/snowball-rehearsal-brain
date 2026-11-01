@@ -51,9 +51,10 @@ from typing import Any, Callable
 
 from gate import secrets
 from ledger import chain
+from target import branches
 import cli
 
-STATE_BRANCH = "brain/state"
+STATE_BRANCH = branches.STATE
 
 
 class HardStop(Exception):

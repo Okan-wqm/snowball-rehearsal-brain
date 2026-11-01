@@ -35,10 +35,6 @@
     "kind": "unwired",
     "why": "the row shapes the D6 writers produce (test 14); imported by activate only, which is off the live path"
   },
-  "loop.cek": {
-    "kind": "unwired",
-    "why": "D1's assembly of pulled: job cek now runs D1's accepted-SHA check (loop.accepted) and stops cycle_not_wired before the target's heads, verify --previous, the root and assemble are wired (rival claim e68f29ca3f75)"
-  },
   "profile.fit": {
     "kind": "session_tool",
     "why": "a session composes each unit candidate's recipe from its own npm scripts and judges it with unit_verify.check_recipe; its --units output is targets/<target>/units.json, which loop.cek reads; run by a session and by test 47 (tests/test_profile_fit.py)"
