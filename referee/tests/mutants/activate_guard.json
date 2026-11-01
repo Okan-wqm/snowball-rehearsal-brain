@@ -38,11 +38,12 @@
   },
   {
    "id": "base_read_follows_links",
-   "file": "activate.py",
-   "old": "    old = derive._read_regular(tree, found[\"path\"])",
-   "new": "    old = open(tree + \"/\" + found[\"path\"], \"rb\").read() if __import__(\"os\").path.isfile(tree + \"/\" + found[\"path\"]) else None",
+   "file": "target/land.py",
+   "old": "    old = derive._read_regular(tree, path)",
+   "new": "    old = open(tree + \"/\" + path, \"rb\").read() if __import__(\"os\").path.isfile(tree + \"/\" + path) else None",
    "tests": [
-    "test_activate.py"
+    "test_activate.py",
+    "test_loop_write.py"
    ]
   },
   {

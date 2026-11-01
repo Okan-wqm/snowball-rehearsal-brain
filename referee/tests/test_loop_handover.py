@@ -60,7 +60,7 @@ HANDOVER: dict[tuple[str, str], tuple[str, str]] = {
     ("deps", "kos"): ("handover", GETIR_TO_KOS),
     ("deps", "yaz"): ("unread", KOS_TO_YAZ),  # D5 reads D3's and D4's artifacts (asama-0/01); no wired step reads deps
     ("results", "yaz"): ("handover", KOS_TO_YAZ),
-    ("response", "yaz"): ("unread", KOS_TO_YAZ),  # D5 decides on D3's results; D6, which appends its cost row, is not wired
+    ("response", "yaz"): ("handover", CEK_TO_ALL),  # D6 appends the response's cost row
 }
 STATUSES = ("handover", "unread", "unwired", "unwired_consumer", "unwritten")
 

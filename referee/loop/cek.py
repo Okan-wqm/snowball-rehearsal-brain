@@ -10,7 +10,7 @@ Rules: asama-0/01 D1 (``çek`` reads, at the SHA the bootstrap referee last acce
 ``setup/summary.json`` and ``policy.json``; ``target_id``; ``objects``, a ``loop.gitobj`` object source holding the
 target's commit; ``commit``, that commit's 40-hex id (``brain/integration``'s head); ``state_head``, the
 ``brain/state`` head D1 verified, and ``state``, its files of ``target.branches.STATE_CHAINS`` (path -> bytes) as
-verified. ``state/heads.json`` is ``{brain/state: state_head, brain/integration: commit}``, so the head recorded
+verified; ``status``, that head's ``status.md`` (``None`` when it has none), carried as read. ``state/heads.json`` is ``{brain/state: state_head, brain/integration: commit}``, so the head recorded
 for the tree is the commit the tree was read from. Nothing here reads the network or a clock.
 
 **Rules**, every reason that holds is listed (``PulledError``; ``out`` is not created):
@@ -105,7 +105,8 @@ def _units(brain: G.Source, commit: str, target_id: str) -> bytes | None:
 
 
 def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, target_id: str,
-             objects: G.Source, commit: str, state_head: str, state: dict[str, bytes], out: str) -> dict[str, Any]:
+             objects: G.Source, commit: str, state_head: str, state: dict[str, bytes], status: bytes | None,
+             out: str) -> dict[str, Any]:
     """Write ``pulled`` into ``out`` (which must not exist) by the rules above; returns its manifest."""
     if not (isinstance(target_id, str) and K.CANDIDATE_ID.fullmatch(target_id)):
         raise P.PulledError(["target_id_unsafe"])
@@ -129,7 +130,7 @@ def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, 
     if reasons:
         raise P.PulledError(list(dict.fromkeys(reasons)))
     manifest = P.write(out, target, tree, units, policy, candidates, {B.STATE: state_head, B.INTEGRATION: commit},
-                       state)
+                       state, status)
     try:
         P.read(out)
     except P.PulledError:

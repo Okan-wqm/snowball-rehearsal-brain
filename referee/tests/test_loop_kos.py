@@ -106,12 +106,12 @@ class Base(unittest.TestCase):
         self.pulled = os.path.join(self.temp, "in", "pulled")
 
     def write_pulled(self, cands=None, units=None, tree_tar=None, policy=None, target=None, heads=None,
-                     state=None) -> dict:
+                     state=None, status=None) -> dict:
         return P.write(self.pulled, target or TARGET, tree_tar if tree_tar is not None else tar_of(self.src),
                        json.dumps(units if units is not None else {"units": [recipe()]}).encode(),
                        policy if isinstance(policy, bytes) else json.dumps(policy or {"operating": operating()}).encode(),
                        cands if cands is not None else {}, HEADS if heads is None else heads,
-                       state_files() if state is None else state)
+                       state_files() if state is None else state, status)
 
     def manifest(self) -> dict:
         with open(os.path.join(self.pulled, P.MANIFEST)) as fh:
@@ -239,6 +239,30 @@ class Layout(Base):
         m["files"]["units.json"] = m["files"]["policy.json"] = P._sha(b"{not json")
         self.set_manifest(m)
         self.assertEqual(self.reasons(), ["json_unreadable:units.json", "json_unreadable:policy.json"])
+
+    def test_status_md_is_carried_when_the_head_has_one(self):
+        # brain/state's status.md (D6 regenerates its block): optional in the layout, read back as it was written
+        self.write_pulled(status=b"# notes\n")
+        self.assertEqual(P.read(self.pulled).status, b"# notes\n")
+        self.assertEqual(self.manifest()["files"]["state/status.md"], P._sha(b"# notes\n"))
+        shutil.rmtree(self.pulled)
+        self.write_pulled()
+        self.assertIsNone(P.read(self.pulled).status)
+        self.assertNotIn("state/status.md", self.manifest()["files"])
+        shutil.rmtree(self.pulled)
+        self.write_pulled(status=b"x")
+        os.remove(os.path.join(self.pulled, "state", "status.md"))  # listed, not there
+        self.assertEqual(self.reasons(), ["file_missing:state/status.md"])
+        write_tree(self.pulled, {"state/status.md": "y"})  # there, other bytes
+        self.assertEqual(self.reasons(), ["hash_mismatch:state/status.md"])
+        shutil.rmtree(self.pulled)
+        self.write_pulled()
+        write_tree(self.pulled, {"state/status.md": "z"})  # there, not listed
+        self.assertEqual(self.reasons(), ["unlisted:state/status.md"])
+        shutil.rmtree(self.pulled)
+        with self.assertRaises(P.PulledError) as ctx:
+            self.write_pulled(status="text")
+        self.assertEqual(ctx.exception.reasons, ["state_incomplete"])
 
     def test_write_refuses_what_read_would(self):
         with self.assertRaises(P.PulledError) as ctx:

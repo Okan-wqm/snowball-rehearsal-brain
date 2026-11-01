@@ -17,9 +17,10 @@ import tempfile
 
 from fake_github import FakeGitHub
 from ledger import anchor, chain
+from target import branches
 
 REPO = "acme/toy"
-GATE = "snowball/gate"
+GATE = branches.CHECK  # tohum/25a row 3
 CYCLE = "41000000001"
 TS = "2026-10-30T12:00:00Z"
 SNAP = "s-activation"
@@ -195,7 +196,7 @@ class World:
         import activate
         self.wr = self.writer()
         return activate.activate(self.wr, self.files, self.request() if req is None else req, self.candidates,
-                                 self.tree or self.base_tree(), self.signer, self.control, GATE, self.canary_cap)
+                                 self.tree or self.base_tree(), self.signer, self.control, self.canary_cap)
 
     def writes(self) -> list[tuple]:
         return [(m, p) for m, p, _ in self.gh.requests if m != "GET"]

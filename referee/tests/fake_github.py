@@ -27,6 +27,7 @@ import hashlib
 import re
 
 from ledger.chain import canonical
+from target import branches
 
 SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -37,7 +38,7 @@ def sha_of(obj) -> str:
 
 class FakeGitHub:
     def __init__(self, repo: str = "acme/toy", direct_push_denied=("brain/integration",),
-                 required_check: str = "snowball/gate", create_denied=()):
+                 required_check: str = branches.CHECK, create_denied=()):
         self.prefix = "/repos/%s/" % repo
         self.refs: dict[str, str] = {}
         self.commits: dict[str, dict] = {}

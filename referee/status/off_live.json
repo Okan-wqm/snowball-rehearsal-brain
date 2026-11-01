@@ -15,17 +15,9 @@
     "kind": "unwired",
     "why": "MF14, D8 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
   },
-  "ledger.cycle": {
-    "kind": "unwired",
-    "why": "calls 10 -> 11, 16: the cycle's one brain/state commit; its callers are activate (MF18, unwired) and D6 in job yaz, whose composition inside the jobs is not written (spec-036), so loop.job does not import it yet"
-  },
   "ledger.founder": {
     "kind": "session_tool",
     "why": "the founder ledger's rules and its append command, run by a session and by test 14 (tests/test_founder_ledger.py); the loop never writes founder rows"
-  },
-  "loop.sign": {
-    "kind": "unwired",
-    "why": "MF11's real signer (sigstore sign of the cycle's root); its caller is ledger.cycle in D6 of job yaz, whose composition inside the jobs is not written (spec-036), so loop.job does not import it yet"
   },
   "profile.fit": {
     "kind": "session_tool",
@@ -34,9 +26,5 @@
   "status.depmap": {
     "kind": "session_tool",
     "why": "the dependency drawings, run in a session and by test 42; the loop never runs it"
-  },
-  "target.write": {
-    "kind": "unwired",
-    "why": "MF9, D6 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"
   }
 }

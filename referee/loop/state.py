@@ -31,7 +31,8 @@ On success: ``{"head", "previous" (the parent or ``None``), "rows" (path -> its 
 Out of scope, stated: whether the head is the commit the last cycle wrote and not one more pushed on top of it,
 which is the root's question (MF11's ``ledger.anchor.judge`` of the ledger's root against the last row of
 ``chain/root.jsonl`` and its Rekor entry, run by the job on ``chains``' bytes after ``verify``); the other files
-of ``brain/state`` (``status.md``, ``profile.json``); the row payloads (``ledger.schema``'s); the reads themselves (the job's ``loop.fetch``). Both versions are held in memory.
+of ``brain/state`` (``profile.json``; ``status.md`` is read by ``status`` as bytes, not verified: D6's
+``status.block.plan`` regenerates a block edited by hand and records it); the row payloads (``ledger.schema``'s); the reads themselves (the job's ``loop.fetch``). Both versions are held in memory.
 """
 
 from __future__ import annotations
@@ -64,6 +65,12 @@ def chains(source: G.Source, commit: str) -> dict[str, bytes | None]:
     """``commit``'s chained files (``STATE_CHAINS``), each its bytes or ``None`` where no file entry is; ``PulledError``
     for a git object reason, unmarked. Read by ``verify`` and by D1's root check (``loop.job``)."""
     return {path: _file(source, commit, path) for path in branches.STATE_CHAINS}
+
+
+def status(source: G.Source, commit: str) -> bytes | None:
+    """``commit``'s ``status.md`` (``target.branches.STATE_STATUS``): its bytes, or ``None`` where no file entry is
+    (absent, a link, a tree, a gitlink); ``PulledError`` for a git object reason, unmarked. Read by D1 for D6."""
+    return _file(source, commit, branches.STATE_STATUS)
 
 
 def verify(source: G.Source, head: str, previous: G.Source | None = None, prev: str | None = None) -> dict[str, Any]:

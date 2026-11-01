@@ -67,15 +67,17 @@ objects), no transfer row or one whose ``referee_tree_sha256`` is not 64 lowerca
 5. Each ready candidate, in id order, is decided by the acceptance rule (asama-0/08): ``gate.diffguard.check``
    (criterion 1, with that profile's ``security_paths``/``excluded_dirs`` and the recipe's ``inputs``), then
    ``gate.check.decide`` (criteria 2-8 against ``base.jsonl``, with ``unfinished_sentinels`` the merges this
-   activation already made: at most one merge), then the diff applied to the base file read from ``tree`` (a
-   missing file, one that is not regular or one under a symbolic link ``base_file_missing``, a diff that does not apply ``patch_does_not_apply``); unusable files
-   ``candidate_unusable``; an id that is not a branch name under ``brain/c/`` ``candidate_id_invalid``. A merge:
-   branch ``brain/c/<cid>`` at the cut, one commit, a pull request into ``brain/integration``, a ``success`` check
-   named ``check_name``, the merge. A reject writes nothing on the target.
+   activation already made: at most one merge), then the diff applied to the base file read from ``tree``
+   (``target.land.applied``, the one application D6 of ``yaz`` makes too: a diff of more than one file
+   ``diff_not_one_file``, a missing file, one that is not regular or one under a symbolic link
+   ``base_file_missing``, a diff that does not apply ``patch_does_not_apply``); unusable files
+   ``candidate_unusable``; an id that is not a branch name under ``brain/c/`` ``candidate_id_invalid``. A merge
+   (``target.land.land``): branch ``brain/c/<cid>`` at the cut, one commit, a pull request into
+   ``brain/integration``, a ``success`` check named ``target.branches.CHECK``, the merge. A reject writes nothing on the target.
 6. The state, ``events`` rows in this order: ``genesis`` (the payload), ``cycle_start {cycle_id}``,
    ``integration_cut {branch, base_sha}``, ``ratchet_base {base_run_sha256, counts}``, one ``decision`` per
    candidate (``{decision: merge, candidate, path, pull, head_sha, merge_sha}`` or ``{decision: reject, candidate,
-   reasons}`` with ``cause`` the first of ``REJECT_CAUSES`` that matches a reason, else ``unknown``), then
+   reasons}`` with ``ledger.events.cause``; the rows are ``ledger.events``', the ones D6 writes), then
    ``status.block.plan``'s rows (MF16); ``ledger.cycle.plan`` over an empty ledger and roots file chains them
    (secret scan), checks the whole ledger against ``ledger.schema``, signs the root and writes its row;
    ``ledger.jsonl``, ``chain/root.jsonl`` and ``status.md`` go in one orphan commit that opens ``brain/state``.
@@ -107,17 +109,16 @@ import sys
 from typing import Any
 
 from gate import check, diffguard
-from ledger import anchor, append, chain, cycle, schema
+from ledger import append, chain, cycle, events, schema
 from loop import accepted
 from profile import derive, unit_verify
-from status import block
-from target import branches, write
+from target import branches, land, write
 import cli
 
 STATE = branches.STATE
 INTEGRATION = branches.INTEGRATION
 MAIN = "main"
-CANDIDATE_PREFIX = "brain/c/"
+CANDIDATE_PREFIX = land.CANDIDATE_PREFIX
 FILES = ("summary.json", "imports.jsonl", "policy.json", "security-ledger.jsonl", "recipe.json", "base.jsonl")
 GENESIS_FILES = FILES[:5]
 REQUEST = {"target_id", "base_run_sha256", "cycle_id", "ts", "snapshot_id", "candidates"}
@@ -125,14 +126,6 @@ KINDS = ("toy", "copy")
 BRANCHES = (STATE, INTEGRATION, MAIN)
 INTEGRATION_RULES = ("deletion", "non_fast_forward", "pull_request", "required_status_checks")
 CANDIDATE_FILES = ("finding.json", "diff.patch", "cand.jsonl", "checks.json", "hashes.json")
-# A reject's cause: the first entry whose test holds for some reason (tohum/26 closed set).
-REJECT_CAUSES = (
-    ("scope_violation", lambda r: r == "scope_violation" or ":" in r),  # criterion 1's path reasons and 4
-    ("test_regression", lambda r: r in ("tests_red", "zero_tests")),
-    ("lint_regression", lambda r: r == "ratchet_increase"),
-)
-
-HardStopBase = append.HardStop
 Refused = write.Refused
 
 
@@ -140,12 +133,7 @@ class Unusable(ValueError):
     pass
 
 
-class HardStop(HardStopBase):
-    """Activation failed after its first write; ``written`` names the refs already written."""
-
-    def __init__(self, message: str, written: list[str]):
-        super().__init__("%s (written: %s)" % (message, ", ".join(written) or "nothing"))
-        self.written = written
+HardStop = land.HardStop  # activation failed after its first write; ``written`` names the refs already written
 
 
 def _sha(data: bytes) -> str:
@@ -187,15 +175,6 @@ def _canonical_sha(value: Any, name: str) -> str:
         return _sha(chain.canonical(value))
     except (chain.ChainError, ValueError, TypeError) as exc:
         raise Unusable("%s has no canonical form: %s" % (name, cli.cause(exc))) from None
-
-
-def _row(cycle: dict, suffix: str, kind: str, payload: dict, cause: str | None = None) -> dict:
-    row = {"row_id": "%s:%s" % (cycle["cycle_id"], suffix), "ts": cycle["ts"], "part": "events", "kind": kind,
-           "payload": payload, "derivation": "tool", "trust": "verified", "snapshot_id": cycle["snapshot_id"],
-           "evidence_refs": []}
-    if cause is not None:
-        row["cause"] = cause
-    return row
 
 
 # ---------------------------------------------------------------- genesis
@@ -347,13 +326,6 @@ def ratchet_base(base_run: bytes, base_run_sha256: str) -> dict:
 
 # ---------------------------------------------------------------- the ready candidates
 
-def _cause(reasons: list[str]) -> str:
-    for cause, test in REJECT_CAUSES:
-        if any(test(r) for r in reasons):
-            return cause
-    return "unknown"
-
-
 def decide(cand: dict, base_run: bytes, profile: Any, recipe: Any, control: Any, pending: list[str],
            tree: str) -> dict:
     """The acceptance rule on one candidate: ``{reasons, path, content}``; ``content`` is the applied file when
@@ -374,36 +346,15 @@ def decide(cand: dict, base_run: bytes, profile: Any, recipe: Any, control: Any,
     reasons = sorted(set(reasons + decided["reasons"]))
     if reasons:
         return {"reasons": reasons, "path": found["path"], "content": None}
-    old = derive._read_regular(tree, found["path"])
-    if old is None:
-        return {"reasons": ["base_file_missing"], "path": found["path"], "content": None}
-    try:
-        content = diffguard.apply(diffguard.parse(text)[0], old)
-    except diffguard.DiffError:
-        return {"reasons": ["patch_does_not_apply"], "path": found["path"], "content": None}
-    return {"reasons": [], "path": found["path"], "content": content}
-
-
-def land(writer: write.Writer, cid: str, path: str, content: bytes, cut: str, check_name: str) -> dict:
-    """Branch, commit, pull request, check and merge of one accepted candidate onto ``brain/integration``."""
-    branch = CANDIDATE_PREFIX + cid
-    title = "candidate %s" % cid
-    writer.create_branch(branch, cut)
-    head = writer.commit_files(branch, cut, {path: content}, title)
-    pull = writer.open_pull(branch, INTEGRATION, title, "accepted by the gate (asama-0/08)")
-    if pull is None:
-        raise write.ApiError(None, "pull request created without a number")
-    writer.check(head, check_name, "success", "gate: merge")
-    merge = writer.merge(pull, head)
-    return {"pull": pull, "head_sha": head, "merge_sha": merge}
+    return land.applied(tree, text)
 
 
 # ---------------------------------------------------------------- the state commit
 
 # ---------------------------------------------------------------- activation
 
-def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates: list[dict], tree: str, signer: Any, control: Any, check_name: str,
-             canary_cap_usd_micros: int) -> dict:
+def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates: list[dict], tree: str, signer: Any,
+             control: Any, canary_cap_usd_micros: int) -> dict:
     """The activation; see the module docstring. ``candidates``: ``{id, <CANDIDATE_FILES>: bytes|None}`` each."""
     req = _request(req)
     ids = [c.get("id") if isinstance(c, dict) else None for c in candidates]
@@ -442,31 +393,27 @@ def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates
         raise Unusable(cli.cause(exc)) from None
     writer.create_branch(INTEGRATION, cut)
     try:
-        rows = [_row(req, "genesis", "genesis", gen["payload"]),
-                _row(req, "start", "cycle_start", {"cycle_id": req["cycle_id"]}),
-                _row(req, "cut", "integration_cut", {"branch": INTEGRATION, "base_sha": cut}),
-                _row(req, "ratchet", "ratchet_base", {"base_run_sha256": req["base_run_sha256"],
-                                                      "counts": base["counts"]})]
+        rows = [events.row(req, "genesis", "genesis", gen["payload"]),
+                events.start(req),
+                events.row(req, "cut", "integration_cut", {"branch": INTEGRATION, "base_sha": cut}),
+                events.row(req, "ratchet", "ratchet_base", {"base_run_sha256": req["base_run_sha256"],
+                                                            "counts": base["counts"]})]
         merges, decisions = [], []
         for cand in sorted(candidates, key=lambda c: c["id"]):
             got = decide(cand, files["base.jsonl"], profile, recipe, control, merges, tree)
             if got["reasons"]:
-                payload = {"decision": "reject", "candidate": cand["id"], "reasons": got["reasons"]}
-                rows.append(_row(req, "c:" + cand["id"], "decision", payload, _cause(got["reasons"])))
-                decisions.append(payload)
-                continue
-            done = land(writer, cand["id"], got["path"], got["content"], cut, check_name)
-            merges.append(done["merge_sha"])
-            payload = dict(done, decision="merge", candidate=cand["id"], path=got["path"])
-            rows.append(_row(req, "c:" + cand["id"], "decision", payload))
-            decisions.append(payload)
+                rows.append(events.decision(req, cand["id"], got["reasons"]))
+            else:
+                done = land.land(writer, cand["id"], got["path"], got["content"], cut, branches.CHECK)
+                merges.append(done["merge_sha"])
+                rows.append(events.decision(req, cand["id"], [], dict(done, path=got["path"])))
+            decisions.append(rows[-1]["payload"])
         facts = {"ts": req["ts"], "snapshot_id": req["snapshot_id"], "row_id": "%s:status" % req["cycle_id"],
                  "canary_cap_usd_micros": canary_cap_usd_micros}
         state = cycle.plan(b"", b"", b"", b"", None, rows, files["imports.jsonl"], facts, signer,
                            "%s:root" % req["cycle_id"])
         sha = writer.open_orphan(STATE, state["files"], "genesis: cycle %s" % req["cycle_id"])
-    except (write.ApiError, write.Refused, Unusable, HardStopBase, block.Unusable, anchor.Unusable,
-            cycle.Unusable) as exc:
+    except (write.ApiError, write.Refused, Unusable) + cycle.FAILURES as exc:
         raise HardStop("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     return {"state_sha": sha, "integration_sha": cut, "row_hashes": state["row_hashes"], "root": state["root"],
             "entry": state["entry"], "decisions": decisions, "files": state["files"]}

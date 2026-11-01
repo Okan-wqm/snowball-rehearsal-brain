@@ -57,7 +57,7 @@ class ToyPulled(unittest.TestCase):
         out = os.path.join(self.tmp, "pulled")
         summary = json.dumps({"targets": [ENTRY, dict(ENTRY, id="copy", kind="copy")]}).encode()
         C.assemble(BRAIN.__getitem__, BRAIN_COMMIT, summary, b"{}", "toy", OBJECTS.__getitem__, COMMIT,
-                   HEADS["brain/state"], state_files(), out)
+                   HEADS["brain/state"], state_files(), None, out)
         got = P.read(out)
         self.assertEqual(got.target, ENTRY)
         self.assertEqual((got.heads["brain/integration"], got.state), (COMMIT, state_files()))

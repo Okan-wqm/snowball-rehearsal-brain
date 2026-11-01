@@ -29,7 +29,7 @@ the job's ``control`` step read it; ``unfinished``, the merge SHAs whose sentine
 
 ``decision`` is ``merge`` only with no reason. Output ``{decisions: {cid: {decision, reasons}}, merge: cid | None}``.
 A recipe whose ``inputs`` is not a list of strings, or a tree ``profile.derive`` refuses, is ``Unusable`` for the
-whole cycle (no candidate is judged). Nothing here writes: the ``events`` rows of the reasons, the merge and the ledger are D6's (not wired).
+whole cycle (no candidate is judged). Nothing here writes: the ``events`` rows of the reasons, the merge and the ledger are D6's (``loop.write_cycle``).
 
 Out of scope, stated: an operator excluded path written as a glob is judged by ``gate.diffguard`` as written
 (29f coverage), not as a pattern; the staging (``derive``'s pattern rule) leaves such files out of the worktree, so

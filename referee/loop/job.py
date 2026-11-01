@@ -68,8 +68,21 @@ refused tree is ``pulled_invalid``). Then:
   ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it),
   read before the tree is judged; a ledger it cannot read is ``state_refused`` with its reasons (exit 1), nothing
   decided. A merge is unfinished until its revert row: the end of a green sentinel has no row until D7 writes one,
-  so after the first merge no candidate merges. D6-D8 are not wired, so the job ends ``cycle_not_wired``, exit 1,
-  after D5, writing nothing.
+  so after the first merge no candidate merges. Then D6 (``yaz_d6``): it needs ``YAZ_ENV`` set (``WRITER_TOKEN``, the
+  writer App's token of step 2; Actions' own ``GITHUB_REPOSITORY``, ``GITHUB_WORKSPACE``, ``GITHUB_RUN_ID`` and
+  ``GITHUB_RUN_ATTEMPT``; unset is unusable), reads ``$RUNNER_TEMP/in/response`` (``cagir``'s download) with
+  ``loop.cagir.read_response`` against ``pulled`` (a refusal is ``response_invalid`` with its reasons, nothing
+  written) and the checkout's ``setup/imports.jsonl``, and calls ``loop.write_cycle.write`` with a
+  ``target.write.Writer`` on the ``targets[]`` entry's ``repo`` (``target_repo_unsafe`` when it is no repository
+  name) over ``target.write.HttpTransport`` with that token, the signer ``loop.sign.SigstoreSigner`` pinned to
+  ``loop.yml`` on ``$GITHUB_REPOSITORY``'s ``main`` (``loop.accepted.workflow_identity``, the identity the next
+  cycle's D1 verifies the root against), the cycle id ``<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`` and the clock's
+  time: the merge, if D5 chose one, and the cycle's one ``brain/state`` commit. Its refusals before any write
+  (``head_moved:<branch>``, ``state_unwritable: ...``) are ``write_refused`` with the reasons; a hard stop
+  (``target.land.HardStop``: a chain break, a root that cannot be signed, a write that failed after the first) is
+  ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. On success the
+  line carries ``written`` (``loop.write_cycle``'s answer) and ``done`` ``["D5", "D6"]``; D7 and D8 are not
+  wired, so the job still ends ``cycle_not_wired``, exit 1.
 - ``cek`` runs D1 (``cek_d1``), and with it the whole job. First the accepted-SHA check: it reads the bootstrap
   referee's last signed state with ``loop.accepted.read_state`` (the Actions API of ``$GITHUB_REPOSITORY`` with the
   job's ``GITHUB_TOKEN``, ``actions: read``; the artifact verified by ``sigstore`` on PATH), fetches the accepted
@@ -93,7 +106,9 @@ refused tree is ``pulled_invalid``). Then:
   anything else of the target is fetched: its head fetched with ``loop.fetch`` into ``cek-*/state.git``, its one
   parent (the version the previous cycle verified and extended), when it has one, into
   ``cek-*/state-previous.git``, and ``ledger.jsonl`` and ``chain/root.jsonl`` each verified as a chain and as an
-  append-only extension of the parent's (a genesis head without parent: as chains only); a refusal is
+  append-only extension of the parent's (a genesis head without parent: as chains only), and the head's
+  ``status.md`` read as bytes (``loop.state.status``; not verified: D6 regenerates a block edited by hand and
+  records it), carried in ``pulled`` for D6; a refusal is
   ``state_refused`` with ``loop.state``'s reasons and carries ``heads``. Then MF11's verify of the head's root,
   still before the target is fetched: ``ledger.anchor.judge`` of the head's ``ledger.jsonl`` against the last row
   of its ``chain/root.jsonl`` (``root_mismatch``: the ledger holds rows no signed root anchors, e.g. a commit pushed
@@ -133,8 +148,8 @@ refused tree is ``pulled_invalid``). Then:
   a ledger that is not a chain and an existing ``out/response`` are unusable (exit 2), nothing started. The CLI is
   not installed by the workflow (seed-042): on a runner without it the job has no verdict.
 
-The rest of the D1-D8 composition inside the jobs (D6's ``brain/state`` commit, D7, D8) has no MF of asama-0/14
-that owns it (reported in the founder ledger, spec-036).
+The rest of the D1-D8 composition inside the jobs (D7, D8) has no MF of asama-0/14 that owns it (reported in the
+founder ledger, spec-036).
 
 ``RED_CONTROL`` is the referee's own known-bad command, ``node -e process.exit(1)`` in the unit's image (the
 image's ``node``); it is not taken from ``pulled``, so nothing the Founder writes can choose it. A known-bad
@@ -177,12 +192,16 @@ from loop import fetch as F
 from loop import gitobj as G
 from loop import pulled as P
 from loop import rekor as RK
+from loop import sign as SG
 from loop import state as ST
+from loop import write_cycle as WC
 from profile import derive as D
 from profile import unit_verify as U
 from runner import deps_npm as N
 from runner import kos as K
 from target import branches as B
+from target import land as LN
+from target import write as W
 import cli
 
 USAGE = "usage: python -m loop.job render | run JOB"
@@ -499,8 +518,9 @@ def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None
     return {"index": index}
 
 
-def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
-    """D5 of ``yaz`` (see the module docstring): ``{reason?, reasons?, decisions?, merge?}``."""
+def yaz_d5(environ: dict[str, str]) -> tuple[dict[str, Any], Any, str | None]:
+    """D5 of ``yaz`` (see the module docstring): ``({reason?, reasons?, decisions?, merge?}, pulled, tree)``, the
+    artifact and the extracted tree D6 writes from (``None`` with a reason)."""
     try:
         with open(_dir(environ, "control", "control.json"), encoding="utf-8") as fh:
             control = json.load(fh)
@@ -508,17 +528,56 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
         raise Unusable("yaz: control.json unreadable: %s" % cli.cause(exc)) from None
     art, unit, refused = _pulled_unit(environ)
     if refused:
-        return refused
+        return refused, None, None
     try:
         unfinished = SE.unfinished(art.state[B.STATE_LEDGER])
     except SE.Unusable as exc:
-        return {"reason": "state_refused", "reasons": exc.reasons}
+        return {"reason": "state_refused", "reasons": exc.reasons}, None, None
     _, tree, refused = _pulled_tree(environ, art, "yaz")
     if refused:
-        return refused
+        return refused, None, None
     try:
-        return E.decide(art, unit, tree, _dir(environ, "in", "results"), control, unfinished)
+        return E.decide(art, unit, tree, _dir(environ, "in", "results"), control, unfinished), art, tree
     except (E.Unusable, D.DeriveError) as exc:
+        raise Unusable("yaz: %s" % cli.cause(exc)) from None
+
+
+YAZ_ENV = ("WRITER_TOKEN", "GITHUB_REPOSITORY", "GITHUB_WORKSPACE", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
+
+
+def yaz_d6(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
+           signer: Any = None, now: Any = None) -> dict[str, Any]:
+    """D6 of ``yaz`` (see the module docstring): ``{reason, reasons, written?}`` or ``{written}``. ``transport``
+    is the target's API (``target.write.HttpTransport`` with ``WRITER_TOKEN`` when ``None``), ``signer`` the root's
+    (``loop.sign.SigstoreSigner`` pinned to ``loop.yml`` on ``$GITHUB_REPOSITORY`` when ``None``), ``now`` the
+    clock."""
+    for name in YAZ_ENV:
+        if not environ.get(name):
+            raise Unusable("yaz: %s is not set" % name)
+    try:
+        cost = CG.read_response(_dir(environ, "in", "response"), art)
+    except CG.ResponseError as exc:
+        return {"reason": "response_invalid", "reasons": exc.reasons}
+    try:
+        with open(os.path.join(environ["GITHUB_WORKSPACE"], "setup", "imports.jsonl"), "rb") as fh:
+            imports = fh.read()
+    except OSError as exc:
+        raise Unusable("yaz: setup/imports.jsonl: %s" % cli.cause(exc)) from None
+    try:
+        repo = A.repo_name(art.target.get("repo"))
+    except A.StateError:
+        return {"reason": "target_repo_unsafe"}
+    writer = W.Writer(repo, transport or W.HttpTransport(environ["WRITER_TOKEN"]))
+    signer = signer or SG.SigstoreSigner(A.workflow_identity(environ["GITHUB_REPOSITORY"], A.LOOP_WORKFLOW))
+    ts = (now or (lambda: datetime.datetime.now(datetime.timezone.utc)))().strftime("%Y-%m-%dT%H:%M:%SZ")
+    cycle_id = "%s-%s" % (environ["GITHUB_RUN_ID"], environ["GITHUB_RUN_ATTEMPT"])
+    try:
+        return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts)}
+    except WC.Refused as exc:
+        return {"reason": "write_refused", "reasons": exc.reasons}
+    except LN.HardStop as exc:
+        return {"reason": "hard_stop", "reasons": [cli.cause(exc)], "written": sorted(set(writer.written))}
+    except (WC.Unusable, W.ApiError, W.Refused) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
@@ -633,7 +692,7 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
     missing = ["head_missing:%s" % b for b, head in heads.items() if head is None]
     if missing:
         return dict(_refused(missing), heads=heads)
-    state, chains = _cek_state(url, heads[B.STATE], root, git, environ)
+    state, chains, status = _cek_state(url, heads[B.STATE], root, git, environ)
     if "reason" in state:
         return dict(state, heads=heads)
     anchored = _cek_root(chains, entries)
@@ -650,7 +709,8 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
         with G.GitBatch(brain_dir, git=git, environ=environ) as brain, \
                 G.GitBatch(target_dir, git=git, environ=environ) as objects:
             manifest = C.assemble(brain, brain_sha, files["setup/summary.json"], files["policy.json"], target_id,
-                                  objects, commit, heads[B.STATE], {p: chains[p] for p in B.STATE_CHAINS}, out)
+                                  objects, commit, heads[B.STATE], {p: chains[p] for p in B.STATE_CHAINS}, status,
+                                  out)
     except P.PulledError as exc:
         return dict({"reason": "pulled_refused", "reasons": exc.reasons}, heads=heads)
     assembled = {"target": target_id, "commit": commit,
@@ -668,10 +728,10 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
 
 
 def _cek_state(url: str, head: str, root: str, git: str,
-               environ: dict[str, str]) -> tuple[dict[str, Any], dict[str, bytes | None]]:
+               environ: dict[str, str]) -> tuple[dict[str, Any], dict[str, bytes | None], bytes | None]:
     """MF1's ``verify --previous`` of the target's ``brain/state`` (``loop.state``): its head fetched into
     ``cek-*/state.git``, its parent, when it has one, into ``cek-*/state-previous.git``; ``(loop.state.verify``'s
-    line or ``{reason: state_refused, reasons}``, the head's chained files)``."""
+    line or ``{reason: state_refused, reasons}``, the head's chained files, its ``status.md`` or None)``."""
     dirs = [os.path.join(root, d) for d in ("state.git", "state-previous.git")]
     _fetch_state(dirs[0], url, head, git, environ)
     with G.GitBatch(dirs[0], git=git, environ=environ) as source:
@@ -683,9 +743,9 @@ def _cek_state(url: str, head: str, root: str, git: str,
                 _fetch_state(dirs[1], url, prev, git, environ)
                 with G.GitBatch(dirs[1], git=git, environ=environ) as previous:
                     line = ST.verify(source, head, previous, prev)
-            return line, ST.chains(source, head)
+            return line, ST.chains(source, head), ST.status(source, head)
         except P.PulledError as exc:
-            return {"reason": "state_refused", "reasons": exc.reasons}, {}
+            return {"reason": "state_refused", "reasons": exc.reasons}, {}, None
 
 
 def _cek_root(chains: dict[str, bytes | None], entries: Any) -> dict[str, Any]:
@@ -711,7 +771,8 @@ def _fetch_state(git_dir: str, url: str, sha: str, git: str, environ: dict[str, 
 
 def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None,
         fetcher: Any = None, http: Any = None, verifier: Any = None, git: str = "git",
-        rekor: Any = None, claude: str | None = None, now: Any = None) -> dict[str, Any]:
+        rekor: Any = None, claude: str | None = None, now: Any = None, transport: Any = None,
+        signer: Any = None) -> dict[str, Any]:
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
     job = JOBS[name]
@@ -741,10 +802,13 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
             return dict(result, **d4)
         return dict(result, ok=True, done=["D4"], **d4)
     if name == "yaz":
-        d5 = yaz_d5(environ)
+        d5, art, tree = yaz_d5(environ)
         if "reason" in d5:
             return dict(result, **d5)
-        return dict(result, reason="cycle_not_wired", done=["D5"], **d5)
+        d6 = yaz_d6(environ, art, tree, d5, transport, signer, now)
+        if "reason" in d6:
+            return dict(result, done=["D5"], **d5, **d6)
+        return dict(result, reason="cycle_not_wired", done=["D5", "D6"], **d5, **d6)
     raise Unusable("job %r has no entry" % name)
 
 

@@ -16,18 +16,20 @@ another job's output only by artifact and hash; the workflow's download checks t
     state/heads.json            {"brain/state": commit, "brain/integration": commit}: the heads D1 read
     state/ledger.jsonl          brain/state's files at that head, the bytes D1 verified (``target.branches``'
     state/chain/root.jsonl        ``STATE_CHAINS``: MF1's verify --previous, MF11's root)
+    state/status.md             brain/state's ``status.md`` at that head, as read; absent when the head has none
     candidates/<cid>/finding.json, diff.patch, expect.json
 
 ``target`` is the ``targets[]`` entry of ``setup/summary.json`` for this target, as read (an object with a string
 ``id``; its lists are checked by ``profile.derive`` where they are used). ``<cid>`` is ``runner.kos``'s candidate id.
 ``state/`` is what the jobs after D1 know of the cycle's state: the ledger the stage brake sums (D4) and that D6
-extends, the heads D6 writes on and D7 watches; a job reads it here, never from the target.
+extends, the ``status.md`` whose block D6 regenerates, the heads D6 writes on and D7 watches; a job reads it here,
+never from the target.
 
 **Reading** (``read``; every reason that holds is listed, prefixed ``pulled:`` by the job): the manifest is a
 regular file holding a JSON object with exactly those three keys (``manifest_unreadable``), the schema
 (``schema_unknown``), the target (``target_invalid``); ``files`` maps each path to 64 lowercase hex
 (``files_invalid``); every path is one of the layout's (``path_not_in_layout:<path>``); ``tree.tar``,
-``units.json`` and ``policy.json`` are listed (``missing:<path>``) and every listed candidate has its three files
+``units.json``, ``policy.json`` and the ``state/`` files but ``state/status.md`` are listed (``missing:<path>``) and every listed candidate has its three files
 (``candidate_incomplete:<cid>``); every listed file is a regular file, no symlink on its way, with the listed
 sha256 (``file_missing:<path>``, ``hash_mismatch:<path>``); no other file or directory is in the artifact
 (``unlisted:<path>``). ``units.json``, ``policy.json`` and ``state/heads.json`` must be JSON
@@ -69,8 +71,10 @@ POLICY = "policy.json"
 STATE_DIR = "state"
 HEADS = STATE_DIR + "/heads.json"
 STATE_FILES = (HEADS,) + tuple("%s/%s" % (STATE_DIR, p) for p in B.STATE_CHAINS)
+STATUS = "%s/%s" % (STATE_DIR, B.STATE_STATUS)
 HEAD_BRANCHES = (B.STATE, B.INTEGRATION)
-TOP = (TREE, UNITS, POLICY) + STATE_FILES
+TOP = (TREE, UNITS, POLICY) + STATE_FILES   # always listed
+LAYOUT = TOP + (STATUS,)                     # STATUS listed when the head has a status.md
 SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 CANDIDATES = "candidates"
 CANDIDATE_FILES = ("diff.patch", "expect.json", "finding.json")
@@ -94,6 +98,7 @@ class Pulled(NamedTuple):
     heads: dict[str, str]                   # brain/state and brain/integration -> commit
     state: dict[str, bytes]                 # target.branches.STATE_CHAINS path -> bytes
     policy_bytes: bytes                     # policy.json as carried (``policy`` is it parsed)
+    status: bytes | None                    # brain/state's status.md, None when the head has none
 
 
 def _sha(data: bytes) -> str:
@@ -114,21 +119,25 @@ def _candidate_of(path: str) -> str | None:
 
 
 def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
-          candidates: dict[str, dict[str, bytes]], heads: dict[str, str], state: dict[str, bytes]) -> dict:
+          candidates: dict[str, dict[str, bytes]], heads: dict[str, str], state: dict[str, bytes],
+          status: bytes | None) -> dict:
     """Write the layout into ``out`` (which must not exist); returns the manifest. ``state`` maps each path of
-    ``STATE_CHAINS`` to its bytes."""
-    if sorted(state) != sorted(B.STATE_CHAINS) or not all(isinstance(d, bytes) for d in state.values()):
+    ``STATE_CHAINS`` to its bytes; ``status`` is ``status.md``'s bytes or ``None`` (not written)."""
+    if sorted(state) != sorted(B.STATE_CHAINS) or not all(isinstance(d, bytes) for d in state.values()) \
+            or not (status is None or isinstance(status, bytes)):
         raise PulledError(["state_incomplete"])
     if not _heads_valid(heads):
         raise PulledError(["heads_invalid"])
     files = {TREE: tree_tar, UNITS: units, POLICY: policy, HEADS: _dump(heads)}
     files.update({"%s/%s" % (STATE_DIR, p): d for p, d in state.items()})
+    if status is not None:
+        files[STATUS] = status
     for cid, content in candidates.items():
         if sorted(content) != sorted(CANDIDATE_FILES):
             raise PulledError(["candidate_incomplete:%s" % cid])
         for name, data in content.items():
             files["%s/%s/%s" % (CANDIDATES, cid, name)] = data
-    bad = [p for p in files if p not in TOP and _candidate_of(p) is None]
+    bad = [p for p in files if p not in LAYOUT and _candidate_of(p) is None]
     if bad:
         raise PulledError(["path_not_in_layout:%s" % p for p in sorted(bad)])
     os.makedirs(out)
@@ -186,7 +195,7 @@ def read(root: str) -> Pulled:
     contents: dict[str, bytes] = {}
     for path in sorted(files):
         cid = _candidate_of(path)
-        if path not in TOP and cid is None:
+        if path not in LAYOUT and cid is None:
             reasons.append("path_not_in_layout:%s" % path)
             continue
         data = D._read_regular(root, path)
@@ -216,7 +225,7 @@ def read(root: str) -> Pulled:
         raise PulledError(reasons)
     state = {p: contents["%s/%s" % (STATE_DIR, p)] for p in B.STATE_CHAINS}
     return Pulled(target, parsed[UNITS], parsed[POLICY], os.path.join(root, TREE), candidates, parsed[HEADS], state,
-                  contents[POLICY])
+                  contents[POLICY], contents.get(STATUS))
 
 
 def extract_tree(tar_path: str, dest: str) -> None:

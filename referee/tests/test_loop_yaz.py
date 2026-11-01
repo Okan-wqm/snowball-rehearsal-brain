@@ -36,6 +36,8 @@ from test_kos import BREAKS_TEST, GOOD, RAISES, diff, recipe  # noqa: E402
 from test_loop_kos import TARGET, Base, RedAs, candidate, state_files  # noqa: E402
 from test_revert_drill import plant, reverted  # noqa: E402
 from test_serial import M1, START, merge  # noqa: E402
+from test_loop_cagir import policy  # noqa: E402
+import yaz_world as YW  # noqa: E402
 
 KEY_ID = "AK" + "IA" + "Q7" * 8  # a key id shape (MF2's floor), spelled so this file holds none
 LEAK = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // " + KEY_ID])
@@ -47,8 +49,8 @@ OPEN = {"merge_paused": False}
 class Cycle(Base):
     """``kos`` then ``yaz`` in one ``$RUNNER_TEMP``, as the workflow hands the artifacts over."""
 
-    def kos(self, cands: dict, target: dict | None = None, units=None) -> None:
-        self.write_pulled(cands, target=target, units=units)
+    def kos(self, cands: dict, target: dict | None = None, units=None, **kw) -> None:
+        self.write_pulled(cands, target=target, units=units, **kw)
         out = J.run("kos", {"RUNNER_TEMP": self.temp}, runner=RedAs())
         self.assertEqual(out["reason"], "cycle_not_wired", out)
         shutil.move(os.path.join(self.temp, "out", "results"), self.results())
@@ -182,7 +184,30 @@ class Artifacts(Cycle):
             self.decide(unit=recipe(inputs="pkg"))
 
 
-class YazJob(Cycle):
+class YazBase(Cycle):
+    """``yaz`` on a target whose heads are ``pulled``'s (``yaz_world.github_at``), with this cycle's ``response``
+    (no tests here: test_loop_write's D6 tests share it)."""
+
+    def write_pulled(self, cands=None, target=None, policy=None, **kw) -> dict:
+        return super().write_pulled(cands, target=target or dict(TARGET, repo=YW.REPO),
+                                    policy=policy or globals()["policy"](), **kw)
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.workspace = YW.write_workspace(self.base)
+        self.signer = YW.signer()
+
+    def github(self) -> None:
+        """The target at ``pulled``'s heads, ``brain/integration`` holding the tree, and the response of the cycle."""
+        art = P.read(self.pulled)
+        self.gh = YW.github_at(art.heads, YW.files_of(self.src))
+        shutil.rmtree(os.path.join(self.temp, "in", "response"), ignore_errors=True)
+        YW.write_response(self.temp, art.target["id"], art.heads, [YW.cost_row(snapshot=art.heads["brain/integration"])])
+
+    def run_yaz(self, **env) -> dict:
+        return J.run("yaz", YW.env(self.temp, self.workspace, **env), transport=self.gh, signer=self.signer,
+                     now=lambda: YW.NOW)
+
     def control(self, doc) -> None:
         write_tree(os.path.join(self.temp, "control"), {"control.json": doc})
 
@@ -191,13 +216,18 @@ class YazJob(Cycle):
         shutil.rmtree(self.pulled)
         self.write_pulled({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)},
                           state=None if rows is None else state_files(rows))
+        self.github()
 
+
+class YazJob(YazBase):
     def test_the_job_runs_d5_with_criterion_8_from_the_state(self):
         self.kos({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
         self.control(OPEN)
-        out = J.run("yaz", {"RUNNER_TEMP": self.temp, "WRITER_TOKEN": "x"})
+        self.github()
+        out = self.run_yaz()
         # the default state's ledger holds no merge: nothing unfinished, good merges
-        self.assertEqual((out["ok"], out["reason"], out["done"], out["merge"]), (False, "cycle_not_wired", ["D5"], "good"))
+        self.assertEqual((out["ok"], out["reason"], out["done"], out["merge"]),
+                         (False, "cycle_not_wired", ["D5", "D6"], "good"))
         self.assertEqual(self.reasons(out), {"good": [], "breaks": ["tests_red"]})
         reverted_merge = [START, merge("c1", M1), reverted("r1", M1, "test_regression")]
         for rows, want in (([START, merge("c1", M1)], "sentinel_pending"),       # the activation's merge
@@ -205,8 +235,8 @@ class YazJob(Cycle):
                            (reverted_merge, None)):
             with self.subTest(rows=[r["row_id"] for r in rows]):
                 self.with_ledger(rows)
-                out = J.run("yaz", {"RUNNER_TEMP": self.temp})
-                self.assertEqual(out["done"], ["D5"])
+                out = self.run_yaz()
+                self.assertEqual(out["done"], ["D5", "D6"])
                 if want:
                     self.assertEqual((out["merge"], self.reasons(out)),
                                      (None, {"good": [want], "breaks": [want, "tests_red"]}))
@@ -231,7 +261,8 @@ class YazJob(Cycle):
     def test_the_control_file_is_read(self):
         self.kos({"good": candidate(GOOD)})
         self.control({"merge_paused": True})
-        out = J.run("yaz", {"RUNNER_TEMP": self.temp})
+        self.github()
+        out = self.run_yaz()
         self.assertIn("merge_paused", out["decisions"]["good"]["reasons"])
         os.remove(os.path.join(self.temp, "control", "control.json"))
         with self.assertRaises(J.Unusable):

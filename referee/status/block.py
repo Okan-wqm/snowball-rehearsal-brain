@@ -70,9 +70,10 @@ from typing import Any
 
 from dispatcher import llm_call
 from ledger import append, chain
+from target import branches
 import cli
 
-STATUS_PATH = "status.md"
+STATUS_PATH = branches.STATE_STATUS
 OPEN = b"<!-- status.block -->"
 CLOSE = b"<!-- /status.block -->"
 PART = "events"

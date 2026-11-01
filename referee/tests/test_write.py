@@ -40,6 +40,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from target import branches  # noqa: E402
 from target import write as W  # noqa: E402
 from fake_github import FakeGitHub  # noqa: E402
 
@@ -47,7 +48,7 @@ REPO = "acme/toy"
 P = "/repos/acme/toy/"
 A = "a" * 40
 B = "b" * 40
-GATE = "snowball/gate"
+GATE = branches.CHECK
 
 
 def check(method, rest, body=None, pulls=None, prefix=P):

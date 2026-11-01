@@ -66,8 +66,8 @@
   {
    "id": "row_id_without_attempt",
    "file": "loop/job.py",
-   "old": "(environ[\"GITHUB_RUN_ID\"], environ[\"GITHUB_RUN_ATTEMPT\"])",
-   "new": "(environ[\"GITHUB_RUN_ID\"], environ[\"GITHUB_RUN_ID\"])",
+   "old": "row_id=\"cagir-%s-%s\" % (environ[\"GITHUB_RUN_ID\"], environ[\"GITHUB_RUN_ATTEMPT\"])",
+   "new": "row_id=\"cagir-%s-%s\" % (environ[\"GITHUB_RUN_ID\"], environ[\"GITHUB_RUN_ID\"])",
    "tests": [
     "test_loop_cagir.py"
    ]

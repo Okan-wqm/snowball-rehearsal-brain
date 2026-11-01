@@ -31,9 +31,10 @@ cycle's rows (JSON objects without ``prev_hash`` and ``row_hash``), ``setup/impo
 one ``commit_files`` call (``ledger.append.CountingState`` or ``TargetState``): the cycle's one commit. The
 activation opens ``brain/state`` with ``plan``'s files as an orphan commit (``target.write.Writer.open_orphan``).
 
-Out of scope, stated: which rows a cycle writes (the caller's: ``activate`` and, once wired, D6 of ``yaz``); where
-``status.md`` and the previous versions come from (the caller's read of ``brain/state``: ``pulled`` carries the
-ledger and the roots file, not ``status.md``); the meaning of a row's values (``ledger.schema`` checks shapes).
+Out of scope, stated: which rows a cycle writes (the caller's: ``activate`` and D6 of ``yaz``,
+``loop.write_cycle``, both through ``ledger.events``); where ``status.md`` and the previous versions come from (the
+caller's read of ``brain/state``: D6 takes them from ``pulled``, which D1 filled); the meaning of a row's values
+(``ledger.schema`` checks shapes).
 """
 
 from __future__ import annotations
@@ -47,6 +48,11 @@ from status import block
 
 class Unusable(ValueError):
     pass
+
+
+# Every exception ``plan`` raises for its inputs (``commit`` adds the state writer's): a caller that has written
+# before planning names what it wrote when one of these is raised (``target.land.HardStop``).
+FAILURES = (append.HardStop, append.SecretRow, append.Unusable, Unusable, block.Unusable, anchor.Unusable)
 
 
 def plan(ledger: bytes, previous: bytes, roots: bytes, previous_roots: bytes, status: bytes | None, rows: Any,

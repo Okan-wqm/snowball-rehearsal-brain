@@ -90,6 +90,9 @@ MANIFEST_NAMES = frozenset(("package.json",) + ("Cargo.toml", "pyproject.toml"))
 LOCK_NAMES = frozenset(("package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml")
                        + ("Cargo.lock", "poetry.lock", "uv.lock"))
 GITATTRIBUTES_NAMES = frozenset((".gitattributes",))
+# Every reason ``path_reasons`` gives, the part before ``:<path>`` (read by ``ledger.events``' cause rule).
+PATH_REASONS = ("symlink", "submodule", "path_escape", "security_path", "excluded_path", "agent_config", "config",
+                "manifest", "lockfile", "gitattributes", "outside_inputs")
 
 SYMLINK, SUBMODULE = "120000", "160000"
 MODES = frozenset(("100644", "100755", SYMLINK, SUBMODULE))

@@ -30,9 +30,17 @@ only when the served model is the requested one and the answer has the output's 
 whether the job ended green. The answer itself is recorded, not judged: the canary checks the call's path (model,
 cap, cost, scan), not the model's reply.
 
+**Reading it back** (``read_response``, D6 of ``yaz``; every reason that holds is listed, ``ResponseError``): the
+directory holds exactly ``response.json`` (``unlisted:<name>`` for anything else), a regular file with no symbolic
+link on its way (``response_missing``) holding one JSON object with exactly the keys above
+(``response_unreadable``); ``schema`` is ``SCHEMA`` (``schema_unknown``); ``target`` is the id of ``pulled``'s
+``targets[]`` entry (``target_mismatch``) and ``heads`` ``pulled``'s heads (``heads_mismatch``): the response is this
+cycle's; ``rows`` is a list of objects (``rows_invalid``). Their shape is ``ledger.schema``'s, checked with the
+whole new ledger by ``ledger.cycle`` before anything is signed.
+
 Out of scope, stated: where the ``claude`` CLI, its sha512 pin and the model come from in a real run (the job's
 environment, ``loop.job``; no page this clone has names them for the loop: founder ledger and report
-seed-042), who reads ``response`` (``yaz``'s D5 and D6; no wired step reads it yet), and the CLI's real output shapes
+seed-042) and the CLI's real output shapes
 (asama-0/10a ``#model``).
 """
 
@@ -44,6 +52,7 @@ from typing import Any
 
 from dispatcher import llm_call as L
 from loop import pulled as P
+from profile import derive as D
 from target import branches as B
 
 SCHEMA = "snowball-response/1"
@@ -56,6 +65,17 @@ CANARY = {
     "output": {"echo": "string"},
 }
 TIMEOUT_S = 300.0
+CALL_KEYS = ("outcome", "reason", "sent", "run_valid", "output", "models_served", "cost_usd_micros", "prompt_sha256",
+             "dropped")  # the call's answer, as llm_call.call gives it
+KEYS = ("schema", "target", "heads", "rows") + CALL_KEYS
+
+
+class ResponseError(ValueError):
+    """The directory is not this cycle's ``response``; ``reasons`` lists why."""
+
+    def __init__(self, reasons: list[str]) -> None:
+        super().__init__(", ".join(reasons))
+        self.reasons = reasons
 
 
 def d4(art: P.Pulled, out: str, *, claude: str, claude_sha512: str, model: str, token: str, row_id: str,
@@ -72,9 +92,34 @@ def d4(art: P.Pulled, out: str, *, claude: str, claude_sha512: str, model: str, 
                  stage_cap_micros=cap, call_cap_micros=cap, book=book, token=token, timeout_s=TIMEOUT_S,
                  row_id=row_id, ts=ts, snapshot_id=art.heads[B.INTEGRATION])
     response = {"schema": SCHEMA, "target": art.target["id"], "heads": art.heads, "rows": book.rows,
-                **{k: got[k] for k in ("outcome", "reason", "sent", "run_valid", "output", "models_served",
-                                       "cost_usd_micros", "prompt_sha256", "dropped")}}
+                **{k: got[k] for k in CALL_KEYS}}
     os.makedirs(out)
     with open(os.path.join(out, RESPONSE), "x", encoding="utf-8") as fh:
         fh.write(json.dumps(response, sort_keys=True) + "\n")
     return {k: got[k] for k in ("outcome", "reason", "sent", "models_served", "cost_usd_micros")}
+
+
+def read_response(root: str, art: P.Pulled) -> list[dict]:
+    """``response``'s cost rows, the directory checked against ``art`` (see the module docstring)."""
+    names = sorted(os.listdir(root)) if os.path.isdir(root) and not os.path.islink(root) else []
+    reasons = ["unlisted:%s" % n for n in names if n != RESPONSE]
+    raw = D._read_regular(root, RESPONSE) if names else None
+    if raw is None:
+        raise ResponseError(reasons + ["response_missing"])
+    try:
+        doc = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        doc = None
+    if not (isinstance(doc, dict) and sorted(doc) == sorted(KEYS)):
+        raise ResponseError(reasons + ["response_unreadable"])
+    if doc["schema"] != SCHEMA:
+        reasons.append("schema_unknown")
+    if doc["target"] != art.target["id"]:
+        reasons.append("target_mismatch")
+    if doc["heads"] != art.heads:
+        reasons.append("heads_mismatch")
+    if not (isinstance(doc["rows"], list) and all(isinstance(r, dict) for r in doc["rows"])):
+        reasons.append("rows_invalid")
+    if reasons:
+        raise ResponseError(reasons)
+    return doc["rows"]
