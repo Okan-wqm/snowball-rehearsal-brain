@@ -8,6 +8,11 @@ read by the gate (MF8) as they are written; with the fake runner (``fake_docker.
   test run, ``checks.json`` from the TAP, ``hashes.json`` of the bytes written; ``gate.check decide`` (MF8's own
   command) then merges the good candidate and rejects a test-breaking, a ratchet-raising, a non-deterministic and
   a red-control-passing one for their own reasons;
+- the sentinel (D7, ``watch``): only with a watched merge; the recipe's ``affected_test_cmd`` at the base worktree,
+  each run contained with the red control; green after one run, red and flaky after four; ``sentinel.json`` holds
+  every run used and ``gate.sentinel decide`` (MF12's own command) gives the same verdict on them; no verdict and
+  no file for a base that did not stage, a run that tells nothing (a green red control, a time limit; the runs stop
+  there) or runs of the wrong shape; a base lint that fails does not stop it;
 - the TAP reader on ``node --test``'s real output (the toy's captured run) and on its edge cases;
 - the command line: exit 0 / 1 / 2, never a traceback.
 """
@@ -323,6 +328,158 @@ class Candidates(Base):
         for cid in ("../x", ".hidden"):
             self.assertEqual(index["candidates"][cid]["reasons"], ["candidate_id_invalid"])
         self.assertEqual(sorted(os.listdir(self.out)), ["base.jsonl", "index.json"])
+
+
+MERGE = "c" * 40
+AFFECTED = ["python", "pkg/affected.py"]
+# The affected tests: three top-level tests; BROKEN in pkg/a.js fails "a is not broken", TWICE prints one
+# description twice; run with the argument "flip", "a flips" fails (a contained run keeps no state between runs, so
+# the flaky test's first run is the runner's: Sentinel.flip).
+AFFECTED_PY = r'''import sys
+src = open("pkg/a.js").read()
+fail = ["a flips"] if sys.argv[1:] == ["flip"] else []
+if "BROKEN" in src:
+    fail.append("a is not broken")
+if "SLOW" in src:
+    import time
+    time.sleep(5)
+names = ["a loads", "a is not broken", "a flips"] + (["a loads"] if "TWICE" in src else [])
+for i, name in enumerate(names, 1):
+    print(("not ok" if name in fail else "ok") + " %d - %s" % (i, name))
+sys.exit(1 if fail else 0)
+'''
+
+
+class Sentinel(Base):
+    def setUp(self) -> None:
+        super().setUp()
+        write_tree(self.tree, {"pkg/affected.py": AFFECTED_PY})
+
+    def watch(self, a_js: str | None = None, runner=None, rec=None, red=RED) -> dict:
+        if a_js is not None:
+            write_tree(self.tree, {"pkg/a.js": a_js})
+        return K.results(rec or recipe(affected_test_cmd=AFFECTED), self.tree, {"operating": operating()}, red, {},
+                         self.out, runner=runner or FakeDocker(), base=self.runs, watch=MERGE)
+
+    def file(self) -> dict:
+        return json.loads(read(os.path.join(self.out, K.SENTINEL)))
+
+    def mf12(self, runs: list) -> dict:
+        proc = subprocess.run([sys.executable, "-m", "gate.sentinel", "decide"], cwd=REFEREE, capture_output=True,
+                              input=json.dumps({"runs": runs}).encode())
+        return json.loads(proc.stdout)
+
+    def affected_runs(self, docker) -> int:
+        return sum(1 for c in docker.calls if c["argv"][-len(AFFECTED):] == AFFECTED)
+
+    def test_nothing_watched_runs_no_test_and_writes_no_file(self):
+        docker = FakeDocker()
+        index = self.results({}, runner=docker)
+        self.assertIsNone(index["sentinel"])
+        self.assertEqual(self.affected_runs(docker), 0)
+        self.assertFalse(os.path.exists(os.path.join(self.out, K.SENTINEL)))
+
+    def test_green_after_one_run_of_the_affected_tests(self):
+        docker = FakeDocker()
+        index = self.watch(runner=docker)
+        got = self.file()
+        self.assertEqual(index["sentinel"], {"merge_sha": MERGE, "verdict": "green", "reasons": [],
+                                             "sha256": sha(read(os.path.join(self.out, K.SENTINEL)))})
+        self.assertEqual(got, {"merge_sha": MERGE, "verdict": "green", "red": [], "flaky": [], "runs": [
+            {"results": [{"id": n, "status": "pass"} for n in ("a loads", "a is not broken", "a flips")]}]})
+        self.assertEqual(self.affected_runs(docker), 1)
+        # the run is contained: the red control first, no network, its own container
+        cmds = [c["argv"][c["argv"].index(IMAGE) + 1:] for c in docker.calls]
+        self.assertEqual(cmds[-2:], [RED["cmd"], AFFECTED])
+        self.assertEqual(docker.calls[-1]["argv"][docker.calls[-1]["argv"].index("--network") + 1], "none")
+        self.assertEqual(json.loads(read(os.path.join(self.out, K.INDEX))), index)
+        self.assertEqual(self.mf12(got["runs"])["verdict"], "green")
+
+    def test_red_after_four_runs_names_the_test(self):
+        docker = FakeDocker()
+        index = self.watch("var a = 1; // BROKEN\n", runner=docker)
+        got = self.file()
+        self.assertEqual((index["sentinel"]["verdict"], got["red"], got["flaky"]), ("red", ["a is not broken"], []))
+        self.assertEqual((len(got["runs"]), self.affected_runs(docker)), (4, 4))
+        self.assertEqual({c["name"] for c in docker.calls}.__len__(), len(docker.calls))
+        self.assertEqual({k: v for k, v in self.mf12(got["runs"]).items()},
+                         {"verdict": "red", "red": ["a is not broken"], "flaky": [], "revert": True})
+
+    def test_flaky_when_a_rerun_passes(self):
+        docker = FakeDocker()
+        seen = {"n": 0}
+
+        def flip(argv, env, timeout):
+            if argv[-len(AFFECTED):] == AFFECTED:
+                seen["n"] += 1
+                if seen["n"] == 1:
+                    argv = argv + ["flip"]
+            return docker(argv, env, timeout)
+        index = self.watch(runner=flip)
+        got = self.file()
+        self.assertEqual((index["sentinel"]["verdict"], got["red"], got["flaky"]), ("flaky", [], ["a flips"]))
+        self.assertEqual(len(got["runs"]), 4)
+        self.assertEqual(self.mf12(got["runs"])["verdict"], "flaky")
+
+    def test_a_failing_base_lint_does_not_stop_it(self):
+        index = self.watch("LINTCRASH\n")
+        self.assertEqual(index["base"]["verdict"], "refused")
+        self.assertEqual(index["sentinel"]["verdict"], "green")
+
+    def test_a_green_red_control_judges_no_test(self):
+        # calls 1-6: the base's lint runs and their red controls; call 7 is the sentinel's red control
+        docker = FakeDocker()
+        calls = {"n": 0}
+
+        def runner(argv, env, timeout):
+            calls["n"] += 1
+            if calls["n"] > 6 and "pkg/red.py" in argv:
+                argv = argv[:-1] + ["pkg/green.py"]
+            return docker(argv, env, timeout)
+        index = self.watch("var a = 1; // BROKEN\n", runner=runner)
+        self.assertEqual(index["sentinel"], {"merge_sha": MERGE, "verdict": None, "reasons": ["red_control_green"],
+                                             "sha256": None})
+        self.assertFalse(os.path.exists(os.path.join(self.out, K.SENTINEL)))
+        self.assertEqual(self.affected_runs(docker), 1)  # the runs stop at the first that tells nothing
+
+    def test_a_rerun_that_tells_nothing_stops_the_runs(self):
+        # run 1 is red; the red control of run 2 (call 9) cannot run
+        docker = FakeDocker()
+        calls = {"n": 0}
+
+        def runner(argv, env, timeout):
+            calls["n"] += 1
+            if calls["n"] == 9:
+                self.assertIn("pkg/red.py", argv)
+                return C.RunnerResult(125, b"", b"", False)
+            return docker(argv, env, timeout)
+        index = self.watch("var a = 1; // BROKEN\n", runner=runner)
+        self.assertEqual((index["sentinel"]["verdict"], index["sentinel"]["reasons"]), (None, ["red_control_fault"]))
+        self.assertEqual(self.affected_runs(docker), 2)
+        self.assertFalse(os.path.exists(os.path.join(self.out, K.SENTINEL)))
+
+    def test_a_run_over_its_time_limit_judges_no_test(self):
+        index = self.watch("var a = 1; // SLOW\n", rec=recipe(affected_test_cmd=AFFECTED, limits={"test_total_s": 2}))
+        self.assertEqual((index["sentinel"]["verdict"], index["sentinel"]["reasons"]),
+                         (None, ["limit_hit:test_total_s"]))
+
+    def test_one_description_twice_is_no_verdict(self):
+        index = self.watch("var a = 1; // TWICE\n")
+        self.assertEqual((index["sentinel"]["verdict"], index["sentinel"]["reasons"]), (None, ["sentinel_unusable"]))
+        self.assertFalse(os.path.exists(os.path.join(self.out, K.SENTINEL)))
+
+    def test_a_base_that_does_not_stage_runs_nothing(self):
+        docker = FakeDocker()
+        index = self.watch(runner=docker, rec=recipe(affected_test_cmd=AFFECTED, services=["db"]))
+        self.assertIsNone(index["sentinel"]["verdict"])
+        self.assertIn("services_not_empty", index["sentinel"]["reasons"])
+        self.assertEqual(docker.calls, [])
+
+    def test_watch_must_be_a_merge_sha(self):
+        for bad in ("C" * 40, "c" * 39, 1, ""):
+            with self.subTest(bad=bad), self.assertRaises(K.KosError):
+                K.results(recipe(), self.tree, {"operating": operating()}, RED, {}, self.out, runner=FakeDocker(),
+                          base=self.runs, watch=bad)
 
 
 class Tap(unittest.TestCase):

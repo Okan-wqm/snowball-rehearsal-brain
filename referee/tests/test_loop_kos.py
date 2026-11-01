@@ -10,7 +10,12 @@
   decide`` (MF8's own command) reads: the good candidate merges, a test-breaking and a ratchet-raising one are
   rejected for their own reasons; the red control is the job's own ``RED_CONTROL`` (a green one blocks the base),
   not something the artifact holds; a refused artifact, two units or an unsafe tree run nothing; ``in/deps`` is
-  taken as one ``<address>/`` directory, which reaches ``unit.verify``; the job still ends ``cycle_not_wired`` after D3 (D7, D8 not wired).
+  taken as one ``<address>/`` directory, which reaches ``unit.verify``; the job still ends ``cycle_not_wired`` after D3
+  (``yaz``'s half of D7, D8 not wired);
+- D7's half in ``kos``: which merge the sentinel watches is read from ``state/ledger.jsonl`` (``ledger.serial``):
+  none without an unfinished merge or after its revert; the one unfinished merge at ``brain/integration``'s head
+  runs the sentinel there (``sentinel.json`` in the results); an unfinished merge elsewhere, or a ledger that cannot
+  be read, runs nothing.
 """
 
 from __future__ import annotations
@@ -33,7 +38,8 @@ from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
-from test_revert_drill import row  # noqa: E402
+from test_revert_drill import ledger_with, reverted, row  # noqa: E402
+from test_serial import START, merge  # noqa: E402
 from test_kos import A_JS, BREAKS_TEST, FINDING, GOOD, LINT, RAISES, TESTS, operating, recipe  # noqa: E402
 
 TREE = {
@@ -368,6 +374,48 @@ class KosJob(Base):
         # every contained run had the job's red control: 3 base lint, 3 x (3 lint + 1 test)
         self.assertEqual(runner.red_seen, 15)
         self.assertEqual(len(runner.calls), 30)
+
+    def test_no_unfinished_merge_watches_nothing(self):
+        head = HEADS["brain/integration"]
+        for rows in ([START], [START, merge("c1", head), reverted("r1", head, "test_regression")]):
+            with self.subTest(rows=len(rows)):
+                shutil.rmtree(self.temp, ignore_errors=True)
+                self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with(rows)}))
+                out = self.run_kos()
+                self.assertEqual((out["reason"], out["index"]["sentinel"]), ("cycle_not_wired", None))
+                self.assertFalse(os.path.exists(self.results("sentinel.json")))
+
+    def test_the_unfinished_merge_at_the_head_is_watched(self):
+        head = HEADS["brain/integration"]
+        self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with([START, merge("c1", head)])}))
+        out = self.run_kos()
+        self.assertEqual((out["reason"], out["done"]), ("cycle_not_wired", ["D3"]))
+        self.assertEqual((out["index"]["sentinel"]["merge_sha"], out["index"]["sentinel"]["verdict"]), (head, "green"))
+        with open(self.results("sentinel.json")) as fh:
+            self.assertEqual(json.load(fh)["merge_sha"], head)
+
+    def test_an_unfinished_merge_elsewhere_runs_nothing(self):
+        head, other = HEADS["brain/integration"], "d" * 40
+        for rows, want in (([START, merge("c1", other)], ["unfinished:" + other]),
+                           ([START, merge("c1", other), merge("c2", head)], ["unfinished:" + other,
+                                                                             "unfinished:" + head])):
+            with self.subTest(rows=len(rows)):
+                shutil.rmtree(self.temp, ignore_errors=True)
+                self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with(rows)}))
+                runner = RedAs()
+                out = self.run_kos(runner)
+                self.assertEqual((out["reason"], out["reasons"]), ("sentinel_unplaced", want))
+                self.assertEqual(runner.calls, [])
+                self.assertFalse(os.path.exists(self.results()))
+
+    def test_a_state_it_cannot_read_runs_nothing(self):
+        self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": state_files([row("x", "events", "nope", {})])[
+            "ledger.jsonl"]}))
+        runner = RedAs()
+        out = self.run_kos(runner)
+        self.assertEqual(out["reason"], "state_refused")
+        self.assertTrue(out["reasons"])
+        self.assertEqual(runner.calls, [])
 
     def test_the_red_control_is_the_jobs_own(self):
         self.write_pulled({"good": candidate(GOOD)})

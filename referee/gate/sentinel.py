@@ -23,8 +23,9 @@ each in a fresh container.
 
 Out of scope here, stated: which tests are affected (stage 0's affected set is the unit's whole service-free
 test set, asama-0/08 item 6; the recipe's ``affected_test_cmd``), how a contained run's output becomes
-``results`` (no producer is named by the seed yet; ``rerun`` is where ``run.contained`` is called, calls 3 ->
-12), and the revert itself (``gate.revert``, MF13).
+``results`` (the seed names no producer; this repository's is ``runner.kos``'s sentinel, which calls ``watch``
+with contained runs of ``affected_test_cmd`` read by ``runner.kos.tap_tests``: calls 3 -> 12), and the revert
+itself (``gate.revert``, MF13).
 
 Command line (tohum/29j), run from ``referee/``, one JSON line on stdout, the cause on stderr::
 

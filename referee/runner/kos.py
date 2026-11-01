@@ -17,7 +17,10 @@ decide`` (MF8) and ``activate`` (MF18) read; it decides nothing.
     c/<cid>/cand.jsonl                  three lint runs of the candidate's worktree
     c/<cid>/checks.json                 {red_control: pass|fail, tests: [{id, status: pass|fail}]}
     c/<cid>/hashes.json                 {"base.jsonl", "cand.jsonl", "checks.json"}: sha256 of the bytes written
-    index.json                          {base: {verdict, reasons}, base_run_sha256, candidates: {cid: {verdict, reasons}}}
+    sentinel.json                       {merge_sha, runs, verdict, red, flaky}: only when a merge is watched
+    index.json                          {base: {verdict, reasons}, base_run_sha256,
+                                         candidates: {cid: {verdict, reasons}},
+                                         sentinel: null | {merge_sha, verdict, reasons, sha256}}
 
 Verdicts are ``unit_verify``'s classes: ``verified`` (the files are written and no reason holds), ``refused`` (a
 reason about the tree: the candidate's or the base's), ``no_verdict`` (a run that tells nothing: a limit, an
@@ -54,16 +57,31 @@ crash or a ``Bail out!`` is red, not zero tests. Out of scope: other reporters a
 TAP line, so ``tests`` is empty and the gate's ``zero_tests`` rejects: closed, not open), and duplicate
 descriptions (each line is its own entry).
 
-Caller: ``loop.job``'s ``kos`` (D3), which reads the ``pulled`` artifact (``loop.pulled``) and passes the one
-``deps`` artifact directory under the download (``runner.deps_npm.artifact_in``). Not done here, stated: the sentinel and the drill of the ``kos`` job (D7,
-D8), and how ``yaz`` treats a candidate without files (the gate
-reads a missing file as ``artefact_hash_mismatch``). The hashes are taken by this process after every container
-ended, from the bytes it wrote, not from anything a container wrote.
+**The sentinel** (D7, MF12; ``watch``, a merge SHA, given by the caller: the merge whose sentinel has not finished,
+which must be the tree's own commit). With no ``watch`` the index's ``sentinel`` is ``null`` and nothing more runs.
+With one, after the base's lint runs and whatever they gave, the recipe's ``affected_test_cmd`` (stage 0's affected
+set is the unit's whole service-free test set, asama-0/08 item 6) runs at the staged base worktree, each run its
+own contained run with the red control, its wall clock capped by ``test_total_s``; each run's ``results`` is
+``tap_tests`` of its stdout and exit (the TAP rules above). ``gate.sentinel.watch`` asks for the runs: one when the
+first is green, four (run 1 and three reruns) otherwise. ``sentinel.json`` holds the merge SHA, every run used and
+``gate.sentinel``'s verdict (``green``, ``flaky`` or ``red``) with its ``red`` and ``flaky`` ids; the index carries
+the verdict, ``reasons`` ``[]`` and the file's sha256. No verdict (``verdict`` and ``sha256`` null, no file) when the
+base did not stage (the staging's reasons), when a run tells nothing (any reason of the contained run,
+``red_control_green`` included: a sandbox a known bad command passed judges no test), or when the runs are not
+``gate.sentinel``'s shape (``sentinel_unusable``: two top-level TAP lines with one description); the runs stop at
+the first run that tells nothing. Who reads the verdict (``yaz``'s half of D7: the revert on red, the row that ends
+a green or flaky run, seed-043) is not here.
+
+Caller: ``loop.job``'s ``kos`` (D3, D7), which reads the ``pulled`` artifact (``loop.pulled``) and passes the one
+``deps`` artifact directory under the download (``runner.deps_npm.artifact_in``), and ``watch`` from
+``brain/state``'s ledger. Not done here, stated: the drill of the ``kos`` job (D8), and how ``yaz`` treats a
+candidate without files (the gate reads a missing file as ``artefact_hash_mismatch``). The hashes are taken by this
+process after every container ended, from the bytes it wrote, not from anything a container wrote.
 
 Command line, from ``referee/``; it runs docker::
 
     python -m runner.kos run FILE    FILE {recipe, tree, policy, red_control: {cmd}, candidates: {cid: dir},
-                                     out, deps?, target?, base?}; stdout the index, one JSON line; exit 0 base
+                                     out, deps?, target?, base?, watch?}; stdout the index, one JSON line; exit 0 base
                                      verified, 1 base refused, 2 no verdict or unusable input
 """
 
@@ -80,6 +98,7 @@ import tempfile
 from typing import Any
 
 from gate import diffguard
+from gate import sentinel as S
 from profile import derive as D
 from profile import unit_verify as U
 from runner import contained as C
@@ -91,6 +110,8 @@ CANDIDATE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 TAP_LINE = re.compile(r"(not ok|ok) ([0-9]+)(?: - (.*))?\Z")
 SKIPPED = ("skip", "todo")
 INDEX = "index.json"
+SENTINEL = "sentinel.json"
+MERGE_SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 
 class KosError(ValueError):
@@ -178,6 +199,40 @@ def _lint(recipe: dict, red: list, worktree: str, operating: dict, runner: C.Run
     return reasons, ([] if len(records) != LINT_RUNS else records)
 
 
+class _NoRun(Exception):
+    """A sentinel run that tells nothing; ``reasons`` are its contained run's."""
+
+    def __init__(self, reasons: list[str]) -> None:
+        super().__init__(", ".join(reasons))
+        self.reasons = reasons
+
+
+def _sentinel(watch: str, recipe: dict, red: list, staging: str, ctx: dict, runner: C.Runner, root: str,
+              out: str) -> dict:
+    """The sentinel's runs of the staged base worktree and ``sentinel.json``; its index entry (see the module
+    docstring)."""
+    def one() -> dict:
+        test = U._one(recipe["affected_test_cmd"], red, recipe["env_image"], staging, ctx["operating"], runner, root,
+                      ctx["values"]["test_total_s"])
+        if test["reasons"]:  # a run whose status is not ok has its status among them (contained)
+            raise _NoRun(test["reasons"])
+        stdout = test["stdout"] if isinstance(test["stdout"], bytes) else b""
+        return {"results": tap_tests(stdout, test["exit"])}
+
+    entry = {"merge_sha": watch, "verdict": None, "reasons": [], "sha256": None}
+    try:
+        got = S.watch(one(), one)
+    except _NoRun as exc:
+        return dict(entry, reasons=exc.reasons)
+    except S.Unusable:
+        return dict(entry, reasons=["sentinel_unusable"])
+    data = _dump({"merge_sha": watch, "runs": got["runs"], "verdict": got["verdict"], "red": got["red"],
+                  "flaky": got["flaky"]})
+    with open(os.path.join(out, SENTINEL), "xb") as fh:
+        fh.write(data)
+    return dict(entry, verdict=got["verdict"], sha256=sha256(data))
+
+
 def _patch(worktree: str, diff: bytes) -> list[str]:
     """Apply every block of ``diff`` in ``worktree``; the reasons it could not (nothing is half applied then:
     the caller drops the worktree)."""
@@ -251,9 +306,12 @@ def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx
 
 def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: dict[str, bytes], out: str,
             deps: str | None = None, target: Any = None, runner: C.Runner | None = None,
-            base: str | None = None) -> dict:
-    """Write OUT (see the module docstring) and return the index. ``candidates``: ``{cid: diff.patch bytes}``."""
+            base: str | None = None, watch: str | None = None) -> dict:
+    """Write OUT (see the module docstring) and return the index. ``candidates``: ``{cid: diff.patch bytes}``;
+    ``watch``: the merge SHA whose sentinel runs, or ``None``."""
     runner = runner or C.docker_runner
+    if watch is not None and not (isinstance(watch, str) and MERGE_SHA.match(watch)):
+        raise KosError("watch must be a merge SHA, 40 lowercase hex")
     if not isinstance(candidates, dict) or not all(isinstance(k, str) and isinstance(v, bytes)
                                                    for k, v in candidates.items()):
         raise KosError("candidates must map ids to diff bytes")
@@ -265,13 +323,16 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
         bad, _, ctx = U.stage(recipe, tree, policy, red_control, deps, target, runner, root)
         reasons, records = (bad, []) if bad else _lint(recipe, red_control["cmd"], ctx["staging"], ctx["operating"],
                                                        runner, root)
-        index: dict[str, Any] = {"base_run_sha256": None, "candidates": {}}
+        index: dict[str, Any] = {"base_run_sha256": None, "candidates": {}, "sentinel": None}
         if records and not reasons:
             base_run = R.run_file(records)
             with open(os.path.join(out, "base.jsonl"), "xb") as fh:
                 fh.write(base_run)
             index["base_run_sha256"] = sha256(base_run)
         index["base"] = _verdict(reasons)
+        if watch is not None:
+            index["sentinel"] = ({"merge_sha": watch, "verdict": None, "reasons": bad, "sha256": None} if bad else
+                                 _sentinel(watch, recipe, red_control["cmd"], ctx["staging"], ctx, runner, root, out))
         for cid in sorted(candidates):
             if not CANDIDATE_ID.fullmatch(cid):
                 got = _verdict(["candidate_id_invalid"])
@@ -313,7 +374,8 @@ def main(argv: list[str]) -> int:
             raise KosError("FILE must be {recipe, tree, policy, red_control, candidates: {cid: dir}, out, ...}")
         cands = {cid: _read(os.path.join(d, "diff.patch")) for cid, d in req["candidates"].items()}
         index = results(req.get("recipe"), req["tree"], req.get("policy"), req.get("red_control"), cands,
-                        req["out"], req.get("deps"), req.get("target"), base=req.get("base"))
+                        req["out"], req.get("deps"), req.get("target"), base=req.get("base"),
+                        watch=req.get("watch"))
         sys.stdout.write(json.dumps(index, sort_keys=True) + "\n")
         return EXIT[index["base"]["verdict"]]
     except UNUSABLE as exc:

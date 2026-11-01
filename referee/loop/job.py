@@ -57,9 +57,15 @@ refused tree is ``pulled_invalid``). Then:
   ``diff.patch`` and the ``deps`` artifact, ``runner.deps_npm.artifact_in`` of ``$RUNNER_TEMP/in/deps`` (the
   download of ``getir``'s ``out/deps``; a root that is not exactly one ``<address>/`` directory is ``deps_invalid``,
   nothing run; ``None`` when ``in/deps`` is absent or empty: ``unit_verify`` then accepts only a lock without
-  packages), writing ``$RUNNER_TEMP/out/results``. Its index is in the output
-  (``index``) and ``done`` is ``["D3"]``. D7 (the sentinel) and D8 (the drill) of this job are not wired, so the
-  job still ends ``cycle_not_wired``, exit 1, after D3: the upload step does not run and ``yaz`` gets nothing.
+  packages), writing ``$RUNNER_TEMP/out/results``. Before the tree is extracted it reads ``pulled``'s
+  ``state/ledger.jsonl`` with ``ledger.serial.unfinished``, the reading ``yaz`` uses (a ledger it cannot read is
+  ``state_refused`` with its reasons, nothing run): with no unfinished merge nothing is watched; when the one
+  unfinished merge is ``brain/integration``'s head (the tree ``pulled`` carries), ``runner.kos.results`` runs D7's
+  sentinel there (``watch``: ``sentinel.json`` and the index's ``sentinel``); any other set of unfinished merges is
+  ``sentinel_unplaced`` with ``unfinished:<sha>`` reasons, exit 1, nothing run (a red could not be laid on one
+  merge). Its index is in the output (``index``) and ``done`` is ``["D3"]``. ``yaz``'s half of D7 (reading the
+  verdict) and D8 (the drill) are not wired, so the job still ends ``cycle_not_wired``, exit 1, after D3: the upload
+  step does not run and ``yaz`` gets nothing.
 - ``yaz`` runs D5 (``yaz_d5``): it reads ``control.json`` from the ``control`` step's clone
   (``$RUNNER_TEMP/control/control.json``; unreadable is unusable, exit 2), ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
   (the same refusals, the same one unit), extracts the tree under ``$RUNNER_TEMP/work`` and calls ``loop.decide``
@@ -465,6 +471,27 @@ def _recipe_refused(art: Any, unit: Any, tree: str, job: str) -> dict | None:
     return {"reason": "recipe_refused", "reasons": reasons} if reasons else None
 
 
+def _unfinished(art: Any) -> tuple[list[str], dict | None]:
+    """The merges of ``pulled``'s ``brain/state`` ledger whose sentinel has not finished (``ledger.serial.unfinished``):
+    ``(shas, None)``, or ``([], {reason: state_refused, reasons})``. One reading for ``kos`` (which merge D7 watches)
+    and ``yaz`` (D5's criterion 8)."""
+    try:
+        return SE.unfinished(art.state[B.STATE_LEDGER]), None
+    except SE.Unusable as exc:
+        return [], {"reason": "state_refused", "reasons": exc.reasons}
+
+
+def _watched(unfinished: list[str], head: str) -> tuple[str | None, dict | None]:
+    """The merge D7's sentinel runs at: ``(None, None)`` when no merge is unfinished, ``(head, None)`` when the one
+    unfinished merge is ``brain/integration``'s head (the tree ``pulled`` carries), else ``(None, {reason:
+    sentinel_unplaced, reasons: [unfinished:<sha>, ...]})``: a red at the head could not be laid on one merge."""
+    if not unfinished:
+        return None, None
+    if unfinished == [head]:
+        return head, None
+    return None, {"reason": "sentinel_unplaced", "reasons": ["unfinished:%s" % sha for sha in unfinished]}
+
+
 def getir_d2(environ: dict[str, str], fetcher: Any = None) -> dict[str, Any]:
     """D2 of ``getir`` (see the module docstring): ``{reason?, reasons?, deps?, licenses?}``."""
     art, unit, refused = _pulled_unit(environ)
@@ -506,13 +533,19 @@ def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None
             deps = N.artifact_in(deps)
         except N.DepsError as exc:
             return {"reason": "deps_invalid", "reasons": [cli.cause(exc)]}
+    unfinished, refused = _unfinished(art)
+    if refused:
+        return refused
+    watch, refused = _watched(unfinished, art.heads[B.INTEGRATION])
+    if refused:
+        return refused
     root, tree, refused = _pulled_tree(environ, art, "kos")
     if refused:
         return refused
     diffs = {cid: files["diff.patch"] for cid, files in art.candidates.items()}
     try:
         index = K.results(unit, tree, art.policy, red_control or RED_CONTROL, diffs, _dir(environ, "out", "results"),
-                          deps, art.target, runner, base=root)
+                          deps, art.target, runner, base=root, watch=watch)
     except K.UNUSABLE as exc:
         raise Unusable("kos: %s" % cli.cause(exc)) from None
     return {"index": index}
@@ -529,10 +562,9 @@ def yaz_d5(environ: dict[str, str]) -> tuple[dict[str, Any], Any, str | None]:
     art, unit, refused = _pulled_unit(environ)
     if refused:
         return refused, None, None
-    try:
-        unfinished = SE.unfinished(art.state[B.STATE_LEDGER])
-    except SE.Unusable as exc:
-        return {"reason": "state_refused", "reasons": exc.reasons}, None, None
+    unfinished, refused = _unfinished(art)
+    if refused:
+        return refused, None, None
     _, tree, refused = _pulled_tree(environ, art, "yaz")
     if refused:
         return refused, None, None

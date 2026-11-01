@@ -66,19 +66,21 @@
   {
    "id": "job_ignores_state",
    "file": "loop/job.py",
-   "old": "        unfinished = SE.unfinished(art.state[B.STATE_LEDGER])",
-   "new": "        unfinished = []",
+   "old": "        return SE.unfinished(art.state[B.STATE_LEDGER]), None",
+   "new": "        return [], None",
    "tests": [
-    "test_loop_yaz.py"
+    "test_loop_yaz.py",
+    "test_loop_kos.py"
    ]
   },
   {
    "id": "job_state_refusal_swallowed",
    "file": "loop/job.py",
-   "old": "    except SE.Unusable as exc:\n        return {\"reason\": \"state_refused\", \"reasons\": exc.reasons}",
-   "new": "    except SE.Unusable as exc:\n        unfinished = []",
+   "old": "        return [], {\"reason\": \"state_refused\", \"reasons\": exc.reasons}",
+   "new": "        return [], None",
    "tests": [
-    "test_loop_yaz.py"
+    "test_loop_yaz.py",
+    "test_loop_kos.py"
    ]
   },
   {
