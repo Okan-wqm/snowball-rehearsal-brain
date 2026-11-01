@@ -23,8 +23,9 @@ in the registry or the emitter shows as a violation of the committed file:
   ``persist-credentials: false``;
 - ``permissions_missing``: every job states its permissions; ``code_job_permissions`` and
   ``secret_in_code_job``: ``getir`` and ``kos`` (the jobs that run code) have ``permissions: {}`` and no
-  ``secrets.``/``github.token`` expression; ``secret_outside``: secrets appear only in ``cagir``
-  (``CLAUDE_CODE_OAUTH_TOKEN`` only) and ``yaz``;
+  ``secrets.``/``github.token`` expression; ``secret_outside``: secrets appear only in ``cek`` (``github.token``
+  only: D1 reads the bootstrap state through the Actions API, asama-0/01), ``cagir`` (``CLAUDE_CODE_OAUTH_TOKEN``
+  only) and ``yaz``;
 - ``secret_job_runs_code``: a job holding a secret or a permission uses only checkout of its own commit
   (``foreign_checkout`` otherwise), the artifact actions and (``yaz``) the App token action, and runs only
   ``control`` and its ``python3 -m loop.job run <job>``; ``unknown_run``: the same for the code jobs.
@@ -60,7 +61,8 @@ WORKFLOW = os.path.join(REFEREE, ".github", "workflows", "loop.yml")
 
 JOBS = ("cek", "getir", "kos", "cagir", "yaz")         # tohum/08 item 1
 CODE_JOBS = ("getir", "kos")                            # run code: no secret, no permission
-SECRETS_ALLOWED = {"cagir": {"CLAUDE_CODE_OAUTH_TOKEN"}, "yaz": None}  # None: any (writer App, OIDC)
+# None: any (writer App, OIDC). cek: only the job's own token, for D1's Actions read (asama-0/01, actions: read)
+SECRETS_ALLOWED = {"cek": {"github.token"}, "cagir": {"CLAUDE_CODE_OAUTH_TOKEN"}, "yaz": None}
 MAIN = "github.ref == 'refs/heads/main'"
 GATE = "steps.control.outputs.go == 'true'"
 CONTROL = re.compile(r"(?m)^python3 -m snowball_bootstrap control( |$)")
@@ -372,8 +374,8 @@ class EachRuleFires(unittest.TestCase):
                                                  "          GH: ${{ github.token }}\n          LOOP_PULLED_DIGEST:"))
 
     def test_secrets_only_where_the_table_puts_them(self):
-        self.fires("secret_outside", _in_job(committed(), "cek", "      - name: cek\n        if: steps.control.outputs.go == 'true'\n",
-                                             "      - name: cek\n        if: steps.control.outputs.go == 'true'\n        env:\n          K: ${{ secrets.WRITER_APP_PRIVATE_KEY }}\n"))
+        self.fires("secret_outside", _in_job(committed(), "cek", "          GITHUB_TOKEN: ${{ github.token }}\n",
+                                             "          GITHUB_TOKEN: ${{ github.token }}\n          K: ${{ secrets.WRITER_APP_PRIVATE_KEY }}\n"))
         self.fires("secret_outside", _in_job(committed(), "cagir", "          CLAUDE_CODE_OAUTH_TOKEN:",
                                              "          W: ${{ secrets.WRITER_APP_ID }}\n          CLAUDE_CODE_OAUTH_TOKEN:"))
 
@@ -526,9 +528,9 @@ class JobEntry(unittest.TestCase):
                     self.assertEqual((code, out["ok"], out["reason"]), (1, False, "secret_in_code_job:" + var))
 
     def test_not_wired_stops_red(self):
-        # kos runs D3 first and yaz D5 first, then each stops the same way: test_loop_kos.py, test_loop_yaz.py;
-        # getir is wired whole (D2): test_loop_getir.py
-        for name in [n for n in JOBS if n not in ("getir", "kos", "yaz")]:
+        # cek runs D1's accepted-SHA check first, kos D3 and yaz D5, then each stops the same way: test_loop_cek.py,
+        # test_loop_kos.py, test_loop_yaz.py; getir is wired whole (D2): test_loop_getir.py
+        for name in [n for n in JOBS if n not in ("cek", "getir", "kos", "yaz")]:
             env = {"CLAUDE_CODE_OAUTH_TOKEN": "x"} if name == "cagir" else {}
             with self.subTest(job=name):
                 code, out = run_job(name, env)

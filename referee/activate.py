@@ -41,13 +41,14 @@ Reasons, sorted; any reason is a hard stop and no payload:
 
 The payload, twelve keys: ``target`` (the id); ``base_sha`` (``toy``: ``object.sha`` of the API's ``main``, the
 summary's not read; ``copy``: ``targets[].base_sha``); of the last ``imports.jsonl`` row carrying
-``referee_tree_sha256`` (a counter row that is no transfer is skipped): ``referee_tree_sha256``, ``result_sha256``
+``referee_tree_sha256`` (a counter row that is no transfer is skipped; read by ``loop.accepted.last_import``, the
+one reader D1 shares): ``referee_tree_sha256``, ``result_sha256``
 and ``import_line_sha256`` (that line's bytes without its LF); ``seed_epoch`` (the last ``seed_epochs[]`` entry as
 written); ``policy_sha256``, ``summary_sha256``, ``seed_security_ledger_sha256`` (sha256 of each file's bytes as
 given); ``seed_security_last_row_hash``; ``recipe_sha256`` (of the recipe's RFC 8785 form); ``facts_sha256`` (of
 the RFC 8785 form of ``{"GET <path>": body}`` over the reads). Unusable (``Unusable``): the target not exactly once
 in ``targets[]`` or of another kind, a file that is not the JSON it names (``imports.jsonl`` a valid chain of
-objects), no transfer row, a read not answered or malformed (a rule without an integer ``ruleset_id`` included).
+objects), no transfer row or one whose ``referee_tree_sha256`` is not 64 lowercase hex, a read not answered or malformed (a rule without an integer ``ruleset_id`` included).
 
 **Activation** (``activate``), in this order; nothing is written before step 4:
 
@@ -101,6 +102,7 @@ from typing import Any, Callable
 
 from gate import check, diffguard
 from ledger import anchor, append, chain, schema
+from loop import accepted
 from status import block
 from target import write
 import cli
@@ -254,14 +256,10 @@ def genesis(transport: Any, files: dict[str, bytes], target_id: Any) -> dict:
     target = _target(summary, target_id)
     _json(files["policy.json"], "policy.json")
     recipe = _json(files["recipe.json"], "recipe.json")
-    imports = files["imports.jsonl"]
-    if not chain.verify_bytes(imports)["valid"]:
-        raise Unusable("imports.jsonl is not a valid chain of JSON objects")
-    lines = chain._lines(imports)
-    transfers = [i for i, line in enumerate(lines) if "referee_tree_sha256" in chain.parse_row(line.decode())]
-    if not transfers:
-        raise Unusable("imports.jsonl has no transfer row")
-    transfer = chain.parse_row(lines[transfers[-1]].decode())
+    try:
+        transfer, transfer_line = accepted.last_import(files["imports.jsonl"])
+    except accepted.StateError as exc:
+        raise Unusable("imports.jsonl: %s" % cli.cause(exc)) from None
 
     repo, reads, reasons = target["repo"], Reads(transport), set()
     app = reads.get("/app", dict)
@@ -316,7 +314,7 @@ def genesis(transport: Any, files: dict[str, bytes], target_id: Any) -> dict:
         "base_sha": base_sha,
         "referee_tree_sha256": transfer.get("referee_tree_sha256"),
         "result_sha256": transfer.get("result_sha256"),
-        "import_line_sha256": _sha(lines[transfers[-1]]),
+        "import_line_sha256": _sha(transfer_line),
         "seed_epoch": summary["seed_epochs"][-1],
         "policy_sha256": _sha(files["policy.json"]),
         "summary_sha256": _sha(files["summary.json"]),

@@ -650,8 +650,13 @@ NET_MODULES = {"urllib.request", "http.client", "socket", "ssl", "requests", "ht
                "http"}
 # The modules that may open a connection, each for one job (tohum/01a): ``yaz`` writes the target through
 # ``target.write``; ``getir`` reads registry tarballs through ``deps.fetch`` and sends nothing (no request body,
-# no method, no header: ``ReadOnlyFetch`` below).
-NET_ALLOWED = {os.path.join("target", "write.py"), os.path.join("runner", "deps_npm.py")}
+# no method, no header: ``ReadOnlyFetch`` below); ``cek`` reads the bootstrap referee's state through the Actions API
+# with ``loop.accepted`` (GET only, no body: ``test_actions_read_is_get_only``).
+NET_ALLOWED = {os.path.join("target", "write.py"), os.path.join("runner", "deps_npm.py"),
+               os.path.join("loop", "accepted.py")}
+# The modules that may name GitHub's hosts: the writer, and cek's reader (the API, the brain's URL, the bootstrap
+# workflow's certificate identity).
+GITHUB_NAMED = {os.path.join("target", "write.py"), os.path.join("loop", "accepted.py")}
 
 
 def scan(rel, src):
@@ -665,7 +670,8 @@ def scan(rel, src):
         if rel not in NET_ALLOWED:
             found += ["%s: import %s" % (rel, m) for m in mods if m in NET_MODULES]
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and rel != os.path.join("target", "write.py"):
-            if "github.com" in node.value.lower() or node.value in ("push", "send-pack", "receive-pack"):
+            if ("github.com" in node.value.lower() and rel not in GITHUB_NAMED) \
+                    or node.value in ("push", "send-pack", "receive-pack"):
                 found.append("%s: %r" % (rel, node.value))
     return found
 
@@ -694,6 +700,22 @@ class OneWay(unittest.TestCase):
             "gate/x.py: 'https://API.GitHub.com/repos'", "gate/x.py: 'push'", "gate/x.py: import http",
             "gate/x.py: import http.client", "gate/x.py: import urllib.request"])
         self.assertEqual(scan(os.path.join("runner", "deps_npm.py"), "import urllib.request\n"), [])
+
+    def test_actions_read_is_get_only(self):
+        """``loop.accepted`` builds every request as ``urllib.request.Request(<url>)``: one argument, no ``data``,
+        ``method`` or ``headers``, so it only reads; and it names no git push."""
+        src = dict(referee_modules())[os.path.join("loop", "accepted.py")]
+        calls = [n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Call)
+                 and isinstance(n.func, ast.Attribute) and n.func.attr == "Request"]
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            self.assertEqual((len(call.args), call.keywords), (1, []))
+        self.assertNotIn("add_data", src)
+        self.assertEqual(scan(os.path.join("loop", "accepted.py"), src), [])
+        self.assertEqual(scan(os.path.join("loop", "accepted.py"), src + "\nX = 'push'\n"),
+                         ["loop/accepted.py: 'push'"])
+        self.assertEqual(scan(os.path.join("loop", "job.py"), "U = 'https://github.com/%s'\n"),
+                         ["loop/job.py: 'https://github.com/%s'"])
 
     def test_read_only_fetch(self):
         """``deps.fetch`` opens a bare URL: no ``Request``, no ``data``/``method``/``headers`` anywhere."""

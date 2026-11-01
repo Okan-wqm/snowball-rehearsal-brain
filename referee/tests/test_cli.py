@@ -438,6 +438,7 @@ def _inject_argv(f: str, d: str) -> dict:
         "ledger.chain": [["hash"], ["verify", f], ["verify", f, "--previous", f]],
         "ledger.founder": [["check", "--ledger", f], ["open", "--ledger", f, "--reports", d]],
         "loop.job": [["run", f]],
+        "loop.treehash": [["tar", f]],
         "profile.derive": [["derive", f, f], ["check", f, f, f]],
         "profile.fit": [[d, "--target", f], [d, "--policy", f], [d, "--images", f]],
         "profile.unit_verify": [["check", f, f], ["verify", f]],

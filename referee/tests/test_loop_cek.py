@@ -7,7 +7,12 @@
   together and nothing written, the brain's own object reasons marked ``brain:``; an id that is not one path
   component reads nothing;
 - end to end: the target's and the brain's git objects -> ``assemble`` -> ``loop.job run kos`` -> ``gate.check
-  decide``: the good candidate merges, the test-breaking one is rejected (``tests_red``).
+  decide``: the good candidate merges, the test-breaking one is rejected (``tests_red``);
+- the ``cek`` job's D1 accepted-SHA check (``loop.job.cek_d1``): a fake Actions API and verifier, the real
+  ``loop.fetch`` and ``loop.gitobj.GitBatch`` with ``git_store``'s test ``git`` holding the brain's commit, the
+  checkout's ``setup/imports.jsonl``: agreeing hashes end ``cycle_not_wired`` with ``accepted`` and no ``pulled``
+  written; a different or refused ``referee/`` and a broken import are refusals (exit 1); an unset variable, an
+  unverified state and a failed fetch are unusable (exit 2).
 """
 
 from __future__ import annotations
@@ -25,7 +30,9 @@ sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from loop import cek as C  # noqa: E402
+from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
+from loop import treehash as T  # noqa: E402
 import git_store as S  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, operating, recipe  # noqa: E402
@@ -225,6 +232,89 @@ class EndToEnd(LK.Base):
         self.assertEqual(self.decide("good")["decision"], "merge")
         self.assertEqual((self.decide("breaks")["decision"], self.decide("breaks")["reasons"]),
                          ("reject", ["tests_red"]))
+
+
+class CekJob(unittest.TestCase):
+    """``loop.job run cek`` up to D1's accepted-SHA check."""
+
+    BRAIN = {"referee/loop/job.py": b"x = 1\n", "referee/a.py": b"a\n", "targets/t1/units.json": b"{}"}
+
+    def setUp(self) -> None:
+        import test_accepted as TA
+        self.TA = TA
+        self.base = writable_base("t-cek-job-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.temp = os.path.join(self.base, "temp")
+        self.work = os.path.join(self.base, "checkout")
+        self.bin = os.path.join(self.base, "bin")
+        for d in (self.temp, os.path.join(self.work, "setup"), self.bin):
+            os.makedirs(d)
+
+    def run_cek(self, brain=None, imported=None, verifier=None, exits=None, env=None, http=None):
+        objects, commit = S.store(self.BRAIN if brain is None else brain)
+        git = S.install_git(self.bin, {sha: S.batch_record(sha, kind, data) for sha, (kind, data) in objects.items()},
+                            exits=exits)
+        tree = T.digest([(p, "file", d) for p, d in self.BRAIN.items()])
+        with open(os.path.join(self.work, "setup", "imports.jsonl"), "wb") as fh:
+            fh.write(self.TA.chained([self.TA.import_row(tree if imported is None else imported, commit)])
+                     if imported != "" else b"")
+        zip_bytes = self.TA.zip_of({"result.json": self.TA.result(commit), "result.json.sigstore.json": b"{}"})
+        api = http or self.TA.FakeApi([self.TA.artifact(11, "2026-11-01T00:00:00Z")], zip_bytes)
+        environ = {"RUNNER_TEMP": self.temp, "GITHUB_REPOSITORY": "o/referee", "GITHUB_TOKEN": "t",
+                   "GITHUB_WORKSPACE": self.work, "LOOP_BRAIN_REPO": "o/brain", "PATH": os.environ.get("PATH", "")}
+        environ.update(env or {})
+        self.verified: list = []
+
+        def verify(argv):
+            self.verified.append(argv)
+            return 0
+        out = J.run("cek", {k: v for k, v in environ.items() if v is not None}, http=api,
+                    verifier=verifier or verify, git=git)
+        self.assertFalse(os.path.lexists(os.path.join(self.temp, "out", "pulled")))
+        return out, commit, tree
+
+    def test_the_job_checks_the_accepted_sha_and_writes_no_pulled(self):
+        out, commit, tree = self.run_cek()
+        self.assertEqual(out["reason"], "cycle_not_wired")
+        self.assertEqual((out["ok"], out["checked"]), (False, ["accepted_sha", "referee_tree"]))
+        self.assertEqual(out["accepted"]["brain_sha"], commit)
+        self.assertEqual(out["accepted"]["referee_tree_sha256"], tree)
+        self.assertEqual(out["accepted"]["artifact_id"], 11)
+        self.assertIn("https://github.com/o/referee/.github/workflows/bootstrap.yml@refs/heads/main", self.verified[0])
+        fetches = [c["argv"] for c in S.calls(self.bin) if "fetch" in c["argv"]]
+        self.assertEqual(len(fetches), 1)
+        self.assertIn("https://github.com/o/brain", fetches[0])
+        self.assertEqual(fetches[0][-1], "%s:refs/pulled" % commit)
+
+    def test_a_referee_tree_that_is_not_the_imported_one(self):
+        out, _, _ = self.run_cek(imported="0" * 64)
+        self.assertEqual((out["ok"], out["reason"]), (False, "referee_tree_mismatch"))
+        self.assertNotIn("accepted", out)
+        changed = dict(self.BRAIN, **{"referee/a.py": b"b\n"})
+        out, _, _ = self.run_cek(brain=changed)
+        self.assertEqual(out["reason"], "referee_tree_mismatch")
+
+    def test_a_refused_tree_and_a_broken_import(self):
+        out, _, _ = self.run_cek(brain=dict(self.BRAIN, **{"referee/Setup": b""}))
+        self.assertEqual((out["reason"], out["reasons"]), ("referee_tree_refused", ["operator_name:Setup"]))
+        out, _, _ = self.run_cek(imported="")
+        self.assertEqual(out["reason"], "imports_no_transfer")
+
+    def test_no_verdict(self):
+        for kw in ({"env": {"GITHUB_TOKEN": None}}, {"env": {"LOOP_BRAIN_REPO": None}},
+                   {"env": {"LOOP_BRAIN_REPO": "o/brain/x"}}, {"verifier": lambda argv: 1},
+                   {"exits": {"fetch": 128}}, {"http": self.TA.FakeApi([], b"")}):
+            with self.subTest(kw=kw):
+                shutil.rmtree(self.temp)
+                os.makedirs(self.temp)
+                with self.assertRaises(J.Unusable):
+                    self.run_cek(**kw)
+        os.remove(os.path.join(self.work, "setup", "imports.jsonl"))
+        with self.assertRaises(J.Unusable):
+            J.run("cek", {"RUNNER_TEMP": self.temp, "GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t",
+                          "GITHUB_WORKSPACE": self.work, "LOOP_BRAIN_REPO": "o/b"},
+                  http=self.TA.FakeApi([self.TA.artifact(1, "2026-11-01T00:00:00Z")],
+                                       self.TA.zip_of(self.TA.GOOD_ZIP)), verifier=lambda argv: 0)
 
 
 if __name__ == "__main__":

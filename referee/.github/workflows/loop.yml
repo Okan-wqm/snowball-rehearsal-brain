@@ -36,6 +36,9 @@ jobs:
           persist-credentials: false
       - name: cek
         if: steps.control.outputs.go == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LOOP_BRAIN_REPO: ${{ vars.BRAIN_REPO }}
         run: |
           python3 -m loop.job run cek
       - name: upload pulled
