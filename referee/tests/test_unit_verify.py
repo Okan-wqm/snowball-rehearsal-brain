@@ -417,6 +417,80 @@ class CommandsAgainstLock(Base):
                              os.path.lexists(os.path.join(context["staging"], probe)), probe)
 
 
+class Workspaces(Base):
+    """npm workspaces (tohum/29g) in the static rules and the staging: the link becomes a symlink to its folder,
+    a nested package is unpacked under its key with its own ``.bin``, and the rules agree with what is written."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.deep = tgz({"package.json": {"name": "deep", "version": "4.0.0", "bin": "cli.js"}, "cli.js": b"x"})
+        self.put(url("deep", "4.0.0"), self.deep)
+        lock = copy.deepcopy(self.lock)
+        lock["packages"][""]["workspaces"] = ["libs/ui"]
+        lock["packages"]["node_modules/left-pad"]["bin"] = {"left-pad": "cli.js"}  # as npm writes the tarball's
+        lock["packages"]["node_modules/@acme/ui"] = {"resolved": "libs/ui", "link": True}
+        lock["packages"]["libs/ui"] = {"name": "@acme/ui", "version": "1.0.0", "devDependencies": {"deep": "4.0.0"}}
+        lock["packages"]["libs/ui/node_modules/deep"] = {"version": "4.0.0", "resolved": url("deep", "4.0.0"),
+                                                         "integrity": sri(self.deep), "bin": {"deep": "cli.js"}}
+        self.write_lock(lock)
+        write_tree(self.tree, {"pkg/libs/ui/package.json": {"name": "@acme/ui", "version": "1.0.0",
+                                                            "scripts": {"lint": "deep src", "test": "left-pad"},
+                                                            "devDependencies": {"deep": "4.0.0"}},
+                               "pkg/libs/ui/index.js": "module.exports = 2\n",
+                               "pkg/package.json": {"name": "pkg", "version": "1.0.0",
+                                                    "devDependencies": {"left-pad": "1.3.0"}}})
+        self.deps = self.fetch()
+
+    def staged(self) -> str:
+        root = os.path.join(self.base, "stage")
+        os.mkdir(root)
+        reasons, _, context = U.stage(recipe(), self.tree, policy(), RED, self.deps, None, FakeDocker(), root)
+        self.assertEqual(reasons, [])
+        return context["staging"]
+
+    def test_the_link_is_a_symlink_to_its_folder_and_the_nested_package_is_under_its_key(self):
+        staging = self.staged()
+        link = os.path.join(staging, "pkg/node_modules/@acme/ui")
+        self.assertEqual(os.readlink(link), "../../libs/ui")
+        with open(os.path.join(link, "index.js")) as fh:
+            self.assertEqual(fh.read(), "module.exports = 2\n")
+        self.assertTrue(os.path.isfile(os.path.join(staging, "pkg/libs/ui/node_modules/deep/cli.js")))
+        self.assertEqual(os.readlink(os.path.join(staging, "pkg/libs/ui/node_modules/.bin/deep")), "../deep/cli.js")
+
+    def test_an_entry_already_at_the_link_refuses_the_artifact(self):
+        staging = os.path.join(self.base, "stage")
+        os.makedirs(os.path.join(staging, "pkg/node_modules/@acme/ui"))
+        bad, _ = U.install_deps(staging, "pkg/package-lock.json", self.deps, self.lock_bytes(), 10 ** 7)
+        self.assertEqual(bad, ["deps_unpack_unsafe:node_modules/@acme/ui"])
+        self.assertEqual(os.listdir(os.path.join(staging, "pkg/node_modules/@acme/ui")), [])
+
+    def test_a_link_the_live_path_does_not_take_is_refused_before_staging(self):
+        lock = json.loads(self.lock_bytes())
+        lock["packages"]["node_modules/@acme/ui"]["resolved"] = "../ui"
+        self.write_lock(lock)
+        self.assertIn("lock:file_dependency:node_modules/@acme/ui", U.check_recipe(recipe(), None, self.tree))
+
+    def test_a_members_script_finds_its_own_nested_bin(self):
+        member = "pkg/libs/ui"
+        reasons = U.check_recipe(recipe(lint_cmd=npm_run("lint", member), test_cmd=npm_run("test", member),
+                                        affected_test_cmd=npm_run("test", member)), None, self.tree)
+        self.assertEqual(reasons, [])
+        lock = json.loads(self.lock_bytes())
+        del lock["packages"]["libs/ui/node_modules/deep"]["bin"]
+        self.write_lock(lock)
+        reasons = U.check_recipe(recipe(lint_cmd=npm_run("lint", "pkg/libs/ui")), None, self.tree)
+        self.assertEqual(reasons, ["script_not_installed:lint_cmd:deep"])
+
+    def test_the_rule_agrees_with_what_the_install_writes(self):
+        staging = self.staged()
+        lock = json.loads(self.lock_bytes())
+        for probe in ("pkg/node_modules/@acme/ui", "pkg/node_modules/@acme", "pkg/libs/ui/node_modules/deep/cli.js",
+                      "pkg/libs/ui/node_modules/.bin/deep", "pkg/libs/ui/node_modules",
+                      "pkg/libs/ui/node_modules/other", "pkg/libs/x/node_modules/deep",
+                      "pkg/node_modules/.bin/deep", "pkg/node_modules/deep", "pkg/libs/ui/node_modules/.bin/left-pad"):
+            self.assertEqual(U.installed(probe, "pkg", lock), os.path.lexists(os.path.join(staging, probe)), probe)
+
+
 def npm_run(script: str, directory: str = "pkg", *rest: str) -> list:
     return ["npm", "--prefix", directory, "run", "--silent", script] + list(rest)
 

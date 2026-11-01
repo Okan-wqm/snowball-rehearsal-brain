@@ -14,8 +14,13 @@ The lock (``check``, before anything is fetched; every reason listed as ``<reaso
   (``lock_unparsable``, ``lock_version_unsupported``). The ``dependencies`` section of a version 2 lock is
   not read; an installer that reads it (npm 6) is out of scope.
 - The root entry ``""`` is skipped: the target's own package and its scripts are the target's code, run
-  in ``koş``, not judged here. Every other key must be a chain of ``node_modules/<name>`` segments with npm
-  name characters (``key_not_allowed``); so a workspace member (``packages/a``) is refused in stage 0.
+  in ``koş``, not judged here. npm workspaces (tohum/29g, ``workspaces``): a workspace link and the workspace
+  folder it names are skipped too, for the same reason (the folder is the target's own code, its scripts
+  included); the live path takes only a link whose key is a package key below and whose ``resolved`` is a
+  folder written plainly (``live_workspaces``); any other link is an entry and is refused below. Every other
+  key must be a chain of ``node_modules/<name>`` segments with npm name characters, at the top or below a
+  taken workspace folder (``<folder>/node_modules/...``, ``key_name``), else ``key_not_allowed``; so a key
+  outside ``node_modules`` that no link names (``packages/a``) is refused.
 - ``link: true``, a ``resolved`` or ``version`` that starts with ``file:``, or a non-empty ``resolved`` with
   no ``://`` is a file
   dependency (``file_dependency``); one that starts with ``git+``, ``git:``, ``git@``, ``github:``,
@@ -84,8 +89,10 @@ cannot be fetched is no verdict (exit 2), not a refusal: an outage says nothing 
 Group ``npmlock`` (tohum/29g, the vector interface; ``fetch``, a report, nothing written): stdin
 ``{registry_egress[], install_scripts_required[]}``, each registry ``https://<host>/...`` ending with ``/``,
 each element a mark as above (a lock key of this lock or ``name@version``; any other element is exit 2). The lock must be ``lockfileVersion`` 3 with a ``packages`` object of objects.
-Every ``packages`` entry other than ``""`` is a package, a link or an entry without ``resolved`` too, and
-gets the first of these reasons that holds, in this order:
+The entries other than ``""``, a workspace link and the workspace folder it names (``workspaces``, compared as
+written) are packages, a nested ``<folder>/node_modules/<name>``, any other link, a key outside ``node_modules``
+that no link names and an entry without ``resolved`` included; each gets the first of these reasons that holds,
+in this order:
 
 - ``git_dependency``: ``resolved`` starts with ``git+``, ``git:``, ``github:`` or ``git@`` (as written);
 - ``file_dependency``: ``resolved`` starts with ``file:``, or ``link`` is true and the target (``resolved``)
@@ -260,6 +267,43 @@ def read_marks(marks: list[str], keys) -> Marks:
     return found
 
 
+def _in_repo(resolved: Any) -> bool:
+    """A link target inside the repository (tohum/29g): a non-empty string, not absolute (``/``, ``\\``), with no
+    ``..`` component (split on ``/`` and ``\\``) and no ``:`` (so no drive letter, no ``file:``, no URL)."""
+    return (isinstance(resolved, str) and resolved != "" and not resolved.startswith(("/", "\\"))
+            and ":" not in resolved and ".." not in re.split(r"[/\\]", resolved))
+
+
+def workspaces(packages: Any) -> tuple[dict[str, str], set[str]]:
+    """npm workspaces in a lock's ``packages`` (tohum/29g), the one reading of which entries are no packages:
+    ``(links, folders)``. A workspace link is an entry other than ``""`` with ``link: true`` whose ``resolved`` is
+    in the repository (``_in_repo``); ``links`` maps its key to that ``resolved``. A workspace folder is a key
+    equal to some link's ``resolved``, compared as written, with no ``node_modules`` component; ``folders`` holds
+    the ``resolved`` values of that shape whether or not the lock has them as keys. Every other entry is a
+    package: a key outside ``node_modules`` that no link names is not a folder."""
+    links = {}
+    for key, entry in packages.items() if isinstance(packages, dict) else ():
+        if key != "" and isinstance(entry, dict) and entry.get("link") is True and _in_repo(entry.get("resolved")):
+            links[key] = entry["resolved"]
+    folders = {f for f in links.values() if "node_modules" not in f.split("/")}
+    return links, folders
+
+
+def key_name(key: str, folders: set[str]) -> str | None:
+    """The package name a lock key installs, or None when the live path does not take the key: a chain of
+    ``node_modules/<name>`` segments (``LOCK_PATH_RE``), at the top or below a workspace folder (``<folder>/``
+    before the first ``node_modules`` component; the folder's components non-empty and not ``.``)."""
+    parts = key.split("/")
+    if "node_modules" not in parts:
+        return None
+    cut = parts.index("node_modules")
+    prefix = parts[:cut]
+    if prefix and ("/".join(prefix) not in folders or any(p in ("", ".") for p in prefix)):
+        return None
+    m = LOCK_PATH_RE.fullmatch("/".join(parts[cut:]))
+    return m.group(1) if m else None
+
+
 def _source_reason(entry: dict) -> str | None:
     if entry.get("link") is True:
         return "file_dependency"
@@ -303,20 +347,33 @@ def entries(lock: Any) -> tuple[list[str], list[dict]]:
     if not isinstance(packages, dict):
         return ["lock_version_unsupported"], []
     reasons, out = [], []
+    links, folders = live_workspaces(packages)
     for key in sorted(packages):
         entry = packages[key]
-        if key == "":
+        if key == "" or key in links or key in folders:
             continue
-        m = LOCK_PATH_RE.fullmatch(key)
-        if not m or not isinstance(entry, dict):
+        found = key_name(key, folders)
+        if found is None or not isinstance(entry, dict):
             reasons.append("key_not_allowed:%s" % key)
             continue
-        name = entry.get("name", m.group(1))
+        name = entry.get("name", found)
         if not isinstance(name, str) or not NAME_RE.fullmatch(name):
             reasons.append("key_not_allowed:%s" % key)
             continue
         out.append({"key": key, "name": name, "entry": entry})
     return reasons, out
+
+
+def live_workspaces(packages: Any) -> tuple[dict[str, str], set[str]]:
+    """The workspaces the live path takes: ``workspaces``' links whose key is a package key (``key_name``, so the
+    staged symlink lands in a ``node_modules`` directory) and whose ``resolved`` is a workspace folder (so it names
+    a directory of the repository, not a package path) written plainly (no empty or ``.`` component, so never the
+    lock's own directory); the folders those links name. Any other link stays an
+    entry and is refused as before (``file_dependency``, ``key_not_allowed``)."""
+    links, folders = workspaces(packages)
+    taken = {k: f for k, f in links.items() if f in folders and key_name(k, folders) is not None
+             and not any(p in ("", ".") for p in f.split("/"))}
+    return taken, set(taken.values())
 
 
 def check(lock: Any, registries=DEFAULT_REGISTRIES, marks: list[str] | None = None) -> dict:
@@ -768,8 +825,9 @@ def npmlock(lock_path: str, mirror: str, registries: list[str], marks: list[str]
     except OSError as exc:
         raise DepsError("mirror unreadable: %s" % (cli.cause(exc))) from None
     rejected, rows, licenses, cache = [], [], [], {}
+    links, folders = workspaces(packages)
     for path in sorted(packages):
-        if path == "":
+        if path == "" or path in links or path in folders:
             continue
         entry = packages[path]
         resolved = entry.get("resolved")

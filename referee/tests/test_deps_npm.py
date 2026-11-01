@@ -3,7 +3,10 @@ tarballs served by a mirror directory (the sandbox has no network; the HTTPS pat
 
 - every tarball equals the lock's ``integrity``; one changed byte is refused and no artifact is written;
 - ``resolved`` off the allowed registry (host, scheme, user, port, query, path, name), git and file
-  dependencies, bundled entries and workspace keys are refused before anything is fetched;
+  dependencies, bundled entries and keys outside ``node_modules`` that no workspace link names are refused
+  before anything is fetched; npm workspaces (tohum/29g): a workspace link and the folder it names are skipped,
+  nested ``<folder>/node_modules/*`` packages are judged and fetched under their keys (``TestWorkspaces`` and
+  the ``workspace`` cases of ``TestNpmlock``);
 - a package that needs an install script (lock flag, ``scripts``, ``binding.gyp``) is refused unless the
   recipe marks it by a key of this lock or ``name@version`` (tohum/26c); every other element of
   ``install_scripts_required`` (bare name, scoped bare name, a path this lock does not hold, ``""``, a range
@@ -272,7 +275,10 @@ class TestSource(Base):
             ("node_modules/f1", {"version": "file:../x", "resolved": "file:../x"}, "file_dependency"),
             ("node_modules/f2", {"version": "1.0.0", "resolved": "../x/f2-1.0.0.tgz",
                                  "integrity": sri(b"x")}, "file_dependency"),
-            ("node_modules/f3", {"resolved": "packages/f3", "link": True}, "file_dependency"),
+            ("node_modules/f3", {"resolved": "../packages/f3", "link": True}, "file_dependency"),
+            ("node_modules/f5", {"resolved": "/abs/f5", "link": True}, "file_dependency"),
+            ("node_modules/f6", {"resolved": "node_modules/f6", "link": True}, "file_dependency"),  # no folder
+            ("node_modules/f7", {"resolved": "./f7", "link": True}, "file_dependency"),  # not written plainly
             ("node_modules/f4", {"version": "1.0.0", "resolved": url("f4", "1.0.0"), "link": True},
              "file_dependency"),
             ("node_modules/b1", {"version": "1.0.0", "inBundle": True}, "bundled_dependency"),
@@ -306,6 +312,95 @@ class TestSource(Base):
                              ({"lockfileVersion": "3", "packages": {}}, "lock_version_unsupported")):
             self.assertEqual(N.check(lock)["reasons"], [reason])
         self.assertTrue(N.check({"lockfileVersion": 2, "packages": {"": {}}})["ok"])
+
+
+class TestWorkspaces(Base):
+    """npm workspaces on the live path (tohum/29g, ``workspaces``, ``live_workspaces``, ``key_name``): the link and
+    the folder it names are skipped, nested ``<folder>/node_modules/*`` packages are judged and fetched."""
+
+    def setUp(self):
+        super().setUp()
+        packages = self.fx.lock["packages"]
+        packages[""]["workspaces"] = ["libs/ui"]
+        packages["node_modules/@acme/ui"] = {"resolved": "libs/ui", "link": True}
+        # the folder is the target's own code: its fields are not judged, an install script flag included
+        packages["libs/ui"] = {"name": "@acme/ui", "version": "1.0.0", "hasInstallScript": True,
+                               "resolved": "https://evil.example/x.tgz"}
+        self.nested = self.fx.add("deep", "4.0.0", key="libs/ui/node_modules/deep")
+
+    def test_link_and_folder_skipped_nested_fetched_under_its_key(self):
+        self.assertEqual(N.check(self.fx.lock)["reasons"], [])
+        report, calls = self.fx.fetch()
+        self.assertTrue(report["ok"], report)
+        self.assertEqual(sorted(calls), sorted(self.fx.blobs))  # every tarball, no link or folder
+        with open(os.path.join(self.fx.out, report["address"], "manifest.json")) as fh:
+            rows = json.load(fh)["packages"]
+        self.assertEqual([r["key"] for r in rows], ["libs/ui/node_modules/deep", "node_modules/@scope/util",
+                                                    "node_modules/left-pad",
+                                                    "node_modules/left-pad/node_modules/inner"])
+        self.assertTrue(N.verify(os.path.join(self.fx.out, report["address"]))["ok"])
+
+    def test_without_link_true_the_link_and_the_folder_are_refused(self):
+        del self.fx.lock["packages"]["node_modules/@acme/ui"]["link"]
+        self.assertEqual(N.check(self.fx.lock)["reasons"], [
+            "key_not_allowed:libs/ui", "key_not_allowed:libs/ui/node_modules/deep",
+            "file_dependency:node_modules/@acme/ui"])
+
+    def test_nested_package_is_judged_like_any_other(self):
+        self.fx.lock["packages"]["libs/ui/node_modules/deep"]["resolved"] = url("deep", "4.0.0").replace(
+            "registry.npmjs.org", "mirror.example.invalid")
+        self.assertEqual(N.check(self.fx.lock)["reasons"], ["resolved_not_allowed:libs/ui/node_modules/deep"])
+        self.fx.lock["packages"]["libs/ui/node_modules/deep"] = {
+            "version": "4.0.0", "resolved": url("deep", "4.0.0"), "integrity": sri(self.nested),
+            "hasInstallScript": True}
+        self.assertEqual(N.check(self.fx.lock)["reasons"], ["install_script_not_marked:libs/ui/node_modules/deep"])
+        self.assertEqual(N.check(self.fx.lock, marks=["libs/ui/node_modules/deep"])["reasons"], [])
+        self.fx.put(url("deep", "4.0.0"), self.nested[:-1] + bytes([self.nested[-1] ^ 1]))
+        report, _ = self.fx.fetch(marks=["deep@4.0.0"])
+        self.assertEqual(report["reasons"], ["integrity_mismatch:libs/ui/node_modules/deep"])
+
+    def test_a_link_not_taken_stays_an_entry(self):
+        for resolved in ("../ui", "/abs/ui", "C:/ui", "libs\\..\\ui", "node_modules/ui", "./libs/ui", "libs//ui",
+                         "", "https://registry.npmjs.org/ui/-/ui-1.0.0.tgz"):
+            lock = copy.deepcopy(self.fx.lock)
+            lock["packages"]["node_modules/@acme/ui"]["resolved"] = resolved
+            self.assertIn("file_dependency:node_modules/@acme/ui", N.check(lock)["reasons"], resolved)
+            self.assertIn("key_not_allowed:libs/ui", N.check(lock)["reasons"], resolved)
+        lock = copy.deepcopy(self.fx.lock)  # a link whose key is no package key
+        lock["packages"]["tools/ui"] = lock["packages"].pop("node_modules/@acme/ui")
+        self.assertEqual(N.check(lock)["reasons"], ["key_not_allowed:libs/ui",
+                                                    "key_not_allowed:libs/ui/node_modules/deep",
+                                                    "key_not_allowed:tools/ui"])
+
+    def test_key_name(self):
+        folders = {"libs/ui", "apps/web"}
+        for key, name in (("node_modules/a", "a"), ("node_modules/@s/a", "@s/a"),
+                          ("node_modules/a/node_modules/b", "b"), ("libs/ui/node_modules/a", "a"),
+                          ("apps/web/node_modules/@s/a/node_modules/b", "b"),
+                          ("libs/ui", None), ("libs/node_modules/a", None), ("other/node_modules/a", None),
+                          ("libs/ui/node_modules/a/b", None), ("libs/ui/node_modules/.bin", None),
+                          ("node_modules/a/libs/ui/node_modules/b", None), ("node_modules", None),
+                          ("libs/ui/x/node_modules/a", None)):
+            self.assertEqual(N.key_name(key, folders), name, key)
+        self.assertIsNone(N.key_name("./node_modules/a", {"."}))
+        self.assertIsNone(N.key_name("a//node_modules/b", {"a/"}))
+
+    def test_workspaces_reading(self):
+        packages = {"": {"link": True, "resolved": "x"},
+                    "node_modules/a": {"link": True, "resolved": "libs/a"},
+                    "node_modules/b": {"link": True, "resolved": "node_modules/c"},
+                    "node_modules/d": {"link": "true", "resolved": "libs/d"},
+                    "node_modules/e": {"link": True, "resolved": "libs/a..b"},
+                    "node_modules/f": {"link": True, "resolved": "libs/../f"},
+                    "node_modules/g": {"link": True, "resolved": "a:b"},
+                    "node_modules/h": {"link": True, "resolved": "\\h"},
+                    "node_modules/i": "not an object"}
+        links, folders = N.workspaces(packages)
+        self.assertEqual(links, {"node_modules/a": "libs/a", "node_modules/b": "node_modules/c",
+                                 "node_modules/e": "libs/a..b"})
+        self.assertEqual(folders, {"libs/a", "libs/a..b"})
+        self.assertEqual(N.live_workspaces(packages), ({"node_modules/a": "libs/a", "node_modules/e": "libs/a..b"},
+                                                       {"libs/a", "libs/a..b"}))
 
 
 class TestInstallScripts(Base):
@@ -852,14 +947,14 @@ class TestNpmlock(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(out["rejected"], sorted(["file_dependency:node_modules/%s" % n for n in files]
                                                  + ["git_dependency:node_modules/%s" % n for n in git]))
-        # not a git or file dependency, but nothing of theirs comes from an allowed registry: refused there
+        # not a git or file dependency, but nothing of theirs comes from an allowed registry: refused there; an
+        # in-tree link is a workspace link (29g), so it and the folder it names are not checked
         self.packages = {"": {}, "node_modules/inside": {"resolved": "packages/a", "link": True},
                          "packages/a": {"name": "a", "version": "1.0.0"},
                          "node_modules/zeta/node_modules/bundled": {"version": "1.0.0", "inBundle": True},
                          "node_modules/upper": {"version": "1.0.0", "resolved": "GIT+https://x/y.git"}}
         self.assertEqual(self.run_fetch()[1]["rejected"], [
-            "registry_not_allowed:node_modules/inside", "registry_not_allowed:node_modules/upper",
-            "registry_not_allowed:node_modules/zeta/node_modules/bundled", "registry_not_allowed:packages/a"])
+            "registry_not_allowed:node_modules/upper", "registry_not_allowed:node_modules/zeta/node_modules/bundled"])
 
     def test_license_from_tarball(self):
         self.packages["node_modules/zeta"]["license"] = "GPL-3.0"
@@ -915,6 +1010,59 @@ class TestNpmlock(unittest.TestCase):
             "install_script_unmarked:node_modules/g", "integrity_mismatch:node_modules/f",
             "registry_not_allowed:node_modules/d", "tarball_missing:node_modules/e",
             "tarball_missing:node_modules/h"]))
+
+    def workspace(self, link=None, folder=None):
+        """``node_modules/@acme/ui`` links ``libs/ui``; a nested package under it; the folder has no resolved."""
+        self.packages[""]["workspaces"] = ["libs/ui"]
+        self.packages["node_modules/@acme/ui"] = dict({"resolved": "libs/ui", "link": True}, **(link or {}))
+        self.packages["libs/ui"] = dict({"name": "@acme/ui", "version": "1.0.0"}, **(folder or {}))
+        self.add("libs/ui/node_modules/deep", "deep", "4.0.0", {"license": "MIT"})
+
+    def test_workspaces_lock(self):
+        self.workspace(folder={"hasInstallScript": True, "resolved": "https://evil.example/x.tgz"})
+        code, out = self.run_fetch()
+        self.assertEqual(code, 0, out)
+        rows = [(k, v["integrity"]) for k, v in self.packages.items() if "integrity" in v]
+        self.assertIn("libs/ui/node_modules/deep", [r[0] for r in rows])
+        self.assertEqual(out["artefact"], expected_address(rows))
+        self.assertEqual([r["path"] for r in out["licenses"]], sorted(r[0] for r in rows))
+
+    def test_workspace_folder_needs_its_link(self):
+        self.workspace(link={"link": False})
+        code, out = self.run_fetch()
+        self.assertEqual((code, out["rejected"]), (1, ["registry_not_allowed:libs/ui",
+                                                       "registry_not_allowed:node_modules/@acme/ui"]))
+
+    def test_the_exemption_ends_at_the_link_and_its_folder(self):
+        self.workspace()
+        deep = self.packages["libs/ui/node_modules/deep"]
+        deep["resolved"] = deep["resolved"].replace("registry.npmjs.org", "mirror.example.invalid")
+        self.assertEqual(self.run_fetch()[1]["rejected"], ["registry_not_allowed:libs/ui/node_modules/deep"])
+        self.packages["libs/ui/node_modules/deep"]["resolved"] = url("deep", "4.0.0")
+        self.packages["libs/other"] = {"name": "other", "version": "1.0.0"}  # a folder no link names
+        self.assertEqual(self.run_fetch()[1]["rejected"], ["registry_not_allowed:libs/other"])
+
+    def test_which_links_are_workspace_links(self):
+        """``resolved`` in the repository: non-empty, not absolute, no ``..`` component, no ``:``; the folder is
+        compared as written and has no ``node_modules`` component."""
+        for resolved, rejected in (
+                ("libs/a..b", ["registry_not_allowed:libs/ui"]),            # a link; the folder it names is not libs/ui
+                ("./libs/ui", ["registry_not_allowed:libs/ui"]),            # as written
+                ("../libs/ui", ["file_dependency:node_modules/@acme/ui", "registry_not_allowed:libs/ui"]),
+                ("libs\\..\\ui", ["file_dependency:node_modules/@acme/ui", "registry_not_allowed:libs/ui"]),
+                ("/libs/ui", ["file_dependency:node_modules/@acme/ui", "registry_not_allowed:libs/ui"]),
+                ("C:libs", ["file_dependency:node_modules/@acme/ui", "registry_not_allowed:libs/ui"]),
+                ("a:b", ["file_dependency:node_modules/@acme/ui", "registry_not_allowed:libs/ui"]),  # a drive
+                ("ab:c", ["registry_not_allowed:libs/ui", "registry_not_allowed:node_modules/@acme/ui"]),
+                ("", ["registry_not_allowed:libs/ui", "registry_not_allowed:node_modules/@acme/ui"])):
+            self.setUp()
+            self.workspace(link={"resolved": resolved})
+            self.assertEqual(self.run_fetch()[1]["rejected"], rejected, resolved)
+        self.setUp()  # a link into node_modules is a link; the entry it names is no folder and is checked
+        self.workspace(link={"resolved": "node_modules/zeta"})
+        self.packages["node_modules/zeta"]["resolved"] = "https://mirror.example.invalid/zeta.tgz"
+        self.assertEqual(self.run_fetch()[1]["rejected"], ["registry_not_allowed:libs/ui",
+                                                           "registry_not_allowed:node_modules/zeta"])
 
     def test_integrity_reads_the_sha512_tokens(self):
         zeta = self.packages["node_modules/zeta"]

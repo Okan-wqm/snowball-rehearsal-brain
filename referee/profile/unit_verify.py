@@ -56,8 +56,10 @@ copied, and criterion 5's coverage).
   any other absolute path, and an element starting with ``-``, an option, is not judged) with a component
   equal to ``node_modules`` after casefold is installed only when it is below the lock's directory (paths are
   read from ``/work``, the tree's root) and, below it, it lies in a package of the lock (a key MF5's lock
-  reading takes, ``runner.deps_npm.entries``: not ``""``, a chain of ``node_modules/<name>``), followed by
-  nothing or by a rest with no ``node_modules`` component; or it is a directory on the way to such a key; or
+  reading takes, ``runner.deps_npm.entries``: not ``""``, a chain of ``node_modules/<name>`` at the top or below
+  a workspace folder; or a workspace link MF5 takes, ``runner.deps_npm.live_workspaces``, which step 2 makes a
+  symlink to its folder), followed by nothing or by a rest with no ``node_modules`` component; or it is a
+  directory on the way to such a key; or
   it is exactly ``<P>/.bin/<name>`` where a key ``<P>/<package>`` (``<package>`` one name or ``@scope/name``)
   has a lock ``bin`` naming ``<name>`` (an object with that key, or a string and ``<name>`` the bare part of
   the package's name as MF5 reads it, as step 2 reads a package's ``bin``). The lock's ``bin`` stands for the
@@ -76,7 +78,8 @@ copied, and criterion 5's coverage).
   ``bin`` name of a package of a lock there) and is a plain name (``[A-Za-z0-9._-]``) is
   installed: the lock's directory is ``<dir>`` or above it (npm puts ``<dir>/node_modules/.bin`` and every
   directory's above it on ``PATH``, and only the lock's ``node_modules`` exists in the worktree) and
-  ``<lock dir>/node_modules/.bin/<program>`` is installed by the rule above
+  ``<d>/node_modules/.bin/<program>`` is installed by the rule above for ``<d>`` the ``<dir>`` itself or a
+  directory above it up to the lock's directory (a workspace member's own nested ``.bin`` included)
   (``script_not_installed:<field>:<program>``, once per field and program). Not judged: a program known as
   neither (``rm``, a global tool), a program written as a path or with ``$``, the scripts a script runs through
   ``npm run`` (only the first level), a script ``shlex`` cannot read, and whether the program accepts the
@@ -104,7 +107,12 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
    each package whose ``package.json`` has ``bin`` (a string, named after the package's bare name, or an
    object), a relative symlink ``<parent node_modules>/.bin/<name>`` to the target inside the package is
    made, the first in lock-key order winning; a bin name outside ``[A-Za-z0-9._-]`` or a target leaving
-   the package is skipped. Out of scope: ``directories.bin``, man pages, npm's own install logic, and a
+   the package is skipped. Then each workspace link MF5 takes (``runner.deps_npm.live_workspaces``) becomes a
+   relative symlink ``<lock dir>/<key>`` to ``<lock dir>/<folder>``, as ``npm ci`` makes it; a symlink or
+   non-directory on its way, or an entry already there, refuses the artifact (``deps_unpack_unsafe:<key>``). A
+   folder outside the inputs leaves the link dangling, which shows in the run. Out of scope: the ``bin`` links
+   of a workspace package (none is made, and the static rule above refuses such a ``.bin`` path unless a
+   package of the lock provides it), ``directories.bin``, man pages, npm's own install logic, and a
    bound on the number of members (only their bytes are bounded; time is bounded by the job's clock). A lock
    with no package needs no artifact; one with packages and no artifact is unusable input.
 3. Install scripts. When a row is flagged ``install_script`` (marked in the recipe, checked by MF5), one
@@ -516,11 +524,14 @@ def _script_reasons(field: str, argv: list, lock_dir: str, lock: Any, tree: str)
         return ["script_missing:%s:%s" % (field, script)]
     known = npm_programs(tree, directory)
     on_path = lock_dir == "." or directory == lock_dir or directory.startswith(lock_dir + "/")
+    dirs = [directory]  # <dir> and each directory above it up to the lock's: their node_modules/.bin are on PATH
+    while on_path and dirs[-1] != lock_dir:
+        dirs.append(posixpath.dirname(dirs[-1]) or ".")
     reasons = []
     for program in script_programs(text) or []:
         judged = program in known and BIN_NAME.fullmatch(program)
-        bin_path = posixpath.join(lock_dir, "node_modules", ".bin", program)  # norm_path drops a leading ./
-        if judged and not (on_path and installed(bin_path, lock_dir, lock)):
+        bins = [posixpath.join(d, "node_modules", ".bin", program) for d in dirs]  # norm_path drops a leading ./
+        if judged and not (on_path and any(installed(b, lock_dir, lock) for b in bins)):
             reason = "script_not_installed:%s:%s" % (field, program)
             if reason not in reasons:
                 reasons.append(reason)
@@ -545,11 +556,13 @@ def installed(element: str, lock_dir: str, lock: Any) -> bool:
             return False
         path = path[len(lock_dir) + 1:]
     rows = {row["key"]: row for row in N.entries(lock)[1]}
+    links = N.live_workspaces(lock.get("packages") if isinstance(lock, dict) else None)[0]
     parts = path.split("/")
     for i in range(len(parts), 0, -1):
-        if "/".join(parts[:i]) in rows and "node_modules" not in [c.casefold() for c in parts[i:]]:
+        head = "/".join(parts[:i])
+        if (head in rows or head in links) and "node_modules" not in [c.casefold() for c in parts[i:]]:
             return True
-    if any(key.startswith(path + "/") for key in rows):
+    if any(key.startswith(path + "/") for key in list(rows) + list(links)):
         return True
     if len(parts) < 3 or parts[-2] != ".bin":
         return False
@@ -704,6 +717,21 @@ def link_bins(staging: str, lock_dir: str, rows: list[dict]) -> list[str]:
     return made
 
 
+def link_workspace(staging: str, lock_dir: str, key: str, folder: str) -> bool:
+    """npm's workspace link: a relative symlink ``<lock dir>/<key>`` to ``<lock dir>/<folder>`` (both from
+    ``runner.deps_npm.live_workspaces``, so the folder has no ``..`` and the key ends in ``node_modules/<name>``).
+    False, nothing made, when a symlink or a non-directory is on the key's way or the key already exists (a
+    package unpacked there). The folder need not be in the inputs: then the link dangles, as a missing input shows
+    in the run."""
+    path = key if lock_dir == "." else lock_dir + "/" + key
+    target = folder if lock_dir == "." else lock_dir + "/" + folder
+    parent = _safe_dir(staging, posixpath.dirname(path))
+    if parent is None or os.path.lexists(os.path.join(staging, path)):
+        return False
+    os.symlink(posixpath.relpath(target, posixpath.dirname(path)), os.path.join(staging, path))
+    return True
+
+
 def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, budget: int) -> tuple[list[str], dict]:
     """Take the artifact by its hash and unpack it; ``(reasons, {address, rows, links, bytes, skipped})``."""
     lock_obj = json.loads(tree_lock.decode("utf-8"))
@@ -720,9 +748,10 @@ def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, bu
     if manifest["lock_sha256"] != hashlib.sha256(tree_lock).hexdigest():
         return ["deps_lock_mismatch"], {}
     lock_dir = posixpath.dirname(lock) or "."
+    links, folders = N.live_workspaces(lock_obj.get("packages"))
     total = skipped = 0
     for row in manifest["packages"]:
-        if not N.LOCK_PATH_RE.fullmatch(row.get("key", "")):
+        if not isinstance(row.get("key"), str) or N.key_name(row["key"], folders) is None:
             return ["deps_unpack_unsafe:%s" % row.get("key")], {}
         dest = row["key"] if lock_dir == "." else lock_dir + "/" + row["key"]
         with open(os.path.join(deps, "tarballs", row["sha512"] + ".tgz"), "rb") as fh:
@@ -737,9 +766,12 @@ def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, bu
             return ["deps_unpack_unsafe:%s" % row["key"]], {}
         total += n
         skipped += s
-    links = link_bins(staging, lock_dir, manifest["packages"])
-    return [], {"address": report["address"], "rows": manifest["packages"], "links": links, "bytes": total,
-                "skipped": skipped}
+    made = link_bins(staging, lock_dir, manifest["packages"])
+    for key, folder in sorted(links.items()):
+        if not link_workspace(staging, lock_dir, key, folder):
+            return ["deps_unpack_unsafe:%s" % key], {}
+    return [], {"address": report["address"], "rows": manifest["packages"], "links": made, "bytes": total,
+                "skipped": skipped, "workspaces": sorted(links)}
 
 
 # ---------------------------------------------------------------- runs

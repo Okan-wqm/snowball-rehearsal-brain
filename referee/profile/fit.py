@@ -14,8 +14,15 @@ and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this modul
 - ``lockfiles``: ``[derive.nearest_lock]`` (the lock MF4 reads for the candidate), ``[]`` when there is none.
 - ``toolchain``: ``node@<text>`` of ``unit_verify.nearest_version`` with a leading ``v`` dropped (``node@`` when
   there is no version file); ``env_image``: ``images[<that text>]`` when given, else ``""``.
-- ``inputs``: ``path``, the lock and the version file, the ones another covers left out (``derive.minimal``). No
-  shared library or root configuration is added: their need shows only in ``verify``'s 3/3 run.
+- ``inputs``: ``path``, the lock, the version file and the workspace folders ``path`` needs, the ones another covers
+  left out (``derive.minimal``). The workspace folders (``workspace_folders``): each name ``path/package.json``
+  declares in ``unit_verify.DEP_FIELDS`` is looked up as Node does, ``<dir>/node_modules/<name>`` for ``<dir>``
+  the candidate's directory and then each directory above it up to the lock's, the first key of the lock found
+  winning; when that key is a workspace link MF5 takes (``runner.deps_npm.live_workspaces``, an in-repo ``file:``
+  dependency included, since npm writes it in the same form), its folder is added and its own ``package.json``
+  read the same way, transitively (each folder once). Not added: a workspace package reached otherwise (a
+  TypeScript path alias, an Nx implicit dependency, an import of an undeclared name), and root configuration
+  (``tsconfig.base.json``, ESLint and test configuration): their need shows only in ``verify``'s 3/3 run.
 - ``install_scripts_required``: the lock keys whose entry says ``hasInstallScript: true`` (MF5's lock reading),
   sorted. A script only a tarball declares is not known before the fetch (MF5 refuses it then).
 - ``lint_cmd``: ``npm --prefix <path> run --silent lint -- --format json``; ``test_cmd`` and
@@ -73,6 +80,51 @@ def install_marks(tree: str, lock: str | None) -> list[str]:
     return sorted(row["key"] for row in N.entries(parsed)[1] if row["entry"].get("hasInstallScript") is True)
 
 
+def _declared(tree: str, directory: str) -> list[str]:
+    """The names ``<directory>/package.json`` declares in ``unit_verify.DEP_FIELDS``, sorted; none when unreadable."""
+    _, manifest = D._json(tree, posixpath.join(directory, "package.json"))
+    names = set()
+    for field in U.DEP_FIELDS if isinstance(manifest, dict) else ():
+        if isinstance(manifest.get(field), dict):
+            names.update(n for n in manifest[field] if isinstance(n, str))
+    return sorted(names)
+
+
+def workspace_folders(tree: str, path: str, lock: str | None) -> list[str]:
+    """The workspace folders candidate ``path`` needs (module docstring), as tree paths, sorted."""
+    if lock is None:
+        return []
+    _, parsed = D._json(tree, lock)
+    packages = parsed.get("packages") if isinstance(parsed, dict) else None
+    if not isinstance(packages, dict):
+        return []
+    links, _ = N.live_workspaces(packages)
+    lock_dir = posixpath.dirname(lock) or "."
+
+    def in_lock(tree_path: str) -> str:  # tree path -> path relative to the lock's directory
+        return "." if tree_path == lock_dir else tree_path if lock_dir == "." else tree_path[len(lock_dir) + 1:]
+
+    found, todo = set(), [path]
+    while todo:
+        here = in_lock(todo.pop())
+        for name in _declared(tree, here if lock_dir == "." else posixpath.join(lock_dir, here)):
+            directory = here
+            while True:  # Node's lookup: <dir>/node_modules/<name>, then each directory above, up to the lock's
+                key = "node_modules/" + name if directory == "." else directory + "/node_modules/" + name
+                if key in packages:
+                    break
+                if directory == ".":
+                    key = None
+                    break
+                directory = posixpath.dirname(directory) or "."
+            folder = links.get(key) if key else None
+            folder = (folder if lock_dir == "." else posixpath.join(lock_dir, folder)) if folder else None
+            if folder and folder not in found:
+                found.add(folder)
+                todo.append(folder)
+    return sorted(found)
+
+
 def compose(tree: str, path: str, images: dict | None = None) -> dict:
     """The recipe of candidate ``path`` (module docstring)."""
     lock = D.nearest_lock(tree, path)
@@ -82,7 +134,7 @@ def compose(tree: str, path: str, images: dict | None = None) -> dict:
     return {
         "unit_id": unit_id(path),
         "path": path,
-        "inputs": D.minimal([p for p in (path, lock, version_file) if p]),
+        "inputs": D.minimal([p for p in (path, lock, version_file) if p] + workspace_folders(tree, path, lock)),
         "toolchain": "node@" + version,
         "env_image": image if isinstance(image, str) else "",
         "lockfiles": [lock] if lock else [],

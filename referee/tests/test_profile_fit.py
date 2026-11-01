@@ -1,6 +1,7 @@
 """``profile.fit``: each unit candidate's recipe composed from its own npm scripts, judged by ``check_recipe``.
 
-- the composition: unit id, nearest lock and version file, minimal inputs, install-script marks from the lock,
+- the composition: unit id, nearest lock and version file, minimal inputs with the workspace folders a candidate
+  declares (Node's lookup through the lock's keys, transitive), install-script marks from the lock,
   the image map, the three ``npm --prefix <path> run --silent`` commands;
 - the result: one row per candidate in the derivation's order, its reasons exactly ``check_recipe``'s (the one
   judge), the passing paths;
@@ -99,6 +100,57 @@ class Compose(Base):
         self.assertEqual((r["lockfiles"], r["toolchain"], r["env_image"], r["inputs"], r["install_scripts_required"]),
                          ([], "node@", "", ["x"], []))
         self.assertEqual(F.compose(self.tree, "pkgs/good", {"20.11.1": 3})["env_image"], "")
+
+
+class WorkspaceFolders(unittest.TestCase):
+    """``workspace_folders``: the folders of the workspace packages a candidate declares, by Node's lookup through
+    the lock's keys, transitively."""
+
+    def setUp(self) -> None:
+        self.base = writable_base("t-fit-ws-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.tree = os.path.join(self.base, "tree")
+
+    def write(self, prefix: str = "") -> None:
+        link = lambda folder: {"resolved": folder, "link": True}  # noqa: E731
+        write_tree(self.tree, {
+            prefix + "package-lock.json": lock(**{
+                "node_modules/@w/a": link("libs/a"), "node_modules/@w/b": link("libs/b"),
+                "node_modules/@w/c": link("libs/c"), "node_modules/@w/far": link("../far"),
+                "node_modules/@w/tool": link("tools/tool"),  # an in-repo file: dependency, same form
+                "node_modules/@w/shadow": link("libs/shadow"),
+                "node_modules/@w/dot": link("./libs/c"),  # a link MF5's live path does not take
+                "apps/web/node_modules/@w/shadow": entry("@w/shadow"),  # nearer: a registry package
+                "node_modules/left-pad": entry("left-pad"), "libs/a": {"name": "@w/a"}}),
+            prefix + "apps/web/package.json": package(dependencies={"@w/a": "*", "left-pad": "1"},
+                                                      devDependencies={"@w/shadow": "*", "@w/far": "*", "@w/dot": "*",
+                                                                       "@w/undeclared-in-lock": "*"},
+                                                      peerDependencies={"@w/tool": "file:../../tools/tool"}),
+            prefix + "libs/a/package.json": package(dependencies={"@w/b": "*"}),
+            prefix + "libs/b/package.json": package(dependencies={"@w/a": "*"}),  # a cycle ends
+            prefix + "libs/c/package.json": package(),  # nobody declares it
+        })
+
+    def test_declared_links_transitively_by_nodes_lookup(self):
+        self.write()
+        self.assertEqual(F.workspace_folders(self.tree, "apps/web", "package-lock.json"),
+                         ["libs/a", "libs/b", "tools/tool"])
+        self.assertEqual(F.compose(self.tree, "apps/web")["inputs"],
+                         ["apps/web", "libs/a", "libs/b", "package-lock.json", "tools/tool"])
+
+    def test_below_a_lock_in_a_subdirectory(self):
+        self.write("sub/")
+        self.assertEqual(F.workspace_folders(self.tree, "sub/apps/web", "sub/package-lock.json"),
+                         ["sub/libs/a", "sub/libs/b", "sub/tools/tool"])
+
+    def test_no_lock_or_unreadable_lock_or_manifest(self):
+        self.write()
+        self.assertEqual(F.workspace_folders(self.tree, "apps/web", None), [])
+        write_tree(self.tree, {"package-lock.json": "not json"})
+        self.assertEqual(F.workspace_folders(self.tree, "apps/web", "package-lock.json"), [])
+        self.write()
+        write_tree(self.tree, {"libs/a/package.json": "not json"})
+        self.assertEqual(F.workspace_folders(self.tree, "apps/web", "package-lock.json"), ["libs/a", "tools/tool"])
 
 
 class Fit(Base):
