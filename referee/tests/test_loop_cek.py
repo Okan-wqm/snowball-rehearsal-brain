@@ -23,7 +23,7 @@
   artifact: agreeing hashes and a recipe the check accepts end ``ok`` with ``done`` ``["D1"]``, ``accepted``,
   ``heads``, ``state``, ``root``, ``assembled`` and ``profile``, the artifact moved from the job's work directory to
   ``out/pulled`` (``loop.pulled.read`` takes it there), and getir, kos and yaz, each on its own copy of it as the
-  download hands it over, run their wired steps on it; any refusal leaves no ``out/pulled``, and an existing
+  download hands it over, run their wired steps on it (cagir's canary with the fake ``claude``); any refusal leaves no ``out/pulled``, and an existing
   ``out/pulled`` (an artifact, an empty directory, a file) is unusable and left as it was;
   a different or refused ``referee/``, a broken import, an unknown target or one without a safe ``repo``, a missing
   head, what ``assemble`` refuses, a ``units`` that is not exactly one recipe, a recipe the derivation of the
@@ -47,6 +47,9 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import fake_claude  # noqa: E402
+import test_loop_cagir  # noqa: E402
+from dispatcher import llm_call as L  # noqa: E402
 from loop import cek as C  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
@@ -59,11 +62,11 @@ from test_rekor import entry_for  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, operating, recipe  # noqa: E402
 import test_loop_kos as LK  # noqa: E402
-from test_loop_kos import TREE, RedAs, candidate  # noqa: E402
+from test_loop_kos import HEADS, TREE, RedAs, candidate, state_files  # noqa: E402
 
 SUMMARY = {"targets": [{"id": "t1", "kind": "toy", "excluded_paths": [], "unit_candidates": []},
                        {"id": "t2", "kind": "copy", "excluded_paths": ["x"], "unit_candidates": []}]}
-POLICY = json.dumps({"operating": operating()}).encode()
+POLICY = json.dumps({"operating": operating(), "stage_budgets": {"asama_0": {"canary_usd": 1}}}).encode()
 
 
 def names(tar_bytes: bytes) -> list[tuple[str, bytes, str, int]]:
@@ -94,13 +97,15 @@ class Brain(unittest.TestCase):
         self.brain = brain_files()
         self.out = os.path.join(self.base, "pulled")
 
-    def assemble(self, target_id="t1", summary=None, commit=None, policy=POLICY, brain_commit=None):
+    def assemble(self, target_id="t1", summary=None, commit=None, policy=POLICY, brain_commit=None,
+                 state_head=HEADS["brain/state"], state=None):
         summary = json.dumps(SUMMARY if summary is None else summary).encode() if not isinstance(summary, bytes) \
             else summary
         objects, own = target_objects(self.src)
         brain, brain_own = S.store(self.brain)
         return C.assemble(brain.__getitem__, brain_commit or brain_own, summary, policy, target_id,
-                          objects.__getitem__, commit or own, self.out)
+                          objects.__getitem__, commit or own, state_head, state_files() if state is None else state,
+                          self.out)
 
     def refused(self, **kw) -> list[str]:
         with self.assertRaises(P.PulledError) as ctx:
@@ -121,6 +126,16 @@ class Brain(unittest.TestCase):
         self.assertEqual(got.candidates, {"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
         with open(got.tree_tar, "rb") as fh:
             self.assertEqual(sorted(n[0] for n in names(fh.read()) if n[1] == tarfile.REGTYPE), sorted(TREE))
+        # the heads: brain/state's as given, brain/integration's the commit the tree was read from
+        self.assertEqual((got.heads, got.state),
+                         ({"brain/state": HEADS["brain/state"], "brain/integration": target_objects(self.src)[1]},
+                          state_files()))
+
+    def test_the_state_it_carries(self):
+        for kw, want in (({"state": {"ledger.jsonl": b"x\n"}}, ["state_incomplete"]),
+                         ({"state_head": "A" * 40}, ["heads_invalid"])):
+            with self.subTest(kw=kw):
+                self.assertEqual(self.refused(**kw), want)
 
     def test_the_brain_as_committed(self):
         # blob bytes as they are (no checkout: .gitattributes cannot touch a diff.patch); git's legacy 100664
@@ -247,7 +262,7 @@ class EndToEnd(LK.Base):
         brain, brain_commit = S.store(brain_files())
         objects, commit = target_objects(self.src)
         C.assemble(brain.__getitem__, brain_commit, json.dumps(SUMMARY).encode(), POLICY, "t1", objects.__getitem__,
-                   commit, self.pulled)
+                   commit, HEADS["brain/state"], state_files(), self.pulled)
         out = self.run_kos()
         self.assertEqual((out["reason"], out["done"]), ("cycle_not_wired", ["D3"]))
         self.assertEqual(out["index"]["base"], {"verdict": "verified", "reasons": []})
@@ -297,6 +312,7 @@ class CekJob(unittest.TestCase):
 
     def setUp_state(self) -> None:
         self.state_objects: dict = {}
+        self.state_content: dict = {}  # commit -> its chained files as written
         self.rekor = FakeRekor()
         self.state_genesis = self.state_commit({p: n[0] for p, n in self.STATE.items()}, ())
         self.state_head = self.state_commit({p: n[1] for p, n in self.STATE.items()}, (self.state_genesis,))
@@ -317,6 +333,7 @@ class CekJob(unittest.TestCase):
                 roots = AN.root_row(roots, "r%d" % i, "2026-11-01T00:00:00Z", root, uuid)
             content["chain/root.jsonl"] = roots
         commit = S.store(dict(content, **(extra or {})), parents, self.state_objects)[1]
+        self.state_content[commit] = content
         if "chain/root.jsonl" in counts:
             self.rekor.last[commit] = uuid
         return commit
@@ -422,16 +439,21 @@ class CekJob(unittest.TestCase):
                          sorted(p.split("/", 1)[1] for p in TREE if p.startswith("pkg/")))
         self.assertEqual(sorted(art.candidates), ["good"])
         self.assertEqual(art.target["repo"], "o/target")
+        # state/: the heads D1 read and brain/state's files at its head, the bytes verify --previous and the root
+        # check judged
+        self.assertEqual(art.heads, out["heads"])
+        self.assertEqual(art.state, self.state_content[self.state_head])
 
-    def test_getir_kos_and_yaz_run_on_the_pulled_cek_hands_over(self):
+    def test_getir_kos_cagir_and_yaz_run_on_the_pulled_cek_hands_over(self):
         """The workflow's hand-over, each job on its own runner: cek's ``out/pulled`` downloaded whole as each
         consumer's ``in/pulled`` (then getir's ``deps`` to kos and kos's ``results`` to yaz the same way); every
-        consumer's wired steps run on those bytes and judge the brain's candidates cek assembled."""
+        consumer's wired steps run on those bytes and judge the brain's candidates cek assembled; cagir's canary
+        spends against the ledger D1 verified (its cost rows) and records the head cek read."""
         self.BRAIN = dict(self.BRAIN, **{"candidates/t1/breaks/%s" % f: d for f, d in candidate(BREAKS_TEST).items()})
         out, _, _ = self.run_cek()
         self.assertEqual((out["done"], out["assembled"]["candidates"]), (["D1"], ["breaks", "good"]))
         temps = {}
-        for job in ("getir", "kos", "yaz"):
+        for job in ("getir", "kos", "cagir", "yaz"):
             temps[job] = os.path.join(self.base, job)
             shutil.copytree(os.path.join(self.temp, "out", "pulled"), os.path.join(temps[job], "in", "pulled"),
                             symlinks=True)
@@ -440,6 +462,20 @@ class CekJob(unittest.TestCase):
         shutil.copytree(os.path.join(temps["getir"], "out", "deps"), os.path.join(temps["kos"], "in", "deps"))
         got = J.run("kos", {"RUNNER_TEMP": temps["kos"]}, runner=RedAs())
         self.assertEqual((got["done"], got["index"]["base"]), (["D3"], {"verdict": "verified", "reasons": []}))
+        claude_dir = os.path.join(self.base, "claude-bin")  # not self.bin: the fake git logs its calls there
+        os.makedirs(claude_dir)
+        claude = fake_claude.install(claude_dir)
+        fake_claude.behave(claude_dir, test_loop_cagir.result())
+        got = J.run("cagir", {"RUNNER_TEMP": temps["cagir"], "CLAUDE_CODE_OAUTH_TOKEN": "t",
+                              "LOOP_CANARY_MODEL": test_loop_cagir.MODEL, "LOOP_CLAUDE_SHA512": L.sha512_file(claude),
+                              "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"}, claude=claude)
+        self.assertEqual((got["done"], got["call"]["outcome"]), (["D4"], "ok"))
+        with open(os.path.join(temps["cagir"], "out", "response", "response.json")) as fh:
+            response = json.load(fh)
+        self.assertEqual(response["heads"], out["heads"])
+        [call] = fake_claude.calls(claude_dir)
+        argv = call["argv"]
+        self.assertEqual(argv[argv.index("--max-budget-usd") + 1], "1.000000")  # the head's ledger has no cost row
         shutil.copytree(os.path.join(temps["kos"], "out", "results"), os.path.join(temps["yaz"], "in", "results"))
         write_tree(os.path.join(temps["yaz"], "control"), {"control.json": {"merge_paused": False}})
         got = J.run("yaz", {"RUNNER_TEMP": temps["yaz"]})

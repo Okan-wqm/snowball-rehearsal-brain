@@ -1,9 +1,10 @@
 """Test 46 (asama-0/09), MF17, D1 -> D3: the ``pulled`` artifact (``loop.pulled``) and the ``kos`` job over it
 (``loop.job run kos``), with the fake runner (``fake_docker.py``, Python commands only).
 
-- the layout: what ``write`` writes, ``read`` gives back; every refusal of ``read`` on a tampered artifact (a
-  changed byte, a missing, extra, symlinked or unlisted file, a path outside the layout, an incomplete candidate,
-  a bad manifest, a file that is not JSON);
+- the layout: what ``write`` writes, ``read`` gives back (``state/``: the heads and ``brain/state``'s chained files,
+  byte for byte); every refusal of ``read`` on a tampered artifact (a changed byte, a missing, extra, symlinked or
+  unlisted file, a path outside the layout, an incomplete candidate, a bad manifest, a file that is not JSON, heads
+  that are not the two branches' commits, a missing state file), and ``write`` refuses what ``read`` would;
 - the tree: ``extract_tree`` keeps modes and inside links and refuses absolute, ``..`` and outside-link members;
 - the job: from ``$RUNNER_TEMP/in/pulled`` (and ``in/deps``) to ``$RUNNER_TEMP/out/results``, which ``gate.check
   decide`` (MF8's own command) reads: the good candidate merges, a test-breaking and a ratchet-raising one are
@@ -27,6 +28,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from ledger import chain as CH  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
@@ -41,6 +43,23 @@ TREE = {
     "pkg/red.py": "raise SystemExit(1)\n", "pkg/green.py": "raise SystemExit(0)\n",
 }
 TARGET = {"id": "t1", "kind": "toy", "excluded_paths": [], "unit_candidates": []}
+HEADS = {"brain/state": "a" * 40, "brain/integration": "b" * 40}
+
+
+def chained(rows: list[dict]) -> bytes:
+    """``rows`` as a chained JSONL file (``ledger.chain``'s rules)."""
+    prev, out = CH.ZERO_HASH, []
+    for row in rows:
+        row = dict(row, prev_hash=prev)
+        row["row_hash"] = prev = CH.row_hash(row)
+        out.append(json.dumps(row))
+    return "".join(line + "\n" for line in out).encode()
+
+
+def state_files(ledger: list[dict] | None = None) -> dict[str, bytes]:
+    """``brain/state``'s chained files as ``pulled`` carries them: a genesis row each, or ``ledger``'s rows."""
+    return {"ledger.jsonl": chained(ledger if ledger is not None else [{"row_id": "g1", "part": "genesis"}]),
+            "chain/root.jsonl": chained([{"row_id": "r0", "part": "root"}])}
 
 
 def tar_of(root: str) -> bytes:
@@ -84,11 +103,13 @@ class Base(unittest.TestCase):
         self.temp = os.path.join(self.base, "runner-temp")
         self.pulled = os.path.join(self.temp, "in", "pulled")
 
-    def write_pulled(self, cands=None, units=None, tree_tar=None, policy=None, target=None) -> dict:
+    def write_pulled(self, cands=None, units=None, tree_tar=None, policy=None, target=None, heads=None,
+                     state=None) -> dict:
         return P.write(self.pulled, target or TARGET, tree_tar if tree_tar is not None else tar_of(self.src),
                        json.dumps(units if units is not None else {"units": [recipe()]}).encode(),
-                       json.dumps(policy or {"operating": operating()}).encode(),
-                       cands if cands is not None else {})
+                       policy if isinstance(policy, bytes) else json.dumps(policy or {"operating": operating()}).encode(),
+                       cands if cands is not None else {}, HEADS if heads is None else heads,
+                       state_files() if state is None else state)
 
     def manifest(self) -> dict:
         with open(os.path.join(self.pulled, P.MANIFEST)) as fh:
@@ -112,10 +133,37 @@ class Layout(Base):
         self.assertEqual(got.units, {"units": [recipe()]})
         self.assertEqual(got.candidates, {"good": candidate(GOOD)})
         self.assertEqual(sorted(manifest["files"]), ["candidates/good/diff.patch", "candidates/good/expect.json",
-                                                     "candidates/good/finding.json", "policy.json", "tree.tar",
-                                                     "units.json"])
+                                                     "candidates/good/finding.json", "policy.json",
+                                                     "state/chain/root.jsonl", "state/heads.json",
+                                                     "state/ledger.jsonl", "tree.tar", "units.json"])
         with open(got.tree_tar, "rb") as fh:
             self.assertEqual(fh.read(), tar_of(self.src))
+        self.assertEqual((got.heads, got.state), (HEADS, state_files()))
+
+    def test_the_state_files_are_required_and_the_heads_are_two_commits(self):
+        self.write_pulled()
+        os.remove(os.path.join(self.pulled, "state", "ledger.jsonl"))
+        m = self.manifest()
+        del m["files"]["state/ledger.jsonl"]
+        self.set_manifest(m)
+        self.assertEqual(self.reasons(), ["missing:state/ledger.jsonl"])
+        for heads, want in (
+                ({"brain/state": "a" * 40}, ["heads_invalid"]),
+                (dict(HEADS, extra="c" * 40), ["heads_invalid"]),
+                (dict(HEADS, **{"brain/state": "A" * 40}), ["heads_invalid"]),
+                (dict(HEADS, **{"brain/integration": "b" * 39}), ["heads_invalid"]),
+                ([HEADS], ["heads_invalid"]),
+                (None, ["json_unreadable:state/heads.json"])):
+            with self.subTest(heads=heads):
+                shutil.rmtree(self.pulled)
+                self.write_pulled()
+                data = json.dumps(heads).encode() if heads is not None else b"{"
+                with open(os.path.join(self.pulled, "state", "heads.json"), "wb") as fh:
+                    fh.write(data)
+                m = self.manifest()
+                m["files"]["state/heads.json"] = P._sha(data)
+                self.set_manifest(m)
+                self.assertEqual(self.reasons(), want)
 
     def test_a_changed_byte(self):
         self.write_pulled({"good": candidate(GOOD)})
@@ -197,6 +245,14 @@ class Layout(Base):
         with self.assertRaises(P.PulledError) as ctx:
             self.write_pulled({"../x": candidate(GOOD)})
         self.assertEqual(ctx.exception.reasons[0].split(":")[0], "path_not_in_layout")
+        for heads, state, want in ((None, {"ledger.jsonl": b""}, "state_incomplete"),
+                                   (None, dict(state_files(), extra=b""), "state_incomplete"),
+                                   (None, dict(state_files(), **{"ledger.jsonl": "text"}), "state_incomplete"),
+                                   ({"brain/state": "a" * 40}, None, "heads_invalid")):
+            with self.subTest(want=want, state=state):
+                with self.assertRaises(P.PulledError) as ctx:
+                    self.write_pulled(heads=heads, state=state)
+                self.assertEqual(ctx.exception.reasons, [want])
         self.assertFalse(os.path.exists(self.pulled))
 
 

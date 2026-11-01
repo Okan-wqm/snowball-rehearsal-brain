@@ -38,8 +38,10 @@ Each rule is shown to fire on a mutated copy of the committed file and not on th
 is ``loop.job.render()`` byte for byte (and the CLI's output); the parser's subset refusals; the registry covers
 D1-D8 and the step table's MFs; the gating, run under a model of Actions' step and job conditions, stops every
 job at a failing ``control`` and ends a paused job green with nothing run; ``python -m loop.job run``'s refusal
-of a secret in a code job and its ``cycle_not_wired`` stop (``kos``'s, after D3, in ``test_loop_kos.py``; ``yaz``'s,
-after D5, in ``test_loop_yaz.py``; ``getir`` is wired whole, D2, in ``test_loop_getir.py``).
+of a secret in a code job, and every job's entry without its inputs is no verdict (exit 2); the steps themselves
+are each job's test file (``cek`` D1 ``test_loop_cek.py``, ``getir`` D2 ``test_loop_getir.py``, ``kos`` D3 and its
+``cycle_not_wired`` stop after it ``test_loop_kos.py``, ``cagir`` D4 ``test_loop_cagir.py``, ``yaz`` D5 and its stop
+``test_loop_yaz.py``).
 """
 
 from __future__ import annotations
@@ -527,14 +529,14 @@ class JobEntry(unittest.TestCase):
                     code, out = run_job(name, {var: "x"})
                     self.assertEqual((code, out["ok"], out["reason"]), (1, False, "secret_in_code_job:" + var))
 
-    def test_not_wired_stops_red(self):
-        # cek runs D1's accepted-SHA check first, kos D3 and yaz D5, then each stops the same way: test_loop_cek.py,
-        # test_loop_kos.py, test_loop_yaz.py; getir is wired whole (D2): test_loop_getir.py
-        for name in [n for n in JOBS if n not in ("cek", "getir", "kos", "yaz")]:
+    def test_every_job_has_an_entry(self):
+        # no job stops at once any more: cek D1, getir D2, kos D3, cagir D4, yaz D5 (each job's own test file);
+        # run from the command line without their inputs, each is no verdict (exit 2), never a green
+        for name in JOBS:
             env = {"CLAUDE_CODE_OAUTH_TOKEN": "x"} if name == "cagir" else {}
             with self.subTest(job=name):
                 code, out = run_job(name, env)
-                self.assertEqual((code, out["ok"], out["reason"], out["job"]), (1, False, "cycle_not_wired", name))
+                self.assertEqual((code, out), (2, {"ok": False, "reason": None}))
 
     def test_unusable(self):
         for argv in (["run", "nope"], ["run"], [], ["render", "x"]):

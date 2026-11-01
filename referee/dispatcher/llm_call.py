@@ -312,6 +312,25 @@ class CostBook:
         return json.dumps({"rows": self.rows}, sort_keys=True).encode("utf-8")
 
 
+def policy_usd(policy: bytes, *path: str) -> int:
+    """The USD value at ``path`` of ``policy.json``'s bytes (e.g. ``stage_budgets``, ``asama_0``, ``canary_usd``)
+    in micro-USD, rounded up exactly as a cost is (``to_micros`` on the number's JSON text, never a float);
+    ``Unusable`` when the file is not one JSON object without duplicate keys, the path is absent, or the value is
+    not a JSON number >= 0 (``true`` and strings included) within 2^53-1 micro-USD."""
+    try:
+        node = _strict_json(policy.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError, chain.ChainError) as exc:
+        raise Unusable("policy.json: %s" % cli.cause(exc)) from None
+    for key in path:
+        if not isinstance(node, dict) or key not in node:
+            raise Unusable("policy.json has no %s" % ".".join(path))
+        node = node[key]
+    micros = _cost(node)
+    if micros is None:
+        raise Unusable("policy.json %s must be a JSON number >= 0 USD" % ".".join(path))
+    return micros
+
+
 # ---------------------------------------------------------------- the result
 
 def _json_int(text: str) -> int | JsonNumber:

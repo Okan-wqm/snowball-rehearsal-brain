@@ -4,8 +4,9 @@
 ``loop.cek.assemble`` (asama-0/01 D1, tohum/26c).
 
 What is proven here: the artifact ``loop.pulled.read`` accepts holds, byte for byte, the brain's ``units.json``
-(one unit, the number ``koş`` runs) and all five candidate directories, the ``targets[]`` entry as given, and a
-tree that unpacks (``extract_tree``, ``koş``'s rule) to exactly the fixture's files. Not proven here: the
+(one unit, the number ``koş`` runs) and all five candidate directories, the ``targets[]`` entry as given, the
+``brain/state`` files given (a stand-in genesis: the toy's real state is activation's) with the toy's commit as
+``brain/integration``'s head, and a tree that unpacks (``extract_tree``, ``koş``'s rule) to exactly the fixture's files. Not proven here: the
 fetch of the real toy repository's objects, and the contained runs over it (asama-0/10a #birim, #merge, #ret).
 
 Run from the brain root: ``python -m unittest discover -s tests -p 'test_toy_pulled.py'``.
@@ -27,6 +28,7 @@ sys.path.insert(0, os.path.join(ROOT, "referee", "tests"))
 from loop import cek as C  # noqa: E402
 from loop import pulled as P  # noqa: E402
 import git_store as S  # noqa: E402
+from test_loop_kos import HEADS, state_files  # noqa: E402
 
 TOY = os.path.join(ROOT, "tests", "fixtures", "toy-repo")
 CANDIDATES = os.path.join(ROOT, "candidates", "toy")
@@ -54,9 +56,11 @@ class ToyPulled(unittest.TestCase):
     def test_the_toy_as_pulled(self):
         out = os.path.join(self.tmp, "pulled")
         summary = json.dumps({"targets": [ENTRY, dict(ENTRY, id="copy", kind="copy")]}).encode()
-        C.assemble(BRAIN.__getitem__, BRAIN_COMMIT, summary, b"{}", "toy", OBJECTS.__getitem__, COMMIT, out)
+        C.assemble(BRAIN.__getitem__, BRAIN_COMMIT, summary, b"{}", "toy", OBJECTS.__getitem__, COMMIT,
+                   HEADS["brain/state"], state_files(), out)
         got = P.read(out)
         self.assertEqual(got.target, ENTRY)
+        self.assertEqual((got.heads["brain/integration"], got.state), (COMMIT, state_files()))
         with open(os.path.join(ROOT, "targets", "toy", "units.json"), "rb") as fh:
             self.assertEqual(got.units, json.loads(fh.read()))
         self.assertEqual(len(got.units["units"]), 1)

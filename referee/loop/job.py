@@ -64,9 +64,10 @@ refused tree is ``pulled_invalid``). Then:
   (``$RUNNER_TEMP/control/control.json``; unreadable is unusable, exit 2), ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
   (the same refusals, the same one unit), extracts the tree under ``$RUNNER_TEMP/work`` and calls ``loop.decide``
   on ``$RUNNER_TEMP/in/results``: ``decisions`` (every candidate's ``decision`` and ``reasons``) and ``merge`` are in
-  the output and ``done`` is ``["D5"]``. The cycle's state (which merges' sentinels are unfinished) is in
-  ``brain/state``, which D1 verifies but ``pulled`` does not carry (no handover of it is wired), so D5 is given ``None`` and every candidate carries ``sentinel_state_unread``: no
-  candidate merges. D6-D8 are not wired, so the job ends ``cycle_not_wired``, exit 1, after D5, writing nothing.
+  the output and ``done`` is ``["D5"]``. Which merges' sentinels are unfinished is the cycle's state: ``pulled``
+  carries ``brain/state``'s ledger as D1 verified it (``state/``), but the rows that would say it (a merge, its
+  sentinel's end) are D6's and D7's to write and no page or module gives their form yet, so D5 is given ``None``
+  and every candidate carries ``sentinel_state_unread``: no candidate merges. D6-D8 are not wired, so the job ends ``cycle_not_wired``, exit 1, after D5, writing nothing.
 - ``cek`` runs D1 (``cek_d1``), and with it the whole job. First the accepted-SHA check: it reads the bootstrap
   referee's last signed state with ``loop.accepted.read_state`` (the Actions API of ``$GITHUB_REPOSITORY`` with the
   job's ``GITHUB_TOKEN``, ``actions: read``; the artifact verified by ``sigstore`` on PATH), fetches the accepted
@@ -116,9 +117,22 @@ refused tree is ``pulled_invalid``). Then:
   exit 2), the line has ``ok`` true and ``done`` ``["D1"]``, exit 0, so the upload step runs and ``getir``, ``kos``,
   ``cagir`` and ``yaz`` download it. A refusal leaves ``out/pulled`` absent. The proposal stage 0 judges is the
   recipe alone (tohum/14); no other profile field is proposed, so none is compared.
-- ``cagir`` stops at once with ``cycle_not_wired`` (exit 1). The D1-D8 composition inside the jobs (building each
-  MF's input from the pulled trees and the previous artifacts, and the cycle's one ``brain/state`` commit) has no
-  MF of asama-0/14 that owns it (reported in the founder ledger, spec-036).
+- ``cagir`` runs D4 (``cagir_d4``), and with it the whole job: it needs ``CAGIR_ENV`` set (the provider token, the
+  operator's repository variables ``CANARY_MODEL`` and ``CLAUDE_CLI_SHA512`` as ``LOOP_CANARY_MODEL`` and
+  ``LOOP_CLAUDE_SHA512``, assumptions: no page this clone has names the canary's model or where the loop's CLI pin
+  is read, report seed-042; Actions' own ``GITHUB_RUN_ID`` and ``GITHUB_RUN_ATTEMPT``), reads
+  ``$RUNNER_TEMP/in/pulled`` with ``loop.pulled.read`` (a refusal is ``pulled_invalid``; no unit or tree is read),
+  takes ``claude`` from ``PATH`` and runs ``loop.cagir.d4``: MF15's one canary call, budgeted by the artifact's
+  ``canary_usd`` less the cost rows of the ledger D1 verified, its ``response`` written to
+  ``$RUNNER_TEMP/out/response`` (which must not exist) whatever the call's outcome. The line has ``ok`` true,
+  ``done`` ``["D4"]`` and ``call`` (``outcome``, ``reason``, ``sent``, ``models_served``, ``cost_usd_micros``),
+  exit 0, so the upload step runs: the exit says the response was written, its ``outcome`` whether the canary
+  held. An unset variable, no CLI on ``PATH``, a CLI that is not the pinned one, a ``canary_usd`` that is no amount,
+  a ledger that is not a chain and an existing ``out/response`` are unusable (exit 2), nothing started. The CLI is
+  not installed by the workflow (seed-042): on a runner without it the job has no verdict.
+
+The rest of the D1-D8 composition inside the jobs (D6's ``brain/state`` commit, D7, D8) has no MF of asama-0/14
+that owns it (reported in the founder ledger, spec-036).
 
 ``RED_CONTROL`` is the referee's own known-bad command, ``node -e process.exit(1)`` in the unit's image (the
 image's ``node``); it is not taken from ``pulled``, so nothing the Founder writes can choose it. A known-bad
@@ -140,6 +154,7 @@ Command line, from ``referee/``::
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
@@ -148,8 +163,11 @@ import sys
 import tempfile
 from typing import Any, NamedTuple
 
+from dispatcher import llm_call as LL
 from ledger import anchor as AN
+from ledger import append as LA
 from loop import accepted as A
+from loop import cagir as CG
 from loop import cek as C
 from loop import decide as E
 from loop import fetch as F
@@ -223,7 +241,8 @@ JOBS: dict[str, Job] = {
     "getir": Job(("D2",), (5,), True, {}, {}, ("cek",), ("pulled",), "deps"),
     "kos": Job(("D3", "D7", "D8"), (3, 6, 12), True, {}, {}, ("cek", "getir"), ("pulled", "deps"), "results"),
     "cagir": Job(("D4",), (2, 15), False, {},
-                 {"CLAUDE_CODE_OAUTH_TOKEN": "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}"},
+                 {"CLAUDE_CODE_OAUTH_TOKEN": "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}",
+                  "LOOP_CANARY_MODEL": "${{ vars.CANARY_MODEL }}", "LOOP_CLAUDE_SHA512": "${{ vars.CLAUDE_CLI_SHA512 }}"},
                  ("cek",), ("pulled",), "response"),
     "yaz": Job(("D5", "D6", "D7", "D8"), (2, 7, 8, 9, 10, 11, 13, 14, 16), False,
                {"id-token": "write", "contents": "read"},
@@ -491,10 +510,39 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
     if refused:
         return refused
     try:
-        # the cycle's state (brain/state: which merges' sentinels are unfinished) is in brain/state, not handed over: None
+        # which merges' sentinels are unfinished: the rows that say it are D6's and D7's, not written yet: None
         return E.decide(art, unit, tree, _dir(environ, "in", "results"), control, None)
     except (E.Unusable, D.DeriveError) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
+
+
+CAGIR_ENV = ("CLAUDE_CODE_OAUTH_TOKEN", "LOOP_CANARY_MODEL", "LOOP_CLAUDE_SHA512", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
+
+
+def cagir_d4(environ: dict[str, str], claude: str | None = None,
+             now: Any = None) -> dict[str, Any]:
+    """D4 of ``cagir`` (see the module docstring): ``{reason, reasons}`` or ``{call}``; with ``call``
+    reason ``out/response`` holds the artifact. ``claude`` is the CLI's path (``claude`` on ``PATH`` when ``None``),
+    ``now`` the clock (``datetime.now(timezone.utc)`` when ``None``)."""
+    for name in CAGIR_ENV:
+        if not environ.get(name):
+            raise Unusable("cagir: %s is not set" % name)
+    out = _dir(environ, "out", "response")  # must not exist: loop.cagir.d4's check, before anything is started
+    try:
+        art = P.read(_dir(environ, "in", "pulled"))
+    except P.PulledError as exc:
+        return {"reason": "pulled_invalid", "reasons": exc.reasons}
+    path = claude or shutil.which("claude", path=environ.get("PATH", ""))
+    if not path:
+        raise Unusable("cagir: no claude CLI on PATH")
+    ts = (now or (lambda: datetime.datetime.now(datetime.timezone.utc)))().strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        got = CG.d4(art, out, claude=path, claude_sha512=environ["LOOP_CLAUDE_SHA512"],
+                    model=environ["LOOP_CANARY_MODEL"], token=environ["CLAUDE_CODE_OAUTH_TOKEN"],
+                    row_id="cagir-%s-%s" % (environ["GITHUB_RUN_ID"], environ["GITHUB_RUN_ATTEMPT"]), ts=ts)
+    except (LL.Unusable, LA.HardStop, OSError) as exc:
+        raise Unusable("cagir: %s" % cli.cause(exc)) from None
+    return {"call": got}
 
 
 def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git: str = "git",
@@ -596,7 +644,7 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
         with G.GitBatch(brain_dir, git=git, environ=environ) as brain, \
                 G.GitBatch(target_dir, git=git, environ=environ) as objects:
             manifest = C.assemble(brain, brain_sha, files["setup/summary.json"], files["policy.json"], target_id,
-                                  objects, commit, out)
+                                  objects, commit, heads[B.STATE], {p: chains[p] for p in B.STATE_CHAINS}, out)
     except P.PulledError as exc:
         return dict({"reason": "pulled_refused", "reasons": exc.reasons}, heads=heads)
     assembled = {"target": target_id, "commit": commit,
@@ -657,7 +705,7 @@ def _fetch_state(git_dir: str, url: str, sha: str, git: str, environ: dict[str, 
 
 def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None,
         fetcher: Any = None, http: Any = None, verifier: Any = None, git: str = "git",
-        rekor: Any = None) -> dict[str, Any]:
+        rekor: Any = None, claude: str | None = None, now: Any = None) -> dict[str, Any]:
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
     job = JOBS[name]
@@ -681,12 +729,17 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         if "reason" in d3:
             return dict(result, **d3)
         return dict(result, reason="cycle_not_wired", done=["D3"], index=d3["index"])
+    if name == "cagir":
+        d4 = cagir_d4(environ, claude, now)
+        if "reason" in d4:
+            return dict(result, **d4)
+        return dict(result, ok=True, done=["D4"], **d4)
     if name == "yaz":
         d5 = yaz_d5(environ)
         if "reason" in d5:
             return dict(result, **d5)
         return dict(result, reason="cycle_not_wired", done=["D5"], **d5)
-    return dict(result, reason="cycle_not_wired")
+    raise Unusable("job %r has no entry" % name)
 
 
 def main(argv: list[str]) -> int:

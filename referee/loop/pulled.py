@@ -13,10 +13,15 @@ another job's output only by artifact and hash; the workflow's download checks t
     tree.tar                    the target's tree as a tar archive (``git archive``'s format)
     units.json                  targets/<target>/units.json as read
     policy.json                 the referee repository's policy.json as read
+    state/heads.json            {"brain/state": commit, "brain/integration": commit}: the heads D1 read
+    state/ledger.jsonl          brain/state's files at that head, the bytes D1 verified (``target.branches``'
+    state/chain/root.jsonl        ``STATE_CHAINS``: MF1's verify --previous, MF11's root)
     candidates/<cid>/finding.json, diff.patch, expect.json
 
 ``target`` is the ``targets[]`` entry of ``setup/summary.json`` for this target, as read (an object with a string
 ``id``; its lists are checked by ``profile.derive`` where they are used). ``<cid>`` is ``runner.kos``'s candidate id.
+``state/`` is what the jobs after D1 know of the cycle's state: the ledger the stage brake sums (D4) and that D6
+extends, the heads D6 writes on and D7 watches; a job reads it here, never from the target.
 
 **Reading** (``read``; every reason that holds is listed, prefixed ``pulled:`` by the job): the manifest is a
 regular file holding a JSON object with exactly those three keys (``manifest_unreadable``), the schema
@@ -25,7 +30,10 @@ regular file holding a JSON object with exactly those three keys (``manifest_unr
 ``units.json`` and ``policy.json`` are listed (``missing:<path>``) and every listed candidate has its three files
 (``candidate_incomplete:<cid>``); every listed file is a regular file, no symlink on its way, with the listed
 sha256 (``file_missing:<path>``, ``hash_mismatch:<path>``); no other file or directory is in the artifact
-(``unlisted:<path>``). ``units.json`` and ``policy.json`` must be JSON (``json_unreadable:<path>``).
+(``unlisted:<path>``). ``units.json``, ``policy.json`` and ``state/heads.json`` must be JSON
+(``json_unreadable:<path>``), and ``state/heads.json`` an object of exactly ``brain/state`` and ``brain/integration``, each 40 lowercase hex
+(``heads_invalid``). The chained files are not judged here: their reader verifies what it uses (the stage brake's
+``llm_call.CostBook`` verifies the ledger as a chain).
 
 **The tree** (``extract_tree``): Python's ``tarfile`` with its ``data`` filter, into a directory that must not
 exist: directories, regular files and links that stay inside it; a member whose path leaves the directory
@@ -34,11 +42,10 @@ does an unreadable archive (``tree_unreadable``). A leading ``/`` of a member na
 so an absolute name lands inside the directory. Modes are the filter's (no setuid, setgid or sticky bit; the
 execute bits kept). A refused tree may be partly written; the caller drops the directory.
 
-Out of scope, stated: who writes ``pulled`` in the workflow (``loop.cek.assemble`` builds it from what ``çek``
-reads, but the ``cek`` job does not call it yet: it still stops with ``cycle_not_wired``; reading the bootstrap
-result, Sigstore, the fetch of the brain's objects, the target's objects and heads are its D1 work), the target's
-``brain/state`` and ``brain/integration`` heads (D1 reads them; nothing here carries them yet), and a size bound on
-the archive (the artifact's own size and the job's disk and wall clock bound it).
+Who writes ``pulled``: ``loop.cek.assemble``, called by the ``cek`` job once D1's checks before it hold
+(``loop.job``). Out of scope, stated: whether ``state/`` holds what D1 verified (the ``cek`` job's tests: this
+module only carries bytes), and a size bound on the archive (the artifact's own size and the job's disk and wall
+clock bound it).
 """
 
 from __future__ import annotations
@@ -52,13 +59,19 @@ from typing import Any, NamedTuple
 
 from profile import derive as D
 from runner import kos as K
+from target import branches as B
 
 SCHEMA = "snowball-pulled/1"
 MANIFEST = "pulled.json"
 TREE = "tree.tar"
 UNITS = "units.json"
 POLICY = "policy.json"
-TOP = (TREE, UNITS, POLICY)
+STATE_DIR = "state"
+HEADS = STATE_DIR + "/heads.json"
+STATE_FILES = (HEADS,) + tuple("%s/%s" % (STATE_DIR, p) for p in B.STATE_CHAINS)
+HEAD_BRANCHES = (B.STATE, B.INTEGRATION)
+TOP = (TREE, UNITS, POLICY) + STATE_FILES
+SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 CANDIDATES = "candidates"
 CANDIDATE_FILES = ("diff.patch", "expect.json", "finding.json")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
@@ -78,6 +91,9 @@ class Pulled(NamedTuple):
     policy: Any
     tree_tar: str                           # the path of tree.tar inside the artifact
     candidates: dict[str, dict[str, bytes]]  # cid -> {file name: bytes}
+    heads: dict[str, str]                   # brain/state and brain/integration -> commit
+    state: dict[str, bytes]                 # target.branches.STATE_CHAINS path -> bytes
+    policy_bytes: bytes                     # policy.json as carried (``policy`` is it parsed)
 
 
 def _sha(data: bytes) -> str:
@@ -98,9 +114,15 @@ def _candidate_of(path: str) -> str | None:
 
 
 def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
-          candidates: dict[str, dict[str, bytes]]) -> dict:
-    """Write the layout into ``out`` (which must not exist); returns the manifest."""
-    files = {TREE: tree_tar, UNITS: units, POLICY: policy}
+          candidates: dict[str, dict[str, bytes]], heads: dict[str, str], state: dict[str, bytes]) -> dict:
+    """Write the layout into ``out`` (which must not exist); returns the manifest. ``state`` maps each path of
+    ``STATE_CHAINS`` to its bytes."""
+    if sorted(state) != sorted(B.STATE_CHAINS) or not all(isinstance(d, bytes) for d in state.values()):
+        raise PulledError(["state_incomplete"])
+    if not _heads_valid(heads):
+        raise PulledError(["heads_invalid"])
+    files = {TREE: tree_tar, UNITS: units, POLICY: policy, HEADS: _dump(heads)}
+    files.update({"%s/%s" % (STATE_DIR, p): d for p, d in state.items()})
     for cid, content in candidates.items():
         if sorted(content) != sorted(CANDIDATE_FILES):
             raise PulledError(["candidate_incomplete:%s" % cid])
@@ -119,6 +141,11 @@ def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
     with open(os.path.join(out, MANIFEST), "xb") as fh:
         fh.write(_dump(manifest))
     return manifest
+
+
+def _heads_valid(heads: Any) -> bool:
+    return isinstance(heads, dict) and sorted(heads) == sorted(HEAD_BRANCHES) \
+        and all(isinstance(v, str) and SHA40.fullmatch(v) for v in heads.values())
 
 
 def _present(root: str) -> list[str]:
@@ -177,15 +204,19 @@ def read(root: str) -> Pulled:
                 if sorted(p.rsplit("/", 1)[1] for p in files if _candidate_of(p) == c) != sorted(CANDIDATE_FILES)]
     reasons += ["unlisted:%s" % p for p in sorted(_present(root)) if p != MANIFEST and p not in files]
     parsed = {}
-    for path in (UNITS, POLICY):
+    for path in (UNITS, POLICY, HEADS):
         if path in contents:
             try:
                 parsed[path] = json.loads(contents[path].decode("utf-8"))
             except (UnicodeDecodeError, ValueError, RecursionError):
                 reasons.append("json_unreadable:%s" % path)
+    if HEADS in parsed and not _heads_valid(parsed[HEADS]):
+        reasons.append("heads_invalid")
     if reasons:
         raise PulledError(reasons)
-    return Pulled(target, parsed[UNITS], parsed[POLICY], os.path.join(root, TREE), candidates)
+    state = {p: contents["%s/%s" % (STATE_DIR, p)] for p in B.STATE_CHAINS}
+    return Pulled(target, parsed[UNITS], parsed[POLICY], os.path.join(root, TREE), candidates, parsed[HEADS], state,
+                  contents[POLICY])
 
 
 def extract_tree(tar_path: str, dest: str) -> None:

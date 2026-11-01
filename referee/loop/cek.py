@@ -8,7 +8,10 @@ Rules: asama-0/01 D1 (``çek`` reads, at the SHA the bootstrap referee last acce
 **Inputs** (``assemble``): ``brain``, a ``loop.gitobj`` object source holding the brain repository's commit
 ``brain_commit`` (the accepted SHA); ``summary`` and ``policy``, the bytes of the referee repository's
 ``setup/summary.json`` and ``policy.json``; ``target_id``; ``objects``, a ``loop.gitobj`` object source holding the
-target's commit; ``commit``, that commit's 40-hex id. Nothing here reads the network or a clock.
+target's commit; ``commit``, that commit's 40-hex id (``brain/integration``'s head); ``state_head``, the
+``brain/state`` head D1 verified, and ``state``, its files of ``target.branches.STATE_CHAINS`` (path -> bytes) as
+verified. ``state/heads.json`` is ``{brain/state: state_head, brain/integration: commit}``, so the head recorded
+for the tree is the commit the tree was read from. Nothing here reads the network or a clock.
 
 **Rules**, every reason that holds is listed (``PulledError``; ``out`` is not created):
 
@@ -34,6 +37,8 @@ target's commit; ``commit``, that commit's 40-hex id. Nothing here reads the net
   recomputed, so ``.gitattributes`` (``export-ignore``, ``export-subst``, filters) has no effect; its reasons
   (``object_missing:<sha>``, ``tree_submodule:<path>``, ...) are listed with the others. What the tree may hold
   (links leaving it, devices) is ``loop.pulled.extract_tree``'s rule in ``kos``, not repeated here.
+- ``state_incomplete``: ``state`` does not map exactly the paths of ``STATE_CHAINS`` to bytes;
+  ``heads_invalid``: ``state_head`` or ``commit`` is not 40 lowercase hex (``loop.pulled.write``'s rules).
 
 Then ``loop.pulled.write`` writes the artifact and ``loop.pulled.read`` reads it back (its refusals, e.g.
 ``json_unreadable:units.json``, are this step's too, and the written directory is removed), so an artifact
@@ -57,6 +62,7 @@ from typing import Any
 from loop import gitobj as G
 from loop import pulled as P
 from runner import kos as K
+from target import branches as B
 
 
 def target_entry(summary: bytes, target_id: str) -> tuple[dict | None, list[str]]:
@@ -99,7 +105,7 @@ def _units(brain: G.Source, commit: str, target_id: str) -> bytes | None:
 
 
 def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, target_id: str,
-             objects: G.Source, commit: str, out: str) -> dict[str, Any]:
+             objects: G.Source, commit: str, state_head: str, state: dict[str, bytes], out: str) -> dict[str, Any]:
     """Write ``pulled`` into ``out`` (which must not exist) by the rules above; returns its manifest."""
     if not (isinstance(target_id, str) and K.CANDIDATE_ID.fullmatch(target_id)):
         raise P.PulledError(["target_id_unsafe"])
@@ -122,7 +128,8 @@ def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, 
         reasons += exc.reasons
     if reasons:
         raise P.PulledError(list(dict.fromkeys(reasons)))
-    manifest = P.write(out, target, tree, units, policy, candidates)
+    manifest = P.write(out, target, tree, units, policy, candidates, {B.STATE: state_head, B.INTEGRATION: commit},
+                       state)
     try:
         P.read(out)
     except P.PulledError:

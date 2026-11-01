@@ -191,6 +191,8 @@ jobs:
         env:
           LOOP_PULLED_DIGEST: ${{ needs.cek.outputs.pulled_digest }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          LOOP_CANARY_MODEL: ${{ vars.CANARY_MODEL }}
+          LOOP_CLAUDE_SHA512: ${{ vars.CLAUDE_CLI_SHA512 }}
         run: |
           python3 -m loop.job run cagir
       - name: upload response

@@ -47,7 +47,7 @@ from loop import job as J  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 
 GETIR_TO_KOS = "test_loop_getir.HandOver.test_kos_installs_what_getir_fetched"
-CEK_TO_ALL = "test_loop_cek.CekJob.test_getir_kos_and_yaz_run_on_the_pulled_cek_hands_over"
+CEK_TO_ALL = "test_loop_cek.CekJob.test_getir_kos_cagir_and_yaz_run_on_the_pulled_cek_hands_over"
 CEK_D1 = "test_loop_cek.CekJob.test_the_job_runs_d1_and_hands_pulled_to_the_upload"
 KOS_TO_YAZ = "test_loop_yaz.YazJob.test_the_job_runs_d5_and_merges_nothing_without_the_state"
 
@@ -55,12 +55,12 @@ KOS_TO_YAZ = "test_loop_yaz.YazJob.test_the_job_runs_d5_and_merges_nothing_witho
 HANDOVER: dict[tuple[str, str], tuple[str, str]] = {
     ("pulled", "getir"): ("handover", CEK_TO_ALL),
     ("pulled", "kos"): ("handover", CEK_TO_ALL),
-    ("pulled", "cagir"): ("unwired_consumer", "cagir stops with cycle_not_wired: D4 is not wired (spec-036)"),
+    ("pulled", "cagir"): ("handover", CEK_TO_ALL),
     ("pulled", "yaz"): ("handover", CEK_TO_ALL),
     ("deps", "kos"): ("handover", GETIR_TO_KOS),
     ("deps", "yaz"): ("unread", KOS_TO_YAZ),  # D5 reads D3's and D4's artifacts (asama-0/01); no wired step reads deps
     ("results", "yaz"): ("handover", KOS_TO_YAZ),
-    ("response", "yaz"): ("unwired", "cagir stops with cycle_not_wired: D4 is not wired (spec-036)"),
+    ("response", "yaz"): ("unread", KOS_TO_YAZ),  # D5 decides on D3's results; D6, which appends its cost row, is not wired
 }
 STATUSES = ("handover", "unread", "unwired", "unwired_consumer", "unwritten")
 
@@ -271,6 +271,12 @@ class Proofs(unittest.TestCase):
         # the D1 test uploads pulled but runs no consumer on it
         self.assertEqual(self.check(("pulled", "kos"), ("handover", CEK_D1)),
                          ["not_handed_over:pulled:cek->kos:%s" % CEK_D1])
+
+    def test_cagir_is_wired_as_producer_and_as_consumer(self):
+        # on an empty RUNNER_TEMP cagir has no verdict (its variables are unset): it stops neither way at once
+        self.assertEqual(self.check(("response", "yaz"), ("unwired", "x")), ["producer_wired:response:cagir->yaz"])
+        self.assertEqual(self.check(("pulled", "cagir"), ("unwired_consumer", "x")),
+                         ["consumer_wired:pulled:cek->cagir"])
 
     def test_kos_is_not_unwired_either(self):
         # kos ends cycle_not_wired after D3, but on an empty RUNNER_TEMP its first refusal is the missing pulled
