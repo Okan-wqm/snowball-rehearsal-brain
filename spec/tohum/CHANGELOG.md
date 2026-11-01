@@ -4,6 +4,33 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-01, E390–E399; Kurucu raporları; E156, E158, E159, E234, E235, E281 kapandı): bu dönemin yanıtladığı ve
+  reddettiği raporlar: `seed-002-29b-stale-after-narrowing` → `29b:13` (giriş), `29b:67-73` "Çıkış isteği";
+  `seed-003-toy-repo-no-reader` → `27:67` (`tests/fixtures/toy-repo/`); `seed-005-push-class-ledger` → `29e:11-16`
+  "Kurucu kayıtları", `29b:44`; `seed-006-ledger-kind-set` → Kurucu talimatı "Görevlerin" (d): eksik yetenek
+  `missing_capability:` önekli `seed_issue`'dur, tür kümeleri kapalı (`26` `founder` satırı, `26c` `reports/*.json`);
+  `seed-007-chain-cli-exit-and-broken-row` → `29d:24-28` "Genel koşucu"; `seed-009-secret-in-prompt-no-location` →
+  `29e:18-29` "Sır desenli metin", `29b:54`, `29b:61-65` "Ret hafızası"; declined: satır numarası (yalnız yol verilir)
+  ve tarayıcının kural kümesi (MF2'nin tabanı `29f:26-29`, fazlası tarayıcının kendisidir);
+  `seed-010-verdict-withheld-no-claim` → `29e:18-29` "Sır desenli metin", `29b:61-65`; declined: kararın eşleşen
+  kısmını hash'leyip kalanını geçirmek (`08:71-72`: eşleşme koşuyu geçersiz kılar; kaybolan bulguyu yeniden inceleme
+  geri getirir); `seed-017-diffguard-config-list` → `29k:53-55` `diffguard`; `seed-022-k0map-mismatched-file-rules` →
+  `29h:31-34` `artefact_hash_mismatch`, `29h:59-60` vaka `mismatched_file_not_read`;
+  `seed-024-revert-parent-is-onto-head` → `29i:21-22`, `29i:32-33` `refs` `revert`, `29i:36` vaka
+  `refuse_revert_not_head`; `seed-025-append-choices` → `29i:54-61` `append` (çıkış 2, (5)), `29i:73-74` vakalar
+  `refuse_known_row_id`, `refuse_empty_rows`; `seed-029-flaky-choices` → `29j:36-39` `flaky`, `29j:48-49` vakalar
+  `unread_run_not_checked`, `empty_runs_rerun` ((d) `29j:39-41` aynen; kimlik biçimi ve sonuçların üreticisi
+  Kurucu'nun); `seed-035-loop-control-and-yaml-subset` → `29p` (denetim komutu, 3b), `29p:55`, `29r` (YAML altkümesi);
+  `spec-004-calls-17-18`
+  → `26c:19-22`, `02:13-14` (3a): 17 1–16'yı, 18 1–17'yi çağırır, donmuş `asama-0/14:48` değişmez;
+  `spec-013-lint-green-vs-violation` → `26c:64-66` "Birim tarifi" (lint yeşili, 3b);
+  `spec-014-toolchain-form-and-calls-6-4` → `26c:66-67` "Birim tarifi" (`toolchain`, 3b), `26a:15-21` (`calls` yalnız
+  sırayı bağlar); `spec-019-calls-7-8-3-8` → `26a:15-21` (`calls` ve "Çağıran"), `26c:21`, `29h:18`;
+  `spec-021-target-write-callers` → `26a:33` "Çağıran", `25a:17` (kontrol adı);
+  `spec-026-append-writes-through-target-write` → `26a:33` "Girdi"; `spec-028-anchor-calls-append` → `26a:35`
+  "Çağıran", `01a:27-28` (`<state_root>`); `spec-032-drill-calls-9-14` → `26a:33` "Çağıran", `29m:27-29`;
+  `spec-038-expect-reason-comparison` → `26c:55-59` "Hazır aday". Yeni sayfalar `29e` ve `29r` (`INDEX`, `00b`); 80
+  satır sınırı için 2026-10-30 ve 2026-10-31'in dört kaydı `CHANGELOG-3.md`'ye taşındı.
 - 2.2 (2026-11-01, E400; Kurucu raporu spec-015 -> `29g`, `29d`, `24`, `30c`): npm workspaces kilidi. Kök, çalışma alanı bağı (`link` doğru, `resolved` depo içi göreli yol) ve böyle bir bağın adlandırdığı çalışma alanı dizini getirilmez ve denetlenmez; iç içe `<çalışma alanı>/node_modules/<paket>` dahil başka her girdi pakettir, getirilir ve denetlenir (`29g`; vakalar `workspaces_lock`, `workspace_folder_needs_its_link`, `nested_registry_not_allowed`). Hangi girdinin getirilip denetlendiği yalnız `29g`'dedir; `29d`, `24` ve `30c` oraya bakar.
 - 2.2 (2026-10-31, E333; uzman tartışması ve hakem, ikinci tur 2026-11-01): önyükleme hakemi `asama-0/10a`'nın kuralını
   uygular: kabul edilmiş çıkıştan ((A)) sonra spec, kod ya da çıkış push'unda Kurucu kayıtları dışında yalnız `candidates/`
@@ -44,32 +71,7 @@ Okunma: bir sayfanın geçmişi aranırken
 - 2.2 (2026-10-31, E249; sahibin sorusu, uzman tartışması): `main`'i salt okunur okumak dokunmak değildir; taban yaşının
   commit sayısı ve eskimiş bulgu oranı senkrondan önce de bu okumayla ölçülür (`07`). `07`'nin andığı eskimiş bulgu oranı
   sinyali `17`'de satırdır: eşik pencerede > %20, doğan şey organ değil Aşama 2'deki senkron izin kararıdır.
-- 2.2 (2026-10-31, E317, E321–E324; ders provası tartışmasının hakem kararı): gerçek beyinde ders provası ders
-  görünümünü getiren aşamanın (Aşama 2) ilk işidir ve sahibin MVP sınavıdır; erken ders partisi yok (`03`, `22b`,
-  E317). `#ders-dogru` zorunlu çıkış satırı (`18`, E322). Aşama özeti `03` satırında `18` atfıyla geçen her yeteneği
-  listeler, Kurucu'nun taslağı tohumun hedefini düşüremez (`02`). Havuz o aşamanın spec isteğinden önce taahhüt
-  edilir, açık sayfada ya da vektörde geçen aile havuza girmez, kalibrasyon ders okuyabilecek her koltuğun modeliyle
-  (`22b`, E324). Etki çiftinin iki koşusu bütçe ve ders bloğu dışındaki prompt hash'iyle de eşit, kaydı eksik çift
-  FAIL (E321); `i`'nci deneme p < 0,10 · 2^-i ile (E323); yeni `22c`; `18a`, `22a`, `29c`, `29q`.
-- 2.2 (2026-10-30, E64, E65, E317–E319; sahibin onayı, uzman tartışmasıyla daraltıldı): ders provasında aileler gizli,
-  taahhüt edilmiş havuzdan gelir, donan yalnız sözleşmeleridir (`22a`, yeni `22b`); dersin kapsamı tek eşleyiciyle açık
-  gözlemlerden yargılanır (E64); plasebo kollarını hakemin tohumu çeker, etki ve plasebo kolları eşit koşar (E65); yeni
-  soru doğru ders (E318); k = 30, aile ≥ %85 kalibrasyonla girer, risk alt sınırda da verilir (E319, `18a`, yeni `29q`).
-  Provayı gerçek beyinde öne almak aşama planını değiştirir, sahibin kararıdır (E317).
-- 2.2 (2026-10-30, E301; sahip): hedefin ve sistemin kendi kodunun haritası insan okunur çizim olarak da üretilir, kodla yenilenir (`15` 4).
-- 2.2 (2026-10-30, E280, E282, E287, E293, E294, E296, E297): Aşama 0 çıkışının karar verilemeyen koşulları.
-  Kurucu defterinde kapatma, emekliliğin defterdeki karşılığı olan yeni kural: hakemin kabul ettiği ama anlam
-  kurallarından birini (`part`, `kind`, `supersedes`) bozan satır silinmez, sonraki geçerli satır `supersedes`'iyle
-  onun `row_hash`'ini adlandırarak onu kapatır; bayt ve zincir kırığı kapanmaz, kurcalama kanıtıdır; push'un eklediği
-  bozuk satır kapatılsa da reddedilir; kapatılmamış anlam kırığı çıkışı kapalı tutar ve Kurucu'nundur; defterin
-  içeriği değil yapısı denetlenir (`13`, `26`). Tohumun `control` komutunun döngü arayüzü: çağrı, çıkışlar, `go`,
-  her işin bayt bayt ilk adımı ve `wiring` kuralı; kill switch ya da fren işi kırmızı durdurur, `loop_schedule`
-  kapalıyken zamanlanmış koşu `paused`; adımın üstünde yalnız kuralın saydığı anahtarlar durur (`services` ve
-  `container` ilk adımdan önce başlar) (yeni `29p`; `08`, `00b`). Sahip istisnası: ölçümü aşama başlamadan yapılacak
-  bir işe dayanan koşul (bugün yalnız #durustluk) o iş yapılmadıysa adıyla istisna edilir; geçmiş ya da
-  `UNMEASURABLE` sayılmaz, sonraki aşamanın çıkışına taşınır, ikinci istisna yoktur, insan dokunuşudur; yanında
-  taşıma hedefinin ekiminin taahhüdü yoksa koşulu kaldırmaz (`02`, `26c`, `27`). Aşama 0'ın ilk durumu, durum
-  kaybolunca da, kopya hedefin `identifiers`'ı ve `honesty_commitment` olmadan kurulmaz (`25`). 80 satır sınırı için
-  2026-10-28 kaydı `CHANGELOG-2.md`'ye taşındı.
+- 2.2 (2026-10-30 – 2026-10-31, E64, E65, E280–E301, E317–E324): ders provasının aileleri ve sınav tarafı, sistem
+  haritası, Aşama 0 çıkışının karar verilemeyen koşulları ve `control`'ün döngü arayüzü: `CHANGELOG-3.md`.
 - 2.2 (2026-10-28 – 2026-10-30, E246–E247 ve öncesi): üçüncü inceleme, önyükleme hakeminin yazılışı ve sonraki kararlar: `CHANGELOG-2.md`.
 - 2.1 ve öncesi (2026-10-28): `CHANGELOG-1.md`.

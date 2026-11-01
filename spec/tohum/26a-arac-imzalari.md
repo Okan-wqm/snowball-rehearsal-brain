@@ -12,7 +12,13 @@ hedefte okuyucu App'iyle) çeker, `getir` bağımlılık getirir, `koş` sırsı
 çağrısı yapar ve iç kullanımda araç kullanan ajanı yalnız hakemin MCP araçlarıyla koşar (`08` 5), `yaz`
 yazar App'ini tutar. Oyuncu kodu yalnız `koş`ta koşar; sırlı işler oyuncu kodu koşturmaz. "Gelir"
 sütunu aracı getiren mikro özelliği (`asama-0/14`) ya da partiyi (`asama-1/13`) adlandırır; taşınan araç
-ilk okuyucusundan hemen önceki partiyle gelir, Aşama 0'da çağrılmaz.
+ilk okuyucusundan hemen önceki partiyle gelir, Aşama 0'da çağrılmaz. `calls` (`26c` "Aşama tablosu")
+donmuş `asama-0/14:47-48` satırıdır ve tohum dönemiyle değişmez (dönem yalnız `spec/tohum/` ve `seed/`
+getirir). Önyükleme hakemi `calls`'u yalnız tabloyu yüklerken okur ve yalnız sırayı denetler: her
+çağrılan çağırandan küçüktür; tutmayan tablo yüklenmez ve koşu durur (tohum kusurudur, Kurucu'nun reddi
+değil). Beyin ağacındaki içe aktarmaları ya da çağrıları `calls`'la karşılaştırmaz. Bir aracın
+çağıranları bu tablonun "Çağıran" sütunudur; `calls`'ta adı geçmeyen bir kenar sıra kuralına
+(`asama-0/14:20`) uyduğu sürece tabloyla çelişmez (`02` 1).
 
 | Araç | Yer | İş | Girdi | Çıktı | Yan etki | Çağıran | Gelir |
 |---|---|---|---|---|---|---|---|
@@ -24,9 +30,9 @@ ilk okuyucusundan hemen önceki partiyle gelir, Aşama 0'da çağrılmaz.
 | `unit.verify` | Hakem | `koş` | tarif (`26c`), ağaç, `deps` | doğrulanmış tarif ya da ret; 3/3 sonuçları | `limit_hit:<anahtar>` | genesis; kilit değişince | MF6 |
 | `gate.diffguard` | Hakem | `yaz` | diff, profil, tarif, politika | ret nedenleri | yok | `gate.check` | MF7 |
 | `gate.check` | Hakem | `yaz` | aday, `koş` sonuçları, `control.json` | karar (`asama-0/08`) | `events` satırı | hakem döngüsü | MF8 |
-| `target.write` | Hakem | `yaz` | dal, PR, check, merge ya da geri alma isteği | ref'ler | yalnız `refs/heads/brain/**`, GitHub REST ve Git Data API | `gate.check`, `gate.revert`, `ledger.append`, etkinleştirme | MF9 |
+| `target.write` | Hakem | `yaz` | dal, PR, check, merge, geri alma ya da `brain/state` commit'i isteği | ref'ler | yalnız `refs/heads/brain/**`, GitHub REST ve Git Data API | `yaz` işi (`gate.check`'in merge kararıyla), `gate.revert`, `ledger.append`, `exit.drill`, etkinleştirme | MF9 |
 | `ledger.append` | Hakem | `yaz` | bölüm, satırlar | `row_hash`'ler | devir başına tek `brain/state` commit'i | hakem işleri | MF10 |
-| `rekor.anchor` | Hakem | `yaz` | kök hash | Rekor kayıt kimliği | Rekor'a ekleme | `ledger.append` | MF11 |
+| `rekor.anchor` | Hakem | `yaz` | kök hash | Rekor kayıt kimliği | Rekor'a ekleme | hakem devir sonu (`yaz`) | MF11 |
 | `sentinel.run` | Hakem | `koş` | `brain/integration` başı | etkilenen test sonuçları | yok | her merge sonrası | MF12 |
 | `gate.revert` | Hakem | `yaz` | merge SHA'sı, `cause` | geri alma | `target.write` ile commit | `sentinel.run` kırmızısı | MF13 |
 | `exit.drill` | Hakem | `yaz` | prova türü, aile listesi, gizli tohum | önceki devirde taahhüt hash'i, koşudan sonra cevap anahtarı | `drill` satırları; provaya konan organlar `planted: true` | hakem (`22a`, `12a`) | MF14 (yalnız `revert`); ders provası Aşama 2 |

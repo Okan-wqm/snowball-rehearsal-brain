@@ -16,11 +16,10 @@ bitmiş MF'lerin 1'den kesintisiz önekidir. **exit-request.json** (kök): `{sta
 değiştiren push çıkış isteğidir; reddedilmiş bir istekle bayt bayt aynı dosya sonraki kod push'larında yok
 sayılır (`29b`, `asama-0/10`). Parti isteği aynı biçimdedir, `batch` alanıyla.
 
-**Aşama tablosu** (tohumda `seed/bootstrap/stages/stage0.json`; `asama-0/14`'ün makine kopyası):
-`{stage, mfs: [{mf, tests[], groups[], module, calls[]}]}`. `module` `referee/` altındaki yoldur
-(modülsüz kırmızı onu siler); `calls` çağrılan MF'lerdir ve her biri çağırandan küçüktür. Önyükleme
-hakemi `done_mf`'in anlamını, test bildirimini, vektör gruplarının ne zaman koştuğunu, modülsüz kırmızıyı
-ve çıkıştaki MF sayısını buradan okur. Partilerin tabloları aynı dizindedir (`asama-1/13`).
+**Aşama tablosu** (tohumda `seed/bootstrap/stages/stage0.json`; `asama-0/14`'ün makine kopyası): `{stage, mfs: [{mf, tests[],
+groups[], module, calls[]}]}`. `module` `referee/` altındaki yoldur (modülsüz kırmızı onu siler); `calls` çağrılan MF'lerdir ve her
+biri çağırandan küçüktür (`calls`'un okunuşu: `26a`). Önyükleme hakemi `done_mf`'in anlamını, test bildirimini, vektör gruplarının
+ne zaman koştuğunu, modülsüz kırmızıyı ve çıkıştaki MF sayısını buradan okur. Partilerin tabloları aynı dizindedir (`asama-1/13`).
 
 **control.json** (hakem reposu): `{kill_switch, budget_state, oauth_token_expires, loop_schedule,
 merge_paused, founder_resume?, reverted_exits?}`. Kapalıya düşüş: `kill_switch` eksikse açık; `budget_state` (`ok` ya da
@@ -53,10 +52,11 @@ hakemi `pull`'da okur, rakipten gizler; imzalı sonuçta her biri `reports[]`'ta
 baytlarının) olur, açık olanlar operatörü `reports_open:<n>` uyarısıyla uyarır; bir vektörü adlandıran `seed_issue` onu
 `disputed` yapar (en çok iki açık itiraz). Spec ve tohum sorunlarını operatör tohum dönemiyle kapatır, Kurucu teyit eder.
 
-**Hazır aday** (`candidates/<hedef>/<cid>/`, beyin): `finding.json` `{rule_id, path, line, fix_range,
-tool_output_sha256}` (hakemin yayımladığı araç çıktısından); `diff.patch` (birleşik diff, yalnız düz
-dosya); `expect.json` `{decision: merge|reject, reason?}` (kötü adayın beklenen ret nedeni, ör.
-`scope_violation`). Hakem `expect.json`'a güvenmez; onu yalnız (B)'nin #ret satırında karşılaştırır.
+**Hazır aday** (`candidates/<hedef>/<cid>/`, beyin): `finding.json` `{rule_id, path, line, fix_range, tool_output_sha256}` (hakemin
+yayımladığı araç çıktısından); `diff.patch` (birleşik diff, yalnız düz dosya); `expect.json` `{decision: merge|reject, reason?}`; `reason`
+kötü adayın beklenen ret nedenidir: kapının nedenlerinden biri (`29h` `decide`'ın adları ya da `29k` `diffguard`'ın `<neden>:<yol>`'u, ör.
+`scope_violation`), satırın `cause`'u değil. Hakem `expect.json`'a güvenmez; onu yalnız (B)'nin #ret satırında karşılaştırır: #ret, adayın
+kapı kararındaki sıralı, tekil nedenler tam olarak `[reason]` olduğunda tutar (`asama-0/08` devir 2: her kötü aday kendi nedeniyle).
 
 **Birim tarifi** (beyin `targets/<hedef>/units.json` önerir; doğrulanmışı `profile.json` `units[]`):
 `{unit_id, path, inputs[], toolchain, env_image (@sha256), lockfiles[], install_scripts_required[], lint_cmd[], test_cmd[], affected_test_cmd[], services: [], limits{}}`.

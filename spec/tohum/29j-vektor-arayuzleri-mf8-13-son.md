@@ -33,17 +33,20 @@ olmayan girdi: çapalanmamış kök denetlenmemiş değil, geçersiz.
 
 `python -m gate.sentinel decide`; stdin `{"runs": [{"results": [{id, status: pass|fail}]}, …]}`: merge'den sonra
 `brain/integration`'ın yeni başında etkilenen testlerin ilk koşusu, sonra taze kapsayıcıda yeniden koşuları. En az bir
-sonucu olan, `fail`'siz ilk koşu yeşildir, sonrakiler okunmaz. Değilse (bir `fail` ya da sıfır test, `04`) 3/3 kuralı
-uygulanır (`07:27`); `04a:24`'ün üç koşusuna ilk koşunun girip girmediğini spec söylemez. Seçim: 3/3 ilk koşu artı üç
-yeniden koşudur, çünkü `07` doğrulamayı kırmızı koşudan sonraya koyar: ilk dördü değerlendirilir; dörtten azsa karar
-`rerun`. Dördüyle `red` her koşuda, `flaky` bazılarında düşüp hepsinde düşmeyen kimlikler; koşuda olmayan test orada
-düşmemiştir. `red` boş değilse (ya da hiçbir koşunun sonucu yoksa) karar `red`, değilse `flaky`; `revert` yalnız
-`red`'de doğru. Çıktı `verdict` (`green` | `red` | `flaky` | `rerun`), sıralı `red` ve `flaky` (`green` ve `rerun`'da
-`[]`), `revert`. Çıkış: 0 yeşil, 1 değil, 2 kullanılamaz girdi.
+sonucu olan, `fail`'siz ilk koşu yeşildir, sonrakiler okunmaz; okunmayan koşu biçim için de denetlenmez. Değilse (bir
+`fail` ya da sıfır test, `04`) 3/3 kuralı uygulanır (`07:27`); `04a:24`'ün üç koşusuna ilk koşunun girip girmediğini
+spec söylemez. Seçim: 3/3 ilk koşu artı üç yeniden koşudur, çünkü `07` doğrulamayı kırmızı koşudan sonraya koyar: ilk
+dördü değerlendirilir, sonrakiler okunmaz; dörtten azsa (boş `runs` da) karar `rerun`. Dördüyle `red` her koşuda,
+`flaky` bazılarında düşüp hepsinde düşmeyen kimlikler; koşuda olmayan test orada düşmemiştir. `red` boş değilse (ya da
+hiçbir koşunun sonucu yoksa) karar `red`, değilse `flaky`; `revert` yalnız `red`'de doğru. Çıktı `verdict` (`green` |
+`red` | `flaky` | `rerun`), sıralı `red` ve `flaky` (`green` ve `rerun`'da `[]`), `revert`. Çıkış: 0 yeşil, 1 değil, 2
+kullanılamaz girdi.
 Vakalar: `green_first_run` testli ve hepsi geçen ilk koşu yeşil; `one_red_run_never_reverts` tek kırmızı koşu karar
 değil, test adlandırılmaz; `two_reruns_rerun` ilk koşu ve iki yeniden koşu yetmez, hepsinde düşen test henüz
 adlandırılmaz; `red_three_reruns` ilk koşuda ve üç yeniden koşuda düşen test kırmızı, merge geri alınır;
-`per_test_rule` kural test başına: her koşuda düşen kırmızı, yalnız ilkinde düşen flaky, ikisi de adlandırılır.
+`per_test_rule` kural test başına: her koşuda düşen kırmızı, yalnız ilkinde düşen flaky, ikisi de adlandırılır;
+`unread_run_not_checked` dördüncüden sonraki koşu biçimsiz olsa da okunmaz, karar ilk dördünündür;
+`empty_runs_rerun` boş `runs` kullanılamaz girdi değil, `rerun`'dır.
 
 ## `cause` (MF13, `gate/revert.py`)
 

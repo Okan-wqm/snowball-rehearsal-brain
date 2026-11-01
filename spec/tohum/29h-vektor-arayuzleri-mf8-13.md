@@ -29,9 +29,11 @@ normalleştirilmiş kayıttır (spec araç çıktısının biçimini vermez): `{
 her koşul dosyanın ilk satırını okur. `<hashes.json>` üç `koş` dosyasının baytlarının sha256'sı (`{"base.jsonl",
 "cand.jsonl", "checks.json"}`, küçük onaltılık, kapsayıcı dışında alınır, `08`). stdin `{control: control.json
 nesnesi, unfinished_sentinels: [merge sha]}`. **Nedenler, hepsi yazılır:** `artefact_hash_mismatch` (üç `koş`
-dosyasından biri yok ya da sha256'sı başka; her biri denetlenir); `target_not_found` (`base.jsonl`'da bulgunun
-`rule_id`, `path` ve `line`'ı olan ihlal yok; hedefsiz `not_distinguished` ve `scope_violation` değerlendirilmez);
-`not_distinguished` (`cand.jsonl`'da hedefin `rule_id` ve `path`'i olan bir ihlal hedef satırın eşlenmiş aralığında);
+dosyasından biri yok ya da sha256'sı başka; her biri denetlenir; hash'i tutmayan ya da olmayan `koş` dosyası okunmaz
+ve ayrıştırılmaz (biçimi denetlenmez, girdiyi kullanılamaz yapmaz): onu okuyan nedenler değerlendirilmez, öbür
+dosyaların ve girdilerin nedenleri değerlendirilir); `target_not_found` (`base.jsonl`'da bulgunun `rule_id`, `path`
+ve `line`'ı olan ihlal yok; hedefsiz `not_distinguished` ve `scope_violation` değerlendirilmez); `not_distinguished`
+(`cand.jsonl`'da hedefin `rule_id` ve `path`'i olan bir ihlal hedef satırın eşlenmiş aralığında);
 `tool_nondeterministic` (taban ya da aday dosyanın, ikisi de denetlenir, üç satırı bayt bayt aynı değil);
 `scope_violation` (diff başka yola dokunur; silinen satırın taban numarası hedefin taban `fix`'i `[s, e]` dışında;
 eklenen satırın taban konumu `p`, hunk'ında sıradaki taban satırı, son taban satırından sonra `a+b`, `b = 0`
@@ -54,11 +56,12 @@ madde 3–8 tutar (hedef eşlenmiş aralıktan gitmiş, aynı kuralın kaymış 
 araç toplamı aynı, koşular aynı, diff `fix` içinde, testler yeşil, kontrol kırmızı, duraklatma ve açık nöbetçi yok,
 hash'ler tutar); `artefact_hash_mismatch` hash'i tutmayan `koş` dosyasına güvenilmez; `forged_candidate_run` `koş`ta
 temiz bir koşuyla değiştirilmiş aday koşusu, manifestoda gerçeğinin hash'i: yarım düzeltme merge olmaz;
-`forged_checks` hepsi geçer diye yeniden yazılmış `checks.json` da güvenilmez; `not_distinguished` bölünen satırda
-kalan ihlal aday aralığında, hedef satırın kendisi, kaymışı ve hunk içindeki konumu onu kaçırır;
-`insertion_not_distinguished` hiçbir şey düzeltmeyen, hedef satırın ardına yalnız yorum ekleyen aday: `b = 0` hunk'ı
-hedeften önce bitmez, ihlal eşlenmiş aralıkta kalır; `target_not_found` taban koşusunun vermediği satırı adlandıran
-bulguya güvenilmez; `tool_nondeterministic` JSON değeri aynı, bir boşluk baytı farklı aday koşusu;
+`forged_checks` hepsi geçer diye yeniden yazılmış `checks.json` da güvenilmez; `mismatched_file_not_read` hash'i
+tutmayan taban koşusunun ihlallerinden neden doğmaz; `not_distinguished` bölünen satırda kalan ihlal aday
+aralığında, hedef satırın kendisi, kaymışı ve hunk içindeki konumu onu kaçırır; `insertion_not_distinguished` hiçbir
+şey düzeltmeyen, hedef satırın ardına yalnız yorum ekleyen aday: `b = 0` hunk'ı hedeften önce bitmez, ihlal eşlenmiş
+aralıkta kalır; `target_not_found` taban koşusunun vermediği satırı adlandıran bulguya güvenilmez;
+`tool_nondeterministic` JSON değeri aynı, bir boşluk baytı farklı aday koşusu;
 `base_nondeterministic` aynısı taban koşusunda; `scope_violation` diff `fix` dışındaki bir satırı da yazar,
 `finding.json`'ın geniş `fix_range`'i sayılmaz; `insertion_past_fix` `fix`'i düzelten diffin `e+1`'in ötesine
 (`b = 0` hunk'ında `a+1`) eklediği satır; `ratchet_and_broken_test` mandal artışı ve düşen test ikisi de yazılır;

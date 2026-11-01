@@ -50,10 +50,12 @@ kapsamında); `agent_config`; `config` (temel adı `.eslintrc`, `.eslintrc.json`
 `tsconfig.*.json`, `jest.config.js`, `jest.config.ts`, `vitest.config.js`, `vitest.config.ts`, `.prettierrc`,
 `.prettierrc.json` ya da `biome.json`; ya da kökteki `.github/` altında); `manifest` (temel adı `package.json`);
 `lockfile` (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`); `gitattributes`
-(`.gitattributes`); `outside_inputs` (hiçbir `inputs` girdisi kapsamaz). Çıktı: `ok` (`reasons` boşsa doğru) ve
-sıralı `reasons` (`<neden>:<yol>`). Çıkış: 0 tamam, 1 neden var, 2 kullanılamaz girdi (ayrıştırılamayan diff,
-okunamayan profil ya da tarif). Diff'in `brain/integration` başına uygulanması (`asama-0/08` madde 1) bu grubun
-değil, `gate.check`'in işidir (MF8; `gate.diffguard` ağaç almaz, `26a`).
+(`.gitattributes`); `outside_inputs` (hiçbir `inputs` girdisi kapsamaz). `config`, `manifest` ve `lockfile`
+listeleri vektörlerin tabanıdır; kural `01b`'nin ret listesidir (lint, tip ve test yapılandırmaları, bağımlılık
+manifestleri ve kilitler), Kurucu fazlasını tanıyabilir (`29a`). Çıktı: `ok` (`reasons` boşsa doğru) ve sıralı
+`reasons` (`<neden>:<yol>`). Çıkış: 0 tamam, 1 neden var, 2 kullanılamaz girdi (ayrıştırılamayan diff, okunamayan
+profil ya da tarif). Diff'in `brain/integration` başına uygulanması (`asama-0/08` madde 1) bu grubun değil,
+`gate.check`'in işidir (MF8; `gate.diffguard` ağaç almaz, `26a`).
 Vakalar: `inside_inputs` `inputs` içindeki düz düzenleme geçer; `symlink` ve `submodule` git kipiyle tanınır,
 içerikle değil; `dotdot_path` birime geri normalleşse de `../` bileşenli yol ret; `agent_config_case_insensitive`
 her harf büyüklüğünde ajan yapılandırması ret; `security_path` anahtar kelime taşımasa da profilin güvenlik yolu

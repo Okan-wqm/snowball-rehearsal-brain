@@ -17,12 +17,16 @@ kırmızıdır (`29a`). Beklenen değerler tohum yazılırken iki bağımsız he
 
 **Genel koşucu.** Önyükleme hakemi bütün grupları tek bir veri koşucusuyla, Kurucu'nun koduna `koş`un
 kumunda uygular (python imajı; git, docker, node yok). Gruba özgü kod yoktur; yeni grup veridir ve tohum
-dönemiyle gelir. Komutun son denemesi 125 ile biterse sonuç `runner_fault`'tur, Kurucu'ya yazılmaz.
-Hakem stdout'un son satırını okur ve yalnız `expect`'in adlandırdığı alanlara bakar; satırdaki başka alanlar
+dönemiyle gelir. Komutun son denemesi 125 ile biterse sonuç `runner_fault`'tur, Kurucu'ya yazılmaz. Hakem
+stdout'un son satırını okur ve yalnız `expect`'in adlandırdığı alanlara bakar; satırdaki başka alanlar
 komutundur. Değerler JSON olarak karşılaştırılır: `true` `1` değildir, `1` `1.0` değildir. `changed` aynı
 alanları vermeli ve `expect_not`'u vermemelidir; cevap vermeyen ya da alanı eksik bırakan da kırmızıdır.
-`chain`, P1'in ve provanın grupları kendi yargıçlarıyla koşar (`29a`, `29c`). `secrets`'tan `diffguard`'a
-grupların komutları, girdileri, çıktı alanları ve vakaları `29f`, `29g` ve `29k`'dedir.
+`chain`, P1'in ve provanın grupları kendi yargıçlarıyla koşar (`29a`, `29c`). `chain`'in yargıcı da
+stdout'un son JSON satırını okur, çıkış kodunu karşılaştırmaz; başarısız ve son denemesi 125 ile biten
+komut `runner_fault`'tur. `hash`'te `row_hash`'e, `verify`'da `valid`'e, V3'te ayrıca `broken_row`'a
+(`r2`, `29a`) bakılır. Kırık zincirin çıkış kodunu ve `row_id`'si olmayan satırın `broken_row` değerini
+tohum sabitlemez. `secrets`'tan `diffguard`'a grupların komutları, girdileri, çıktı alanları ve vakaları
+`29f`, `29g` ve `29k`'dedir.
 
 | Grup | MF | Bağladığı |
 |---|---|---|

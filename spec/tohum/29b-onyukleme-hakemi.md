@@ -6,12 +6,11 @@ Okunma: kurulumda ve Aşama 0 boyunca
 
 ---
 
-Aşama 0'da Kurucu hakemi yazar; o hakem henüz yoktur, Kurucu da kendi yargıcı olamaz (Y6). Boşluğu tohumla
-gelen, Kurucu'dan önce ve Kurucu olmayan bir yazarca yazılmış küçük, deterministik önyükleme hakemi
-kapatır: beyin reposunun `seed/bootstrap/` dizininde `snowball_bootstrap` paketi (yalnız standart
-kütüphane), `workflow/bootstrap.yml`, hash'e sabitli `requirements/` (Sigstore, `claude` CLI), `vectors/`
-ve `tests/`. Operatör kurulumda hakem reposuna kurar (`25` 3); Kurucu ona yazamaz. Aşama 0 çıkışındaki
-aktarım bu paketin `import` komutudur; Kurucu'nun betiği (`asama-0/14` 30) sonraki çıkışlarda kullanılır.
+Aşama 0'da Kurucu hakemi yazar; o hakem henüz yoktur, Kurucu da kendi yargıcı olamaz (Y6). Boşluğu tohumla gelen,
+Kurucu'dan önce ve Kurucu olmayan bir yazarca yazılmış küçük, deterministik önyükleme hakemi kapatır: beyin reposunun
+`seed/bootstrap/` dizininde `snowball_bootstrap` paketi (yalnız standart kütüphane), `workflow/bootstrap.yml`, hash'e
+sabitli `requirements/` (Sigstore, `claude` CLI), `vectors/` ve `tests/`. Operatör kurulumda hakem reposuna kurar
+(`25` 3); Kurucu ona yazamaz. Her çıkıştaki aktarım bu paketin `import` komutudur (`25a` 1).
 
 **Boru hattı.** Zamanlayıcı saatte bir, sabit bir dakikada beyin reposunun izlenen dalını `ls-remote` ile
 yoklar; son kabul edilmiş ya da son değerlendirilmiş SHA'dan farklı bir SHA yoksa hiçbir şey kurmaz
@@ -42,6 +41,7 @@ dener; kabul edilirse dizinin hash'i donar. Yalnız sıradaki aşamanın dizini 
 `spec/asama-0/CHANGELOG.md`'ye tarihli satır olarak ekleyip iter. Yalnız `exit-request.json` değiştiren push **çıkış
 isteğidir**; diğer her push **kod isteğidir**, `spec/asama-0` donmadan kabul edilmez. Değişikliksiz push değerlendirilmez;
 spec ile kodu karıştıran, `seed/**`, başka `spec/` yolu ya da `.github/` değiştiren, geçmişi yeniden yazan push reddedilir.
+Kurucu kayıtları: `29e`.
 
 **Rakip çağrısı.** İç kullanımda API anahtarı yoktur (satışta anahtara geçilir): rakip, operatörün
 `CLAUDE_CODE_OAUTH_TOKEN`'ıyla koşan, `requirements/claude-cli/`'de sha512'yle pinli `claude` CLI'sidir; yerleşik araç,
@@ -51,25 +51,25 @@ yana tam diff) ve ilgili tohum sayfalarını görür, commit ağacını tek MCP 
 ağaçtan çıkarılır. Sunulan model farklıysa, ret, bütçe ya da tur sonu ve biçimsiz karar kabul değil `unresolved`'dır;
 yedek model yoktur. Kimlik, kota, ağ, zaman aşımı ve 5xx kesintidir (`api_error`), ret sayılmaz: aynı SHA üçüncüden sonra
 günde bir, en çok 7 gün denenir, sonra görünür durur. 400/404/413/422 `request_rejected`'dır: değerlendirilmiş sayılır,
-Kurucu'ya yazılmaz, operatörü uyarır. İzolasyon hatası operatör için durdurur.
+Kurucu'ya yazılmaz, operatörü uyarır. İzolasyon hatası operatör için durdurur. Sır desenli metin: `29e`.
 
 **Kabul.** Kod SHA'sı: Aşama 0 testleri yeşil; vektörler geçer ve değiştirilmiş girdiyi reddeder; kırmızı
 kontroller doğru; rakip geçerli karar verdi; ne yeni bir çürütme ne durumda tutulan kanıtlanmış kusur
 yeniden üretildi (`refutation_still_reproduces`, `29`). Testler kırmızıysa rakip çağrılmaz. **Ret
 artefaktı** tiplidir: `{sha, kind, reasons: [{kind, test_id?, ref, detail_sha256, detail?}]}`.
 
-**Ret hafızası.** Kurucu'nun düzeltebildiği her ret (test, vektör, lisans, yeniden üretilmiş çürütme, `prompt_too_large`,
-`max_turns`) nedenlerinin imzasıyla (`tür:test`, `tür:ref`; çürütmede komut ve beklentinin hash'i) sayılır; kabul seriyi
-sıfırlar. Rakibin hataları (`model_mismatch`, `malformed_verdict`, `no_verdict`, `refusal`, `rival_missing`), bütçe ve altyapı
-arızası serilere dokunmaz; rakip hata serisi operatörü uyarır. Sonuç `learning {repeated, not_learning, repeat_events}` taşır;
-aynı imza ardışık `stage_params.repeat_reject_limit` rete ulaşınca `not_learning` olur ve Kurucu oturumu durur (`22a`).
+**Ret hafızası.** Kurucu'nun düzeltebildiği her ret (test, vektör, lisans, yeniden üretilmiş çürütme, `prompt_too_large`, `max_turns`,
+`secret_in_prompt`) nedenlerinin imzasıyla (`tür:test`, `tür:ref`; çürütmede komut ve beklentinin hash'i) sayılır; kabul seriyi
+sıfırlar. Rakibin hataları (`model_mismatch`, `malformed_verdict`, `no_verdict`, `refusal`, `rival_missing`, `secret_in_verdict`), bütçe
+ve altyapı arızası serilere dokunmaz; rakip hata serisi operatörü uyarır. Sonuç `learning {repeated, not_learning, repeat_events}`
+taşır; aynı imza ardışık `stage_params.repeat_reject_limit` rete ulaşınca `not_learning` olur ve Kurucu oturumu durur (`22a`).
 
-**Çıkış isteği, Aşama 0 çıkışının (A) parçası.** `exit-request.json` son kabul edilmiş SHA'yı ve donmuş
-`spec/asama-0` hash'ini adlandırır. Hakem testleri, vektörleri, durumdaki yeniden üreticileri koşar, açık
-iddiaları listeler; `referee/`'den `python -m spec.lint spec/asama-0` boş `violations`,
-`python -m gate.lock check 0 <spec_sha256> exit-request.json` `{"open": true}` vermeli (`29a`). 30 mikro
-özellik bitmiş; çıkış SHA'sı ve ondan ayrı en az `stage_params.rival_min_attempts` artefakt rakipten sağ
-çıkmış olmalı (tamamlanmış karar, yeniden üretilmiş çürütme yok); aynı başın yeniden denemesi saklı rakip
+**Çıkış isteği, Aşama 0 çıkışının (A) parçası.** `exit-request.json` son kabul edilmiş SHA'yı ve donmuş `spec/asama-0` hash'ini
+adlandırır. Hakem testleri, vektörleri, durumdaki yeniden üreticileri koşar, açık iddiaları listeler; aşama tablosunun
+(`stages/stage0.json`, `asama-0/14`) her mikro özelliği bitmiş olmalı: `done_mf` 1'den tablonun sayısına kesintisiz (Aşama 0'da
+18), değilse sonucun `exit.missing`'inde `not_all_micro_features_done`; `spec.lint` ve `gate.lock` (A)'da çağrılmaz, spec denetimi
+ve kilit tohumun kodudur (`29a`, `asama-0/10`); çıkış SHA'sı ve ondan ayrı en az `stage_params.rival_min_attempts` artefakt
+rakipten sağ çıkmış olmalı (tamamlanmış karar, yeniden üretilmiş çürütme yok); aynı başın yeniden denemesi saklı rakip
 sonucunu kullanır. Sonuç "aktarılabilir"dir, `referee/` ağaç hash'ini ve `repeat_events`'i taşır (`25a` 1). **Çıkıştan sonra** imzalı durum (A)'nın başını `exit_accepted_sha`'da tutar; o andan spec, kod ya da çıkış push'unda Kurucu kayıtları dışında yalnız `candidates/` ve `targets/` değişebilir (`asama-0/10a`, `asama-0/11`, `25a` 8): `referee/` altındaki değişiklik `referee_changed_after_exit`, başka her yol `changed_after_exit:<yol>`'dur (Kurucu'nun nedeni). Dondurma Aşama 0'ındır: kilit sonraki aşamayı açınca ya da (B) kırmızı olup operatör aktarımı geri alıp o başı `control.json` `reverted_exits`'e yazınca biter, sonraki sonuç alanı boşaltır; düzeltilmiş SHA (A)'dan yeniden geçer (`25a` "Başarısızlık").
 
 **Asla yapmadıkları.** Hedefe, beyin ve hakem reposuna yazmaz; merge etmez; Kurucu'nun kodunu sırlı işte

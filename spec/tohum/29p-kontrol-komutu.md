@@ -52,7 +52,8 @@ Sonraki her adım `if: steps.control.outputs.go == 'true'` taşır. GitHub bu ko
 duran kontrol adımı sonraki adımları da durdurur, `go=false` onları atlatır ve iş yeşil biter.
 
 **`wiring` kuralı** (`asama-0/09` test 46 "her işin ilk adımı `control` ve kill switch açıkken iş durur";
-`asama-0/10` #is-akisi). Bir kabuk betiği ne yaptığı için okunamaz; kural dosyayı okuyarak karar verir:
+`asama-0/10` #is-akisi). Dosya `29r`'nin altkümesiyle okunur. Bir kabuk betiği ne yaptığı için okunamaz; kural
+dosyayı okuyarak karar verir:
 - her işin ilk adımı yukarıdaki adımdır, tam olarak: `LOOP_JOB` işin adı; fazladan anahtar (`if`,
   `continue-on-error`, `shell`, başka `env`) yok. Değilse `workflow_control_step:<iş>`.
 - sonraki her adımın `if`'i tam olarak `steps.control.outputs.go == 'true'`'dur (`${{ }}` içinde ya da

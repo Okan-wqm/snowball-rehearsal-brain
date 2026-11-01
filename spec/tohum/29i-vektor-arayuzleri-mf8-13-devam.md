@@ -18,7 +18,8 @@ reddeder. İstek `{op, …}`; yollar `/repos/{repo}` altında: `branch {repo, re
 `update {repo, ref, sha}` → `PATCH /git/refs/<ref, refs/ öneksiz> {sha, force: false}`; `pr {repo, head, base,
 title}` → `POST /pulls`; `check {repo, sha, name, conclusion}` → `POST /check-runs`; `merge {repo, pr}` → `GET
 /pulls/{pr}`, sonra `PUT /pulls/{pr}/merge`; `revert {repo, merge_sha, onto, ref}` → `GET /git/commits/{merge_sha}`,
-`GET /git/commits/<ilk ebeveyni>`, `GET /git/ref/<onto, refs/ öneksiz>`, `POST /git/commits {message, tree: ilk
+`GET /git/commits/<ilk ebeveyni>`, `GET /git/ref/<onto, refs/ öneksiz>`; `onto`'nun başı `merge_sha` değilse
+yazmadan ret (ilk ebeveynin ağacı sonraki merge'leri de geri alırdı); `POST /git/commits {message, tree: ilk
 ebeveynin ağacı, parents: [onto'nun başı]}`, `POST /git/refs {ref, sha: yeni commit}`. **Ref kuralı:** yazılan her
 ref `refs/heads/brain/` ile başlar, `refs/heads/`'den sonraki bileşenleri boş, `.` ya da `..` değil; büyük-küçük harf
 duyarlı. Kural `branch`, `update` ve `revert`'ün `ref`'ine, `pr`'nin `head` ve `base`'ine, `merge`'ün yazdığı PR'nin
@@ -28,9 +29,11 @@ ya da güncellenen ref'ler, sıralı: `POST git/refs` gövdesinin `ref`'i, `PATC
 edilen PR'nin kayıttaki base'i `refs/heads/<base>`); `writes` (GET dışı her çağrının `METHOD /yol`'u, çağrı
 sırasıyla; yol `/repos/` ile başlar); `commit` (`revert`'te `POST git/commits` gövdesinin `{tree, parents}`'ı, yoksa
 `null`); `forced` (bir `PATCH git/refs` gövdesi `force: true` taşıdı mı; zorla itme yoktur, `07`); retle `refs` ve
-`writes` `[]`, `forced` yanlış. Çıkış: 0 yazıldı; 1 ref kuralıyla ret; 2 kullanılamaz istek ya da 404.
+`writes` `[]`, `forced` yanlış. Çıkış: 0 yazıldı; 1 ref kuralıyla ya da `onto`'nun başı olmayan merge'ün geri
+alınmasıyla ret; 2 kullanılamaz istek ya da 404.
 Vakalar: `revert_first_parent_tree` geri alma commit'inin ağacı merge'ün ilk ebeveyninin ağacı (Git Data API'sinden),
-ne kendi ağacı ne ikinci ebeveyninki; ebeveyni `onto`'nun başı, yazılan tek ref `brain/` altındaki dal; `refuse_main`
+ne kendi ağacı ne ikinci ebeveyninki; ebeveyni `onto`'nun başı, yazılan tek ref `brain/` altındaki dal;
+`refuse_revert_not_head` `onto`'nun başı olmayan merge'ü geri alma isteği yazmadan ret; `refuse_main`
 kaydın kabul edeceği `refs/heads/main` güncellemesi yazmadan ret; `update_never_forces` `brain/c/*` dalının
 güncellemesi zorlamaz (o dalların `non_fast_forward` kuralı yok, `01b`); `refuse_prefix_lookalike` metin olarak
 `refs/heads/brain` ile başlayan, `refs/heads/brain/` altında olmayan ref ret; `refuse_dotdot` `..` bileşeniyle
@@ -48,12 +51,15 @@ defter JSONL'dir (`13`) ve tutmayan denetim sert duruştur (`01b`); seçim. (2) 
 `secrets.scan`'in `row` anlamıyla taranır (`29f`, kaçışlar çözülmüş); eşleşme hiçbir şey yazmaz, koşuyu geçersiz
 kılar (`08`), sert duruş değil. (3) `proposed_by` taşıyan satır `trust` `inferred` ile saklanır (`26`; değerin biçimi
 serbest). (4) Satırlar stdin sırasıyla son satıra zincirlenir, bölümü ne olursa olsun (`13`). (5) Yazarla tek
-`brain/state` commit'i; yazar commit sayan bir taklittir (`asama-0/14` Kum), diske ve ağa dokunulmaz. Çıktı: `ok`;
+`brain/state` commit'i; yazar commit sayan bir taklittir (`asama-0/14` Kum), diske ve ağa dokunulmaz. Saklanan
+satırın bayt biçimini tohum sabitlemez: sonraki devir önceki satırları yalnız bayt olarak karşılaştırır (1),
+`row_hash` kanonik biçimden hesaplanır (`26`). Çıktı: `ok`;
 `row_hashes` (saklanan satırlarınki, stdin sırasıyla); `commits`; `hard_stop` (zincir kırık ya da yalnız eklemeli
 değil); retle `[]`, 0. Çıkış: 0 yazıldı; 1 ret, sert duruş dahil; 2 kullanılamaz girdi: okunamayan dosya, ya da
-(1) tuttuktan sonra `{rows: […]}` olmayan stdin, `prev_hash` ya da `row_hash` taşıyan ya da `row_id`'si tekrarlanan
-satır. `chain`'in kendi arayüzü `python -m ledger.chain verify <dosya> --previous <dosya>` (`29a`, MF1) de bu grupta
-sınanır, yalnız `valid` karşılaştırılır.
+(1) tuttuktan sonra `{rows: […]}` olmayan stdin, `prev_hash` ya da `row_hash` taşıyan ya da `row_id`'si istekteki
+başka bir satırın ya da defterdeki bir satırın `row_id`'siyle aynı olan satır, ya da boş `rows` (devir tek commit
+yapar, (5)). `chain`'in kendi arayüzü `python -m ledger.chain verify <dosya> --previous <dosya>` (`29a`, MF1) de bu
+grupta sınanır, yalnız `valid` karşılaştırılır.
 Vakalar: `cycle_one_commit` iki bölümün iki satırı tek devirde sırayla zincirlenir, devir tek commit yapar;
 `chains_onto_current_tip` önceki sürümden beri büyümüş defterde yeni satır defterin son satırına zincirlenir;
 `refuse_broken_tip` öncekini bayt bayt uzatan ama son satırı hash'ten sonra düzenlenmiş defter: yalnız eklemelilik
@@ -63,4 +69,6 @@ değil, zincir kırığıdır; `refuse_broken_chain_first` kurcalanmış defter 
 `refuse_reserialized_row` anahtarları başka sırada yazılmış satır, kanonik biçim aynı, baytlar başka;
 `refuse_secret_row` `\u` kaçışıyla yazılmış sahte belirteç çözülmüş satırda yakalanır, sert duruş değil;
 `proposed_by_stored_inferred` verilen `trust` ne olursa olsun `inferred`, hash saklanan satırın; `chain_previous_rewrite`
-ve `chain_previous_truncated` yeniden yazılmış ya da son satırını yitirmiş dosya öncekinin uzantısı değil.
+ve `chain_previous_truncated` yeniden yazılmış ya da son satırını yitirmiş dosya öncekinin uzantısı değil;
+`refuse_known_row_id` defterde zaten olan `row_id` kullanılamaz istektir; `refuse_empty_rows` boş `rows`
+kullanılamaz istektir.
