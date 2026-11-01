@@ -48,6 +48,24 @@ copied, and criterion 5's coverage).
   (``version_file_not_exact``) and equal the toolchain's (``toolchain_version_mismatch``); the lock must be
   a regular file with no symlink on its way (``lockfile_missing``) and pass MF5's static check with the
   recipe's marks (``lock:<reason>``).
+- With the tree, the commands against the lock (``cmd_not_installed:<field>:<element>``, the element as
+  written). Only ``node_modules`` paths are judged, because the worktree has no other source for them: the
+  copy leaves every ``node_modules`` name out (casefolded) and the install writes only
+  ``<lock dir>/<lock key>/`` and ``.bin`` links (step 2). An element of ``lint_cmd``, ``test_cmd`` or
+  ``affected_test_cmd`` that is a relative path (``derive.norm_path``; ``/work/<path>`` is read as ``<path>``;
+  any other absolute path, and an element starting with ``-``, an option, is not judged) with a component
+  equal to ``node_modules`` after casefold is installed only when it is below the lock's directory (paths are
+  read from ``/work``, the tree's root) and, below it, it lies in a package of the lock (a key MF5's lock
+  reading takes, ``runner.deps_npm.entries``: not ``""``, a chain of ``node_modules/<name>``), followed by
+  nothing or by a rest with no ``node_modules`` component; or it is a directory on the way to such a key; or
+  it is exactly ``<P>/.bin/<name>`` where a key ``<P>/<package>`` (``<package>`` one name or ``@scope/name``)
+  has a lock ``bin`` naming ``<name>`` (an object with that key, or a string and ``<name>`` the bare part of
+  the package's name as MF5 reads it, as step 2 reads a package's ``bin``). The lock's ``bin`` stands for the
+  tarball's here, as npm writes it from the package's ``package.json``; a lock without it refuses that
+  ``.bin`` path. Not judged: whether the file exists inside the package, a path inside an option
+  (``--config=x/node_modules/y``) or another element (``sh -c`` text), a bare program name (``vitest``,
+  ``npx``), and imports or configuration that reach outside the inputs: those show in the run as a red or
+  failing command, as before.
 
 The run (``verify``), only when the static check passes (steps 1-3 are ``stage``, which ``runner.kos`` shares, so
 ``koş``'s results come from the same worktree):
@@ -381,7 +399,46 @@ def _tree_reasons(recipe: dict, path: str, lock: str, version: str, tree: str, t
             parsed = None
         report = N.check(parsed, N.DEFAULT_REGISTRIES, recipe["install_scripts_required"])
         reasons += ["lock:%s" % r for r in report["reasons"]]
+        if isinstance(parsed, dict) and isinstance(parsed.get("packages"), dict):
+            lock_dir = posixpath.dirname(lock) or "."
+            reasons += ["cmd_not_installed:%s:%s" % (field, element) for field in CMD_FIELDS
+                        for element in recipe[field] if not installed(element, lock_dir, parsed)]
     return reasons
+
+
+def _bin_names(entry: Any, name: str) -> set:
+    value = entry.get("bin")
+    if isinstance(value, str):
+        return {name.split("/")[-1]}
+    return set(value) if isinstance(value, dict) else set()
+
+
+def installed(element: str, lock_dir: str, lock: Any) -> bool:
+    """False when ``element`` is a ``node_modules`` path the lock does not install (module docstring); the lock's
+    packages, their keys and names, are read as MF5 reads them (``runner.deps_npm.entries``)."""
+    path = D.norm_path(element[len(C.WORKDIR) + 1:] if element.startswith(C.WORKDIR + "/") else element)
+    if path is None or element.startswith("-") or "node_modules" not in [c.casefold() for c in path.split("/")]:
+        return True
+    if lock_dir != ".":
+        if not path.startswith(lock_dir + "/"):
+            return False
+        path = path[len(lock_dir) + 1:]
+    rows = {row["key"]: row for row in N.entries(lock)[1]}
+    parts = path.split("/")
+    for i in range(len(parts), 0, -1):
+        if "/".join(parts[:i]) in rows and "node_modules" not in [c.casefold() for c in parts[i:]]:
+            return True
+    if any(key.startswith(path + "/") for key in rows):
+        return True
+    if len(parts) < 3 or parts[-2] != ".bin":
+        return False
+    parent, name = "/".join(parts[:-2]), parts[-1]
+    for key, row in rows.items():
+        package = key[len(parent) + 1:] if key.startswith(parent + "/") else ""
+        one_name = package and package.count("/") == package.startswith("@")
+        if one_name and name in _bin_names(row["entry"], row["name"]):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------- worktree

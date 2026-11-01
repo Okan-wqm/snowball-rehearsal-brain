@@ -71,7 +71,6 @@ if os.path.exists("pkg/node_modules/left-pad/BUILT"):
 print("problems:", problems)
 sys.exit(1 if problems else 0)
 """
-SLEEP = "import time\ntime.sleep(5)\n"
 
 
 def operating(**over) -> dict:
@@ -96,6 +95,23 @@ def recipe(**over) -> dict:
 
 
 RED = {"cmd": ["python", "pkg/red.py"]}
+
+
+class Clockless:
+    """A runner with no wall clock: the command ending in ``script`` is taken to need ``seconds`` and times out
+    under any smaller timeout; every other command runs on the fake docker with no binding timeout. So a limit
+    test asserts the timeout each run is given and the reason a timeout maps to, whatever the machine's load
+    (a real 1 s limit timed out the red control's own python start under load; how the docker runner kills a
+    container on timeout is test_contained's)."""
+
+    def __init__(self, script: str, seconds: float) -> None:
+        self.script, self.seconds, self.inner, self.timeouts = script, seconds, FakeDocker(), []
+
+    def __call__(self, argv: list, env: dict, timeout: float) -> C.RunnerResult:
+        self.timeouts.append((argv[-1], timeout))
+        if argv[-1] == self.script and timeout < self.seconds:
+            return C.RunnerResult(None, b"", b"", True)
+        return self.inner(argv, env, 600)
 
 
 
@@ -286,6 +302,121 @@ class StaticCheck(Base):
         self.assertIn("lockfile_missing", self.reasons(tree=True))
 
 
+class CommandsAgainstLock(Base):
+    """``cmd_not_installed``: a ``node_modules`` path in a command must be one the lock installs."""
+
+    def reasons(self, **over) -> list:
+        return U.check_recipe(recipe(**over), None, self.tree)
+
+    def rich(self) -> dict:
+        """A lock with a bin by string, a scoped package with a bin object, and a nested package."""
+        tool = tgz({"package.json": {"name": "@s/tool", "version": "1.0.0", "bin": {"tl": "t.js"}}, "t.js": b"x"})
+        inner = tgz({"package.json": {"name": "inner", "version": "2.0.0", "bin": "i.js"}, "i.js": b"x"})
+        self.put(url("@s/tool", "1.0.0"), tool)
+        self.put(url("inner", "2.0.0"), inner)
+        lock = copy.deepcopy(self.lock)
+        lock["packages"]["node_modules/left-pad"]["bin"] = {"left-pad": "cli.js"}
+        lock["packages"]["node_modules/@s/tool"] = {"version": "1.0.0", "resolved": url("@s/tool", "1.0.0"),
+                                                    "integrity": sri(tool), "bin": {"tl": "t.js"}}
+        lock["packages"]["node_modules/left-pad/node_modules/inner"] = {
+            "version": "2.0.0", "resolved": url("inner", "2.0.0"), "integrity": sri(inner), "bin": "i.js"}
+        lock["packages"]["node_modules/ghost/node_modules/inner"] = dict(
+            lock["packages"]["node_modules/left-pad/node_modules/inner"])  # its parent is no key of the lock
+        self.write_lock(lock)
+        return lock
+
+    def test_a_package_of_the_lock_is_installed_and_another_is_not(self):
+        self.assertEqual(self.reasons(lint_cmd=["node", "pkg/node_modules/left-pad/cli.js", "--format", "json"]), [])
+        self.assertEqual(self.reasons(lint_cmd=["node", "pkg/node_modules/eslint/bin/eslint.js", "pkg"]),
+                         ["cmd_not_installed:lint_cmd:pkg/node_modules/eslint/bin/eslint.js"])
+        self.assertEqual(self.reasons(lint_cmd=["node", "/work/pkg/node_modules/eslint/bin/eslint.js"]),
+                         ["cmd_not_installed:lint_cmd:/work/pkg/node_modules/eslint/bin/eslint.js"])
+        self.assertEqual(self.reasons(lint_cmd=["node", "/work/pkg/node_modules/left-pad/cli.js"]), [])
+
+    def test_every_command_field_is_judged_and_every_element_listed(self):
+        bad = "pkg/node_modules/vitest/vitest.mjs"
+        self.assertEqual(self.reasons(lint_cmd=["node", bad], test_cmd=["node", bad, "pkg/node_modules/x"],
+                                      affected_test_cmd=["node", bad]),
+                         ["cmd_not_installed:lint_cmd:" + bad, "cmd_not_installed:test_cmd:" + bad,
+                          "cmd_not_installed:test_cmd:pkg/node_modules/x",
+                          "cmd_not_installed:affected_test_cmd:" + bad])
+
+    def test_a_path_outside_the_locks_directory_is_not_installed(self):
+        for element in ("node_modules/left-pad/cli.js", "lib/node_modules/left-pad/cli.js",
+                        "other/pkg/node_modules/left-pad/cli.js", "pkgx/node_modules/left-pad/cli.js"):
+            self.assertEqual(self.reasons(test_cmd=["node", element]), ["cmd_not_installed:test_cmd:" + element])
+
+    def test_a_case_variant_of_node_modules_is_not_installed(self):
+        for element in ("pkg/Node_Modules/left-pad/cli.js", "pkg/node_modules/Left-Pad/cli.js"):
+            self.assertEqual(self.reasons(test_cmd=[element]), ["cmd_not_installed:test_cmd:" + element])
+
+    def test_a_nested_package_only_by_its_own_key(self):
+        self.rich()
+        for element in ("pkg/node_modules/left-pad/node_modules/inner/i.js", "pkg/node_modules/@s",
+                        "pkg/node_modules/ghost", "pkg/node_modules/left-pad/node_modules"):
+            self.assertEqual(self.reasons(test_cmd=["node", element]), [], element)
+        for element in ("pkg/node_modules/left-pad/node_modules/other/i.js", "pkg/node_modules/@s/tool/node_modules/x",
+                        "pkg/node_modules/@s/other/t.js", "pkg/node_modules/gho"):
+            self.assertEqual(self.reasons(test_cmd=["node", element]), ["cmd_not_installed:test_cmd:" + element])
+
+    def test_bin_links_by_the_locks_bin(self):
+        self.assertEqual(self.reasons(test_cmd=["pkg/node_modules/.bin/left-pad"]),
+                         ["cmd_not_installed:test_cmd:pkg/node_modules/.bin/left-pad"], "no bin in the lock")
+        self.rich()
+        for ok in ("pkg/node_modules/.bin/left-pad", "pkg/node_modules/.bin/tl",
+                   "pkg/node_modules/left-pad/node_modules/.bin/inner",
+                   "pkg/node_modules/ghost/node_modules/.bin/inner"):
+            self.assertEqual(self.reasons(test_cmd=[ok]), [], ok)
+        for bad in ("pkg/node_modules/.bin/tool", "pkg/node_modules/.bin/inner", "pkg/node_modules/.bin/i.js",
+                    "pkg/node_modules/left-pad/node_modules/.bin/left-pad",
+                    "pkg/node_modules/zz/node_modules/.bin/inner",
+                    "pkg/node_modules/.bin/tl/x", "node_modules/.bin/tl"):
+            self.assertEqual(self.reasons(test_cmd=[bad]), ["cmd_not_installed:test_cmd:" + bad], bad)
+
+    def test_a_string_bin_is_named_after_the_entrys_name(self):
+        lock = copy.deepcopy(self.lock)
+        lock["packages"]["node_modules/left-pad"].update(bin="cli.js", name="@x/padder",
+                                                         resolved=url("@x/padder", "1.3.0"))
+        self.write_lock(lock)
+        self.assertEqual(self.reasons(test_cmd=["pkg/node_modules/.bin/padder"]), [])
+        self.assertEqual(self.reasons(test_cmd=["pkg/node_modules/.bin/left-pad"]),
+                         ["cmd_not_installed:test_cmd:pkg/node_modules/.bin/left-pad"])
+
+    def test_elements_that_are_not_node_modules_paths_are_not_judged(self):
+        for element in ("python", "--format", "pkg/lint.py", "/usr/lib/node_modules/npm/bin/npm-cli.js",
+                        "../node_modules/x", "--config=pkg/node_modules/x", "npx", "vitest"):
+            self.assertEqual(self.reasons(test_cmd=["node", element]), [], element)
+
+    def test_listed_beside_the_locks_own_reasons(self):
+        lock = copy.deepcopy(self.lock)
+        lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
+        self.write_lock(lock)
+        self.assertEqual(self.reasons(test_cmd=["pkg/node_modules/eslint/x"]),
+                         ["lock:install_script_not_marked:node_modules/left-pad",
+                          "cmd_not_installed:test_cmd:pkg/node_modules/eslint/x"])
+
+    def test_the_rule_agrees_with_what_the_install_writes(self):
+        """Every probe the rule calls installed exists in the staged worktree, and none it refuses does."""
+        self.rich()
+        self.deps = self.fetch()
+        probes = ["pkg/node_modules/left-pad", "pkg/node_modules/left-pad/cli.js", "pkg/node_modules/@s/tool/t.js",
+                  "pkg/node_modules/left-pad/node_modules/inner/i.js", "pkg/node_modules/.bin/left-pad",
+                  "pkg/node_modules/.bin/tl", "pkg/node_modules/left-pad/node_modules/.bin/inner",
+                  "pkg/node_modules/.bin/tool", "pkg/node_modules/.bin/inner", "pkg/node_modules/eslint/x",
+                  "pkg/node_modules/stale/index.js", "node_modules/left-pad/cli.js", "pkg/Node_Modules/left-pad/cli.js",
+                  "pkg/node_modules/@s/other", "pkg/node_modules/left-pad/node_modules/.bin/left-pad",
+                  "pkg/node_modules/ghost/node_modules/.bin/inner", "pkg/node_modules/ghost",
+                  "pkg/node_modules/zz/node_modules/.bin/inner"]
+        root = os.path.join(self.base, "stage")
+        os.mkdir(root)
+        reasons, _, context = U.stage(recipe(), self.tree, policy(), RED, self.deps, None, FakeDocker(), root)
+        self.assertEqual(reasons, [])
+        lock = json.loads(self.lock_bytes())
+        for probe in probes:
+            self.assertEqual(U.installed(probe, "pkg", lock),
+                             os.path.lexists(os.path.join(context["staging"], probe)), probe)
+
+
 # ---------------------------------------------------------------- the run
 
 class Run(Base):
@@ -443,24 +574,19 @@ class Run(Base):
         self.assertLessEqual(copied, 2)
 
     def test_test_total_s_caps_the_test_command(self):
-        write_tree(self.tree, {"pkg/run_tests.py": SLEEP})
-        timeouts = []
-        inner = FakeDocker()
-
-        def record(argv, env, timeout):
-            timeouts.append((argv[-1], timeout))
-            return inner(argv, env, timeout)
-        report = self.verify(recipe(limits={"test_total_s": 1}), runner=record)
+        runner = Clockless("pkg/run_tests.py", 5)
+        report = self.verify(recipe(limits={"test_total_s": 1}), runner=runner)
         self.assertEqual(report["verdict"], "no_verdict")
         self.assertEqual(report["reasons"], ["limit_hit:test_total_s"])
-        self.assertIn(("pkg/run_tests.py", 1), timeouts)
-        self.assertIn(("pkg/lint.py", 60), timeouts)
-        self.assertLess(report["runs"]["test"][0]["duration_s"], 4)
+        self.assertIn(("pkg/run_tests.py", 1), runner.timeouts)
+        self.assertIn(("pkg/red.py", 1), runner.timeouts, "the attempt's red control is capped too")
+        self.assertIn(("pkg/lint.py", 60), runner.timeouts)
 
     def test_kos_wall_s_and_worktree_bytes(self):
-        write_tree(self.tree, {"pkg/run_tests.py": SLEEP})
-        report = self.verify(pol=policy(kos_wall_s=1, test_total_s=5))
+        runner = Clockless("pkg/run_tests.py", 5)
+        report = self.verify(pol=policy(kos_wall_s=1, test_total_s=5), runner=runner)
         self.assertEqual(report["reasons"], ["limit_hit:kos_wall_s"])
+        self.assertIn(("pkg/run_tests.py", 1), runner.timeouts)
         report = self.verify(pol=policy(worktree_bytes=300))
         self.assertEqual((report["verdict"], report["reasons"]), ("no_verdict", ["limit_hit:worktree_bytes"]))
 
