@@ -13,7 +13,10 @@
   holding it, made by ``capture_git_modes.py``) as git does, and the walk takes legacy modes as git's files,
   links and trees;
 - ``lookup``: only the trees on a path are read; absent, through a non-tree, malformed, duplicate;
-- ``tree_tar`` is deterministic and unpacks with ``loop.pulled.extract_tree``, empty directories included.
+- ``tree_tar`` is deterministic and unpacks with ``loop.pulled.extract_tree``, empty directories included;
+- ``parents``: real git 2.47.3's commits (``fixtures/git-parents.json``, made by ``capture_git_parents.py``: a root,
+  a child, a merge, a message holding ``parent`` lines) read as git's ``rev-list --parents`` reads them, and
+  ``git_store``'s commits on parents; a ``parent`` line that is no id and a commit with no ``tree`` line refused.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ import git_store as S  # noqa: E402
 
 FIXTURE = os.path.join(REFEREE, "tests", "fixtures", "git-objects.batch")
 MODES = os.path.join(REFEREE, "tests", "fixtures", "git-modes.json")
+PARENTS = os.path.join(REFEREE, "tests", "fixtures", "git-parents.json")
 PRINTED = {("file", 0o644): "100644", ("file", 0o755): "100755", ("link", 0o777): "120000",
            ("dir", 0o755): "040000", ("submodule", 0): "160000"}  # how git ls-tree prints each kind
 # git init -b main; files as below; chmod +x x.sh; ln -s d/a.txt link; git add -A;
@@ -86,6 +90,36 @@ class RealGit(unittest.TestCase):
         self.assertEqual(G._tree_sha(objects[commit][1]), REAL_TREE)
         self.assertEqual({sha for sha, (kind, _) in objects.items() if kind != "commit"},
                          {sha for sha, (kind, _) in real_objects().items() if kind != "commit"})
+
+
+class Parents(unittest.TestCase):
+    def test_as_real_git_reads_them(self):
+        with open(PARENTS) as fh:
+            commits = json.load(fh)["commits"]
+        self.assertEqual([len(c["parents"]) for c in commits.values()], [1, 2, 1, 0])  # child, merge, message, root
+        for name, c in commits.items():
+            with self.subTest(commit=name):
+                source = {c["sha"]: ("commit", bytes.fromhex(c["object"]))}.__getitem__
+                self.assertEqual(G.parents(source, c["sha"]), c["parents"])
+
+    def test_git_stores_commits_and_what_is_refused(self):
+        objects, first = S.store({"a": b"1\n"})
+        S.store({"a": b"2\n"}, (first,), objects)
+        two = S.store({"a": b"3\n"}, (first, "b" * 40), objects)[1]
+        self.assertEqual(G.parents(objects.__getitem__, first), [])
+        self.assertEqual(G.parents(objects.__getitem__, two), [first, "b" * 40])
+        tree = G.tree_of(objects.__getitem__, first)
+        for raw in (b"tree %s\nparent %s\n\nm\n" % (tree.encode(), b"B" * 40),
+                    b"tree %s\nparent %s\n\nm\n" % (tree.encode(), b"b" * 39),
+                    b"parent %s\ntree %s\n\nm\n" % (first.encode(), tree.encode())):
+            with self.subTest(raw=raw):
+                sha = S.put(objects, "commit", raw)
+                with self.assertRaises(P.PulledError) as cm:
+                    G.parents(objects.__getitem__, sha)
+                self.assertEqual(cm.exception.reasons, ["commit_unreadable"])
+        with self.assertRaises(P.PulledError) as cm:
+            G.parents(objects.__getitem__, "c" * 40)
+        self.assertEqual(cm.exception.reasons, ["object_missing:%s" % ("c" * 40)])
 
 
 class Batch(unittest.TestCase):

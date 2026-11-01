@@ -167,7 +167,7 @@ class CountingState:
 
     commits: int = 0
     files: dict | None = None
-    path: str = "ledger.jsonl"
+    path: str = branches.STATE_LEDGER
 
     @property
     def content(self) -> bytes | None:
@@ -187,7 +187,7 @@ class TargetState:
 
     writer: Any
     head: str
-    path: str = "ledger.jsonl"
+    path: str = branches.STATE_LEDGER
     branch: str = STATE_BRANCH
     commits_made: list[str] = field(default_factory=list)
 

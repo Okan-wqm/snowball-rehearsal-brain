@@ -1,6 +1,7 @@
 """Git objects in git's own format, built in Python (tests only): the object source ``loop.gitobj`` reads.
 
-``store(files)`` -> ``(objects, commit)``: ``objects`` maps sha -> (type, content) for a commit whose tree holds
+``store(files, parents)`` -> ``(objects, commit)``: ``objects`` maps sha -> (type, content) for a commit (on
+``parents``, none by default) whose tree holds
 ``files`` (path -> bytes for a ``100644`` file, or ``(mode, bytes)``; ``"120000"`` is a link, its bytes the
 target); entries are sorted as git sorts them (a tree's name compared with a trailing ``/``). ``RealGit`` checks
 that a tree built here has the id real git gave the same files.
@@ -44,9 +45,9 @@ def tree(objects: dict, entries: list[tuple[bytes, bytes, str]]) -> str:
     return put(objects, "tree", b"".join(m + b" " + n + b"\0" + bytes.fromhex(s) for m, n, s in entries))
 
 
-def commit(objects: dict, tree_sha: str, message: bytes = b"m\n") -> str:
-    return put(objects, "commit", b"tree %s\nauthor %s\ncommitter %s\n\n%s" % (
-        tree_sha.encode(), AUTHOR, AUTHOR, message))
+def commit(objects: dict, tree_sha: str, message: bytes = b"m\n", parents: tuple = ()) -> str:
+    return put(objects, "commit", b"tree %s\n%sauthor %s\ncommitter %s\n\n%s" % (
+        tree_sha.encode(), b"".join(b"parent %s\n" % p.encode() for p in parents), AUTHOR, AUTHOR, message))
 
 
 def _build(objects: dict, files: dict) -> str:
@@ -65,9 +66,10 @@ def _build(objects: dict, files: dict) -> str:
     return tree(objects, [(here[n][0], n.encode(), here[n][1]) for n in order])
 
 
-def store(files: dict) -> tuple[dict, str]:
-    objects: dict = {}
-    return objects, commit(objects, _build(objects, files))
+def store(files: dict, parents: tuple = (), objects: dict | None = None) -> tuple[dict, str]:
+    """``objects`` (a new dict when ``None``) with a commit of ``files`` on ``parents`` added; the commit's id."""
+    objects = {} if objects is None else objects
+    return objects, commit(objects, _build(objects, files), parents=parents)
 
 
 def from_dir(root: str) -> dict:

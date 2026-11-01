@@ -46,7 +46,7 @@ link may point at, and what the tree may hold beyond the names above, stays ``lo
 rule in ``kos``. The whole tree is held in memory.
 
 Not checked here, stated: git ``fsck``'s other name rules (NTFS and HFS spellings of ``.git``, ``.gitmodules``
-as a link), tree entry order, and the commit's signature, author or parents.
+as a link), tree entry order, and the commit's signature and author; its parents are read only by ``parents``.
 """
 
 from __future__ import annotations
@@ -93,6 +93,23 @@ def _tree_sha(commit: bytes) -> str:
     if first.startswith(b"tree ") and SHA.fullmatch(first[5:].decode("ascii", "replace")):
         return first[5:].decode()
     raise PulledError(["commit_unreadable"])
+
+
+def parents(source: Source, commit: str) -> list[str]:
+    """The ids on ``commit``'s ``parent`` lines, in order (git writes them right after the ``tree`` line);
+    ``PulledError`` (``commit_unreadable``: no ``tree`` first line, or a ``parent`` line whose id is not 40
+    lowercase hex; ``object_*``)."""
+    header = read(source, commit, "commit").split(b"\n\n", 1)[0].split(b"\n")
+    _tree_sha(header[0])
+    out = []
+    for line in header[1:]:
+        if not line.startswith(b"parent "):
+            break
+        sha = line[7:].decode("ascii", "replace")
+        if not SHA.fullmatch(sha):
+            raise PulledError(["commit_unreadable"])
+        out.append(sha)
+    return out
 
 
 def parse_tree(data: bytes, sha: str) -> list[tuple[bytes, bytes, str]]:

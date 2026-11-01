@@ -11,10 +11,13 @@
 - the ``cek`` job's D1 accepted-SHA check (``loop.job.cek_d1``): a fake Actions API and verifier, the real
   ``loop.fetch`` and ``loop.gitobj.GitBatch`` with ``git_store``'s test ``git`` holding the brain's commit, the
   checkout's ``setup/imports.jsonl``, ``setup/summary.json`` and ``policy.json``; then the target half: the heads
-  read by ``loop.fetch.heads`` (the fake ``git``'s ``ls-remote`` answer), ``brain/integration``'s head fetched and
+  read by ``loop.fetch.heads`` (the fake ``git``'s ``ls-remote`` answer), ``brain/state``'s head and its parent
+  fetched into their own git directories and verified (``loop.state``'s rules are ``test_loop_state.py``'s; here a
+  genesis head without parent, a rewritten ledger, a missing file and a merge head are ``state_refused`` before the
+  target is fetched, a state commit the fetch did not bring is unusable), ``brain/integration``'s head fetched and
   ``loop.cek.assemble`` run on both repositories' objects, then MF4's judgement of the read-back artifact: agreeing
-  hashes and a recipe the check accepts end ``cycle_not_wired`` with ``accepted``, ``heads``, ``assembled`` and
-  ``profile``, the artifact in the job's work directory (``loop.pulled.read`` takes it) and none in ``out/pulled``;
+  hashes and a recipe the check accepts end ``cycle_not_wired`` with ``accepted``, ``heads``, ``state``,
+  ``assembled`` and ``profile``, the artifact in the job's work directory (``loop.pulled.read`` takes it) and none in ``out/pulled``;
   a different or refused ``referee/``, a broken import, an unknown target or one without a safe ``repo``, a missing
   head, what ``assemble`` refuses, a ``units`` that is not exactly one recipe, a recipe the derivation of the
   assembled tree refuses (no eligible candidate, a path that is none, an input excluded by the agent-configuration
@@ -249,7 +252,7 @@ class CekJob(unittest.TestCase):
                   "targets/t1/units.json": json.dumps({"units": [recipe()]}).encode()},
                  **{"candidates/t1/good/%s" % f: d for f, d in candidate(GOOD).items()})
     TARGET = {p: (json.dumps(v) if isinstance(v, dict) else v).encode() for p, v in TREE.items()}
-    STATE_HEAD = "5" * 40
+    STATE = {"ledger.jsonl": [2, 5], "chain/root.jsonl": [1, 2]}  # rows at genesis, at the head on top of it
 
     def setUp(self) -> None:
         import test_accepted as TA
@@ -265,8 +268,18 @@ class CekJob(unittest.TestCase):
                                      "unit_candidates": []}]}
         with open(os.path.join(self.work, "policy.json"), "wb") as fh:
             fh.write(POLICY)
+        self.state_objects: dict = {}
+        self.state_genesis = self.state_commit({p: n[0] for p, n in self.STATE.items()}, ())
+        self.state_head = self.state_commit({p: n[1] for p, n in self.STATE.items()}, (self.state_genesis,))
 
-    def listing(self, integration: str | None, state: str | None = STATE_HEAD) -> bytes:
+    def state_commit(self, counts: dict, parents: tuple, extra: dict | None = None) -> str:
+        """A ``brain/state`` commit whose chained files hold ``counts`` rows (``loop.state``'s rules)."""
+        content = {p: self.TA.chained([{"row_id": "%s%d" % (p, i), "part": "p"} for i in range(n)])
+                   for p, n in counts.items()}
+        return S.store(dict(content, **(extra or {})), parents, self.state_objects)[1]
+
+    def listing(self, integration: str | None, state: str | None = "head") -> bytes:
+        state = self.state_head if state == "head" else state
         rows = [(state, "refs/heads/brain/state"), (integration, "refs/heads/brain/integration")]
         return b"".join(b"%s\t%s\n" % (sha.encode(), ref.encode()) for sha, ref in rows if sha)
 
@@ -276,7 +289,8 @@ class CekJob(unittest.TestCase):
         tobjects, self.target_commit = S.store(self.TARGET)
         if target is not None:
             tobjects = target
-        answers = {sha: S.batch_record(sha, kind, data) for sha, (kind, data) in dict(objects, **tobjects).items()}
+        answers = {sha: S.batch_record(sha, kind, data)
+                   for sha, (kind, data) in dict(objects, **tobjects, **self.state_objects).items()}
         git = S.install_git(self.bin, answers, exits=exits,
                             listing=self.listing(self.target_commit) if listing is None else listing)
         tree = T.digest([(p, "file", d) for p, d in self.BRAIN.items()])
@@ -310,7 +324,9 @@ class CekJob(unittest.TestCase):
         out, commit, tree = self.run_cek()
         self.assertEqual(out["reason"], "cycle_not_wired")
         self.assertEqual((out["ok"], out["checked"]),
-                         (False, ["accepted_sha", "referee_tree", "heads", "assembled", "profile"]))
+                         (False, ["accepted_sha", "referee_tree", "heads", "state_previous", "assembled", "profile"]))
+        self.assertEqual(out["state"], {"head": self.state_head, "previous": self.state_genesis,
+                                        "rows": {"ledger.jsonl": 5, "chain/root.jsonl": 2}})
         self.assertEqual(out["profile"], {"unit_id": "pkg"})
         self.assertEqual(out["accepted"]["brain_sha"], commit)
         self.assertEqual(out["accepted"]["referee_tree_sha256"], tree)
@@ -320,12 +336,21 @@ class CekJob(unittest.TestCase):
         fetches = [a for a in argvs if "fetch" in a]
         self.assertEqual([(f[-2], f[-1]) for f in fetches],
                          [("https://github.com/o/brain", "%s:refs/pulled" % commit),
+                          ("https://github.com/o/target", "%s:refs/pulled" % self.state_head),
+                          ("https://github.com/o/target", "%s:refs/pulled" % self.state_genesis),
                           ("https://github.com/o/target", "%s:refs/pulled" % self.target_commit)])
+        # each into its own new git directory of the job's work directory, read there
+        dirs = [a.split("=", 1)[1] for f in fetches for a in f if a.startswith("--git-dir=")]
+        self.assertEqual([os.path.basename(d) for d in dirs],
+                         ["brain.git", "state.git", "state-previous.git", "target.git"])
+        batches = [a for a in argvs if "cat-file" in a]
+        for d in dirs[1:3]:
+            self.assertIn(["--git-dir=%s" % d, "cat-file", "--batch"], [b[-3:] for b in batches])
         listings = [a for a in argvs if "ls-remote" in a]
         self.assertEqual(len(listings), 1)
         self.assertEqual(listings[0][-4:], ["--", "https://github.com/o/target", "refs/heads/brain/state",
                                             "refs/heads/brain/integration"])
-        self.assertEqual(out["heads"], {"brain/state": self.STATE_HEAD, "brain/integration": self.target_commit})
+        self.assertEqual(out["heads"], {"brain/state": self.state_head, "brain/integration": self.target_commit})
         self.assertEqual(out["assembled"], {"target": "t1", "commit": self.target_commit, "candidates": ["good"]})
         # the artifact is assembled in the job's work directory, and loop.pulled reads it: the target's tree at
         # brain/integration's head, the brain's units.json and candidate at the accepted commit
@@ -368,6 +393,54 @@ class CekJob(unittest.TestCase):
                 self.assertIn("accepted", out)
                 self.assertEqual(len([c for c in S.calls(self.bin) if "fetch" in c["argv"]]), 1)  # the brain's only
                 self.assertEqual(self.assembled(), [])
+
+    def target_fetched(self) -> bool:
+        return any("%s:refs/pulled" % self.target_commit in c["argv"] for c in S.calls(self.bin))
+
+    def test_a_genesis_head_is_verified_as_chains_only(self):
+        self.state_head = self.state_genesis
+        out, _, _ = self.run_cek()
+        self.assertEqual((out["reason"], out["state"]), ("cycle_not_wired", {
+            "head": self.state_genesis, "previous": None, "rows": {"ledger.jsonl": 2, "chain/root.jsonl": 1}}))
+        self.assertEqual([a[-1] for a in (c["argv"] for c in S.calls(self.bin)) if "fetch" in a][1:2],
+                         ["%s:refs/pulled" % self.state_genesis])
+        self.assertFalse([d for d in os.listdir(os.path.join(self.temp, "work", os.listdir(
+            os.path.join(self.temp, "work"))[0])) if d == "state-previous.git"])
+
+    def test_a_state_that_does_not_verify_is_a_refusal_before_the_target_is_fetched(self):
+        for name, head, reasons in (
+                # the head rewrote its parent's ledger: fewer rows than the parent had
+                ("rewritten", lambda: self.state_commit({"ledger.jsonl": 1, "chain/root.jsonl": 2},
+                                                        (self.state_genesis,)),
+                 ["not_append_only:ledger.jsonl:2"]),
+                ("no roots", lambda: self.state_commit({"ledger.jsonl": 3}, (self.state_genesis,)),
+                 ["file_missing:chain/root.jsonl"]),
+                ("merge", lambda: self.state_commit({"ledger.jsonl": 3, "chain/root.jsonl": 2},
+                                                    (self.state_genesis, self.state_head)),
+                 ["state_merge"])):
+            with self.subTest(name):
+                shutil.rmtree(self.temp)
+                os.makedirs(self.temp)
+                if os.path.exists(os.path.join(self.bin, "calls.jsonl")):
+                    os.remove(os.path.join(self.bin, "calls.jsonl"))
+                self.state_head = head()
+                out, _, _ = self.run_cek()
+                self.assertEqual((out["ok"], out["reason"], out["reasons"]), (False, "state_refused", reasons))
+                self.assertEqual(out["heads"]["brain/state"], self.state_head)
+                self.assertIn("accepted", out)
+                self.assertNotIn("checked", out)
+                self.assertFalse(self.target_fetched())
+                self.assertEqual(self.assembled(), [])
+
+    def test_a_state_commit_the_fetch_did_not_bring_is_no_verdict(self):
+        everything = dict(self.state_objects)
+        for missing in (self.state_head, self.state_genesis):  # the head, then its parent
+            with self.subTest(missing=missing):
+                shutil.rmtree(self.temp)
+                os.makedirs(self.temp)
+                self.state_objects = {k: v for k, v in everything.items() if k != missing}
+                with self.assertRaisesRegex(J.Unusable, "state fetch: object_missing:%s" % missing):
+                    self.run_cek()
 
     def test_the_target_entry(self):
         for summary, reason in (({"targets": []}, "target_unknown"), ({"x": 1}, "summary_unreadable"),

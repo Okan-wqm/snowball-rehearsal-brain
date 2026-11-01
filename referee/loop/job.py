@@ -81,23 +81,30 @@ refused tree is ``pulled_invalid``). Then:
   ``loop.fetch.heads``, ``brain/integration``'s head fetched with ``loop.fetch`` into ``cek-*/target.git``, and
   ``loop.cek.assemble`` run on the two repositories' objects with the checkout's ``policy.json``, writing ``pulled``
   into ``cek-*/pulled``, not into ``out/pulled``: the upload takes the artifact only once D1's other checks pass.
-  An unset variable, a state that is absent, unreadable or unverified, an unreadable checkout file, a failed
-  listing and a failed fetch are unusable (exit 2: 29b's reader stops). Refusals (exit 1): ``imports_broken``,
+  An unset variable, a bootstrap state that is absent, unreadable or unverified, an unreadable checkout file, a
+  failed listing and a failed fetch (of a ``brain/state`` commit too) are unusable (exit 2: 29b's reader stops). Refusals (exit 1): ``imports_broken``,
   ``imports_no_transfer``, ``imports_invalid``, ``referee_tree_refused`` (with the hash's reasons),
   ``referee_tree_mismatch``; ``summary_unreadable``, ``target_unknown``, ``target_ambiguous``,
   ``target_repo_unsafe``; ``head_missing:<branch>`` for each head the target lacks (before genesis it has neither;
-  nothing of the target is fetched); ``pulled_refused`` with ``assemble``'s reasons. Then MF4's judgement: the
+  nothing of the target is fetched). Then MF1's ``verify --previous`` of ``brain/state`` (``loop.state``), before
+  anything else of the target is fetched: its head fetched with ``loop.fetch`` into ``cek-*/state.git``, its one
+  parent (the version the previous cycle verified and extended), when it has one, into
+  ``cek-*/state-previous.git``, and ``ledger.jsonl`` and ``chain/root.jsonl`` each verified as a chain and as an
+  append-only extension of the parent's (a genesis head without parent: as chains only); a refusal is
+  ``state_refused`` with ``loop.state``'s reasons and carries ``heads``. Then ``pulled_refused`` with
+  ``assemble``'s reasons. Then MF4's judgement: the
   assembled artifact is read back as the other jobs read their download (``loop.pulled.read``, exactly one entry of
   ``units``, else ``units_not_one``; the tree extracted by ``loop.pulled.extract_tree`` into ``cek-*/tree``, a tree
   it refuses is ``pulled_invalid``) and the unit gets the static check ``getir`` runs
   (``profile.unit_verify.check_recipe`` with the artifact's policy and ``targets[]`` entry: MF6's recipe rules and,
   on the tree, ``profile.derive check`` of the recipe against the referee's own derivation of that tree; a reason
-  is ``recipe_refused`` with the reasons). A refusal after the assembly carries ``heads`` and ``assembled``. When
-  all of it holds, the line has ``accepted`` (``brain_sha``, ``referee_tree_sha256``, ``result_sha256``,
-  ``artifact_id``), ``heads`` (branch to commit), ``assembled`` (``target``, ``commit``, ``candidates``),
-  ``profile`` (``unit_id``) and ``checked`` ``CEK_CHECKED``, and the job still ends ``cycle_not_wired``, exit 1:
-  the rest of D1 (``verify --previous`` of ``brain/state``'s ledger, the root signature) is not wired, so nothing
-  is uploaded and in a real run ``kos`` is not reached. The proposal stage 0 judges is the recipe alone
+  is ``recipe_refused`` with the reasons). A refusal after the assembly carries ``heads``, ``state`` and
+  ``assembled``. When all of it holds, the line has ``accepted`` (``brain_sha``, ``referee_tree_sha256``,
+  ``result_sha256``, ``artifact_id``), ``heads`` (branch to commit), ``state`` (``head``, ``previous``, ``rows``),
+  ``assembled`` (``target``, ``commit``, ``candidates``), ``profile`` (``unit_id``) and ``checked``
+  ``CEK_CHECKED``, and the job still ends ``cycle_not_wired``, exit 1: the rest of D1 (MF11's root signature: the
+  ledger's root against the last root row and its Rekor entry, which says whether the head is the commit the last
+  cycle wrote) is not wired, so nothing is uploaded and in a real run ``kos`` is not reached. The proposal stage 0 judges is the recipe alone
   (tohum/14); no other profile field is proposed, so none is compared.
 - ``cagir`` stops at once with ``cycle_not_wired`` (exit 1). The D1-D8 composition inside the jobs (building each
   MF's input from the pulled trees and the previous artifacts, and the cycle's one ``brain/state`` commit) has no
@@ -136,6 +143,7 @@ from loop import decide as E
 from loop import fetch as F
 from loop import gitobj as G
 from loop import pulled as P
+from loop import state as ST
 from profile import derive as D
 from profile import unit_verify as U
 from runner import deps_npm as N
@@ -214,7 +222,7 @@ JOBS: dict[str, Job] = {
 CEK_FILES = ("setup/imports.jsonl", "setup/summary.json", "policy.json")
 TARGET_REFS = {b: "refs/heads/" + b for b in (B.STATE, B.INTEGRATION)}
 # What cek's line lists as checked when D1 holds as far as it is wired.
-CEK_CHECKED = ("accepted_sha", "referee_tree", "heads", "assembled", "profile")
+CEK_CHECKED = ("accepted_sha", "referee_tree", "heads", "state_previous", "assembled", "profile")
 
 SECRET_ENV = tuple(sorted({name for job in JOBS.values() for name in job.secrets} | {"GITHUB_TOKEN"}))
 
@@ -539,6 +547,9 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
     missing = ["head_missing:%s" % b for b, head in heads.items() if head is None]
     if missing:
         return dict(_refused(missing), heads=heads)
+    state = _cek_state(url, heads[B.STATE], root, git, environ)
+    if "reason" in state:
+        return dict(state, heads=heads)
     target_dir = os.path.join(root, "target.git")
     commit = heads[B.INTEGRATION]
     try:
@@ -562,8 +573,36 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
     if not refused:
         refused = _extract(art, tree) or _recipe_refused(art, unit, tree, "cek")
     if refused:
-        return dict(refused, heads=heads, assembled=assembled)
-    return {"heads": heads, "assembled": assembled, "profile": {"unit_id": unit["unit_id"]}}
+        return dict(refused, heads=heads, state=state, assembled=assembled)
+    return {"heads": heads, "state": state, "assembled": assembled, "profile": {"unit_id": unit["unit_id"]}}
+
+
+def _cek_state(url: str, head: str, root: str, git: str, environ: dict[str, str]) -> dict[str, Any]:
+    """MF1's ``verify --previous`` of the target's ``brain/state`` (``loop.state``): its head fetched into
+    ``cek-*/state.git``, its parent, when it has one, into ``cek-*/state-previous.git``; ``loop.state.verify``'s
+    line or ``{reason: state_refused, reasons}``."""
+    dirs = [os.path.join(root, d) for d in ("state.git", "state-previous.git")]
+    _fetch_state(dirs[0], url, head, git, environ)
+    with G.GitBatch(dirs[0], git=git, environ=environ) as source:
+        try:
+            prev = ST.parent(source, head)
+            if prev is None:
+                return ST.verify(source, head)
+        except P.PulledError as exc:
+            return {"reason": "state_refused", "reasons": exc.reasons}
+        _fetch_state(dirs[1], url, prev, git, environ)
+        with G.GitBatch(dirs[1], git=git, environ=environ) as previous:
+            try:
+                return ST.verify(source, head, previous, prev)
+            except P.PulledError as exc:
+                return {"reason": "state_refused", "reasons": exc.reasons}
+
+
+def _fetch_state(git_dir: str, url: str, sha: str, git: str, environ: dict[str, str]) -> None:
+    try:
+        F.fetch(git_dir, url, sha, git=git, environ=environ)
+    except P.PulledError as exc:
+        raise Unusable("cek: state fetch: %s" % ", ".join(exc.reasons)) from None
 
 
 def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None,

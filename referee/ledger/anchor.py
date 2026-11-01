@@ -50,10 +50,11 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from ledger import append, chain
+from target import branches
 import cli
 
-LEDGER_PATH = "ledger.jsonl"
-ROOTS_PATH = "chain/root.jsonl"
+LEDGER_PATH = branches.STATE_LEDGER
+ROOTS_PATH = branches.STATE_ROOTS
 REASONS = ("root_mismatch", "entry_missing", "entry_root_mismatch", "identity_mismatch")
 
 
