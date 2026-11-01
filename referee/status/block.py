@@ -5,7 +5,7 @@ Rules: tohum/29n (``status``: the fields, the block's markers and bytes, the edi
 asama-0/14 row 16, asama-0/09 test 42, tohum/26a (``status.block``: reads the ledger, writes the block of
 ``status.md`` on ``brain/state``), tohum/15 and tohum/01b (the block is written only by ``status.block``), tohum/26c
 and tohum/27 (``setup/imports.jsonl`` is the human touch counter). Calls 10 -> 16: the rows and the file go into the
-cycle's one ``brain/state`` commit through ``ledger.append``.
+cycle's one ``brain/state`` commit through ``ledger.cycle`` (which chains them with ``ledger.append``).
 
 **Fields** (``fields``), from the ledger's rows and ``imports.jsonl``'s alone; an ``events`` row is one with
 ``part: events``:
@@ -36,12 +36,12 @@ line per field, every value written as JSON with every non-ASCII character and `
 a code span.
 
 **Render** (``render``) reads and writes nothing else: it does not verify the ledger or ``imports.jsonl`` as chains
-(``ledger.append`` does, tohum/29i). **The cycle** (``plan``, ``status_cycle``): the ledger must be a valid chain
+(``ledger.append`` does, tohum/29i). **The cycle** (``plan``): the ledger must be a valid chain
 extending ``previous`` (``ledger.append.HardStop`` otherwise, before anything else is read); the cycle's own rows
 count as the ledger's last rows; the new ``status.md`` is the old one with the block replaced (``regenerate``), or
 the markers and the block followed by the old file when it had no block; the rows appended after the cycle's are a
-``status_edited`` row (when edited) and the ``status`` row; then ``ledger.append.plan_cycle`` (chain, secret scan)
-and one ``state.commit_files`` call with the ledger and ``status.md``. A refusal at any step commits nothing.
+``status_edited`` row (when edited) and the ``status`` row. ``plan`` writes nothing: ``ledger.cycle`` chains its rows
+(``ledger.append``) and commits ``status.md`` with the ledger and the signed root in the cycle's one commit.
 
 Out of scope here, stated: the other lines of tohum/20's top section, tohum/07's ``main`` commits since the cut (no
 stage 0 producer, asama-0/01:37), who writes ``cycle_start`` and ``decision`` rows (the cycle and the gate; this
@@ -259,19 +259,6 @@ def plan(ledger: bytes, previous: bytes, rows: Any, status: bytes | None, import
     new.append(dict(common, row_id=facts["row_id"], kind=KIND, payload={"block_sha256": _sha(block)}))
     return dict(f, edited=e["edited"], event=e["event"], block=block, block_sha256=_sha(block),
                 status=regenerate(status, block), rows=rows + new)
-
-
-def status_cycle(ledger: bytes, previous: bytes, rows: Any, status: bytes | None, imports: bytes, facts: Any,
-                 state: Any, message: str = "ledger: one cycle, status block") -> dict:
-    """``plan`` and the cycle's one ``brain/state`` commit (ledger and ``status.md``); returns ``plan``'s result
-    without ``rows``, with ``row_hashes`` of the stored rows."""
-    planned = plan(ledger, previous, rows, status, imports, facts)
-    request = json.dumps({"rows": planned["rows"]}, sort_keys=True).encode("utf-8")
-    cycle = append.plan_cycle(ledger, previous, lambda: request)
-    state.commit_files({state.path: cycle.content, STATUS_PATH: planned["status"]}, message)
-    out = {k: v for k, v in planned.items() if k != "rows"}
-    out["row_hashes"] = cycle.row_hashes
-    return out
 
 
 # ---------------------------------------------------------------- command line

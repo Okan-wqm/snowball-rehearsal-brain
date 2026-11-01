@@ -29,9 +29,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ledger import anchor as AN  # noqa: E402
 from ledger import append as AP  # noqa: E402
-from ledger import chain  # noqa: E402
-from target import write as W  # noqa: E402
-from fake_github import FakeGitHub  # noqa: E402
 
 ZERO = "0" * 64
 WORKFLOW = "https://github.com/acme/referee/.github/workflows/loop.yml@refs/heads/main"
@@ -204,107 +201,6 @@ class Verify(unittest.TestCase):
         for case in cases:
             with self.subTest(case=case), self.assertRaises(AN.Unusable):
                 self.check(**case)
-
-
-class Reader:
-    def __init__(self, data):
-        self.data, self.calls = data, 0
-
-    def __call__(self):
-        self.calls += 1
-        return self.data
-
-
-def req(*rows):
-    return json.dumps({"rows": list(rows)}).encode()
-
-
-class Cycle(unittest.TestCase):
-    def run_cycle(self, signer, roots=b"", previous_roots=b"", row_id="r1", ledger=LEDGER, reader=None):
-        state = AP.CountingState()
-        reader = reader or Reader(req({"row_id": "n1", "part": "events"}))
-        out = AN.anchor_cycle(ledger, ledger, roots, previous_roots, reader, signer, state, row_id, "2026-10-30T12:00:00Z")
-        return out, state, reader
-
-    def test_one_commit_holds_the_rows_and_the_signed_root(self):
-        signer = AN.FakeSigner(True, WORKFLOW, "uuid-1")
-        out, state, _ = self.run_cycle(signer)
-        self.assertEqual(state.commits, 1)
-        self.assertEqual(set(state.files), {"ledger.jsonl", "chain/root.jsonl"})
-        new_ledger, roots = state.files["ledger.jsonl"], state.files["chain/root.jsonl"]
-        self.assertTrue(chain.verify_bytes(new_ledger, LEDGER)["valid"])
-        self.assertEqual(AN.tips(new_ledger)["events"], out["row_hashes"][0])
-        self.assertEqual(out["root"], AN.root_of(AN.tips(new_ledger)))
-        self.assertNotEqual(out["root"], AN.root_of(AN.tips(LEDGER)))
-        self.assertEqual(signer.payloads, [out["root"].encode()])
-        self.assertTrue(chain.verify_bytes(roots)["valid"])
-        row = json.loads(roots)
-        self.assertEqual({k: row[k] for k in ("row_id", "ts", "root", "rekor_uuid", "prev_hash")},
-                         {"row_id": "r1", "ts": "2026-10-30T12:00:00Z", "root": out["root"], "rekor_uuid": "uuid-1",
-                          "prev_hash": ZERO})
-        self.assertEqual(set(row), {"row_id", "ts", "root", "rekor_uuid", "prev_hash", "row_hash"})
-        rekor = {"entries": {out["entry"]["uuid"]: out["entry"]}}
-        self.assertEqual(AN.verify(new_ledger, roots, rekor, WORKFLOW), {"valid": True, "reasons": []})
-        # the next cycle chains its root row onto this one
-        state2 = AP.CountingState()
-        out2 = AN.anchor_cycle(new_ledger, new_ledger, roots, roots, Reader(req({"row_id": "n2", "part": "cost"})),
-                               AN.FakeSigner(True, WORKFLOW, "uuid-2"), state2, "r2", "2026-10-30T13:00:00Z")
-        roots2 = state2.files["chain/root.jsonl"]
-        self.assertTrue(chain.verify_bytes(roots2, roots)["valid"])
-        self.assertEqual(json.loads(roots2.splitlines()[1])["prev_hash"], row["row_hash"])
-        rekor["entries"]["uuid-2"] = out2["entry"]
-        self.assertTrue(AN.verify(state2.files["ledger.jsonl"], roots2, rekor, WORKFLOW)["valid"])
-        # the old ledger against the new record: the tip moved
-        self.assertEqual(AN.verify(new_ledger, roots2, rekor, WORKFLOW)["reasons"], ["root_mismatch"])
-
-    def test_unsignable_commits_nothing(self):
-        state = AP.CountingState()
-        with self.assertRaises(AN.Unsignable):
-            AN.anchor_cycle(LEDGER, LEDGER, b"", b"", Reader(req({"row_id": "n1", "part": "x"})), AN.FakeSigner(False),
-                            state, "r1", "t")
-        self.assertEqual((state.commits, state.files), (0, None))
-
-    def test_a_rewritten_root_file_stops_before_the_request(self):
-        roots = roots_file(("a" * 64, "u1"), ("b" * 64, "u2"))
-        rewritten = roots_file(("c" * 64, "u1"), ("b" * 64, "u2"))  # a valid chain, not an extension
-        for current, previous in ((rewritten, roots), (roots[:-10], roots), (roots.replace(b"u2", b"u3"), roots)):
-            state, reader, signer = AP.CountingState(), Reader(b"not json"), AN.FakeSigner(True, WORKFLOW, "u")
-            with self.assertRaises(AP.HardStop):
-                AN.anchor_cycle(LEDGER, LEDGER, current, previous, reader, signer, state, "r9", "t")
-            self.assertEqual((reader.calls, state.commits, signer.payloads), (0, 0, []))
-
-    def test_a_repeated_root_row_id_or_no_ts_commits_nothing(self):
-        roots = roots_file(("a" * 64, "u1"))
-        state = AP.CountingState()
-        for row_id in ("r1", "", None):
-            with self.assertRaises(AN.Unusable):
-                AN.anchor_cycle(LEDGER, LEDGER, roots, roots, Reader(req({"row_id": "n1", "part": "x"})),
-                                AN.FakeSigner(True, WORKFLOW, "u"), state, row_id, "t")
-        for ts in ("", None, 7):
-            with self.assertRaises(AN.Unusable):
-                AN.anchor_cycle(LEDGER, LEDGER, roots, roots, Reader(req({"row_id": "n1", "part": "x"})),
-                                AN.FakeSigner(True, WORKFLOW, "u"), state, "r2", ts)
-        self.assertEqual(state.commits, 0)
-
-    def test_on_the_target(self):
-        gh = FakeGitHub("acme/toy")
-        main = gh.seed_commit("t0")
-        gh.refs["main"] = main
-        head = gh.seed_commit("s0", files={"ledger.jsonl": LEDGER, "status.md": b"s\n"})
-        gh.refs["brain/state"] = head
-        wr = W.Writer("acme/toy", gh)
-        with self.assertRaises(AN.Unsignable):
-            AN.anchor_cycle(LEDGER, LEDGER, b"", b"", Reader(req({"row_id": "n1", "part": "x"})), AN.FakeSigner(False),
-                            AP.TargetState(wr, head), "r1", "t")
-        self.assertEqual(gh.requests, [])
-        out = AN.anchor_cycle(LEDGER, LEDGER, b"", b"", Reader(req({"row_id": "n1", "part": "x"})),
-                              AN.FakeSigner(True, WORKFLOW, "uuid-1"), AP.TargetState(wr, head), "r1", "t")
-        self.assertEqual(sum(1 for r in gh.requests if r[0] == "POST" and r[1].endswith("/git/commits")), 1)
-        self.assertEqual(gh.commits[gh.refs["brain/state"]]["parents"], [head])
-        ledger, roots = gh.read_file("brain/state", "ledger.jsonl"), gh.read_file("brain/state", "chain/root.jsonl")
-        self.assertEqual(gh.read_file("brain/state", "status.md"), b"s\n")
-        self.assertEqual(gh.refs["main"], main)
-        self.assertTrue(AN.verify(ledger, roots, {"entries": {"uuid-1": out["entry"]}}, WORKFLOW)["valid"])
 
 
 class CommandLine(unittest.TestCase):

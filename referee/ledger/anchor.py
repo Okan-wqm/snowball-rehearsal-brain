@@ -23,12 +23,11 @@ chain break or a root that cannot be written to Rekor is a hard stop), tohum/26 
   ``chain/root.jsonl`` itself (``ledger.chain verify`` reads it, tohum/27a) and how the entries were fetched
   from Rekor. The order and the root rule are ``judge``'s, which the next cycle's D1 calls with the entry it reads
   from Rekor itself (``loop.rekor``: there the entry's hash and identity are judged by ``sigstore``).
-- **The cycle** (``anchor_cycle``, calls 10 -> 11): ``chain/root.jsonl`` is checked as an append-only valid chain
-  of its previous version, then ``ledger.append.plan_cycle`` (which checks the ledger before it reads the
-  request), then the root of the new ledger is signed, then one chained root row ``{row_id, ts, root,
-  rekor_uuid, prev_hash, row_hash}`` is appended, and both files go to the state writer in one
-  ``commit_files`` call: the signed root is in the cycle's one ``brain/state`` commit. A hard stop at any step
-  commits nothing. Writing the hard-stop row itself (tohum/28) is the caller's.
+- **The root row** (``root_row``): one chained row ``{row_id, ts, root, rekor_uuid, prev_hash, row_hash}`` appended
+  to ``chain/root.jsonl``; ``root_row_reasons`` refuses a repeated or empty ``row_id`` and an empty ``ts``. The
+  cycle that signs the new ledger's root and commits both files with ``status.md`` in the cycle's one
+  ``brain/state`` commit is ``ledger.cycle`` (calls 10 -> 11, 16). Writing the hard-stop row itself (tohum/28) is
+  the caller's.
 
 Command line (tohum/29j), run from ``referee/``, one JSON line on stdout, the cause on stderr::
 
@@ -185,35 +184,30 @@ def verify(ledger: bytes, roots: bytes, rekor: Any, pin: str) -> dict:
     return {"valid": found["valid"], "reasons": found["reasons"]}
 
 
-# ---------------------------------------------------------------- the cycle (calls 10 -> 11)
+# ---------------------------------------------------------------- the root row (the cycle's: ledger.cycle)
+
+def root_row_reasons(roots: bytes, row_id: Any, ts: Any) -> list[str]:
+    """Why a root row ``row_id``/``ts`` cannot be appended to ``roots``: a repeated or empty id, an empty ts."""
+    old = [chain.parse_row(line.decode("utf-8")) for line in chain._lines(roots)]
+    out = []
+    if not isinstance(row_id, str) or not row_id or any(r.get("row_id") == row_id for r in old):
+        out.append("root row_id must be a new non-empty string")
+    if not isinstance(ts, str) or not ts:
+        out.append("root ts must be a non-empty string")
+    return out
+
 
 def root_row(roots: bytes, row_id: str, ts: str, root: str, rekor_uuid: str) -> bytes:
     """``roots`` with one chained root row appended (RFC 8785 line, ``ledger.chain``)."""
+    reasons = root_row_reasons(roots, row_id, ts)
+    if reasons:
+        raise Unusable("; ".join(reasons))
     old = [chain.parse_row(line.decode("utf-8")) for line in chain._lines(roots)]
-    if not isinstance(row_id, str) or not row_id or any(r.get("row_id") == row_id for r in old):
-        raise Unusable("root row_id must be a new non-empty string")
-    if not isinstance(ts, str) or not ts:
-        raise Unusable("root ts must be a non-empty string")
     row = {"row_id": row_id, "ts": ts, "root": _root_text(root), "rekor_uuid": rekor_uuid,
            "prev_hash": old[-1]["row_hash"] if old else chain.ZERO_HASH}
     row["row_hash"] = chain.row_hash(row)
     joint = b"\n" if roots and not roots.endswith(b"\n") else b""
     return roots + joint + chain.canonical(row) + b"\n"
-
-
-def anchor_cycle(ledger: bytes, previous: bytes, roots: bytes, previous_roots: bytes,
-                 read_request: Callable[[], bytes], signer: Any, state: Any, row_id: str, ts: str,
-                 message: str = "ledger: one cycle, anchored root") -> dict:
-    """One anchored cycle, one ``state.commit_files`` call; returns ``{row_hashes, root, entry}``."""
-    verdict = chain.verify_bytes(roots, previous_roots)
-    if not verdict["valid"]:
-        raise append.HardStop("roots: %s (%s)" % (verdict["reason"], verdict["broken_row"]))
-    cycle = append.plan_cycle(ledger, previous, read_request)
-    root = root_of(tips(cycle.content))
-    entry = anchor(root, signer)
-    new_roots = root_row(roots, row_id, ts, root, entry["uuid"])
-    state.commit_files({LEDGER_PATH: cycle.content, ROOTS_PATH: new_roots}, message)
-    return {"row_hashes": cycle.row_hashes, "root": root, "entry": entry}
 
 
 # ---------------------------------------------------------------- command line

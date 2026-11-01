@@ -35,10 +35,7 @@ sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ledger import append as AP  # noqa: E402
-from ledger import chain  # noqa: E402
 from status import block as SB  # noqa: E402
-from target import write as W  # noqa: E402
-from fake_github import FakeGitHub  # noqa: E402
 
 ZERO = "0" * 64
 TOKEN = "ghp_" + "Q7x" * 12  # a GitHub token shape, not a real token
@@ -245,49 +242,6 @@ class Cycle(unittest.TestCase):
             ("st1:edited", "status_edited", {"found_sha256": sha(b"hand\n"), "recorded_sha256": None}),
             ("st1", "status", {"block_sha256": sha(edited["block"])})])
         self.assertEqual(edited["status"], OPEN + edited["block"] + CLOSE + b"docs\n")
-
-    def test_refusals_commit_nothing(self):
-        state = AP.CountingState()
-        tampered = LEDGER.replace(b'"decision":"merge"', b'"decision":"revert"', 1)
-        with self.assertRaises(AP.HardStop):
-            SB.status_cycle(tampered, LEDGER, [], None, IMPORTS, facts(), state)
-        with self.assertRaises(AP.HardStop):  # the ledger is checked before the facts are read
-            SB.status_cycle(tampered, LEDGER, [], None, IMPORTS, None, state)
-        with self.assertRaises(AP.SecretRow):
-            SB.status_cycle(LEDGER, LEDGER, [ev("n", "decision", note=TOKEN)], None, IMPORTS, facts(), state)
-        with self.assertRaises(AP.Unusable):  # a row id the ledger already has
-            SB.status_cycle(LEDGER, LEDGER, [], None, IMPORTS, facts(row_id="d1"), state)
-        for bad in (facts(extra=1), facts(ts="now"), facts(row_id=""), facts(canary_cap_usd_micros=-1),
-                    {k: v for k, v in facts().items() if k != "snapshot_id"}):
-            with self.assertRaises(SB.Unusable):
-                SB.status_cycle(LEDGER, LEDGER, [], None, IMPORTS, bad, state)
-        with self.assertRaises(SB.Unusable):
-            SB.status_cycle(LEDGER, LEDGER, [], OPEN + b"x\n", IMPORTS, facts(), state)
-        self.assertEqual(state.commits, 0)
-
-    def test_two_cycles_on_the_target_and_a_hand_edit_between(self):
-        gh = FakeGitHub("acme/toy")
-        gh.refs["main"] = main = gh.seed_commit("t0")
-        gh.refs["brain/state"] = head = gh.seed_commit("s0", files={"ledger.jsonl": LEDGER})
-        wr = W.Writer("acme/toy", gh)
-        first = SB.status_cycle(LEDGER, LEDGER, [], None, IMPORTS, facts(), AP.TargetState(wr, head))
-        self.assertFalse(first["edited"])
-        self.assertEqual(gh.read_file("brain/state", "status.md"), OPEN + first["block"] + CLOSE)
-        self.assertEqual(sum(1 for r in gh.requests if r[0] == "POST" and r[1].endswith("/git/commits")), 1)
-        ledger1 = gh.read_file("brain/state", "ledger.jsonl")
-        hand = OPEN + first["block"].replace(b"released", b"fine") + CLOSE + b"## Report\n"
-        gh.refs["brain/state"] = gh.seed_commit("s-hand", [gh.refs["brain/state"]],
-                                                files={"ledger.jsonl": ledger1, "status.md": hand})
-        second = SB.status_cycle(ledger1, ledger1, [], gh.read_file("brain/state", "status.md"), IMPORTS,
-                                 facts(row_id="st2"), AP.TargetState(wr, gh.refs["brain/state"]))
-        self.assertTrue(second["edited"])
-        self.assertEqual(gh.read_file("brain/state", "status.md"), OPEN + second["block"] + CLOSE + b"## Report\n")
-        ledger2 = gh.read_file("brain/state", "ledger.jsonl")
-        self.assertTrue(chain.verify_bytes(ledger2, ledger1)["valid"])
-        edited = [json.loads(line) for line in ledger2.splitlines() if b'"status_edited"' in line]
-        self.assertEqual(edited[-1]["payload"], {"found_sha256": sha(first["block"].replace(b"released", b"fine")),
-                                                 "recorded_sha256": sha(first["block"])})
-        self.assertEqual(gh.refs["main"], main)
 
 
 def run(args, stdin=b'{"canary_cap_usd_micros":500000}'):

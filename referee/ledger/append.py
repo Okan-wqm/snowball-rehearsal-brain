@@ -30,7 +30,7 @@ A cycle, in this order (``append_cycle``):
 State writers: ``CountingState`` counts commits and keeps the last commit's files, touching neither disk nor network
 (the vector's writer, asama-0/14 "Kum"); ``TargetState`` commits the file through ``target.write``'s
 ``Writer.commit_files`` on ``brain/state`` at the head the ledger was read from. Both also take
-``commit_files(files, message)``: one commit of several files (``ledger.anchor.anchor_cycle`` adds the root
+``commit_files(files, message)``: one commit of several files (``ledger.cycle`` adds the root
 file). Reading ``brain/state`` is the caller's job (the ``yaz`` job's checkout); this module never reads the target.
 
 Command line (tohum/29i), run from ``referee/``, one JSON line on stdout, the cause on stderr::

@@ -76,10 +76,9 @@ objects), no transfer row or one whose ``referee_tree_sha256`` is not 64 lowerca
    ``integration_cut {branch, base_sha}``, ``ratchet_base {base_run_sha256, counts}``, one ``decision`` per
    candidate (``{decision: merge, candidate, path, pull, head_sha, merge_sha}`` or ``{decision: reject, candidate,
    reasons}`` with ``cause`` the first of ``REJECT_CAUSES`` that matches a reason, else ``unknown``), then
-   ``status.block.plan``'s rows (MF16); every row's payload is checked by ``ledger.schema``, the chained ledger
-   again; ``ledger.append.plan_cycle`` chains them (secret scan); the root is signed (``ledger.anchor``) and its
-   row written; ``ledger.jsonl``, ``chain/root.jsonl`` and ``status.md`` go in one orphan commit that opens
-   ``brain/state``.
+   ``status.block.plan``'s rows (MF16); ``ledger.cycle.plan`` over an empty ledger and roots file chains them
+   (secret scan), checks the whole ledger against ``ledger.schema``, signs the root and writes its row;
+   ``ledger.jsonl``, ``chain/root.jsonl`` and ``status.md`` go in one orphan commit that opens ``brain/state``.
 
 A failure after step 4 raises ``HardStop`` carrying the refs already written (tohum/25a's failure rule leaves them
 to the operator; step 3 refuses a retry).
@@ -108,7 +107,7 @@ import sys
 from typing import Any
 
 from gate import check, diffguard
-from ledger import anchor, append, chain, schema
+from ledger import anchor, append, chain, cycle, schema
 from loop import accepted
 from profile import derive, unit_verify
 from status import block
@@ -196,9 +195,6 @@ def _row(cycle: dict, suffix: str, kind: str, payload: dict, cause: str | None =
            "evidence_refs": []}
     if cause is not None:
         row["cause"] = cause
-    reasons = schema.payload_reasons("events", kind, payload)
-    if reasons:
-        raise Unusable("%s row: %s" % (kind, "; ".join(reasons)))
     return row
 
 
@@ -404,25 +400,6 @@ def land(writer: write.Writer, cid: str, path: str, content: bytes, cut: str, ch
 
 # ---------------------------------------------------------------- the state commit
 
-def state_files(rows: list[dict], imports: bytes, facts: dict, signer: Any, root_row_id: str) -> dict:
-    """The files of the orphan ``brain/state``: ``status.block`` rows added, chained, schema-checked, root signed."""
-    planned = block.plan(b"", b"", rows, None, imports, facts)
-    for row in planned["rows"]:
-        reasons = schema.payload_reasons(row.get("part"), row.get("kind"), row.get("payload"))
-        if reasons:
-            raise Unusable("row %s: %s" % (row.get("row_id"), "; ".join(reasons)))
-    request = json.dumps({"rows": planned["rows"]}, sort_keys=True).encode("utf-8")
-    cycle = append.plan_cycle(b"", b"", lambda: request)
-    reasons = schema.ledger_reasons(cycle.content)
-    if reasons:
-        raise Unusable("ledger: %s" % "; ".join(reasons))
-    root = anchor.root_of(anchor.tips(cycle.content))
-    entry = anchor.anchor(root, signer)
-    roots = anchor.root_row(b"", root_row_id, facts["ts"], root, entry["uuid"])
-    return {"files": {anchor.LEDGER_PATH: cycle.content, anchor.ROOTS_PATH: roots, block.STATUS_PATH: planned["status"]},
-            "row_hashes": cycle.row_hashes, "root": root, "entry": entry}
-
-
 # ---------------------------------------------------------------- activation
 
 def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates: list[dict], tree: str, signer: Any, control: Any, check_name: str,
@@ -485,9 +462,11 @@ def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates
             decisions.append(payload)
         facts = {"ts": req["ts"], "snapshot_id": req["snapshot_id"], "row_id": "%s:status" % req["cycle_id"],
                  "canary_cap_usd_micros": canary_cap_usd_micros}
-        state = state_files(rows, files["imports.jsonl"], facts, signer, "%s:root" % req["cycle_id"])
+        state = cycle.plan(b"", b"", b"", b"", None, rows, files["imports.jsonl"], facts, signer,
+                           "%s:root" % req["cycle_id"])
         sha = writer.open_orphan(STATE, state["files"], "genesis: cycle %s" % req["cycle_id"])
-    except (write.ApiError, write.Refused, Unusable, HardStopBase, block.Unusable, anchor.Unusable) as exc:
+    except (write.ApiError, write.Refused, Unusable, HardStopBase, block.Unusable, anchor.Unusable,
+            cycle.Unusable) as exc:
         raise HardStop("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     return {"state_sha": sha, "integration_sha": cut, "row_hashes": state["row_hashes"], "root": state["root"],
             "entry": state["entry"], "decisions": decisions, "files": state["files"]}

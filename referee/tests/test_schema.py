@@ -29,7 +29,7 @@ import activate  # noqa: E402
 import activation_world as AW  # noqa: E402
 from dispatcher import llm_call  # noqa: E402
 from harness import revert_drill  # noqa: E402
-from ledger import chain, schema  # noqa: E402
+from ledger import chain, cycle, schema  # noqa: E402
 from status import block  # noqa: E402
 
 
@@ -182,10 +182,11 @@ class Artifacts(unittest.TestCase):
         with self.assertRaises(activate.HardStop):
             w.run()
         self.assertNotIn("brain/state", w.gh.refs)
-        with self.assertRaises(activate.Unusable):
-            activate.state_files([dict(self.row("decision", "merge"), payload={"decision": "merge", "candidate": "x"})],
-                                 AW.World().imports, {"ts": AW.TS, "snapshot_id": "s", "row_id": "1:status",
-                                                      "canary_cap_usd_micros": 0}, AW.World().signer, "1:root")
+        with self.assertRaises(cycle.Unusable):
+            cycle.plan(b"", b"", b"", b"", None,
+                       [dict(self.row("decision", "merge"), payload={"decision": "merge", "candidate": "x"})],
+                       AW.World().imports, {"ts": AW.TS, "snapshot_id": "s", "row_id": "1:status",
+                                            "canary_cap_usd_micros": 0}, AW.World().signer, "1:root")
 
 
 if __name__ == "__main__":
