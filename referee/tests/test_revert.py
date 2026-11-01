@@ -9,6 +9,8 @@
   first parent's tree, on a branch, with a pull request carrying the cause; after the gate's check and merge,
   ``brain/integration`` has the first parent's tree again; green, flaky and too few runs send nothing; the red
   tests are the sentinel's, not the caller's; unusable facts and a merge that is not the head write nothing;
+- ``assess``: the same verdict and cause with nothing sent; ``lint`` null (the totals unreadable) is ``unknown``
+  unless the build broke, the other facts still checked; the command line refuses a null ``lint``;
 - the command line's outputs and exits 0/2.
 """
 
@@ -207,6 +209,33 @@ class Revert(unittest.TestCase):
         out = R.revert_red(wr, [empty] * 4, dict(FACTS, build_ok=False), merge, "brain/integration",
                            "brain/c/revert-1")
         self.assertEqual((out["verdict"], out["red"], out["cause"]), ("red", [], "build_break"))
+
+
+class Assess(unittest.TestCase):
+    """``assess``: the verdict and the cause before anything is written; a red whose lint totals are unreadable."""
+
+    def test_the_cause_without_writing(self):
+        self.assertEqual(R.assess([RED_A] * 4, FACTS), {"revert": True, "verdict": "red", "red": ["a"],
+                                                        "cause": R.cause(dict(FACTS, red_tests=["a"]))})
+        self.assertEqual(R.assess([GREEN_RUN], None), {"revert": False, "verdict": "green", "red": [], "cause": None})
+
+    def test_unreadable_lint_is_unknown_unless_the_build_broke(self):
+        rising = dict(FACTS, lint={"eslint": {"before": 0, "after": 9}})
+        self.assertEqual(R.assess([RED_A] * 4, rising)["cause"], "lint_regression")
+        # without the totals neither lint_regression nor a later rule can be stated: unknown, not test_regression
+        self.assertEqual(R.cause(dict(FACTS, red_tests=["a"], lint={})), "test_regression")
+        self.assertEqual(R.assess([RED_A] * 4, dict(FACTS, lint=None))["cause"], "unknown")
+        self.assertEqual(R.assess([RED_A] * 4, dict(FACTS, lint=None, build_ok=False))["cause"], "build_break")
+
+    def test_unreadable_lint_keeps_the_other_shapes(self):
+        for facts in (dict(FACTS, lint=None, build_ok="no"), dict(FACTS, lint=None, impact=[""]),
+                      {"impact": ["a"], "lint": None}):
+            with self.subTest(facts=facts), self.assertRaises(R.Unusable):
+                R.assess([RED_A] * 4, facts)
+
+    def test_the_command_line_takes_no_null_lint(self):
+        code, out, _ = cli(json.dumps(dict(req(red=["a"], impact=["a"]), lint=None)).encode(), "cause")
+        self.assertEqual((code, out), (2, {"cause": None}))
 
 
 class CommandLine(unittest.TestCase):

@@ -33,7 +33,7 @@ from loop import pulled as P  # noqa: E402
 from profile import unit_verify as V  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, RAISES, diff, recipe  # noqa: E402
-from test_loop_kos import TARGET, Base, RedAs, candidate, state_files  # noqa: E402
+from test_loop_kos import HEADS, TARGET, Base, RedAs, candidate, state_files  # noqa: E402
 from test_revert_drill import plant, reverted  # noqa: E402
 from test_serial import M1, START, merge  # noqa: E402
 from test_loop_cagir import policy  # noqa: E402
@@ -229,14 +229,21 @@ class YazJob(YazBase):
         self.assertEqual((out["ok"], out["reason"], out["done"], out["merge"]),
                          (False, "cycle_not_wired", ["D5", "D6"], "good"))
         self.assertEqual(self.reasons(out), {"good": [], "breaks": ["tests_red"]})
-        reverted_merge = [START, merge("c1", M1), reverted("r1", M1, "test_regression")]
-        for rows, want in (([START, merge("c1", M1)], "sentinel_pending"),       # the activation's merge
-                           ([START, plant("p1", "i1", M1)], "sentinel_pending"),  # the drill's planted merge
+        # kos and yaz read the same state: an unfinished merge is the head's, whose sentinel kos ran (green here)
+        head = HEADS["brain/integration"]
+        reverted_merge = [START, merge("c1", head), reverted("r1", head, "test_regression")]
+        for rows, want in (([START, merge("c1", head)], "sentinel_pending"),       # the activation's merge
+                           ([START, plant("p1", "i1", head)], "sentinel_pending"),  # the drill's planted merge
                            (reverted_merge, None)):
             with self.subTest(rows=[r["row_id"] for r in rows]):
-                self.with_ledger(rows)
+                shutil.rmtree(self.pulled)
+                shutil.rmtree(self.results())
+                self.kos({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)}, state=state_files(rows))
+                self.github()
                 out = self.run_yaz()
                 self.assertEqual(out["done"], ["D5", "D6"])
+                self.assertEqual(out["sentinel"] and (out["sentinel"]["merge_sha"], out["sentinel"]["verdict"]),
+                                 want and (head, "green"))
                 if want:
                     self.assertEqual((out["merge"], self.reasons(out)),
                                      (None, {"good": [want], "breaks": [want, "tests_red"]}))

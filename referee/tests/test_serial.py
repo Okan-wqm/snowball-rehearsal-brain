@@ -5,7 +5,9 @@ written by ``ledger.append`` (the cycle's writer) with rows of ``ledger.schema``
 - a gate merge and a planted drill merge are unfinished until a later revert names them; order is file order;
 - a ledger that is not a chain, or holds a row of no known type or of a wrong shape, answers nothing (``Unusable``);
 - a revert of no earlier merge (also one written before its merge) and the same SHA merged twice answer nothing;
-- the reasons are all collected.
+- the reasons are all collected;
+- ``lint_before``: the merge's own cycle's last ratchet base before it; none for another cycle's, a later one, a
+  merge without a cycle start or a planted merge; a SHA no merge row names and an unreadable ledger answer nothing.
 """
 
 from __future__ import annotations
@@ -81,6 +83,46 @@ class Unfinished(unittest.TestCase):
         self.assertEqual(self.refused(ledger_with([reverted("r2", M2, "unknown"), merge("c1", M1), merge("c3", M1)])),
                          ["finish_without_merge:%s" % M2, "merged_twice:%s" % M1])
 
+
+
+def ratchet(row_id: str, counts: dict) -> dict:
+    return row(row_id, "events", "ratchet_base", {"base_run_sha256": "e" * 64, "counts": counts})
+
+
+def start(row_id: str) -> dict:
+    return row(row_id, "events", "cycle_start", {"cycle_id": row_id})
+
+
+class LintBefore(unittest.TestCase):
+    """``lint_before``: the ratchet base of the merge's own cycle, else ``None``."""
+
+    def before(self, sha: str, *rows: dict):
+        return SE.lint_before(ledger_with(list(rows)), sha)
+
+    def test_the_merges_cycle_ratchet_base(self):
+        self.assertEqual(self.before(M1, start("s1"), ratchet("b1", {"eslint": 4}), merge("c1", M1)), {"eslint": 4})
+        # the last one before the merge in that cycle; a later cycle's does not count
+        rows = (start("s1"), ratchet("b1", {"eslint": 4}), ratchet("b2", {"eslint": 2}), merge("c1", M1),
+                start("s2"), ratchet("b3", {"eslint": 9}), merge("c2", M2))
+        self.assertEqual((self.before(M1, *rows), self.before(M2, *rows)), ({"eslint": 2}, {"eslint": 9}))
+
+    def test_none_without_its_own_cycles_ratchet_base(self):
+        # an earlier cycle's ratchet base is another base; a ratchet base after the merge is not its before
+        self.assertIsNone(self.before(M1, start("s1"), ratchet("b1", {"eslint": 4}), start("s2"), merge("c1", M1)))
+        self.assertIsNone(self.before(M1, start("s1"), merge("c1", M1), ratchet("b1", {"eslint": 4})))
+        self.assertIsNone(self.before(M1, merge("c1", M1)))
+
+    def test_a_planted_merge_has_none(self):
+        self.assertIsNone(self.before(M2, start("s1"), ratchet("b1", {"eslint": 4}), plant("p1", "i1", M2)))
+
+    def test_refusals(self):
+        for ledger, want in ((ledger_with([START, merge("c1", M1)]), ["not_merged:%s" % M2]),
+                             (ledger_with([START, reject("c1")]), ["not_merged:%s" % M2])):
+            with self.subTest(want=want), self.assertRaises(SE.Unusable) as ctx:
+                SE.lint_before(ledger, M2)
+            self.assertEqual(ctx.exception.reasons, want)
+        with self.assertRaises(SE.Unusable):
+            SE.lint_before(ledger_with([row("x", "events", "nope", {})]), M1)
 
 if __name__ == "__main__":
     unittest.main()

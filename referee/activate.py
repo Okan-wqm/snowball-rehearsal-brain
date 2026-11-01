@@ -312,16 +312,11 @@ def genesis(transport: Any, files: dict[str, bytes], target_id: Any) -> dict:
 
 
 def ratchet_base(base_run: bytes, base_run_sha256: str) -> dict:
-    """``{reasons, counts}``: step 2 of the activation."""
-    if _sha(base_run) != base_run_sha256:
-        return {"reasons": ["base_run_hash_mismatch"], "counts": None}
+    """``{reasons, counts}``: step 2 of the activation (``gate.check.base_counts``)."""
     try:
-        run, same = check.run_file(base_run, "base.jsonl")
+        return check.base_counts(base_run, base_run_sha256)
     except check.Unusable as exc:
         raise Unusable(cli.cause(exc)) from None
-    if not same:
-        return {"reasons": ["tool_nondeterministic"], "counts": None}
-    return {"reasons": [], "counts": {run["tool"]: len(run["violations"])}}
 
 
 # ---------------------------------------------------------------- the ready candidates
@@ -396,8 +391,7 @@ def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates
         rows = [events.row(req, "genesis", "genesis", gen["payload"]),
                 events.start(req),
                 events.row(req, "cut", "integration_cut", {"branch": INTEGRATION, "base_sha": cut}),
-                events.row(req, "ratchet", "ratchet_base", {"base_run_sha256": req["base_run_sha256"],
-                                                            "counts": base["counts"]})]
+                events.ratchet_base(req, req["base_run_sha256"], base["counts"])]
         merges, decisions = [], []
         for cand in sorted(candidates, key=lambda c: c["id"]):
             got = decide(cand, files["base.jsonl"], profile, recipe, control, merges, tree)

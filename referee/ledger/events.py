@@ -1,14 +1,16 @@
-"""The loop's ``events`` rows of a cycle, built in one place (stage 0; written by ``activate`` and D6 of ``yaz``).
+"""The loop's ``events`` rows of a cycle, built in one place (stage 0; written by ``activate`` and D6 and D7 of
+``yaz``).
 
-Rules: tohum/26 (the ledger row; ``cause`` from its closed set on a failed event: a reject), ``ledger.schema``
-(``events`` ``cycle_start`` and ``decision``: the shapes these rows must have; ``ledger.cycle`` checks them before
-anything is signed), asama-0/08 (a reject's reasons).
+Rules: tohum/26 (the ledger row; ``cause`` from its closed set on a failed or reverted event: a reject, a revert),
+``ledger.schema`` (``events`` ``cycle_start``, ``ratchet_base``, ``decision`` and ``revert``: the shapes these rows
+must have; ``ledger.cycle`` checks them before anything is signed), asama-0/08 (a reject's reasons).
 
 ``row(cycle, suffix, kind, payload, cause)``: ``row_id`` ``<cycle_id>:<suffix>``, ``ts`` and ``snapshot_id`` the
 cycle's, ``part`` ``events``, ``derivation`` ``tool``, ``trust`` ``verified``, no evidence refs; ``cause`` only when
-given. ``decision(cycle, cid, reasons, merged)``: a reject (``{decision: reject, candidate, reasons}``, row suffix
-``c:<cid>``) with ``cause(reasons)``, or a merge (``{decision: merge, candidate, path, pull, head_sha, merge_sha}``
-from ``merged``, ``target.land``'s answer and the path) without cause.
+given. ``ratchet_base(cycle, base_run_sha256, counts)`` (row suffix ``ratchet``) and ``revert(cycle, merge_sha,
+cause)`` (suffix ``revert``, with the cause). ``decision(cycle, cid, reasons, merged)``: a reject (``{decision:
+reject, candidate, reasons}``, row suffix ``c:<cid>``) with ``cause(reasons)``, or a merge (``{decision: merge,
+candidate, path, pull, head_sha, merge_sha}`` from ``merged``, ``target.land``'s answer and the path) without cause.
 
 **A reject's cause** (``cause``): the first entry of ``REJECT_CAUSES`` one of whose reasons it matches, else
 ``unknown``. The rules are exact, by name, so a reason of another writer that only looks alike is not taken:
@@ -56,6 +58,18 @@ def cause(reasons: list[str]) -> str:
 
 def start(cycle: dict) -> dict:
     return row(cycle, "start", "cycle_start", {"cycle_id": cycle["cycle_id"]})
+
+
+def ratchet_base(cycle: dict, base_run_sha256: str, counts: dict) -> dict:
+    """The lint totals of the base the cycle judged (``activate``'s step 2; D6 in a cycle that merges): a later
+    revert's lint before (``ledger.serial.lint_before``)."""
+    return row(cycle, "ratchet", "ratchet_base", {"base_run_sha256": base_run_sha256, "counts": counts})
+
+
+def revert(cycle: dict, merge_sha: str, cause: str) -> dict:
+    """D7's revert of ``merge_sha`` with ``gate.revert``'s cause: the row that finishes its sentinel
+    (``ledger.serial``)."""
+    return row(cycle, "revert", "revert", {"merge_sha": merge_sha}, cause)
 
 
 def decision(cycle: dict, cid: str, reasons: list[str], merged: Any = None) -> dict:

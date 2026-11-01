@@ -69,8 +69,8 @@ the verdict, ``reasons`` ``[]`` and the file's sha256. No verdict (``verdict`` a
 base did not stage (the staging's reasons), when a run tells nothing (any reason of the contained run,
 ``red_control_green`` included: a sandbox a known bad command passed judges no test), or when the runs are not
 ``gate.sentinel``'s shape (``sentinel_unusable``: two top-level TAP lines with one description); the runs stop at
-the first run that tells nothing. Who reads the verdict (``yaz``'s half of D7: the revert on red, the row that ends
-a green or flaky run, seed-043) is not here.
+the first run that tells nothing. Who reads the verdict is ``yaz``'s half of D7 (``loop.watch``: the revert on red;
+the row that ends a green or flaky run is not named, seed-043), not this module.
 
 Caller: ``loop.job``'s ``kos`` (D3, D7), which reads the ``pulled`` artifact (``loop.pulled``) and passes the one
 ``deps`` artifact directory under the download (``runner.deps_npm.artifact_in``), and ``watch`` from
@@ -111,6 +111,7 @@ TAP_LINE = re.compile(r"(not ok|ok) ([0-9]+)(?: - (.*))?\Z")
 SKIPPED = ("skip", "todo")
 INDEX = "index.json"
 SENTINEL = "sentinel.json"
+BASE = "base.jsonl"
 MERGE_SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 
@@ -326,7 +327,7 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
         index: dict[str, Any] = {"base_run_sha256": None, "candidates": {}, "sentinel": None}
         if records and not reasons:
             base_run = R.run_file(records)
-            with open(os.path.join(out, "base.jsonl"), "xb") as fh:
+            with open(os.path.join(out, BASE), "xb") as fh:
                 fh.write(base_run)
             index["base_run_sha256"] = sha256(base_run)
         index["base"] = _verdict(reasons)

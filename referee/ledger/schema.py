@@ -18,10 +18,12 @@ writes no row whose shape is not written here. Each type gives its payload's key
 other key), each key's shape, and whether ``cause`` is required (a failed or reverted event, tohum/26; for a
 ``decision`` only when it is a reject). The words are the seed's vector pages' choices, which tohum/26 does not
 list yet (tohum/29m, 29n, 29o: "26'ya girmelidir"): the ``drill`` ``commit`` and ``plant`` payloads and the
-``events`` ``revert`` row are ``harness.revert_drill``'s (MF14, 29m); the ``cost`` payload is ``llm.call``'s (MF15,
+``events`` ``revert`` row are ``harness.revert_drill``'s (MF14, 29m; the loop's D7 writes the same revert row,
+``ledger.events.revert``); the ``cost`` payload is ``llm.call``'s (MF15,
 its ``usd_micros`` the field 29n's brake sums); ``status`` and ``status_edited`` are ``status.block``'s (MF16, 29n);
 ``genesis`` is 29o's twelve keys, and ``cycle_start``, ``integration_cut``, ``ratchet_base`` and ``decision``
-(``payload.decision`` is the field 29n reads) are ``activate``'s (MF18). Kinds no writer here produces (``rival``,
+(``payload.decision`` is the field 29n reads) are ``activate``'s (MF18; D6 writes ``cycle_start``, ``ratchet_base``
+and ``decision`` with the same builders, ``ledger.events``). Kinds no writer here produces (``rival``,
 ``accept``, ``freeze``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
 writer and its shape are added. The founder row is a session's, not the loop's: its shape and writer are
 ``ledger.founder``'s, built on ``ROW_FIELDS`` below.

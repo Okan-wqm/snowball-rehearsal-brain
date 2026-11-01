@@ -3,8 +3,8 @@ on the in-process GitHub at ``pulled``'s heads, after ``kos`` ran the candidates
 pieces D6 shares with ``activate`` (``ledger.events``, ``target.land``).
 
 - a cycle with a merge: the candidate's branch, pull request, check and merge on ``brain/integration``, then one
-  ``brain/state`` commit on the head D1 read: the rows in order (cycle start, decisions, the response's cost row,
-  status), the whole ledger of ``ledger.schema``, an append-only extension, the root signed once and its row, the
+  ``brain/state`` commit on the head D1 read: the rows in order (cycle start, the base's ratchet base, decisions, the
+  response's cost row, status), the whole ledger of ``ledger.schema``, an append-only extension, the root signed once and its row, the
   ``status.md`` block, and the merge unfinished for the next cycle, which merges nothing and writes its own commit;
 - a cycle without a merge writes only ``brain/state``;
 - nothing is written when a head moved (a rerun of the same cycle included), when the response is not this cycle's,
@@ -12,12 +12,20 @@ pieces D6 shares with ``activate`` (``ledger.events``, ``target.land``).
   the merge is a hard stop naming the refs written; a block edited by hand is regenerated and recorded;
 - ``ledger.events.cause``: each rule by name, ``kos:`` reasons and look-alikes are ``unknown``; every reason
   ``gate.diffguard.path_reasons`` gives is in ``PATH_REASONS``;
+- D7's red (``loop.watch``, ``target.land.revert``): a cycle merges a candidate whose affected test fails; the next
+  cycle's ``kos`` watches the merge at the head and its sentinel is red; ``yaz`` reverts it (the revert commit has
+  the first parent's tree, its pull request is checked and merged) and writes the ``revert`` row with the cause from
+  the facts (the impact set, the lint before from the merge's ``ratchet_base`` row and after from the base run),
+  which finishes the merge; a green sentinel is left and stays unfinished (seed-043); a sentinel file that is
+  missing, changed or not its index's hash is refused before any write; ``target.land.revert`` of runs that are
+  not red (green, too few, flaky) writes nothing;
 - ``target.land.applied``: one file applied; more than one file, a missing or linked base, a hunk that does not
   apply, a creation and an unusable diff each refused with their reason.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -41,8 +49,9 @@ from loop import pulled as P  # noqa: E402
 from status import block as SB  # noqa: E402
 from target import branches as B  # noqa: E402
 from target import land as LN  # noqa: E402
+from target import write as W  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
-from test_kos import BREAKS_TEST, GOOD, diff  # noqa: E402
+from test_kos import BREAKS_TEST, GOOD, diff, recipe  # noqa: E402
 from test_loop_kos import A_JS, HEADS, candidate  # noqa: E402
 from test_loop_yaz import OPEN, YazBase  # noqa: E402
 import yaz_world as YW  # noqa: E402
@@ -64,7 +73,9 @@ def rows_of(data: bytes) -> list[dict]:
     return [json.loads(line) for line in data.splitlines()]
 
 
-class D6(YazBase):
+class StateBase(YazBase):
+    """``yaz`` on a target whose ``brain/state`` is ``genesis_state``'s, as D1 hands it over."""
+
     def setUp(self) -> None:
         super().setUp()
         self.state = genesis_state()
@@ -94,6 +105,8 @@ class D6(YazBase):
     def state_file(self, path: str) -> bytes:
         return self.gh.read_file(B.STATE, path)
 
+
+class D6(StateBase):
     def test_a_cycle_merges_and_writes_one_state_commit(self):
         out = self.cycle({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
         self.assertEqual((out["ok"], out["reason"], out["done"], out["merge"]),
@@ -118,15 +131,23 @@ class D6(YazBase):
         self.assertEqual(SC.ledger_reasons(new), [])
         added = rows_of(new)[len(rows_of(old)):]
         self.assertEqual([(r["row_id"], r["kind"]) for r in added],
-                         [("9-1:start", "cycle_start"), ("9-1:c:breaks", "decision"), ("9-1:c:good", "decision"),
-                          ("cagir-9-1", "cost"), ("9-1:status", "status")])
-        self.assertEqual(added[1]["payload"], {"decision": "reject", "candidate": "breaks", "reasons": ["tests_red"]})
-        self.assertEqual(added[1]["cause"], "test_regression")
-        self.assertEqual(added[2]["payload"], dict(merge, decision="merge"))
-        self.assertNotIn("cause", added[2])
+                         [("9-1:start", "cycle_start"), ("9-1:ratchet", "ratchet_base"), ("9-1:c:breaks", "decision"),
+                          ("9-1:c:good", "decision"), ("cagir-9-1", "cost"), ("9-1:status", "status")])
+        # the merge's lint before: the base kos ran, its sha256 and its first record's violations per tool
+        with open(self.results("base.jsonl"), "rb") as fh:
+            base_run = fh.read()
+        first = json.loads(base_run.splitlines()[0])
+        counts = {first["tool"]: len(first["violations"])}
+        self.assertEqual(added[1]["payload"], {"base_run_sha256": hashlib.sha256(base_run).hexdigest(), "counts": counts})
+        self.assertEqual(counts, {first["tool"]: 1})  # pkg/a.js's one var
+        self.assertEqual(SE.lint_before(new, merge["merge_sha"]), counts)
+        self.assertEqual(added[2]["payload"], {"decision": "reject", "candidate": "breaks", "reasons": ["tests_red"]})
+        self.assertEqual(added[2]["cause"], "test_regression")
+        self.assertEqual(added[3]["payload"], dict(merge, decision="merge"))
+        self.assertNotIn("cause", added[3])
         self.assertEqual({(r["ts"], r["snapshot_id"]) for r in added if r["part"] == "events"},
                          {(YW.TS, HEADS[B.INTEGRATION])})
-        self.assertEqual(written["rows"], 5)
+        self.assertEqual((written["rows"], written["revert"]), (6, None))
         # the root of the new ledger, signed once, its row appended; status.md's block is the last status row's
         root = AN.root_of(AN.tips(new))
         self.assertEqual(self.signer.payloads, [root.encode()])
@@ -278,6 +299,121 @@ class D6(YazBase):
         self.github()
         self.assertEqual(self.run_yaz()["reason"], "target_repo_unsafe")
         self.assertEqual(self.gh.requests, [])
+
+
+# D7: the affected tests at the head; "SENTINEL_RED" in pkg/a.js fails one, which the candidate's own test command
+# (pkg/run_tests.py) does not read, so a candidate carrying it merges and its sentinel is red in the next cycle.
+SENTINEL_PY = r'''import sys
+red = "SENTINEL_RED" in open("pkg/a.js").read()
+print("ok 1 - a loads")
+print(("not ok" if red else "ok") + " 2 - a holds at the head")
+sys.exit(1 if red else 0)
+'''
+SENTINEL_UNITS = {"units": [recipe(affected_test_cmd=["python", "pkg/sentinel.py"])]}
+RED_AT_HEAD = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // SENTINEL_RED"])
+
+
+class D7(StateBase):
+    """Cycle 9-1 merges a candidate; cycle 10-1's ``kos`` runs the sentinel at the merge (the head) and ``yaz``
+    reads it: red is reverted with its cause in the cycle's one ``brain/state`` commit."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        write_tree(self.src, {"pkg/sentinel.py": SENTINEL_PY})
+
+    def merged_then_watched(self, cand: bytes) -> tuple[dict, dict]:
+        """Cycle 9-1 merges ``cand``; then cycle 10-1's ``kos`` on the merged tree at the new heads. Returns
+        ``(cycle 9-1's written, the new heads)``; ``self.state`` is cycle 9-1's state."""
+        self.kos({"c": candidate(cand)}, units=SENTINEL_UNITS)
+        self.control(OPEN)
+        self.github()
+        first = self.run_yaz()
+        self.assertEqual((first["merge"], first["sentinel"]), ("c", None), first)
+        merged = self.gh.read_file(B.INTEGRATION, "pkg/a.js")
+        write_tree(self.src, {"pkg/a.js": merged.decode()})  # the tree kos pulls next is the merge's
+        self.state = {p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}
+        heads = {b: self.gh.refs[b] for b in P.HEAD_BRANCHES}
+        shutil.rmtree(self.pulled)
+        shutil.rmtree(self.results())
+        self.kos({}, heads=heads, units=SENTINEL_UNITS)
+        art = P.read(self.pulled)
+        YW.write_response(self.temp, "t1", art.heads, [YW.cost_row("cagir-10-1", art.heads[B.INTEGRATION])])
+        return first["written"], heads
+
+    def test_a_red_merge_is_reverted_with_its_cause(self):
+        first, heads = self.merged_then_watched(RED_AT_HEAD)
+        merge_sha = first["merge"]["merge_sha"]
+        self.assertEqual(heads[B.INTEGRATION], merge_sha)
+        with open(self.results("sentinel.json")) as fh:
+            self.assertEqual(json.load(fh)["verdict"], "red")
+        old_ledger = self.state[B.STATE_LEDGER]
+        out = self.run_yaz(GITHUB_RUN_ID="10")
+        self.assertEqual((out["reason"], out["done"], out["merge"]), ("cycle_not_wired", ["D5", "D6"], None))
+        [ratchet] = [r for r in rows_of(old_ledger) if r["kind"] == "ratchet_base"]
+        (name, before), = ratchet["payload"]["counts"].items()
+        self.assertEqual(out["sentinel"], {
+            "merge_sha": merge_sha, "verdict": "red", "red": ["a holds at the head"], "flaky": [],
+            "facts": {"impact": ["a holds at the head", "a loads"], "build_ok": True,
+                      "lint": {name: {"before": before, "after": 0}}}})
+        self.assertEqual(before, 1)  # the base's var; the merged a.js has none
+        revert = out["written"]["revert"]
+        self.assertEqual((revert["reverted"], revert["cause"]), (merge_sha, "test_regression"))
+        # brain/integration: the revert commit (the merge's first parent's tree) merged by pull request after the check
+        self.assertEqual(self.gh.refs[B.INTEGRATION], revert["merge_sha"])
+        self.assertEqual(self.gh.commits[revert["commit"]]["parents"], [merge_sha])
+        self.assertEqual(self.gh.commits[revert["commit"]]["tree"], self.gh.commits[HEADS[B.INTEGRATION]]["tree"])
+        self.assertEqual(self.gh.read_file(B.INTEGRATION, "pkg/a.js"), A_JS.encode())
+        self.assertEqual(self.gh.refs["brain/revert/" + merge_sha], revert["commit"])
+        self.assertEqual(self.gh.pulls[revert["pull"]]["head"], "brain/revert/" + merge_sha)
+        self.assertEqual([(c["name"], c["head_sha"], c["conclusion"]) for c in self.gh.checks][-1],
+                         (B.CHECK, revert["commit"], "success"))
+        # brain/state: one commit; the revert row with its cause finishes the merge, so the next cycle may merge
+        new = self.state_file(B.STATE_LEDGER)
+        self.assertTrue(CH.verify_bytes(new, old_ledger)["valid"])
+        self.assertEqual(SC.ledger_reasons(new), [])
+        added = rows_of(new)[len(rows_of(old_ledger)):]
+        self.assertEqual([(r["row_id"], r["kind"]) for r in added],
+                         [("10-1:start", "cycle_start"), ("10-1:revert", "revert"), ("cagir-10-1", "cost"),
+                          ("10-1:status", "status")])
+        self.assertEqual((added[1]["payload"], added[1]["cause"]), ({"merge_sha": merge_sha}, "test_regression"))
+        self.assertEqual(SE.unfinished(new), [])
+        self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [heads[B.STATE]])
+
+    def test_a_green_merge_is_left_and_stays_unfinished(self):
+        _, heads = self.merged_then_watched(GOOD)
+        out = self.run_yaz(GITHUB_RUN_ID="10")
+        self.assertEqual((out["sentinel"]["verdict"], out["written"]["revert"]), ("green", None))
+        self.assertEqual(self.gh.refs[B.INTEGRATION], heads[B.INTEGRATION])
+        self.assertEqual(len(SE.unfinished(self.state_file(B.STATE_LEDGER))), 1)  # seed-043: no row ends a green
+
+    def test_a_sentinel_it_cannot_verify_writes_nothing(self):
+        self.merged_then_watched(RED_AT_HEAD)
+        path = self.results("sentinel.json")
+        with open(path, "rb") as fh:
+            kept = fh.read()
+        for changed, want in ((None, ["sentinel_hash_mismatch"]), (kept + b" ", ["sentinel_hash_mismatch"]),
+                              (kept.replace(b'"red"', b'"green"', 1), ["sentinel_hash_mismatch"])):
+            with self.subTest(want=want, removed=changed is None):
+                if os.path.exists(path):
+                    os.remove(path)
+                if changed is not None:
+                    with open(path, "wb") as fh:
+                        fh.write(changed)
+                writes = len(self.writes())
+                out = self.run_yaz(GITHUB_RUN_ID="10")
+                self.assertEqual((out["reason"], out["reasons"], out["done"]), ("sentinel_refused", want, ["D5"]))
+                self.assertEqual(len(self.writes()), writes)
+
+
+class LandRevert(unittest.TestCase):
+    def test_runs_that_are_not_red_write_nothing(self):
+        gh = YW.github_at(HEADS, {"pkg/a.js": A_JS.encode()})
+        writer = W.Writer(YW.REPO, gh)
+        passing, failing = {"results": [{"id": "a", "status": "pass"}]}, {"results": [{"id": "a", "status": "fail"}]}
+        for runs in ([passing], [failing], [failing, passing, passing, passing]):  # green, rerun, flaky
+            with self.subTest(runs=len(runs)), self.assertRaises(LN.Unusable):
+                LN.revert(writer, HEADS[B.INTEGRATION], runs, None, B.CHECK)
+        self.assertEqual([m for m, _, _ in gh.requests if m != "GET"], [])
 
 
 class Cause(unittest.TestCase):

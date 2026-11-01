@@ -63,32 +63,38 @@ refused tree is ``pulled_invalid``). Then:
   unfinished merge is ``brain/integration``'s head (the tree ``pulled`` carries), ``runner.kos.results`` runs D7's
   sentinel there (``watch``: ``sentinel.json`` and the index's ``sentinel``); any other set of unfinished merges is
   ``sentinel_unplaced`` with ``unfinished:<sha>`` reasons, exit 1, nothing run (a red could not be laid on one
-  merge). Its index is in the output (``index``) and ``done`` is ``["D3"]``. ``yaz``'s half of D7 (reading the
-  verdict) and D8 (the drill) are not wired, so the job still ends ``cycle_not_wired``, exit 1, after D3: the upload
-  step does not run and ``yaz`` gets nothing.
+  merge). Its index is in the output (``index``) and ``done`` is ``["D3"]``. D8 (the drill) is not wired, so the job
+  still ends ``cycle_not_wired``, exit 1, after D3: the upload step does not run and ``yaz`` gets nothing (``yaz``'s
+  half of D7, below, reads the verdict once it does).
 - ``yaz`` runs D5 (``yaz_d5``): it reads ``control.json`` from the ``control`` step's clone
   (``$RUNNER_TEMP/control/control.json``; unreadable is unusable, exit 2), ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
-  (the same refusals, the same one unit), extracts the tree under ``$RUNNER_TEMP/work`` and calls ``loop.decide``
-  on ``$RUNNER_TEMP/in/results``: ``decisions`` (every candidate's ``decision`` and ``reasons``) and ``merge`` are in
-  the output and ``done`` is ``["D5"]``. Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
-  ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it),
-  read before the tree is judged; a ledger it cannot read is ``state_refused`` with its reasons (exit 1), nothing
-  decided. A merge is unfinished until its revert row: the end of a green sentinel has no row until D7 writes one,
-  so after the first merge no candidate merges. Then D6 (``yaz_d6``): it needs ``YAZ_ENV`` set (``WRITER_TOKEN``, the
+  (the same refusals, the same one unit), extracts the tree under ``$RUNNER_TEMP/work`` and calls ``loop.decide`` on
+  ``$RUNNER_TEMP/in/results``: ``decisions`` (every candidate's ``decision`` and ``reasons``) and ``merge`` are in the
+  output and ``done`` is ``["D5"]``. Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
+  ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it), read
+  before the tree is judged; a ledger it cannot read is ``state_refused`` with its reasons (exit 1), nothing decided. A
+  merge is unfinished until its revert row: the end of a green sentinel has no row until D7 writes one, so after the
+  first merge no candidate merges. Then D7's half (``yaz_d7``, ``loop.watch``): the merge watched is chosen from the
+  same state by ``kos``'s rule (``_watched``; ``sentinel_unplaced`` likewise), and the results' sentinel read by its
+  hash and judged again by MF12 (``loop.watch.read``; a reason is ``sentinel_refused`` with it, exit 1, nothing
+  written); the output's ``sentinel`` is ``null`` (nothing watched) or ``{merge_sha, verdict, red?, flaky?, reasons?}``,
+  with ``facts`` (``loop.watch.facts``: impact, ``build_ok``, lint before and after) on a red, which D6 reverts. A green
+  or flaky verdict writes nothing (seed-043). Then D6 (``yaz_d6``): it needs ``YAZ_ENV`` set (``WRITER_TOKEN``, the
   writer App's token of step 2; Actions' own ``GITHUB_REPOSITORY``, ``GITHUB_WORKSPACE``, ``GITHUB_RUN_ID`` and
   ``GITHUB_RUN_ATTEMPT``; unset is unusable), reads ``$RUNNER_TEMP/in/response`` (``cagir``'s download) with
-  ``loop.cagir.read_response`` against ``pulled`` (a refusal is ``response_invalid`` with its reasons, nothing
-  written) and the checkout's ``setup/imports.jsonl``, and calls ``loop.write_cycle.write`` with a
-  ``target.write.Writer`` on the ``targets[]`` entry's ``repo`` (``target_repo_unsafe`` when it is no repository
-  name) over ``target.write.HttpTransport`` with that token, the signer ``loop.sign.SigstoreSigner`` pinned to
-  ``loop.yml`` on ``$GITHUB_REPOSITORY``'s ``main`` (``loop.accepted.workflow_identity``, the identity the next
-  cycle's D1 verifies the root against), the cycle id ``<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`` and the clock's
-  time: the merge, if D5 chose one, and the cycle's one ``brain/state`` commit. Its refusals before any write
+  ``loop.cagir.read_response`` against ``pulled`` (a refusal is ``response_invalid`` with its reasons, nothing written)
+  and the checkout's ``setup/imports.jsonl``, and calls ``loop.write_cycle.write`` with a ``target.write.Writer`` on the
+  ``targets[]`` entry's ``repo`` (``target_repo_unsafe`` when it is no repository name) over
+  ``target.write.HttpTransport`` with that token, the base's lint totals (``loop.watch.base_lint``: D6's
+  ``ratchet_base`` row of a cycle that merges) and D7's red, the signer ``loop.sign.SigstoreSigner`` pinned to
+  ``loop.yml`` on ``$GITHUB_REPOSITORY``'s ``main`` (``loop.accepted.workflow_identity``, the identity the next cycle's
+  D1 verifies the root against), the cycle id ``<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`` and the clock's time: the merge,
+  if D5 chose one, or the revert of D7's red, and the cycle's one ``brain/state`` commit. Its refusals before any write
   (``head_moved:<branch>``, ``state_unwritable: ...``) are ``write_refused`` with the reasons; a hard stop
   (``target.land.HardStop``: a chain break, a root that cannot be signed, a write that failed after the first) is
-  ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. On success the
-  line carries ``written`` (``loop.write_cycle``'s answer) and ``done`` ``["D5", "D6"]``; D7 and D8 are not
-  wired, so the job still ends ``cycle_not_wired``, exit 1.
+  ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. On success the line
+  carries ``written`` (``loop.write_cycle``'s answer) and ``done`` ``["D5", "D6"]``; D7's end of a green sentinel and D8
+  are not wired, so the job still ends ``cycle_not_wired``, exit 1.
 - ``cek`` runs D1 (``cek_d1``), and with it the whole job. First the accepted-SHA check: it reads the bootstrap
   referee's last signed state with ``loop.accepted.read_state`` (the Actions API of ``$GITHUB_REPOSITORY`` with the
   job's ``GITHUB_TOKEN``, ``actions: read``; the artifact verified by ``sigstore`` on PATH), fetches the accepted
@@ -200,6 +206,7 @@ from loop import pulled as P
 from loop import rekor as RK
 from loop import sign as SG
 from loop import state as ST
+from loop import watch as WT
 from loop import write_cycle as WC
 from profile import derive as D
 from profile import unit_verify as U
@@ -574,12 +581,40 @@ def yaz_d5(environ: dict[str, str]) -> tuple[dict[str, Any], Any, str | None]:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
+def yaz_d7(environ: dict[str, str], art: Any) -> tuple[dict[str, Any], dict | None, dict | None]:
+    """D7's half in ``yaz`` (see the module docstring): ``({sentinel} or {reason, reasons}, red, base_lint)``:
+    ``red`` the revert D6 writes (``{merge_sha, runs, facts}``) or ``None``; ``base_lint`` ``loop.watch.base_lint``
+    of the results."""
+    results = _dir(environ, "in", "results")
+    unfinished, refused = _unfinished(art)
+    if not refused:
+        watch, refused = _watched(unfinished, art.heads[B.INTEGRATION])
+    if refused:
+        return refused, None, None
+    try:
+        seen = WT.read(results, watch)
+    except WT.Refused as exc:
+        return {"reason": "sentinel_refused", "reasons": exc.reasons}, None, None
+    lint = WT.base_lint(results)
+    if seen is None or seen["verdict"] != "red":
+        return {"sentinel": seen and {k: v for k, v in seen.items() if k != "runs"}}, None, lint
+    try:
+        facts = WT.facts(seen, art.state[B.STATE_LEDGER], lint)
+    except SE.Unusable as exc:
+        return {"reason": "state_refused", "reasons": exc.reasons}, None, None
+    line = {k: v for k, v in seen.items() if k != "runs"}
+    return {"sentinel": dict(line, facts=facts)}, {"merge_sha": seen["merge_sha"], "runs": seen["runs"],
+                                                   "facts": facts}, lint
+
+
 YAZ_ENV = ("WRITER_TOKEN", "GITHUB_REPOSITORY", "GITHUB_WORKSPACE", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
 
 
 def yaz_d6(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
-           signer: Any = None, now: Any = None) -> dict[str, Any]:
-    """D6 of ``yaz`` (see the module docstring): ``{reason, reasons, written?}`` or ``{written}``. ``transport``
+           signer: Any = None, now: Any = None, base_lint: dict | None = None,
+           red: dict | None = None) -> dict[str, Any]:
+    """D6 of ``yaz``, with D7's revert ``red`` (see the module docstring): ``{reason, reasons, written?}`` or
+    ``{written}``. ``transport``
     is the target's API (``target.write.HttpTransport`` with ``WRITER_TOKEN`` when ``None``), ``signer`` the root's
     (``loop.sign.SigstoreSigner`` pinned to ``loop.yml`` on ``$GITHUB_REPOSITORY`` when ``None``), ``now`` the
     clock."""
@@ -604,7 +639,7 @@ def yaz_d6(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any], tra
     ts = (now or (lambda: datetime.datetime.now(datetime.timezone.utc)))().strftime("%Y-%m-%dT%H:%M:%SZ")
     cycle_id = "%s-%s" % (environ["GITHUB_RUN_ID"], environ["GITHUB_RUN_ATTEMPT"])
     try:
-        return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts)}
+        return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, red)}
     except WC.Refused as exc:
         return {"reason": "write_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
@@ -837,10 +872,13 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         d5, art, tree = yaz_d5(environ)
         if "reason" in d5:
             return dict(result, **d5)
-        d6 = yaz_d6(environ, art, tree, d5, transport, signer, now)
+        d7, red, lint = yaz_d7(environ, art)
+        if "reason" in d7:
+            return dict(result, done=["D5"], **d5, **d7)
+        d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, red)
         if "reason" in d6:
-            return dict(result, done=["D5"], **d5, **d6)
-        return dict(result, reason="cycle_not_wired", done=["D5", "D6"], **d5, **d6)
+            return dict(result, done=["D5"], **d5, **d7, **d6)
+        return dict(result, reason="cycle_not_wired", done=["D5", "D6"], **d5, **d7, **d6)
     raise Unusable("job %r has no entry" % name)
 
 

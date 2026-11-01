@@ -204,6 +204,20 @@ def run_file(raw: bytes, name: str) -> tuple[dict, bool]:
     return run, all(line == lines[0] for line in lines)
 
 
+def base_counts(base_run: bytes, base_run_sha256: str) -> dict:
+    """``{reasons, counts}``: the lint totals of a base run file (``base.jsonl``) whose sha256 must be
+    ``base_run_sha256`` (``base_run_hash_mismatch``) and whose three records must be one (``tool_nondeterministic``);
+    ``counts`` is ``{tool: violations}`` of its first record (``_counts``, criterion 5's count), ``None`` with a
+    reason. A file ``run_file`` refuses raises ``Unusable``. One reading for ``activate``'s ratchet base and the
+    loop's (``loop.watch``: a merge's lint before, a sentinel's lint after)."""
+    if hashlib.sha256(base_run).hexdigest() != base_run_sha256:
+        return {"reasons": ["base_run_hash_mismatch"], "counts": None}
+    run, same = run_file(base_run, "base.jsonl")
+    if not same:
+        return {"reasons": ["tool_nondeterministic"], "counts": None}
+    return {"reasons": [], "counts": _counts(run)}
+
+
 def checks_file(raw: bytes) -> dict:
     try:
         doc = json.loads(raw.decode("utf-8"))
