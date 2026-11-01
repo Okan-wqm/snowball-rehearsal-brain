@@ -46,7 +46,7 @@ gelir.
 | Boyut | Ölçüsü |
 |---|---|
 | Güvenli | Yetki sınırları kanıtlı, girdi sınırda doğrulanmış, sır sızıntısı sıfır, denetim izi tam |
-| Performanslı | Ölçülmüş darboğazlar, tanımlı hedefler, kaynak sızıntısı yok |
+| Performanslı | Ölçülmüş darboğazlar, tanımlı hedefler, kaynak sızıntısı yok; beklenen yük altında da (sahip, 2026-10-31): gecikme, hata ve kaynak hedefleri yük altında ölçülür ve tutulur; ölçüm yalnız yalıtılmış kopyada, sentetik veriyle (Y3) |
 | Sürdürülebilir | Katman kuralları ihlalsiz, her gerçeğin tek sahibi var, kullanılmayan her birim bildirilmiş: kopyalar birleştirilmiş, eskimiş artıklar sahibin onayıyla kalkmış, yarım iş korunmuş (`07a`) |
 | Test edilebilir | Her davranışın CI'da koşan gerçek bir testi var |
 | Dokümante | Doküman var olanı anlatır, her iddiası koda çapalıdır, bayatlaması bir kapıyı kırmızıya boyar; sistem onu kodla birlikte yazar |

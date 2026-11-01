@@ -14,23 +14,27 @@ Okunma: Aşama 0'ın MF5 ve MF6'sını yazarken; bu grupların komutu, girdisi y
 `python -m runner.deps_npm fetch <package-lock.json> <ayna_dizini>`; stdin `{registry_egress[],
 install_scripts_required[]}`: profilin izinli kayıt defterleri (`26b`, her biri `/` ile biter) ve tarifin kurulum
 betiği işaretleri (`26c`: kilit yolu ya da `ad@sürüm`; başka eleman isteği kullanılamaz yapar). Kilit npm
-`lockfileVersion` 3'tür; paketler kök `""` dışındaki `packages` girdileridir. Ayna kayıt defterinin çevrimdışı yerine
-geçer: `https://<host>/<yol>` adresinin tarball'ı `<ayna>/<host>/<yol>` dosyasıdır (`asama-0/14` Kum: yerel fikstür
-tarball'lar). Tarball'lar bellekte okunur; sistemin geçici dizini dışına bir şey yazılmaz. Paket başına ilk tutmayan
-denetim nedendir, bu sırayla: `git_dependency` (`resolved` `git+`, `git:`, `github:` ya da `git@` ile başlar);
-`file_dependency` (`file:` ile başlar, ya da `link` doğru ve hedef mutlak ya da `..` içerir); `registry_not_allowed`
-(`resolved` hiçbir `registry_egress` girdisiyle başlamaz; önek bütün URL üzerinde, `/` dahil); `tarball_missing`
-(aynada dosya yok); `integrity_mismatch` (ham `.tgz` baytlarının base64 sha512'si kilitteki sha512 `integrity`'den
-farklı); `install_script_unmarked` (tarball'ın `package/package.json` `scripts`'inde `preinstall`, `install` ya da
-`postinstall` var, ya da `package/binding.gyp` var, ya da kilit girdisi `hasInstallScript: true` diyor; ve ne kilit
-yolu ne tarball'daki `ad@sürüm` `install_scripts_required`'da var). Çıktı: `ok` (hiçbir paket reddedilmedi);
-`rejected` (sıralı `<neden>:<kilit yolu>`, tamamsa `[]`); `artefact`: getirilen her paketin `{"integrity":
-<kilitteki>, "path": <kilit yolu>}` nesnesinden, yola göre sıralı dizinin RFC 8785 kanonik JSON'unun sha256'sı,
-`sha256:` ve küçük onaltılık; `licenses`: yola göre sıralı `{path, name, version, license}`, ad, sürüm ve lisans
-tarball'ın `package/package.json`'ından (lisans yoksa ya da dizgi değilse `null`; rapordur, kapı değil, `24`). Ret
-olunca `artefact` ve `licenses` `null`'dır. Çıkış: 0 tamam, 1 ret, 2 kullanılamaz girdi (okunamayan kilit ya da ayna,
-biçimi tutmayan stdin, ör. çıplak ad gibi işaret olmayan eleman); 2'de satır `{"ok": false}` (serbest `error`),
-hiçbir paket getirilmez.
+`lockfileVersion` 3'tür, npm workspaces kilidi de; `packages` girdilerinden hangisinin getirilip denetlendiği yalnız
+buradadır. Kök `""`, çalışma alanı bağı (`link` doğru, `resolved` depo içi göreli yol: boş değil, mutlak değil, `..`
+bileşeni ve `:` yok) ve böyle bir bağın `resolved`'ının adlandırdığı çalışma alanı dizini (`node_modules` bileşeni
+olmayan, `libs/x` gibi bir anahtar) getirilmez ve denetlenmez. Paketler başka her girdidir, iç içe
+`<çalışma alanı>/node_modules/<paket>` dahil: getirilir, aşağıdaki denetimlerden geçer, kilit yoluyla anılır. Ayna
+kayıt defterinin çevrimdışı yerine geçer: `https://<host>/<yol>` adresinin tarball'ı `<ayna>/<host>/<yol>` dosyasıdır
+(`asama-0/14` Kum: yerel fikstür tarball'lar). Tarball'lar bellekte okunur; sistemin geçici dizini dışına bir şey
+yazılmaz. Paket başına ilk tutmayan denetim nedendir, bu sırayla: `git_dependency` (`resolved` `git+`, `git:`,
+`github:` ya da `git@` ile başlar); `file_dependency` (`file:` ile başlar, ya da `link` doğru ve hedef mutlak ya da
+`..` içerir); `registry_not_allowed` (`resolved` hiçbir `registry_egress` girdisiyle başlamaz; önek bütün URL
+üzerinde, `/` dahil); `tarball_missing` (aynada dosya yok); `integrity_mismatch` (ham `.tgz` baytlarının base64
+sha512'si kilitteki sha512 `integrity`'den farklı); `install_script_unmarked` (tarball'ın `package/package.json`
+`scripts`'inde `preinstall`, `install` ya da `postinstall` var, ya da `package/binding.gyp` var, ya da kilit girdisi
+`hasInstallScript: true` diyor; ve ne kilit yolu ne tarball'daki `ad@sürüm` `install_scripts_required`'da var). Çıktı:
+`ok` (hiçbir paket reddedilmedi); `rejected` (sıralı `<neden>:<kilit yolu>`, tamamsa `[]`); `artefact`: getirilen her
+paketin `{"integrity": <kilitteki>, "path": <kilit yolu>}` nesnesinden, yola göre sıralı dizinin RFC 8785 kanonik
+JSON'unun sha256'sı, `sha256:` ve küçük onaltılık; `licenses`: yola göre sıralı `{path, name, version, license}`, ad,
+sürüm ve lisans tarball'ın `package/package.json`'ından (lisans yoksa ya da dizgi değilse `null`; rapordur, kapı
+değil, `24`). Ret olunca `artefact` ve `licenses` `null`'dır. Çıkış: 0 tamam, 1 ret, 2 kullanılamaz girdi (okunamayan
+kilit ya da ayna, biçimi tutmayan stdin, ör. çıplak ad gibi işaret olmayan eleman); 2'de satır `{"ok": false}`
+(serbest `error`), hiçbir paket getirilmez.
 Vakalar: `integrity_good_and_one_byte` her tarball kilidin bütünlüğüne uyar, işaretli kurulum betiği geçer, içerik
 adresi ve lisans raporu üretilir; değişmiş girdide tarball'ın tek baytı (gzip başlığında) değişir, içindeki tar
 aynıdır; `install_script_unmarked` kilidin söylemediği, tarball'daki işaretsiz `postinstall` ret;
@@ -44,7 +48,9 @@ yerinde kilitte olmayan bir kilit yolu isteği kullanılamaz yapar; `registry_no
 önekine benzeyen başka host ret; `git_dependency` ve `file_dependency` bütünlük değeri taşısa da ret;
 `license_from_tarball` lisans kilitten değil tarball'dan okunur, hedef bağımlılığın lisansı raporlanır, kapı değildir;
 `same_lock_same_address` aynı kilit başka biçimde yazılınca (sıkışık, anahtarlar başka sırada) aynı içerik adresini
-verir.
+verir; `workspaces_lock` bağ ve adlandırdığı dizin getirilmez, iç içe ve kökteki paketler kilit yollarıyla getirilir;
+`workspace_folder_needs_its_link` `link` işareti kalkınca bağ da dizin de denetlenir; `nested_registry_not_allowed`
+iç içe paketin kayıt defteri izinsizse ret.
 
 ## `recipe` (MF6, `profile/unit_verify.py`)
 

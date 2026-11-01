@@ -29,8 +29,8 @@ bir Windows kullanıcısında koşar; Kurucu'nun yapılandırması repo dışın
    ya da operatörün yönettiği dosya, `--strict-mcp-config`, taze `CLAUDE_CONFIG_DIR`,
    `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; çalışma dizini beyin klonu, hedefin salt okunur klonu dışarıda;
    açılış "`00` ve `00a`'yı oku" ve tipli durum.
-4. Bitince CLI'nin bildirdiği maliyeti `kind: cost` satırı olarak `founder-ledger.jsonl`'a tohumun defter
-   aracıyla ekler; oturum sayısı ve USD `status-stage0.md`'ye girer.
+4. Bitince CLI'nin bildirdiği maliyeti `kind: cost` satırı olarak `founder-ledger.jsonl`'a `26`'nın zincir
+   kuralıyla ekler; oturum sayısı ve USD `status-stage0.md`'ye girer.
 
 **Maliyet bir ölçümdür, kapı değil** (`asama-0/12`). Kurucu kendi maliyetini ölçemez; ölçümü başlatıcı
 yazar (rapor yoksa `unmeasured`). Oturum sayısı ve USD toplamları ilerlemenin ve maliyetin ölçüsüdür;

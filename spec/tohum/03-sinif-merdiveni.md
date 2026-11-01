@@ -18,7 +18,7 @@ her sınıfın adapter'ı profildeki aracı sarar. LLM, mekanik aracın bittiği
 | K4 | Şema yerleşimi ve mevcut invariant testleri | Sarıcı adapter | Araç |
 | K5 | Mantık hataları: eksik await, ters koşul, yanlış sıra, yarım idempotency | LLM avcı, Opus | Test oracle'ı, avcıdan farklı model |
 | K6 | Güvenlik, yetki sınırı, tenant izolasyonu, bağımlılık değişikliği | LLM avcı, Opus | Test oracle'ı, avcıdan farklı model |
-| K7 | Performans | Profildeki benchmark ve sorgu planı araçları | Baseline'a karşı ölçüm |
+| K7 | Performans, yük altında da (`01`) | Profildeki benchmark ve sorgu planı araçları | Baseline'a karşı ölçüm |
 | K8 | Hedef reponun dokümanı: bayat doküman, davranışı değişmiş kodun eksik dokümanı | Çapa çözümleme; doküman-kod çelişkisi | Her iddia koda çapalı (`path:line` ya da sembol) ve çapa çözülür; imza, CLI bayrağı, yapılandırma anahtarı ve uç adı gibi mekanik iddialar koda karşı doğrulanır; çözülmeyen çapa kırmızı |
 
 Bir sınıf grubu ancak bir önceki aşama PASS alınca açılır. Aşama 1'den sonra hangi grubun açılacağını Kurucu'nun

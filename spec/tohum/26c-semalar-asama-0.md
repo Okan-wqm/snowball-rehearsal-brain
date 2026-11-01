@@ -23,10 +23,10 @@ hakemi `done_mf`'in anlamını, test bildirimini, vektör gruplarının ne zaman
 ve çıkıştaki MF sayısını buradan okur. Partilerin tabloları aynı dizindedir (`asama-1/13`).
 
 **control.json** (hakem reposu): `{kill_switch, budget_state, oauth_token_expires, loop_schedule,
-merge_paused, founder_resume?}`. Kapalıya düşüş: `kill_switch` eksikse açık; `budget_state` (`ok` ya da
+merge_paused, founder_resume?, reverted_exits?}`. Kapalıya düşüş: `kill_switch` eksikse açık; `budget_state` (`ok` ya da
 frene takılan kalem) eksikse fren; `loop_schedule` eksikse `false` (zamanlanmış devir `paused` ile yeşil
 biter); `merge_paused` eksikse `true` (gözlem sürer, merge yok); `founder_resume {after_run, note}`
-yalnız adlandırdığı koşudan sonra bir kez geçerlidir (`24a`).
+yalnız adlandırdığı koşudan sonra bir kez geçerlidir (`24a`); `reverted_exits`, (B) kırmızı olduğu için aktarımı geri alınmış çıkışların imzalı sonuçtaki beyin başları (40 karakterlik SHA listesi), eksikse boştur: (A)'nın dondurması sürer (`29b` "Çıkıştan sonra", `25a` "Başarısızlık").
 
 **setup/summary.json** (`25`'in alanlarına ek): `seed_epochs[]` `{commit, spec_tohum_sha256, seed_sha256,
 bootstrap_sha256}`; `targets[]` `{id, repo, kind: toy|copy, base_sha, identifiers[], excluded_paths[],
@@ -36,18 +36,22 @@ hakem kodu değildir; `unit_candidates` kopyanın aday birim yolları, sırayla)
 (`02` "Sahip istisnası"; yanındaki taahhüt taşıma hedefinin ekimidir, o olmadan istisna koşulu kaldırmaz); ilk
 koşu işareti.
 
-**setup/imports.jsonl**: her aktarım bir satır `{ts, stage, batch?, brain_sha, referee_tree_sha256, result_sha256,
-toy_tree_sha256?}`, zincirli (`26`); insan dokunuşu sayacı. **setup/stage.json**: `{stage, pass_row_sha256,
-toy_state_head, copy_state_head, import_line_sha256}`; `stage-open` yazar, operatör iter (`asama-0/10a`).
-**setup/honesty-key.json**: taahhüdün açılan hâli; ekim biçiminde ekim kimlikleri, tespit yüklemleri, kardeş girdi;
-kaydedilmiş plan biçiminde planın kendisi (`snowball-honesty-plan/1`); `sha256(canonical(…))`'ı `honesty_commitment`'la
-tutmalıdır; çıkışta operatör ekler. **setup/honesty-result.json** (`snowball-honesty-result/1`): kaydedilmiş plan
-biçiminde değerlendiricinin çıktısı; çıkışta operatör ekler (insan dokunuşu).
+**setup/imports.jsonl**: her aktarım bir satır `{ts, stage, batch?, brain_sha, referee_tree_sha256, result_sha256, toy_tree_sha256?}`, zincirli (`26`); insan dokunuşu
+sayacı. `referee_tree_sha256`: `brain_sha`'nın ağacında, blob baytlarıyla (git öznitelikleri, filtreler ve satır sonu dönüşümü uygulanmadan), `referee/` altındaki her düzenli dosya için bir satır:
+içeriğin sha256'sı (küçük onaltılık), iki boşluk, `referee/`'ye göre yol, LF. Satırlar bayt sırasıyla dizilip birleştirilir;
+sonucun sha256'sı küçük onaltılıktır; dizinler ve yürütme biti girmez. Hash yoktur (ret): arşivin herhangi bir yerinde, yalnız `referee/` altında değil, bağ ya da özel dosya, ya da UTF-8 olmayan, kontrol karakteri, ters bölü ya da iki nokta taşıyan, mutlak, `..` ya da `.git` bileşenli (harf duyarsız) bir yol varsa;
+`referee/` altında büyük-küçük harf duyarsız dosya sisteminde (casefold) tek ad olan iki yol ya da yol üstü iki dizin, `referee/`'nin tepesinde bir operatör adı ya da `bootstrap` (casefold, `asama-0/10` #agac) varsa ya da `referee/` altında hiç dosya yoksa. Bilinen
+cevaplı örnek (bir vektör vakası değildir, hakem onu koşmaz; beklenen değer `/vec`'te yoktur, yalnız bu sayfadadır): `/vec/treehash/three-files.tar` → `d255bfaa4f3afb55f037a81d40ba8e44896babc20fbd5883ca291f003cd25037`.
+**setup/stage.json**: `{stage, pass_row_sha256, toy_state_head, copy_state_head, import_line_sha256}`; `stage-open` yazar,
+operatör iter (`asama-0/10a`). **setup/honesty-key.json**: taahhüdün açılan hâli; ekim biçiminde ekim kimlikleri, tespit
+yüklemleri, kardeş girdi; kaydedilmiş plan biçiminde planın kendisi (`snowball-honesty-plan/1`); `sha256(canonical(…))`'ı
+`honesty_commitment`'la tutmalıdır; çıkışta operatör ekler. **setup/honesty-result.json** (`snowball-honesty-result/1`):
+kaydedilmiş plan biçiminde değerlendiricinin çıktısı; çıkışta operatör ekler (insan dokunuşu).
 
-**reports/*.json** (beyin): `{id, kind: seed_issue|referee_weakness|spec_issue, ref, evidence_test?,
-state}`. Önyükleme hakemi `pull`'da okur, rakipten gizler, imzalı sonuçta `reports[]` olur ve operatörü
-uyarır; bir vektörü adlandıran `seed_issue` onu `disputed` yapar (en çok iki açık itiraz). Spec ve tohum
-sorunlarını operatör tohum dönemiyle kapatır, Kurucu teyit eder.
+**reports/*.json** (beyin): `{id, kind: seed_issue|referee_weakness|spec_issue, ref, evidence_test?, state}`. Önyükleme
+hakemi `pull`'da okur, rakipten gizler; imzalı sonuçta her biri `reports[]`'ta `{id, kind, ref, state, sha256}` (dosya
+baytlarının) olur, açık olanlar operatörü `reports_open:<n>` uyarısıyla uyarır; bir vektörü adlandıran `seed_issue` onu
+`disputed` yapar (en çok iki açık itiraz). Spec ve tohum sorunlarını operatör tohum dönemiyle kapatır, Kurucu teyit eder.
 
 **Hazır aday** (`candidates/<hedef>/<cid>/`, beyin): `finding.json` `{rule_id, path, line, fix_range,
 tool_output_sha256}` (hakemin yayımladığı araç çıktısından); `diff.patch` (birleşik diff, yalnız düz
@@ -55,25 +59,21 @@ dosya); `expect.json` `{decision: merge|reject, reason?}` (kötü adayın beklen
 `scope_violation`). Hakem `expect.json`'a güvenmez; onu yalnız (B)'nin #ret satırında karşılaştırır.
 
 **Birim tarifi** (beyin `targets/<hedef>/units.json` önerir; doğrulanmışı `profile.json` `units[]`):
-`{unit_id, path, inputs[], toolchain, env_image (@sha256), lockfiles[], install_scripts_required[],
-lint_cmd[], test_cmd[], affected_test_cmd[], services: [], limits{}}`. `inputs` birimin dizini, kullandığı
-ortak kütüphaneler ve kök yapılandırmalardır; yeterliliğinin kanıtı yalnız bu girdilerle HEAD'in 3/3
-yeşil koşmasıdır (`unit.verify`). Lint için yeşil: `lint_cmd` üç koşunun her birinde 0 ya da 1 ile biter ve
-üç koşunun çıkış kodu ve stdout'u bayt bayt aynıdır (ESLint'te 1 bulunan ihlaldir; `asama-0/08` ölçüt 5 ihlal
-ister, ölçüt 6 yeşil). `toolchain` `node@X.Y.Z`'dir: kesin sürüm (üç ondalık bileşen; aralık ya da `lts` gibi
-takma ad değil), birimin en yakın sürüm dosyasındaki sürüm. İmaj resmi araç zinciri imajıdır, etiketindeki
-sürüm de `X.Y.Z`'dir. `install_scripts_required[]`'in her elemanı kilitteki tam paket yolu (kök `""` dışında
-bir `packages` anahtarı, ör. `node_modules/x`) ya da `ad@sürüm`'dür; `ad@sürüm` tarball'ının adı ve sürümü
-eşleşen paketi işaretler, kilitte eşleşeni yoksa hiçbir şeyi. Başka bir eleman, ör. çıplak ad (her sürümü
-işaretlerdi) ya da kilitte olmayan bir yol, işaret değildir ve isteği kullanılamaz yapar: `deps.fetch` onu
-reddeder (çıkış 2, `29g`).
-`services` Aşama 0'da boştur. Önerinin hariç yolları ya da güvenlik yollarını daraltması reddedilir.
+`{unit_id, path, inputs[], toolchain, env_image (@sha256), lockfiles[], install_scripts_required[], lint_cmd[], test_cmd[], affected_test_cmd[], services: [], limits{}}`.
+`inputs` birimin dizini, kullandığı ortak kütüphaneler ve kök yapılandırmalardır; yeterliliğinin kanıtı yalnız bu girdilerle
+HEAD'in 3/3 yeşil koşmasıdır (`unit.verify`). Lint için yeşil: `lint_cmd` üç koşunun her birinde 0 ya da 1 ile biter ve üç
+koşunun çıkış kodu ve stdout'u bayt bayt aynıdır (ESLint'te 1 bulunan ihlaldir; `asama-0/08` ölçüt 5 ihlal ister, ölçüt 6
+yeşil). `toolchain` `node@X.Y.Z`'dir: kesin sürüm (üç ondalık bileşen; aralık ya da `lts` gibi takma ad değil), birimin en yakın
+sürüm dosyasındaki sürüm. İmaj resmi araç zinciri imajıdır, etiketindeki sürüm de `X.Y.Z`'dir. `install_scripts_required[]`'in
+her elemanı kilitteki tam paket yolu (kök `""` dışında bir `packages` anahtarı, ör. `node_modules/x`) ya da `ad@sürüm`'dür;
+`ad@sürüm` tarball'ının adı ve sürümü eşleşen paketi işaretler, kilitte eşleşeni yoksa hiçbir şeyi. Başka bir eleman, ör. çıplak
+ad (her sürümü işaretlerdi) ya da kilitte olmayan bir yol, işaret değildir ve isteği kullanılamaz yapar: `deps.fetch` onu
+reddeder (çıkış 2, `29g`). `services` Aşama 0'da boştur. Önerinin hariç yolları ya da güvenlik yollarını daraltması reddedilir.
 
-**policy.json `operating{}`**: `{key: {value, band: [min, max]}}`; anahtarlar `unit_inputs_bytes`,
-`deps_bytes`, `worktree_bytes`, `container_mem_bytes`, `kos_wall_s`, `test_total_s`, `output_bytes`.
-Döngünün karşılaştırdığı her sınır buradadır, sabit yoktur; bandı operatör yazar (`18a`). Sınıra takılan
-iş `limit_hit:<anahtar>`'dır, Kurucu'ya sayılmaz, `status.md`'de görünür. Aşama 0'da değer kendini
-ayarlamaz; bant içinde ayar P1'le gelir.
+**policy.json `operating{}`**: `{key: {value, band: [min, max]}}`; anahtarlar `unit_inputs_bytes`, `deps_bytes`,
+`worktree_bytes`, `container_mem_bytes`, `kos_wall_s`, `test_total_s`, `output_bytes`. Döngünün karşılaştırdığı her sınır
+buradadır, sabit yoktur; bandı operatör yazar (`18a`). Sınıra takılan iş `limit_hit:<anahtar>`'dır, Kurucu'ya sayılmaz,
+`status.md`'de görünür. Aşama 0'da değer kendini ayarlamaz; bant içinde ayar P1'le gelir.
 
 **status-stage0.md** (önyükleme hakeminin her koşusunun yüklediği adım özeti): son kabul ve son
 değerlendirilen SHA, park, seriler, frenlere karşı harcama, belirteç süresi, son kararlar, açık

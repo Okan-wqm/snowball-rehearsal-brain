@@ -30,7 +30,7 @@ grupların komutları, girdileri, çıktı alanları ve vakaları `29f`, `29g` v
 | `secrets` | 2 | diff, defter satırı ve promptta gömülü sahte sır yakalanır; temiz girdi geçer |
 | `contained` | 3 | üretilen `docker run` argv'si zorunlu bayrakları (`--network none`, `--cap-drop ALL`, `--read-only`, kullanıcı) taşır, yasaklıları taşımaz |
 | `profile` | 4 | fikstür ağaçlarda diller, birim adayları, güvenlik ve hariç yollar; ajan yapılandırması büyük-küçük harf duyarsız hariç; yalnız genişleten öneri kabul, daraltan ret |
-| `npmlock` | 5 | `integrity` eşleşmesi; bir baytı değişmiş tarball, izinsiz `resolved`, git ve dosya bağımlılığı ret; kurulum betiği kilit yolu ya da `ad@sürüm` ile işaretlenir, çıplak ad isteği kullanılamaz yapar |
+| `npmlock` | 5 | `integrity` eşleşmesi; bir baytı değişmiş tarball, izinsiz `resolved`, git ve dosya bağımlılığı ret; kurulum betiği kilit yolu ya da `ad@sürüm` ile işaretlenir, çıplak ad isteği kullanılamaz yapar; npm workspaces kilidinde hangi girdinin getirildiği, iç içe girdiler dahil (`29g`) |
 | `recipe` | 6 | statik tarif denetimi: imaj `@sha256`, `inputs`, komutlar, sınırların `operating{}` anahtarları |
 | `diffguard` | 7 | `asama-0/08` madde 1'in her ret nedeni; diff'in `brain/integration` başına uygulanması hariç: o `gate.check`'in (MF8) işidir |
 | `k0map` | 8 | eşlenmiş satır kuralı (`asama-0/08`) ve madde 3–8'in kararları, fikstür `koş` çıktılarıyla; arayüz `29h` |

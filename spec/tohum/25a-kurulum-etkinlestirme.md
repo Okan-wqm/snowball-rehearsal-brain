@@ -23,8 +23,9 @@ Hedef repoya dokunan kurulum, Aşama 0'ın ürettiği döngü hakemiyle yapılı
 | 9 | **Kilidin açılışı:** PASS satırından sonra `stage-open` komutunu koştur; PASS satırını okur, zinciri tohum koduyla ve kökü Sigstore ile doğrular, `setup/stage.json`'u yazar (`asama-0/10a`, `26c`); incele ve it. Sonra `control.json` `loop_schedule: true`; kopyanın aynalaması günlük açılır (`25` 10a) | Aşama 1 ancak PASS'ten sonra açılsın |
 
 **Başarısızlık.** Satır 1, 7 ya da 8 kırmızıysa sistem sert durur; operatör aktarım commit'ini `git revert`
-eder; itme yargıcı aktarımdan etkilenmediği için Kurucu'nun yolu açık kalır. Düzeltilmiş SHA'nın aktarımı
-yine operatörün işidir ve insan dokunuşu sayacında görünür.
+eder ve çıkışın imzalı sonuçtaki başını `control.json` `reverted_exits`'e ekler (`26c`): (A)'nın dondurması kalkar
+(`29b` "Çıkıştan sonra"), itme yargıcı aktarımdan etkilenmediği için Kurucu'nun yolu açık kalır. Düzeltilmiş SHA (A)'dan
+yeniden geçer; aktarımı yine operatörün işidir ve insan dokunuşu sayacında görünür.
 
 **Her yeni hedef.** Satır 3–7 her yeni yazma modu hedefinde tekrar edilir; satır 5–6 P1 aktarımından sonra
 `drift.check` ile her döngü yeniden doğrulanır (`21`); ondan önce yalnız genesis'te. **Eğitim hedefi** için

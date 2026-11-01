@@ -65,7 +65,7 @@ sistem metnini söylemez; seçim). Prompt MF2'nin `prompt` kuralıyla taranır (
 `secret_in_prompt`. Kalan = `stage_cap − spent`; kalan ≤ 0 ise `stage_brake` (`asama-0/12:20`), değilse çağrı tavanı
 `min(call_cap, kalan)`, tohum rakibi gibi (`24:53-55`). `plan` hiçbir şey koşturmaz: promptu kurar, tarar, pinli
 araçsız `claude -p`'nin argv'sini kurar (prompt stdin'de, `--model`, yerleşik araç, ayar kaynağı, slash komutu, oturum
-kaydı yok, `--max-budget-usd`; `29b:44-46`); hiçbir model çağrılmaz. Sunulan model, 429 ve `cost` satırı (test 37) CLI
+kaydı yok, `--max-budget-usd`; `29b:46-48`); hiçbir model çağrılmaz. Sunulan model, 429 ve `cost` satırı (test 37) CLI
 sonucunun spec'te olmayan biçimini okur: grupta değil, Kurucu'nun PATH'teki taklit `claude`'lu testindedir. Çıktı:
 `send` (kullanılabilir ve `reasons` boş); sıralı, tekil `reasons` (`secret_in_prompt`, `stage_brake`; adlar seçim,
 desen adı yazılmaz); `prompt_sha256` (gönderilmese de); sıralı `dropped`; `max_budget_usd` (mikrolardan
