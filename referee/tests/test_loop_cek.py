@@ -20,8 +20,11 @@
   root anchors, no entry, another root's entry, an entry the verifier refuses and a last root row without a root
   are ``root_refused`` before the target is fetched, Rekor unreadable is unusable; ``brain/integration``'s head
   fetched and ``loop.cek.assemble`` run on both repositories' objects, then MF4's judgement of the read-back
-  artifact: agreeing hashes and a recipe the check accepts end ``cycle_not_wired`` with ``accepted``, ``heads``,
-  ``state``, ``root``, ``assembled`` and ``profile``, the artifact in the job's work directory (``loop.pulled.read`` takes it) and none in ``out/pulled``;
+  artifact: agreeing hashes and a recipe the check accepts end ``ok`` with ``done`` ``["D1"]``, ``accepted``,
+  ``heads``, ``state``, ``root``, ``assembled`` and ``profile``, the artifact moved from the job's work directory to
+  ``out/pulled`` (``loop.pulled.read`` takes it there), and getir, kos and yaz, each on its own copy of it as the
+  download hands it over, run their wired steps on it; any refusal leaves no ``out/pulled``, and an existing
+  ``out/pulled`` (an artifact, an empty directory, a file) is unusable and left as it was;
   a different or refused ``referee/``, a broken import, an unknown target or one without a safe ``repo``, a missing
   head, what ``assemble`` refuses, a ``units`` that is not exactly one recipe, a recipe the derivation of the
   assembled tree refuses (no eligible candidate, a path that is none, an input excluded by the agent-configuration
@@ -56,7 +59,7 @@ from test_rekor import entry_for  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, operating, recipe  # noqa: E402
 import test_loop_kos as LK  # noqa: E402
-from test_loop_kos import TREE, candidate  # noqa: E402
+from test_loop_kos import TREE, RedAs, candidate  # noqa: E402
 
 SUMMARY = {"targets": [{"id": "t1", "kind": "toy", "excluded_paths": [], "unit_candidates": []},
                        {"id": "t2", "kind": "copy", "excluded_paths": ["x"], "unit_candidates": []}]}
@@ -353,7 +356,8 @@ class CekJob(unittest.TestCase):
         self.rekor.calls = []
         out = J.run("cek", {k: v for k, v in environ.items() if v is not None}, http=api,
                     verifier=verifier or verify, git=git, rekor=rekor or self.rekor)
-        self.assertFalse(os.path.lexists(os.path.join(self.temp, "out", "pulled")))  # nothing for the upload step
+        # the upload step's path holds the artifact exactly when D1 held
+        self.assertEqual(os.path.lexists(os.path.join(self.temp, "out", "pulled")), out["ok"])
         return out, commit, tree
 
     def assembled(self) -> list[str]:
@@ -361,11 +365,11 @@ class CekJob(unittest.TestCase):
         return [os.path.join(work, d, "pulled") for d in sorted(os.listdir(work))
                 if os.path.isdir(os.path.join(work, d, "pulled"))] if os.path.isdir(work) else []
 
-    def test_the_job_checks_the_accepted_sha_and_writes_no_pulled(self):
+    def test_the_job_runs_d1_and_hands_pulled_to_the_upload(self):
         out, commit, tree = self.run_cek()
-        self.assertEqual(out["reason"], "cycle_not_wired")
-        self.assertEqual((out["ok"], out["checked"]),
-                         (False, ["accepted_sha", "referee_tree", "heads", "state_previous", "root", "assembled",
+        self.assertNotIn("reason", out)
+        self.assertEqual((out["ok"], out["done"], out["checked"]),
+                         (True, ["D1"], ["accepted_sha", "referee_tree", "heads", "state_previous", "root", "assembled",
                                   "profile"]))
         self.assertEqual(out["state"], {"head": self.state_head, "previous": self.state_genesis,
                                         "rows": {"ledger.jsonl": 5, "chain/root.jsonl": 2}})
@@ -402,19 +406,68 @@ class CekJob(unittest.TestCase):
                                             "refs/heads/brain/integration"])
         self.assertEqual(out["heads"], {"brain/state": self.state_head, "brain/integration": self.target_commit})
         self.assertEqual(out["assembled"], {"target": "t1", "commit": self.target_commit, "candidates": ["good"]})
-        # the artifact is assembled in the job's work directory, and loop.pulled reads it: the target's tree at
-        # brain/integration's head, the brain's units.json and candidate at the accepted commit
-        [path] = self.assembled()
+        # the artifact assembled in the job's work directory is moved, not copied, to out/pulled, and loop.pulled
+        # reads it there: the target's tree at brain/integration's head, the brain's units.json and candidate at
+        # the accepted commit
+        self.assertEqual(self.assembled(), [])
+        [cek] = os.listdir(os.path.join(self.temp, "work"))
+        path = os.path.join(self.temp, "out", "pulled")
         art = P.read(path)
         with open(art.tree_tar, "rb") as fh:
             members = names(fh.read())
         self.assertEqual(sorted(n for n, t, _, _ in members if t == tarfile.REGTYPE), sorted(TREE))
         self.assertEqual(art.units, {"units": [recipe()]})
         # MF4 judged the tree extracted next to the artifact, the one the derivation read
-        self.assertEqual(sorted(os.listdir(os.path.join(os.path.dirname(path), "tree", "pkg"))),
+        self.assertEqual(sorted(os.listdir(os.path.join(self.temp, "work", cek, "tree", "pkg"))),
                          sorted(p.split("/", 1)[1] for p in TREE if p.startswith("pkg/")))
         self.assertEqual(sorted(art.candidates), ["good"])
         self.assertEqual(art.target["repo"], "o/target")
+
+    def test_getir_kos_and_yaz_run_on_the_pulled_cek_hands_over(self):
+        """The workflow's hand-over, each job on its own runner: cek's ``out/pulled`` downloaded whole as each
+        consumer's ``in/pulled`` (then getir's ``deps`` to kos and kos's ``results`` to yaz the same way); every
+        consumer's wired steps run on those bytes and judge the brain's candidates cek assembled."""
+        self.BRAIN = dict(self.BRAIN, **{"candidates/t1/breaks/%s" % f: d for f, d in candidate(BREAKS_TEST).items()})
+        out, _, _ = self.run_cek()
+        self.assertEqual((out["done"], out["assembled"]["candidates"]), (["D1"], ["breaks", "good"]))
+        temps = {}
+        for job in ("getir", "kos", "yaz"):
+            temps[job] = os.path.join(self.base, job)
+            shutil.copytree(os.path.join(self.temp, "out", "pulled"), os.path.join(temps[job], "in", "pulled"),
+                            symlinks=True)
+        got = J.run("getir", {"RUNNER_TEMP": temps["getir"]})
+        self.assertEqual((got["ok"], got["done"], got["deps"]["packages"]), (True, ["D2"], 0))
+        shutil.copytree(os.path.join(temps["getir"], "out", "deps"), os.path.join(temps["kos"], "in", "deps"))
+        got = J.run("kos", {"RUNNER_TEMP": temps["kos"]}, runner=RedAs())
+        self.assertEqual((got["done"], got["index"]["base"]), (["D3"], {"verdict": "verified", "reasons": []}))
+        shutil.copytree(os.path.join(temps["kos"], "out", "results"), os.path.join(temps["yaz"], "in", "results"))
+        write_tree(os.path.join(temps["yaz"], "control"), {"control.json": {"merge_paused": False}})
+        got = J.run("yaz", {"RUNNER_TEMP": temps["yaz"]})
+        self.assertEqual(got["done"], ["D5"])
+        self.assertEqual({cid: d["reasons"] for cid, d in got["decisions"].items()},
+                         {"good": ["sentinel_state_unread"], "breaks": ["sentinel_state_unread", "tests_red"]})
+
+    def test_an_existing_out_pulled_is_no_verdict_and_left_as_it_was(self):
+        # another run's artifact (or anything) at the upload step's path is neither replaced nor mixed with
+        self.run_cek()
+        out = os.path.join(self.temp, "out", "pulled")
+        before = sorted(os.listdir(out))
+        for leftover in ("artifact", "empty", "file"):
+            with self.subTest(leftover=leftover):
+                if leftover == "empty":
+                    shutil.rmtree(out)
+                    os.makedirs(out)
+                    before = []
+                elif leftover == "file":
+                    os.rmdir(out)
+                    write_tree(os.path.join(self.temp, "out"), {"pulled": "x"})
+                with self.assertRaisesRegex(J.Unusable, "out/pulled exists"):
+                    self.run_cek()
+                if leftover == "file":
+                    with open(out) as fh:
+                        self.assertEqual(fh.read(), "x")
+                else:
+                    self.assertEqual(sorted(os.listdir(out)), before)
 
     def test_a_referee_tree_that_is_not_the_imported_one(self):
         out, _, _ = self.run_cek(imported="0" * 64)
@@ -450,7 +503,7 @@ class CekJob(unittest.TestCase):
     def test_a_genesis_head_is_verified_as_chains_only(self):
         self.state_head = self.state_genesis
         out, _, _ = self.run_cek()
-        self.assertEqual((out["reason"], out["state"]), ("cycle_not_wired", {
+        self.assertEqual((out["done"], out["state"]), (["D1"], {
             "head": self.state_genesis, "previous": None, "rows": {"ledger.jsonl": 2, "chain/root.jsonl": 1}}))
         self.assertEqual([a[-1] for a in (c["argv"] for c in S.calls(self.bin)) if "fetch" in a][1:2],
                          ["%s:refs/pulled" % self.state_genesis])
@@ -573,7 +626,7 @@ class CekJob(unittest.TestCase):
     def test_the_line_names_the_unit_judged(self):
         self.with_units({"units": [recipe(unit_id="the-unit")]})
         out, _, _ = self.run_cek()
-        self.assertEqual((out["reason"], out["profile"]), ("cycle_not_wired", {"unit_id": "the-unit"}))
+        self.assertEqual((out["done"], out["profile"]), (["D1"], {"unit_id": "the-unit"}))
 
     def test_stage_0_judges_exactly_one_unit(self):
         for units in ({"units": []}, {"units": [recipe(), recipe(unit_id="b")]}, {"unit": [recipe()]}):
@@ -629,7 +682,10 @@ class CekJob(unittest.TestCase):
                     self.run_cek(**kw)
         for name in ("setup/imports.jsonl", "setup/summary.json", "policy.json"):
             with self.subTest(missing=name):
+                shutil.rmtree(self.temp)
+                os.makedirs(self.temp)
                 self.run_cek()  # writes the checkout's files
+                shutil.rmtree(os.path.join(self.temp, "out"))
                 os.remove(os.path.join(self.work, *name.split("/")))
                 with self.assertRaisesRegex(J.Unusable, name):
                     J.run("cek", {"RUNNER_TEMP": self.temp, "GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t",

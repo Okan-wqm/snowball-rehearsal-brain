@@ -12,6 +12,8 @@ exactly one status, and ``problems`` checks it against what the code does:
   ``in/<artifact>`` is absent, so the consumer's wired steps do not read the download (a stated gap, with its why);
 - ``unwired`` (a why): the producer, run on an empty ``$RUNNER_TEMP``, stops at once with ``cycle_not_wired``, no
   ``done`` step and no ``out/<artifact>``: nothing reaches the consumer in a real run;
+- ``unwired_consumer`` (a why): the consumer, run on an empty ``$RUNNER_TEMP``, stops at once the same way (no
+  ``done`` step, nothing uploaded): whatever the producer hands over, no wired step of the consumer reads it;
 - ``unwritten`` (a test id): the producer's first steps are wired but it does not write the artifact yet: the named
   test passes, calls the producer at least once with a result ``cycle_not_wired`` (its wired steps ran to their
   end), and no call of the producer leaves ``out/<artifact>``: nothing reaches the consumer in a real run.
@@ -43,21 +45,22 @@ from loop import job as J  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 
 GETIR_TO_KOS = "test_loop_getir.HandOver.test_kos_installs_what_getir_fetched"
-CEK_D1 = "test_loop_cek.CekJob.test_the_job_checks_the_accepted_sha_and_writes_no_pulled"
+CEK_TO_ALL = "test_loop_cek.CekJob.test_getir_kos_and_yaz_run_on_the_pulled_cek_hands_over"
+CEK_D1 = "test_loop_cek.CekJob.test_the_job_runs_d1_and_hands_pulled_to_the_upload"
 KOS_TO_YAZ = "test_loop_yaz.YazJob.test_the_job_runs_d5_and_merges_nothing_without_the_state"
 
 # (artifact, consumer) -> (status, test id | why)
 HANDOVER: dict[tuple[str, str], tuple[str, str]] = {
-    ("pulled", "getir"): ("unwritten", CEK_D1),  # cek assembles pulled in its work dir, stops before out/pulled
-    ("pulled", "kos"): ("unwritten", CEK_D1),  # cek assembles pulled in its work dir, stops before out/pulled
-    ("pulled", "cagir"): ("unwritten", CEK_D1),  # cek assembles pulled in its work dir, stops before out/pulled
-    ("pulled", "yaz"): ("unwritten", CEK_D1),  # cek assembles pulled in its work dir, stops before out/pulled
+    ("pulled", "getir"): ("handover", CEK_TO_ALL),
+    ("pulled", "kos"): ("handover", CEK_TO_ALL),
+    ("pulled", "cagir"): ("unwired_consumer", "cagir stops with cycle_not_wired: D4 is not wired (spec-036)"),
+    ("pulled", "yaz"): ("handover", CEK_TO_ALL),
     ("deps", "kos"): ("handover", GETIR_TO_KOS),
     ("deps", "yaz"): ("unread", KOS_TO_YAZ),  # D5 reads D3's and D4's artifacts (asama-0/01); no wired step reads deps
     ("results", "yaz"): ("handover", KOS_TO_YAZ),
     ("response", "yaz"): ("unwired", "cagir stops with cycle_not_wired: D4 is not wired (spec-036)"),
 }
-STATUSES = ("handover", "unread", "unwired", "unwritten")
+STATUSES = ("handover", "unread", "unwired", "unwired_consumer", "unwritten")
 
 
 def edges(jobs: dict[str, J.Job]) -> dict[tuple[str, str], str]:
@@ -168,6 +171,9 @@ def problems(register: dict[tuple[str, str], tuple[str, str]], jobs: dict[str, J
         elif status == "unwired":
             if not _stops_at_once(producer, jobs):
                 found.append("producer_wired:%s" % edge)
+        elif status == "unwired_consumer":
+            if not _stops_at_once(consumer, jobs):
+                found.append("consumer_wired:%s" % edge)
         else:
             if ref not in runs:
                 runs[ref] = recorded(ref, jobs)
@@ -234,6 +240,22 @@ class Proofs(unittest.TestCase):
     def test_cek_is_not_unwired_any_more(self):
         # on an empty RUNNER_TEMP cek has no verdict (its variables are unset), it does not stop at once
         self.assertEqual(self.check(("pulled", "kos"), ("unwired", "x")), ["producer_wired:pulled:cek->kos"])
+
+    def test_a_wired_consumer_is_not_unwired(self):
+        # kos reads pulled (on an empty RUNNER_TEMP it refuses the missing download), and yaz reads results
+        self.assertEqual(self.check(("pulled", "kos"), ("unwired_consumer", "x")), ["consumer_wired:pulled:cek->kos"])
+        self.assertEqual(self.check(("results", "yaz"), ("unwired_consumer", "x")),
+                         ["consumer_wired:results:kos->yaz"])
+
+    def test_cek_writes_pulled_now(self):
+        # the D1 test leaves out/pulled: not "unwritten" any more
+        self.assertEqual(self.check(("pulled", "getir"), ("unwritten", CEK_D1)),
+                         ["not_unwritten:pulled:cek->getir:%s" % CEK_D1])
+
+    def test_a_producer_alone_is_not_a_hand_over(self):
+        # the D1 test uploads pulled but runs no consumer on it
+        self.assertEqual(self.check(("pulled", "kos"), ("handover", CEK_D1)),
+                         ["not_handed_over:pulled:cek->kos:%s" % CEK_D1])
 
     def test_kos_is_not_unwired_either(self):
         # kos ends cycle_not_wired after D3, but on an empty RUNNER_TEMP its first refusal is the missing pulled

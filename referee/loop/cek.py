@@ -41,8 +41,9 @@ left in ``out`` is one ``loop.pulled.read`` accepts.
 
 Out of scope, stated: the reads themselves (the bootstrap result, the target's heads, the fetches: the ``cek`` job's,
 ``loop.job.cek_d1``, with ``loop.accepted`` and ``loop.fetch``), D1's other checks (``verify --previous`` of
-``brain/state``: ``loop.state``; the root signature, not wired) and MF4's judgement of the assembled artifact
-(``loop.job``'s, on the artifact read back).
+``brain/state``: ``loop.state``; the root signature: ``ledger.anchor.judge`` with ``loop.rekor``), MF4's judgement
+of the assembled artifact (``loop.job``'s, on the artifact read back) and its move to ``out/pulled``
+(``loop.job``'s, once every check holds).
 Which commit is read is the caller's choice; ``pulled`` does not record it. The tree is held in memory (on the
 15134-file target: 175 MB of ``tree.tar``, 518 MB peak).
 """

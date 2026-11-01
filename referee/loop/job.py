@@ -15,7 +15,7 @@ jobs it needs, the artifacts it downloads and the one it uploads. ``render()`` w
 for byte the committed ``referee/.github/workflows/loop.yml`` (test 46 compares them); a change is made here and
 the file regenerated with ``python -m loop.job render > .github/workflows/loop.yml`` from ``referee/``. Every
 artifact edge of ``JOBS`` (an upload and a download of it) has one status in ``tests/test_loop_handover.py``: a test
-that runs both jobs on the handed-over bytes, a stated unread download, or a producer that stops unwired.
+that runs both jobs on the handed-over bytes, a stated unread download, or a producer or consumer that stops unwired.
 
 **The shape of every job**, in this order:
 
@@ -64,10 +64,10 @@ refused tree is ``pulled_invalid``). Then:
   (``$RUNNER_TEMP/control/control.json``; unreadable is unusable, exit 2), ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
   (the same refusals, the same one unit), extracts the tree under ``$RUNNER_TEMP/work`` and calls ``loop.decide``
   on ``$RUNNER_TEMP/in/results``: ``decisions`` (every candidate's ``decision`` and ``reasons``) and ``merge`` are in
-  the output and ``done`` is ``["D5"]``. The cycle's state (which merges' sentinels are unfinished) is D1's read of
-  ``brain/state``, not wired, so D5 is given ``None`` and every candidate carries ``sentinel_state_unread``: no
+  the output and ``done`` is ``["D5"]``. The cycle's state (which merges' sentinels are unfinished) is in
+  ``brain/state``, which D1 verifies but ``pulled`` does not carry (no handover of it is wired), so D5 is given ``None`` and every candidate carries ``sentinel_state_unread``: no
   candidate merges. D6-D8 are not wired, so the job ends ``cycle_not_wired``, exit 1, after D5, writing nothing.
-- ``cek`` runs D1 as far as it is wired (``cek_d1``). First the accepted-SHA check: it reads the bootstrap
+- ``cek`` runs D1 (``cek_d1``), and with it the whole job. First the accepted-SHA check: it reads the bootstrap
   referee's last signed state with ``loop.accepted.read_state`` (the Actions API of ``$GITHUB_REPOSITORY`` with the
   job's ``GITHUB_TOKEN``, ``actions: read``; the artifact verified by ``sigstore`` on PATH), fetches the accepted
   brain commit with ``loop.fetch`` from ``loop.accepted.repo_url`` of ``$LOOP_BRAIN_REPO`` (the operator's
@@ -111,10 +111,11 @@ refused tree is ``pulled_invalid``). Then:
   and ``assembled``. When all of it holds, the line has ``accepted`` (``brain_sha``, ``referee_tree_sha256``,
   ``result_sha256``, ``artifact_id``), ``heads`` (branch to commit), ``state`` (``head``, ``previous``, ``rows``),
   ``root`` (``root``, ``rekor_uuid``), ``assembled`` (``target``, ``commit``, ``candidates``), ``profile``
-  (``unit_id``) and ``checked`` ``CEK_CHECKED``: every check of D1's row has run. The job still ends
-  ``cycle_not_wired``, exit 1: the artifact is not moved into ``out/pulled``, so nothing is uploaded and in a real
-  run ``kos`` is not reached. The proposal stage 0 judges is the recipe alone
-  (tohum/14); no other profile field is proposed, so none is compared.
+  (``unit_id``) and ``checked`` ``CEK_CHECKED``: every check of D1's row has run. Then the assembled directory,
+  the bytes MF4 judged, is moved to ``$RUNNER_TEMP/out/pulled`` (``_hand_over``; it must not exist before, else
+  exit 2), the line has ``ok`` true and ``done`` ``["D1"]``, exit 0, so the upload step runs and ``getir``, ``kos``,
+  ``cagir`` and ``yaz`` download it. A refusal leaves ``out/pulled`` absent. The proposal stage 0 judges is the
+  recipe alone (tohum/14); no other profile field is proposed, so none is compared.
 - ``cagir`` stops at once with ``cycle_not_wired`` (exit 1). The D1-D8 composition inside the jobs (building each
   MF's input from the pulled trees and the previous artifacts, and the cycle's one ``brain/state`` commit) has no
   MF of asama-0/14 that owns it (reported in the founder ledger, spec-036).
@@ -134,7 +135,7 @@ Command line, from ``referee/``::
     python -m loop.job render        # the workflow on stdout, exit 0
     python -m loop.job run JOB       # one JSON line on stdout; exit 0 the job's steps all done (``ok`` true),
                                      # 1 refused or not wired, 2 unusable (RUNNER_TEMP unset, an input
-                                     # unusable, getir's fetch failed)
+                                     # unusable, getir's fetch failed, an out/ directory that exists)
 """
 
 from __future__ import annotations
@@ -142,6 +143,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 from typing import Any, NamedTuple
@@ -232,7 +234,7 @@ JOBS: dict[str, Job] = {
 # What cek reads from the referee repository's checkout, and the target branches whose heads it reads (asama-0/01 D1).
 CEK_FILES = ("setup/imports.jsonl", "setup/summary.json", "policy.json")
 TARGET_REFS = {b: "refs/heads/" + b for b in (B.STATE, B.INTEGRATION)}
-# What cek's line lists as checked when D1 holds as far as it is wired.
+# What cek's line lists as checked when D1 holds: every check of asama-0/01's D1 row.
 CEK_CHECKED = ("accepted_sha", "referee_tree", "heads", "state_previous", "root", "assembled", "profile")
 
 SECRET_ENV = tuple(sorted({name for job in JOBS.values() for name in job.secrets} | {"GITHUB_TOKEN"}))
@@ -489,7 +491,7 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
     if refused:
         return refused
     try:
-        # the cycle's state (brain/state: which merges' sentinels are unfinished) is D1's read, not wired: None
+        # the cycle's state (brain/state: which merges' sentinels are unfinished) is in brain/state, not handed over: None
         return E.decide(art, unit, tree, _dir(environ, "in", "results"), control, None)
     except (E.Unusable, D.DeriveError) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
@@ -497,8 +499,8 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
 
 def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git: str = "git",
            rekor: Any = None) -> dict[str, Any]:
-    """D1 of ``cek`` as far as it is wired (see the module docstring): ``{reason?, reasons?, accepted?, heads?,
-    state?, root?, assembled?, profile?}``. ``rekor`` reads Rekor entries (``entry(uuid)``; ``loop.rekor.RekorHttp``
+    """D1 of ``cek`` (see the module docstring): ``{reason?, reasons?, accepted?, heads?, state?, root?,
+    assembled?, profile?}``; without a reason ``out/pulled`` holds the artifact. ``rekor`` reads Rekor entries (``entry(uuid)``; ``loop.rekor.RekorHttp``
     when ``None``); ``verifier`` runs both Sigstore checks."""
     for name in ("GITHUB_REPOSITORY", "GITHUB_TOKEN", "GITHUB_WORKSPACE", "LOOP_BRAIN_REPO", "LOOP_TARGET"):
         if not environ.get(name):
@@ -539,7 +541,18 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
         raise Unusable("cek: %s" % cli.cause(exc)) from None
     entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, verifier=verifier or A.run_verifier)
     pulled = _cek_target(environ, files, brain_dir, sha, root, git, entries)
+    if "reason" not in pulled:
+        _hand_over(os.path.join(root, "pulled"), _dir(environ, "out", "pulled"))
     return dict(pulled, accepted=accepted)
+
+
+def _hand_over(assembled: str, out: str) -> None:
+    """D1 held: the assembled ``pulled`` (the bytes MF4 judged, read back) moved to ``out``, the upload step's path,
+    which must not exist before (an existing directory would be replaced or mixed with another run's)."""
+    if os.path.lexists(out):
+        raise Unusable("cek: %s exists" % out)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    shutil.move(assembled, out)
 
 
 def _refused(reasons: list[str]) -> dict[str, Any]:
@@ -657,8 +670,7 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         d1 = cek_d1(environ, http, verifier, git, rekor)
         if "reason" in d1:
             return dict(result, **d1)
-        return dict(result, reason="cycle_not_wired", checked=list(CEK_CHECKED),
-                    **d1)
+        return dict(result, ok=True, done=["D1"], checked=list(CEK_CHECKED), **d1)
     if name == "getir":
         d2 = getir_d2(environ, fetcher)
         if "reason" in d2:
