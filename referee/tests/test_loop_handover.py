@@ -29,6 +29,8 @@ correctly (each job's own tests).
 
 from __future__ import annotations
 
+import functools
+import importlib
 import hashlib
 import os
 import shutil
@@ -94,35 +96,51 @@ class Call(dict):
     pass
 
 
-def recorded(test_id: str, jobs: dict[str, J.Job]) -> tuple[bool, list[Call]]:
+def _artifacts(jobs: dict[str, J.Job]) -> tuple[tuple[str, tuple[str, ...], str | None], ...]:
+    """What ``recorded`` reads of ``jobs``: each job's downloads and upload (the key of its cache)."""
+    return tuple(sorted((name, tuple(job.downloads), job.upload) for name, job in jobs.items()))
+
+
+def recorded(test_id: str, jobs: dict[str, J.Job]) -> tuple[bool, tuple[Call, ...]]:
     """Run one test with ``loop.job.run`` wrapped: whether it passed, and every call that returned, in order, with
-    its job, its downloads' digests before the call, its result and its upload's digest after the call."""
+    its job, its downloads' digests before the call, its result and its upload's digest after the call.
+
+    A test runs once per process for one ``_artifacts(jobs)``: what it records does not depend on the register
+    being checked, so every register (``Register``, each ``Proofs`` case) reads the same run. A test whose result
+    changes between two runs in one process is judged by its first run."""
+    return _recorded(test_id, _artifacts(jobs))
+
+
+@functools.cache
+def _recorded(test_id: str, artifacts: tuple[tuple[str, tuple[str, ...], str | None], ...]
+              ) -> tuple[bool, tuple[Call, ...]]:
+    io = {name: (downloads, upload) for name, downloads, upload in artifacts}
     calls: list[Call] = []
     real = J.run
 
     def run(name: str, environ: dict[str, str], *args: Any, **kwargs: Any) -> dict[str, Any]:
         temp = environ.get("RUNNER_TEMP") or ""
-        job = jobs.get(name)
-        seen = {a: digest(os.path.join(temp, "in", a)) for a in (job.downloads if job else ())}
+        downloads, upload = io.get(name, ((), None))
+        seen = {a: digest(os.path.join(temp, "in", a)) for a in downloads}
         out = real(name, environ, *args, **kwargs)
-        upload = digest(os.path.join(temp, "out", job.upload)) if job and job.upload else None
-        calls.append(Call(job=name, seen=seen, out=out, upload=upload))
+        made = digest(os.path.join(temp, "out", upload)) if upload else None
+        calls.append(Call(job=name, seen=seen, out=out, upload=made))
         return out
 
     try:
         suite = unittest.defaultTestLoader.loadTestsFromName(test_id)
     except (ImportError, AttributeError):
-        return False, []
+        return False, ()
     result = unittest.TestResult()
     J.run = run
     try:
         suite.run(result)
     finally:
         J.run = real
-    return result.testsRun == 1 and result.wasSuccessful() and not result.skipped, calls
+    return result.testsRun == 1 and result.wasSuccessful() and not result.skipped, tuple(calls)
 
 
-def _handed_over(calls: list[Call], artifact: str, producer: str, consumer: str) -> bool:
+def _handed_over(calls: tuple[Call, ...], artifact: str, producer: str, consumer: str) -> bool:
     for i, made in enumerate(calls):
         if made["job"] != producer or made["upload"] is None:
             continue
@@ -132,11 +150,11 @@ def _handed_over(calls: list[Call], artifact: str, producer: str, consumer: str)
     return False
 
 
-def _unread(calls: list[Call], artifact: str, consumer: str) -> bool:
+def _unread(calls: tuple[Call, ...], artifact: str, consumer: str) -> bool:
     return any(c["job"] == consumer and c["seen"].get(artifact, "") is None and c["out"].get("done") for c in calls)
 
 
-def _unwritten(calls: list[Call], producer: str) -> bool:
+def _unwritten(calls: tuple[Call, ...], producer: str) -> bool:
     made = [c for c in calls if c["job"] == producer]
     return (any(c["out"].get("reason") == "cycle_not_wired" for c in made)
             and all(c["upload"] is None for c in made))
@@ -160,7 +178,6 @@ def problems(register: dict[tuple[str, str], tuple[str, str]], jobs: dict[str, J
     derived = edges(jobs)
     found = ["unregistered:%s->%s" % e for e in sorted(set(derived) - set(register))]
     found += ["not_an_edge:%s->%s" % e for e in sorted(set(register) - set(derived))]
-    runs: dict[str, tuple[bool, list[Call]]] = {}
     for (artifact, consumer), (status, ref) in sorted(register.items()):
         if (artifact, consumer) not in derived:
             continue
@@ -175,9 +192,7 @@ def problems(register: dict[tuple[str, str], tuple[str, str]], jobs: dict[str, J
             if not _stops_at_once(consumer, jobs):
                 found.append("consumer_wired:%s" % edge)
         else:
-            if ref not in runs:
-                runs[ref] = recorded(ref, jobs)
-            passed, calls = runs[ref]
+            passed, calls = recorded(ref, jobs)
             if not passed:
                 found.append("test_failed:%s:%s" % (edge, ref))
             elif status == "handover" and not _handed_over(calls, artifact, producer, consumer):
@@ -322,6 +337,53 @@ class Proofs(unittest.TestCase):
                 shutil.copytree(root, other, symlinks=True)
                 change(other)
                 self.assertNotEqual(digest(other), first)
+
+
+COUNTED = "test_loop_handover.Counted.counted"
+
+
+def _runs() -> int:
+    # the class the loader runs by name (under ``python tests/test_loop_handover.py`` this module is __main__)
+    return importlib.import_module("test_loop_handover").Counted.runs
+
+
+class Cache(unittest.TestCase):
+    def test_a_test_runs_once_for_every_register(self):
+        recorded(COUNTED, J.JOBS)
+        before = _runs()
+        for _ in range(3):
+            self.assertEqual(recorded(COUNTED, J.JOBS), (True, ()))
+        self.assertEqual(_runs(), before)
+
+    def test_another_shape_of_the_jobs_runs_the_test_again(self):
+        shapes = []
+        for name in ("getir", "kos"):
+            jobs = dict(J.JOBS)
+            jobs[name] = jobs[name]._replace(upload=None)
+            shapes.append(jobs)
+        before = _runs()
+        for jobs in shapes + shapes:
+            recorded(COUNTED, jobs)
+        self.assertEqual(_runs(), before + 2)
+
+    def test_the_recording_follows_the_jobs_it_is_given(self):
+        # kos downloads only pulled here: its calls record no deps, though J.JOBS's kos downloads deps too
+        jobs = dict(J.JOBS)
+        jobs["kos"] = jobs["kos"]._replace(downloads=("pulled",))
+        full = [c["seen"] for c in recorded(CEK_TO_ALL, J.JOBS)[1] if c["job"] == "kos"]
+        part = [c["seen"] for c in recorded(CEK_TO_ALL, jobs)[1] if c["job"] == "kos"]
+        self.assertTrue(full and part)
+        self.assertEqual([sorted(seen) for seen in full], [["deps", "pulled"]] * len(full))
+        self.assertEqual(part, [{"pulled": seen["pulled"]} for seen in full])
+
+
+class Counted(unittest.TestCase):
+    """Run by name only, from ``Cache``: counts its runs across the process."""
+
+    runs = 0
+
+    def counted(self):
+        type(self).runs += 1
 
 
 class Failing(unittest.TestCase):

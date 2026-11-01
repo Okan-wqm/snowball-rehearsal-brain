@@ -1,0 +1,67 @@
+{
+ "mutants": [
+  {
+   "id": "several_occurrences_apply",
+   "old": "return None if count == 1 else",
+   "new": "return None if count >= 1 else",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "baseline_ignored",
+   "old": "if base[tuple(m[\"tests\"])] != \"green\":",
+   "new": "if False:",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "mutates_the_brain_itself",
+   "old": "path = os.path.join(copy, \"referee\", mutant[\"file\"])",
+   "new": "path = os.path.join(brain, \"referee\", mutant[\"file\"])",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "timeout_counts_as_killed",
+   "old": "}.get(verdict, verdict)",
+   "new": "}.get(verdict, \"killed\")",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "any_killed_exits_zero",
+   "old": "all(r[\"outcome\"] == \"killed\" for r in rows)",
+   "new": "any(r[\"outcome\"] == \"killed\" for r in rows)",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "duplicate_ids_accepted",
+   "old": "if len(set(ids)) != len(ids):",
+   "new": "if False:",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "unchanged_mutant_accepted",
+   "old": "and m[\"new\"] != m[\"old\"]",
+   "new": "",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  }
+ ]
+}
