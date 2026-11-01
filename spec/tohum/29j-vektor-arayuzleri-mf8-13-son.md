@@ -56,7 +56,7 @@ birimin servissiz testleri), kodun kırmızı başta derlenip yüklendiği, her 
 baştaki toplamı. Tutan ilk kural: `build_break` (`build_ok` yanlış); `lint_regression` (bir aracın `after`'ı
 `before`'undan büyük; araç başına, `asama-0/08` 5); `test_regression` (bir kırmızı test kümede); `impact_miss`
 (kırmızı test var, hiçbiri kümede değil); değilse `unknown`. Çıktı `cause` (`26`); çıkış 0, kullanılamaz girdide 2.
-Geri almanın kendisi `refs`'in `revert` işlemidir; girdileri grubun dışında üretilir (spec `build_ok`'un üreticisini
-ve nöbetçinin lint toplamını henüz adlandırmaz). Vakalar: `test_regression` kırmızı test kümede; `impact_miss` kümenin
+Geri almanın kendisi `refs`'in `revert` işlemidir; girdileri grubun dışında, Kurucu'nun hakem kodunda üretilir; tohum
+`build_ok`'un ve nöbetçinin lint toplamının üreticisini adlandırmaz. Vakalar: `test_regression` kırmızı test kümede; `impact_miss` kümenin
 dışında; `build_break_first` derlenmeyen kodda kırmızı testler onun sonucudur; `lint_regression` test ve derleme temiz,
 araç toplamı arttı; `lint_per_tool` bir aracın düşüşü başkasının artışını kapatmaz; `unknown` mekanik açıklama yok.

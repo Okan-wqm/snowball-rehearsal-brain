@@ -4,6 +4,31 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-01, E450; sahibin onayı): Kurucu kapsülü her oturumun başında beynin `agents/` ve `skills/` dizinlerindeki
+  ajan ve skill tanımlarını denetleyip `brain` eklentisi olarak yükler, beynin başka hiçbir dosyasını yapılandırma olarak
+  yüklemez; iki dizin beyin ağacında, biçim, düşürme kuralları ve yükleme kaydı `24a` "Ajan ve skill tanımları"nda. 80
+  satır sınırı için 2026-10-31 E344 kaydı `CHANGELOG-3.md`'ye taşındı.
+- 2.2 (2026-11-01, E421–E436; sahibin yetkisiyle operatör kararı (2026-11-01); sahip geri alabilir; Kurucu raporları;
+  E150, E231, E260 kapandı): **Fiziksel güvenlik** (`05`, tek yer): fiziksel bir süreci süren, durduran, alarm veren ya
+  da koruyan kod güvenlik yoludur; risk ağırlıklıdır, K6 kapısı olmadan biçimleyici dahil dokunulmaz; yolları sistem
+  hedeften türetir, sahibin isteğe bağlı `targets[].safety_paths`'ı yalnız genişletir (`26c`, `25` 10a, `14`); K6 canlı
+  olana kadar birim seçimi güvenlik yollarını dışlar, Aşama 1'in ilk birimi de; `03` ve `30` oraya bakar. **Görünmeyen
+  tüketici** (`05`): tüketicilerini kapının sayamadığı değişiklik `blocked`'dır. **K0** ekosistemin kimlik ve konum veren
+  ilk mekanik denetimidir, kural kimliği veren linter yoksa da (`03`). **Test gücü** (`04` 1): modülsüz kırmızı kalır;
+  Aşama 1'in çıkışından Kurucu'nun kendi kodunun değişen satırlarında mutant öldürme tabanı; ölçü, içe aktarma ya da
+  sözdizimi hatası olmayan kırmızıyla öldürülenlerin payı, değeri çıkıştan önce sahibin. **Kum havuzu** (`08` 2): hedefin
+  test paketini koşan her kum havuzunda süreç ve CPU sınırı. **Sınav hatası** (`29e`, `29b` "Ret hafızası", `26c`
+  `control.json`; E53): operatörün `exam_faults`'ta doğruladığı ret imzası, onu yargılayan sınav yürürlükteyken serilere
+  sayılmaz, seri girdisi geri alınır, ret kalır. Yanıtlanan raporlar: `seed-001-seed-dir-missing` → `00a:24-27`,
+  `24a:49`, `24a:55`, `26:18`, `27:61`, `25:28` (Kurucu satırı kendi koduyla `26`'nın zincir kuralına göre ekler, `cost`
+  satırını başlatıcı yazar, beyne yalnız `spec/tohum` gelir); `referee-016-reproducer-polarity` → `29:30-52` (3a'dan beri
+  yürürlükte; E260'ın bekleme etiketi `CHANGELOG-2.md:27`'den kalktı); `seed-027-root-choices` → `13:49-53`
+  (g): beş bağ Aşama 1'den başlar, Aşama 0'ın satırı `29j`'ninkidir; `seed-030-cause-choices` → `29j:59-60` (girdiler
+  Kurucu'nun hakem kodunda üretilir, vaat sözcüğü kalktı); `seed-023-run-record-producer` → declined: koşu kaydının ve
+  `cause` girdilerinin üreticisi Kurucu'nun hakem kodudur (`29b:9`, `29j:59-60`; spec araç çıktısının biçimini vermez,
+  `29h:27-28`); `spec-036-cycle-composition-unowned` → declined: devrin bileşimi MF17'nin, Kurucu'nun kodudur
+  (`asama-0/14:44`, `:48`; `00a:13-14`); seed-029 (e) ve seed-030 (f) aynı yanıtı alır. 80 satır sınırı için
+  2026-10-31'in dört kaydı (E341; E294, E308; E338, E339; E249) `CHANGELOG-3.md`'ye taşındı.
 - 2.2 (2026-11-01, E390–E399; Kurucu raporları; E156, E158, E159, E234, E235, E281 kapandı): bu dönemin yanıtladığı ve
   reddettiği raporlar: `seed-002-29b-stale-after-narrowing` → `29b:13` (giriş), `29b:67-73` "Çıkış isteği";
   `seed-003-toy-repo-no-reader` → `27:67` (`tests/fixtures/toy-repo/`); `seed-005-push-class-ledger` → `29e:11-16`
@@ -38,8 +63,6 @@ Okunma: bir sayfanın geçmişi aranırken
   sonra"). Dondurma Aşama 0'ındır: kilit sonraki aşamayı açınca ya da (B) kırmızıyken operatör aktarımı geri alıp başı
   `control.json` `reverted_exits`'e yazınca biter (`26c`, `25a` "Başarısızlık"). İmzalı durum çıkışın başını taşır
   (`snowball-bootstrap-state/4`; `/3` aynen taşınır, taşıdığı sonuç aktarılabilir bir çıkışsa onun başıyla).
-- 2.2 (2026-10-31, E344; uzman tartışması ve hakem): başlatıcı oturumun CLI'nin bildirdiği maliyetini `kind: cost`
-  satırı olarak `26`'nın zincir kuralıyla yazar (`24a` 4); andığı "tohumun defter aracı" tohumda yoktur (E150).
 - 2.2 (2026-10-31, E342, E93; Kurucu raporu seed-040, uzman tartışması ve hakem): önyükleme hakeminin imzalı durumunun
   arayüzü `29b` "Durum"dadır: artefakt, hakem reposunun `main`'indeki koşuların süresi dolmamış en yeni `bootstrap-state`'i
   (iki dosya); açılışı `sigstore verify identity` (`bootstrap.yml`'in `main` kimliği, GitHub OIDC yayıncısı), doğrulanamazsa
@@ -50,28 +73,8 @@ Okunma: bir sayfanın geçmişi aranırken
   uyarısını taşır; rakibin isteği `reports/`'u yine dışarıda tutar (`26c`); `disputed` kuralı E53'te kalır. Her dönemin
   günlük satırı yanıtladığı ya da reddettiği rapor kimliklerini adlandırır; bu dönem: `seed-040-d1-bootstrap-state-read` →
   `29b:30-34`, `26c:39-45`.
-- 2.2 (2026-10-31, E341; sahibin kararı): "Performanslı" hedefi beklenen yük altında da geçerlidir; gecikme, hata ve kaynak
-  hedefleri yük altında ölçülür, yalnız yalıtılmış kopyada ve sentetik veriyle (`01`); K7 bu hedefe bağlıdır (`03`).
-- 2.2 (2026-10-31, E294, E308; sahibin kararı): ekim üretilemediyse taşınan #durustluk'un taahhüdü, aşama başlamadan
-  kaydedilmiş değişmez ve mühürlü bir ölçüm planının hash'idir (`02` "Sahip istisnası", `25` 10c); plan çıkışta
-  `setup/honesty-key.json` olarak açılır, değerlendiricinin çıktısı `setup/honesty-result.json`'dır (`26c`); gizli artefakt yoktur.
-- 2.2 (2026-10-31, E338, E339; sahibin onayı, uzman tartışması ve hakem): sınıf merdiveni varsayılandır. Aşama 1'den
-  sonra hangi sınıf grubunun açılacağını Kurucu'nun aşama spec'i, önkoşulları kapanmış sınıflar arasından seçer; aşama
-  tablosu ve Savunma'nın zorunlu alternatifi varsayılan satırdır ve yan yana koşmaz (`10`); sapma tek sınıf getirir,
-  hakemin aşama açılmadan yazdığı değer / USD alt sınırına dayanır ve çıkışta seçilen sınıfın gerçek harcamasıyla o
-  sınıra karşı denetlenir; ıska, `UNMEASURABLE` tahmin ya da `UNMEASURABLE` çıkış varsayılanı geri getirir (`03`, `18`
-  Varsayılandan sapma). Sınıf önkoşulları `class_requires`: prosedür yalnız ekler, operatör siler; "aynı çıkışta" en
-  geç sınıfın kendi çıkışıdır (`03`, `18`, `18a`, `26b`); `stage_order` sayaçtır, kök 0 → 1, 6 son. Oracle'ı hazır
-  olmayan sınıf yalnız rapor eder; geçen aşama ya da açık sınıf sayısı puana girmez. Çapa aşama numarasını değil
-  `02`'nin listesindeki olayı bekler (`02`, `15`): `04a`, `07a`, `10a`, `11`, `12a`, `21a`, `22`, `30e`, `31a`, `31b`,
-  `31d`, `31h`; sınıf sırasına bağlı metin koşulları da (`01a`, `06`, `08`, `17`, `19`, `24`, `25a`, `26a`, `27`,
-  `27a`, `29`, `30`, `30a`, `30f`). `18`'in "merdiven sırası" maliyet merdiveninin basamak sırasıdır. Satırdaki `18`
-  atıflı yetenek seçimle o aşamadan düşmez: ders provası Aşama 2'nin ilk işi kalır (E317). `asama-4` K5'in hedef
-  taslağıdır, ön koşulu `03`'ün tablosudur. Kapının kodu Aşama 2 spec isteğiyle gelir (E339).
-- 2.2 (2026-10-31, E249; sahibin sorusu, uzman tartışması): `main`'i salt okunur okumak dokunmak değildir; taban yaşının
-  commit sayısı ve eskimiş bulgu oranı senkrondan önce de bu okumayla ölçülür (`07`). `07`'nin andığı eskimiş bulgu oranı
-  sinyali `17`'de satırdır: eşik pencerede > %20, doğan şey organ değil Aşama 2'deki senkron izin kararıdır.
-- 2.2 (2026-10-30 – 2026-10-31, E64, E65, E280–E301, E317–E324): ders provasının aileleri ve sınav tarafı, sistem
-  haritası, Aşama 0 çıkışının karar verilemeyen koşulları ve `control`'ün döngü arayüzü: `CHANGELOG-3.md`.
+- 2.2 (2026-10-30 – 2026-10-31, E64, E65, E249, E280–E301, E308, E317–E324, E338, E339, E341, E344): ders provasının
+  aileleri ve sınav tarafı, sistem haritası, Aşama 0 çıkışının karar verilemeyen koşulları, `control`'ün döngü arayüzü,
+  sınıf merdiveninin varsayılanlığı, yük altında performans ve `main`'in salt okunur okunuşu: `CHANGELOG-3.md`.
 - 2.2 (2026-10-28 – 2026-10-30, E246–E247 ve öncesi): üçüncü inceleme, önyükleme hakeminin yazılışı ve sonraki kararlar: `CHANGELOG-2.md`.
 - 2.1 ve öncesi (2026-10-28): `CHANGELOG-1.md`.

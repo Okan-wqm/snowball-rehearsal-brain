@@ -15,7 +15,7 @@ da yeni kategori önerisini genesis değil şerit yazarı yapar (`09a`).
 
 | Bölüm (`part`) | Dosya | Yazar | Açılış |
 |---|---|---|---|
-| `founder` | beyin reposunda `founder-ledger.jsonl` | Kurucu, tohumun defter aracıyla | Aşama 0, ilk oturum |
+| `founder` | beyin reposunda `founder-ledger.jsonl` | Kurucu, kendi koduyla (zincir kuralı aşağıda); `cost` satırını başlatıcı (`24a` 4) | Aşama 0, ilk oturum |
 | `events`, `cost`, `drill` | `<state_root>/ledger.jsonl` | Hakem işleri; `drill` `exit.drill` (Aşama 0'da yalnız geri alma provası) | Etkinleştirme |
 | `freeze`; `rival`, `accept`; `security` | aynı dosya (`security`'nin hakem ve beyin kapsamı tohumda `seed/security-ledger.jsonl`, `30e`) | Gözcü; döngünün `yaz`'ı, önyükleme hakeminin imzalı sonucundan; `security.run` | P1; Aşama 1 MF6; P2 (`asama-1/13`) |
 | `looks` | `<state_root>/ledger.jsonl` | Hakem exit işi | İlk held-out havuzu |

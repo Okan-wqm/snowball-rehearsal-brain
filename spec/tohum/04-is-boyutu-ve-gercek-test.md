@@ -23,6 +23,10 @@ denetiminde (`02`) kırmızıdır; bölünür, kök neden bölünmez (`23`).
    Geri alındığında yeşil kalan test, test değildir. **Modülsüz kırmızı:** bir mikro özellik bitti
    denince önyükleme hakemi onun testlerini, aşama tablosundaki modül yolu silinmiş ağaçta yeniden
    koşar; yeşil kalırsa ret (`module_less_green:MFk`, `asama-0/14`). Çıkışta bütün mikro özellikler için.
+   Modülsüz kırmızı şimdilik kalır. **Mutant öldürme tabanı:** Aşama 1'in çıkışından başlayarak her aşama çıkışı
+   ayrıca Kurucu'nun kendi kodunun değişen satırlarında bir mutant öldürme tabanı ister. Ölçü, bu satırlardaki
+   mutantlardan öldürülenlerin payıdır; bir mutant ancak içe aktarma ya da sözdizimi hatası olmayan bir kırmızıyla
+   öldürülmüş sayılır. Taban değeri aşama çıkışından önce sahip koyar.
 2. **Canlı yol.** Test, mekanizmayı üretim kodunun çağırdığı yoldan çalıştırır; yardımcı
    fonksiyonu doğrudan çağırmaz. Yardımcıyı doğrudan çağıran suite, üretim yolu onu hiç
    çağırmasa da yeşil kalır.

@@ -21,19 +21,19 @@ groups[], module, calls[]}]}`. `module` `referee/` altındaki yoldur (modülsüz
 biri çağırandan küçüktür (`calls`'un okunuşu: `26a`). Önyükleme hakemi `done_mf`'in anlamını, test bildirimini, vektör gruplarının
 ne zaman koştuğunu, modülsüz kırmızıyı ve çıkıştaki MF sayısını buradan okur. Partilerin tabloları aynı dizindedir (`asama-1/13`).
 
-**control.json** (hakem reposu): `{kill_switch, budget_state, oauth_token_expires, loop_schedule,
-merge_paused, founder_resume?, reverted_exits?}`. Kapalıya düşüş: `kill_switch` eksikse açık; `budget_state` (`ok` ya da
-frene takılan kalem) eksikse fren; `loop_schedule` eksikse `false` (zamanlanmış devir `paused` ile yeşil
-biter); `merge_paused` eksikse `true` (gözlem sürer, merge yok); `founder_resume {after_run, note}`
-yalnız adlandırdığı koşudan sonra bir kez geçerlidir (`24a`); `reverted_exits`, (B) kırmızı olduğu için aktarımı geri alınmış çıkışların imzalı sonuçtaki beyin başları (40 karakterlik SHA listesi), eksikse boştur: (A)'nın dondurması sürer (`29b` "Çıkıştan sonra", `25a` "Başarısızlık").
+**control.json** (hakem reposu): `{kill_switch, budget_state, oauth_token_expires, loop_schedule, merge_paused,
+founder_resume?, reverted_exits?, exam_faults?}`. Kapalıya düşüş: `kill_switch` eksikse açık; `budget_state` (`ok` ya da frene
+takılan kalem) eksikse fren; `loop_schedule` eksikse `false` (zamanlanmış devir `paused` ile yeşil biter); `merge_paused` eksikse
+`true` (gözlem sürer, merge yok); `founder_resume {after_run, note}` yalnız adlandırdığı koşudan sonra bir kez geçerlidir (`24a`);
+`reverted_exits`, (B) kırmızı olduğu için aktarımı geri alınmış çıkışların imzalı sonuçtaki beyin başları (40 karakterlik SHA listesi), eksikse boştur: (A)'nın dondurması sürer (`29b` "Çıkıştan sonra", `25a` "Başarısızlık"); `exam_faults` `[{head, signature}]`, eksikse boştur (`29e` "Sınav hatası").
 
 **setup/summary.json** (`25`'in alanlarına ek): `seed_epochs[]` `{commit, spec_tohum_sha256, seed_sha256,
-bootstrap_sha256}`; `targets[]` `{id, repo, kind: toy|copy, base_sha, identifiers[], excluded_paths[],
-unit_candidates[]}` (`identifiers` genellik denetiminin ad listesidir; `excluded_paths` operatör verisidir,
-hakem kodu değildir; `unit_candidates` kopyanın aday birim yolları, sırayla); `honesty_commitment`
-(`sha256(canonical(anahtar))`); ekim kaçırıldıysa sahibin `honesty_exception` `{stage: 0, carry_to: 1, reason}`'ı
-(`02` "Sahip istisnası"; yanındaki taahhüt taşıma hedefinin ekimidir, o olmadan istisna koşulu kaldırmaz); ilk
-koşu işareti.
+bootstrap_sha256}`; `targets[]` `{id, repo, kind: toy|copy, base_sha, identifiers[], excluded_paths[], unit_candidates[],
+safety_paths[]?}` (`identifiers` genellik denetiminin ad listesidir; `excluded_paths` operatör verisidir, hakem kodu değildir;
+`unit_candidates` kopyanın aday birim yolları, sırayla; `safety_paths` sahibin isteğe bağlı fiziksel güvenlik yolları, `05`
+"Fiziksel güvenlik"); `honesty_commitment` (`sha256(canonical(anahtar))`); ekim kaçırıldıysa sahibin `honesty_exception`
+`{stage: 0, carry_to: 1, reason}`'ı (`02` "Sahip istisnası"; yanındaki taahhüt taşıma hedefinin ekimidir, o olmadan istisna
+koşulu kaldırmaz); ilk koşu işareti.
 
 **setup/imports.jsonl**: her aktarım bir satır `{ts, stage, batch?, brain_sha, referee_tree_sha256, result_sha256, toy_tree_sha256?}`, zincirli (`26`); insan dokunuşu
 sayacı. `referee_tree_sha256`: `brain_sha`'nın ağacında, blob baytlarıyla (git öznitelikleri, filtreler ve satır sonu dönüşümü uygulanmadan), `referee/` altındaki her düzenli dosya için bir satır:

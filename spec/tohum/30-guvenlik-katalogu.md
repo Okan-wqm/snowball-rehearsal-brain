@@ -7,8 +7,8 @@ Okunma: her güvenlik işinde, her bildirimde ve yeni bir hedefe bağlanırken
 ---
 
 **Neden var.** Repoyu öğrenmenin bir amacı güvenlik açığı açmamaktır (`05`); güvenlik K6 sınıfıdır
-(`03`). Katalog bilinen açık sınıflarını tek yerde toplar ki her ajan neye bakacağını bilsin: Kurucu
-beyin ve hakem kodunu yazarken, güvenlik avcısı (`30f`) ararken, rakip bir artefaktı çürütürken (ilgili
+(`03`), fiziksel güvenlik yolları da bu sıradadır (`05` "Fiziksel güvenlik"). Katalog bilinen açık
+sınıflarını tek yerde toplar ki her ajan neye bakacağını bilsin: Kurucu beyin ve hakem kodunu yazarken, güvenlik avcısı (`30f`) ararken, rakip bir artefaktı çürütürken (ilgili
 tohum sayfası olarak, `29`), K6 organları önkoşulları kapanınca (`03`) düzeltirken. Test-yazıcıya katalog girdisi property
 tanımının parçası olarak gider, bulgunun iddiası gitmez (`04a` 2). Katalog bir hipotez listesidir, bulgu
 değildir (Y1): bir sınıfın bu kodda var olduğunu yalnız yürütme söyler.

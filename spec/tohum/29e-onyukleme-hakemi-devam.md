@@ -1,8 +1,8 @@
-# Önyükleme Hakemi, Devam: Kurucu Kayıtları, Sır Desenli Metin
+# Önyükleme Hakemi, Devam: Kurucu Kayıtları, Sır Desenli Metin, Sınav Hatası
 
 Tarih: 2026-11-01 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
-Okunma: Aşama 0 boyunca; Kurucu kaydı itilirken ve bir `secret_in_*` reddi okunurken
-Çapa: `seed/bootstrap/snowball_bootstrap/` (`classify.py` `is_founder_record`, `rival.py` `secret_paths`, `decide.py`)
+Okunma: Aşama 0 boyunca; Kurucu kaydı itilirken, bir `secret_in_*` reddi okunurken ve bir ret sınav hatası sayılınca
+Çapa: `seed/bootstrap/snowball_bootstrap/` (`classify.py` `is_founder_record`, `rival.py` `secret_paths`, `config.py` `load_exam_faults`, `decide.py`)
 
 ---
 
@@ -27,3 +27,14 @@ dokunmaz. Rakip tarafı hatada (bütçe ve `request_rejected` dışında) commit
 yeniden inceler (uyarı `rival_side_retry:<n>`); üst üste üçüncü rakip tarafı hatada commit değerlendirilir ve operatör
 uyarılır (`rival_side_streak:<n>`). Rakibin protokolü ona sır desenli dizgeyi kararına yazmamasını, yeniden üreticide
 çalışma anında parçalardan kurmasını söyler.
+
+**Sınav hatası** (E53). Operatör bir reddin sınavın kendi hatası olduğunu doğrularsa (yanlış vektör ya da yanlış kanıt:
+Kurucu doğru kodu tuttuğu için reddedildi), reddedilen başı ve ret imzasını `control.json` `exam_faults`'a `{head,
+signature}` olarak yazar. İmza "Ret hafızası"nınkidir (`29b`), imzalı durumun `reject_streaks` anahtarı: `tür:test`,
+`tür:ref`, çürütmede `refutation:<anahtar>`. Girdi, son tohum döneminin commit'i (dönem yoksa kurulum tohumununki)
+adlandırdığı başın atası olduğu sürece, yani o başı yargılayan sınav yürürlükteyken geçerlidir; sonraki tohum dönemi onu
+kendiliğinden kapatır. Geçerli girdinin imzası serilere sayılmaz, ret o imza yokmuş gibi okunur: imzalı durumdaki seri
+girdisi geri alınır, imza `repeated`, `not_learning` ve `repeat_events`'e girmez, başka nedeni olmayan ret seriler için
+kabul gibidir; öbür imzalar her zamanki gibi sayılır. Ret kalır: sınav düzeltilene kadar o imza reddetmeye devam eder.
+Geçerli imzalar sonucun `exam_faults`'undadır. Biçimsiz liste ya da beyinde olmayan baş koşuyu durdurur (operatörün
+dosyasıdır, ret değildir). Daha önce sayılmış `repeat_events` geri alınmaz.

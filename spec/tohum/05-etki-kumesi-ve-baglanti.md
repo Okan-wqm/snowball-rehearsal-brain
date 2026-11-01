@@ -28,6 +28,8 @@ bağımlılığa dayanıyor. Oracle doğrulama kapsamını bu kümeyle kurar.
   tabanda ve adayda yeşil koşar; kum havuzunda koşamayan test (servis yok) test sayılmaz.
 - Graf aracı yalnız proje düzeyinde bağ veriyorsa etki kümesi proje düzeyindedir ve "kaba" olarak
   işaretlenir; dosya düzeyi bağ ihtiyacı bir kas sinyalidir.
+- **Görünmeyen tüketici.** Kapının tüketicilerini sayamadığı değişiklik görünmeyen bir tüketiciye dokunmuş
+  sayılır ve `blocked`'dır (kapalıya düşüş).
 - Güvenlik sınırı kenarına dokunan değişiklik, hangi sınıf bulmuş olursa olsun K6'dır; K6 oracle'ı
   canlı değilse `blocked` kalır. Harita katmanı (c) gelene kadar güvenlik sınırını profildeki
   `security_paths` tanımlar. K6 canlı olana kadar güvenlik yollarına hiç dokunulmaz, biçimleyici
@@ -38,6 +40,13 @@ bağımlılığa dayanıyor. Oracle doğrulama kapsamını bu kümeyle kurar.
   dosyada olursa olsun güvenlik yoludur: K6 canlı olana kadar `blocked`'dır, sonra yalnız K6
   kapısından ve `07a`'nın veri şartlarıyla geçer. Böyle bir yol eklemediğini ve genişletmediğini
   kapının gösteremediği değişiklik de böyle sayılır.
+- **Fiziksel güvenlik.** Fiziksel bir süreci süren, durduran, onun için alarm veren ya da onu koruyan kod
+  (pompa, havalandırıcı, oksijen, besleme, alarm, acil duruş; eşikleri ve eskalasyonu dahil) güvenlik yoludur:
+  risk ağırlıklıdır (`20`), K6 canlı olana kadar hiç, sonra yalnız K6 kapısından dokunulur, biçimleyici ve
+  `--fix` dahil. Bu yolları sistem hedeften türetir (`14`); sahibin isteğe bağlı `targets[].safety_paths`
+  listesi (`26c`) türetmeyi yalnız genişletir, hiçbir öneri daraltamaz. K6 canlı olana kadar birim seçimi
+  güvenlik yollarını dışlar: kendisi bir güvenlik yolu olan ya da bir güvenlik yolunun altında kalan birim
+  aday değildir; Aşama 1'in ilk birimi de.
 - Bağımlılık manifesti değişikliği K6'dır ve Y3 gereği `blocked`'dır; bağımlılık eklemek
   sistemin işi değildir.
 - Derleme grafiğinin dışında kalan dizinlerdeki değişiklik, o dizin için profilde bir araç zinciri

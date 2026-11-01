@@ -11,13 +11,13 @@ her sınıfın adapter'ı profildeki aracı sarar. LLM, mekanik aracın bittiği
 
 | Sınıf | Hata türü | Avcı | Oracle |
 |---|---|---|---|
-| K0 | Lint ve format | Profildeki lint araçlarını saran adapter | Aracın yeniden koşusu |
+| K0 | Lint ve format: ekosistemin kimlik ve konum veren ilk mekanik denetimi (kural kimliği veren linter yoksa da) | Profildeki o denetimi saran adapter | Aracın yeniden koşusu |
 | K1 | Tip ve derleme hataları | Sarıcı adapter | Araç |
 | K2 | Ölü kod, kullanılmayan export, koşmayan test hedefi; kullanılmıyor olmak ölü olmak değildir (`07a`) | Sarıcı adapter, repo invariantları | Bulguda araç; silmede `07a`'nın kanıtları ve etki kümesi testleri |
 | K3 | Sözleşme paritesi: iki uçlu sözleşmeler | LLM'siz mekanik çapraz kontrol | Kasıtlı bozma |
 | K4 | Şema yerleşimi ve mevcut invariant testleri | Sarıcı adapter | Araç |
 | K5 | Mantık hataları: eksik await, ters koşul, yanlış sıra, yarım idempotency | LLM avcı, Opus | Test oracle'ı, avcıdan farklı model |
-| K6 | Güvenlik, yetki sınırı, tenant izolasyonu, bağımlılık değişikliği | LLM avcı, Opus | Test oracle'ı, avcıdan farklı model |
+| K6 | Güvenlik, yetki sınırı, tenant izolasyonu, bağımlılık değişikliği, fiziksel güvenlik (`05`) | LLM avcı, Opus | Test oracle'ı, avcıdan farklı model |
 | K7 | Performans, yük altında da (`01`) | Profildeki benchmark ve sorgu planı araçları | Baseline'a karşı ölçüm |
 | K8 | Hedef reponun dokümanı: bayat doküman, davranışı değişmiş kodun eksik dokümanı | Çapa çözümleme; doküman-kod çelişkisi | Her iddia koda çapalı (`path:line` ya da sembol) ve çapa çözülür; imza, CLI bayrağı, yapılandırma anahtarı ve uç adı gibi mekanik iddialar koda karşı doğrulanır; çözülmeyen çapa kırmızı |
 

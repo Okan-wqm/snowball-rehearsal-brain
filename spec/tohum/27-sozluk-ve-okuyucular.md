@@ -58,7 +58,7 @@ dosyaları içindir; kod dizinlerinin çağıranları `24` ve `26a`'dadır. Hede
 | `setup/honesty-key.json`, hakem reposu | operatör | önyükleme hakemi, çıkışta | #durustluk | Aşama 0 çıkışı |
 | `vectors/`, `seats/`, `bootstrap/stages/`, hakem reposu | operatör, tohumdan | önyükleme hakemi, `agent.dispatch` | Kabul, koltuk promptu, `done_mf` ve MF testleri | Kurulum |
 | Önyükleme koşu artefaktları, Rekor kayıtları, `status-stage0.md` | önyükleme hakemi | Kurucu, başlatıcı, `import`, sonraki koşu (imzalı durum), operatör | Neyin düzeltileceği, oturum başlatma, aktarılacak SHA, sonraki karar | Aşama 0 |
-| `founder-ledger.jsonl`, beyin reposu | Kurucu, tohumun defter aracıyla; başlatıcı (`cost`) | Kurucu sonraki oturum, önyükleme hakemi (zincir) | Neye devam edilecek; `founder_ledger_invalid` | Aşama 0 |
+| `founder-ledger.jsonl`, beyin reposu | Kurucu, kendi koduyla (`26`'nın zincir kuralı); başlatıcı (`cost`) | Kurucu sonraki oturum, önyükleme hakemi (zincir) | Neye devam edilecek; `founder_ledger_invalid` | Aşama 0 |
 | `reports/*.json`, beyin reposu | Kurucu | önyükleme hakemi, operatör | İtiraz (`disputed`), uyarı, tohum dönemi | Aşama 0 |
 | `spec/`, `INDEX.md`, beyin reposu | Kurucu | Kurucu, tohumun spec denetimi, önyükleme hakemi (kilit) | Aşama açma, kilit | Aşama 0 |
 | `referee/` ve `referee/.github/workflows/loop.yml`, beyin reposu | Kurucu | önyükleme hakemi (`wiring` dahil), `import` | Aktarılacak hakem ve döngü iş akışı | Aşama 0 |

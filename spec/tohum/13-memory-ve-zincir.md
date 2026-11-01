@@ -49,9 +49,10 @@ ilk satırın `prev_hash`'i 64 sıfırdır. Uygulama tohum vektörleri V1–V3'�
 - **Kök ve dış günlük.** Her döngü sonunda tüm bölümlerin son hash'lerinden bir kök hash türetilir,
   `chain/root.jsonl`'a eklenir ve `rekor.anchor` ile Sigstore Rekor'a yazılır. Kök kaydı hakem
   ağacı hash'ini, kabul edilmiş beyin SHA'sını, koltuk özetlerini, tohum hash'ini ve anayasal
-  `policy.json` hash'ini bağlar. Rekor kaydı herkese açıktır; yalnız hash ve iş akışı kimliği
-  taşır. Açık hedefte `brain/state` ayrıca ruleset ile korunur (`deletion`, `non_fast_forward`,
-  bypass yok); özel hedefte ve eğitim deposunda bütünlüğün dış güvencesi Rekor'dur.
+  `policy.json` hash'ini bağlar; bu beş bağ Aşama 1'den başlar, Aşama 0'ın kök satırı `29j`'nin
+  `root` satırıdır. Rekor kaydı herkese açıktır; yalnız hash ve iş akışı kimliği taşır. Açık hedefte
+  `brain/state` ayrıca ruleset ile korunur (`deletion`, `non_fast_forward`, bypass yok); özel hedefte ve
+  eğitim deposunda bütünlüğün dış güvencesi Rekor'dur.
 - **Zincir kırığı sert duruştur.** Hash uyuşmazlığı, Rekor'daki kökle uyuşmayan dal ucu ya da
   Rekor'a yazılamama kurcalama kanıtıdır: Gözcü sert duruş yazar (`28`), defter salt okunur olur,
   kırığın satırı ve commit'i raporlanır. Kırık düzeltilmez; kırığın kendisi yeni bir satırdır.

@@ -42,7 +42,8 @@ Okunma: yeni repoda ve property eklerken
   `policy.json`'daki `security_keywords` (`auth`, `guard`, `security`, `session`, `token`, `secret`,
   `crypto`, `tenant`, `permission`, `role`, `policy`, `payment`, `billing`, `pii`) ve sahiplik
   dosyalarının güvenlik ekibine verdiği yollar. Anahtar kelime listesi anayasaldır, yalnız operatör
-  değiştirir; yol listesi bir türetmedir ve hiçbir öneri onu daraltamaz.
+  değiştirir; yol listesi bir türetmedir ve hiçbir öneri onu daraltamaz. Fiziksel güvenlik yolları da
+  bu türetmeye girer; sahibin `targets[].safety_paths`'ı onu yalnız genişletir (`05` "Fiziksel güvenlik").
 - **Hariç tutulan dizinler** profilde listelenir: kendi durumunu, defterlerini ya da ajan
   tanımlarını tutan otomasyon dizinleri, ajan çalışma alanları, inceleme kayıtları, üretilmiş
   çıktı. Hariç tutma da hakem türetmesidir; bunlar uygulama kodu olarak taranmaz.

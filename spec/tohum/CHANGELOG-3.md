@@ -4,6 +4,29 @@ Tarih: 2026-11-01 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-10-31, E344; uzman tartışması ve hakem): başlatıcı oturumun CLI'nin bildirdiği maliyetini `kind: cost`
+  satırı olarak `26`'nın zincir kuralıyla yazar (`24a` 4); andığı "tohumun defter aracı" tohumda yoktur (E150).
+- 2.2 (2026-10-31, E341; sahibin kararı): "Performanslı" hedefi beklenen yük altında da geçerlidir; gecikme, hata ve kaynak
+  hedefleri yük altında ölçülür, yalnız yalıtılmış kopyada ve sentetik veriyle (`01`); K7 bu hedefe bağlıdır (`03`).
+- 2.2 (2026-10-31, E294, E308; sahibin kararı): ekim üretilemediyse taşınan #durustluk'un taahhüdü, aşama başlamadan
+  kaydedilmiş değişmez ve mühürlü bir ölçüm planının hash'idir (`02` "Sahip istisnası", `25` 10c); plan çıkışta
+  `setup/honesty-key.json` olarak açılır, değerlendiricinin çıktısı `setup/honesty-result.json`'dır (`26c`); gizli artefakt yoktur.
+- 2.2 (2026-10-31, E338, E339; sahibin onayı, uzman tartışması ve hakem): sınıf merdiveni varsayılandır. Aşama 1'den
+  sonra hangi sınıf grubunun açılacağını Kurucu'nun aşama spec'i, önkoşulları kapanmış sınıflar arasından seçer; aşama
+  tablosu ve Savunma'nın zorunlu alternatifi varsayılan satırdır ve yan yana koşmaz (`10`); sapma tek sınıf getirir,
+  hakemin aşama açılmadan yazdığı değer / USD alt sınırına dayanır ve çıkışta seçilen sınıfın gerçek harcamasıyla o
+  sınıra karşı denetlenir; ıska, `UNMEASURABLE` tahmin ya da `UNMEASURABLE` çıkış varsayılanı geri getirir (`03`, `18`
+  Varsayılandan sapma). Sınıf önkoşulları `class_requires`: prosedür yalnız ekler, operatör siler; "aynı çıkışta" en
+  geç sınıfın kendi çıkışıdır (`03`, `18`, `18a`, `26b`); `stage_order` sayaçtır, kök 0 → 1, 6 son. Oracle'ı hazır
+  olmayan sınıf yalnız rapor eder; geçen aşama ya da açık sınıf sayısı puana girmez. Çapa aşama numarasını değil
+  `02`'nin listesindeki olayı bekler (`02`, `15`): `04a`, `07a`, `10a`, `11`, `12a`, `21a`, `22`, `30e`, `31a`, `31b`,
+  `31d`, `31h`; sınıf sırasına bağlı metin koşulları da (`01a`, `06`, `08`, `17`, `19`, `24`, `25a`, `26a`, `27`,
+  `27a`, `29`, `30`, `30a`, `30f`). `18`'in "merdiven sırası" maliyet merdiveninin basamak sırasıdır. Satırdaki `18`
+  atıflı yetenek seçimle o aşamadan düşmez: ders provası Aşama 2'nin ilk işi kalır (E317). `asama-4` K5'in hedef
+  taslağıdır, ön koşulu `03`'ün tablosudur. Kapının kodu Aşama 2 spec isteğiyle gelir (E339).
+- 2.2 (2026-10-31, E249; sahibin sorusu, uzman tartışması): `main`'i salt okunur okumak dokunmak değildir; taban yaşının
+  commit sayısı ve eskimiş bulgu oranı senkrondan önce de bu okumayla ölçülür (`07`). `07`'nin andığı eskimiş bulgu oranı
+  sinyali `17`'de satırdır: eşik pencerede > %20, doğan şey organ değil Aşama 2'deki senkron izin kararıdır.
 - 2.2 (2026-10-31, E317, E321–E324; ders provası tartışmasının hakem kararı): gerçek beyinde ders provası ders
   görünümünü getiren aşamanın (Aşama 2) ilk işidir ve sahibin MVP sınavıdır; erken ders partisi yok (`03`, `22b`,
   E317). `#ders-dogru` zorunlu çıkış satırı (`18`, E322). Aşama özeti `03` satırında `18` atfıyla geçen her yeteneği

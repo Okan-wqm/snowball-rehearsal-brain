@@ -25,7 +25,9 @@ Okunma: her hakem işi tasarlanırken ve her ajan dispatch'inde
 2. **Konteyner.** `koş` işindeki her kod iç içe, kısa ömürlü bir konteynerde koşar:
    `--network none --cap-drop ALL --read-only --user <uid>`, yazılabilir yalnız worktree ve çıktı
    dizini, `ACTIONS_*` değişkeni yok, docker soketi yok. Worktree koşu başına taze bir host dizinidir
-   (tmpfs değil); boyutu ve kapsayıcının belleği `operating{}` sınırlarındadır (`18a`). Barındırılan
+   (tmpfs değil); boyutu ve kapsayıcının belleği `operating{}` sınırlarındadır (`18a`). Hedefin test
+   paketini koşan her kum havuzu, kimin kodunda kurulursa kurulsun (Kurucu'nunki dahil), süreç sayısı ve CPU
+   sınırıyla koşar. Barındırılan
    koşucuda iş kullanıcısının şifresiz sudo'su vardır; bu yüzden sonuç dosyaları konteyner bittikten
    sonra konteyner dışında hash'lenir ve `yaz` işi onları yalnız artefakt kimliğiyle alır. Koşucu GitHub
    barındırmalıdır; kendi koşucu yalnız `--ephemeral` kipindedir. İmajlar `@sha256` ile pinlidir: birimin

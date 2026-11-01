@@ -59,10 +59,10 @@ yeniden üretildi (`refutation_still_reproduces`, `29`). Testler kırmızıysa r
 artefaktı** tiplidir: `{sha, kind, reasons: [{kind, test_id?, ref, detail_sha256, detail?}]}`.
 
 **Ret hafızası.** Kurucu'nun düzeltebildiği her ret (test, vektör, lisans, yeniden üretilmiş çürütme, `prompt_too_large`, `max_turns`,
-`secret_in_prompt`) nedenlerinin imzasıyla (`tür:test`, `tür:ref`; çürütmede komut ve beklentinin hash'i) sayılır; kabul seriyi
-sıfırlar. Rakibin hataları (`model_mismatch`, `malformed_verdict`, `no_verdict`, `refusal`, `rival_missing`, `secret_in_verdict`), bütçe
-ve altyapı arızası serilere dokunmaz; rakip hata serisi operatörü uyarır. Sonuç `learning {repeated, not_learning, repeat_events}`
-taşır; aynı imza ardışık `stage_params.repeat_reject_limit` rete ulaşınca `not_learning` olur ve Kurucu oturumu durur (`22a`).
+`secret_in_prompt`) nedenlerinin imzasıyla (`tür:test`, `tür:ref`; çürütmede komut ve beklentinin hash'i) sayılır; kabul seriyi sıfırlar.
+Rakibin hataları (`model_mismatch`, `malformed_verdict`, `no_verdict`, `refusal`, `rival_missing`, `secret_in_verdict`), bütçe ve altyapı
+arızası serilere dokunmaz; rakip hata serisi operatörü uyarır. Sonuç `learning {repeated, not_learning, repeat_events}` taşır; aynı imza
+ardışık `stage_params.repeat_reject_limit` rete ulaşınca `not_learning` olur ve Kurucu oturumu durur (`22a`). Sınav hatası: `29e`.
 
 **Çıkış isteği, Aşama 0 çıkışının (A) parçası.** `exit-request.json` son kabul edilmiş SHA'yı ve donmuş `spec/asama-0` hash'ini
 adlandırır. Hakem testleri, vektörleri, durumdaki yeniden üreticileri koşar, açık iddiaları listeler; aşama tablosunun
