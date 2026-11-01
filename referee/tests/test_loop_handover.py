@@ -49,7 +49,7 @@ from profile_tree import write_tree  # noqa: E402
 GETIR_TO_KOS = "test_loop_getir.HandOver.test_kos_installs_what_getir_fetched"
 CEK_TO_ALL = "test_loop_cek.CekJob.test_getir_kos_cagir_and_yaz_run_on_the_pulled_cek_hands_over"
 CEK_D1 = "test_loop_cek.CekJob.test_the_job_runs_d1_and_hands_pulled_to_the_upload"
-KOS_TO_YAZ = "test_loop_yaz.YazJob.test_the_job_runs_d5_and_merges_nothing_without_the_state"
+KOS_TO_YAZ = "test_loop_yaz.YazJob.test_the_job_runs_d5_with_criterion_8_from_the_state"
 
 # (artifact, consumer) -> (status, test id | why)
 HANDOVER: dict[tuple[str, str], tuple[str, str]] = {

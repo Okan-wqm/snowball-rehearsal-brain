@@ -63,6 +63,13 @@ from profile_tree import writable_base, write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, operating, recipe  # noqa: E402
 import test_loop_kos as LK  # noqa: E402
 from test_loop_kos import HEADS, TREE, RedAs, candidate, state_files  # noqa: E402
+from test_revert_drill import row  # noqa: E402
+
+
+def state_rows(n: int) -> list[dict]:
+    """The first ``n`` rows of the fixture ``brain/state`` ledgers: ``cycle_start`` rows of ``ledger.schema``, no merge."""
+    return [row("l%d" % i, "events", "cycle_start", {"cycle_id": str(i)}) for i in range(n)]
+
 
 SUMMARY = {"targets": [{"id": "t1", "kind": "toy", "excluded_paths": [], "unit_candidates": []},
                        {"id": "t2", "kind": "copy", "excluded_paths": ["x"], "unit_candidates": []}]}
@@ -320,7 +327,7 @@ class CekJob(unittest.TestCase):
     def state_commit(self, counts: dict, parents: tuple, extra: dict | None = None) -> str:
         """A ``brain/state`` commit whose chained files hold ``counts`` rows (``loop.state``'s rules); root row ``i``
         anchors the ledger's first ``ANCHORED[i]`` rows, its entry in the fake Rekor (``ledger.anchor``'s rules)."""
-        ledger = [{"row_id": "l%d" % i, "part": "p"} for i in range(max(self.ANCHORED))]
+        ledger = state_rows(max(self.ANCHORED))
         content = {}
         if "ledger.jsonl" in counts:
             content["ledger.jsonl"] = self.TA.chained(ledger[:counts["ledger.jsonl"]])
@@ -396,7 +403,7 @@ class CekJob(unittest.TestCase):
         self.assertEqual(out["accepted"]["artifact_id"], 11)
         self.assertIn("https://github.com/o/referee/.github/workflows/bootstrap.yml@refs/heads/main", self.verified[0])
         # MF11: the head's root (its ledger's, the last root row's) and its Rekor entry, verified against loop.yml
-        root = AN.root_of(AN.tips(self.TA.chained([{"row_id": "l%d" % i, "part": "p"} for i in range(5)])))
+        root = AN.root_of(AN.tips(self.TA.chained(state_rows(5))))
         uuid = entry_for(RK.payload_digest(root))[0]
         self.assertEqual((out["root"], self.rekor.calls), ({"root": root, "rekor_uuid": uuid}, [uuid]))
         self.assertEqual(len(self.verified), 2)
@@ -480,8 +487,9 @@ class CekJob(unittest.TestCase):
         write_tree(os.path.join(temps["yaz"], "control"), {"control.json": {"merge_paused": False}})
         got = J.run("yaz", {"RUNNER_TEMP": temps["yaz"]})
         self.assertEqual(got["done"], ["D5"])
-        self.assertEqual({cid: d["reasons"] for cid, d in got["decisions"].items()},
-                         {"good": ["sentinel_state_unread"], "breaks": ["sentinel_state_unread", "tests_red"]})
+        # criterion 8 from the ledger cek verified: no merge in it, so good merges
+        self.assertEqual((got["merge"], {cid: d["reasons"] for cid, d in got["decisions"].items()}),
+                         ("good", {"good": [], "breaks": ["tests_red"]}))
 
     def test_an_existing_out_pulled_is_no_verdict_and_left_as_it_was(self):
         # another run's artifact (or anything) at the upload step's path is neither replaced nor mixed with

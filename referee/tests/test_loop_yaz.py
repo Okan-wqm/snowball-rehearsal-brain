@@ -6,11 +6,11 @@
 - criterion 1 through ``gate.diffguard`` with the profile ``kos`` staged with: a manifest change, and an operator
   excluded path, which 29g says ``excluded_dirs`` carries (and ``kos`` refused too: ``kos:base_file_missing``);
 - criterion 2: a diff that adds a key id is ``secret_in_diff`` (MF2 reached through MF8);
-- criteria 7 and 8 from the inputs: ``merge_paused`` missing or true, an unfinished sentinel, and an unread state
-  (``None``: ``sentinel_state_unread``, no merge);
+- criteria 7 and 8 from the inputs: ``merge_paused`` missing or true, an unfinished sentinel;
 - the artifacts by hash: a changed byte of a run file, a missing ``hashes.json``, an unusable diff or finding;
-- the job: ``loop.job run yaz`` reads ``control.json`` and the two artifacts, gives every candidate
-  ``sentinel_state_unread`` (D1's state read is not wired) and ends ``cycle_not_wired`` after D5; a refused
+- the job: ``loop.job run yaz`` reads ``control.json`` and the two artifacts, takes criterion 8 from ``pulled``'s
+  ``brain/state`` ledger (``ledger.serial``: no merge, a merge, a planted merge, a reverted one) and ends
+  ``cycle_not_wired`` after D5; a ledger ``ledger.serial`` refuses is ``state_refused``, nothing decided; a refused
   artifact, a missing ``control.json`` and an unusable recipe.
 """
 
@@ -33,7 +33,9 @@ from loop import pulled as P  # noqa: E402
 from profile import unit_verify as V  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, RAISES, diff, recipe  # noqa: E402
-from test_loop_kos import TARGET, Base, RedAs, candidate  # noqa: E402
+from test_loop_kos import TARGET, Base, RedAs, candidate, state_files  # noqa: E402
+from test_revert_drill import plant, reverted  # noqa: E402
+from test_serial import M1, START, merge  # noqa: E402
 
 KEY_ID = "AK" + "IA" + "Q7" * 8  # a key id shape (MF2's floor), spelled so this file holds none
 LEAK = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // " + KEY_ID])
@@ -62,7 +64,7 @@ class Cycle(Base):
     def decide(self, control=None, unfinished=(), unit=None) -> dict:
         art = P.read(self.pulled)
         return E.decide(art, unit or recipe(), self.tree(), self.results(), OPEN if control is None else control,
-                        None if unfinished is None else list(unfinished))
+                        list(unfinished))
 
     def reasons(self, got: dict) -> dict:
         return {cid: d["reasons"] for cid, d in got["decisions"].items()}
@@ -141,12 +143,6 @@ class Criteria(Cycle):
         got = self.decide(unfinished=["a" * 40])
         self.assertEqual((got["merge"], self.reasons(got)), (None, {"good": ["sentinel_pending"]}))
 
-    def test_an_unread_state_merges_nothing(self):
-        self.kos({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
-        got = self.decide(unfinished=None)
-        self.assertEqual((got["merge"], self.reasons(got)),
-                         (None, {"good": ["sentinel_state_unread"], "breaks": ["sentinel_state_unread", "tests_red"]}))
-
 
 class Artifacts(Cycle):
     def test_a_changed_byte_of_a_run_file(self):
@@ -190,13 +186,47 @@ class YazJob(Cycle):
     def control(self, doc) -> None:
         write_tree(os.path.join(self.temp, "control"), {"control.json": doc})
 
-    def test_the_job_runs_d5_and_merges_nothing_without_the_state(self):
+    def with_ledger(self, rows: list[dict] | None) -> None:
+        """``pulled`` rewritten with ``rows`` as ``brain/state``'s ledger (the default state when ``None``)."""
+        shutil.rmtree(self.pulled)
+        self.write_pulled({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)},
+                          state=None if rows is None else state_files(rows))
+
+    def test_the_job_runs_d5_with_criterion_8_from_the_state(self):
         self.kos({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
         self.control(OPEN)
         out = J.run("yaz", {"RUNNER_TEMP": self.temp, "WRITER_TOKEN": "x"})
-        self.assertEqual((out["ok"], out["reason"], out["done"], out["merge"]), (False, "cycle_not_wired", ["D5"], None))
-        self.assertEqual(self.reasons(out), {"good": ["sentinel_state_unread"],
-                                             "breaks": ["sentinel_state_unread", "tests_red"]})
+        # the default state's ledger holds no merge: nothing unfinished, good merges
+        self.assertEqual((out["ok"], out["reason"], out["done"], out["merge"]), (False, "cycle_not_wired", ["D5"], "good"))
+        self.assertEqual(self.reasons(out), {"good": [], "breaks": ["tests_red"]})
+        reverted_merge = [START, merge("c1", M1), reverted("r1", M1, "test_regression")]
+        for rows, want in (([START, merge("c1", M1)], "sentinel_pending"),       # the activation's merge
+                           ([START, plant("p1", "i1", M1)], "sentinel_pending"),  # the drill's planted merge
+                           (reverted_merge, None)):
+            with self.subTest(rows=[r["row_id"] for r in rows]):
+                self.with_ledger(rows)
+                out = J.run("yaz", {"RUNNER_TEMP": self.temp})
+                self.assertEqual(out["done"], ["D5"])
+                if want:
+                    self.assertEqual((out["merge"], self.reasons(out)),
+                                     (None, {"good": [want], "breaks": [want, "tests_red"]}))
+                else:
+                    self.assertEqual((out["merge"], self.reasons(out)), ("good", {"good": [], "breaks": ["tests_red"]}))
+
+    def test_a_state_ledger_serial_refuses_decides_nothing(self):
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        for rows, want in (([START, reverted("r1", M1, "unknown")], ["finish_without_merge:%s" % M1]),
+                           ([{"row_id": "g1", "part": "genesis"}], None)):
+            with self.subTest(want=want):
+                self.with_ledger(rows)
+                out = J.run("yaz", {"RUNNER_TEMP": self.temp})
+                self.assertEqual((out["ok"], out["reason"]), (False, "state_refused"))
+                self.assertNotIn("decisions", out)
+                if want:
+                    self.assertEqual(out["reasons"], want)
+                else:
+                    self.assertTrue(out["reasons"], out)
 
     def test_the_control_file_is_read(self):
         self.kos({"good": candidate(GOOD)})

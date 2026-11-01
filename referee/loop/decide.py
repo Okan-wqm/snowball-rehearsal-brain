@@ -8,8 +8,8 @@ tohum/07 (merges are serial: no merge while another merge's sentinel is unfinish
 **Inputs** (``decide``): ``art``, the ``pulled`` artifact as ``loop.pulled.read`` gives it; ``recipe``, its one unit;
 ``tree``, the directory its ``tree.tar`` was extracted to; ``results``, the ``results`` artifact ``runner.kos`` wrote
 (``index.json``, ``base.jsonl``, ``c/<cid>/{cand.jsonl, checks.json, hashes.json}``); ``control``, ``control.json`` as
-the job's ``control`` step read it; ``unfinished``, the merge SHAs whose sentinel has not finished, or ``None`` when
-the cycle's state was not read.
+the job's ``control`` step read it; ``unfinished``, the merge SHAs whose sentinel has not finished
+(``ledger.serial.unfinished`` of the ``brain/state`` ledger D1 verified, read by the ``yaz`` job).
 
 **Rules.** Candidates are judged in code-point order of their id. Each one's ``reasons`` are, sorted and unique:
 
@@ -23,8 +23,6 @@ the cycle's state was not read.
   ``{control, unfinished_sentinels}``. Without ``c/<cid>/hashes.json`` there is nothing whose hash can hold:
   ``artefact_hash_mismatch``. A ``finding.json``, run file or ``hashes.json`` ``gate.check`` cannot use is
   ``candidate_unusable``;
-- ``sentinel_state_unread`` when ``unfinished`` is ``None``: whether criterion 8 holds is not known, so no
-  candidate merges (fail closed);
 - merges are serial: the first candidate with no reason is the cycle's merge; every later one is judged with that
   candidate in ``unfinished_sentinels`` (its merge is written in D6 and its sentinel runs in the next cycle's D7),
   so it carries ``sentinel_pending``.
@@ -104,12 +102,12 @@ def _gate(files: dict[str, bytes], results: str, cid: str, control: Any, unfinis
 
 
 def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
-           unfinished: list[str] | None) -> dict[str, Any]:
+           unfinished: list[str]) -> dict[str, Any]:
     """D5 over every candidate; see the module docstring."""
     profile = V.guard_profile(tree, art.target, art.policy)
     index = _index(results)
     control = control if isinstance(control, dict) else {}
-    pending = list(unfinished) if unfinished is not None else []
+    pending = list(unfinished)
     decisions: dict[str, dict] = {}
     merge = None
     for cid in sorted(art.candidates):
@@ -126,8 +124,6 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
             raise Unusable("decide: %s" % cli.cause(exc)) from None
         reasons += _kos_reasons(index.get(cid))
         reasons += _gate(files, results, cid, control, pending + ([merge] if merge else []))
-        if unfinished is None:
-            reasons.append("sentinel_state_unread")
         reasons = sorted(set(reasons))
         decisions[cid] = {"decision": "reject" if reasons else "merge", "reasons": reasons}
         if not reasons and merge is None:

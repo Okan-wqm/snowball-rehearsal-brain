@@ -33,6 +33,7 @@ from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
+from test_revert_drill import row  # noqa: E402
 from test_kos import A_JS, BREAKS_TEST, FINDING, GOOD, LINT, RAISES, TESTS, operating, recipe  # noqa: E402
 
 TREE = {
@@ -57,8 +58,9 @@ def chained(rows: list[dict]) -> bytes:
 
 
 def state_files(ledger: list[dict] | None = None) -> dict[str, bytes]:
-    """``brain/state``'s chained files as ``pulled`` carries them: a genesis row each, or ``ledger``'s rows."""
-    return {"ledger.jsonl": chained(ledger if ledger is not None else [{"row_id": "g1", "part": "genesis"}]),
+    """``brain/state``'s chained files as ``pulled`` carries them: a ``cycle_start`` row in the ledger (a row of
+    ``ledger.schema``, no merge) and a root row, or ``ledger``'s rows."""
+    return {"ledger.jsonl": chained(ledger if ledger is not None else [row("g1", "events", "cycle_start", {"cycle_id": "1"})]),
             "chain/root.jsonl": chained([{"row_id": "r0", "part": "root"}])}
 
 

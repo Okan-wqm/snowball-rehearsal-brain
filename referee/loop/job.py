@@ -64,10 +64,12 @@ refused tree is ``pulled_invalid``). Then:
   (``$RUNNER_TEMP/control/control.json``; unreadable is unusable, exit 2), ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
   (the same refusals, the same one unit), extracts the tree under ``$RUNNER_TEMP/work`` and calls ``loop.decide``
   on ``$RUNNER_TEMP/in/results``: ``decisions`` (every candidate's ``decision`` and ``reasons``) and ``merge`` are in
-  the output and ``done`` is ``["D5"]``. Which merges' sentinels are unfinished is the cycle's state: ``pulled``
-  carries ``brain/state``'s ledger as D1 verified it (``state/``), but the rows that would say it (a merge, its
-  sentinel's end) are D6's and D7's to write and no page or module gives their form yet, so D5 is given ``None``
-  and every candidate carries ``sentinel_state_unread``: no candidate merges. D6-D8 are not wired, so the job ends ``cycle_not_wired``, exit 1, after D5, writing nothing.
+  the output and ``done`` is ``["D5"]``. Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
+  ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it),
+  read before the tree is judged; a ledger it cannot read is ``state_refused`` with its reasons (exit 1), nothing
+  decided. A merge is unfinished until its revert row: the end of a green sentinel has no row until D7 writes one,
+  so after the first merge no candidate merges. D6-D8 are not wired, so the job ends ``cycle_not_wired``, exit 1,
+  after D5, writing nothing.
 - ``cek`` runs D1 (``cek_d1``), and with it the whole job. First the accepted-SHA check: it reads the bootstrap
   referee's last signed state with ``loop.accepted.read_state`` (the Actions API of ``$GITHUB_REPOSITORY`` with the
   job's ``GITHUB_TOKEN``, ``actions: read``; the artifact verified by ``sigstore`` on PATH), fetches the accepted
@@ -166,6 +168,7 @@ from typing import Any, NamedTuple
 from dispatcher import llm_call as LL
 from ledger import anchor as AN
 from ledger import append as LA
+from ledger import serial as SE
 from loop import accepted as A
 from loop import cagir as CG
 from loop import cek as C
@@ -506,12 +509,15 @@ def yaz_d5(environ: dict[str, str]) -> dict[str, Any]:
     art, unit, refused = _pulled_unit(environ)
     if refused:
         return refused
+    try:
+        unfinished = SE.unfinished(art.state[B.STATE_LEDGER])
+    except SE.Unusable as exc:
+        return {"reason": "state_refused", "reasons": exc.reasons}
     _, tree, refused = _pulled_tree(environ, art, "yaz")
     if refused:
         return refused
     try:
-        # which merges' sentinels are unfinished: the rows that say it are D6's and D7's, not written yet: None
-        return E.decide(art, unit, tree, _dir(environ, "in", "results"), control, None)
+        return E.decide(art, unit, tree, _dir(environ, "in", "results"), control, unfinished)
     except (E.Unusable, D.DeriveError) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
