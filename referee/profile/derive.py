@@ -521,31 +521,40 @@ def _has_version_file(tree: str, d: str) -> bool:
                for line in data.decode("utf-8", "replace").splitlines())
 
 
-def _lock_reasons(tree: str, path: str) -> list[str]:
+def nearest_lock(tree: str, path: str) -> str | None:
+    """The lock nearest to ``path``: walking up to the root, in one directory ``npm-shrinkwrap.json`` before
+    ``package-lock.json``, the first name that exists (of any kind); ``None`` when there is none."""
     for d in _ancestors(path):
         for name in ("npm-shrinkwrap.json", "package-lock.json"):
-            present, lock = _json(tree, posixpath.join(d, name))
-            if not present:
-                if os.path.lexists(os.path.join(tree, d, name)):
-                    return ["lock_not_regular"]
-                continue
-            if not isinstance(lock, dict):
-                return ["lock_unparsable"]
-            packages = lock.get("packages")
-            if not isinstance(packages, dict):
-                return ["lock_v1_unsupported"]
-            for key, entry in packages.items():
-                if "node_modules/" not in key:
-                    continue
-                if not isinstance(entry, dict):
-                    return ["lock_unparsable"]
-                if entry.get("link") is True or entry.get("inBundle") is True:
-                    continue
-                integrity = entry.get("integrity")
-                if not (isinstance(integrity, str) and integrity):
-                    return ["lock_without_integrity"]
-            return []
-    return ["no_lockfile"]
+            rel = name if d == "." else posixpath.join(d, name)
+            if os.path.lexists(os.path.join(tree, rel)):
+                return rel
+    return None
+
+
+def _lock_reasons(tree: str, path: str) -> list[str]:
+    rel = nearest_lock(tree, path)
+    if rel is None:
+        return ["no_lockfile"]
+    present, lock = _json(tree, rel)
+    if not present:
+        return ["lock_not_regular"]
+    if not isinstance(lock, dict):
+        return ["lock_unparsable"]
+    packages = lock.get("packages")
+    if not isinstance(packages, dict):
+        return ["lock_v1_unsupported"]
+    for key, entry in packages.items():
+        if "node_modules/" not in key:
+            continue
+        if not isinstance(entry, dict):
+            return ["lock_unparsable"]
+        if entry.get("link") is True or entry.get("inBundle") is True:
+            continue
+        integrity = entry.get("integrity")
+        if not (isinstance(integrity, str) and integrity):
+            return ["lock_without_integrity"]
+    return []
 
 
 # ---------------------------------------------------------------- check

@@ -417,6 +417,122 @@ class CommandsAgainstLock(Base):
                              os.path.lexists(os.path.join(context["staging"], probe)), probe)
 
 
+def npm_run(script: str, directory: str = "pkg", *rest: str) -> list:
+    return ["npm", "--prefix", directory, "run", "--silent", script] + list(rest)
+
+
+class NpmRunScripts(Base):
+    """``script_missing`` / ``script_not_installed``: an ``npm --prefix D run --silent S`` command's script exists
+    and every program of it known as an npm program is on npm's PATH in the worktree."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.eslint = {"version": "9.0.0", "resolved": url("eslint", "9.0.0"), "integrity": sri(b"e"),
+                       "bin": {"eslint": "bin/eslint.js"}}
+        self.manifest({"lint": "eslint src", "test": "node --test"}, devDependencies={"eslint": "9.0.0"})
+
+    def manifest(self, scripts: dict, where: str = "pkg", **fields) -> None:
+        write_tree(self.tree, {where + "/package.json": dict({"name": "pkg", "version": "1.0.0", "scripts": scripts},
+                                                             **fields)})
+
+    def reasons(self, **over) -> list:
+        return U.check_recipe(recipe(**dict({"lint_cmd": npm_run("lint", "pkg", "--", "--format", "json"),
+                                             "test_cmd": npm_run("test"), "affected_test_cmd": npm_run("test")},
+                                            **over)), None, self.tree)
+
+    def with_eslint(self, key: str = "node_modules/eslint") -> None:
+        lock = copy.deepcopy(self.lock)
+        lock["packages"][key] = self.eslint
+        self.write_lock(lock)
+
+    def test_the_command_form(self):
+        self.assertEqual(U.npm_run(npm_run("lint")), ("pkg", "lint"))
+        self.assertEqual(U.npm_run(npm_run("lint", "/work/pkg", "--", "--format", "json")), ("pkg", "lint"))
+        self.assertEqual(U.npm_run(npm_run("test", ".")), (".", "test"))
+        for argv in (["npm", "run", "--silent", "lint"], ["npm", "--prefix", "pkg", "run", "lint"],
+                     ["npm", "--prefix", "pkg", "run-script", "--silent", "lint"], npm_run("lint", "pkg", "x"),
+                     npm_run("-lint"), npm_run("lint", "/elsewhere"), npm_run("lint", "../up"),
+                     ["npx", "--prefix", "pkg", "run", "--silent", "lint"]):
+            self.assertIsNone(U.npm_run(argv), argv)
+
+    def test_the_programs_of_a_script(self):
+        cases = {"eslint src": ["eslint"], "vitest run": ["vitest"],
+                 "a x && b || c; d | e & f": ["a", "b", "c", "d", "e", "f"],
+                 "FOO=1 BAR='x y' vitest run": ["vitest"], "eslint . 2>&1 > out.txt": ["eslint"],
+                 "jest >out <in": ["jest"], "(cd sub && jest)": ["cd", "jest"], "a&&b": ["a", "b"],
+                 "node tools/run.mjs nx affected": ["node"], "": [], "tsc -p . ; ": ["tsc"]}
+        for text, programs in cases.items():
+            self.assertEqual(U.script_programs(text), programs, text)
+        self.assertIsNone(U.script_programs("eslint 'src"))
+
+    def test_a_declared_program_the_lock_does_not_install_is_refused(self):
+        self.assertEqual(self.reasons(), ["script_not_installed:lint_cmd:eslint"])
+        self.with_eslint()
+        self.assertEqual(self.reasons(), [])
+
+    def test_a_program_declared_above_the_directory_is_judged(self):
+        """A workspace member's tools are declared at the root (the class f409 measured on the target)."""
+        self.manifest({"lint": "vitest run && eslint src", "test": "node --test"})
+        write_tree(self.tree, {"package.json": {"name": "root", "devDependencies": {"vitest": "1", "eslint": "9"}}})
+        self.assertEqual(self.reasons(),
+                         ["script_not_installed:lint_cmd:vitest", "script_not_installed:lint_cmd:eslint"])
+
+    def test_a_bin_name_of_a_lock_above_is_judged(self):
+        self.manifest({"lint": "tsc --noEmit", "test": "node --test"})
+        write_tree(self.tree, {"package-lock.json": {"lockfileVersion": 3, "packages": {
+            "": {}, "node_modules/typescript": {"version": "5.0.0", "bin": {"tsc": "bin/tsc"}}}}})
+        self.assertEqual(self.reasons(), ["script_not_installed:lint_cmd:tsc"])
+
+    def test_a_program_known_nowhere_is_not_judged(self):
+        self.manifest({"lint": "rm -rf out && mytool src && node_modules/.bin/eslint && $X", "test": "node --test"})
+        self.assertEqual(self.reasons(), [])
+
+    def test_only_the_locks_top_level_bin_is_on_the_path(self):
+        self.with_eslint("node_modules/left-pad/node_modules/eslint")
+        self.assertEqual(self.reasons(), ["script_not_installed:lint_cmd:eslint"])
+
+    def test_a_directory_the_locks_node_modules_is_not_above(self):
+        self.with_eslint()
+        self.manifest({"lint": "eslint src"}, where="lib", devDependencies={"eslint": "9.0.0"})
+        self.assertEqual(self.reasons(lint_cmd=npm_run("lint", "lib")), ["script_not_installed:lint_cmd:eslint"])
+        self.manifest({"lint": "eslint src"}, where="pkg/sub", devDependencies={"eslint": "9.0.0"})
+        self.assertEqual(self.reasons(lint_cmd=npm_run("lint", "pkg/sub")), [])
+
+    def test_a_missing_script_and_every_field(self):
+        self.with_eslint()
+        self.assertEqual(self.reasons(test_cmd=npm_run("unit"), affected_test_cmd=npm_run("lint", "lib")),
+                         ["script_missing:test_cmd:unit", "script_missing:affected_test_cmd:lint"])
+        write_tree(self.tree, {"pkg/package.json": "not json"})
+        self.assertEqual(self.reasons(), ["profile:units[0]:unit_not_eligible:pkg", "script_missing:lint_cmd:lint",
+                                          "script_missing:test_cmd:test", "script_missing:affected_test_cmd:test"])
+
+    def test_an_unreadable_script_is_not_judged(self):
+        self.manifest({"lint": "eslint 'src", "test": "node --test"}, devDependencies={"eslint": "9.0.0"})
+        self.assertEqual(self.reasons(), [])
+
+
+class TreeChecksBesideOtherReasons(Base):
+    """Reasons about fields the tree checks never read do not hide the tree's reasons."""
+
+    def test_tree_reasons_listed_beside_image_limits_services_and_id(self):
+        write_tree(self.tree, {"pkg/.nvmrc": "20.11.0"})
+        r = recipe(env_image="node:20.11.1", unit_id="-x", services=["pg"], limits={"cpu_s": 1})
+        self.assertEqual(U.check_recipe(r, None, self.tree),
+                         ["invalid:unit_id", "image_not_pinned", "services_not_empty", "limit_key_unknown:cpu_s",
+                          "toolchain_version_mismatch"])
+
+    def test_a_field_the_tree_checks_read_still_stops_them(self):
+        write_tree(self.tree, {"pkg/.nvmrc": "20.11.0"})
+        for over, reasons in (({"lockfiles": ["pkg/yarn.lock"]}, ["invalid:lockfiles"]),
+                              ({"toolchain": "node@20"}, ["invalid:toolchain", "image_version_mismatch"]),
+                              ({"test_cmd": []}, ["invalid:test_cmd"]),
+                              ({"extra": 1}, ["field_not_in_recipe:extra"])):
+            self.assertEqual(U.check_recipe(recipe(**over), None, self.tree), reasons, over)
+        r = recipe()
+        del r["path"]
+        self.assertEqual(U.check_recipe(r, None, self.tree), ["missing:path"])
+
+
 # ---------------------------------------------------------------- the run
 
 class Run(Base):

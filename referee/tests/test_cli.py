@@ -439,6 +439,7 @@ def _inject_argv(f: str, d: str) -> dict:
         "ledger.founder": [["check", "--ledger", f], ["open", "--ledger", f, "--reports", d]],
         "loop.job": [["run", f]],
         "profile.derive": [["derive", f, f], ["check", f, f, f]],
+        "profile.fit": [[d, "--target", f], [d, "--policy", f], [d, "--images", f]],
         "profile.unit_verify": [["check", f, f], ["verify", f]],
         "runner.contained": [["argv", f], ["check", f], ["run", f]],
         "runner.deps_npm": [["check", f], ["fetch", f, d], ["verify", d]],

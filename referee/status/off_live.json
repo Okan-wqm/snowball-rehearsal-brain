@@ -51,6 +51,10 @@
     "kind": "unwired",
     "why": "D1's tree reader: imported by loop.cek and loop.fetch, both off the live path, and by the session tool ledger.founder for git_env, SHA and canonical (the mode of a file at a commit)"
   },
+  "profile.fit": {
+    "kind": "session_tool",
+    "why": "a session composes each unit candidate's recipe from its own npm scripts and judges it with unit_verify.check_recipe; its --units output is targets/<target>/units.json, which loop.cek reads; run by a session and by test 47 (tests/test_profile_fit.py)"
+  },
   "status.block": {
     "kind": "unwired",
     "why": "MF16, D6 in job yaz: the cycle's composition inside the jobs is not written (spec-036), so loop.job does not import it"

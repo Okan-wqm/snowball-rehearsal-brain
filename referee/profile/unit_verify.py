@@ -66,6 +66,24 @@ copied, and criterion 5's coverage).
   (``--config=x/node_modules/y``) or another element (``sh -c`` text), a bare program name (``vitest``,
   ``npx``), and imports or configuration that reach outside the inputs: those show in the run as a red or
   failing command, as before.
+- With the tree, a command of exactly the form ``npm --prefix <dir> run --silent <script>``, optionally followed
+  by ``--`` and arguments (``npm_run``; ``<dir>`` read as a path like the elements above, ``<script>`` not
+  starting with ``-``; any other ``npm`` form is not judged): ``<dir>/package.json`` is a JSON object whose
+  ``scripts`` maps ``<script>`` to a string (``script_missing:<field>:<script>``), and each program of that
+  script (``script_programs``: the first word of every simple command, ``shlex`` POSIX with
+  ``punctuation_chars``, ``NAME=value`` words and redirection targets skipped) that is known as an npm program
+  (``npm_programs``: a dependency declared by the ``package.json`` of ``<dir>`` or of a directory above it, or a
+  ``bin`` name of a package of a lock there) and is a plain name (``[A-Za-z0-9._-]``) is
+  installed: the lock's directory is ``<dir>`` or above it (npm puts ``<dir>/node_modules/.bin`` and every
+  directory's above it on ``PATH``, and only the lock's ``node_modules`` exists in the worktree) and
+  ``<lock dir>/node_modules/.bin/<program>`` is installed by the rule above
+  (``script_not_installed:<field>:<program>``, once per field and program). Not judged: a program known as
+  neither (``rm``, a global tool), a program written as a path or with ``$``, the scripts a script runs through
+  ``npm run`` (only the first level), a script ``shlex`` cannot read, and whether the program accepts the
+  arguments.
+- The tree checks run when no reason above is about a field they read: a reason about ``unit_id``,
+  ``env_image``, ``services`` or ``limits`` alone does not stop them (``TREE_FREE_FIELDS``), so every reason of
+  both kinds is listed; any other reason (a field the tree checks read, ``field_not_in_recipe``) stops them.
 
 The run (``verify``), only when the static check passes (steps 1-3 are ``stage``, which ``runner.kos`` shares, so
 ``koş``'s results come from the same worktree):
@@ -170,6 +188,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import shutil
 import stat
 import sys
@@ -197,6 +216,11 @@ OFFICIAL_REPOS = ("node", "docker.io/library/node")
 IMAGE_SHAPE = re.compile(r"(?P<repo>[^@]+?)(?::(?P<tag>[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?@sha256:[0-9a-f]{64}")
 CMD_FIELDS = ("lint_cmd", "test_cmd", "affected_test_cmd")
 BIN_NAME = re.compile(r"[A-Za-z0-9._-]+")
+# Reasons about fields the tree checks never read: they do not stop the tree checks (every reason is listed).
+TREE_FREE_FIELDS = ("unit_id", "env_image", "services", "limits")
+SHELL_OPERATOR = re.compile(r"[();<>|&]+")
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+DEP_FIELDS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
 RESERVED = ".snowball"
 ATTEMPTS = 3
 LINT_OK_EXITS = (0, 1)
@@ -269,8 +293,10 @@ def vector_check(recipe: Any, policy: Any) -> list[str]:
     return sorted(reasons)
 
 
-def check_recipe(recipe: Any, policy: Any = None, tree: str | None = None, target: Any = None) -> list[str]:
-    """Every static reason against ``recipe`` (empty when it passes); see the module docstring."""
+def check_recipe(recipe: Any, policy: Any = None, tree: str | None = None, target: Any = None,
+                 derived: dict | None = None) -> list[str]:
+    """Every static reason against ``recipe`` (empty when it passes); see the module docstring. ``derived`` is
+    ``derived_profile(tree, target, policy)`` when the caller has it already (one derivation for many recipes)."""
     if not isinstance(recipe, dict):
         return ["malformed:recipe"]
     reasons = ["missing:%s" % f for f in RECIPE_FIELDS if f not in recipe]
@@ -322,9 +348,21 @@ def check_recipe(recipe: Any, policy: Any = None, tree: str | None = None, targe
         reasons.append("services_not_empty")
     if "limits" in recipe:
         reasons += _limit_reasons(get("limits"), policy)
-    if tree is not None and not reasons:
-        reasons += _tree_reasons(recipe, path, lock, version, tree, target, policy)
+    if tree is not None and not [r for r in reasons if _field_of(r) not in TREE_FREE_FIELDS]:
+        reasons += _tree_reasons(recipe, path, lock, version, tree,
+                                 derived if derived is not None else derived_profile(tree, target, policy))
     return reasons
+
+
+def _field_of(reason: str) -> str | None:
+    """The recipe field a static reason is about (``None`` for reasons about several fields)."""
+    if reason.startswith(("missing:", "invalid:")):
+        return reason.split(":", 1)[1].split(".", 1)[0]
+    if reason.startswith("image_"):
+        return "env_image"
+    if reason.startswith("limit_"):
+        return "limits"
+    return "services" if reason == "services_not_empty" else None
 
 
 def _image_reasons(image: Any, version: str | None) -> list[str]:
@@ -360,25 +398,24 @@ def _limit_reasons(limits: Any, policy: Any) -> list[str]:
 
 
 def nearest_version(tree: str, path: str) -> tuple[str | None, str | None]:
-    """``(file, text)`` of the version file nearest to ``path``; ``(None, None)`` when there is none."""
+    """``(file, text)`` of the version file nearest to ``path`` (``file`` a normalised tree path, no ``./``);
+    ``(None, None)`` when there is none."""
     for d in D._ancestors(path):
         for name in (".nvmrc", ".node-version"):
             data = D._read_regular(tree, posixpath.join(d, name))
             if data is not None and data.strip():
-                return posixpath.join(d, name), data.decode("utf-8", "replace").strip()
+                return D.norm_path(posixpath.join(d, name)), data.decode("utf-8", "replace").strip()
         data = D._read_regular(tree, posixpath.join(d, ".tool-versions"))
         if data is not None:
             for line in data.decode("utf-8", "replace").splitlines():
                 words = line.split()
                 if len(words) > 1 and words[0] in ("node", "nodejs"):
-                    return posixpath.join(d, ".tool-versions"), words[1]
+                    return D.norm_path(posixpath.join(d, ".tool-versions")), words[1]
     return None, None
 
 
-def _tree_reasons(recipe: dict, path: str, lock: str, version: str, tree: str, target: Any,
-                  policy: Any) -> list[str]:
+def _tree_reasons(recipe: dict, path: str, lock: str, version: str, tree: str, derived: dict) -> list[str]:
     reasons = []
-    derived = D.derive(tree, target, policy if isinstance(policy, dict) and "constitutional" in policy else None)
     reasons += ["profile:%s" % r for r in D.check(derived, {"units": [recipe]}, tree)["reasons"]]
     _, text = nearest_version(tree, path)
     if text is None:
@@ -403,6 +440,90 @@ def _tree_reasons(recipe: dict, path: str, lock: str, version: str, tree: str, t
             lock_dir = posixpath.dirname(lock) or "."
             reasons += ["cmd_not_installed:%s:%s" % (field, element) for field in CMD_FIELDS
                         for element in recipe[field] if not installed(element, lock_dir, parsed)]
+            for field in CMD_FIELDS:
+                reasons += _script_reasons(field, recipe[field], lock_dir, parsed, tree)
+    return reasons
+
+
+def _work_path(element: str) -> str | None:
+    """A command element read as a path of the tree: ``/work/<p>`` is ``<p>``; ``None`` when not a plain path."""
+    return D.norm_path(element[len(C.WORKDIR) + 1:] if element.startswith(C.WORKDIR + "/") else element)
+
+
+def npm_run(argv: list) -> tuple[str, str] | None:
+    """``(directory, script)`` when ``argv`` is ``npm --prefix <dir> run --silent <script>``, optionally followed
+    by ``--`` and arguments, ``<dir>`` a plain path of the tree and ``<script>`` not an option; else ``None``."""
+    if not (len(argv) >= 6 and argv[:2] == ["npm", "--prefix"] and argv[3:5] == ["run", "--silent"]
+            and not argv[5].startswith("-") and (len(argv) == 6 or argv[6] == "--")):
+        return None
+    directory = _work_path(argv[2])
+    return (directory, argv[5]) if directory is not None else None
+
+
+def script_programs(text: str) -> list[str] | None:
+    """The program word of every simple command of a ``package.json`` script, read with ``shlex`` (POSIX,
+    ``punctuation_chars``): a command starts the script and follows a token made only of ``();|&``; leading
+    ``NAME=value`` words are skipped; a token holding ``<`` or ``>`` is a redirection whose next token is its
+    target, not a program. ``None`` when ``shlex`` cannot read the text (an open quote)."""
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    programs, start, skip = [], True, False
+    for token in tokens:
+        if skip:
+            skip = False
+        elif SHELL_OPERATOR.fullmatch(token) and ("<" in token or ">" in token):
+            skip = True
+        elif SHELL_OPERATOR.fullmatch(token):
+            start = True
+        elif start and not ASSIGNMENT.match(token):
+            programs.append(token)
+            start = False
+    return programs
+
+
+def npm_programs(tree: str, directory: str) -> set:
+    """The names npm's ``run`` could find on its ``PATH`` in the developer's layout: dependencies declared by the
+    ``package.json`` of ``directory`` and of each directory above it, and the ``bin`` names of the packages of
+    the locks there (MF5's lock reading)."""
+    names: set = set()
+    for d in D._ancestors(directory):
+        _, manifest = D._json(tree, posixpath.join(d, "package.json"))
+        if isinstance(manifest, dict):
+            for field in DEP_FIELDS:
+                if isinstance(manifest.get(field), dict):
+                    names.update(manifest[field])
+        for lock_name in N.LOCK_NAMES:
+            _, lock = D._json(tree, posixpath.join(d, lock_name))
+            for row in N.entries(lock)[1]:
+                names |= _bin_names(row["entry"], row["name"])
+    return names
+
+
+def _script_reasons(field: str, argv: list, lock_dir: str, lock: Any, tree: str) -> list[str]:
+    """``npm --prefix <dir> run --silent <script>``: the script exists and its programs are installed."""
+    found = npm_run(argv)
+    if found is None:
+        return []
+    directory, script = found
+    _, manifest = D._json(tree, posixpath.join(directory, "package.json"))
+    scripts = manifest.get("scripts") if isinstance(manifest, dict) else None
+    text = scripts.get(script) if isinstance(scripts, dict) else None
+    if not isinstance(text, str):
+        return ["script_missing:%s:%s" % (field, script)]
+    known = npm_programs(tree, directory)
+    on_path = lock_dir == "." or directory == lock_dir or directory.startswith(lock_dir + "/")
+    reasons = []
+    for program in script_programs(text) or []:
+        judged = program in known and BIN_NAME.fullmatch(program)
+        bin_path = posixpath.join(lock_dir, "node_modules", ".bin", program)  # norm_path drops a leading ./
+        if judged and not (on_path and installed(bin_path, lock_dir, lock)):
+            reason = "script_not_installed:%s:%s" % (field, program)
+            if reason not in reasons:
+                reasons.append(reason)
     return reasons
 
 
@@ -416,7 +537,7 @@ def _bin_names(entry: Any, name: str) -> set:
 def installed(element: str, lock_dir: str, lock: Any) -> bool:
     """False when ``element`` is a ``node_modules`` path the lock does not install (module docstring); the lock's
     packages, their keys and names, are read as MF5 reads them (``runner.deps_npm.entries``)."""
-    path = D.norm_path(element[len(C.WORKDIR) + 1:] if element.startswith(C.WORKDIR + "/") else element)
+    path = _work_path(element)
     if path is None or element.startswith("-") or "node_modules" not in [c.casefold() for c in path.split("/")]:
         return True
     if lock_dir != ".":
