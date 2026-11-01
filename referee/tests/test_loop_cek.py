@@ -12,11 +12,15 @@
   ``loop.fetch`` and ``loop.gitobj.GitBatch`` with ``git_store``'s test ``git`` holding the brain's commit, the
   checkout's ``setup/imports.jsonl``, ``setup/summary.json`` and ``policy.json``; then the target half: the heads
   read by ``loop.fetch.heads`` (the fake ``git``'s ``ls-remote`` answer), ``brain/integration``'s head fetched and
-  ``loop.cek.assemble`` run on both repositories' objects: agreeing hashes end ``cycle_not_wired`` with
-  ``accepted``, ``heads`` and ``assembled``, the artifact in the job's work directory (``loop.pulled.read`` takes it)
-  and none in ``out/pulled``; a different or refused ``referee/``, a broken import, an unknown target or one
-  without a safe ``repo``, a missing head and what ``assemble`` refuses are refusals (exit 1); an unset variable, an
-  unverified state, an unreadable checkout file, a failed listing or fetch are unusable (exit 2).
+  ``loop.cek.assemble`` run on both repositories' objects, then MF4's judgement of the read-back artifact: agreeing
+  hashes and a recipe the check accepts end ``cycle_not_wired`` with ``accepted``, ``heads``, ``assembled`` and
+  ``profile``, the artifact in the job's work directory (``loop.pulled.read`` takes it) and none in ``out/pulled``;
+  a different or refused ``referee/``, a broken import, an unknown target or one without a safe ``repo``, a missing
+  head, what ``assemble`` refuses, a ``units`` that is not exactly one recipe, a recipe the derivation of the
+  assembled tree refuses (no eligible candidate, a path that is none, an input excluded by the agent-configuration
+  rule or by the ``targets[]`` entry, an input the tree lacks), a recipe rule ``getir`` refuses and a tree the
+  extraction refuses are refusals (exit 1); an unset variable, an unverified state, an unreadable checkout file, a
+  failed listing or fetch are unusable (exit 2).
 """
 
 from __future__ import annotations
@@ -242,9 +246,9 @@ class CekJob(unittest.TestCase):
     """``loop.job run cek`` up to the assembled ``pulled``: D1's accepted-SHA check, the target's heads, its fetch."""
 
     BRAIN = dict({"referee/loop/job.py": b"x = 1\n", "referee/a.py": b"a\n",
-                  "targets/t1/units.json": b'{"units": []}'},
+                  "targets/t1/units.json": json.dumps({"units": [recipe()]}).encode()},
                  **{"candidates/t1/good/%s" % f: d for f, d in candidate(GOOD).items()})
-    TARGET = {"a.js": b"const a = 1;\n", "lib/b.js": b"b\n"}
+    TARGET = {p: (json.dumps(v) if isinstance(v, dict) else v).encode() for p, v in TREE.items()}
     STATE_HEAD = "5" * 40
 
     def setUp(self) -> None:
@@ -305,7 +309,9 @@ class CekJob(unittest.TestCase):
     def test_the_job_checks_the_accepted_sha_and_writes_no_pulled(self):
         out, commit, tree = self.run_cek()
         self.assertEqual(out["reason"], "cycle_not_wired")
-        self.assertEqual((out["ok"], out["checked"]), (False, ["accepted_sha", "referee_tree", "heads", "assembled"]))
+        self.assertEqual((out["ok"], out["checked"]),
+                         (False, ["accepted_sha", "referee_tree", "heads", "assembled", "profile"]))
+        self.assertEqual(out["profile"], {"unit_id": "pkg"})
         self.assertEqual(out["accepted"]["brain_sha"], commit)
         self.assertEqual(out["accepted"]["referee_tree_sha256"], tree)
         self.assertEqual(out["accepted"]["artifact_id"], 11)
@@ -327,9 +333,11 @@ class CekJob(unittest.TestCase):
         art = P.read(path)
         with open(art.tree_tar, "rb") as fh:
             members = names(fh.read())
-        self.assertEqual(sorted(n for n, t, _, _ in members if t == tarfile.REGTYPE),
-                         ["a.js", "lib/b.js"])
-        self.assertEqual(art.units, {"units": []})
+        self.assertEqual(sorted(n for n, t, _, _ in members if t == tarfile.REGTYPE), sorted(TREE))
+        self.assertEqual(art.units, {"units": [recipe()]})
+        # MF4 judged the tree extracted next to the artifact, the one the derivation read
+        self.assertEqual(sorted(os.listdir(os.path.join(os.path.dirname(path), "tree", "pkg"))),
+                         sorted(p.split("/", 1)[1] for p in TREE if p.startswith("pkg/")))
         self.assertEqual(sorted(art.candidates), ["good"])
         self.assertEqual(art.target["repo"], "o/target")
 
@@ -383,6 +391,63 @@ class CekJob(unittest.TestCase):
                                                                                "candidate_invalid:bad name"]))
         self.assertEqual(out["heads"]["brain/integration"], self.target_commit)
         self.assertEqual(self.assembled(), [])
+
+    def refused_after_assembly(self, reason: str, **kw) -> dict:
+        out, _, _ = self.run_cek(**kw)
+        self.assertEqual((out["ok"], out["reason"]), (False, reason))
+        self.assertEqual(out["assembled"]["commit"], self.target_commit)  # the refusal says what was judged
+        self.assertNotIn("profile", out)
+        self.assertNotIn("checked", out)
+        return out
+
+    def with_units(self, units: dict) -> None:
+        self.BRAIN = dict(self.BRAIN, **{"targets/t1/units.json": json.dumps(units).encode()})
+
+    def test_the_line_names_the_unit_judged(self):
+        self.with_units({"units": [recipe(unit_id="the-unit")]})
+        out, _, _ = self.run_cek()
+        self.assertEqual((out["reason"], out["profile"]), ("cycle_not_wired", {"unit_id": "the-unit"}))
+
+    def test_stage_0_judges_exactly_one_unit(self):
+        for units in ({"units": []}, {"units": [recipe(), recipe(unit_id="b")]}, {"unit": [recipe()]}):
+            with self.subTest(units=units):
+                self.with_units(units)
+                self.refused_after_assembly("units_not_one")
+
+    def test_a_recipe_the_derivation_refuses(self):
+        """MF4's part of the check: the recipe against the referee's derivation of the assembled tree."""
+        for change, units, reason in (
+                # no version file in the tree: pkg is no eligible unit candidate
+                ({".nvmrc": None}, None, "profile:units[0]:unit_not_eligible:pkg"),
+                # a path the derivation offers no candidate for (no package.json there)
+                ({}, {"units": [recipe(path="pkg/sub")]}, "profile:units[0]:unit_not_candidate:pkg/sub"),
+                # an input the derivation excludes (agent configuration), and one the tree lacks
+                ({".claude/settings.json": b"{}"}, {"units": [recipe(inputs=["pkg", ".claude"])]},
+                 "profile:units[0]:input_excluded:.claude"),
+                ({}, {"units": [recipe(inputs=["pkg", "shared"])]}, "profile:units[0]:input_missing:shared")):
+            with self.subTest(reason=reason):
+                self.TARGET = {p: d for p, d in dict(CekJob.TARGET, **change).items() if d is not None}
+                self.BRAIN = CekJob.BRAIN
+                if units is not None:
+                    self.with_units(units)
+                out = self.refused_after_assembly("recipe_refused")
+                self.assertIn(reason, out["reasons"])
+
+    def test_the_operator_exclusion_is_the_targets_entry(self):
+        self.summary["targets"][0]["excluded_paths"] = ["/pkg"]
+        out = self.refused_after_assembly("recipe_refused")
+        self.assertIn("profile:units[0]:unit_not_candidate:pkg", out["reasons"])  # the walk does not enter it
+        self.assertIn("profile:units[0]:input_excluded:pkg", out["reasons"])
+
+    def test_the_recipe_rules_are_getirs(self):
+        self.with_units({"units": [recipe(services=["db"])]})
+        out = self.refused_after_assembly("recipe_refused")
+        self.assertEqual(out["reasons"], ["services_not_empty"])
+
+    def test_a_tree_the_extraction_refuses(self):
+        self.TARGET = dict(CekJob.TARGET, **{"pkg/out": ("120000", b"../../../../etc")})
+        out = self.refused_after_assembly("pulled_invalid")
+        self.assertEqual(out["reasons"], ["tree_unsafe"])
 
     def test_no_verdict(self):
         for kw in ({"env": {"GITHUB_TOKEN": None}}, {"env": {"LOOP_BRAIN_REPO": None}},

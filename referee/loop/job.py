@@ -36,7 +36,8 @@ Every step after ``control`` runs only if ``go`` is true; no step continues on e
 **What ``run`` does now.** It checks the job's environment contract first: a job that runs code (``getir``,
 ``kos``) refuses to start when any secret of another job, the OIDC request variables or ``GITHUB_TOKEN`` is in its
 environment (``secret_in_code_job:<NAME>``, exit 1). Every job that reads the tree extracts it from ``pulled`` into
-a fresh ``$RUNNER_TEMP/work/<job>-*/tree`` (``_pulled_tree``; a refused tree is ``pulled_invalid``). Then:
+a fresh ``$RUNNER_TEMP/work/<job>-*/tree`` (``_pulled_tree``, ``cek`` its own assembly through ``_extract``; a
+refused tree is ``pulled_invalid``). Then:
 
 - ``getir`` runs D2 (``getir_d2``), and with it the whole job: it reads ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
   (the same refusals, the same one unit), runs the recipe's static check (``profile.unit_verify.check_recipe``,
@@ -48,7 +49,8 @@ a fresh ``$RUNNER_TEMP/work/<job>-*/tree`` (``_pulled_tree``; a refused tree is 
   is ``deps_refused`` with MF5's reasons (exit 1, nothing uploaded); a fetch that fails is no verdict (exit 2). On
   success the line has ``ok`` true, ``done`` ``["D2"]``, ``deps`` (``address``, ``packages``, ``bytes``,
   ``artefact``) and ``licenses`` (the report, not gated: the target's dependencies do not enter the product), exit
-  0, so the upload step runs. A lock with no packages gives an artifact with none. (``kos_d3``): it reads ``$RUNNER_TEMP/in/pulled`` with ``loop.pulled.read`` (a refusal is
+  0, so the upload step runs. A lock with no packages gives an artifact with none.
+- ``kos`` runs D3 (``kos_d3``): it reads ``$RUNNER_TEMP/in/pulled`` with ``loop.pulled.read`` (a refusal is
   ``pulled_invalid`` with the reasons), takes the recipe from its ``units.json`` (stage 0 runs one unit: exactly
   one entry in ``units``, else ``units_not_one``), unpacks the tree under ``$RUNNER_TEMP/work`` and calls
   ``runner.kos.results`` with the policy, the ``targets[]`` entry, ``RED_CONTROL``, every candidate's
@@ -84,12 +86,19 @@ a fresh ``$RUNNER_TEMP/work/<job>-*/tree`` (``_pulled_tree``; a refused tree is 
   ``imports_no_transfer``, ``imports_invalid``, ``referee_tree_refused`` (with the hash's reasons),
   ``referee_tree_mismatch``; ``summary_unreadable``, ``target_unknown``, ``target_ambiguous``,
   ``target_repo_unsafe``; ``head_missing:<branch>`` for each head the target lacks (before genesis it has neither;
-  nothing of the target is fetched); ``pulled_refused`` with ``assemble``'s reasons. When all of it holds, the line
-  has ``accepted`` (``brain_sha``, ``referee_tree_sha256``, ``result_sha256``, ``artifact_id``), ``heads`` (branch
-  to commit), ``assembled`` (``target``, ``commit``, ``candidates``) and ``checked`` ``["accepted_sha",
-  "referee_tree", "heads", "assembled"]``, and the job still ends ``cycle_not_wired``, exit 1: the rest of D1
-  (``verify --previous`` of ``brain/state``'s ledger, the root signature, MF4's profile) is not wired, so nothing
-  is uploaded and in a real run ``kos`` is not reached.
+  nothing of the target is fetched); ``pulled_refused`` with ``assemble``'s reasons. Then MF4's judgement: the
+  assembled artifact is read back as the other jobs read their download (``loop.pulled.read``, exactly one entry of
+  ``units``, else ``units_not_one``; the tree extracted by ``loop.pulled.extract_tree`` into ``cek-*/tree``, a tree
+  it refuses is ``pulled_invalid``) and the unit gets the static check ``getir`` runs
+  (``profile.unit_verify.check_recipe`` with the artifact's policy and ``targets[]`` entry: MF6's recipe rules and,
+  on the tree, ``profile.derive check`` of the recipe against the referee's own derivation of that tree; a reason
+  is ``recipe_refused`` with the reasons). A refusal after the assembly carries ``heads`` and ``assembled``. When
+  all of it holds, the line has ``accepted`` (``brain_sha``, ``referee_tree_sha256``, ``result_sha256``,
+  ``artifact_id``), ``heads`` (branch to commit), ``assembled`` (``target``, ``commit``, ``candidates``),
+  ``profile`` (``unit_id``) and ``checked`` ``CEK_CHECKED``, and the job still ends ``cycle_not_wired``, exit 1:
+  the rest of D1 (``verify --previous`` of ``brain/state``'s ledger, the root signature) is not wired, so nothing
+  is uploaded and in a real run ``kos`` is not reached. The proposal stage 0 judges is the recipe alone
+  (tohum/14); no other profile field is proposed, so none is compared.
 - ``cagir`` stops at once with ``cycle_not_wired`` (exit 1). The D1-D8 composition inside the jobs (building each
   MF's input from the pulled trees and the previous artifacts, and the cycle's one ``brain/state`` commit) has no
   MF of asama-0/14 that owns it (reported in the founder ledger, spec-036).
@@ -204,6 +213,8 @@ JOBS: dict[str, Job] = {
 # What cek reads from the referee repository's checkout, and the target branches whose heads it reads (asama-0/01 D1).
 CEK_FILES = ("setup/imports.jsonl", "setup/summary.json", "policy.json")
 TARGET_REFS = {b: "refs/heads/" + b for b in (B.STATE, B.INTEGRATION)}
+# What cek's line lists as checked when D1 holds as far as it is wired.
+CEK_CHECKED = ("accepted_sha", "referee_tree", "heads", "assembled", "profile")
 
 SECRET_ENV = tuple(sorted({name for job in JOBS.values() for name in job.secrets} | {"GITHUB_TOKEN"}))
 
@@ -340,11 +351,17 @@ def _dir(environ: dict[str, str], *parts: str) -> str:
 
 
 def _pulled_unit(environ: dict[str, str]) -> tuple[Any, Any, dict | None]:
-    """``$RUNNER_TEMP/in/pulled`` read by ``loop.pulled.read`` and its one unit (stage 0 runs exactly one entry of
-    ``units``): ``(artifact, unit, None)``, or ``(None, None, {reason, reasons?})`` (``pulled_invalid``,
-    ``units_not_one``). Shared by ``kos`` and ``yaz``, so both read the same artifact the same way."""
+    """``$RUNNER_TEMP/in/pulled`` read by ``_read_unit``. Shared by ``getir``, ``kos`` and ``yaz``, so each reads the
+    same artifact the same way."""
+    return _read_unit(_dir(environ, "in", "pulled"))
+
+
+def _read_unit(path: str) -> tuple[Any, Any, dict | None]:
+    """The ``pulled`` artifact at ``path`` read by ``loop.pulled.read`` and its one unit (stage 0 runs exactly one
+    entry of ``units``): ``(artifact, unit, None)``, or ``(None, None, {reason, reasons?})`` (``pulled_invalid``,
+    ``units_not_one``). ``cek`` reads its own assembly with it, the other jobs their download."""
     try:
-        art = P.read(_dir(environ, "in", "pulled"))
+        art = P.read(path)
     except P.PulledError as exc:
         return None, None, {"reason": "pulled_invalid", "reasons": exc.reasons}
     units = art.units.get("units") if isinstance(art.units, dict) else None
@@ -361,11 +378,29 @@ def _pulled_tree(environ: dict[str, str], art: Any, job: str) -> tuple[str, str,
     os.makedirs(work, exist_ok=True)
     root = tempfile.mkdtemp(prefix=job + "-", dir=work)
     tree = os.path.join(root, "tree")
+    return root, tree, _extract(art, tree)
+
+
+def _extract(art: Any, tree: str) -> dict | None:
+    """``pulled``'s tree extracted into ``tree`` by ``loop.pulled.extract_tree``: ``None``, or ``{reason:
+    pulled_invalid, reasons}`` for a tree it refuses."""
     try:
         P.extract_tree(art.tree_tar, tree)
     except P.PulledError as exc:
-        return root, tree, {"reason": "pulled_invalid", "reasons": exc.reasons}
-    return root, tree, None
+        return {"reason": "pulled_invalid", "reasons": exc.reasons}
+    return None
+
+
+def _recipe_refused(art: Any, unit: Any, tree: str, job: str) -> dict | None:
+    """The unit's static check on the extracted tree (``profile.unit_verify.check_recipe``: MF6's recipe rules and,
+    on the tree, MF4's ``profile.derive check`` of the recipe against the referee's own derivation): ``None``, or
+    ``{reason: recipe_refused, reasons}``. One rule for ``cek`` (D1's profile judgement, before the upload) and
+    ``getir`` (before anything is fetched); ``kos`` runs it again inside ``unit.verify``."""
+    try:
+        reasons = U.check_recipe(unit, art.policy, tree, art.target)
+    except (U.VerifyError, D.DeriveError) as exc:
+        raise Unusable("%s: %s" % (job, cli.cause(exc))) from None
+    return {"reason": "recipe_refused", "reasons": reasons} if reasons else None
 
 
 def getir_d2(environ: dict[str, str], fetcher: Any = None) -> dict[str, Any]:
@@ -376,12 +411,9 @@ def getir_d2(environ: dict[str, str], fetcher: Any = None) -> dict[str, Any]:
     _, tree, refused = _pulled_tree(environ, art, "getir")
     if refused:
         return refused
-    try:
-        reasons = U.check_recipe(unit, art.policy, tree, art.target)
-    except (U.VerifyError, D.DeriveError) as exc:
-        raise Unusable("getir: %s" % cli.cause(exc)) from None
-    if reasons:
-        return {"reason": "recipe_refused", "reasons": reasons}
+    refused = _recipe_refused(art, unit, tree, "getir")
+    if refused:
+        return refused
     out = _dir(environ, "out", "deps")
     try:
         os.makedirs(out)
@@ -521,9 +553,17 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
                                   objects, commit, out)
     except P.PulledError as exc:
         return dict({"reason": "pulled_refused", "reasons": exc.reasons}, heads=heads)
-    return {"heads": heads, "assembled": {"target": target_id, "commit": commit,
-                                          "candidates": sorted({p.split("/")[1] for p in manifest["files"]
-                                                                if p.startswith(P.CANDIDATES + "/")})}}
+    assembled = {"target": target_id, "commit": commit,
+                 "candidates": sorted({p.split("/")[1] for p in manifest["files"] if p.startswith(P.CANDIDATES + "/")})}
+    # MF4's judgement (D1): the brain's proposal (units.json, its one unit) against the referee's own derivation
+    # from the assembled tree, read back the way getir, kos and yaz read their download
+    tree = os.path.join(root, "tree")
+    art, unit, refused = _read_unit(out)
+    if not refused:
+        refused = _extract(art, tree) or _recipe_refused(art, unit, tree, "cek")
+    if refused:
+        return dict(refused, heads=heads, assembled=assembled)
+    return {"heads": heads, "assembled": assembled, "profile": {"unit_id": unit["unit_id"]}}
 
 
 def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None,
@@ -540,7 +580,7 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         d1 = cek_d1(environ, http, verifier, git)
         if "reason" in d1:
             return dict(result, **d1)
-        return dict(result, reason="cycle_not_wired", checked=["accepted_sha", "referee_tree", "heads", "assembled"],
+        return dict(result, reason="cycle_not_wired", checked=list(CEK_CHECKED),
                     **d1)
     if name == "getir":
         d2 = getir_d2(environ, fetcher)
