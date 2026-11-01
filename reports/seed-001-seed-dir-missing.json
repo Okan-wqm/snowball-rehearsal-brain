@@ -2,5 +2,6 @@
   "id": "seed-001-seed-dir-missing",
   "kind": "seed_issue",
   "ref": "spec/tohum/24a-kurucu-ve-yerlesim.md:50",
-  "state": "open"
+  "state": "confirmed",
+  "update_2026_11_01_epoch_35c8838": "Answered by seed epoch 35c8838 (00a:24-27, 24a:49 and :55, 26:18, 27:61, 25:28): the Founder appends rows with its own code by 26's chain rule, the launcher writes the cost row, only spec/tohum comes to the brain. Confirmed against my code: every row since f1 is appended by referee/ledger/founder.py append (refusals: chain, append-only, closed kinds), tested by tests/test_founder_ledger.py and referee test 14; this session's rows were written by it."
 }

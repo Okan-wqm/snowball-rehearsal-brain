@@ -38,6 +38,19 @@ What ``derive`` returns, and the exact rule for each field (all paths are relati
   ``security_keywords`` when given, otherwise the fourteen of tohum/14. A substring rule over-includes
   (``author`` holds ``auth``); that is its cost, a narrower rule would let a security path through.
   File contents are not read for keywords.
+- ``safety_paths`` (tohum/05 "Fiziksel güvenlik": code that drives, stops, alarms for or protects a physical
+  process, its thresholds and escalation included): topmost paths found by the same component rule with
+  ``SAFETY_KEYWORDS`` (a closed list of this module, the page's six kinds of process in English and Turkish
+  plus control-system words: pump, aeration, oxygen, feeding, alarm and alert, emergency stop, shutdown,
+  interlock, safety, SCADA, PLC, Modbus, actuator, valve, dosing, heater, chiller, VFD, automation, threshold,
+  setpoint, escalation; the policy's keywords do not replace it), plus the paths matched by an ownership-file
+  line naming an owner that holds such a word, plus the paths matched by the owner's optional
+  ``targets[].safety_paths`` (patterns in the syntax below; an entry that matches nothing in the tree adds
+  nothing). Every safety path is also in ``security_paths``, the one list the path gates read
+  (``gate.diffguard``, ``loop.decide``, ``unit_verify``'s criterion 5), so nothing derived here is touched
+  until K6 is live, formatters included. The owner's list and the keywords only widen the derivation. Out of
+  scope: names in no list (a pump driver in ``motor.ts`` under ``devices/``: the owner's ``safety_paths`` is
+  the channel) and file contents.
 - ``test_path_rules``: the rules of ``TEST_RULES`` that match at least one non-excluded regular file,
   plus, as literal paths, every non-excluded ``.rs`` file with a ``#[test]`` attribute or a ``#[cfg(...)]``
   that names ``test`` (``INLINE_RUST_TEST``; inline tests). A test file outside these rules (say
@@ -45,7 +58,10 @@ What ``derive`` returns, and the exact rule for each field (all paths are relati
 - ``unit_candidates``: the operator's ``unit_candidates`` in their order; when there are none, every
   non-excluded directory that holds a ``package.json``, in path order. Each is ``{path, eligible,
   reasons}``; eligible means none of: ``path_invalid`` (absolute, ``..``, empty), ``path_symlink``,
-  ``not_a_directory``, ``excluded``, ``no_package_json``, ``package_json_unparsable``,
+  ``not_a_directory``, ``excluded``, ``safety_path`` or ``security_path`` (the candidate is such a path or lies
+  under one, ``guarded_by``; tohum/05: until K6 is live, which is never in this brain, unit selection leaves
+  them out, stage 1's first unit included; a candidate that only holds one below it stays a candidate and the
+  gates refuse touching that path), ``no_package_json``, ``package_json_unparsable``,
   ``no_version_file`` (no non-blank regular ``.nvmrc`` or ``.node-version``, nor a ``.tool-versions``
   with a ``node``/``nodejs`` line, in the unit directory or an ancestor up to the root), ``no_lockfile``
   (no ``npm-shrinkwrap.json`` or ``package-lock.json`` there; the nearest wins, shrinkwrap first),
@@ -144,6 +160,11 @@ EXCLUDED_DIR_NAMES = (
 )
 SECURITY_KEYWORDS = ("auth", "guard", "security", "session", "token", "secret", "crypto", "tenant",
                      "permission", "role", "policy", "payment", "billing", "pii")
+SAFETY_KEYWORDS = ("pump", "pompa", "aerat", "havalandir", "oxygen", "oksijen", "feeding", "feeder", "besleme",
+                   "yemleme", "alarm", "alert", "uyari", "emergency", "estop", "e-stop", "e_stop", "acil-dur",
+                   "acil_dur", "acildur", "shutdown", "interlock", "failsafe", "fail-safe", "fail_safe", "safety",
+                   "scada", "plc", "modbus", "actuator", "valve", "dosing", "heater", "chiller", "automation",
+                   "threshold", "setpoint", "escalat", "vfd")
 EXTENSIONS = {
     ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript", ".jsx": "javascript",
     ".ts": "typescript", ".mts": "typescript", ".cts": "typescript", ".tsx": "typescript",
@@ -158,7 +179,7 @@ OWNER_FILES = ("CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS", ".gitlab/C
 RECIPE_FIELDS = ("unit_id", "path", "inputs", "toolchain", "env_image", "lockfiles", "install_scripts_required",
                  "lint_cmd", "test_cmd", "affected_test_cmd", "services", "limits")
 SET_FIELDS = ("agent_config", "security_keywords", "security_paths", "security_owner_patterns",
-              "excluded_dir_names", "excluded_dirs", "test_path_rules")
+              "safety_keywords", "safety_paths", "excluded_dir_names", "excluded_dirs", "test_path_rules")
 PROPOSABLE = SET_FIELDS + ("languages", "excluded_paths", "units")
 
 _AGENT = frozenset(n.casefold() for n in AGENT_CONFIG)
@@ -284,20 +305,21 @@ def _keywords(policy: dict | None) -> list[str]:
     return [w.casefold() for w in words]
 
 
-def _target(target: dict | None) -> tuple[list[str], list[str]]:
+def _target(target: dict | None) -> tuple[list[str], list[str], list[str]]:
+    """The operator's ``excluded_paths``, ``unit_candidates`` and the owner's optional ``safety_paths``."""
     if target is None:
-        return [], []
+        return [], [], []
     if not isinstance(target, dict):
         raise DeriveError("target must be an object")
     lists = []
-    for key in ("excluded_paths", "unit_candidates"):
+    for key in ("excluded_paths", "unit_candidates", "safety_paths"):
         value = target.get(key, [])
         if not (isinstance(value, list) and all(isinstance(v, str) and v.strip("/") for v in value)):
             raise DeriveError("target.%s must be a list of non-empty strings" % key)
         lists.append(value)
     for p in lists[0]:
         pattern_regex(p)
-    return lists[0], lists[1]
+    return lists[0], lists[1], lists[2]
 
 
 def _walk(root: str):
@@ -332,9 +354,9 @@ def _walk(root: str):
 def derive(tree: str, target: dict | None = None, policy: dict | None = None) -> dict:
     if not os.path.isdir(tree) or os.path.islink(tree):
         raise DeriveError("tree is not a directory")
-    op_excluded, op_candidates = _target(target)
+    op_excluded, op_candidates, op_safety = _target(target)
     keywords = _keywords(policy)
-    agent_found, excl_dirs, security, files, package_dirs = [], [], [], [], []
+    agent_found, excl_dirs, security, safety, files, package_dirs = [], [], [], [], [], []
     languages: dict[str, int] = {}
 
     walker = _walk(tree)
@@ -359,6 +381,8 @@ def derive(tree: str, target: dict | None = None, policy: dict | None = None) ->
             continue
         if any(k in name for k in keywords):
             security.append(rel)
+        if any(k in name for k in SAFETY_KEYWORDS):
+            safety.append(rel)
         if stat.S_ISREG(st.st_mode):
             files.append(rel)
             lang = EXTENSIONS.get(posixpath.splitext(name)[1])
@@ -368,10 +392,12 @@ def derive(tree: str, target: dict | None = None, policy: dict | None = None) ->
                 package_dirs.append(posixpath.dirname(rel) or ".")
 
     owner_patterns = _owner_patterns(tree, keywords)
+    safety_patterns = _owner_patterns(tree, SAFETY_KEYWORDS) + op_safety
     all_paths = _all_paths(files)
-    for pattern in owner_patterns:
-        rx = pattern_regex(pattern)
-        security.extend(p for p in all_paths if rx.match(p.casefold()))
+    for patterns, found in ((owner_patterns, security), (safety_patterns, safety)):
+        for pattern in patterns:
+            rx = pattern_regex(pattern)
+            found.extend(p for p in all_paths if rx.match(p.casefold()))
 
     derived = {
         "agent_config": list(AGENT_CONFIG),
@@ -379,9 +405,11 @@ def derive(tree: str, target: dict | None = None, policy: dict | None = None) ->
         "excluded_dirs": minimal(excl_dirs),
         "excluded_paths": sorted(set(op_excluded) | set(minimal(agent_found))),
         "languages": {k: {"files": v} for k, v in sorted(languages.items())},
+        "safety_keywords": list(SAFETY_KEYWORDS),
+        "safety_paths": minimal(safety),
         "security_keywords": keywords,
         "security_owner_patterns": owner_patterns,
-        "security_paths": minimal(security),
+        "security_paths": minimal(security + safety),
         "test_path_rules": _test_rules(tree, files),
     }
     candidates = op_candidates or sorted(package_dirs)
@@ -497,6 +525,9 @@ def _candidate(tree: str, derived: dict, raw: str) -> dict:
         reasons.append(where)
     if path != "." and excluded(derived, path):
         reasons.append("excluded")
+    guarded = guarded_by(derived, path)
+    if guarded:
+        reasons.append(guarded)
     if not reasons:
         present, pkg = _json(tree, posixpath.join(path, "package.json"))
         if not present:
@@ -507,6 +538,16 @@ def _candidate(tree: str, derived: dict, raw: str) -> dict:
             reasons.append("no_version_file")
         reasons.extend(_lock_reasons(tree, path))
     return {"path": path, "eligible": not reasons, "reasons": reasons}
+
+
+def guarded_by(derived: dict, path: str) -> str | None:
+    """``safety_path`` when a ``safety_paths`` entry covers ``path`` (equal to it or above it), else
+    ``security_path`` when a ``security_paths`` entry does, else None. A path that only holds such a path below
+    it is not covered (tohum/05: the unit that is one, or lies under one)."""
+    for field in ("safety_paths", "security_paths"):
+        if any(covers(entry, path) for entry in derived.get(field, [])):
+            return field[:-1]
+    return None
 
 
 def _has_version_file(tree: str, d: str) -> bool:
