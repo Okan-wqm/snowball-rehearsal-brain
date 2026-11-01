@@ -279,7 +279,7 @@ class Proofs(unittest.TestCase):
                          ["consumer_wired:pulled:cek->cagir"])
 
     def test_kos_is_not_unwired_either(self):
-        # kos ends cycle_not_wired after D3, but on an empty RUNNER_TEMP its first refusal is the missing pulled
+        # kos is wired (D3, D7): on an empty RUNNER_TEMP its first refusal is the missing pulled, not cycle_not_wired
         self.assertEqual(self.check(("results", "yaz"), ("unwired", "x")), ["producer_wired:results:kos->yaz"])
 
     def test_the_consumer_without_the_artifact_is_not_a_hand_over(self):

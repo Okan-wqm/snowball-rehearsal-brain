@@ -10,8 +10,9 @@
   decide`` (MF8's own command) reads: the good candidate merges, a test-breaking and a ratchet-raising one are
   rejected for their own reasons; the red control is the job's own ``RED_CONTROL`` (a green one blocks the base),
   not something the artifact holds; a refused artifact, two units or an unsafe tree run nothing; ``in/deps`` is
-  taken as one ``<address>/`` directory, which reaches ``unit.verify``; the job still ends ``cycle_not_wired`` after D3
-  (``yaz``'s half of D7, D8 not wired);
+  taken as one ``<address>/`` directory, which reaches ``unit.verify``; the job ends ``ok``, exit 0, after D3
+  (``done`` ``["D3"]``) or after D3 and D7's sentinel (``["D3", "D7"]``), so the upload runs; the job's steps are
+  D3 and D7 only (D8's planted merge is watched by D7's run);
 - D7's half in ``kos``: which merge the sentinel watches is read from ``state/ledger.jsonl`` (``ledger.serial``):
   none without an unfinished merge or after its revert; the one unfinished merge at ``brain/integration``'s head
   runs the sentinel there (``sentinel.json`` in the results); an unfinished merge elsewhere, or a ledger that cannot
@@ -362,7 +363,7 @@ class KosJob(Base):
         self.write_pulled({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST), "raises": candidate(RAISES)})
         runner = RedAs()
         out = self.run_kos(runner)
-        self.assertEqual((out["ok"], out["reason"], out["done"], out["job"]), (False, "cycle_not_wired", ["D3"], "kos"))
+        self.assertEqual((out["ok"], out.get("reason"), out["done"], out["job"]), (True, None, ["D3"], "kos"))
         self.assertEqual(out["index"]["base"], {"verdict": "verified", "reasons": []})
         self.assertEqual({c: v["verdict"] for c, v in out["index"]["candidates"].items()},
                          {"good": "verified", "breaks": "verified", "raises": "verified"})
@@ -382,14 +383,14 @@ class KosJob(Base):
                 shutil.rmtree(self.temp, ignore_errors=True)
                 self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with(rows)}))
                 out = self.run_kos()
-                self.assertEqual((out["reason"], out["index"]["sentinel"]), ("cycle_not_wired", None))
+                self.assertEqual((out["ok"], out["done"], out["index"]["sentinel"]), (True, ["D3"], None))
                 self.assertFalse(os.path.exists(self.results("sentinel.json")))
 
     def test_the_unfinished_merge_at_the_head_is_watched(self):
         head = HEADS["brain/integration"]
         self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with([START, merge("c1", head)])}))
         out = self.run_kos()
-        self.assertEqual((out["reason"], out["done"]), ("cycle_not_wired", ["D3"]))
+        self.assertEqual((out["ok"], out["done"]), (True, ["D3", "D7"]))
         self.assertEqual((out["index"]["sentinel"]["merge_sha"], out["index"]["sentinel"]["verdict"]), (head, "green"))
         with open(self.results("sentinel.json")) as fh:
             self.assertEqual(json.load(fh)["merge_sha"], head)

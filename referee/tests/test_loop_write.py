@@ -335,7 +335,9 @@ class D7(StateBase):
         heads = {b: self.gh.refs[b] for b in P.HEAD_BRANCHES}
         shutil.rmtree(self.pulled)
         shutil.rmtree(self.results())
-        self.kos({}, heads=heads, units=SENTINEL_UNITS)
+        watched = self.kos({}, heads=heads, units=SENTINEL_UNITS)
+        self.assertEqual((watched["done"], watched["index"]["sentinel"]["merge_sha"]),
+                         (["D3", "D7"], heads[B.INTEGRATION]))  # kos ends ok after D7 whatever the verdict
         art = P.read(self.pulled)
         YW.write_response(self.temp, "t1", art.heads, [YW.cost_row("cagir-10-1", art.heads[B.INTEGRATION])])
         return first["written"], heads

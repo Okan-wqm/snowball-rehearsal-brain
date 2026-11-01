@@ -63,9 +63,11 @@ refused tree is ``pulled_invalid``). Then:
   unfinished merge is ``brain/integration``'s head (the tree ``pulled`` carries), ``runner.kos.results`` runs D7's
   sentinel there (``watch``: ``sentinel.json`` and the index's ``sentinel``); any other set of unfinished merges is
   ``sentinel_unplaced`` with ``unfinished:<sha>`` reasons, exit 1, nothing run (a red could not be laid on one
-  merge). Its index is in the output (``index``) and ``done`` is ``["D3"]``. D8 (the drill) is not wired, so the job
-  still ends ``cycle_not_wired``, exit 1, after D3: the upload step does not run and ``yaz`` gets nothing (``yaz``'s
-  half of D7, below, reads the verdict once it does).
+  merge). Its index is in the output (``index``), ``ok`` is true and ``done`` is ``["D3", "D7"]`` when a merge was
+  watched, else ``["D3"]`` (D7 has nothing to watch), exit 0: the upload step runs and ``yaz`` reads the results
+  (D5) and the sentinel's verdict (its half of D7, below). ``kos`` carries no step of D8: the drill's plant is a
+  write (``yaz``), and its planted merge is a ``drill``/``plant`` row, which ``ledger.serial`` counts as a merge, so
+  the next cycle's ``kos`` watches it with D7's own sentinel run, at ``brain/integration``'s head like any merge.
 - ``yaz`` runs D5 (``yaz_d5``): it reads ``control.json`` from the ``control`` step's clone
   (``$RUNNER_TEMP/control/control.json``; unreadable is unusable, exit 2), ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
   (the same refusals, the same one unit), extracts the tree under ``$RUNNER_TEMP/work`` and calls ``loop.decide`` on
@@ -274,7 +276,7 @@ JOBS: dict[str, Job] = {
                 "LOOP_TARGET": "${{ vars.LOOP_TARGET }}"},
                (), (), "pulled"),
     "getir": Job(("D2",), (5,), True, {}, {}, ("cek",), ("pulled",), "deps"),
-    "kos": Job(("D3", "D7", "D8"), (3, 6, 12), True, {}, {}, ("cek", "getir"), ("pulled", "deps"), "results"),
+    "kos": Job(("D3", "D7"), (3, 6, 12), True, {}, {}, ("cek", "getir"), ("pulled", "deps"), "results"),
     "cagir": Job(("D4",), (2, 15), False, {},
                  {"CLAUDE_CODE_OAUTH_TOKEN": "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}",
                   "LOOP_CANARY_MODEL": "${{ vars.CANARY_MODEL }}", "LOOP_CLAUDE_SHA512": "${{ vars.CLAUDE_CLI_SHA512 }}"},
@@ -528,7 +530,8 @@ def getir_d2(environ: dict[str, str], fetcher: Any = None) -> dict[str, Any]:
 
 
 def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None = None) -> dict[str, Any]:
-    """D3 of ``kos`` (see the module docstring): ``{reason?, reasons?, index?}``."""
+    """D3 of ``kos``, with D7's sentinel when a merge is watched (see the module docstring): ``{reason, reasons?}``
+    or ``{index, done}``."""
     art, unit, refused = _pulled_unit(environ)
     if refused:
         return refused
@@ -555,7 +558,7 @@ def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None
                           deps, art.target, runner, base=root, watch=watch)
     except K.UNUSABLE as exc:
         raise Unusable("kos: %s" % cli.cause(exc)) from None
-    return {"index": index}
+    return {"index": index, "done": ["D3", "D7"] if watch else ["D3"]}
 
 
 def yaz_d5(environ: dict[str, str]) -> tuple[dict[str, Any], Any, str | None]:
@@ -862,7 +865,7 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         d3 = kos_d3(environ, runner, red_control)
         if "reason" in d3:
             return dict(result, **d3)
-        return dict(result, reason="cycle_not_wired", done=["D3"], index=d3["index"])
+        return dict(result, ok=True, **d3)
     if name == "cagir":
         d4 = cagir_d4(environ, claude, now)
         if "reason" in d4:

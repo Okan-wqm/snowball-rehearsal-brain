@@ -272,7 +272,7 @@ class EndToEnd(LK.Base):
         C.assemble(brain.__getitem__, brain_commit, json.dumps(SUMMARY).encode(), POLICY, "t1", objects.__getitem__,
                    commit, HEADS["brain/state"], state_files(), None, self.pulled)
         out = self.run_kos()
-        self.assertEqual((out["reason"], out["done"]), ("cycle_not_wired", ["D3"]))
+        self.assertEqual((out["ok"], out["done"]), (True, ["D3"]))
         self.assertEqual(out["index"]["base"], {"verdict": "verified", "reasons": []})
         self.assertEqual(self.decide("good")["decision"], "merge")
         self.assertEqual((self.decide("breaks")["decision"], self.decide("breaks")["reasons"]),

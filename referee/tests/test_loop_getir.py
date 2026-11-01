@@ -121,7 +121,7 @@ class HandOver(Getir):
         self.hand_over()
         out = self.run_kos()
         self.assertEqual(out["index"]["base"], {"verdict": "verified", "reasons": []})
-        self.assertEqual((out["reason"], out["done"]), ("cycle_not_wired", ["D3"]))
+        self.assertEqual((out["ok"], out["done"]), (True, ["D3"]))
 
     def test_without_the_artifact_kos_has_no_verdict(self):
         # the same tree with no in/deps: a lock with packages and no artifact is unusable input for kos

@@ -39,8 +39,8 @@ is ``loop.job.render()`` byte for byte (and the CLI's output); the parser's subs
 D1-D8 and the step table's MFs; the gating, run under a model of Actions' step and job conditions, stops every
 job at a failing ``control`` and ends a paused job green with nothing run; ``python -m loop.job run``'s refusal
 of a secret in a code job, and every job's entry without its inputs is no verdict (exit 2); the steps themselves
-are each job's test file (``cek`` D1 ``test_loop_cek.py``, ``getir`` D2 ``test_loop_getir.py``, ``kos`` D3 and its
-``cycle_not_wired`` stop after it ``test_loop_kos.py``, ``cagir`` D4 ``test_loop_cagir.py``, ``yaz`` D5 and its stop
+are each job's test file (``cek`` D1 ``test_loop_cek.py``, ``getir`` D2 ``test_loop_getir.py``, ``kos`` D3 and D7
+``test_loop_kos.py``, ``cagir`` D4 ``test_loop_cagir.py``, ``yaz`` D5 and its stop
 ``test_loop_yaz.py``).
 """
 

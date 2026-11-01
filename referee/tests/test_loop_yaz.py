@@ -49,11 +49,15 @@ OPEN = {"merge_paused": False}
 class Cycle(Base):
     """``kos`` then ``yaz`` in one ``$RUNNER_TEMP``, as the workflow hands the artifacts over."""
 
-    def kos(self, cands: dict, target: dict | None = None, units=None, **kw) -> None:
+    def kos(self, cands: dict, target: dict | None = None, units=None, **kw) -> dict:
+        """The ``kos`` job on the pulled artifact; it ends ``ok`` (so the upload runs) and its ``out/results`` is
+        handed over to ``in/results`` as the download does. Returns ``kos``'s line."""
         self.write_pulled(cands, target=target, units=units, **kw)
         out = J.run("kos", {"RUNNER_TEMP": self.temp}, runner=RedAs())
-        self.assertEqual(out["reason"], "cycle_not_wired", out)
+        self.assertTrue(out["ok"], out)
+        self.assertNotIn("reason", out)
         shutil.move(os.path.join(self.temp, "out", "results"), self.results())
+        return out
 
     def results(self, *parts) -> str:
         return os.path.join(self.temp, "in", "results", *parts)
