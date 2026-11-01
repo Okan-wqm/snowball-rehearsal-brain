@@ -11,9 +11,10 @@ chain break or a root that cannot be written to Rekor is a hard stop), tohum/26 
   ``Unusable``: there is nothing to anchor.
 - **Anchor** (``anchor``): the signer signs the root's 64 hex characters (ASCII) as its payload and answers
   ``{uuid, identity}``; the entry is ``{uuid, hash: root, identity}``. A signer that cannot sign raises
-  ``Unsignable``, which is a ``HardStop``: no entry, nothing written. Only ``FakeSigner`` exists here: it stands
-  in for a verified Sigstore bundle (asama-0/14 "Kum", tohum/29j) and does no cryptography; a real Sigstore
-  signer and the seed's pins are not part of this module (asama-0/10a #kok).
+  ``Unsignable``, which is a ``HardStop``: no entry, nothing written. ``FakeSigner`` here stands in
+  for a verified Sigstore bundle (asama-0/14 "Kum", tohum/29j) and does no cryptography; the real signer is
+  ``loop.sign.SigstoreSigner`` (``sigstore sign`` in ``yaz``); the seed's pins are not part of this module
+  (asama-0/10a #kok).
 - **Verify** (``verify``, the next cycle's D1): reads the ledger's root, only the last line of
   ``chain/root.jsonl`` (``root`` 64 lowercase hex, ``rekor_uuid`` a non-empty string) and the recorded Rekor
   entries ``{entries: {uuid: {hash, identity}}}``. Reasons, in this order: ``root_mismatch`` (the ledger's root
