@@ -58,6 +58,7 @@ Performans değerleri `18b`'dedir ve `18`'deki prosedürle değişir. Adlar `26b
 | `stage_budgets.asama_0.founder_usd` | Başlangıç fren değeri 220 USD; ölçüm ~22 oturumdur, kapı değil | başlatıcı (`24`), `asama-0/12` |
 | `stage_budgets.asama_0.rival_usd` | Başlangıç fren değeri 25 USD | önyükleme hakemi (`29b`), `asama-0/12` |
 | `stage_budgets.asama_0.canary_usd` | Başlangıç fren değeri 1 USD; çağrı başına ayrıca `--max-budget-usd` | `llm.call`, `asama-0/12` |
+| `stage_budgets.asama_1.rival_usd` | Başlangıç fren değeri 15 USD; harcama kilidin açılışından sayılır, kilit onsuz açılmaz (`26e`) | önyükleme hakemi (`29b`), `stage-open`, `asama-1/10` |
 
 ## İşletim sınırları (`operating`)
 

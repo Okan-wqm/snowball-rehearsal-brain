@@ -6,9 +6,9 @@ Okunma: Aşama 0 inşasında ve her şema değişikliğinde
 
 ---
 
-Alanların tek kaynağı bu sayfa, `26b` ve güvenlik şemaları için `30d` ile `30e`'dir; başka sayfa alan
-adı tanımlamaz. Hepsi JSON Schema olarak hakem reposunda `schemas/` altındadır; harness her artefaktı
-şemaya karşı doğrular. Alan adları İngilizce. Araç imzaları `26a`'da. Şema hakem kodudur: yeni alan ya
+Alanların tek kaynağı bu sayfa ve devamları (`26b`, `26c`, `26d`), güvenlik şemaları için `30d` ile `30e`'dir;
+başka sayfa alan adı tanımlamaz. Hepsi JSON Schema olarak hakem reposunda `schemas/` altındadır; harness her
+artefaktı şemaya karşı doğrular. Alan adları İngilizce. Araç imzaları `26a`'da. Şema hakem kodudur: yeni alan ya
 da yeni kategori önerisini genesis değil şerit yazarı yapar (`09a`).
 
 **Bölüm → dosya.** Her durum dosyası yalnız sonuna eklenen, zincirli JSONL'dir; kök hash hepsini kapsar.
@@ -75,6 +75,6 @@ attempts:[{claim, evidence_refs, reproducer?}], reproduced}`. `reproduced` hakem
 instance_id, arm?: with|without, commitment_sha256, revealed_sha256?, outcome, verdict}`.
 Taahhüt koşudan önce, açılım koşudan sonra yazılır; eşleşmezse prova `FAIL`'dır. Prova dosyası `29c`'de.
 
-Diğer şemalar (ders, bilgi, öneri, harita, organ, itibar, rapor, profil, politika, test-yazıcı, bakış,
-mühür, sözleşme) `26b`'de; Aşama 0'ın dosyaları (`control.json`, `setup/*`, tarif, aday, bildirim,
-`snowball-tests.json`) `26c`'de; güvenlik profili `30d`'de, `security` satırının yükü `30e`'dedir.
+Diğer şemalar (ders, bilgi, öneri, harita, organ, itibar, rapor, profil, politika, test-yazıcı, bakış, mühür,
+sözleşme) `26b`'de; Aşama 0'ın dosyaları (`control.json`, `setup/*`, tarif, aday, bildirim, `snowball-tests.json`)
+`26c`'de, PASS satırı ve kilidin açılışı `26d`'de; güvenlik profili `30d`'de, `security` satırının yükü `30e`'dedir.

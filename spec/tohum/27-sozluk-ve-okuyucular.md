@@ -50,13 +50,14 @@ dosyaları içindir; kod dizinlerinin çağıranları `24` ve `26a`'dadır. Hede
 | Dosya | Yazar | Okuyucu | Değişen karar | Açılış |
 |---|---|---|---|---|
 | `control.json`, hakem reposu | operatör | her iş (`main`'den canlı), başlatıcı, gece bekçisi | Durmak, zamanlanmış devir, merge duraklatma, Kurucu'nun devamı; belirteç süresi uyarısı | Kurulum |
-| `bootstrap.json`, hakem reposu | operatör | önyükleme hakemi | İzlenen beyin dalı, imaj, rakip modeli ve tavanları | Kurulum |
+| `bootstrap.json`, hakem reposu | operatör | önyükleme hakemi; döngünün `çek`'i (`brain_repo`, `29s`) | İzlenen beyin dalı, imaj, rakip modeli ve tavanları; D1'in okuduğu beyin | Kurulum |
 | `policy.json` anayasal ve `operating{}`, hakem reposu | operatör | her kapı, tohumun spec denetimi, `limit_hit` | Eşik, zorunlu çıkış satırı, kaynak sınırı | Kurulum |
-| `setup/summary.json`, hakem reposu | operatör | önyükleme hakemi, genesis, P1'den `drift.check` | Sert duruş; tohum dönemi, hedefler ve aday birimler, genellik adları, dürüstlük taahhüdü, ilk koşu | Kurulum |
+| `setup/summary.json`, hakem reposu | operatör | önyükleme hakemi, genesis, döngünün her işi (`targets[]`, `29s`), P1'den `drift.check` | Sert duruş; tohum dönemi, hedefler ve aday birimler, bir koşunun hizmet ettiği hedefler, genellik adları, dürüstlük taahhüdü, ilk koşu | Kurulum |
 | `setup/imports.jsonl`, hakem reposu | `import` | döngü hakemi D1, genesis, `status.block`, operatör | Kabul edilmiş `referee/` hash'i; insan dokunuşu sayacı | Aşama 0 çıkışı |
 | `setup/stage.json`, hakem reposu | `stage-open`, operatör iter | önyükleme hakemi her `pull`'da | Sonraki aşamanın tablosu ve testleri geçerli mi | Aşama 0 PASS |
 | `setup/honesty-key.json`, hakem reposu | operatör | önyükleme hakemi, çıkışta | #durustluk | Aşama 0 çıkışı |
-| `vectors/`, `seats/`, `bootstrap/stages/`, hakem reposu | operatör, tohumdan | önyükleme hakemi, `agent.dispatch` | Kabul, koltuk promptu, `done_mf` ve MF testleri | Kurulum |
+| `vectors/`, `seats/`, `bootstrap/stages/`, hakem reposu | operatör, tohumdan | önyükleme hakemi, `agent.dispatch` | Kabul, koltuk promptu, `done_mf` ve MF testleri (Aşama 1'in partileri `26e`) | Kurulum |
+| `bootstrap/requirements/sign.txt`, hakem reposu | operatör, tohumdan | önyükleme hakemi; döngünün `çek` ve `yaz`'ı (`29s`) | Hangi Sigstore'un kurulacağı (hash'e sabitli, lisans kapısından) | Kurulum |
 | Önyükleme koşu artefaktları, Rekor kayıtları, `status-stage0.md` | önyükleme hakemi | Kurucu, başlatıcı, `import`, sonraki koşu (imzalı durum), operatör | Neyin düzeltileceği, oturum başlatma, aktarılacak SHA, sonraki karar | Aşama 0 |
 | `founder-ledger.jsonl`, beyin reposu | Kurucu, kendi koduyla (`26`'nın zincir kuralı); başlatıcı (`cost`) | Kurucu sonraki oturum, önyükleme hakemi (zincir) | Neye devam edilecek; `founder_ledger_invalid` | Aşama 0 |
 | `reports/*.json`, beyin reposu | Kurucu | önyükleme hakemi, operatör | İtiraz (`disputed`), uyarı, tohum dönemi | Aşama 0 |

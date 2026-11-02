@@ -32,7 +32,7 @@ değil). Beyin ağacındaki içe aktarmaları ya da çağrıları `calls`'la kar
 | `gate.check` | Hakem | `yaz` | aday, `koş` sonuçları, `control.json` | karar (`asama-0/08`) | `events` satırı | hakem döngüsü | MF8 |
 | `target.write` | Hakem | `yaz` | dal, PR, check, merge, geri alma ya da `brain/state` commit'i isteği | ref'ler | yalnız `refs/heads/brain/**`, GitHub REST ve Git Data API | `yaz` işi (`gate.check`'in merge kararıyla), `gate.revert`, `ledger.append`, `exit.drill`, etkinleştirme | MF9 |
 | `ledger.append` | Hakem | `yaz` | bölüm, satırlar | `row_hash`'ler | devir başına tek `brain/state` commit'i | hakem işleri | MF10 |
-| `rekor.anchor` | Hakem | `yaz` | kök hash | Rekor kayıt kimliği | Rekor'a ekleme | hakem devir sonu (`yaz`) | MF11 |
+| `rekor.anchor` | Hakem | `yaz` | kök (kaydın `spec.data.hash`'i kökün kendisidir, `26d`) | Rekor kayıt kimliği, Sigstore paketi (`26d`) | Rekor'a ekleme | hakem devir sonu (`yaz`) | MF11 |
 | `sentinel.run` | Hakem | `koş` | `brain/integration` başı | etkilenen test sonuçları | yok | her merge sonrası | MF12 |
 | `gate.revert` | Hakem | `yaz` | merge SHA'sı, `cause` | geri alma | `target.write` ile commit | `sentinel.run` kırmızısı | MF13 |
 | `exit.drill` | Hakem | `yaz` | prova türü, aile listesi, gizli tohum | önceki devirde taahhüt hash'i, koşudan sonra cevap anahtarı | `drill` satırları; provaya konan organlar `planted: true` | hakem (`22a`, `12a`) | MF14 (yalnız `revert`); ders provası Aşama 2 |

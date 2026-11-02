@@ -42,6 +42,10 @@ bindirilip ağsız koşar. Durum değişimi bir `security` satırıdır; `guarde
 aday, hangi sınıftan olursa olsun reddedilir (`gate.check`, `cause: test_regression`). K6 canlı olunca
 `guarded` testler K6 kapısından hedefin kendi test yoluna önerilebilir; sahibin CI'ı da koşturur.
 
+**Profil testi.** `asama-1/13`'ün P2 MF1 için andığı "`30d`'nin profil testleri" tek testtir, §0.9'un numaralarının
+devamı olarak 53 (`26e`): fikstür hedeflerde `security.derive` ve `security.run`'ın bu sayfanın "Ne ve nerede",
+"Türetme", "Her kural bir teste bağlıdır" ve "Şema" kurallarını tuttuğunu sınar; biri tutmazsa test kırmızıdır.
+
 **Örnek.** TypeScript API'si ve Apollo GraphQL sunucusu, Python servisleri ve işçileri, Rust bileşenleri,
 PL/pgSQL fonksiyonlu Postgres taşıyan çok kiracılı bir platform:
 - `tenancy`: `shared_schema`, `tenant_key: tenant_id`, `context_source: token_claim`; RLS'li ve RLS'siz
@@ -56,12 +60,11 @@ PL/pgSQL fonksiyonlu Postgres taşıyan çok kiracılı bir platform:
   derinlik, maliyet, takma ad sınırları. R6 her liste alanında sorgu sayısı sabit. R7 Python işçisinde
   iş başına kiracı bağlamı.
 
-**Hakem ve beyin de hedeftir.** Profilleri tohumla sabittir: kiracılık yok; kimlik GitHub kimlikleri,
-App belirteçleri ve Sigstore OIDC; veri depoları git dalları, iş artefaktları ve Rekor; güvenlik yolu
-hakem kodu, iş akışı, koltuklar ve vektörlerin tamamı. Uygulanan sınıflar `path-traversal`,
-`prompt-injection`, `agent-escape`, `ci-supply-chain`, `exceptional-conditions`, `integrity`, `secrets`,
-`deserialization`, `unbounded-input`, `cmdi`, `supply-chain`, `vulnerable-deps`; kuralların testleri
-hakemin kendi testleridir, defteri `seed/security-ledger.jsonl`'dır (`30e`).
+**Hakem ve beyin de hedeftir.** Profilleri tohumla sabittir: kiracılık yok; kimlik GitHub kimlikleri, App belirteçleri
+ve Sigstore OIDC; veri depoları git dalları, iş artefaktları ve Rekor; güvenlik yolu hakem kodu, iş akışı, koltuklar
+ve vektörlerin tamamı. Uygulanan sınıflar `path-traversal`, `prompt-injection`, `agent-escape`, `ci-supply-chain`,
+`exceptional-conditions`, `integrity`, `secrets`, `deserialization`, `unbounded-input`, `cmdi`, `supply-chain`,
+`vulnerable-deps`; kuralların testleri hakemin kendi testleridir, defteri `seed/security-ledger.jsonl`'dır (`30e`).
 
 **Şema** (`26` ve `26b` dolu olduğu için burada; alan adları İngilizce). **security profile**:
 `schema_version`, `snapshot_id`, `derived_by`, `tenancy` `{model: none|single|shared_schema|

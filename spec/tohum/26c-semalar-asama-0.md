@@ -19,7 +19,7 @@ sayılır (`29b`, `asama-0/10`). Parti isteği aynı biçimdedir, `batch` alanı
 **Aşama tablosu** (tohumda `seed/bootstrap/stages/stage0.json`; `asama-0/14`'ün makine kopyası): `{stage, mfs: [{mf, tests[],
 groups[], module, calls[]}]}`. `module` `referee/` altındaki yoldur (modülsüz kırmızı onu siler); `calls` çağrılan MF'lerdir ve her
 biri çağırandan küçüktür (`calls`'un okunuşu: `26a`). Önyükleme hakemi `done_mf`'in anlamını, test bildirimini, vektör gruplarının
-ne zaman koştuğunu, modülsüz kırmızıyı ve çıkıştaki MF sayısını buradan okur. Partilerin tabloları aynı dizindedir (`asama-1/13`).
+ne zaman koştuğunu, modülsüz kırmızıyı ve çıkıştaki MF sayısını buradan okur. Partilerin tabloları aynı dizindedir (`26e`).
 
 **control.json** (hakem reposu): `{kill_switch, budget_state, oauth_token_expires, loop_schedule, merge_paused,
 founder_resume?, reverted_exits?, exam_faults?}`. Kapalıya düşüş: `kill_switch` eksikse açık; `budget_state` (`ok` ya da frene

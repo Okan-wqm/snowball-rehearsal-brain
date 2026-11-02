@@ -49,7 +49,8 @@ seyrek ve kimliksiz çeker (kök dosyaları ve `bootstrap/`), komutu `bootstrap/
 ```
 
 Sonraki her adım `if: steps.control.outputs.go == 'true'` taşır. GitHub bu koşula `success()` ekler: kırmızı
-duran kontrol adımı sonraki adımları da durdurur, `go=false` onları atlatır ve iş yeşil biter.
+duran kontrol adımı sonraki adımları da durdurur, `go=false` onları atlatır ve iş yeşil biter. Döngünün beyin reposu,
+hedefleri ve Sigstore'u (kontrol adımının klonundan kurulan pinli küme) `29s`'tedir.
 
 **`wiring` kuralı** (`asama-0/09` test 46 "her işin ilk adımı `control` ve kill switch açıkken iş durur";
 `asama-0/10` #is-akisi). Dosya `29r`'nin altkümesiyle okunur. Bir kabuk betiği ne yaptığı için okunamaz; kural

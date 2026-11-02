@@ -22,6 +22,7 @@ Okunma: yeni durum dosyası, bölüm ya da görünüm eklerken
 | `security/profile.json` | `security.derive`, doğrulanmış bildirim | `security.run`, `security.scan`, güvenlik avcısı, `gate.check` | Hangi sınıf ve test koşar; hangi aday K6 | P2 (`30d`) |
 | `security/tests/` | `yaz`, doğrulanmış bildirimden | `security.run` (`koş`) | Merge reddi; açığın kapanışı | P2 (`30d`) |
 | `chain/root.jsonl` | `yaz` | `chain.verify`, `rekor.anchor`, sonraki D1 | Sert duruş | Etkinleştirme |
+| `chain/<kök>.sigstore.json` (son kökün Sigstore paketi, `26d`) | `yaz` | `stage-open` | Kilit açılışı | Etkinleştirme |
 | `cases/` (dev) | `cases.build` | `harness.score`, Kurucu | Adapter değişikliği | P1 |
 | `status.md` | `status.block`, `docs.render` | operatör | Kill switch | Etkinleştirme |
 | `findings.jsonl` | hakem, adapter önerisinden | düzelticiler, kapı | İş kuyruğu | Aşama 1 |

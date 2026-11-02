@@ -76,5 +76,5 @@ sonucunu kullanır. Sonuç "aktarılabilir"dir, `referee/` ağaç hash'ini ve `r
 koşturmaz; Actions önbelleği kullanmaz; kill switch açıksa iş başlatmaz. Rakip bütçesi bittiyse yoklama
 uyarıyla geçer; aynı baş ay dönünce ya da politika değişince kendiliğinden yargılanır. Aşama 0'da Gözcü
 yoktur, bütçe dondurması buradadır; `monthly_cap_ci_minutes` ölçülmez (fren GitHub harcama sınırıdır,
-`25` 8). Politikadan okudukları: `monthly_cap_usd`, `stage_budgets.asama_0.rival_usd`,
+`25` 8). Politikadan okudukları: `monthly_cap_usd`, açık aşamanın `stage_budgets.asama_<k>.rival_usd`'si (`26e`),
 `stage_params.{rival_min_attempts, repeat_reject_limit}`, `license_allowlist`, `license_exceptions`.
