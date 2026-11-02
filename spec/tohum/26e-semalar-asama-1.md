@@ -30,7 +30,11 @@ değildir.
 Test numaraları §0.9'undur (`asama-0/09`); 53 onun numaralarının devamıdır: `asama-1/13`'ün P2 MF1 için andığı
 "`30d`'nin profil testleri", tanımı `30d` "Profil testi"ndedir. Öbür testler ve gruplar `asama-1/13`'ündür. Modül yolu `26a`'nın
 araç adındandır (`snapshot.make` → `snapshot/make.py`), aracı olmayan mekanizmada mekanizmanın adından; iki araçlı MF'nin
-modülü ilk aracınkidir (`asama-0/14` MF1 ve MF13 gibi). Modülsüz kırmızı bu yolu siler (`asama-0/14`). Parti çıkış isteği
+modülü ilk aracınkidir (`asama-0/14` MF1 ve MF13 gibi). Modülsüz kırmızı bu yolu siler (`asama-0/14`). Modülün ilk adı
+(paketi ya da `.py`'siz dosyası) Python'un standart kütüphanesinde bir modülün adı olamaz (`sys.stdlib_module_names`):
+hakem komutu `referee/` `sys.path`'te önde koşar ve o ad standart modülü gizler (`profile/` varken `import cProfile`
+düşer); böyle bir satırı olan tablo yüklenmez. Aşama 0'ın donmuş tablosundaki `profile` (MF4, MF6) bu kuraldan önce
+gelir ve o tablo yeniden açılana kadar kalır; hakemin hiçbir komutu `cProfile`'ı çağırmaz. Parti çıkış isteği
 `{stage: 1, sha, spec_sha256, batch}`'tir (`26c`); `batch` bu tablonun ilk sütunudur ve açık partininki olmalıdır,
 değilse `exit_request_wrong_batch`.
 

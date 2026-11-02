@@ -16,6 +16,7 @@ bir klondan **veri olarak** okur; hedefin yönerge, ayar, hook ve MCP dosyaları
 kodunu kendi makinesinde koşturmaz, adayını hakemin yayımladığı araç çıktısından yazar
 (`asama-0/08`). Her itmeden önce son imzalı sonucu okur; ret nedenleri tiplidir ve nedeni giderilmemiş
 bir itme öğrenilmemiş ret sayılır. Sonuç `not_learning` derse oturum durur (`22a`, `29b`).
+Kapsülde `/opt/founder/ledger_index.py` vardır: defterin salt-okur dizini; tohumun ekleme aracı yoktur.
 
 **Başlatıcı sözleşmesi** (`seed/launcher/`, tohum kodu). Operatör onu Kurucu'nun kapsülünde ya da ayrı
 bir Windows kullanıcısında koşar; Kurucu'nun yapılandırması repo dışında, başlatıcıya aittir:
