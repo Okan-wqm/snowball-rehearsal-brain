@@ -21,8 +21,8 @@
   {
    "id": "cost_rows_dropped",
    "file": "activate.py",
-   "old": "            + write_cycle.candidate_rows(cyc, decided, merged) + list(cost)",
-   "new": "            + write_cycle.candidate_rows(cyc, decided, merged)",
+   "old": "            + write_cycle.candidate_rows(cyc, decided, merged, change) + list(cost)",
+   "new": "            + write_cycle.candidate_rows(cyc, decided, merged, change)",
    "tests": [
     "test_activate.py"
    ]

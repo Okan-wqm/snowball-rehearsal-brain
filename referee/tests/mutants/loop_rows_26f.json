@@ -30,7 +30,7 @@
   {
    "id": "merge_without_merge_row",
    "file": "ledger/events.py",
-   "old": "    return [row(cycle, \"c:\" + cid, \"decision\", {\"decision\": \"merge\", \"candidate\": cid}),\n            row(cycle, \"m:\" + cid, \"merge\", dict(merge, candidate=cid))]",
+   "old": "    return [row(cycle, \"c:\" + cid, \"decision\", {\"decision\": \"merge\", \"candidate\": cid}),\n            row(cycle, \"m:\" + cid, \"merge\", merge)]",
    "new": "    return [row(cycle, \"c:\" + cid, \"decision\", {\"decision\": \"merge\", \"candidate\": cid})]",
    "tests": [
     "test_schema.py",
@@ -40,8 +40,8 @@
   {
    "id": "merge_row_before_decision",
    "file": "ledger/events.py",
-   "old": "    return [row(cycle, \"c:\" + cid, \"decision\", {\"decision\": \"merge\", \"candidate\": cid}),\n            row(cycle, \"m:\" + cid, \"merge\", dict(merge, candidate=cid))]",
-   "new": "    return [row(cycle, \"m:\" + cid, \"merge\", dict(merge, candidate=cid)),\n            row(cycle, \"c:\" + cid, \"decision\", {\"decision\": \"merge\", \"candidate\": cid})]",
+   "old": "    return [row(cycle, \"c:\" + cid, \"decision\", {\"decision\": \"merge\", \"candidate\": cid}),\n            row(cycle, \"m:\" + cid, \"merge\", merge)]",
+   "new": "    return [row(cycle, \"m:\" + cid, \"merge\", merge),\n            row(cycle, \"c:\" + cid, \"decision\", {\"decision\": \"merge\", \"candidate\": cid})]",
    "tests": [
     "test_schema.py"
    ]
@@ -49,8 +49,8 @@
   {
    "id": "write_merge_row_dropped",
    "file": "loop/write_cycle.py",
-   "old": "        out += events.decided(cyc, cid, decided[\"decisions\"][cid][\"reasons\"],\n                              merged if cid == decided[\"merge\"] else None)",
-   "new": "        out += events.decided(cyc, cid, decided[\"decisions\"][cid][\"reasons\"],\n                              merged if cid == decided[\"merge\"] else None)[:1]",
+   "old": "        out += events.decided(cyc, cid, decided[\"decisions\"][cid][\"reasons\"],\n                              dict(merged, hunks=change[\"hunks\"]) if cid == decided[\"merge\"] else None)",
+   "new": "        out += events.decided(cyc, cid, decided[\"decisions\"][cid][\"reasons\"],\n                              dict(merged, hunks=change[\"hunks\"]) if cid == decided[\"merge\"] else None)[:1]",
    "tests": [
     "test_loop_write.py"
    ]

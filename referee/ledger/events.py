@@ -109,10 +109,10 @@ def decided(cycle: dict, cid: str, reasons: list[str], merged: Any = None) -> li
     if reasons:
         return [row(cycle, "c:" + cid, "decision", {"decision": "reject", "candidate": cid, "reasons": reasons},
                     cause(reasons))]
-    merge = {k: merged[k] for k in MERGE_FIELDS}
+    merge = dict({k: merged[k] for k in MERGE_FIELDS}, candidate=cid,
+                 hunk_covered=hunk_covered(merged["path"], merged["hunks"]))
     return [row(cycle, "c:" + cid, "decision", {"decision": "merge", "candidate": cid}),
-            row(cycle, "m:" + cid, "merge", dict(merge, candidate=cid,
-                                                  hunk_covered=hunk_covered(merged["path"], merged["hunks"])))]
+            row(cycle, "m:" + cid, "merge", merge)]
 
 
 def hunk_covered(path: str, hunks: list[dict]) -> list[dict]:
