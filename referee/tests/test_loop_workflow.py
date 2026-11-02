@@ -28,11 +28,19 @@ in the registry or the emitter shows as a violation of the committed file:
   only) and ``yaz``;
 - ``secret_job_runs_code``: a job holding a secret or a permission uses only checkout of its own commit
   (``foreign_checkout`` otherwise), the artifact actions and (``yaz``) the App token action, and runs only
-  ``control`` and its ``python3 -m loop.job run <job>``; ``unknown_run``: the same for the code jobs.
+  ``control``, its ``python3 -m loop.job run <job>`` and the install steps ``INSTALLS`` gives it, each exactly
+  ``install_step(name)``; ``unknown_run``: the same for the code jobs, which have none;
+- ``install_missing`` (tohum/29s): ``cek`` and ``yaz`` run the ``sigstore`` step (``cek`` verifies, ``yaz`` signs)
+  and ``cagir`` the ``claude`` step, each once and before the job's ``python3 -m loop.job run`` (``install_order``
+  otherwise); an install step carries no secret, since its step has no ``env``;
+- ``operator_variable`` (tohum/29s: no input of a run is an operator variable): every ``vars.<NAME>`` expression
+  names an entry of ``VARS``, each with why it is still there.
 
 Stricter than 29p, on purpose: a job's ``if`` must be ``job_not_main``'s and no job or step continues on error
 (29p allows both keys). ``control_step`` is a copy of 29p's text; ``tests/test_control_step_spec.py`` at the
 brain's root compares it with the block in ``spec/tohum/29p-kontrol-komutu.md``, so the copy cannot drift.
+``install_step`` holds copies of 29s's two steps, bound to that page by ``tests/test_install_steps_spec.py`` the same
+way.
 
 Each rule is shown to fire on a mutated copy of the committed file and not on the file itself. Also: the file
 is ``loop.job.render()`` byte for byte (and the CLI's output); the parser's subset refusals; the registry covers
@@ -83,6 +91,33 @@ CONTROL_RUN = (
     'python3 -m snowball_bootstrap control --control ../control.json --job "$LOOP_JOB" --event "$GITHUB_EVENT_NAME"'
     ' --github-output "$GITHUB_OUTPUT"\n'
 )
+# tohum/29s "Sigstore" and "Kanaryanın claude CLI'si": the two install steps, byte for byte, and the jobs that run them.
+INSTALL_RUN = {
+    "sigstore": (
+        'set -eu\n'
+        'cd "$RUNNER_TEMP/control/bootstrap"\n'
+        'python3 -m venv "$RUNNER_TEMP/sig"\n'
+        '"$RUNNER_TEMP/sig/bin/pip" download --quiet --require-hashes --only-binary=:all: --no-deps'
+        ' -d "$RUNNER_TEMP/sigw" -r requirements/sign.txt\n'
+        'python3 -m snowball_bootstrap licenses --root .. --wheels "$RUNNER_TEMP/sigw"\n'
+        '"$RUNNER_TEMP/sig/bin/pip" install --quiet --no-index --find-links "$RUNNER_TEMP/sigw" --require-hashes'
+        ' --only-binary=:all: --no-deps -r requirements/sign.txt\n'),
+    "claude": (
+        'set -eu\n'
+        'C="$RUNNER_TEMP/control/bootstrap/requirements/claude-cli"\n'
+        'node -e \'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)\'\n'
+        'npm ci --prefix "$C" --no-audit --no-fund\n'
+        'pinned=$(node -p "require(\'$C/package.json\').dependencies[\'@anthropic-ai/claude-code\']")\n'
+        'test "$("$C/node_modules/.bin/claude" --version | cut -d\' \' -f1)" = "$pinned"\n'),
+}
+INSTALLS = {"cek": ("sigstore",), "yaz": ("sigstore",), "cagir": ("claude",)}  # 29s: who verifies, signs, calls
+# The operator variables still read, and why (29s: none of the run's three inputs is one).
+VARS = {
+    "TARGET_OWNER": "the writer App token's owner (tohum/25 item 6); no page names another source",
+    "LOOP_TARGET": "which targets[] entry a run serves; 29s 'Hedefler' says every one, in order: to be removed",
+}
+VARS_EXPR = re.compile(r"\$\{\{[^}]*?\bvars\.([A-Za-z0-9_]+)")
+
 # tohum/29p "wiring kuralı": the keys allowed, everything else refused.
 WORKFLOW_KEYS = {"name", "run-name", "on", "permissions", "concurrency", "jobs"}
 JOB_KEYS = {"name", "if", "needs", "runs-on", "permissions", "environment", "concurrency", "outputs",
@@ -92,6 +127,10 @@ CALL_KEYS = {"uses", "with", "secrets"}  # a workflow call: allowed keys, refuse
 
 def control_step(job: str) -> dict:
     return {"name": "control", "id": "control", "env": {"LOOP_JOB": job}, "run": CONTROL_RUN}
+
+
+def install_step(name: str) -> dict:
+    return {"name": name, "if": GATE, "run": INSTALL_RUN[name]}
 
 
 def committed() -> str:
@@ -147,10 +186,19 @@ def violations(doc: dict) -> list[str]:
             allowed = SECRETS_ALLOWED.get(name, set())
             if allowed is not None and not secrets <= allowed:
                 out.append("secret_outside" + where)
+        if {m.group(1) for s in _strings(job) for m in VARS_EXPR.finditer(s)} - set(VARS):
+            out.append("operator_variable" + where)
         steps = job.get("steps")
         if not isinstance(steps, list) or not steps:
             out.append("workflow_control_step" + where)
             continue
+        names = [step.get("name") if isinstance(step, dict) else None for step in steps]
+        entry = names.index(name) if name in names else len(steps)
+        for install in INSTALLS.get(name, ()):
+            if install_step(install) not in steps:
+                out.append("install_missing" + where)
+            elif names.count(install) != 1 or steps.index(install_step(install)) > entry:
+                out.append("install_order" + where)
         if steps[0] != control_step(name):
             out.append("workflow_control_step" + where)
         for index, step in enumerate(steps):
@@ -170,7 +218,8 @@ def violations(doc: dict) -> list[str]:
             if isinstance(run, str):
                 if CONTROL.search(run):
                     out.append("control_elsewhere" + at)
-                if run != "python3 -m loop.job run %s\n" % name:
+                installed = any(step == install_step(i) for i in INSTALLS.get(name, ()))
+                if run != "python3 -m loop.job run %s\n" % name and not installed:
                     out.append(("secret_job_runs_code" if holds_secret else "unknown_run") + at)
             if uses is not None:
                 if not isinstance(uses, str) or not PIN.fullmatch(uses):
@@ -395,6 +444,51 @@ class EachRuleFires(unittest.TestCase):
                                                "          persist-credentials: false\n          repository: someone/brain\n"))
         self.fires("foreign_checkout", _in_job(committed(), "yaz", "          persist-credentials: false\n",
                                                "          persist-credentials: false\n          ref: brain/c/1\n"))
+
+    def _install_block(self, text: str, job: str, name: str) -> str:
+        start, end = _job(text, job)
+        block = text[start:end]
+        i = block.index("      - name: %s\n" % name)
+        return block[i:block.index("      - name: ", i + 1)]
+
+    def test_install_steps(self):
+        text = committed()
+        sig, cla = self._install_block(text, "cek", "sigstore"), self._install_block(text, "cagir", "claude")
+        self.assertEqual(self._install_block(text, "yaz", "sigstore"), sig)
+        for job, block in (("cek", sig), ("yaz", sig), ("cagir", cla)):
+            with self.subTest(removed=job):
+                self.fires("install_missing", _in_job(text, job, block, ""))
+        # one changed byte, or a secret given to the step: not 29s's step, so neither installed nor allowed
+        for old, new in (("--require-hashes --only-binary", "--only-binary"), ("        run: |\n",
+                          "        env:\n          T: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}\n        run: |\n")):
+            with self.subTest(changed=new):
+                found = rules(_in_job(text, "cek", sig, sig.replace(old, new, 1)))
+                self.assertTrue({"install_missing", "secret_job_runs_code"} <= found, found)
+        changed = cla.replace("--no-audit", "--ignore-scripts=false --no-audit")
+        self.assertTrue({"install_missing", "secret_job_runs_code"} <= rules(_in_job(text, "cagir", cla, changed)))
+        # after the job's entry, or twice
+        start, end = _job(text, "yaz")
+        moved = text[start:end].replace(sig, "")
+        i = moved.index("        run: |\n          python3 -m loop.job run yaz\n")
+        j = i + len("        run: |\n          python3 -m loop.job run yaz\n")
+        self.fires("install_order", text[:start] + moved[:j] + sig + moved[j:] + text[end:])
+        self.fires("install_order", _in_job(text, "cek", sig, sig + sig))
+        # an install step in a job 29s does not give it
+        self.fires("secret_job_runs_code", _in_job(text, "yaz", sig, sig + cla))
+        start, end = _job(text, "kos")
+        block = text[start:end]
+        self.fires("unknown_run", text[:start] + block.replace("      - name: checkout\n", sig + "      - name: checkout\n", 1)
+                   + text[end:])
+
+    def test_operator_variables(self):
+        self.assertEqual({m.group(1) for m in VARS_EXPR.finditer(committed())}, set(VARS))
+        for job, name in (("cek", "BRAIN_REPO"), ("cagir", "CANARY_MODEL"), ("cagir", "CLAUDE_CLI_SHA512"),
+                          ("yaz", "LOOP_TARGETS")):
+            with self.subTest(var=name):
+                self.fires("operator_variable", _in_job(committed(), job, "    timeout-minutes: 60\n",
+                                                        "    timeout-minutes: 60\n    env-x: ${{ vars.%s }}\n" % name))
+                self.fires("operator_variable", _in_job(committed(), job, "        run: |\n          python3 -m loop.job",
+                                                        "        run: |\n          echo ${{vars.%s}}\n          python3 -m loop.job" % name))
 
     def test_code_jobs_run_only_their_entry(self):
         self.fires("unknown_run", _in_job(committed(), "kos", "python3 -m loop.job run kos\n",

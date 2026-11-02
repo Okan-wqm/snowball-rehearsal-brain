@@ -1,8 +1,10 @@
 """Test 46 (asama-0/09), MF17, D4: the ``cagir`` job (``loop.job run cagir``, ``loop.cagir``), MF15's call on the
 ``pulled`` artifact, with the fake ``claude`` CLI (``fake_claude.py``, test 37's).
 
-- the call: one process, the referee's own template with the target's id as typed input (the prompt on stdin, the
-  id in its RFC 8785 form), the model and pin of the job's environment, ``--max-budget-usd`` the canary's
+- the call: one process, the CLI the ``claude`` step installs (``loop.inputs.claude``, tohum/29s; the fake placed
+  there), the referee's own template with the target's id as typed input (the prompt on stdin, the id in its RFC
+  8785 form), the model ``bootstrap.json``'s ``rival.model`` in the checkout (no variable is read), the pin the
+  CLI file's sha512 when the job read it (in the line), ``--max-budget-usd`` the canary's
   ``canary_usd`` less what ``state/ledger.jsonl``'s cost rows spent (an integer and a fraction of USD, exact);
 - the response: written whatever the outcome (``ok``, a served model that is not the requested one), its one
   ``cost`` row with the run's ``row_id``, the clock's ``ts`` and ``brain/integration``'s head, appended by
@@ -10,8 +12,9 @@
 - not sent, response written without a row: the stage brake (the ledger's spend at the cap), a secret pattern in the
   prompt (a target id shaped like a token);
 - nothing started and nothing written: a refused ``pulled`` (``pulled_invalid``, exit 1); a ``canary_usd`` that is
-  absent, ``true``, a string or negative, a ledger in ``pulled`` that is not a chain, a CLI that is not the pinned
-  one, no CLI on ``PATH``, an unset variable and an existing ``out/response`` (no verdict, exit 2).
+  absent, ``true``, a string or negative, a ledger in ``pulled`` that is not a chain, no CLI where the step installs
+  it (one on ``PATH`` is not used), an unusable ``bootstrap.json`` or ``rival.model``, an unset variable and an
+  existing ``out/response`` (no verdict, exit 2).
 """
 
 from __future__ import annotations
@@ -31,9 +34,11 @@ import fake_claude  # noqa: E402
 from dispatcher import llm_call as L  # noqa: E402
 from ledger import append  # noqa: E402
 from loop import cagir as CG  # noqa: E402
+from loop import inputs  # noqa: E402
 from loop import job as J  # noqa: E402
 from test_kos import operating  # noqa: E402
 from test_loop_kos import HEADS, Base, state_files  # noqa: E402
+from loop_inputs_world import ABSENT, BOOTSTRAP, write_bootstrap  # noqa: E402
 
 from test_llm_call import MODEL, TOKEN  # noqa: E402  (test 37's model and token-shaped value, one source)
 
@@ -63,13 +68,14 @@ def ledger_with_costs(*costs: int) -> list[dict]:
 class CagirJob(Base):
     def setUp(self) -> None:
         super().setUp()
-        self.bin = os.path.join(self.base, "bin")
-        os.makedirs(self.bin)
-        self.claude = fake_claude.install(self.bin)
+        self.claude = fake_claude.install_for_loop(self.temp)
+        self.bin = os.path.dirname(self.claude)
         fake_claude.behave(self.bin, result())
-        self.env = {"RUNNER_TEMP": self.temp, "CLAUDE_CODE_OAUTH_TOKEN": TOKEN, "LOOP_CANARY_MODEL": MODEL,
-                    "LOOP_CLAUDE_SHA512": L.sha512_file(self.claude), "GITHUB_RUN_ID": "77",
-                    "GITHUB_RUN_ATTEMPT": "2", "PATH": self.bin + os.pathsep + os.environ.get("PATH", "")}
+        self.work = os.path.join(self.base, "checkout")
+        os.makedirs(self.work)
+        write_bootstrap(self.work, dict(BOOTSTRAP, rival={"model": MODEL}))
+        self.env = {"RUNNER_TEMP": self.temp, "CLAUDE_CODE_OAUTH_TOKEN": TOKEN, "GITHUB_WORKSPACE": self.work,
+                    "GITHUB_RUN_ID": "77", "GITHUB_RUN_ATTEMPT": "2", "PATH": os.environ.get("PATH", "")}
 
     def write(self, canary: str = "1", ledger: list[dict] | None = None, **kw) -> None:
         state = state_files(ledger) if ledger is not None else None
@@ -106,6 +112,7 @@ class CagirJob(Base):
         self.assertEqual((out["ok"], out["done"], out["job"]), (True, ["D4"], "cagir"))
         self.assertEqual(out["call"], {"outcome": "ok", "reason": None, "sent": True, "models_served": [MODEL],
                                        "cost_usd_micros": 12346})
+        self.assertEqual(out["claude_sha512"], L.sha512_file(self.claude))
         [call] = self.calls()
         # the prompt, written out by hand: the template's text with the id in its JSON form, on stdin only
         prompt = ('This is the canary call of the Snowball loop for the target "t1". Reply only with the '
@@ -139,7 +146,8 @@ class CagirJob(Base):
         # the JSON text's exact value rounded up to a micro-USD (llm_call.to_micros), never through a float
         for canary, cap in (("0.5", "0.500000"), ("0.0000005", "0.000001"), ("5e-1", "0.500000")):
             with self.subTest(canary=canary):
-                shutil.rmtree(self.temp, ignore_errors=True)
+                for d in ("in", "out"):  # not the claude step's CLI, which is under the same RUNNER_TEMP
+                    shutil.rmtree(os.path.join(self.temp, d), ignore_errors=True)
                 if self.calls():
                     os.remove(os.path.join(self.bin, "calls.jsonl"))
                 self.write(canary=canary)
@@ -195,10 +203,45 @@ class CagirJob(Base):
         self.write_pulled(policy=policy(), state=state)
         self.no_verdict()
 
-    def test_the_pin_the_path_and_the_environment(self):
+    def test_the_model_is_bootstrap_json_s_and_no_variable_is_read(self):
+        write_bootstrap(self.work, {"rival": {"model": "claude-other-model"}})  # cagir needs no brain_repo
+        fake_claude.behave(self.bin, result(modelUsage={"claude-other-model": {"costUSD": 0.01}}))
         self.write()
-        self.no_verdict(LOOP_CLAUDE_SHA512="0" * 128)
-        self.no_verdict(PATH=os.path.join(self.base, "nowhere"))
+        out = self.run_cagir(LOOP_CANARY_MODEL=MODEL, CANARY_MODEL=MODEL, LOOP_CLAUDE_SHA512="0" * 128)
+        self.assertEqual(out["call"]["outcome"], "ok")
+        argv = self.calls()[0]["argv"]
+        self.assertEqual(argv[argv.index("--model") + 1], "claude-other-model")
+
+    def test_an_unusable_bootstrap_starts_nothing(self):
+        self.write()
+        for boot in (ABSENT, b"{", b'{"rival": {"model": "a"}, "rival": {"model": "b"}}', b"[]", {"rival": "m"},
+                     {"rival": {}}, {"rival": {"model": ""}}, {"rival": {"model": " "}}, {"rival": {"model": 5}},
+                     {"model": MODEL}, b'{"rival": {"model": "m"}}'.ljust(inputs.MAX_BOOTSTRAP + 1)):
+            with self.subTest(bootstrap=boot):
+                write_bootstrap(self.work, boot)
+                with self.assertRaisesRegex(J.Unusable, "bootstrap_unreadable|rival_model_invalid"):
+                    self.run_cagir()
+                self.assert_nothing()
+
+    def test_a_bootstrap_at_the_size_bound_is_read(self):
+        self.write()
+        write_bootstrap(self.work, ('{"rival": {"model": "%s"}}' % MODEL).encode().ljust(inputs.MAX_BOOTSTRAP))
+        self.assertEqual(self.run_cagir()["call"]["outcome"], "ok")
+
+    def test_the_cli_is_the_step_s_not_one_on_path(self):
+        self.write()
+        on_path = os.path.join(self.base, "path-bin")
+        os.makedirs(on_path)
+        fake_claude.install(on_path)
+        fake_claude.behave(on_path, result())
+        os.remove(self.claude)
+        with self.assertRaisesRegex(J.Unusable, "claude_missing"):
+            self.run_cagir(PATH=on_path + os.pathsep + os.environ.get("PATH", ""))
+        self.assertEqual(fake_claude.calls(on_path), [])
+        self.assert_nothing()
+
+    def test_the_environment(self):
+        self.write()
         for name in J.CAGIR_ENV:
             with self.subTest(unset=name):
                 self.no_verdict(**{name: None})

@@ -25,11 +25,15 @@ that runs both jobs on the handed-over bytes, a stated unread download, or a pro
    every job that needs it is skipped. Exit 0 writes ``go=true`` or ``go=false`` to ``$GITHUB_OUTPUT``;
    ``go=false`` (a scheduled run while ``loop_schedule`` is not true) ends the job green with every later step
    skipped, i.e. ``paused``. The command's flags are this module's assumption (no seed page gives them).
-2. the writer App token (``yaz`` only), made inside the job.
-3. checkout of the run's own commit of the referee repository, ``persist-credentials: false``.
-4. one download per artifact the job reads, by the producing job's artifact id, ``digest-mismatch: error``.
-5. ``python3 -m loop.job run <job>``, with the expected artifact digests and the job's secrets in ``env``.
-6. the upload of the job's artifact, whose id and digest are job outputs.
+2. the job's install steps (``Job.installs``; tohum/29s, the text in ``loop.inputs.STEPS``): ``sigstore`` in ``cek``
+   and ``yaz`` (the pinned Sigstore from the control step's clone, through the seed's license gate, into
+   ``$RUNNER_TEMP/sig``), ``claude`` in ``cagir`` (``npm ci`` of the pinned CLI lock in the control step's clone and
+   the version check). They carry no secret: a job's secrets are only in its ``run`` step's ``env``.
+3. the writer App token (``yaz`` only), made inside the job.
+4. checkout of the run's own commit of the referee repository, ``persist-credentials: false``.
+5. one download per artifact the job reads, by the producing job's artifact id, ``digest-mismatch: error``.
+6. ``python3 -m loop.job run <job>``, with the expected artifact digests and the job's secrets in ``env``.
+7. the upload of the job's artifact, whose id and digest are job outputs.
 
 Every step after ``control`` runs only if ``go`` is true; no step continues on error.
 
@@ -90,8 +94,9 @@ refused tree is ``pulled_invalid``). Then:
   and the checkout's ``setup/imports.jsonl``, and calls ``loop.write_cycle.write`` with a ``target.write.Writer`` on the
   ``targets[]`` entry's ``repo`` (``target_repo_unsafe`` when it is no repository name) over
   ``target.write.HttpTransport`` with that token, the base's lint totals (``loop.watch.base_lint``: D6's
-  ``ratchet_base`` row of a cycle that merges) and D7's end, the signer ``loop.sign.SigstoreSigner`` pinned to
-  ``loop.yml`` on ``$GITHUB_REPOSITORY``'s ``main`` (``loop.accepted.workflow_identity``, the identity the next cycle's
+  ``ratchet_base`` row of a cycle that merges) and D7's end, the signer ``loop.sign.SigstoreSigner`` with the
+  ``sigstore`` step's program (``_signer``; none installed is unusable), pinned to ``loop.yml`` on
+  ``$GITHUB_REPOSITORY``'s ``main`` (``loop.accepted.workflow_identity``, the identity the next cycle's
   D1 verifies the root against), the cycle id ``<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`` and the clock's time: the merge,
   if D5 chose one, or the revert of D7's red, or the end row of its green or flaky, and the cycle's one ``brain/state`` commit. Its refusals before any write
   (``head_moved:<branch>``, ``state_unwritable: ...``) are ``write_refused`` with the reasons; a hard stop
@@ -109,19 +114,21 @@ refused tree is ``pulled_invalid``). Then:
   (``harness.revert_drill.judge``) in the line's ``drill.judged``.
 - ``cek`` runs D1 (``cek_d1``), and with it the whole job. First the accepted-SHA check: it reads the bootstrap
   referee's last signed state with ``loop.accepted.read_state`` (the Actions API of ``$GITHUB_REPOSITORY`` with the
-  job's ``GITHUB_TOKEN``, ``actions: read``; the artifact verified by ``sigstore`` on PATH), fetches the accepted
-  brain commit with ``loop.fetch`` from ``loop.accepted.repo_url`` of ``$LOOP_BRAIN_REPO`` (the operator's
-  repository variable ``BRAIN_REPO``, an assumption: no page this clone has names where the loop finds the brain
-  repository's name) into ``$RUNNER_TEMP/work/cek-*/brain.git``, and compares its ``referee/`` hash with the last
+  job's ``GITHUB_TOKEN``, ``actions: read``; the artifact verified by the ``sigstore`` step's program,
+  ``loop.inputs.sigstore``, which the Rekor entry's check below runs too), fetches the accepted
+  brain commit with ``loop.fetch`` from ``loop.accepted.repo_url`` of ``bootstrap.json``'s ``brain_repo`` in the
+  checkout (``loop.inputs.brain_repo``, tohum/29s) into ``$RUNNER_TEMP/work/cek-*/brain.git``, and compares its ``referee/`` hash with the last
   transfer row of the checkout's ``setup/imports.jsonl`` (``loop.accepted.last_import``, ``check_tree``). Then the
   target half, for the target ``$LOOP_TARGET`` (the operator's repository variable ``LOOP_TARGET``, an assumption
-  too: no page says which of ``targets[]`` a run serves): its ``targets[]`` entry in the checkout's
+  that contradicts tohum/29s "Hedefler", which came after it: a run serves every ``targets[]`` entry in order, with
+  no variable choosing; the next change of this module): its ``targets[]`` entry in the checkout's
   ``setup/summary.json`` (``loop.cek.target_entry``, the reader ``assemble`` uses), its ``repo`` made a URL by
   ``loop.accepted.repo_url``, the heads of ``brain/state`` and ``brain/integration`` read credential-less with
   ``loop.fetch.heads``, ``brain/integration``'s head fetched with ``loop.fetch`` into ``cek-*/target.git``, and
   ``loop.cek.assemble`` run on the two repositories' objects with the checkout's ``policy.json``, writing ``pulled``
   into ``cek-*/pulled``, not into ``out/pulled``: the upload takes the artifact only once D1's other checks pass.
-  An unset variable, a bootstrap state that is absent, unreadable or unverified, an unreadable checkout file, a
+  An unset variable, an unusable ``bootstrap.json`` or ``brain_repo``, no ``sigstore`` step program, a bootstrap
+  state that is absent, unreadable or unverified, an unreadable checkout file, a
   failed listing and a failed fetch (of a ``brain/state`` commit too) are unusable (exit 2: 29b's reader stops). Refusals (exit 1): ``imports_broken``,
   ``imports_no_transfer``, ``imports_invalid``, ``referee_tree_refused`` (with the hash's reasons),
   ``referee_tree_mismatch``; ``summary_unreadable``, ``target_unknown``, ``target_ambiguous``,
@@ -158,19 +165,19 @@ refused tree is ``pulled_invalid``). Then:
   exit 2), the line has ``ok`` true and ``done`` ``["D1"]``, exit 0, so the upload step runs and ``getir``, ``kos``,
   ``cagir`` and ``yaz`` download it. A refusal leaves ``out/pulled`` absent. The proposal stage 0 judges is the
   recipe alone (tohum/14); no other profile field is proposed, so none is compared.
-- ``cagir`` runs D4 (``cagir_d4``), and with it the whole job: it needs ``CAGIR_ENV`` set (the provider token, the
-  operator's repository variables ``CANARY_MODEL`` and ``CLAUDE_CLI_SHA512`` as ``LOOP_CANARY_MODEL`` and
-  ``LOOP_CLAUDE_SHA512``, assumptions: no page this clone has names the canary's model or where the loop's CLI pin
-  is read, report seed-042; Actions' own ``GITHUB_RUN_ID`` and ``GITHUB_RUN_ATTEMPT``), reads
-  ``$RUNNER_TEMP/in/pulled`` with ``loop.pulled.read`` (a refusal is ``pulled_invalid``; no unit or tree is read),
-  takes ``claude`` from ``PATH`` and runs ``loop.cagir.d4``: MF15's one canary call, budgeted by the artifact's
+- ``cagir`` runs D4 (``cagir_d4``), and with it the whole job: it needs ``CAGIR_ENV`` set (the provider token;
+  Actions' own ``GITHUB_WORKSPACE``, ``GITHUB_RUN_ID`` and ``GITHUB_RUN_ATTEMPT``), takes the CLI the ``claude`` step
+  installed (``loop.inputs.claude``) and the model ``bootstrap.json``'s ``rival.model`` in the checkout
+  (``loop.inputs.rival_model``; tohum/29s), reads ``$RUNNER_TEMP/in/pulled`` with ``loop.pulled.read`` (a refusal is
+  ``pulled_invalid``; no unit or tree is read), hashes the CLI file (its sha512 is the pin MF15 checks again
+  before it starts the process, and is in the line as ``claude_sha512``) and runs ``loop.cagir.d4``: MF15's one canary call, budgeted by the artifact's
   ``canary_usd`` less the cost rows of the ledger D1 verified, its ``response`` written to
   ``$RUNNER_TEMP/out/response`` (which must not exist) whatever the call's outcome. The line has ``ok`` true,
   ``done`` ``["D4"]`` and ``call`` (``outcome``, ``reason``, ``sent``, ``models_served``, ``cost_usd_micros``),
   exit 0, so the upload step runs: the exit says the response was written, its ``outcome`` whether the canary
-  held. An unset variable, no CLI on ``PATH``, a CLI that is not the pinned one, a ``canary_usd`` that is no amount,
-  a ledger that is not a chain and an existing ``out/response`` are unusable (exit 2), nothing started. The CLI is
-  not installed by the workflow (seed-042): on a runner without it the job has no verdict.
+  held. An unset variable, no CLI where the step installs it, an unusable ``bootstrap.json`` or ``rival.model``, a
+  ``canary_usd`` that is no amount, a ledger that is not a chain and an existing ``out/response`` are unusable (exit
+  2), nothing started.
 
 The rest of the D1-D8 composition inside the jobs (D7, D8) has no MF of asama-0/14 that owns it (reported in the
 founder ledger, spec-036).
@@ -215,6 +222,7 @@ from loop import decide as E
 from loop import drill as DR
 from loop import fetch as F
 from loop import gitobj as G
+from loop import inputs as IN
 from loop import pulled as P
 from loop import rekor as RK
 from loop import sign as SG
@@ -279,23 +287,22 @@ class Job(NamedTuple):
     needs: tuple[str, ...]
     downloads: tuple[str, ...]      # artifacts read, each the upload of the job of the same index in needs
     upload: str | None
+    installs: tuple[str, ...] = ()  # tohum/29s's install steps (``loop.inputs.STEPS``) the job runs after control
 
 
 JOBS: dict[str, Job] = {
     "cek": Job(("D1",), (1, 4, 11), False, {"contents": "read", "actions": "read"},
-               {"GITHUB_TOKEN": "${{ github.token }}", "LOOP_BRAIN_REPO": "${{ vars.BRAIN_REPO }}",
-                "LOOP_TARGET": "${{ vars.LOOP_TARGET }}"},
-               (), (), "pulled"),
+               {"GITHUB_TOKEN": "${{ github.token }}", "LOOP_TARGET": "${{ vars.LOOP_TARGET }}"},
+               (), (), "pulled", ("sigstore",)),
     "getir": Job(("D2",), (5,), True, {}, {}, ("cek",), ("pulled",), "deps"),
     "kos": Job(("D3", "D7"), (3, 6, 12), True, {}, {}, ("cek", "getir"), ("pulled", "deps"), "results"),
     "cagir": Job(("D4",), (2, 15), False, {},
-                 {"CLAUDE_CODE_OAUTH_TOKEN": "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}",
-                  "LOOP_CANARY_MODEL": "${{ vars.CANARY_MODEL }}", "LOOP_CLAUDE_SHA512": "${{ vars.CLAUDE_CLI_SHA512 }}"},
-                 ("cek",), ("pulled",), "response"),
+                 {"CLAUDE_CODE_OAUTH_TOKEN": "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}"},
+                 ("cek",), ("pulled",), "response", ("claude",)),
     "yaz": Job(("D5", "D6", "D7", "D8"), (2, 7, 8, 9, 10, 11, 13, 14, 16), False,
                {"id-token": "write", "contents": "read"},
                {"WRITER_TOKEN": "${{ steps.app.outputs.token }}", DR.SEED_ENV: "${{ secrets.DRILL_SEED }}"},
-               ("cek", "getir", "kos", "cagir"), ("pulled", "deps", "results", "response"), None),
+               ("cek", "getir", "kos", "cagir"), ("pulled", "deps", "results", "response"), None, ("sigstore",)),
 }
 
 # What cek reads from the referee repository's checkout, and the target branches whose heads it reads (asama-0/01 D1).
@@ -331,6 +338,7 @@ def _steps(name: str) -> list[dict[str, Any]]:
     steps: list[dict[str, Any]] = [
         {"name": "control", "id": "control", "env": {"LOOP_JOB": name}, "run": CONTROL_RUN},
     ]
+    steps.extend({"name": step, "if": GO, "run": IN.STEPS[step]} for step in job.installs)
     if name == "yaz":
         steps.append({"name": "writer token", "id": "app", "if": GO, "uses": APP_TOKEN, "with": dict(APP_INPUTS)})
     steps.append({"name": "checkout", "if": GO, "uses": CHECKOUT, "with": {"persist-credentials": "false"}})
@@ -668,7 +676,7 @@ def yaz_d6(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any], tra
     except A.StateError:
         return {"reason": "target_repo_unsafe"}
     writer = W.Writer(repo, transport or W.HttpTransport(environ["WRITER_TOKEN"]))
-    signer = signer or SG.SigstoreSigner(A.workflow_identity(environ["GITHUB_REPOSITORY"], A.LOOP_WORKFLOW))
+    signer = signer or _signer(environ)
     ts = (now or (lambda: datetime.datetime.now(datetime.timezone.utc)))().strftime("%Y-%m-%dT%H:%M:%SZ")
     cycle_id = "%s-%s" % (environ["GITHUB_RUN_ID"], environ["GITHUB_RUN_ATTEMPT"])
     try:
@@ -681,33 +689,44 @@ def yaz_d6(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any], tra
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
-CAGIR_ENV = ("CLAUDE_CODE_OAUTH_TOKEN", "LOOP_CANARY_MODEL", "LOOP_CLAUDE_SHA512", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
+def _signer(environ: dict[str, str]) -> SG.SigstoreSigner:
+    """``yaz``'s root signer: ``loop.sign.SigstoreSigner`` with the ``sigstore`` step's program, pinned to ``loop.yml``
+    on ``$GITHUB_REPOSITORY``'s ``main``."""
+    try:
+        return SG.SigstoreSigner(A.workflow_identity(environ["GITHUB_REPOSITORY"], A.LOOP_WORKFLOW),
+                                 IN.sigstore(environ))
+    except (A.StateError, IN.InputError) as exc:
+        raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
-def cagir_d4(environ: dict[str, str], claude: str | None = None,
-             now: Any = None) -> dict[str, Any]:
+CAGIR_ENV = ("CLAUDE_CODE_OAUTH_TOKEN", "GITHUB_WORKSPACE", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
+
+
+def cagir_d4(environ: dict[str, str], now: Any = None) -> dict[str, Any]:
     """D4 of ``cagir`` (see the module docstring): ``{reason, reasons}`` or ``{call}``; with ``call``
-    reason ``out/response`` holds the artifact. ``claude`` is the CLI's path (``claude`` on ``PATH`` when ``None``),
-    ``now`` the clock (``datetime.now(timezone.utc)`` when ``None``)."""
+    ``out/response`` holds the artifact. ``now`` is the clock (``datetime.now(timezone.utc)`` when ``None``)."""
     for name in CAGIR_ENV:
         if not environ.get(name):
             raise Unusable("cagir: %s is not set" % name)
     out = _dir(environ, "out", "response")  # must not exist: loop.cagir.d4's check, before anything is started
     try:
+        path = IN.claude(environ)
+        model = IN.rival_model(environ["GITHUB_WORKSPACE"])
+    except IN.InputError as exc:
+        raise Unusable("cagir: %s" % cli.cause(exc)) from None
+    try:
         art = P.read(_dir(environ, "in", "pulled"))
     except P.PulledError as exc:
         return {"reason": "pulled_invalid", "reasons": exc.reasons}
-    path = claude or shutil.which("claude", path=environ.get("PATH", ""))
-    if not path:
-        raise Unusable("cagir: no claude CLI on PATH")
     ts = (now or (lambda: datetime.datetime.now(datetime.timezone.utc)))().strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
-        got = CG.d4(art, out, claude=path, claude_sha512=environ["LOOP_CLAUDE_SHA512"],
-                    model=environ["LOOP_CANARY_MODEL"], token=environ["CLAUDE_CODE_OAUTH_TOKEN"],
+        # the bytes found after the claude step: MF15 hashes the file again before it starts it (loop.inputs)
+        pin = LL.sha512_file(path)
+        got = CG.d4(art, out, claude=path, claude_sha512=pin, model=model, token=environ["CLAUDE_CODE_OAUTH_TOKEN"],
                     row_id="cagir-%s-%s" % (environ["GITHUB_RUN_ID"], environ["GITHUB_RUN_ATTEMPT"]), ts=ts)
     except (LL.Unusable, LA.HardStop, OSError) as exc:
         raise Unusable("cagir: %s" % cli.cause(exc)) from None
-    return {"call": got}
+    return {"call": got, "claude_sha512": pin}
 
 
 def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git: str = "git",
@@ -715,14 +734,15 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
     """D1 of ``cek`` (see the module docstring): ``{reason?, reasons?, accepted?, heads?, state?, root?,
     assembled?, profile?}``; without a reason ``out/pulled`` holds the artifact. ``rekor`` reads Rekor entries (``entry(uuid)``; ``loop.rekor.RekorHttp``
     when ``None``); ``verifier`` runs both Sigstore checks."""
-    for name in ("GITHUB_REPOSITORY", "GITHUB_TOKEN", "GITHUB_WORKSPACE", "LOOP_BRAIN_REPO", "LOOP_TARGET"):
+    for name in ("GITHUB_REPOSITORY", "GITHUB_TOKEN", "GITHUB_WORKSPACE", "LOOP_TARGET"):
         if not environ.get(name):
             raise Unusable("cek: %s is not set" % name)
     try:
+        sigstore = IN.sigstore(environ)
+        brain_url = A.repo_url(IN.brain_repo(environ["GITHUB_WORKSPACE"]))
         state = A.read_state(http or A.ActionsHttp(environ["GITHUB_TOKEN"]), environ["GITHUB_REPOSITORY"],
-                             verifier=verifier or A.run_verifier)
-        brain_url = A.repo_url(environ["LOOP_BRAIN_REPO"])
-    except A.StateError as exc:
+                             sigstore, verifier=verifier or A.run_verifier)
+    except (A.StateError, IN.InputError) as exc:
         raise Unusable("cek: %s" % cli.cause(exc)) from None
     files = {}
     for name in CEK_FILES:
@@ -752,7 +772,7 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
         pin = A.workflow_identity(environ["GITHUB_REPOSITORY"], A.LOOP_WORKFLOW)
     except A.StateError as exc:
         raise Unusable("cek: %s" % cli.cause(exc)) from None
-    entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, verifier=verifier or A.run_verifier)
+    entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, sigstore, verifier=verifier or A.run_verifier)
     pulled = _cek_target(environ, files, brain_dir, sha, root, git, entries)
     if "reason" not in pulled:
         _hand_over(os.path.join(root, "pulled"), _dir(environ, "out", "pulled"))
@@ -871,7 +891,7 @@ def _fetch_state(git_dir: str, url: str, sha: str, git: str, environ: dict[str, 
 
 def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dict | None = None,
         fetcher: Any = None, http: Any = None, verifier: Any = None, git: str = "git",
-        rekor: Any = None, claude: str | None = None, now: Any = None, transport: Any = None,
+        rekor: Any = None, now: Any = None, transport: Any = None,
         signer: Any = None) -> dict[str, Any]:
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
@@ -897,7 +917,7 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
             return dict(result, **d3)
         return dict(result, ok=True, **d3)
     if name == "cagir":
-        d4 = cagir_d4(environ, claude, now)
+        d4 = cagir_d4(environ, now)
         if "reason" in d4:
             return dict(result, **d4)
         return dict(result, ok=True, done=["D4"], **d4)

@@ -39,7 +39,7 @@ def verdict(sigstore: str, made: dict, identity: str, digest: str) -> int:
         path = os.path.join(tmp, "b.json")
         with open(path, "w") as fh:
             json.dump(made, fh)
-        return subprocess.run(A.identity_argv(sigstore, path, identity, "sha256:" + digest),
+        return subprocess.run(A.identity_argv((sigstore,), path, identity, "sha256:" + digest),
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
 
 

@@ -10,7 +10,8 @@
 - the artifacts by hash: a changed byte of a run file, a missing ``hashes.json``, an unusable diff or finding;
 - the job: ``loop.job run yaz`` reads ``control.json`` and the two artifacts, takes criterion 8 from ``pulled``'s
   ``brain/state`` ledger (``ledger.serial``: no merge, a merge, a planted merge, a reverted one) and ends ``ok``
-  after D5 and D6 (D7 when it ends a sentinel; D8 off without its seed); a ledger ``ledger.serial`` refuses is ``state_refused``, nothing decided; a refused
+  after D5 and D6 (D7 when it ends a sentinel; D8 off without its seed); its root signer is the ``sigstore`` step's
+  program (tohum/29s), and without it the job is no verdict before anything is written; a ledger ``ledger.serial`` refuses is ``state_refused``, nothing decided; a refused
   artifact, a missing ``control.json`` and an unusable recipe.
 """
 
@@ -38,6 +39,8 @@ from test_revert_drill import plant, reverted  # noqa: E402
 from test_serial import M1, START, merge  # noqa: E402
 from test_loop_cagir import policy  # noqa: E402
 import yaz_world as YW  # noqa: E402
+from loop import sign as S  # noqa: E402
+from loop_inputs_world import install_sigstore  # noqa: E402
 
 KEY_ID = "AK" + "IA" + "Q7" * 8  # a key id shape (MF2's floor), spelled so this file holds none
 LEAK = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // " + KEY_ID])
@@ -252,6 +255,25 @@ class YazJob(YazBase):
                                      (None, {"good": [want], "breaks": [want, "tests_red"]}))
                 else:
                     self.assertEqual((out["merge"], self.reasons(out)), ("good", {"good": [], "breaks": ["tests_red"]}))
+
+    def test_the_root_signer_is_the_sigstore_step_s(self):
+        # tohum/29s: yaz signs with the program the sigstore step installs, pinned to loop.yml on the referee's main
+        environ = YW.env(self.temp, self.workspace)
+        with self.assertRaisesRegex(J.Unusable, "sigstore_missing"):
+            J._signer(environ)
+        python = install_sigstore(self.temp)
+        got = J._signer(environ)
+        self.assertEqual((type(got), got.sigstore, got.pin),
+                         (S.SigstoreSigner, (python, "-m", "sigstore"),
+                          "https://github.com/acme/referee/.github/workflows/loop.yml@refs/heads/main"))
+        # the job without an injected signer and without the step's program: no verdict, nothing written
+        os.remove(python)
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        self.github()
+        with self.assertRaisesRegex(J.Unusable, "sigstore_missing"):
+            J.run("yaz", environ, transport=self.gh, now=lambda: YW.NOW)
+        self.assertEqual([m for m, _, _ in self.gh.requests if m != "GET"], [])
 
     def test_a_state_ledger_serial_refuses_decides_nothing(self):
         self.kos({"good": candidate(GOOD)})

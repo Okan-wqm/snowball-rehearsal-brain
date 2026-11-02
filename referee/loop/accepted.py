@@ -38,11 +38,12 @@ bytes without the LF (``activate``'s ``import_line_sha256``). ``check_tree``: th
 a tree the hash refuses is ``referee_tree_refused`` (the hash's reasons after it in ``reasons``), a different hash
 ``referee_tree_mismatch``.
 
-Out of scope, stated: which ``sigstore`` program runs (the seed's pinned requirements in ``bootstrap/requirements/``
-serve the loop too, asama-0/01; the file that pins it for this job is not named in any page this clone has, so the
-caller gives the program); the bundle's transparency-log checks beyond what ``sigstore verify identity`` does; the
+Which ``sigstore`` program runs is the caller's argument (``sigstore``, an argv prefix): in a run, the one the
+``sigstore`` step installs from ``bootstrap/requirements/sign.txt`` (tohum/29s, ``loop.inputs.sigstore``).
+
+Out of scope, stated: the bundle's transparency-log checks beyond what ``sigstore verify identity`` does; the
 other fields of ``result.json`` (its previous result's hash, the frozen specs); which repository the accepted brain
-commit is fetched from (``repo_url`` makes the URL of the name its caller gives); the artifact's retention.
+commit is fetched from (``repo_url`` makes the URL of the name its caller gives: ``loop.inputs.brain_repo``); the artifact's retention.
 
 Network: this module and ``target.write`` are the two that name GitHub's hosts; it only reads (every request is a GET
 without a body, ``tests/test_write.py`` ``OneWay``), and the token goes only to the API host.
@@ -61,7 +62,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from ledger import chain as C
 from loop import treehash as T
@@ -156,14 +157,15 @@ def workflow_identity(repo: str, workflow: str) -> str:
     return IDENTITY % (repo_name(repo), workflow)
 
 
-def identity_argv(sigstore: str, bundle: str, identity: str, artifact: str) -> list[str]:
+def identity_argv(sigstore: Sequence[str], bundle: str, identity: str, artifact: str) -> list[str]:
     """``sigstore verify identity`` of ``artifact`` (a path, or ``sha256:<hex>``) with ``bundle`` against
-    ``identity`` and GitHub Actions' issuer: the one form both of the loop's Sigstore checks run."""
-    return [sigstore, "verify", "identity", "--bundle", bundle, "--cert-identity", identity,
+    ``identity`` and GitHub Actions' issuer: the one form both of the loop's Sigstore checks run. ``sigstore`` is
+    the program's argv prefix (``loop.inputs.sigstore``: ``(<python>, -m, sigstore)`` in a run)."""
+    return [*sigstore, "verify", "identity", "--bundle", bundle, "--cert-identity", identity,
             "--cert-oidc-issuer", ISSUER, artifact]
 
 
-def verify_argv(sigstore: str, repo: str, directory: str) -> list[str]:
+def verify_argv(sigstore: Sequence[str], repo: str, directory: str) -> list[str]:
     return identity_argv(sigstore, os.path.join(directory, BUNDLE), workflow_identity(repo, BOOTSTRAP_WORKFLOW),
                          os.path.join(directory, RESULT))
 
@@ -176,7 +178,7 @@ def run_verifier(argv: list[str]) -> int:
         return 127
 
 
-def open_state(result: bytes, bundle: bytes, repo: str, sigstore: str = "sigstore",
+def open_state(result: bytes, bundle: bytes, repo: str, sigstore: Sequence[str],
                verifier: Callable[[list[str]], int] = run_verifier) -> dict:
     """The verified result: ``{last_accepted_sha, result_sha256}``, by the rules above."""
     repo_name(repo)
@@ -280,7 +282,7 @@ def list_artifacts(http: Any, repo: str) -> list[Any]:
     raise StateError("actions_unreadable")
 
 
-def read_state(http: Any, repo: str, sigstore: str = "sigstore",
+def read_state(http: Any, repo: str, sigstore: Sequence[str],
                verifier: Callable[[list[str]], int] = run_verifier) -> dict:
     """D1's read of the bootstrap state: listed, chosen, downloaded, unpacked, verified (the rules above)."""
     entry = choose(list_artifacts(http, repo))

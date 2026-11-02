@@ -50,7 +50,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fake_claude  # noqa: E402
 import test_loop_cagir
 import yaz_world as YW  # noqa: E402
-from dispatcher import llm_call as L  # noqa: E402
+from loop_inputs_world import ABSENT, BOOTSTRAP, install_sigstore, write_bootstrap  # noqa: E402
 from loop import cek as C  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
@@ -354,7 +354,9 @@ class CekJob(unittest.TestCase):
         return b"".join(b"%s\t%s\n" % (sha.encode(), ref.encode()) for sha, ref in rows if sha)
 
     def run_cek(self, brain=None, imported=None, verifier=None, exits=None, env=None, http=None, listing=None,
-                target=None, summary=None, rekor=None):
+                target=None, summary=None, rekor=None, bootstrap=None, sigstore=True):
+        """``bootstrap``: the checkout's ``bootstrap.json`` (a dict, raw bytes, or ``ABSENT``); ``sigstore``: whether
+        the sigstore step's program is in place (``loop.inputs.sigstore``)."""
         objects, commit = S.store(self.BRAIN if brain is None else brain)
         tobjects, self.target_commit = S.store(self.TARGET)
         if target is not None:
@@ -369,11 +371,13 @@ class CekJob(unittest.TestCase):
                      if imported != "" else b"")
         with open(os.path.join(self.work, "setup", "summary.json"), "wb") as fh:
             fh.write(json.dumps(self.summary if summary is None else summary).encode())
+        write_bootstrap(self.work, bootstrap)
+        if sigstore:
+            install_sigstore(self.temp)
         zip_bytes = self.TA.zip_of({"result.json": self.TA.result(commit), "result.json.sigstore.json": b"{}"})
         api = http or self.TA.FakeApi([self.TA.artifact(11, "2026-11-01T00:00:00Z")], zip_bytes)
         environ = {"RUNNER_TEMP": self.temp, "GITHUB_REPOSITORY": "o/referee", "GITHUB_TOKEN": "t",
-                   "GITHUB_WORKSPACE": self.work, "LOOP_BRAIN_REPO": "o/brain", "LOOP_TARGET": "t1",
-                   "PATH": os.environ.get("PATH", "")}
+                   "GITHUB_WORKSPACE": self.work, "LOOP_TARGET": "t1", "PATH": os.environ.get("PATH", "")}
         environ.update(env or {})
         self.verified: list = []
 
@@ -410,8 +414,11 @@ class CekJob(unittest.TestCase):
         uuid = entry_for(RK.payload_digest(root))[0]
         self.assertEqual((out["root"], self.rekor.calls), ({"root": root, "rekor_uuid": uuid}, [uuid]))
         self.assertEqual(len(self.verified), 2)
+        # both checks run the sigstore step's program (tohum/29s), an argv prefix
+        program = (os.path.join(self.temp, "sig", "bin", "python"), "-m", "sigstore")
+        self.assertEqual(self.verified[0][:3], list(program))
         self.assertEqual(self.verified[1], A.identity_argv(
-            "sigstore", self.verified[1][4], "https://github.com/o/referee/.github/workflows/loop.yml@refs/heads/main",
+            program, self.verified[1][6], "https://github.com/o/referee/.github/workflows/loop.yml@refs/heads/main",
             "sha256:" + RK.payload_digest(root)))
         argvs = [c["argv"] for c in S.calls(self.bin)]
         fetches = [a for a in argvs if "fetch" in a]
@@ -473,13 +480,10 @@ class CekJob(unittest.TestCase):
         shutil.copytree(os.path.join(temps["getir"], "out", "deps"), os.path.join(temps["kos"], "in", "deps"))
         got = J.run("kos", {"RUNNER_TEMP": temps["kos"]}, runner=RedAs())
         self.assertEqual((got["done"], got["index"]["base"]), (["D3"], {"verdict": "verified", "reasons": []}))
-        claude_dir = os.path.join(self.base, "claude-bin")  # not self.bin: the fake git logs its calls there
-        os.makedirs(claude_dir)
-        claude = fake_claude.install(claude_dir)
-        fake_claude.behave(claude_dir, test_loop_cagir.result())
+        claude_dir = os.path.dirname(fake_claude.install_for_loop(temps["cagir"]))
+        fake_claude.behave(claude_dir, test_loop_cagir.result(modelUsage={BOOTSTRAP["rival"]["model"]: {"costUSD": 0.01}}))
         got = J.run("cagir", {"RUNNER_TEMP": temps["cagir"], "CLAUDE_CODE_OAUTH_TOKEN": "t",
-                              "LOOP_CANARY_MODEL": test_loop_cagir.MODEL, "LOOP_CLAUDE_SHA512": L.sha512_file(claude),
-                              "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"}, claude=claude)
+                              "GITHUB_WORKSPACE": self.work, "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"})
         self.assertEqual((got["done"], got["call"]["outcome"]), (["D4"], "ok"))
         with open(os.path.join(temps["cagir"], "out", "response", "response.json")) as fh:
             response = json.load(fh)
@@ -729,9 +733,61 @@ class CekJob(unittest.TestCase):
         out = self.refused_after_assembly("pulled_invalid")
         self.assertEqual(out["reasons"], ["tree_unsafe"])
 
+    def test_the_brain_repository_is_bootstrap_json_s(self):
+        # tohum/29s: bootstrap.json's brain_repo in the checkout; no variable names it (one in env is not read)
+        boot = dict(BOOTSTRAP, brain_repo="o2/brain-2")
+        out, commit, _ = self.run_cek(bootstrap=boot, env={"LOOP_BRAIN_REPO": "o/elsewhere", "BRAIN_REPO": "o/x"})
+        self.assertTrue(out["ok"], out)
+        fetches = [a for a in (c["argv"] for c in S.calls(self.bin)) if "fetch" in a]
+        self.assertEqual((fetches[0][-2], fetches[0][-1]), ("https://github.com/o2/brain-2", "%s:refs/pulled" % commit))
+        # a file without the model cek does not read is no reason to stop cek
+        out, _, _ = self.reset_and_run(bootstrap={"brain_repo": "o/brain"})
+        self.assertTrue(out["ok"], out)
+
+    def reset_and_run(self, **kw):
+        shutil.rmtree(self.temp)
+        os.makedirs(self.temp)
+        for name in os.listdir(self.bin):  # the fake git's record of the previous run
+            os.remove(os.path.join(self.bin, name))
+        return self.run_cek(**kw)
+
+    def test_an_unusable_bootstrap_or_no_sigstore_is_no_verdict_before_anything_is_read(self):
+        bad = {"absent": (ABSENT, "bootstrap_unreadable"), "not json": (b"{", "bootstrap_unreadable"),
+               "not utf-8": (b'{"brain_repo": "o/\xff"}', "bootstrap_unreadable"),
+               "duplicate key": (b'{"brain_repo": "o/brain", "brain_repo": "o/brain"}', "bootstrap_unreadable"),
+               "NaN": (b'{"brain_repo": "o/brain", "x": NaN}', "bootstrap_unreadable"),
+               "an array": (b'[{"brain_repo": "o/brain"}]', "bootstrap_unreadable"),
+               "no brain_repo": ({"rival": {"model": "m"}}, "brain_repo_invalid"),
+               "a URL": ({"brain_repo": "https://github.com/o/brain"}, "brain_repo_invalid"),
+               "three parts": ({"brain_repo": "o/brain/x"}, "brain_repo_invalid"),
+               "a number": ({"brain_repo": 7}, "brain_repo_invalid")}
+        for label, (boot, reason) in bad.items():
+            with self.subTest(bootstrap=label):
+                api = self.TA.FakeApi([self.TA.artifact(11, "2026-11-01T00:00:00Z")], b"")
+                with self.assertRaisesRegex(J.Unusable, reason):
+                    self.reset_and_run(bootstrap=boot, http=api)
+                self.assertFalse(os.path.exists(os.path.join(self.bin, "calls.jsonl")))  # no git ran
+                self.assertEqual(api.calls, [])
+        with self.subTest(file="a link to a valid file"):
+            target = os.path.join(self.base, "elsewhere.json")
+            with open(target, "w") as fh:
+                json.dump(BOOTSTRAP, fh)
+            write_bootstrap(self.work, ABSENT)
+            os.symlink(target, os.path.join(self.work, "bootstrap.json"))
+            shutil.rmtree(self.temp)
+            os.makedirs(self.temp)
+            install_sigstore(self.temp)
+            with self.assertRaisesRegex(J.Unusable, "bootstrap_unreadable"):
+                J.run("cek", {"RUNNER_TEMP": self.temp, "GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t",
+                              "GITHUB_WORKSPACE": self.work, "LOOP_TARGET": "t1"},
+                      http=self.TA.FakeApi([], b""), verifier=lambda argv: 0)
+        with self.subTest(sigstore="not installed"):
+            with self.assertRaisesRegex(J.Unusable, "sigstore_missing"):
+                self.reset_and_run(sigstore=False)
+            self.assertFalse(os.path.exists(os.path.join(self.bin, "calls.jsonl")))
+
     def test_no_verdict(self):
-        for kw in ({"env": {"GITHUB_TOKEN": None}}, {"env": {"LOOP_BRAIN_REPO": None}},
-                   {"env": {"LOOP_TARGET": None}}, {"env": {"LOOP_BRAIN_REPO": "o/brain/x"}},
+        for kw in ({"env": {"GITHUB_TOKEN": None}}, {"env": {"LOOP_TARGET": None}},
                    {"verifier": lambda argv: 1}, {"exits": {"fetch": 128}}, {"http": self.TA.FakeApi([], b"")},
                    {"exits": {"ls-remote": 128}}, {"listing": b"garbage\n"},
                    {"target": {}}):  # the target's fetch brings no commit: its read-back fails
@@ -749,7 +805,7 @@ class CekJob(unittest.TestCase):
                 os.remove(os.path.join(self.work, *name.split("/")))
                 with self.assertRaisesRegex(J.Unusable, name):
                     J.run("cek", {"RUNNER_TEMP": self.temp, "GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": "t",
-                                  "GITHUB_WORKSPACE": self.work, "LOOP_BRAIN_REPO": "o/b", "LOOP_TARGET": "t1"},
+                                  "GITHUB_WORKSPACE": self.work, "LOOP_TARGET": "t1"},
                           http=self.TA.FakeApi([self.TA.artifact(1, "2026-11-01T00:00:00Z")],
                                                self.TA.zip_of(self.TA.GOOD_ZIP)), verifier=lambda argv: 0)
                 if name == "policy.json":

@@ -43,6 +43,15 @@ def install(directory: str) -> str:
     return path
 
 
+def install_for_loop(runner_temp: str) -> str:
+    """The fake CLI where the loop's ``claude`` step leaves the real one (``loop.inputs.CLAUDE_CLI`` under
+    ``$RUNNER_TEMP``, tohum/29s); its ``calls.jsonl`` and ``behavior.json`` are beside it (``os.path.dirname``)."""
+    from loop import inputs
+    directory = os.path.join(runner_temp, *inputs.CLAUDE_CLI[:-1])
+    os.makedirs(directory, exist_ok=True)
+    return install(directory)
+
+
 def behave(directory: str, stdout: str, sleep: float = 0, exit: int = 0) -> None:
     with open(os.path.join(directory, "behavior.json"), "w") as fh:
         json.dump({"stdout": stdout, "sleep": sleep, "exit": exit}, fh)

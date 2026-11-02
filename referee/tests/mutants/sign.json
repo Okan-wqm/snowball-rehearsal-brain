@@ -3,8 +3,8 @@
   {
    "id": "rekor_version_unpinned",
    "file": "loop/sign.py",
-   "old": "    return [sigstore, \"sign\", \"--rekor-version\", \"1\", \"--bundle\", bundle, payload]\n",
-   "new": "    return [sigstore, \"sign\", \"--bundle\", bundle, payload]\n",
+   "old": "    return [*sigstore, \"sign\", \"--rekor-version\", \"1\", \"--bundle\", bundle, payload]\n",
+   "new": "    return [*sigstore, \"sign\", \"--bundle\", bundle, payload]\n",
    "tests": [
     "test_sign.py"
    ]

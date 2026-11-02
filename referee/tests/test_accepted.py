@@ -150,16 +150,19 @@ class Unpack(unittest.TestCase):
 
 class Verify(unittest.TestCase):
     def test_the_command(self):
-        self.assertEqual(A.verify_argv("sigstore", REPO, "/d"), [
+        self.assertEqual(A.verify_argv(("sigstore",), REPO, "/d"), [
             "sigstore", "verify", "identity", "--bundle", "/d/result.json.sigstore.json",
             "--cert-identity", "https://github.com/snowball-org/referee/.github/workflows/bootstrap.yml@refs/heads/main",
             "--cert-oidc-issuer", "https://token.actions.githubusercontent.com", "/d/result.json"])
+        # the program is an argv prefix: the sigstore step's venv runs as ``python -m sigstore`` (tohum/29s)
+        self.assertEqual(A.verify_argv(("/t/sig/bin/python", "-m", "sigstore"), REPO, "/d")[:5],
+                         ["/t/sig/bin/python", "-m", "sigstore", "verify", "identity"])
 
     def test_an_unsafe_repository_name(self):
         for repo in ("", "a", "a/b/c", "a/..", "-a/b", "a b/c", "a/b?x", "a/b\n", None, "https://github.com/a/b"):
             with self.subTest(repo=repo):
                 with self.assertRaises(A.StateError) as ctx:
-                    A.verify_argv("sigstore", repo, "/d")
+                    A.verify_argv(("sigstore",), repo, "/d")
                 self.assertEqual(ctx.exception.reasons, ["repo_unsafe"])
                 with self.assertRaises(A.StateError):
                     A.repo_url(repo)
@@ -176,7 +179,7 @@ class Verify(unittest.TestCase):
             seen.append((argv, files))
             return 0
 
-        out = A.open_state(GOOD_ZIP["result.json"], b"B", REPO, "sg", verifier)
+        out = A.open_state(GOOD_ZIP["result.json"], b"B", REPO, ("sg",), verifier)
         self.assertEqual(out["last_accepted_sha"], SHA)
         self.assertEqual(len(out["result_sha256"]), 64)
         argv, files = seen[0]
@@ -187,7 +190,7 @@ class Verify(unittest.TestCase):
     def test_an_unverified_result_is_not_parsed(self):
         for body in (result(), b"not json"):
             with self.assertRaises(A.StateError) as ctx:
-                A.open_state(body, b"B", REPO, verifier=lambda argv: 1)
+                A.open_state(body, b"B", REPO, ("sigstore",), verifier=lambda argv: 1)
             self.assertEqual(ctx.exception.reasons, ["state_unverified"])
 
     def test_an_invalid_result(self):
@@ -195,7 +198,7 @@ class Verify(unittest.TestCase):
                      result(sha="a" * 39), result(sha=None), json.dumps({"last_accepted_sha": SHA}).encode()):
             with self.subTest(body=body):
                 with self.assertRaises(A.StateError) as ctx:
-                    A.open_state(body, b"B", REPO, verifier=lambda argv: 0)
+                    A.open_state(body, b"B", REPO, ("sigstore",), verifier=lambda argv: 0)
                 self.assertEqual(ctx.exception.reasons, ["state_invalid"])
 
     def test_the_default_verifier_runs_a_program(self):
@@ -205,11 +208,11 @@ class Verify(unittest.TestCase):
                 fh.write("#!%s\nimport sys\nsys.exit(0 if sys.argv[1:4] == ['verify', 'identity', '--bundle'] else 3)\n"
                          % sys.executable)
             os.chmod(prog, os.stat(prog).st_mode | stat.S_IXUSR)
-            self.assertEqual(A.open_state(result(), b"B", REPO, prog)["last_accepted_sha"], SHA)
+            self.assertEqual(A.open_state(result(), b"B", REPO, (prog,))["last_accepted_sha"], SHA)
             self.assertEqual(A.run_verifier([prog, "other"]), 3)
             self.assertEqual(A.run_verifier([os.path.join(tmp, "absent")]), 127)
             with self.assertRaises(A.StateError) as ctx:
-                A.open_state(result(), b"B", REPO, os.path.join(tmp, "absent"))
+                A.open_state(result(), b"B", REPO, (os.path.join(tmp, "absent"),))
             self.assertEqual(ctx.exception.reasons, ["state_unverified"])
 
 
@@ -240,7 +243,7 @@ class ReadState(unittest.TestCase):
     def test_every_page_then_the_newest(self):
         arts = [artifact(i, "2026-11-01T0%d:00:00Z" % i) for i in range(1, 6)]
         api = FakeApi(arts, zip_of(GOOD_ZIP))
-        out = A.read_state(api, REPO, verifier=lambda argv: 0)
+        out = A.read_state(api, REPO, ("sigstore",), verifier=lambda argv: 0)
         self.assertEqual(out["artifact_id"], 5)
         self.assertEqual(out["last_accepted_sha"], SHA)
         self.assertEqual([c[0] for c in api.calls], ["json", "json", "json", "redirect", "blob"])
@@ -251,14 +254,14 @@ class ReadState(unittest.TestCase):
     def test_a_short_listing_or_a_bad_page(self):
         for api in (FakeApi([artifact(1, "2026-11-01T00:00:00Z")], b"", total=3),):
             with self.assertRaises(A.StateError) as ctx:
-                A.read_state(api, REPO, verifier=lambda argv: 0)
+                A.read_state(api, REPO, ("sigstore",), verifier=lambda argv: 0)
             self.assertEqual(ctx.exception.reasons, ["actions_unreadable"])
 
         class Bad(FakeApi):
             def json(self, path):
                 return {"artifacts": []}
         with self.assertRaises(A.StateError) as ctx:
-            A.read_state(Bad([], b""), REPO, verifier=lambda argv: 0)
+            A.read_state(Bad([], b""), REPO, ("sigstore",), verifier=lambda argv: 0)
         self.assertEqual(ctx.exception.reasons, ["actions_unreadable"])
 
     def test_too_many_pages(self):
@@ -272,7 +275,7 @@ class ReadState(unittest.TestCase):
     def test_unverified_stops(self):
         api = FakeApi([artifact(1, "2026-11-01T00:00:00Z")], zip_of(GOOD_ZIP))
         with self.assertRaises(A.StateError) as ctx:
-            A.read_state(api, REPO, verifier=lambda argv: 1)
+            A.read_state(api, REPO, ("sigstore",), verifier=lambda argv: 1)
         self.assertEqual(ctx.exception.reasons, ["state_unverified"])
 
 
@@ -281,7 +284,7 @@ class Http(unittest.TestCase):
         listing = json.dumps({"total_count": 1, "artifacts": [artifact(4, "2026-11-01T00:00:00Z")]}).encode()
         fake = _FakeHttps([(200, listing, {}), (302, b"", {"Location": "https://blob.example/z?sig=1"}),
                            (200, zip_of(GOOD_ZIP), {})])
-        out = A.read_state(A.ActionsHttp("tok", handlers=(fake,)), REPO, verifier=lambda argv: 0)
+        out = A.read_state(A.ActionsHttp("tok", handlers=(fake,)), REPO, ("sigstore",), verifier=lambda argv: 0)
         self.assertEqual(out["artifact_id"], 4)
         urls = [r.full_url for r in fake.seen]
         self.assertEqual(urls[1], "https://api.github.com/repos/snowball-org/referee/actions/artifacts/4/zip")

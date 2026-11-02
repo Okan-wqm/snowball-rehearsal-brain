@@ -74,7 +74,7 @@ class Program:
 
     def __call__(self, argv):
         self.argvs.append(list(argv))
-        if argv[1] == "sign":
+        if next(a for a in argv if a in ("sign", "verify")) == "sign":
             with open(argv[-1], "rb") as fh:
                 self.signed = fh.read()
             if self.bundle is not None:
@@ -87,13 +87,15 @@ class Program:
 class RealBundle(unittest.TestCase):
     def test_answers_the_leaf_hash_and_the_pin(self):
         run = Program(REAL["published"])
-        answer = S.SigstoreSigner(PIN, "/opt/sigstore", run).sign(SIGNED)
+        answer = S.SigstoreSigner(PIN, ("/opt/python", "-m", "sigstore"), run).sign(SIGNED)
         self.assertEqual(answer, {"uuid": REAL["uuid"][-64:], "identity": PIN})
         self.assertEqual(R.checked_answer(answer["uuid"], json.loads(REAL["answer"])), REAL_ENTRY)  # Rekor's entry
         sign, verify = run.argvs
-        bundle, payload = sign[5], sign[6]
-        self.assertEqual(sign, ["/opt/sigstore", "sign", "--rekor-version", "1", "--bundle", bundle, payload])
-        self.assertEqual(verify, A.identity_argv("/opt/sigstore", bundle, PIN, payload))
+        bundle, payload = sign[7], sign[8]
+        # the program is an argv prefix: the sigstore step's venv as ``python -m sigstore`` (tohum/29s)
+        self.assertEqual(sign, ["/opt/python", "-m", "sigstore", "sign", "--rekor-version", "1", "--bundle", bundle,
+                                payload])
+        self.assertEqual(verify, A.identity_argv(("/opt/python", "-m", "sigstore"), bundle, PIN, payload))
         self.assertEqual(run.signed, SIGNED)
         self.assertNotEqual(bundle, payload)
         self.assertFalse(os.path.exists(bundle))  # the fresh directory is gone
@@ -101,13 +103,13 @@ class RealBundle(unittest.TestCase):
     def test_empty_pin_is_refused(self):
         for bad in ("", None):
             with self.assertRaises(ValueError):
-                S.SigstoreSigner(bad)
+                S.SigstoreSigner(bad, ("sigstore",))
 
 
 class Refusals(unittest.TestCase):
     def refused(self, run, payload=SIGNED, runs=2):
         with self.assertRaises(AN.Unsignable):
-            S.SigstoreSigner(PIN, "sigstore", run).sign(payload)
+            S.SigstoreSigner(PIN, ("sigstore",), run).sign(payload)
         self.assertEqual(len(run.argvs), runs)
         self.assertTrue(issubclass(AN.Unsignable, AN.append.HardStop))
 
@@ -119,7 +121,7 @@ class Refusals(unittest.TestCase):
 
     def test_bundle_too_large(self):
         self.refused(Program(json.dumps(REAL["published"]).encode().ljust(R.MAX_ANSWER + 1)), runs=1)  # valid JSON
-        S.SigstoreSigner(PIN, "s", Program(json.dumps(REAL["published"]).encode().ljust(R.MAX_ANSWER))).sign(SIGNED)
+        S.SigstoreSigner(PIN, ("s",), Program(json.dumps(REAL["published"]).encode().ljust(R.MAX_ANSWER))).sign(SIGNED)
 
     def test_bundle_not_json(self):
         self.refused(Program(b"{"), runs=1)
@@ -148,11 +150,11 @@ class RoundTrip(unittest.TestCase):
         root = "ab" * 32
         made = bundle_for(digest=R.payload_digest(root))
         body = made["verificationMaterial"]["tlogEntries"][0]["canonicalizedBody"]
-        entry = AN.anchor(root, S.SigstoreSigner(PIN, "sigstore", Program(made)))
+        entry = AN.anchor(root, S.SigstoreSigner(PIN, ("sigstore",), Program(made)))
         self.assertEqual(entry, {"uuid": leaf(body), "hash": root, "identity": PIN})
         rekor = {entry["uuid"]: dict(copy.deepcopy(REAL_ENTRY), body=body)}
         seen = []
-        judge = R.entry_reasons(rekor.get, PIN, "sigstore", lambda argv: seen.append(argv) or 0)
+        judge = R.entry_reasons(rekor.get, PIN, ("sigstore",), lambda argv: seen.append(argv) or 0)
         self.assertEqual(judge(entry["uuid"], root), [])
         self.assertEqual(seen[0][seen[0].index("--cert-identity") + 1], PIN)
         self.assertEqual(judge(entry["uuid"], "cd" * 32), ["entry_root_mismatch"])
@@ -170,11 +172,11 @@ class RealProcess(unittest.TestCase):
                          "if argv[0] == 'sign':\n    shutil.copy(%r, argv[argv.index('--bundle') + 1])\n"
                          "sys.exit(0 if argv[0] == 'sign' or %r in argv else 1)\n" % (sys.executable, source, PIN))
             os.chmod(program, os.stat(program).st_mode | stat.S_IXUSR)
-            self.assertEqual(S.SigstoreSigner(PIN, program).sign(SIGNED)["uuid"], REAL["uuid"][-64:])
+            self.assertEqual(S.SigstoreSigner(PIN, (program,)).sign(SIGNED)["uuid"], REAL["uuid"][-64:])
             with self.assertRaises(AN.Unsignable):
-                S.SigstoreSigner(PIN + "x", program).sign(SIGNED)
+                S.SigstoreSigner(PIN + "x", (program,)).sign(SIGNED)
             with self.assertRaises(AN.Unsignable):
-                S.SigstoreSigner(PIN, os.path.join(tmp, "absent")).sign(SIGNED)
+                S.SigstoreSigner(PIN, (os.path.join(tmp, "absent"),)).sign(SIGNED)
 
 
 if __name__ == "__main__":

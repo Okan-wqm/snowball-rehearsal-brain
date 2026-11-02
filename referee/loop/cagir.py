@@ -38,10 +38,11 @@ link on its way (``response_missing``) holding one JSON object with exactly the 
 cycle's; ``rows`` is a list of objects (``rows_invalid``). Their shape is ``ledger.schema``'s, checked with the
 whole new ledger by ``ledger.cycle`` before anything is signed.
 
-Out of scope, stated: where the ``claude`` CLI, its sha512 pin and the model come from in a real run (the job's
-environment, ``loop.job``; no page this clone has names them for the loop: founder ledger and report
-seed-042) and the CLI's real output shapes
-(asama-0/10a ``#model``).
+The ``claude`` CLI, its sha512 pin and the model are the caller's arguments: in a run, ``loop.job``'s ``cagir`` gives
+the CLI the ``claude`` step installs, the sha512 of that file when the job read it and ``bootstrap.json``'s
+``rival.model`` (``loop.inputs``, tohum/29s).
+
+Out of scope, stated: the CLI's real output shapes (asama-0/10a ``#model``).
 """
 
 from __future__ import annotations

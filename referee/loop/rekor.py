@@ -29,8 +29,9 @@ key a uuid whose last 64 characters are the requested one's and the RFC 6962 lea
 body itself) and the message signature (the body's digest and signature). ``tests/fixtures/rekor-entry.json`` holds
 a real entry, the bundle its signer published and real ``sigstore`` 4.5.1's exit codes on the bundle made here.
 
-Out of scope, stated: which ``sigstore`` program runs and the trust root it fetches (``loop.accepted``'s
-paragraph); whether a newer root than the recorded one is in Rekor (a ``brain/state`` reset to an earlier, valid
+The ``sigstore`` program is the caller's argv prefix (``loop.inputs.sigstore`` in ``cek``, tohum/29s).
+
+Out of scope, stated: the trust root the program fetches; whether a newer root than the recorded one is in Rekor (a ``brain/state`` reset to an earlier, valid
 cycle: the ruleset's ``non_fast_forward`` on an open target, tohum/13); the identity pin's source (the referee
 repository's ``loop.yml`` on ``main``, the job's own ``GITHUB_REPOSITORY``: no seed page this clone has names the
 pin, an assumption); the Rekor instance (the public one).
@@ -47,7 +48,7 @@ import re
 import tempfile
 import urllib.error
 import urllib.request
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from loop import accepted as A
 
@@ -187,7 +188,7 @@ def bundle(entry: dict, body: dict) -> dict:
         raise ValueError("entry lacks a bundle piece: %s" % type(exc).__name__) from None
 
 
-def entry_reasons(read: Callable[[str], dict | None], pin: str, sigstore: str = "sigstore",
+def entry_reasons(read: Callable[[str], dict | None], pin: str, sigstore: Sequence[str],
                   verifier: Callable[[list[str]], int] = A.run_verifier) -> Callable[[str, str], list[str] | None]:
     """``ledger.anchor.judge``'s entry judgement over Rekor (``read``: ``RekorHttp().entry`` or a fake), by the
     judging rules above."""

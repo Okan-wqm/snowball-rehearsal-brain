@@ -25,7 +25,11 @@ stop: nothing is written). ``tests/fixtures/rekor-entry.json`` ``published`` is 
 and ``tests/fixtures/sigstore-signed-payload`` the file it signed; real ``sigstore`` 4.5.1's exits on them are
 recorded in ``tests/test_sign.py``.
 
-Out of scope, stated: which ``sigstore`` program runs (the caller's, as in ``loop.accepted``); whether the entry is
+The program is the caller's ``sigstore`` argv prefix: in ``yaz``, the one the ``sigstore`` step installs
+(``loop.inputs.sigstore``, tohum/29s: ``sigstore==4.5.0``). The recorded exits above are 4.5.1's, the version the
+fixtures were captured with; no exit of 4.5.0 on them is recorded here.
+
+Out of scope, stated: whether the entry is
 in Rekor's log beyond what ``sigstore verify identity`` checks of the bundle (the next D1 reads it from Rekor);
 the pin's source (``loop.accepted.workflow_identity`` of the referee repository's ``loop.yml``, the caller's).
 """
@@ -36,7 +40,7 @@ import hashlib
 import json
 import os
 import tempfile
-from typing import Callable
+from typing import Callable, Sequence
 
 from ledger.anchor import Unsignable
 from loop import accepted as A
@@ -46,8 +50,8 @@ PAYLOAD = "root"
 BUNDLE = "root.sigstore.json"
 
 
-def sign_argv(sigstore: str, bundle: str, payload: str) -> list[str]:
-    return [sigstore, "sign", "--rekor-version", "1", "--bundle", bundle, payload]
+def sign_argv(sigstore: Sequence[str], bundle: str, payload: str) -> list[str]:
+    return [*sigstore, "sign", "--rekor-version", "1", "--bundle", bundle, payload]
 
 
 def _bundle_body(path: str, digest: str) -> str:
@@ -74,7 +78,7 @@ def _bundle_body(path: str, digest: str) -> str:
 class SigstoreSigner:
     """``sign(payload) -> {uuid, identity}`` by the rules above; ``run(argv) -> exit code``."""
 
-    def __init__(self, pin: str, sigstore: str = "sigstore", run: Callable[[list[str]], int] = A.run_verifier):
+    def __init__(self, pin: str, sigstore: Sequence[str], run: Callable[[list[str]], int] = A.run_verifier):
         if not isinstance(pin, str) or not pin:
             raise ValueError("identity pin must be a non-empty string")
         self.pin, self.sigstore, self.run = pin, sigstore, run

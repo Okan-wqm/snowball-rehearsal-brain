@@ -147,7 +147,7 @@ class Judging(unittest.TestCase):
             with open(argv[4]) as fh:
                 self.calls.append((argv, json.load(fh)))
             return code
-        return R.entry_reasons(lambda uuid: entry, pin, "sigstore", verifier)("u", self.ROOT)
+        return R.entry_reasons(lambda uuid: entry, pin, ("sigstore",), verifier)("u", self.ROOT)
 
     def test_no_entry(self):
         self.assertIsNone(self.judge(None))
@@ -204,13 +204,13 @@ class Judging(unittest.TestCase):
         root = AN.root_of(AN.tips(LEDGER))
         uuid, entry = entry_for(R.payload_digest(root))
         roots = AN.root_row(b"", "r1", "2026-11-01T00:00:00Z", root, uuid)
-        rekor = R.entry_reasons({uuid: entry}.get, WORKFLOW, "sigstore", lambda argv: 0)
+        rekor = R.entry_reasons({uuid: entry}.get, WORKFLOW, ("sigstore",), lambda argv: 0)
         self.assertEqual(AN.judge(LEDGER, roots, rekor), {"valid": True, "reasons": [], "root": root, "rekor_uuid": uuid})
         other = AN.root_row(b"", "r1", "2026-11-01T00:00:00Z", "2" * 64, uuid)
         self.assertEqual(AN.judge(LEDGER, other, rekor)["reasons"], ["root_mismatch", "entry_root_mismatch"])
         gone = AN.root_row(b"", "r1", "2026-11-01T00:00:00Z", root, "f" * 64)
         self.assertEqual(AN.judge(LEDGER, gone, rekor)["reasons"], ["entry_missing"])
-        refused = R.entry_reasons({uuid: entry}.get, WORKFLOW, "sigstore", lambda argv: 1)
+        refused = R.entry_reasons({uuid: entry}.get, WORKFLOW, ("sigstore",), lambda argv: 1)
         self.assertEqual(AN.judge(LEDGER, other, refused)["reasons"], ["root_mismatch", "entry_root_mismatch"])
         self.assertEqual(AN.judge(LEDGER, roots, refused)["reasons"], ["entry_unverified"])
 
