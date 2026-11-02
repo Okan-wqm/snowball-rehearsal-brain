@@ -32,7 +32,8 @@ pieces D6 shares with ``activate`` (``ledger.events``, ``target.land``).
   longer applies commits again, and a catalog that does not fit commits nothing; without the seed the drill is off;
   unusable inputs (no catalog, an empty one, a patch outside its directory, missing, linked or not text, no
   workspace, a run id that is not digits) write nothing; ``loop.write_cycle`` refuses a plant beside a merge or an
-  end and an action ``loop.drill`` does not give;
+  end and an action ``loop.drill`` does not give; ``harness.pass_row`` judges the state these cycles wrote (one root
+  and one status row per cycle, the drill ``PASS`` or ``FAIL`` as the loop judged it);
 - ``target.land.applied``: one file applied; more than one file, a missing or linked base, a hunk that does not
   apply, a creation and an unusable diff each refused with their reason.
 """
@@ -60,6 +61,7 @@ from ledger import cycle as CY  # noqa: E402
 from ledger import events as EV  # noqa: E402
 from ledger import schema as SC  # noqa: E402
 from ledger import serial as SE  # noqa: E402
+from harness import pass_row as PR  # noqa: E402
 from harness import revert_drill as RD  # noqa: E402
 from loop import drill as DR  # noqa: E402
 from loop import job as J  # noqa: E402
@@ -626,6 +628,23 @@ class D8(StateBase):
         self.assertEqual((out["ok"], out["reason"], out["drill"]["judged"]["verdict"],
                           out["drill"]["judged"]["reasons"]), (False, "drill_fail", "FAIL", ["cause_mismatch"]))
         self.assertIn("written", out)
+
+    def test_the_pass_row_judge_reads_the_drills_the_loop_wrote(self):
+        """``harness.pass_row`` on the state these cycles wrote: one root and one status row per cycle, the drill
+        judged as the loop judged it; the causes not planted here are unshown."""
+        for causes, geri in ((DRILL_CAUSES, ["toy:cause_unshown:build_break", "toy:cause_unshown:lint_regression"]),
+                             (dict(DRILL_CAUSES, **{"rd-test": "build_break"}),
+                              ["toy:drill_fail:rd-test:cause_mismatch", "toy:cause_unshown:test_regression",
+                               "toy:cause_unshown:build_break", "toy:cause_unshown:lint_regression"])):
+            with self.subTest(causes=causes):
+                self.setUp()
+                self.chain("rd-test", causes)
+                doc = drill_catalog(causes)
+                state = {"ledger": self.state_file(B.STATE_LEDGER), "roots": self.state_file(B.STATE_ROOTS)}
+                got = PR.judge(state, state, {}, {}, {"seed": seed_for(doc, "rd-test", "9"), "catalog": doc})
+                self.assertEqual(got["conditions"]["#geri-alma"], geri)
+                self.assertEqual([got["conditions"][c] for c in ("#kok", "#durum", "#nobetci #hayatta")],
+                                 [[], [], []])
 
     def test_the_drill_waits_for_a_candidates_merge_and_its_sentinel(self):
         seed = seed_for(drill_catalog(DRILL_CAUSES), "rd-test", "9")

@@ -23,7 +23,8 @@ list yet (tohum/29m, 29n, 29o: "26'ya girmelidir"): the ``drill`` ``commit`` and
 its ``usd_micros`` the field 29n's brake sums); ``status`` and ``status_edited`` are ``status.block``'s (MF16, 29n);
 ``genesis`` is 29o's twelve keys; ``sentinel`` (the end of a green or flaky sentinel run, which no seed page names:
 seed-043's draft, taken as this brain's stated assumption, without ``red``, since a red ends at its ``revert``) is
-D7's (``ledger.events.sentinel``); and ``cycle_start``, ``integration_cut``, ``ratchet_base`` and ``decision``
+D7's (``ledger.events.sentinel``); ``pass`` (the PASS row of asama-0/10a, whose shape no seed page gives:
+seed-046's draft, this brain's stated assumption) is ``harness.pass_row``'s; and ``cycle_start``, ``integration_cut``, ``ratchet_base`` and ``decision``
 (``payload.decision`` is the field 29n reads) are ``activate``'s (MF18; D6 writes ``cycle_start``, ``ratchet_base``
 and ``decision`` with the same builders, ``ledger.events``). Kinds no writer here produces (``rival``,
 ``accept``, ``freeze``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
@@ -230,6 +231,9 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
                               "models_served": list_of(text), "outcome": one_of(*llm_call.OUTCOMES),
                               "reason": nullable(text), "usd_micros": count, "cost_source": text,
                               "cap_usd_micros": count, "prompt_sha256": hex64, "duration_ms": count}), False),
+    ("events", "pass"): (shape({"stage": count, "copy_genesis_row_hash": hex64,
+                                 "copy_merge_row_hashes": list_of(hex64), "conditions": list_of(text, unique_sorted=True),
+                                 "not_checked": list_of(text, unique_sorted=True)}), False),
     ("drill", "commit"): (shape({"drill": one_of("revert"), "family": one_of("revert"), "commitment_sha256": hex64}),
                           False),
     ("drill", "plant"): (shape({"drill": one_of("revert"), "family": one_of("revert"), "instance_id": text,

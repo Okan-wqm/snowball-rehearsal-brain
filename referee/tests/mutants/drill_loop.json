@@ -39,7 +39,7 @@
   {
    "id": "key_of_this_run",
    "file": "loop/drill.py",
-   "old": "        answer = RD.key(inp[\"seed\"], _committed_by(rows, drills[-1]), inp[\"catalog\"])",
+   "old": "        answer = RD.key(inp[\"seed\"], committed_by(rows, drills[-1]), inp[\"catalog\"])",
    "new": "        answer = RD.key(inp[\"seed\"], RD.cycle(this_run), inp[\"catalog\"])",
    "tests": [
     "test_loop_write.py"

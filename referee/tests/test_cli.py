@@ -433,6 +433,7 @@ def _inject_argv(f: str, d: str) -> dict:
         "gate.secrets": [["scan", "diff", f], ["scan", "row", f], ["scan", "prompt", f], ["scan", "--kind", "diff", f]],
         "gate.sentinel": [["decide"]],
         "harness.revert_drill": [["commit", f, f], ["reveal", f, f], ["judge", f, f]],
+        "harness.pass_row": [["judge", d, d, d, d], ["judge", d, d, d, d, f, f]],
         "ledger.anchor": [["root", f], ["anchor", f], ["verify", f, f, f]],
         "ledger.append": [["cycle", f, f]],
         "ledger.chain": [["hash"], ["verify", f], ["verify", f, "--previous", f]],

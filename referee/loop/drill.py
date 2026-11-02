@@ -110,7 +110,7 @@ def _rows(ledger: bytes) -> list[dict]:
     return rows
 
 
-def _committed_by(rows: list[dict], at: int) -> str:
+def committed_by(rows: list[dict], at: int) -> str:
     """The run id of the cycle whose rows hold ``rows[at]``: its last ``cycle_start`` before it."""
     starts = [r for r in rows[:at] if r.get("part") == "events" and r.get("kind") == "cycle_start"]
     if not starts:
@@ -134,7 +134,7 @@ def _step(inp: dict | None, ledger: bytes, unfinished: list[str], merging: bool,
     last = rows[drills[-1]] if drills else None
     out: dict[str, Any] = {}
     if last is not None and last["kind"] == "commit":
-        answer = RD.key(inp["seed"], _committed_by(rows, drills[-1]), inp["catalog"])
+        answer = RD.key(inp["seed"], committed_by(rows, drills[-1]), inp["catalog"])
         if RD.commit_payload(answer) != last["payload"]:
             out["replaces"] = "commitment_mismatch"
         elif unfinished or merging:
@@ -150,7 +150,7 @@ def _step(inp: dict | None, ledger: bytes, unfinished: list[str], merging: bool,
             return {"action": "wait", "why": "drill_unfinished"}
         commits = [i for i in drills if rows[i]["kind"] == "commit"]
         if commits:
-            answer = RD.key(inp["seed"], _committed_by(rows, commits[-1]), inp["catalog"])
+            answer = RD.key(inp["seed"], committed_by(rows, commits[-1]), inp["catalog"])
             out["judged"] = dict(RD.judge(ledger, answer), key=answer)
     misfits = sorted(i for i, patch in inp["patches"].items() if land.applied(tree, patch)["reasons"])
     if misfits:

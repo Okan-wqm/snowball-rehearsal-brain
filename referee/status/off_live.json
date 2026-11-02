@@ -3,6 +3,10 @@
     "kind": "unwired",
     "why": "MF18, step (B): the operator's activation of a target; no workflow under referee/.github/workflows starts it yet"
   },
+  "harness.pass_row": {
+    "kind": "unwired",
+    "why": "(B) step 9 of asama-0/08: the PASS row's judgement over the toy's and the copy's brain/state and its write on the toy's (seed-046's draft); nothing calls write yet: no page says which job or command does, nor how the toy's run reads the copy's state"
+  },
   "ledger.founder": {
     "kind": "session_tool",
     "why": "the founder ledger's rules and its append command, run by a session and by test 14 (tests/test_founder_ledger.py); the loop never writes founder rows"

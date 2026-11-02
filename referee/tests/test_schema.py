@@ -10,7 +10,9 @@ rows, the root, the ``status.md`` block) conforms to tohum/26, 26b and 26c and t
   decision with a reject's field, a genesis payload field missing, extra, or of the wrong form, a bad hash,
   evidence lines out of order, a root row with an extra key, a hand-edited block, a file without a block, a broken
   chain;
-- a writer that hands ``activate`` a row of the wrong shape writes nothing.
+- a writer that hands ``activate`` a row of the wrong shape writes nothing;
+- the PASS row (seed-046's draft): its payload conforms; a missing or extra key, a negative stage, a short hash and
+  an unsorted condition list do not.
 """
 
 from __future__ import annotations
@@ -161,6 +163,22 @@ class Artifacts(unittest.TestCase):
                                   (dict(end["payload"], red=[]), "payload.red: not a field")):
             with self.subTest(fragment=fragment):
                 self.assert_reason(dict(end, payload=payload), fragment)
+
+    def test_pass_row_rules(self):
+        """The PASS row (seed-046's draft, ``harness.pass_row``): its payload conforms, without a cause; a missing or
+        extra key, a hash that is not one and an unsorted condition list do not."""
+        cyc = {"cycle_id": "46", "ts": AW.TS, "snapshot_id": AW.SNAP}
+        payload = {"stage": 0, "copy_genesis_row_hash": "a" * 64, "copy_merge_row_hashes": ["b" * 64],
+                   "conditions": ["#genesis", "#kok"], "not_checked": ["#aktarim"]}
+        row = events.row(cyc, "pass", "pass", payload)
+        self.assertEqual(schema.row_reasons(stored(row)), [])
+        for bad, fragment in (({k: v for k, v in payload.items() if k != "stage"}, "payload.stage: missing"),
+                              (dict(payload, verdict="PASS"), "payload.verdict: not a field"),
+                              (dict(payload, stage=-1), "payload.stage"),
+                              (dict(payload, copy_merge_row_hashes=["b" * 63]), "payload.copy_merge_row_hashes[0]"),
+                              (dict(payload, conditions=["#kok", "#genesis"]), "payload.conditions")):
+            with self.subTest(fragment=fragment):
+                self.assert_reason(dict(row, payload=bad), fragment)
 
     def test_genesis_payload_rules(self):
         gen = self.row("genesis")
