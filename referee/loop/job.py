@@ -42,8 +42,8 @@ Every step after ``control`` runs only if ``go`` is true; no step continues on e
 **Targets** (tohum/29s "Hedefler"). A run serves every ``targets[]`` entry of the checkout's
 ``setup/summary.json`` in the array's order (``loop.cek.targets``); no variable or trigger input chooses one. ``cek``
 alone decides which are served: a ``copy`` entry whose target has neither ``brain/state`` nor ``brain/integration``
-is not served this run (its line ``{target, waiting: copy_genesis, heads}``: it writes nothing and is not red, 29s);
-every other entry is. ``cek``'s ``out/pulled`` holds ``served.json``, the served ids in order, and one ``<id>/`` per
+is not served this run (its line ``{target, waiting: copy_genesis, heads}``: it writes nothing and is not red, 29s)
+unless the copy's genesis gate is open (below); every other entry is. ``cek``'s ``out/pulled`` holds ``served.json``, the served ids in order, and one ``<id>/`` per
 served target (``loop.pulled`` "Served"); each later job reads that list from its ``in/pulled`` and serves each id
 in turn, every artifact path below being that target's own directory (``in/pulled/<id>``, ``out/deps/<id>``,
 ``in/deps/<id>``, ``out/results/<id>``, ``in/results/<id>``, ``out/response/<id>``, ``in/response/<id>``; a
@@ -69,9 +69,22 @@ unit as the recipe: the genesis row, the cut at that commit, D5's merge, the rat
 ``activation_refused`` with the reasons; a hard stop after the cut is ``hard_stop`` with ``written``. The line has
 ``done`` ``["D5", "D6"]``, ``drill`` ``{action: off, why: genesis}`` (D8 starts in the next cycle) and ``written``
 (``GENESIS_WRITTEN`` of ``activate``'s answer, ``genesis: true``). The next run's ``cek`` finds both heads and serves
-an ordinary cycle. Out of scope, stated: a ``copy`` entry with neither head is not served (above) until 25a item
-7's condition on the toy's cycles 1-5, which gates the copy's genesis, is judged (not yet: no code here reads it);
-a target with exactly one of the two heads (an activation stopped after its cut) stays ``head_missing`` (25a's
+an ordinary cycle.
+
+**The copy's genesis gate** (tohum/25a row 7, 29s: the copy's genesis waits until the toy's cycles 1-5 are green,
+read from the toy's ``brain/state``; ``harness.pass_row`` "The copy's genesis gate"). ``yaz`` judges it on each toy's
+ordinary cycle (``yaz_gate``, before anything is written: ``harness.pass_row.gate`` on ``pulled``'s state with the
+toy's candidates' ``expect.json``, D8's seed and catalog, ``loop.drill.inputs``, and the checkout's
+``setup/imports.jsonl``), unless the toy's run already holds the gate's row; the line has ``gate`` ``{verdict:
+open|closed, conditions, unusable?}`` (only the conditions with reasons). An open gate adds the ``events``/
+``copy_gate`` row to the cycle D6 writes (``loop.write_cycle``'s ``gate``). The next run's ``cek`` reads it: after a
+``toy`` entry is served on an ordinary cycle, ``harness.pass_row.gate_opened`` of its ``pulled`` ledger (the bytes
+D1 verified); a ``copy`` entry later in ``targets[]`` with neither head is then served as its genesis cycle at its
+``targets[].base_sha`` (``base_sha_invalid`` when it is not 40 lowercase hex; nothing fetched), assembled with
+``loop.pulled``'s genesis form like the toy's, and ``yaz`` runs ``activate`` on it (``activate`` checks the copy's
+facts and that ``base_sha`` is the commit ``pulled`` was read from). A copy before the toy in ``targets[]``, or a run
+whose toy is refused, in its genesis cycle or without the row, leaves the copy waiting. Out of scope, stated: a
+target with exactly one of the two heads (an activation stopped after its cut) stays ``head_missing`` (25a's
 failure rule leaves it to the operator); a second genesis after a re-import (tohum/26d) is ``activate``'s
 ``already_activated`` (seed-047).
 
@@ -170,8 +183,8 @@ refused tree is ``pulled_invalid``). Then:
   failed listing and a failed fetch (of a ``brain/state`` commit too) are unusable (exit 2: 29b's reader stops). Refusals (exit 1): ``imports_broken``,
   ``imports_no_transfer``, ``imports_invalid``, ``referee_tree_refused`` (with the hash's reasons),
   ``referee_tree_mismatch``; ``target_repo_unsafe``; ``head_missing:<branch>`` for each head the target lacks (a
-  toy with neither is its genesis cycle and a copy with neither is waiting, above; nothing of the target is
-  fetched). Then, unless it is the genesis cycle, MF1's ``verify --previous`` of ``brain/state`` (``loop.state``), before
+  toy with neither is its genesis cycle and a copy with neither is waiting, or its genesis cycle once the gate is
+  open, above; nothing of the target is fetched). Then, unless it is the genesis cycle, MF1's ``verify --previous`` of ``brain/state`` (``loop.state``), before
   anything else of the target is fetched: its head fetched with ``loop.fetch`` into ``cek-*/state.git``, its one
   parent (the version the previous cycle verified and extended), when it has one, into
   ``cek-*/state-previous.git``, and ``ledger.jsonl`` and ``chain/root.jsonl`` each verified as a chain and as an
@@ -249,8 +262,10 @@ import tempfile
 from typing import Any, NamedTuple
 
 from dispatcher import llm_call as LL
+from harness import pass_row as PR
 from ledger import anchor as AN
 from ledger import append as LA
+from ledger import schema as SC
 from ledger import serial as SE
 import activate as AC
 from loop import accepted as A
@@ -701,10 +716,35 @@ def yaz_d8(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any]) -> 
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
+def yaz_gate(environ: dict[str, str], art: Any) -> dict[str, Any] | None:
+    """The copy's genesis gate on the toy's cycle (``harness.pass_row.gate``; see the module docstring): ``None`` on
+    a target that is not a toy or whose run already holds the gate's row; else ``{verdict: open|closed,
+    conditions}`` (``conditions``: only those with reasons), judged on ``pulled``'s state before anything is
+    written. An input the gate cannot use (an ``expect.json`` that is not ``{decision: merge}`` or ``{decision:
+    reject, reason}``, a counter with no import) keeps it ``closed`` with ``unusable``: the toy's cycle goes on; an
+    unreadable checkout file is unusable as in D6."""
+    if art.target.get("kind") != "toy" or PR.gate_opened(art.state[B.STATE_LEDGER]):
+        return None
+    try:
+        inp = DR.inputs(environ.get("GITHUB_WORKSPACE", ""), environ)
+    except DR.Unusable as exc:
+        raise Unusable("yaz: %s" % cli.cause(exc)) from None
+    drill = {"seed": inp["seed"], "catalog": inp["catalog"]} if inp and "seed" in inp else None
+    imports = _workspace_file(environ, "setup/imports.jsonl")
+    try:
+        expect = {cid: json.loads(files["expect.json"].decode("utf-8")) for cid, files in art.candidates.items()}
+        got = PR.gate({"ledger": art.state[B.STATE_LEDGER], "roots": art.state[B.STATE_ROOTS]}, expect, drill,
+                      imports)
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, PR.Unusable) as exc:
+        return {"verdict": "closed", "conditions": {}, "unusable": cli.cause(exc)}
+    return {"verdict": got["verdict"], "conditions": {c: r for c, r in got["conditions"].items() if r}}
+
+
 def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
            signer: Any = None, now: Any = None, base_lint: dict | None = None,
-           end: dict | None = None, drill: dict | None = None) -> dict[str, Any]:
-    """D6 of ``yaz``, with D7's ``end`` (see the module docstring): ``{reason, reasons, written?}`` or
+           end: dict | None = None, drill: dict | None = None, gate: dict | None = None) -> dict[str, Any]:
+    """D6 of ``yaz``, with D7's ``end``, D8's step and the gate's row (see the module docstring): ``{reason, reasons,
+    written?}`` or
     ``{written}``. ``transport``
     is the target's API (``target.write.HttpTransport`` with ``WRITER_TOKEN`` when ``None``), ``signer`` the root's
     (``loop.sign.SigstoreSigner`` pinned to ``loop.yml`` on ``$GITHUB_REPOSITORY`` when ``None``), ``now`` the
@@ -715,7 +755,8 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
     writer, signer, imports, cost, cycle_id, ts = (got[k] for k in ("writer", "signer", "imports", "cost", "cycle_id",
                                                                     "ts"))
     try:
-        return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill)}
+        return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill,
+                                    gate)}
     except WC.Refused as exc:
         return {"reason": "write_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
@@ -875,15 +916,19 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
         return dict(_refused(reasons), accepted=accepted)
     entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, sigstore, verifier=verifier or A.run_verifier)
     lines: list[dict[str, Any]] = []
+    opened = False  # the copy's genesis gate, read from a toy served before it in this run
     for target in targets:
         tid = target["id"]
         os.makedirs(os.path.join(root, tid))
         line = dict({"target": tid}, **_cek_target(environ, files, target, brain_dir, sha,
-                                                    os.path.join(root, tid), git, entries))
+                                                    os.path.join(root, tid), git, entries, opened))
         lines.append(line)
         if "reason" in line:
             return dict(_refused([line["reason"]] + line.get("reasons", [])), target=tid, targets=lines,
                         accepted=accepted)
+        if target["kind"] == "toy" and "genesis" not in line:
+            served = P.read(os.path.join(root, tid, "pulled"))  # the bytes D1 verified, as assembled
+            opened = opened or PR.gate_opened(served.state[B.STATE_LEDGER])
     _hand_over(root, [line["target"] for line in lines if "waiting" not in line], _dir(environ, "out", "pulled"))
     return {"accepted": accepted, "targets": lines}
 
@@ -905,10 +950,10 @@ def _refused(reasons: list[str]) -> dict[str, Any]:
 
 
 def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, brain_dir: str, brain_sha: str,
-                root: str, git: str, entries: Any) -> dict[str, Any]:
+                root: str, git: str, entries: Any, opened: bool = False) -> dict[str, Any]:
     """The target half of D1 for one ``targets[]`` entry, in its own directory ``root`` (see the module
-    docstring): ``{reason?, reasons?, heads?, state?, root?, assembled?, profile?}``, or ``{waiting, heads}`` for a
-    copy not yet opened."""
+    docstring): ``{reason?, reasons?, heads?, state?, root?, assembled?, profile?, genesis?}``, or ``{waiting,
+    heads}`` for a copy not yet opened; ``opened``: the copy's genesis gate is open on a toy served before it."""
     target_id = target["id"]
     try:
         url = A.repo_url(target.get("repo"))
@@ -920,9 +965,15 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
         raise Unusable("cek: target heads: %s" % ", ".join(exc.reasons)) from None
     heads = {branch: found[ref] for branch, ref in TARGET_REFS.items()}
     missing = ["head_missing:%s" % b for b, head in heads.items() if head is None]
-    if target["kind"] == "copy" and len(missing) == len(heads):
+    if target["kind"] == "copy" and len(missing) == len(heads) and not opened:
         return {"waiting": "copy_genesis", "heads": heads}
-    if len(missing) == len(heads):  # a toy with neither head: its genesis cycle, on its main (loop.pulled)
+    if target["kind"] == "copy" and len(missing) == len(heads):  # its genesis cycle, at targets[].base_sha (25a 7)
+        commit = target.get("base_sha")
+        if SC.hex40(commit, "base_sha"):
+            return dict(_refused(["base_sha_invalid"]), heads=heads)
+        state = anchored = status = None
+        chains = {p: b"" for p in B.STATE_CHAINS}
+    elif len(missing) == len(heads):  # a toy with neither head: its genesis cycle, on its main (loop.pulled)
         try:
             commit = F.heads(os.path.join(root, "main.git"), url, [MAIN_REF], git=git, environ=environ)[MAIN_REF]
         except P.PulledError as exc:
@@ -1079,11 +1130,14 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
             return dict(ok=False, done=["D5"], **d5, **d7, **d6)
         return dict(ok=True, done=["D5", "D6"], drill=GENESIS_DRILL, **d5, **d7, **d6)
     d8 = yaz_d8(environ, art, tree, d5)
-    d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8)
+    gate = yaz_gate(environ, art)
+    opened = PR.gate_payload() if gate is not None and gate["verdict"] == "open" else None
+    d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened)
+    shown = {} if gate is None else {"gate": gate}
     if "reason" in d6:
-        return dict(ok=False, done=["D5"], **d5, **d7, **d6)
+        return dict(ok=False, done=["D5"], **d5, **d7, **d6, **shown)
     done = ["D5", "D6"] + (["D7"] if end else []) + ([] if d8["action"] == "off" else ["D8"])
-    line = dict(ok=True, done=done, drill=DR.line(d8), **d5, **d7, **d6)
+    line = dict(ok=True, done=done, drill=DR.line(d8), **d5, **d7, **d6, **shown)
     if d8.get("judged", {}).get("verdict") == "FAIL":
         return dict(line, ok=False, reason="drill_fail")
     return line

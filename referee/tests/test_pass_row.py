@@ -403,6 +403,98 @@ class Regenesis(unittest.TestCase):
                                                            "toy:cause_unshown:lint_regression"])
 
 
+def gate(toy: State | None = None, drill_inputs=True, toy_expect=None, imports: bytes = IMPORTS) -> dict:
+    return PR.gate((toy or toy_world()).files(), TOY_EXPECT if toy_expect is None else toy_expect,
+                   {"seed": SEED, "catalog": CATALOG} if drill_inputs else None, imports)
+
+
+def gate_row(c: dict, **over) -> dict:
+    return dict(EV.row(c, "gate", "copy_gate", PR.gate_payload()), **over)
+
+
+class Gate(unittest.TestCase):
+    """The copy's genesis gate (tohum/25a row 7): the toy's half of ``judge``, on the toy's state alone."""
+
+    def test_open_when_every_condition_holds_on_the_toy(self):
+        got = gate()
+        self.assertEqual(got, {"verdict": "open", "conditions": {cond: [] for cond in PR.CONDITIONS}, "state": {}})
+        # no (A) result is read: the counter's last import alone gives #genesis its keys
+        self.assertEqual(PR.import_keys(IMPORTS), {"referee_tree_sha256": "2" * 64,
+                                                   "result_sha256": hashlib.sha256(RESULT).hexdigest(),
+                                                   "import_line_sha256": COUNTER["line_sha256"]})
+        self.assertEqual(SC.payload_reasons("events", "copy_gate", PR.gate_payload()), [])
+        self.assertEqual(PR.gate_payload(), {"conditions": sorted(PR.CONDITIONS)})
+
+    def test_closed_by_any_toy_condition_judge_names(self):
+        """The same reasons ``judge`` gives for the toy, one change of the toy's world at a time."""
+        cases = {"no drill inputs": (toy_world(), {"drill_inputs": False}),
+                 "a cause unshown": (toy_world(drills=[("rd-test", "test_regression")]), {}),
+                 "a flaky sentinel": (toy_world(verdict="flaky"), {}),
+                 "a reject expected for another reason": (toy_world(), {"toy_expect": dict(
+                     TOY_EXPECT, **{"bad-test": {"decision": "reject", "reason": "ratchet_increase"}})}),
+                 "a model mismatch": (toy_world(cost={"served": ["other"]}), {}),
+                 "another import": (toy_world(), {"counter": YW.transfer({"requested": False})})}
+        for name, (toy, kw) in cases.items():
+            with self.subTest(name):
+                counter = kw.pop("counter", COUNTER)
+                got = gate(toy, imports=counter["imports"], **kw)
+                judged = judge(toy, counter=counter, **kw)
+                self.assertEqual(got["verdict"], "closed")
+                self.assertTrue(any(got["conditions"].values()))
+                self.assertEqual(got["conditions"], {c: [r for r in rs if r.startswith("toy:")]
+                                                     for c, rs in judged["conditions"].items()})
+
+    def test_the_copy_is_not_read(self):
+        """A copy with no state at all does not close it; a copy's failing state only fails ``judge``."""
+        self.assertEqual(gate()["verdict"], "open")
+        self.assertEqual(judge(copy=State("copy"))["verdict"], "FAIL")
+
+    def test_a_toy_state_not_of_the_schema(self):
+        toy = toy_world()  # a chain still, with a row ledger.schema refuses
+        raw_cycle(toy, [dict(EV.start({"cycle_id": "900-1", "ts": TS, "snapshot_id": h(99)}), trust="nope")])
+        got = gate(toy)
+        self.assertEqual(got["verdict"], "closed")
+        self.assertEqual(got["conditions"], {cond: ["toy:state_invalid"] for cond in PR.CONDITIONS})
+        self.assertIn("toy", got["state"])
+
+    def test_unusable_inputs(self):
+        with self.assertRaises(PR.Unusable):
+            gate(toy_expect={"good": {"decision": "maybe"}})
+        with self.assertRaises(PR.Unusable):
+            gate(imports=b"")
+
+    def test_opened_reads_the_referees_own_row_after_the_last_genesis(self):
+        toy = toy_world()
+        self.assertFalse(PR.gate_opened(toy.ledger))
+        toy.cycle(gate_row, cost)
+        self.assertTrue(PR.gate_opened(toy.ledger))
+        # a later genesis (a re-import) starts a run without it
+        toy_world(toy, genesis=genesis_payload("toy"))
+        self.assertFalse(PR.gate_opened(toy.ledger))
+        # a player's proposal of the row opens nothing (tohum/26d: proposed_by)
+        toy.cycle(lambda c: gate_row(c, proposed_by="founder"), cost)
+        self.assertFalse(PR.gate_opened(toy.ledger))
+        toy.cycle(gate_row, cost)
+        self.assertTrue(PR.gate_opened(toy.ledger))
+        # another row kind of the same part, or the kind in another part, is no gate
+        other = State("toy")
+        toy_world(other)
+        other.cycle(lambda c: EV.row(c, "gate", "status_edited", {"found_sha256": None, "recorded_sha256": None}),
+                    cost)
+        self.assertFalse(PR.gate_opened(other.ledger))
+
+    def test_opened_on_a_ledger_not_of_the_schema_opens_nothing(self):
+        toy = toy_world()
+        toy.cycle(gate_row, cost)
+        self.assertTrue(PR.gate_opened(toy.ledger))
+        bad = State("toy")
+        bad.ledger = toy.ledger
+        raw_cycle(bad, [dict(EV.start({"cycle_id": "900-1", "ts": TS, "snapshot_id": h(99)}), trust="nope")])
+        self.assertFalse(PR.gate_opened(bad.ledger))
+        self.assertFalse(PR.gate_opened(toy.ledger[:-2]))  # not a chain
+        self.assertFalse(PR.gate_opened(b""))
+
+
 class Write(unittest.TestCase):
     """``write`` on the in-process GitHub whose ``brain/state`` holds the toy world's files."""
 

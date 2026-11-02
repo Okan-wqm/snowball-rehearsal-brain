@@ -28,7 +28,9 @@ written after the candidate's ``decision`` merge row (``{decision: merge, candid
 (``ledger.events.decided``); ``pass`` (the PASS row of asama-0/10a, tohum/26d: its ``kind`` free, here ``pass``;
 ``payload`` 26d's ``stage`` (the integer 0), ``verdict`` ``PASS``, ``import_line_sha256``,
 ``copy_genesis_row_hash``, ``copy_merge_row_hashes`` (at least one, each once) and optional ``owner_exception``, and
-this brain's ``conditions`` and ``not_checked``, which 26d allows) is ``harness.pass_row``'s; and ``cycle_start``,
+this brain's ``conditions`` and ``not_checked``, which 26d allows) is ``harness.pass_row``'s, as is ``copy_gate``
+(``{conditions}``, the conditions of the copy's genesis gate judged open on the toy, D6's; this brain's shape,
+seed-048); and ``cycle_start``,
 ``integration_cut``, ``ratchet_base`` and ``decision``
 (``payload.decision`` is the field 29n reads) are ``activate``'s (MF18; D6 writes ``cycle_start``, ``ratchet_base``
 and ``decision`` with the same builders, ``ledger.events``). Kinds no writer here produces (``rival``,
@@ -270,6 +272,7 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
                                 "conditions": list_of(text, unique_sorted=True),
                                 "not_checked": list_of(text, unique_sorted=True)},
                                {"owner_exception": OWNER_EXCEPTION}), False),
+    ("events", "copy_gate"): (shape({"conditions": list_of(text, non_empty=True, unique_sorted=True)}), False),
     ("drill", "commit"): (shape({"drill": one_of("revert"), "family": one_of("revert"), "commitment_sha256": hex64}),
                           False),
     ("drill", "plant"): (shape({"drill": one_of("revert"), "family": one_of("revert"), "instance_id": text,

@@ -17,7 +17,8 @@ required when D5 chose a merge, else ``Unusable``); ``end``, D7's sentinel to en
 flaky, sha256, facts?}`` (``loop.watch.read``'s verified answer at ``brain/integration``'s head, with
 ``loop.watch.facts`` on a red), or ``None``; ``drill``, ``loop.drill.step``'s answer or ``None``: only ``commit``
 (``{payload}``) and ``plant`` (``{instance_id, path, content}``) write; an action ``loop.drill`` does not give is
-``Unusable``.
+``Unusable``; ``gate``, the payload of the toy's ``copy_gate`` row (``harness.pass_row.gate_payload``) when the copy's
+genesis gate opened on this cycle's state, or ``None``.
 
 **Order.** Nothing is written on the target before every check holds, and nothing is signed before the rows are
 planned:
@@ -56,12 +57,12 @@ reject's ``decision`` with D5's reasons and ``ledger.events.cause``; the merge's
 row with ``path`` and ``target.land.land``'s ``{pull, head_sha, merge_sha}``); ``revert {merge_sha}`` with
 ``gate.revert``'s cause for a red ``end``, or ``sentinel {merge_sha, verdict, red: [], flaky}`` for a green or flaky
 one (the row that finishes the merge's sentinel, ``ledger.serial``; tohum/26f); D8's ``drill`` row (``commit`` with its payload, or ``plant`` with ``harness.revert_drill``'s
-``{drill, family, instance_id, merge_sha}``, the planted merge's SHA; ``ledger.events.drill``); the response's cost
-rows as they are; then
+``{drill, family, instance_id, merge_sha}``, the planted merge's SHA; ``ledger.events.drill``); the ``copy_gate`` row
+with ``gate`` (``harness.pass_row``'s gate); the response's cost rows as they are; then
 ``status.block``'s rows (``ledger.cycle``). ``ts`` is the given time; ``snapshot_id`` is ``brain/integration``'s
 head in ``pulled`` (the snapshot D3 ran on and D5 judged; the cost row carries the same, ``loop.cagir``). Row ids are
 ``<cycle_id>:start``, ``<cycle_id>:ratchet``, ``<cycle_id>:c:<cid>``, ``<cycle_id>:m:<cid>``, ``<cycle_id>:revert`` or
-``<cycle_id>:sentinel``, ``<cycle_id>:drill``, ``<cycle_id>:status``
+``<cycle_id>:sentinel``, ``<cycle_id>:drill``, ``<cycle_id>:gate``, ``<cycle_id>:status``
 and the root row's ``<cycle_id>:root``. The
 status facts' ``canary_cap_usd_micros`` is ``canary_usd`` of ``pulled``'s policy (``loop.cagir.CANARY_USD``, the
 cap D4 called with).
@@ -80,6 +81,7 @@ from typing import Any
 from dispatcher import llm_call
 from gate import revert as gate_revert
 from gate import sentinel
+from harness import pass_row as PR
 from harness import revert_drill
 from ledger import append, cycle, events, schema
 from loop import cagir
@@ -147,7 +149,7 @@ def candidate_rows(cyc: dict, decided: dict, merged: dict | None) -> list[dict]:
 
 def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.Writer, signer: Any,
           imports: bytes, cycle_id: str, ts: str, base_lint: dict | None = None,
-          end: dict | None = None, drill: dict | None = None) -> dict[str, Any]:
+          end: dict | None = None, drill: dict | None = None, gate: dict | None = None) -> dict[str, Any]:
     """D6, D7's end of a sentinel and D8's step (see the module docstring)."""
     cyc = {"cycle_id": cycle_id, "ts": ts, "snapshot_id": art.heads[B.INTEGRATION]}
     merge = decided["merge"]
@@ -197,6 +199,8 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
             out.append(events.drill(cyc, "plant", revert_drill.plant_payload(drill["instance_id"], plant_sha)))
         elif action == "commit":
             out.append(events.drill(cyc, "commit", drill["payload"]))
+        if gate is not None:
+            out.append(events.row(cyc, "gate", PR.GATE_ROW[1], gate))
         return out + list(cost)
 
     ledger, roots = art.state[B.STATE_LEDGER], art.state[B.STATE_ROOTS]

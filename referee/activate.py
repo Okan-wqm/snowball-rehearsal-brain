@@ -97,8 +97,9 @@ row_hashes, entry, edited, files}``.
 Out of scope, stated: running the tools and tests (``koş``: their outputs are inputs here); (A)'s Rekor ids, the App
 declaration of tohum/25a row 5 and ``bypass_actors`` (genesis does not read them, tohum/29o); writing
 ``profile.json`` into ``brain/state``; D8's drill in the genesis cycle (``yaz`` does not run it there: the drill
-starts in the next cycle); the copy's genesis gate (tohum/25a row 7: the toy's cycles 1-5 green; until it is
-judged, ``cek`` leaves a copy with neither head waiting); a second genesis after a re-import (tohum/26d) on a
+starts in the next cycle); the copy's genesis gate (tohum/25a row 7: the toy's cycles 1-5 green; judged by
+``harness.pass_row.gate`` in the toy's ``yaz`` and read by ``cek``, which serves the copy's genesis only after it
+opened, ``loop.job``); a second genesis after a re-import (tohum/26d) on a
 target whose ``brain/state`` exists (``already_activated``: tohum/07 neither re-cuts nor syncs ``brain/integration``,
 reported as seed-047). Whether GitHub lets
 the writer App create ``brain/integration`` under tohum/25a row 3's ``pull_request`` rule is not known here

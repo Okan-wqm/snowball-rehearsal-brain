@@ -84,6 +84,20 @@ branch no longer at ``head`` is ``target.write``'s ``state_head_moved``).
 Any refusal or failure of that commit is a ``target.land.HardStop`` naming the refs written. The answer is
 ``judge``'s with ``refused`` and ``written`` (``{state_sha, row_hashes, root}`` or ``None``).
 
+**The copy's genesis gate** (tohum/25a row 7 and 29s: the copy's genesis waits until the toy's cycles 1-5, asama-0/08
+rows 1-5, are green, read from the toy's ``brain/state``). ``gate(toy, toy_expect, drill, imports)`` judges every
+condition of ``CONDITIONS`` on the toy's state alone, exactly as ``judge`` judges the toy's half (the same
+``_judged``; ``import_keys`` gives ``#genesis`` its three keys from the imports alone, no (A) result is read):
+rows 1-5 are ``#genesis`` and ``#taban`` (1), ``#merge`` and ``#ret`` (2), ``#nobetci #hayatta`` (3),
+``#geri-alma`` (4), ``#model #belirtec`` (5), and every cycle's ``#kok`` and ``#durum``. ``open`` iff no condition
+has a reason. It is judged where the drill seed is, ``yaz`` (tohum/26f: only ``yaz``'s step holds it), on the toy's
+state as D1 verified it, and recorded there: ``yaz`` adds the referee's own row ``events``/``copy_gate``
+(``GATE_ROW``; payload ``gate_payload``, the conditions judged) to the toy's cycle when the gate is open and the
+toy's run holds none yet; the next run's ``cek`` reads it from the toy's verified ledger (``gate_opened``: such a row,
+without ``proposed_by``, after the last genesis; a ledger that does not conform to ``ledger.schema`` opens nothing) and
+only then serves a copy with neither head as its genesis cycle. The row's shape is this brain's (no seed page names
+the gate's record; seed-048's draft).
+
 Out of scope, stated: Rekor (each cycle's root is verified there by the next cycle's D1, ``loop.cek``; at the
 opening by ``stage-open``); a candidate decided that no expectation names (not judged); whether the two states are
 the targets' current heads (the caller reads them); the (A) result's signature (``imported`` checks only that it is
@@ -118,6 +132,7 @@ IMPORT_KEYS = ("import_line_sha256", "referee_tree_sha256", "result_sha256")  # 
 CONDITIONS = ("#genesis", "#taban", "#merge", "#ret", "#nobetci #hayatta", "#geri-alma", "#kok", "#durum",
               "#model #belirtec")
 DRILL_CAUSES = ("test_regression", "build_break", "lint_regression")
+GATE_ROW = ("events", "copy_gate")  # the toy's record that the copy's genesis gate opened (ledger.schema)
 NOT_CHECKED = {
     "#aktarim": "the import's signed result and the referee repository's setup/imports.jsonl (tohum/25a)",
     "#oyuncak": "the toy tree's hash beside (A)'s toy_tree_sha256 (the activation's input)",
@@ -266,7 +281,8 @@ def _roots(ledger: bytes, roots: bytes, rows: list[dict]) -> list[str]:
     cycles = len(_cycles(rows))
     out = [] if len(root_rows) == cycles else ["roots_per_cycle:%d/%d" % (len(root_rows), cycles)]
     last = root_rows[-1]["root"] if root_rows else None
-    return out + ([] if last == anchor.root_of(anchor.tips(ledger)) else ["root_mismatch"])
+    mine = anchor.root_of(anchor.tips(ledger)) if rows else None  # an empty ledger has no tip (#genesis names it)
+    return out + ([] if last == mine else ["root_mismatch"])
 
 
 def _status(rows: list[dict]) -> list[str]:
@@ -302,14 +318,22 @@ def _target(name: str, state: dict, expect: dict, drill: dict | None, imported: 
     return {cond: ["%s:%s" % (name, r) for r in reasons] for cond, reasons in found.items()}
 
 
-def imported(imports: bytes, result: bytes) -> dict:
-    """The counter's last import (``loop.accepted.last_import``, the one reader) and the (A) result it names:
-    ``{referee_tree_sha256, result_sha256, import_line_sha256, owner_exception?}``, else ``Unusable``."""
+def import_keys(imports: bytes) -> dict:
+    """The counter's last import (``loop.accepted.last_import``, the one reader): ``{referee_tree_sha256,
+    result_sha256, import_line_sha256}``, the three keys ``#genesis`` judges, else ``Unusable``."""
     try:
         row, line = AC.last_import(imports)
     except AC.StateError as exc:
         raise Unusable("imports: %s" % exc.reasons[0]) from None
-    if row.get("result_sha256") != hashlib.sha256(result).hexdigest():
+    return {"referee_tree_sha256": row["referee_tree_sha256"], "result_sha256": row.get("result_sha256"),
+            "import_line_sha256": hashlib.sha256(line).hexdigest()}
+
+
+def imported(imports: bytes, result: bytes) -> dict:
+    """``import_keys`` and the (A) result the import names: ``{referee_tree_sha256, result_sha256,
+    import_line_sha256, owner_exception?}``, else ``Unusable``."""
+    out = import_keys(imports)
+    if out["result_sha256"] != hashlib.sha256(result).hexdigest():
         raise Unusable("result: not the (A) result the last import names (result_sha256)")
     try:
         doc = chain.parse_row(result.decode("utf-8"))
@@ -318,8 +342,6 @@ def imported(imports: bytes, result: bytes) -> dict:
     exit_ = doc.get("exit") if isinstance(doc, dict) else None
     if not isinstance(exit_, dict):
         raise Unusable("result: no exit object")
-    out = {"referee_tree_sha256": row["referee_tree_sha256"], "result_sha256": row["result_sha256"],
-           "import_line_sha256": hashlib.sha256(line).hexdigest()}
     if "owner_exception" in exit_:
         if schema.OWNER_EXCEPTION(exit_["owner_exception"], "owner_exception"):
             raise Unusable("result: exit.owner_exception is not {anchor, stage, carry_to, reason, carry_commitment, "
@@ -344,22 +366,51 @@ def judge(toy: dict, copy: dict, toy_expect: Any, copy_expect: Any, drill: dict 
           result: bytes) -> dict:
     """``{verdict, conditions, not_checked, state, payload}`` (see the module docstring)."""
     imp = imported(imports, result)
-    expects = {"toy": expectations(toy_expect), "copy": expectations(copy_expect)}
-    states = {"toy": toy, "copy": copy}
-    invalid = {name: schema.ledger_reasons(s["ledger"]) + schema.roots_reasons(s["roots"])
-               for name, s in states.items()}
+    conditions, invalid = _judged({"toy": toy, "copy": copy},
+                                  {"toy": expectations(toy_expect), "copy": expectations(copy_expect)}, drill, imp)
+    passed = not any(conditions.values())
+    return {"verdict": "PASS" if passed else "FAIL", "conditions": conditions, "not_checked": dict(NOT_CHECKED),
+            "state": invalid, "payload": _payload(copy, imp) if passed else None}
+
+
+def _judged(states: dict, expects: dict, drill: dict | None, imp: dict) -> tuple[dict[str, list[str]], dict]:
+    """Every condition's reasons over the named states (``toy``, ``copy`` or both, in ``TARGETS``' order) and the
+    states that do not conform to ``ledger.schema`` (their reasons)."""
+    names = [name for name in TARGETS if name in states]
+    invalid = {name: schema.ledger_reasons(states[name]["ledger"]) + schema.roots_reasons(states[name]["roots"])
+               for name in names}
     conditions: dict[str, list[str]] = {cond: [] for cond in CONDITIONS}
     if any(invalid.values()):
         for cond in CONDITIONS:
-            conditions[cond] = ["%s:state_invalid" % name for name in TARGETS if invalid[name]]
+            conditions[cond] = ["%s:state_invalid" % name for name in names if invalid[name]]
     else:
-        for name in TARGETS:
+        for name in names:
             for cond, reasons in _target(name, states[name], expects[name], drill, imp).items():
                 conditions[cond] += reasons
-    passed = not any(conditions.values())
-    return {"verdict": "PASS" if passed else "FAIL", "conditions": conditions, "not_checked": dict(NOT_CHECKED),
-            "state": {name: reasons for name, reasons in invalid.items() if reasons},
-            "payload": _payload(copy, imp) if passed else None}
+    return conditions, {name: reasons for name, reasons in invalid.items() if reasons}
+
+
+def gate(toy: dict, toy_expect: Any, drill: dict | None, imports: bytes) -> dict:
+    """The copy's genesis gate (tohum/25a row 7, 29s: the toy's cycles 1-5 green): every condition judged on the
+    toy's state alone, as ``judge`` judges the toy's half (see "The copy's genesis gate" above): ``{verdict:
+    open|closed, conditions, state}``, else ``Unusable``."""
+    conditions, invalid = _judged({"toy": toy}, {"toy": expectations(toy_expect)}, drill, import_keys(imports))
+    return {"verdict": "closed" if any(conditions.values()) else "open", "conditions": conditions, "state": invalid}
+
+
+def gate_opened(ledger: bytes) -> bool:
+    """Whether the toy's ledger (the bytes D1 verified) holds the referee's own ``events``/``copy_gate`` row after its
+    last genesis (see "The copy's genesis gate" above); a ledger that does not conform to ``ledger.schema`` opens
+    nothing."""
+    if schema.ledger_reasons(ledger):
+        return False
+    rows = _rows(ledger)
+    return any(_is(row, *GATE_ROW) and "proposed_by" not in row for row in rows[_last_genesis(rows):])
+
+
+def gate_payload() -> dict:
+    """The ``copy_gate`` row's payload: the conditions ``gate`` judged."""
+    return {"conditions": sorted(CONDITIONS)}
 
 
 def write(writer: W.Writer, head: str, toy: dict, copy: dict, toy_expect: Any, copy_expect: Any, drill: dict | None,
