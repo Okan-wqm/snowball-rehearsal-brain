@@ -6,6 +6,7 @@ hand-over). Every value is written here by hand.
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 import os
 
@@ -32,6 +33,17 @@ def chained(rows: list[dict]) -> bytes:
         row["row_hash"] = prev = chain.row_hash(row)
         out += (json.dumps(row) + "\n").encode()
     return out
+
+
+def transfer(exit_: dict | None = None, tree: str = "2" * 64) -> dict:
+    """A counter whose last row is an import naming an (A) result (``harness.pass_row.imported``'s inputs):
+    ``{imports, result, line_sha256}``; ``exit_`` is the result's ``exit`` object."""
+    result = json.dumps({"verdict": "accepted", "exit": exit_ or {"requested": True, "transferable": True}}).encode()
+    rows = IMPORTS_ROWS + [{"ts": "2026-10-30T10:00:00Z", "stage": 0, "referee_tree_sha256": tree,
+                            "result_sha256": hashlib.sha256(result).hexdigest()}]
+    imports = chained(rows)
+    return {"imports": imports, "result": result,
+            "line_sha256": hashlib.sha256(imports.rstrip(b"\n").split(b"\n")[-1]).hexdigest()}
 
 
 def cost_row(row_id: str = "cagir-9-1", snapshot: str = "b" * 40, usd: int = 1234, **payload) -> dict:

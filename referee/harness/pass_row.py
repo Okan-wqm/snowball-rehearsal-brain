@@ -6,18 +6,33 @@ Rules: asama-0/10a (the (B) conditions; ``#pass``: the loop referee writes the P
 cycles: the toy's genesis, merge, rejects, sentinel and revert drill, then the copy's), tohum/02 item 5 (the exit
 decision is a ledger row the referee writes; "PASS is not a signature but the machine check of these conditions"),
 26c and spec-038's draft (``expect.json`` ``{decision, reason?}``; a reject holds when its row's ``reasons`` is
-exactly ``[reason]``), tohum/29m (``harness.revert_drill``: key, commitment, judge).
+exactly ``[reason]``), tohum/29m (``harness.revert_drill``: key, commitment, judge), tohum/26d (the PASS row's
+``payload``; the referee's own row; (B) runs on each ledger's last genesis and only the rows from it on count;
+stage-open's conditions 2-7).
 
-**Stated assumptions** (seed-046: no page gives the PASS row's shape, its writer's inputs or which conditions it
-judges from the state; its draft): the row is ``events``/``pass`` with ``payload`` below (``ledger.schema``), and
-``write`` puts it on the toy's ``brain/state`` as one cycle of its own (``ledger.cycle``: its ``cycle_start``, the
-``pass`` row, the status row and block, one signed root), after ``judge`` gave ``PASS``. Which job or command runs
-``write``, and how it reads the copy's state, no page says: nothing calls it yet (``status/off_live.json``).
+**The row** (tohum/26d): ``events``/``pass`` (26d leaves ``kind`` free; ``ledger.schema``'s type), written by
+``ledger.events.row``: ``derivation`` ``tool``, ``trust`` ``verified``, no ``proposed_by``. **Stated assumptions**
+(seed-046 (b)-(e), still open): which (B) conditions are judged from the states (below; the others are in
+``NOT_CHECKED``), and that ``write`` puts the row on the toy's ``brain/state`` as one cycle of its own
+(``ledger.cycle``: its ``cycle_start``, the ``pass`` row, the status row and block, one signed root), after ``judge``
+gave ``PASS``. Which job or command runs ``write``, and how it reads the copy's state, no page says: nothing calls it
+yet (``status/off_live.json``).
 
-**Inputs** (``judge(toy, copy, toy_expect, copy_expect, drill)``): each state ``{ledger, roots}``, the bytes of
-``brain/state``'s ``ledger.jsonl`` and ``chain/root.jsonl``; each target's expectations ``{candidate id:
+**Inputs** (``judge(toy, copy, toy_expect, copy_expect, drill, imports, result)``): each state ``{ledger, roots}``, the
+bytes of ``brain/state``'s ``ledger.jsonl`` and ``chain/root.jsonl``; each target's expectations ``{candidate id:
 expect.json}`` (``expectations``: ``{decision: merge}`` or ``{decision: reject, reason: <non-empty string>}``, else
-``Unusable``); ``drill`` ``{seed, catalog}`` (``harness.revert_drill``'s seed file and catalog objects) or ``None``.
+``Unusable``); ``drill`` ``{seed, catalog}`` (``harness.revert_drill``'s seed file and catalog objects) or ``None``;
+``imports``, the bytes of the referee repository's ``setup/imports.jsonl`` (its last import, the last row carrying
+``referee_tree_sha256``: ``loop.accepted.last_import``, the reader D1 and ``activate`` share), and ``result``, the
+bytes of the signed (A) result that import names. ``imported`` reads them; each is ``Unusable`` when: the imports
+are not a valid chain or hold no import (``loop.accepted``'s reasons); sha256 of ``result`` is not the import's
+``result_sha256``; ``result`` is not a JSON object with an ``exit`` object; its ``exit.owner_exception``, when
+present, is not ``ledger.schema.OWNER_EXCEPTION``.
+
+**The run** of a target is its ledger from the last ``events``/``genesis`` row on (the whole ledger when the first
+row is not a genesis: ``#genesis`` fails then). ``#taban``, ``#merge``, ``#ret``, the merges of ``#nobetci
+#hayatta``, the plants and commitments of ``#geri-alma``, and ``#model #belirtec`` read the run; ``#kok``,
+``#durum`` and ``ledger.serial``'s refusals read the whole files.
 
 **First** each state must conform to ``ledger.schema`` (``ledger_reasons``, ``roots_reasons``: the chains and every
 row's shape); a state that does not gives ``<target>:state_invalid`` under every condition (``state`` carries the
@@ -27,12 +42,14 @@ schema's reasons) and nothing else is judged.
 candidate is its first ``events``/``decision`` row (a candidate is offered again every cycle; after its merge its
 diff no longer applies, so later rows are not its verdict):
 
-- ``#genesis``: the ledger's first row is ``events``/``genesis`` (``genesis_not_first``) and no other row is
-  (``genesis_repeated``);
-- ``#taban``: the genesis cycle (its first ``cycle_start`` up to the next) holds a ``ratchet_base`` row
+- ``#genesis``: the ledger's first row is ``events``/``genesis`` (``genesis_not_first``; nothing else is judged
+  under it then); the last genesis's ``import_line_sha256``, ``referee_tree_sha256`` and ``result_sha256`` are the
+  import's (``genesis_import:<key>`` each, 26d stage-open 2 and 5);
+- ``#taban``: the run's first cycle (its first ``cycle_start`` up to the next) holds a ``ratchet_base`` row
   (``base_missing``);
-- ``#merge``: each candidate expected to merge has a first decision (``undecided:<cid>``) that is a merge
-  (``not_merged:<cid>``);
+- ``#merge``: the run holds at least one ``events``/``merge`` row (``merge_missing``; 26d stage-open 4 for the toy,
+  ``copy_merge_row_hashes`` non-empty for the copy); each candidate expected to merge has a first decision
+  (``undecided:<cid>``) that is a merge (``not_merged:<cid>``);
 - ``#ret``: each candidate expected to be rejected has a first decision (``undecided:<cid>``) that is a reject
   (``merged:<cid>``) whose ``reasons`` is exactly ``[reason]`` (``reason_mismatch:<cid>``);
 - ``#nobetci #hayatta``: ``ledger.serial.unfinished`` reads the merges (``serial:<reason>`` when it refuses the
@@ -53,31 +70,37 @@ diff no longer applies, so later rows are not its verdict):
   ``usd_micros`` exceeds its ``cap_usd_micros`` (``cap_exceeded:<row_id>``).
 
 ``verdict`` is ``PASS`` iff no judged condition has a reason; the conditions in ``NOT_CHECKED`` are listed with the
-place that holds their evidence and do not enter the verdict. ``payload`` (``PASS`` only, else ``None``): ``{stage:
-0, copy_genesis_row_hash, copy_merge_row_hashes, conditions, not_checked}``, the copy's merge rows (its
-``events``/``merge`` rows, the ones 26d's stage-open counts) in file order.
+place that holds their evidence and do not enter the verdict. ``payload`` (``PASS`` only, else ``None``), 26d's
+fields and two of this brain's: ``{stage: 0, verdict: "PASS", import_line_sha256, copy_genesis_row_hash,
+copy_merge_row_hashes, owner_exception?, conditions, not_checked}``: the import's line hash; the ``row_hash`` of the
+copy's last genesis; the copy's run's ``events``/``merge`` rows (the ones 26d's stage-open counts) in file order;
+the (A) result's ``exit.owner_exception`` as read, absent when the result has none.
 
-**The write** (``write(writer, head, toy, copy, ..., req, imports, signer, canary_cap_usd_micros)``, ``req``
-``{cycle_id, ts, snapshot_id}``): nothing is written when the verdict is not ``PASS`` (``refused: [not_pass]``) or the
-toy's ledger already holds a ``pass`` row (``already_passed``); else ``ledger.cycle.commit`` on ``brain/state`` at
-``head`` (``ledger.append.TargetState``; a branch no longer at ``head`` is ``target.write``'s ``state_head_moved``).
+**The write** (``write(writer, head, toy, copy, ..., req, imports, result, signer, canary_cap_usd_micros)``,
+``req`` ``{cycle_id, ts, snapshot_id}``): nothing is written when the verdict is not ``PASS`` (``refused:
+[not_pass]``) or the toy's run already holds a ``pass`` row (``already_passed``; a PASS before a later genesis is
+another run's); else ``ledger.cycle.commit`` on ``brain/state`` at ``head`` (``ledger.append.TargetState``; a
+branch no longer at ``head`` is ``target.write``'s ``state_head_moved``).
 Any refusal or failure of that commit is a ``target.land.HardStop`` naming the refs written. The answer is
 ``judge``'s with ``refused`` and ``written`` (``{state_sha, row_hashes, root}`` or ``None``).
 
 Out of scope, stated: Rekor (each cycle's root is verified there by the next cycle's D1, ``loop.cek``; at the
 opening by ``stage-open``); a candidate decided that no expectation names (not judged); whether the two states are
-the targets' current heads (the caller reads them).
+the targets' current heads (the caller reads them); the (A) result's signature (``imported`` checks only that it is
+the result the import names; ``loop.accepted.open_state`` verifies D1's, ``stage-open`` the opening's).
 
 Command line, from ``referee/``, one JSON line on stdout::
 
-    python -m harness.pass_row judge TOY_STATE COPY_STATE TOY_CANDIDATES COPY_CANDIDATES [CATALOG SEED]
+    python -m harness.pass_row judge TOY_STATE COPY_STATE TOY_CANDIDATES COPY_CANDIDATES IMPORTS RESULT [CATALOG SEED]
 
 ``*_STATE`` a directory with ``brain/state``'s ``ledger.jsonl`` and ``chain/root.jsonl``; ``*_CANDIDATES`` a
-directory of ``<cid>/expect.json``. Exit 0 ``PASS``, 1 ``FAIL``, 2 unusable input (``{"verdict": "FAIL"}``).
+directory of ``<cid>/expect.json``; ``IMPORTS`` and ``RESULT`` the two files ``imported`` reads. Exit 0 ``PASS``,
+1 ``FAIL``, 2 unusable input (``{"verdict": "FAIL"}``).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -85,11 +108,13 @@ from typing import Any
 
 from harness import revert_drill as RD
 from ledger import anchor, append, chain, cycle, events, schema, serial
+from loop import accepted as AC
 from loop import drill as DR
 from target import branches, land, write as W
 import cli
 
 TARGETS = ("toy", "copy")
+IMPORT_KEYS = ("import_line_sha256", "referee_tree_sha256", "result_sha256")  # a genesis row's, the import's (29o)
 CONDITIONS = ("#genesis", "#taban", "#merge", "#ret", "#nobetci #hayatta", "#geri-alma", "#kok", "#durum",
               "#model #belirtec")
 DRILL_CAUSES = ("test_regression", "build_break", "lint_regression")
@@ -152,10 +177,18 @@ def _first_decisions(rows: list[dict]) -> dict[str, dict]:
     return out
 
 
-def _genesis(rows: list[dict]) -> list[str]:
+def _last_genesis(rows: list[dict]) -> int:
+    """The index of the ledger's last ``genesis`` row (tohum/26d: (B) runs on it), 0 when there is none."""
     found = [i for i, row in enumerate(rows) if _is(row, "events", "genesis")]
-    out = [] if found[:1] == [0] else ["genesis_not_first"]
-    return out + (["genesis_repeated"] if len(found) > 1 else [])
+    return found[-1] if found else 0
+
+
+def _genesis(rows: list[dict], imported: dict) -> list[str]:
+    out = [] if rows and _is(rows[0], "events", "genesis") else ["genesis_not_first"]
+    if out:
+        return out
+    payload = rows[_last_genesis(rows)]["payload"]
+    return ["genesis_import:" + key for key in IMPORT_KEYS if payload[key] != imported[key]]
 
 
 def _base(rows: list[dict]) -> list[str]:
@@ -207,12 +240,12 @@ def _sentinels(ledger: bytes, rows: list[dict]) -> list[str]:
 def _drills(ledger: bytes, rows: list[dict], drill: dict | None) -> list[str]:
     if drill is None:
         return ["drill_inputs_missing"]
-    lines = chain._lines(ledger)
-    plants = [i for i, row in enumerate(rows) if RD.is_drill(row, "plant")]
+    lines, since = chain._lines(ledger), _last_genesis(rows)
+    plants = [i for i, row in enumerate(rows) if i > since and RD.is_drill(row, "plant")]
     out, shown = [], set()
     for n, p in enumerate(plants):
         instance = rows[p]["payload"]["instance_id"]
-        commits = [i for i in range(p) if RD.is_drill(rows[i], "commit")]
+        commits = [i for i in range(since, p) if RD.is_drill(rows[i], "commit")]
         if not commits:
             out.append("drill_uncommitted:" + instance)
             continue
@@ -257,25 +290,60 @@ def _canary(rows: list[dict]) -> list[str]:
                   if row["payload"]["usd_micros"] > row["payload"]["cap_usd_micros"]]
 
 
-def _target(name: str, state: dict, expect: dict, drill: dict | None) -> dict[str, list[str]]:
+def _target(name: str, state: dict, expect: dict, drill: dict | None, imported: dict) -> dict[str, list[str]]:
     ledger, rows = state["ledger"], _rows(state["ledger"])
-    merges, rejects = _decided(rows, expect)
-    found = {"#genesis": _genesis(rows), "#taban": _base(rows), "#merge": merges, "#ret": rejects,
-             "#nobetci #hayatta": _sentinels(ledger, rows),
+    run = rows[_last_genesis(rows):]  # the rows of the (B) run: its genesis on (tohum/26d)
+    merges, rejects = _decided(run, expect)
+    found = {"#genesis": _genesis(rows, imported), "#taban": _base(run),
+             "#merge": ([] if _candidate_merges(run) else ["merge_missing"]) + merges, "#ret": rejects,
+             "#nobetci #hayatta": _sentinels(ledger, run),
              "#geri-alma": _drills(ledger, rows, drill) if name == "toy" else [],
-             "#kok": _roots(ledger, state["roots"], rows), "#durum": _status(rows), "#model #belirtec": _canary(rows)}
+             "#kok": _roots(ledger, state["roots"], rows), "#durum": _status(rows), "#model #belirtec": _canary(run)}
     return {cond: ["%s:%s" % (name, r) for r in reasons] for cond, reasons in found.items()}
 
 
-def _payload(copy: dict) -> dict:
+def imported(imports: bytes, result: bytes) -> dict:
+    """The counter's last import (``loop.accepted.last_import``, the one reader) and the (A) result it names:
+    ``{referee_tree_sha256, result_sha256, import_line_sha256, owner_exception?}``, else ``Unusable``."""
+    try:
+        row, line = AC.last_import(imports)
+    except AC.StateError as exc:
+        raise Unusable("imports: %s" % exc.reasons[0]) from None
+    if row.get("result_sha256") != hashlib.sha256(result).hexdigest():
+        raise Unusable("result: not the (A) result the last import names (result_sha256)")
+    try:
+        doc = chain.parse_row(result.decode("utf-8"))
+    except (UnicodeDecodeError, chain.ChainError) as exc:
+        raise Unusable("result: %s" % cli.cause(exc)) from None
+    exit_ = doc.get("exit") if isinstance(doc, dict) else None
+    if not isinstance(exit_, dict):
+        raise Unusable("result: no exit object")
+    out = {"referee_tree_sha256": row["referee_tree_sha256"], "result_sha256": row["result_sha256"],
+           "import_line_sha256": hashlib.sha256(line).hexdigest()}
+    if "owner_exception" in exit_:
+        if schema.OWNER_EXCEPTION(exit_["owner_exception"], "owner_exception"):
+            raise Unusable("result: exit.owner_exception is not {anchor, stage, carry_to, reason, carry_commitment, "
+                           "measured: false}")
+        out["owner_exception"] = exit_["owner_exception"]
+    return out
+
+
+def _payload(copy: dict, imported: dict) -> dict:
     rows = _rows(copy["ledger"])
-    return {"stage": 0, "copy_genesis_row_hash": rows[0]["row_hash"],
-            "copy_merge_row_hashes": [row["row_hash"] for row in _candidate_merges(rows)],
-            "conditions": sorted(CONDITIONS), "not_checked": sorted(NOT_CHECKED)}
+    since = _last_genesis(rows)
+    out = {"stage": 0, "verdict": "PASS", "import_line_sha256": imported["import_line_sha256"],
+           "copy_genesis_row_hash": rows[since]["row_hash"],
+           "copy_merge_row_hashes": [row["row_hash"] for row in _candidate_merges(rows[since:])],
+           "conditions": sorted(CONDITIONS), "not_checked": sorted(NOT_CHECKED)}
+    if "owner_exception" in imported:
+        out["owner_exception"] = imported["owner_exception"]
+    return out
 
 
-def judge(toy: dict, copy: dict, toy_expect: Any, copy_expect: Any, drill: dict | None) -> dict:
+def judge(toy: dict, copy: dict, toy_expect: Any, copy_expect: Any, drill: dict | None, imports: bytes,
+          result: bytes) -> dict:
     """``{verdict, conditions, not_checked, state, payload}`` (see the module docstring)."""
+    imp = imported(imports, result)
     expects = {"toy": expectations(toy_expect), "copy": expectations(copy_expect)}
     states = {"toy": toy, "copy": copy}
     invalid = {name: schema.ledger_reasons(s["ledger"]) + schema.roots_reasons(s["roots"])
@@ -286,23 +354,24 @@ def judge(toy: dict, copy: dict, toy_expect: Any, copy_expect: Any, drill: dict 
             conditions[cond] = ["%s:state_invalid" % name for name in TARGETS if invalid[name]]
     else:
         for name in TARGETS:
-            for cond, reasons in _target(name, states[name], expects[name], drill).items():
+            for cond, reasons in _target(name, states[name], expects[name], drill, imp).items():
                 conditions[cond] += reasons
     passed = not any(conditions.values())
     return {"verdict": "PASS" if passed else "FAIL", "conditions": conditions, "not_checked": dict(NOT_CHECKED),
             "state": {name: reasons for name, reasons in invalid.items() if reasons},
-            "payload": _payload(copy) if passed else None}
+            "payload": _payload(copy, imp) if passed else None}
 
 
 def write(writer: W.Writer, head: str, toy: dict, copy: dict, toy_expect: Any, copy_expect: Any, drill: dict | None,
-          req: dict, imports: bytes, signer: Any, canary_cap_usd_micros: int) -> dict:
+          req: dict, imports: bytes, result: bytes, signer: Any, canary_cap_usd_micros: int) -> dict:
     """The PASS row on the toy's ``brain/state`` at ``head`` (see the module docstring); ``toy`` also carries the
     head's ``status`` bytes (``None`` without a ``status.md``)."""
-    got = judge(toy, copy, toy_expect, copy_expect, drill)
+    got = judge(toy, copy, toy_expect, copy_expect, drill, imports, result)
+    rows = _rows(toy["ledger"])
     refused = []
     if got["verdict"] != "PASS":
         refused.append("not_pass")
-    elif any(row["part"] == "events" and row["kind"] == "pass" for row in _rows(toy["ledger"])):
+    elif any(_is(row, "events", "pass") for row in rows[_last_genesis(rows):]):
         refused.append("already_passed")
     if refused:
         return dict(got, refused=refused, written=None)
@@ -322,7 +391,8 @@ def write(writer: W.Writer, head: str, toy: dict, copy: dict, toy_expect: Any, c
 
 # ---------------------------------------------------------------- command line
 
-USAGE = "usage: python -m harness.pass_row judge TOY_STATE COPY_STATE TOY_CANDIDATES COPY_CANDIDATES [CATALOG SEED]"
+USAGE = ("usage: python -m harness.pass_row judge TOY_STATE COPY_STATE TOY_CANDIDATES COPY_CANDIDATES IMPORTS RESULT "
+         "[CATALOG SEED]")
 
 
 def _read(path: str) -> bytes:
@@ -352,11 +422,11 @@ def read_expectations(root: str) -> dict:
 
 def main(argv: list[str]) -> int:
     try:
-        if not argv or argv[0] != "judge" or len(argv) not in (5, 7):
+        if not argv or argv[0] != "judge" or len(argv) not in (7, 9):
             raise Unusable(USAGE)
-        drill = {"catalog": _json(argv[5]), "seed": _json(argv[6])} if len(argv) == 7 else None
+        drill = {"catalog": _json(argv[7]), "seed": _json(argv[8])} if len(argv) == 9 else None
         result = judge(read_state(argv[1]), read_state(argv[2]), read_expectations(argv[3]),
-                       read_expectations(argv[4]), drill)
+                       read_expectations(argv[4]), drill, _read(argv[5]), _read(argv[6]))
         sys.stdout.write(json.dumps(result, sort_keys=True) + "\n")
         return 0 if result["verdict"] == "PASS" else 1
     except (Unusable, UnicodeDecodeError, chain.ChainError) as exc:

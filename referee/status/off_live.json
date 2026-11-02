@@ -5,7 +5,7 @@
   },
   "harness.pass_row": {
     "kind": "unwired",
-    "why": "(B) step 9 of asama-0/08: the PASS row's judgement over the toy's and the copy's brain/state and its write on the toy's (seed-046's draft); nothing calls write yet: no page says which job or command does, nor how the toy's run reads the copy's state"
+    "why": "(B) step 9 of asama-0/08: the PASS row of tohum/26d, judged over the toy's and the copy's brain/state and written on the toy's; nothing calls write yet: no page says which job or command does, nor how the toy's run reads the copy's state (seed-046 (c))"
   },
   "ledger.founder": {
     "kind": "session_tool",

@@ -25,8 +25,11 @@ its ``usd_micros`` the field 29n's brake sums); ``status`` and ``status_edited``
 (``red`` always empty: a red ends at its ``revert`` row, 26f), D7's (``ledger.events.sentinel``); ``merge`` (tohum/26d:
 ``kind: merge``, its payload free; here ``{candidate, path, pull, head_sha, merge_sha}``, ``target.land``'s answer) is
 written after the candidate's ``decision`` merge row (``{decision: merge, candidate}``) by ``activate`` and D6
-(``ledger.events.decided``); ``pass`` (the PASS row of asama-0/10a, whose shape no seed page gives:
-seed-046's draft, this brain's stated assumption) is ``harness.pass_row``'s; and ``cycle_start``, ``integration_cut``, ``ratchet_base`` and ``decision``
+(``ledger.events.decided``); ``pass`` (the PASS row of asama-0/10a, tohum/26d: its ``kind`` free, here ``pass``;
+``payload`` 26d's ``stage`` (the integer 0), ``verdict`` ``PASS``, ``import_line_sha256``,
+``copy_genesis_row_hash``, ``copy_merge_row_hashes`` (at least one, each once) and optional ``owner_exception``, and
+this brain's ``conditions`` and ``not_checked``, which 26d allows) is ``harness.pass_row``'s; and ``cycle_start``,
+``integration_cut``, ``ratchet_base`` and ``decision``
 (``payload.decision`` is the field 29n reads) are ``activate``'s (MF18; D6 writes ``cycle_start``, ``ratchet_base``
 and ``decision`` with the same builders, ``ledger.events``). Kinds no writer here produces (``rival``,
 ``accept``, ``freeze``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
@@ -115,7 +118,7 @@ def nullable(inner: Check) -> Check:
     return check
 
 
-def list_of(inner: Check, non_empty: bool = False, unique_sorted: bool = False) -> Check:
+def list_of(inner: Check, non_empty: bool = False, unique_sorted: bool = False, unique: bool = False) -> Check:
     def check(value: Any, where: str) -> list[str]:
         if not isinstance(value, list):
             return _bad(where, "not a list")
@@ -124,8 +127,21 @@ def list_of(inner: Check, non_empty: bool = False, unique_sorted: bool = False) 
         out = [r for i, v in enumerate(value) for r in inner(v, "%s[%d]" % (where, i))]
         if unique_sorted and not out and value != sorted(set(value)):
             out += _bad(where, "not sorted and unique")
+        if unique and not out and len(value) != len(set(value)):
+            out += _bad(where, "an element repeated")
         return out
     return check
+
+
+def exactly(allowed: Any) -> Check:
+    """``allowed`` of its own type (``0`` is not ``False``)."""
+    def check(value: Any, where: str) -> list[str]:
+        return [] if type(value) is type(allowed) and value == allowed else _bad(where, "not %r" % (allowed,))
+    return check
+
+
+def any_value(value: Any, where: str) -> list[str]:
+    return []
 
 
 def empty_list(value: Any, where: str) -> list[str]:
@@ -205,6 +221,16 @@ GENESIS = shape({  # tohum/29o's twelve keys (activate.genesis)
     "seed_security_last_row_hash": hex64, "recipe_sha256": hex64, "facts_sha256": hex64,
 })
 
+def _anchor(value: Any, where: str) -> list[str]:
+    return text(value, where) or (_bad(where, "starts with #") if value.startswith("#") else [])
+
+
+# (A)'s ``exit.owner_exception`` (tohum/02 "Sahip istisnası", 26d): its six keys; ``anchor`` without ``#``,
+# ``measured`` false; the other values are the (A) result's as written (no seed page gives their types)
+OWNER_EXCEPTION = shape({"anchor": _anchor,
+                         "stage": any_value, "carry_to": any_value, "reason": any_value, "carry_commitment": any_value,
+                         "measured": exactly(False)})
+
 DECISION = tagged("decision", {
     "merge": shape({"decision": one_of("merge"), "candidate": text}),
     "reject": shape({"decision": one_of("reject"), "candidate": text,
@@ -238,9 +264,12 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
                               "models_served": list_of(text), "outcome": one_of(*llm_call.OUTCOMES),
                               "reason": nullable(text), "usd_micros": count, "cost_source": text,
                               "cap_usd_micros": count, "prompt_sha256": hex64, "duration_ms": count}), False),
-    ("events", "pass"): (shape({"stage": count, "copy_genesis_row_hash": hex64,
-                                 "copy_merge_row_hashes": list_of(hex64), "conditions": list_of(text, unique_sorted=True),
-                                 "not_checked": list_of(text, unique_sorted=True)}), False),
+    ("events", "pass"): (shape({"stage": exactly(0), "verdict": one_of("PASS"), "import_line_sha256": hex64,
+                                "copy_genesis_row_hash": hex64,
+                                "copy_merge_row_hashes": list_of(hex64, non_empty=True, unique=True),
+                                "conditions": list_of(text, unique_sorted=True),
+                                "not_checked": list_of(text, unique_sorted=True)},
+                               {"owner_exception": OWNER_EXCEPTION}), False),
     ("drill", "commit"): (shape({"drill": one_of("revert"), "family": one_of("revert"), "commitment_sha256": hex64}),
                           False),
     ("drill", "plant"): (shape({"drill": one_of("revert"), "family": one_of("revert"), "instance_id": text,

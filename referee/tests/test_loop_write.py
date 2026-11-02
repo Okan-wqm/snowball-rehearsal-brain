@@ -715,7 +715,9 @@ class D8(StateBase):
                 self.chain("rd-test", causes)
                 doc = drill_catalog(causes)
                 state = {"ledger": self.state_file(B.STATE_LEDGER), "roots": self.state_file(B.STATE_ROOTS)}
-                got = PR.judge(state, state, {}, {}, {"seed": seed_for(doc, "rd-test", "9"), "catalog": doc})
+                counter = YW.transfer()
+                got = PR.judge(state, state, {}, {}, {"seed": seed_for(doc, "rd-test", "9"), "catalog": doc},
+                               counter["imports"], counter["result"])
                 self.assertEqual(got["conditions"]["#geri-alma"], geri)
                 self.assertEqual([got["conditions"][c] for c in ("#kok", "#durum", "#nobetci #hayatta")],
                                  [[], [], []])

@@ -109,15 +109,6 @@
    ]
   },
   {
-   "id": "genesis_repeat_allowed",
-   "file": "harness/pass_row.py",
-   "old": "    return out + ([\"genesis_repeated\"] if len(found) > 1 else [])",
-   "new": "    return out",
-   "tests": [
-    "test_pass_row.py"
-   ]
-  },
-  {
    "id": "base_of_any_cycle",
    "file": "harness/pass_row.py",
    "old": "    held = cycles and any(_is(row, \"events\", \"ratchet_base\") for row in cycles[0][1])",
@@ -129,8 +120,8 @@
   {
    "id": "payload_on_fail",
    "file": "harness/pass_row.py",
-   "old": "\"payload\": _payload(copy) if passed else None}",
-   "new": "\"payload\": _payload(copy)}",
+   "old": "\"payload\": _payload(copy, imp) if passed else None}",
+   "new": "\"payload\": _payload(copy, imp)}",
    "tests": [
     "test_pass_row.py"
    ]
@@ -156,7 +147,7 @@
   {
    "id": "already_passed_not_checked",
    "file": "harness/pass_row.py",
-   "old": "    elif any(row[\"part\"] == \"events\" and row[\"kind\"] == \"pass\" for row in _rows(toy[\"ledger\"])):",
+   "old": "    elif any(_is(row, \"events\", \"pass\") for row in rows[_last_genesis(rows):]):",
    "new": "    elif False:",
    "tests": [
     "test_pass_row.py"

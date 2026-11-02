@@ -18,6 +18,9 @@ a verdict, and ``gate.secrets``' exit 1 is "match").
   the latter; ``Injected`` runs every command in-process with ``json.loads`` or ``open`` raising a builtin exception
   that carries the mark (228 runs reach a patched read, measured) and finds no mark in any output, while the same
   runs with ``cli.cause`` replaced by ``str`` leak it in 139 runs of 19 commands.
+- Names (tohum/26e, spec-011): no module or package of ``referee/`` or ``tests/`` is named like a standard module
+  but the frozen table's ``profile``; the scan is shown to find a shadowing module and package; no source imports
+  ``cProfile``.
 - Process: every command, started the way the referee starts it, exits 2 when stdout is closed or a broken pipe
   (before this boundary: 20 of 22 exited 1 with stdout closed, and most 120 on a broken pipe); and ``gate.secrets
   scan`` on a clean file and on a file with a fake token exits 0 and 1 with a working stdout and 2 with either
@@ -190,6 +193,46 @@ def start(module: str, argv: list[str], stdout: str) -> subprocess.CompletedProc
         return subprocess.run(cmd, stdout=write, **common)
     finally:
         os.close(write)
+
+
+def shadowing(*roots: str) -> set[str]:
+    """The names on ``sys.path`` ahead of the standard library (each root's packages and ``.py`` modules) that are
+    names of standard modules (``sys.stdlib_module_names``, tohum/26e)."""
+    found = set()
+    for root in roots:
+        for name in os.listdir(root):
+            path = os.path.join(root, name)
+            if name.endswith(".py"):
+                found.add(name[:-3])
+            elif os.path.isdir(path) and os.path.isfile(os.path.join(path, "__init__.py")):
+                found.add(name)
+    return found & set(sys.stdlib_module_names)
+
+
+class Names(unittest.TestCase):
+    """tohum/26e: a referee command runs with ``referee/`` first on ``sys.path`` (and a test with ``tests/`` too), so
+    a module named like a standard one hides it (spec-011: ``profile`` breaks ``import cProfile``). The one such
+    name is the frozen stage 0 table's ``profile`` (MF4, MF6), kept until that table is reopened; no other."""
+
+    def test_no_module_but_the_frozen_profile_shadows_a_standard_one(self):
+        self.assertEqual(shadowing(REFEREE, os.path.join(REFEREE, "tests")), {"profile"})
+
+    def test_the_scan_finds_a_shadowing_module_and_package(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "json"))
+            for rel in ("json/__init__.py", "random.py", "mine.py", "data.txt"):
+                with open(os.path.join(tmp, rel), "w", encoding="utf-8") as fh:
+                    fh.write("")
+            os.makedirs(os.path.join(tmp, "email"))  # a directory without __init__.py is no package here
+            self.assertEqual(shadowing(tmp), {"json", "random"})
+
+    def test_no_referee_source_imports_cprofile(self):
+        """26e's answer: no referee command calls ``cProfile``, which the ``profile`` package breaks."""
+        users = [path for path, source in sources().items()
+                 if any(isinstance(node, (ast.Import, ast.ImportFrom)) and "cProfile" in
+                        ([a.name for a in node.names] + [getattr(node, "module", None) or ""])
+                        for node in ast.walk(ast.parse(source)))]
+        self.assertEqual(users, [])
 
 
 class Boundary(unittest.TestCase):
@@ -433,7 +476,7 @@ def _inject_argv(f: str, d: str) -> dict:
         "gate.secrets": [["scan", "diff", f], ["scan", "row", f], ["scan", "prompt", f], ["scan", "--kind", "diff", f]],
         "gate.sentinel": [["decide"]],
         "harness.revert_drill": [["commit", f, f], ["reveal", f, f], ["judge", f, f]],
-        "harness.pass_row": [["judge", d, d, d, d], ["judge", d, d, d, d, f, f]],
+        "harness.pass_row": [["judge", d, d, d, d, f, f], ["judge", d, d, d, d, f, f, f, f]],
         "ledger.anchor": [["root", f], ["anchor", f], ["verify", f, f, f]],
         "ledger.append": [["cycle", f, f]],
         "ledger.chain": [["hash"], ["verify", f], ["verify", f, "--previous", f]],

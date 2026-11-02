@@ -3,5 +3,6 @@
   "kind": "spec_issue",
   "ref": "spec/asama-0/14-sirali-mikro-ozellikler.md:31",
   "evidence_test": "cd referee && python -c 'import cProfile'  # AttributeError: module 'profile' has no attribute 'run'",
-  "state": "open"
+  "state": "confirmed",
+  "update_2026_11_02_session_4": "Answered by the seed epoch 252366a (tohum/26e:33-37): a stage table row whose module's first name is a standard module's does not load; the frozen stage 0 table's profile (MF4, MF6) stays until that table is reopened, and no referee command calls cProfile. Confirmed with my tests: cd referee && python -m unittest discover -s tests -p 'test_cli.py'  # Names: the modules and packages of referee/ and referee/tests/ named like a standard module are exactly {profile} (sys.stdlib_module_names; the scan is shown to find a shadowing module and package), and no referee source imports cProfile. A new top-level module named like a standard one makes test 38 red, so the class cannot come back unseen in this brain."
 }

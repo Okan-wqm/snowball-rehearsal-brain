@@ -183,18 +183,37 @@ class Artifacts(unittest.TestCase):
                 self.assert_reason(dict(end, payload=payload), fragment)
 
     def test_pass_row_rules(self):
-        """The PASS row (seed-046's draft, ``harness.pass_row``): its payload conforms, without a cause; a missing or
-        extra key, a hash that is not one and an unsorted condition list do not."""
+        """The PASS row (tohum/26d, ``harness.pass_row``): its payload conforms, without a cause, with or without
+        (A)'s owner exception; a missing or extra key, a stage that is not the integer 0 (``False`` included), a
+        verdict other than PASS, a hash that is not one, an empty or repeating merge list, an unsorted condition
+        list and an owner exception not of tohum/02's form do not."""
         cyc = {"cycle_id": "46", "ts": AW.TS, "snapshot_id": AW.SNAP}
-        payload = {"stage": 0, "copy_genesis_row_hash": "a" * 64, "copy_merge_row_hashes": ["b" * 64],
-                   "conditions": ["#genesis", "#kok"], "not_checked": ["#aktarim"]}
-        row = events.row(cyc, "pass", "pass", payload)
-        self.assertEqual(schema.row_reasons(stored(row)), [])
+        owner = {"anchor": "durustluk", "stage": 0, "carry_to": 1, "reason": "r", "carry_commitment": "c" * 64,
+                 "measured": False}
+        payload = {"stage": 0, "verdict": "PASS", "import_line_sha256": "c" * 64, "copy_genesis_row_hash": "a" * 64,
+                   "copy_merge_row_hashes": ["b" * 64, "a" * 64], "conditions": ["#genesis", "#kok"],
+                   "not_checked": ["#aktarim"]}
+        for good in (payload, dict(payload, owner_exception=owner)):
+            row = events.row(cyc, "pass", "pass", good)
+            self.assertEqual(schema.row_reasons(stored(row)), [])
         for bad, fragment in (({k: v for k, v in payload.items() if k != "stage"}, "payload.stage: missing"),
-                              (dict(payload, verdict="PASS"), "payload.verdict: not a field"),
-                              (dict(payload, stage=-1), "payload.stage"),
+                              ({k: v for k, v in payload.items() if k != "import_line_sha256"},
+                               "payload.import_line_sha256: missing"),
+                              (dict(payload, extra=1), "payload.extra: not a field"),
+                              (dict(payload, stage=1), "payload.stage"),
+                              (dict(payload, stage=False), "payload.stage"),
+                              (dict(payload, verdict="FAIL"), "payload.verdict"),
                               (dict(payload, copy_merge_row_hashes=["b" * 63]), "payload.copy_merge_row_hashes[0]"),
-                              (dict(payload, conditions=["#kok", "#genesis"]), "payload.conditions")):
+                              (dict(payload, copy_merge_row_hashes=[]), "payload.copy_merge_row_hashes: empty"),
+                              (dict(payload, copy_merge_row_hashes=["b" * 64] * 2),
+                               "payload.copy_merge_row_hashes: an element repeated"),
+                              (dict(payload, conditions=["#kok", "#genesis"]), "payload.conditions"),
+                              (dict(payload, owner_exception=dict(owner, anchor="#durustluk")),
+                               "payload.owner_exception.anchor"),
+                              (dict(payload, owner_exception=dict(owner, measured=0)),
+                               "payload.owner_exception.measured"),
+                              (dict(payload, owner_exception={k: v for k, v in owner.items() if k != "reason"}),
+                               "payload.owner_exception.reason: missing")):
             with self.subTest(fragment=fragment):
                 self.assert_reason(dict(row, payload=bad), fragment)
 
