@@ -328,9 +328,12 @@ class Activation(unittest.TestCase):
             self.assertEqual(r["payload"], {"decision": "reject", "candidate": cid,
                                             "reasons": [AW.EXPECTED_REJECTS[cid][0]]})
             self.assertEqual(r["cause"], AW.EXPECTED_REJECTS[cid][1], r["row_id"])
-        # the merge: its decision row, then tohum/26d's merge row with target.land's answer
+        # the merge: its decision row, then tohum/26d's merge row with target.land's answer and asama-0/08's
+        # coverage record of the good candidate's one hunk (@@ -2 +2 @@ of src/a.js), unmeasured at stage 0
         self.assertEqual(rows[8]["payload"], {"decision": "merge", "candidate": "good"})
-        self.assertEqual((rows[9]["part"], rows[9]["payload"]), ("events", out["merge"]))
+        self.assertEqual((rows[9]["part"], rows[9]["payload"]), ("events", dict(out["merge"], hunk_covered=[
+            {"path": "src/a.js", "old_start": 2, "old_count": 1, "new_start": 2, "new_count": 1,
+             "covered": "unmeasured", "reason": "no_coverage_tool"}])))
         self.assertEqual(out["merge"]["path"], "src/a.js")
         self.assertNotIn("cause", rows[8])
         self.assertNotIn("cause", rows[9])

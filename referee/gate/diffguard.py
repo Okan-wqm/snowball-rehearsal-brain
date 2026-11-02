@@ -101,6 +101,7 @@ EXTENDED = ("old mode ", "new mode ", "deleted file mode ", "new file mode ", "c
 INDEX = re.compile(r"index [0-9a-f]+\.\.[0-9a-f]+(?: ([0-9]+))?")
 SCORE = re.compile(r"[0-9]+%")
 HUNK = re.compile(r"@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@")
+HUNK_RANGE = ("old_start", "old_count", "new_start", "new_count")  # a hunk's ``@@ -a,b +c,d @@``, as ``_hunk`` reads it
 BASE85_LINE = re.compile(r"[A-Za-z][0-9A-Za-z!#$%&()*+\-;<=>?@^_`{|}~]+")
 BINARY_SIZE = re.compile(r"(?:literal|delta) [0-9]+")
 GIT_HEADER = "diff --git "

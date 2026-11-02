@@ -82,7 +82,7 @@ the cycle id and the time. In this order; nothing is written before step 5:
 7. The state, ``events`` rows in this order: ``genesis`` (the payload), ``cycle_start {cycle_id}``,
    ``integration_cut {branch, base_sha}``, ``ratchet_base {base_run_sha256, counts}``, D5's decisions in code-point
    order of the candidate id (``loop.write_cycle.candidate_rows``: a merge's ``decision {decision: merge,
-   candidate}`` and its ``merge {candidate, path, pull, head_sha, merge_sha}`` row, tohum/26d; a reject's
+   candidate}`` and its ``merge {candidate, path, pull, head_sha, merge_sha, hunk_covered}`` row, tohum/26d; a reject's
    ``decision {decision: reject, candidate, reasons}`` with ``ledger.events.cause``), the response's cost rows as
    they are, then ``status.block.plan``'s rows (MF16; ``loop.write_cycle.status_facts``); ``ledger.cycle.plan``
    over an empty ledger and roots file chains them, signs the root and writes its row; ``ledger.jsonl``,
@@ -356,7 +356,7 @@ def activate(writer: write.Writer, files: dict[str, bytes], art: pulled.Pulled, 
         return [events.row(cyc, "genesis", "genesis", gen["payload"]), events.start(cyc),
                 events.row(cyc, "cut", "integration_cut", {"branch": INTEGRATION, "base_sha": cut}),
                 events.ratchet_base(cyc, base_run_sha256, base["counts"])] \
-            + write_cycle.candidate_rows(cyc, decided, merged) + list(cost)
+            + write_cycle.candidate_rows(cyc, decided, merged, change) + list(cost)
 
     root_row_id = "%s:root" % cycle_id
     try:  # the dry plan: every row and the whole ledger checked before the first write

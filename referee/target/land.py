@@ -7,12 +7,15 @@ tohum/01b (``brain/integration`` takes changes only by pull request, merges are 
 merge is reverted; the revert passes the gate like a merge), ``target.write`` (MF9, the
 one writer; its guard checks every request).
 
-``applied(tree, diff_text)``: the candidate's one changed file after its diff, ``{reasons, path, content}``. The
+``applied(tree, diff_text)``: the candidate's one changed file after its diff, ``{reasons, path, content, hunks}``. The
 diff must parse (``gate.diffguard.parse``) and change exactly one file (``diff_not_one_file`` otherwise: the gate's
 criterion 4 lets a candidate change only its finding's file, and nothing here writes more than one); the base file is
 read from ``tree`` at the block's path (a regular file, no symbolic link on its way, else ``base_file_missing``) and
 the hunks applied (``gate.diffguard.apply``, which takes only an in-place text change: a creation, deletion, rename,
-copy, mode change or binary patch is ``patch_does_not_apply`` too). ``content`` is ``None`` with a reason.
+copy, mode change or binary patch is ``patch_does_not_apply`` too). ``hunks`` are the block's text hunks in diff
+order, each ``{old_start, old_count, new_start, new_count}`` as its ``@@`` header gives them (``gate.diffguard.HUNK_RANGE``; empty for
+a block with no hunk), the ranges ``ledger.events.hunk_covered`` records. ``content`` and ``hunks`` are ``None`` with
+a reason.
 
 ``land(writer, cid, path, content, base, check)``: branch ``brain/c/<cid>`` at ``base``, one commit setting ``path``
 to ``content``, a pull request into ``brain/integration``, a ``success`` check run named ``check`` on the commit, and
@@ -67,18 +70,19 @@ def applied(tree: str, diff_text: str) -> dict:
     try:
         blocks = diffguard.parse(diff_text)
     except diffguard.DiffError:
-        return {"reasons": ["diff_unusable"], "path": None, "content": None}
+        return {"reasons": ["diff_unusable"], "path": None, "content": None, "hunks": None}
     if len(blocks) != 1:
-        return {"reasons": ["diff_not_one_file"], "path": None, "content": None}
+        return {"reasons": ["diff_not_one_file"], "path": None, "content": None, "hunks": None}
     path = blocks[0]["new"] or blocks[0]["old"]
     old = derive._read_regular(tree, path)
     if old is None:
-        return {"reasons": ["base_file_missing"], "path": path, "content": None}
+        return {"reasons": ["base_file_missing"], "path": path, "content": None, "hunks": None}
     try:
         content = diffguard.apply(blocks[0], old)
     except diffguard.DiffError:
-        return {"reasons": ["patch_does_not_apply"], "path": path, "content": None}
-    return {"reasons": [], "path": path, "content": content}
+        return {"reasons": ["patch_does_not_apply"], "path": path, "content": None, "hunks": None}
+    return {"reasons": [], "path": path, "content": content,
+            "hunks": [{k: h[k] for k in diffguard.HUNK_RANGE} for h in blocks[0]["hunks"]]}
 
 
 def pull_merge(writer: Any, branch: str, base: str, files: dict[str, bytes], onto: str, title: str, body: str,

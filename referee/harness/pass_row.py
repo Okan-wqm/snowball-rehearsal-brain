@@ -55,6 +55,11 @@ diff no longer applies, so later rows are not its verdict):
   (``undecided:<cid>``) that is a merge (``not_merged:<cid>``);
 - ``#ret``: each candidate expected to be rejected has a first decision (``undecided:<cid>``) that is a reject
   (``merged:<cid>``) whose ``reasons`` is exactly ``[reason]`` (``reason_mismatch:<cid>``);
+- ``#kapsama-kaydi``: every ``events``/``merge`` row carries its coverage record ``hunk_covered`` (asama-0/08, 10a),
+  which ``ledger.schema``'s merge row requires, each entry of the row's own path: a state whose merge row lacks it
+  is ``state_invalid`` (above), so nothing is left to judge here. The values gate nothing (10a: kapılamaz; stage 0
+  writes only ``unmeasured``); that the record lists every hunk of the merged diff is its writer's
+  (``ledger.events.hunk_covered`` of ``target.land.applied``'s hunks), since the state does not hold the diff;
 - ``#nobetci #hayatta``: ``ledger.serial.unfinished`` reads the merges (``serial:<reason>`` when it refuses the
   ledger); every candidate merge (an ``events``/``merge`` row, tohum/26d; a planted merge is the drill's) is finished
   (``sentinel_unfinished:<sha>``) by a ``sentinel`` row of verdict ``green`` (``sentinel_flaky:<sha>``: 10a asks
@@ -91,7 +96,7 @@ Any refusal or failure of that commit is a ``target.land.HardStop`` naming the r
 rows 1-5, are green, read from the toy's ``brain/state``). ``gate(toy, toy_expect, drill, imports)`` judges every
 condition of ``CONDITIONS`` on the toy's state alone, exactly as ``judge`` judges the toy's half (the same
 ``_judged``; ``import_keys`` gives ``#genesis`` its three keys from the imports alone, no (A) result is read):
-rows 1-5 are ``#genesis`` and ``#taban`` (1), ``#merge`` and ``#ret`` (2), ``#nobetci #hayatta`` (3),
+rows 1-5 are ``#genesis`` and ``#taban`` (1), ``#merge``, ``#ret`` and ``#kapsama-kaydi`` (2), ``#nobetci #hayatta`` (3),
 ``#geri-alma`` (4), ``#model #belirtec`` (5), and every cycle's ``#kok`` and ``#durum``. ``open`` iff no condition
 has a reason. It is judged where the drill seed is, ``yaz`` (tohum/26f: only ``yaz``'s step holds it), on the toy's
 state as D1 verified it, and recorded there: ``yaz`` adds the referee's own row ``events``/``copy_gate``
@@ -132,8 +137,8 @@ import cli
 
 TARGETS = ("toy", "copy")
 IMPORT_KEYS = ("import_line_sha256", "referee_tree_sha256", "result_sha256")  # a genesis row's, the import's (29o)
-CONDITIONS = ("#genesis", "#taban", "#merge", "#ret", "#nobetci #hayatta", "#geri-alma", "#kok", "#durum",
-              "#model #belirtec")
+CONDITIONS = ("#genesis", "#taban", "#merge", "#ret", "#kapsama-kaydi", "#nobetci #hayatta", "#geri-alma", "#kok",
+              "#durum", "#model #belirtec")
 DRILL_CAUSES = ("test_regression", "build_break", "lint_regression")
 GATE_ROW = ("events", "copy_gate")  # the toy's record that the copy's genesis gate opened (ledger.schema)
 NOT_CHECKED = {
@@ -145,7 +150,6 @@ NOT_CHECKED = {
     "#getir #birim": "getir's and kos's job lines, which brain/state does not hold",
     "#oracle-ayirt #mandal #sifir-test": "the gate's judgement of each merge (loop.decide), recorded only as the "
                                          "merge decision; not judged again here",
-    "#kapsama-kaydi": "no writer of this repository writes hunk_covered (gate.check leaves it to the loop)",
     "#prompt": "a prompt refused for a secret pattern starts no process and writes no row (loop.cagir)",
     "#main #guvenlik-yolu": "the target's rulesets and target.write's refusals; brain/state records no write",
 }
@@ -315,6 +319,7 @@ def _target(name: str, state: dict, expect: dict, drill: dict | None, imported: 
     merges, rejects = _decided(run, expect)
     found = {"#genesis": _genesis(rows, imported), "#taban": _base(run),
              "#merge": ([] if _candidate_merges(run) else ["merge_missing"]) + merges, "#ret": rejects,
+             "#kapsama-kaydi": [],  # ledger.schema's merge row requires hunk_covered: judged with the state above
              "#nobetci #hayatta": _sentinels(ledger, run),
              "#geri-alma": _drills(ledger, rows, drill) if name == "toy" else [],
              "#kok": _roots(ledger, state["roots"], rows), "#durum": _status(rows), "#model #belirtec": _canary(run)}

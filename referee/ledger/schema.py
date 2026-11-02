@@ -23,7 +23,10 @@ list yet (tohum/29m, 29n, 29o: "26'ya girmelidir"): the ``drill`` ``commit`` and
 its ``usd_micros`` the field 29n's brake sums); ``status`` and ``status_edited`` are ``status.block``'s (MF16, 29n);
 ``genesis`` is 29o's twelve keys; ``sentinel`` is tohum/26f's ``{merge_sha, verdict: green|flaky, red: [], flaky}``
 (``red`` always empty: a red ends at its ``revert`` row, 26f), D7's (``ledger.events.sentinel``); ``merge`` (tohum/26d:
-``kind: merge``, its payload free; here ``{candidate, path, pull, head_sha, merge_sha}``, ``target.land``'s answer) is
+``kind: merge``, its payload free; here ``{candidate, path, pull, head_sha, merge_sha, hunk_covered}``,
+``target.land``'s answer and asama-0/08's coverage record, ``HUNK_COVERED``: a list, possibly empty, of ``{path,
+old_start, old_count, new_start, new_count, covered: "unmeasured", reason: "no_coverage_tool"}``, stage 0's only
+values, ``ledger.events.UNMEASURED``; each entry's ``path`` the row's) is
 written after the candidate's ``decision`` merge row (``{decision: merge, candidate}``) by ``activate`` and D6
 (``ledger.events.decided``); ``pass`` (the PASS row of asama-0/10a, tohum/26d: its ``kind`` free, here ``pass``;
 ``payload`` 26d's ``stage`` (the integer 0), ``verdict`` ``PASS``, ``import_line_sha256``,
@@ -240,6 +243,19 @@ DECISION = tagged("decision", {
 })
 
 
+# asama-0/08's coverage record on a merge row (``ledger.events.hunk_covered``): stage 0 writes only unmeasured
+HUNK_COVERED = list_of(shape({"path": text, "old_start": count, "old_count": count, "new_start": count,
+                              "new_count": count, "covered": one_of("unmeasured"), "reason": one_of("no_coverage_tool")}))
+MERGE = shape({"candidate": text, "path": text, "pull": positive, "head_sha": hex40, "merge_sha": hex40,
+               "hunk_covered": HUNK_COVERED})
+
+
+def _hunk_paths(payload: dict, where: str) -> list[str]:
+    """Each coverage entry names the merge row's own file (a record of another file is not this merge's)."""
+    return [r for i, h in enumerate(payload["hunk_covered"]) if h["path"] != payload["path"]
+            for r in _bad("%s.hunk_covered[%d].path" % (where, i), "not the merge's path")]
+
+
 def _rejected(payload: Any) -> bool:
     return isinstance(payload, dict) and payload.get("decision") == "reject"
 
@@ -255,8 +271,7 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
     ("events", "ratchet_base"): (shape({"base_run_sha256": hex64, "counts": map_of(count)}), False),
     ("events", "decision"): (DECISION, _rejected),
     ("events", "revert"): (shape({"merge_sha": hex40}), True),
-    ("events", "merge"): (shape({"candidate": text, "path": text, "pull": positive, "head_sha": hex40,
-                                 "merge_sha": hex40}), False),
+    ("events", "merge"): (lambda p, where: MERGE(p, where) or _hunk_paths(p, where), False),
     ("events", "sentinel"): (shape({"merge_sha": hex40, "verdict": one_of(*SENTINEL_ENDS), "red": empty_list,
                                     "flaky": list_of(text, unique_sorted=True)}), False),
     ("events", "status"): (shape({"block_sha256": hex64}), False),

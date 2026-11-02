@@ -35,7 +35,7 @@ MERGE = "a" * 40
 LEDGER = ledger_with([row("s1", "events", "cycle_start", {"cycle_id": "4100"}),
                       row("d1", "events", "decision", {"decision": "merge", "candidate": "c1"}),
                       row("m1", "events", "merge", {"candidate": "c1", "path": "src/a.js", "pull": 1,
-                                                    "head_sha": "b" * 40, "merge_sha": MERGE})])
+                                                    "head_sha": "b" * 40, "merge_sha": MERGE, "hunk_covered": []})])
 IMPORTS = ledger_with([{"ts": "2026-10-29T08:00:00Z", "stage": 0}])
 
 

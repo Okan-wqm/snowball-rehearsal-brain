@@ -34,7 +34,7 @@ START = row("s", "events", "cycle_start", {"cycle_id": "7"})
 def merge(row_id: str, sha: str) -> dict:
     """The gate's merge row (tohum/26d ``kind: merge``)."""
     return row(row_id, "events", "merge", {"candidate": row_id, "path": "pkg/a.js", "pull": 1, "head_sha": "f" * 40,
-                                           "merge_sha": sha})
+                                           "merge_sha": sha, "hunk_covered": []})
 
 
 def decided_merge(row_id: str) -> dict:

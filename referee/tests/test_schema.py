@@ -217,6 +217,42 @@ class Artifacts(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assert_reason(dict(row, payload=bad), fragment)
 
+    def test_merge_row_coverage_record(self):
+        """asama-0/08's coverage record on the merge row (``ledger.events.hunk_covered``): one entry per hunk, in the
+        hunks' order, each ``unmeasured`` with ``no_coverage_tool`` and the merge's path; an empty record for a diff
+        with no hunk conforms. A merge row without the record, with an extra key in an entry, a ``covered`` other than
+        ``unmeasured`` (``true`` and ``false`` included: stage 0 measures nothing), another reason or none, a
+        negative or non-integer range, or an entry of another file than the row's does not."""
+        cyc = {"cycle_id": "46", "ts": AW.TS, "snapshot_id": AW.SNAP}
+        hunks = [{"old_start": 3, "old_count": 2, "new_start": 3, "new_count": 1},
+                 {"old_start": 9, "old_count": 0, "new_start": 9, "new_count": 2}]
+        merged = {"path": "src/a.js", "pull": 4, "head_sha": "b" * 40, "merge_sha": "c" * 40, "hunks": hunks}
+        decision, merge = events.decided(cyc, "good", [], merged)
+        self.assertEqual(merge["payload"], {"candidate": "good", "path": "src/a.js", "pull": 4, "head_sha": "b" * 40,
+                                            "merge_sha": "c" * 40, "hunk_covered": [
+            dict(h, path="src/a.js", covered="unmeasured", reason="no_coverage_tool") for h in hunks]})
+        self.assertEqual(schema.row_reasons(stored(merge)), [])
+        self.assertEqual(events.decided(cyc, "good", [], dict(merged, hunks=[]))[1]["payload"]["hunk_covered"], [])
+        self.assertEqual(schema.row_reasons(stored(events.decided(cyc, "good", [], dict(merged, hunks=[]))[1])), [])
+        payload, entry = merge["payload"], merge["payload"]["hunk_covered"][0]
+
+        def with_entry(**over):
+            return dict(payload, hunk_covered=[dict(entry, **over)] + payload["hunk_covered"][1:])
+        for bad, fragment in (({k: v for k, v in payload.items() if k != "hunk_covered"}, "payload.hunk_covered: missing"),
+                              (dict(payload, hunk_covered=None), "payload.hunk_covered: not a list"),
+                              (with_entry(extra=1), "payload.hunk_covered[0].extra: not a field"),
+                              (with_entry(covered=True), "payload.hunk_covered[0].covered"),
+                              (with_entry(covered=False), "payload.hunk_covered[0].covered"),
+                              (with_entry(covered="covered"), "payload.hunk_covered[0].covered"),
+                              (with_entry(reason="no_tool"), "payload.hunk_covered[0].reason"),
+                              ({**payload, "hunk_covered": [{k: v for k, v in entry.items() if k != "reason"}]},
+                               "payload.hunk_covered[0].reason: missing"),
+                              (with_entry(old_start=-1), "payload.hunk_covered[0].old_start"),
+                              (with_entry(new_count=True), "payload.hunk_covered[0].new_count"),
+                              (with_entry(path="src/b.js"), "payload.hunk_covered[0].path: not the merge's path")):
+            with self.subTest(fragment=fragment):
+                self.assert_reason(dict(merge, payload=bad), fragment)
+
     def test_copy_gate_row_rules(self):
         """The copy's genesis gate row (``harness.pass_row``, seed-048's draft): ``{conditions}``, a non-empty sorted
         list of distinct strings, no cause; a missing or extra key, an empty, unsorted or repeating list do not."""

@@ -133,7 +133,8 @@ class State:
 
 
 def merged(sha: str, pull: int = 1) -> dict:
-    return {"path": "src/a.js", "pull": pull, "head_sha": h(0xbeef), "merge_sha": sha}
+    return {"path": "src/a.js", "pull": pull, "head_sha": h(0xbeef), "merge_sha": sha,
+            "hunks": [{"old_start": 2, "old_count": 1, "new_start": 2, "new_count": 1}]}
 
 
 def genesis_cycle(state: State, decisions, genesis: bool | dict = True) -> None:
@@ -353,6 +354,29 @@ class Fails(unittest.TestCase):
         self.assertEqual(got["conditions"]["#ret"], ["copy:undecided:bad-unit"])
         self.assertEqual(got["conditions"]["#model #belirtec"], ["copy:canary_missing"])
         self.assertEqual(got["conditions"]["#geri-alma"], [])
+
+    def test_a_merge_row_without_its_coverage_record(self):
+        """#kapsama-kaydi (asama-0/08, 10a): each merge row carries ``hunk_covered``; the copy's merge row without it,
+        the chain otherwise intact, makes the copy's state not of the schema, so no condition holds for it. The
+        judged conditions name #kapsama-kaydi and NOT_CHECKED no longer does."""
+        self.assertIn("#kapsama-kaydi", PR.CONDITIONS)
+        self.assertNotIn("#kapsama-kaydi", PR.NOT_CHECKED)
+        copy = copy_world()
+        rows = []
+        for line in copy.ledger.splitlines():
+            r = {k: v for k, v in json.loads(line).items() if k not in ("prev_hash", "row_hash")}
+            if r["kind"] == "merge":
+                self.assertEqual(r["payload"]["hunk_covered"], [
+                    {"path": "src/a.js", "old_start": 2, "old_count": 1, "new_start": 2, "new_count": 1,
+                     "covered": "unmeasured", "reason": "no_coverage_tool"}])
+                del r["payload"]["hunk_covered"]
+            rows.append(r)
+        copy.ledger = ledger_with(rows)
+        self.assertTrue(CH.verify_bytes(copy.ledger)["valid"])
+        got = judge(copy=copy)
+        self.assertEqual(got["verdict"], "FAIL")
+        self.assertEqual(got["conditions"], {cond: ["copy:state_invalid"] for cond in PR.CONDITIONS})
+        self.assertTrue(any("payload.hunk_covered: missing" in r for r in got["state"]["copy"]), got["state"])
 
     def test_a_state_not_of_the_schema_is_judged_no_further(self):
         toy = toy_world()

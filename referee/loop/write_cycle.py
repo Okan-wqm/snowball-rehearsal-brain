@@ -54,7 +54,8 @@ A failure after the first write of step 4 or 5 is ``target.land.HardStop`` namin
 counts}`` when the cycle merges or plants (``base_lint``: the merge's lint before, which a later revert reads with
 ``ledger.serial.lint_before``); per candidate in code-point order of its id, ``ledger.events.decided``'s rows (a
 reject's ``decision`` with D5's reasons and ``ledger.events.cause``; the merge's ``decision`` and then its ``merge``
-row with ``path`` and ``target.land.land``'s ``{pull, head_sha, merge_sha}``); ``revert {merge_sha}`` with
+row with ``path``, ``target.land.land``'s ``{pull, head_sha, merge_sha}`` and ``hunk_covered``, the record of
+the hunks step 1 applied, ``ledger.events.hunk_covered``); ``revert {merge_sha}`` with
 ``gate.revert``'s cause for a red ``end``, or ``sentinel {merge_sha, verdict, red: [], flaky}`` for a green or flaky
 one (the row that finishes the merge's sentinel, ``ledger.serial``; tohum/26f); D8's ``drill`` row (``commit`` with its payload, or ``plant`` with ``harness.revert_drill``'s
 ``{drill, family, instance_id, merge_sha}``, the planted merge's SHA; ``ledger.events.drill``); the ``copy_gate`` row
@@ -137,13 +138,14 @@ def status_facts(art: P.Pulled, cyc: dict) -> dict:
             "canary_cap_usd_micros": cap}
 
 
-def candidate_rows(cyc: dict, decided: dict, merged: dict | None) -> list[dict]:
+def candidate_rows(cyc: dict, decided: dict, merged: dict | None, change: dict | None) -> list[dict]:
     """D5's decisions as rows, in code-point order of the candidate id (``ledger.events.decided``); ``merged`` is
-    the merge's ``{path, pull, head_sha, merge_sha}``. Shared with ``activate``."""
+    the merge's ``{path, pull, head_sha, merge_sha}`` and ``change`` its ``merge_change``, whose ``hunks`` the merge
+    row's ``hunk_covered`` records. Shared with ``activate``."""
     out: list[dict] = []
     for cid in sorted(decided["decisions"]):
         out += events.decided(cyc, cid, decided["decisions"][cid]["reasons"],
-                              merged if cid == decided["merge"] else None)
+                              dict(merged, hunks=change["hunks"]) if cid == decided["merge"] else None)
     return out
 
 
@@ -190,7 +192,7 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         out = [events.start(cyc)]
         if merge is not None or planted:
             out.append(events.ratchet_base(cyc, base_lint["base_run_sha256"], base_lint["counts"]))
-        out += candidate_rows(cyc, decided, merged)
+        out += candidate_rows(cyc, decided, merged, change)
         if red is not None:
             out.append(events.revert(cyc, red["merge_sha"], cause))
         elif end is not None:

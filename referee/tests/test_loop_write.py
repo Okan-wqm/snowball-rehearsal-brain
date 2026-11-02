@@ -215,7 +215,10 @@ class D6(StateBase):
         self.assertEqual(added[2]["cause"], "test_regression")
         # the merge: its decision row, then tohum/26d's merge row carrying target.land's answer (ledger.events.decided)
         self.assertEqual(added[3]["payload"], {"decision": "merge", "candidate": "good"})
-        self.assertEqual((added[4]["part"], added[4]["payload"]), ("events", merge))
+        # and asama-0/08's coverage record of GOOD's one hunk, @@ -1,1 +1,1 @@ (ledger.events.hunk_covered)
+        self.assertEqual((added[4]["part"], added[4]["payload"]), ("events", dict(merge, hunk_covered=[
+            {"path": "pkg/a.js", "old_start": 1, "old_count": 1, "new_start": 1, "new_count": 1,
+             "covered": "unmeasured", "reason": "no_coverage_tool"}])))
         self.assertNotIn("cause", added[3])
         self.assertNotIn("cause", added[4])
         self.assertEqual({(r["ts"], r["snapshot_id"]) for r in added if r["part"] == "events"},
@@ -1138,7 +1141,21 @@ class Applied(unittest.TestCase):
 
     def test_one_file(self):
         self.assertEqual(self.applied(diff("pkg/a.js", ["var a = 1;"], ["let a = 1;"])),
-                         {"reasons": [], "path": "pkg/a.js", "content": b"let a = 1;\nvar b = 2;\n"})
+                         {"reasons": [], "path": "pkg/a.js", "content": b"let a = 1;\nvar b = 2;\n",
+                          "hunks": [{"old_start": 1, "old_count": 1, "new_start": 1, "new_count": 1}]})
+
+    def test_hunks_in_diff_order(self):
+        """The ranges of every hunk of the one block, as their ``@@`` headers give them (a missing count is 1; an
+        insertion's ``-a,0``), in diff order: the merge row's coverage record lists exactly these."""
+        write_tree(self.tree, {"pkg/c.js": "".join("l%d\n" % i for i in range(1, 11))})
+        patch = (b"diff --git a/pkg/c.js b/pkg/c.js\nindex 1111111..2222222 100644\n--- a/pkg/c.js\n+++ b/pkg/c.js\n"
+                 b"@@ -2 +2 @@\n-l2\n+L2\n@@ -5,0 +6,2 @@\n+n1\n+n2\n@@ -8,2 +10,1 @@\n-l8\n-l9\n+L8\n")
+        got = self.applied(patch)
+        self.assertEqual((got["reasons"], got["content"]),
+                         ([], b"l1\nL2\nl3\nl4\nl5\nn1\nn2\nl6\nl7\nL8\nl10\n"))
+        self.assertEqual(got["hunks"], [{"old_start": 2, "old_count": 1, "new_start": 2, "new_count": 1},
+                                        {"old_start": 5, "old_count": 0, "new_start": 6, "new_count": 2},
+                                        {"old_start": 8, "old_count": 2, "new_start": 10, "new_count": 1}])
 
     def test_refusals(self):
         two = diff("pkg/a.js", ["var a = 1;"], ["let a = 1;"]) + diff("pkg/b.js", ["var c = 3;"], ["let c = 3;"])
@@ -1151,7 +1168,7 @@ class Applied(unittest.TestCase):
                             (create, "base_file_missing"), (b"not a diff\n", "diff_unusable")):
             with self.subTest(want=want):
                 got = self.applied(patch)
-                self.assertEqual((got["reasons"], got["content"]), ([want], None))
+                self.assertEqual((got["reasons"], got["content"], got["hunks"]), ([want], None, None))
 
 
 if __name__ == "__main__":

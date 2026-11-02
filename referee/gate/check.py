@@ -61,7 +61,7 @@ Not judged here: criterion 1's path rules (``gate.diffguard``); its check that t
 until it has one); criterion 2 for ledger rows and prompts; how a tool's
 own output becomes a run record (the spec does not give it; whoever writes it must count suppressed
 violations as violations, or a suppression comment passes the ratchet and the mapped-line rule); hunk
-coverage (asama-0/08's ``hunk_covered`` is the loop's record, not part of this decision).
+coverage (asama-0/08's ``hunk_covered`` is the loop's record, ``ledger.events.hunk_covered``, not part of this decision).
 
 Command line, from ``referee/``; stdout is one JSON line::
 
