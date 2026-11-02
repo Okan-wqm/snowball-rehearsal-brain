@@ -5,14 +5,24 @@
   byte for byte); every refusal of ``read`` on a tampered artifact (a changed byte, a missing, extra, symlinked or
   unlisted file, a path outside the layout, an incomplete candidate, a bad manifest, a file that is not JSON, heads
   that are not the two branches' commits, a missing state file), and ``write`` refuses what ``read`` would;
+- served (``served``, ``write_served``): the downloaded ``pulled`` root's ``served.json`` gives the ids in its
+  order; an absent, symlinked, non-JSON, extra-keyed or wrong-schema file, a non-id or repeated id is
+  ``served_unreadable``; an id with no directory, a file or a link in its place is ``served_missing:<id>``; any other
+  entry of the root is ``unlisted:<name>``; ``write_served`` does not overwrite an existing ``served.json``;
 - the tree: ``extract_tree`` keeps modes and inside links and refuses absolute, ``..`` and outside-link members;
-- the job: from ``$RUNNER_TEMP/in/pulled`` (and ``in/deps``) to ``$RUNNER_TEMP/out/results``, which ``gate.check
-  decide`` (MF8's own command) reads: the good candidate merges, a test-breaking and a ratchet-raising one are
-  rejected for their own reasons; the red control is the job's own ``RED_CONTROL`` (a green one blocks the base),
-  not something the artifact holds; a refused artifact, two units or an unsafe tree run nothing; ``in/deps`` is
-  taken as one ``<address>/`` directory, which reaches ``unit.verify``; the job ends ``ok``, exit 0, after D3
-  (``done`` ``["D3"]``) or after D3 and D7's sentinel (``["D3", "D7"]``), so the upload runs; the job's steps are
-  D3 and D7 only (D8's planted merge is watched by D7's run);
+- the job, per served target ``<id>``: from ``$RUNNER_TEMP/in/pulled/<id>`` (and ``in/deps/<id>``) to
+  ``$RUNNER_TEMP/out/results/<id>``, which ``gate.check decide`` (MF8's own command) reads: the good candidate
+  merges, a test-breaking and a ratchet-raising one are rejected for their own reasons; the red control is the
+  job's own ``RED_CONTROL`` (a green one blocks the base), not something the artifact holds; a refused artifact
+  (``target_mismatch`` included: the manifest's target id is not its directory's), two units or an unsafe tree run
+  nothing; ``in/deps/<id>`` is taken as one ``<address>/`` directory, which reaches ``unit.verify``; the line's
+  ``targets`` holds one entry per target, ``{target: <id>, ...}``, the per-target fields (``index``, ``done``) in
+  it; the job ends ``ok``, exit 0, after D3 (``done`` ``["D3"]``) or after D3 and D7's sentinel (``["D3",
+  "D7"]``), so the upload runs; the job's steps are D3 and D7 only (D8's planted merge is watched by D7's run);
+- two served targets: both run, in ``served.json``'s order, each into its own ``out/results/<id>``; a refused
+  first target stops the job (the second is not run) with its reason and id (``target``) at the top level; a bad
+  ``served.json`` is ``pulled_invalid`` at the top level with no ``targets`` and nothing run; no download at all is
+  ``served_unreadable`` at the command line;
 - D7's half in ``kos``: which merge the sentinel watches is read from ``state/ledger.jsonl`` (``ledger.serial``):
   none without an unfinished merge or after its revert; the one unfinished merge at ``brain/integration``'s head
   runs the sentinel there (``sentinel.json`` in the results); an unfinished merge elsewhere, or a ledger that cannot
@@ -110,15 +120,29 @@ class Base(unittest.TestCase):
         self.src = os.path.join(self.base, "src")
         write_tree(self.src, TREE)
         self.temp = os.path.join(self.base, "runner-temp")
-        self.pulled = os.path.join(self.temp, "in", "pulled")
+        # the download of cek's pulled: served.json and the one served target's directory (loop.pulled "Served")
+        self.pulled = os.path.join(self.temp, "in", "pulled", TARGET["id"])
 
     def write_pulled(self, cands=None, units=None, tree_tar=None, policy=None, target=None, heads=None,
                      state=None, status=None) -> dict:
+        served = os.path.dirname(self.pulled)
+        if not os.path.exists(os.path.join(served, P.SERVED)):
+            os.makedirs(served, exist_ok=True)
+            P.write_served(served, [os.path.basename(self.pulled)])
         return P.write(self.pulled, target or TARGET, tree_tar if tree_tar is not None else tar_of(self.src),
                        json.dumps(units if units is not None else {"units": [recipe()]}).encode(),
                        policy if isinstance(policy, bytes) else json.dumps(policy or {"operating": operating()}).encode(),
                        cands if cands is not None else {}, HEADS if heads is None else heads,
                        state_files() if state is None else state, status)
+
+    def write_pulled_as(self, tid: str, **kw) -> dict:
+        """``write_pulled`` into ``in/pulled/<tid>`` with the target id ``tid`` (unless ``target`` is given); the
+        caller writes ``served.json`` first when more than one target is served."""
+        kept, self.pulled = self.pulled, os.path.join(os.path.dirname(self.pulled), tid)
+        try:
+            return self.write_pulled(**dict({"target": dict(TARGET, id=tid)}, **kw))
+        finally:
+            self.pulled = kept
 
     def manifest(self) -> dict:
         with open(os.path.join(self.pulled, P.MANIFEST)) as fh:
@@ -289,6 +313,104 @@ class Layout(Base):
         self.assertFalse(os.path.exists(self.pulled))
 
 
+class Served(Base):
+    """``loop.pulled.served`` and ``write_served`` on a root holding ``served.json`` and one directory per id."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.root = os.path.join(self.base, "pulled")
+        os.makedirs(os.path.join(self.root, "t1"))
+        os.makedirs(os.path.join(self.root, "t2"))
+
+    def put(self, doc) -> None:
+        data = doc if isinstance(doc, bytes) else json.dumps(doc).encode()
+        with open(os.path.join(self.root, P.SERVED), "wb") as fh:
+            fh.write(data)
+
+    def refused(self) -> list[str]:
+        with self.assertRaises(P.PulledError) as ctx:
+            P.served(self.root)
+        return ctx.exception.reasons
+
+    def test_the_order_is_the_files(self):
+        for ids in (["t1", "t2"], ["t2", "t1"]):
+            with self.subTest(ids=ids):
+                shutil.rmtree(self.root)
+                for tid in ids:
+                    os.makedirs(os.path.join(self.root, tid))
+                P.write_served(self.root, ids)
+                self.assertEqual(P.served(self.root), ids)
+                with open(os.path.join(self.root, P.SERVED), "rb") as fh:
+                    self.assertEqual(json.loads(fh.read()), {"schema": P.SERVED_SCHEMA, "targets": ids})
+        shutil.rmtree(self.root)
+        os.makedirs(self.root)
+        P.write_served(self.root, [])
+        self.assertEqual(P.served(self.root), [])
+
+    def test_a_file_it_cannot_read(self):
+        self.assertEqual(self.refused(), ["served_unreadable"])  # absent
+        good = {"schema": P.SERVED_SCHEMA, "targets": ["t1", "t2"]}
+        for name, doc in (("not_json", b"{not json"), ("not_utf8", b"\xff{"), ("a_list", [good]),
+                          ("extra_key", dict(good, extra=1)), ("no_targets", {"schema": P.SERVED_SCHEMA}),
+                          ("schema", dict(good, schema="snowball-served/2")),
+                          ("targets_not_list", dict(good, targets="t1")),
+                          ("non_id_space", dict(good, targets=["t1", "t 2"])),
+                          ("non_id_dotdot", dict(good, targets=["t1", "../t2"])),
+                          ("non_id_empty", dict(good, targets=["t1", ""])),
+                          ("non_id_number", dict(good, targets=["t1", 2])),
+                          ("duplicate", dict(good, targets=["t1", "t2", "t1"]))):
+            with self.subTest(name):
+                self.put(doc)
+                self.assertEqual(self.refused(), ["served_unreadable"])
+        self.put(good)
+        self.assertEqual(P.served(self.root), ["t1", "t2"])
+        # served.json itself a link to a good file
+        outside = os.path.join(self.base, "served-outside.json")
+        shutil.move(os.path.join(self.root, P.SERVED), outside)
+        os.symlink(outside, os.path.join(self.root, P.SERVED))
+        self.assertEqual(self.refused(), ["served_unreadable"])
+        # the root a link to a good root
+        os.remove(os.path.join(self.root, P.SERVED))
+        self.put(good)
+        link = os.path.join(self.base, "pulled-link")
+        os.symlink(self.root, link)
+        with self.assertRaises(P.PulledError) as ctx:
+            P.served(link)
+        self.assertEqual(ctx.exception.reasons, ["served_unreadable"])
+
+    def test_an_id_without_its_directory(self):
+        self.put({"schema": P.SERVED_SCHEMA, "targets": ["t1", "t2", "t3"]})
+        self.assertEqual(self.refused(), ["served_missing:t3"])
+        write_tree(self.root, {"t3": "a file"})
+        self.assertEqual(self.refused(), ["served_missing:t3"])
+        os.remove(os.path.join(self.root, "t3"))
+        real = os.path.join(self.base, "real-t3")
+        os.makedirs(real)
+        os.symlink(real, os.path.join(self.root, "t3"))
+        self.assertEqual(self.refused(), ["served_missing:t3"])
+        os.remove(os.path.join(self.root, "t3"))
+        os.makedirs(os.path.join(self.root, "t3"))
+        self.assertEqual(P.served(self.root), ["t1", "t2", "t3"])
+
+    def test_an_unlisted_entry(self):
+        self.put({"schema": P.SERVED_SCHEMA, "targets": ["t1"]})
+        self.assertEqual(self.refused(), ["unlisted:t2"])
+        write_tree(self.root, {"notes.txt": "n"})
+        self.assertEqual(self.refused(), ["unlisted:notes.txt", "unlisted:t2"])
+        self.put({"schema": P.SERVED_SCHEMA, "targets": ["t2", "t3"]})
+        self.assertEqual(self.refused(), ["served_missing:t3", "unlisted:notes.txt", "unlisted:t1"])
+
+    def test_write_served_does_not_overwrite(self):
+        P.write_served(self.root, ["t1", "t2"])
+        with open(os.path.join(self.root, P.SERVED), "rb") as fh:
+            before = fh.read()
+        with self.assertRaises(FileExistsError):
+            P.write_served(self.root, ["t2"])
+        with open(os.path.join(self.root, P.SERVED), "rb") as fh:
+            self.assertEqual(fh.read(), before)
+        self.assertEqual(P.served(self.root), ["t1", "t2"])
+
+
 class Tree(Base):
     def tar(self, members) -> str:
         path = os.path.join(self.base, "t.tar")
@@ -348,7 +470,12 @@ class KosJob(Base):
         return J.run("kos", dict({"RUNNER_TEMP": self.temp}, **(env or {})), runner=runner or RedAs())
 
     def results(self, *parts) -> str:
-        return os.path.join(self.temp, "out", "results", *parts)
+        return os.path.join(self.temp, "out", "results", TARGET["id"], *parts)
+
+    def one(self, out: dict) -> dict:
+        """The line's one target, ``t1``: its entry of ``targets``."""
+        self.assertEqual([t["target"] for t in out["targets"]], [TARGET["id"]])
+        return out["targets"][0]
 
     def decide(self, cid: str) -> dict:
         """MF8's own command on the pulled candidate and the files the job wrote."""
@@ -363,12 +490,14 @@ class KosJob(Base):
         self.write_pulled({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST), "raises": candidate(RAISES)})
         runner = RedAs()
         out = self.run_kos(runner)
-        self.assertEqual((out["ok"], out.get("reason"), out["done"], out["job"]), (True, None, ["D3"], "kos"))
-        self.assertEqual(out["index"]["base"], {"verdict": "verified", "reasons": []})
-        self.assertEqual({c: v["verdict"] for c, v in out["index"]["candidates"].items()},
+        t1 = self.one(out)
+        self.assertEqual((out["ok"], out.get("reason"), out["job"]), (True, None, "kos"))
+        self.assertEqual((t1["ok"], t1.get("reason"), t1["done"]), (True, None, ["D3"]))
+        self.assertEqual(t1["index"]["base"], {"verdict": "verified", "reasons": []})
+        self.assertEqual({c: v["verdict"] for c, v in t1["index"]["candidates"].items()},
                          {"good": "verified", "breaks": "verified", "raises": "verified"})
         with open(self.results("index.json")) as fh:
-            self.assertEqual(json.load(fh), out["index"])
+            self.assertEqual(json.load(fh), t1["index"])
         self.assertEqual(self.decide("good")["decision"], "merge")
         self.assertEqual((self.decide("breaks")["decision"], self.decide("breaks")["reasons"]), ("reject", ["tests_red"]))
         self.assertIn("ratchet_increase", self.decide("raises")["reasons"])
@@ -383,15 +512,17 @@ class KosJob(Base):
                 shutil.rmtree(self.temp, ignore_errors=True)
                 self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with(rows)}))
                 out = self.run_kos()
-                self.assertEqual((out["ok"], out["done"], out["index"]["sentinel"]), (True, ["D3"], None))
+                t1 = self.one(out)
+                self.assertEqual((out["ok"], t1["ok"], t1["done"], t1["index"]["sentinel"]), (True, True, ["D3"], None))
                 self.assertFalse(os.path.exists(self.results("sentinel.json")))
 
     def test_the_unfinished_merge_at_the_head_is_watched(self):
         head = HEADS["brain/integration"]
         self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with([START, merge("c1", head)])}))
         out = self.run_kos()
-        self.assertEqual((out["ok"], out["done"]), (True, ["D3", "D7"]))
-        self.assertEqual((out["index"]["sentinel"]["merge_sha"], out["index"]["sentinel"]["verdict"]), (head, "green"))
+        t1 = self.one(out)
+        self.assertEqual((out["ok"], t1["ok"], t1["done"]), (True, True, ["D3", "D7"]))
+        self.assertEqual((t1["index"]["sentinel"]["merge_sha"], t1["index"]["sentinel"]["verdict"]), (head, "green"))
         with open(self.results("sentinel.json")) as fh:
             self.assertEqual(json.load(fh)["merge_sha"], head)
 
@@ -405,25 +536,28 @@ class KosJob(Base):
                 self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with(rows)}))
                 runner = RedAs()
                 out = self.run_kos(runner)
-                self.assertEqual((out["reason"], out["reasons"]), ("sentinel_unplaced", want))
+                self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"]),
+                                 (False, "sentinel_unplaced", want, "t1"))
+                self.assertEqual((self.one(out)["ok"], self.one(out)["reason"]), (False, "sentinel_unplaced"))
                 self.assertEqual(runner.calls, [])
-                self.assertFalse(os.path.exists(self.results()))
+                self.assertFalse(os.path.exists(os.path.join(self.temp, "out", "results")))
 
     def test_a_state_it_cannot_read_runs_nothing(self):
         self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": state_files([row("x", "events", "nope", {})])[
             "ledger.jsonl"]}))
         runner = RedAs()
         out = self.run_kos(runner)
-        self.assertEqual(out["reason"], "state_refused")
+        self.assertEqual((out["ok"], out["reason"], out["target"]), (False, "state_refused", "t1"))
         self.assertTrue(out["reasons"])
+        self.assertEqual(self.one(out)["reasons"], out["reasons"])
         self.assertEqual(runner.calls, [])
 
     def test_the_red_control_is_the_jobs_own(self):
         self.write_pulled({"good": candidate(GOOD)})
-        out = self.run_kos(RedAs("pkg/green.py"))
-        self.assertEqual(out["index"]["base"]["verdict"], "no_verdict")
-        self.assertIn("red_control_green", out["index"]["base"]["reasons"])
-        self.assertEqual(out["index"]["candidates"]["good"]["reasons"], ["base_unavailable"])
+        t1 = self.one(self.run_kos(RedAs("pkg/green.py")))
+        self.assertEqual(t1["index"]["base"]["verdict"], "no_verdict")
+        self.assertIn("red_control_green", t1["index"]["base"]["reasons"])
+        self.assertEqual(t1["index"]["candidates"]["good"]["reasons"], ["base_unavailable"])
         self.assertFalse(os.path.exists(self.results("base.jsonl")))
         self.assertEqual(J.RED_CONTROL, {"cmd": ["node", "-e", "process.exit(1)"]})
 
@@ -433,9 +567,11 @@ class KosJob(Base):
             fh.write(b"+eval(1);\n")
         runner = RedAs()
         out = self.run_kos(runner)
-        self.assertEqual((out["reason"], out["reasons"]), ("pulled_invalid", ["hash_mismatch:candidates/good/diff.patch"]))
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"]),
+                         (False, "pulled_invalid", ["hash_mismatch:candidates/good/diff.patch"], "t1"))
+        self.assertEqual(self.one(out)["reasons"], ["hash_mismatch:candidates/good/diff.patch"])
         self.assertEqual(runner.calls, [])
-        self.assertFalse(os.path.exists(self.results()))
+        self.assertFalse(os.path.exists(os.path.join(self.temp, "out", "results")))
 
     def test_one_unit_only(self):
         for units in ({"units": [recipe(), recipe(unit_id="b")]}, {"units": []}, {"unit": recipe()}, [recipe()]):
@@ -443,7 +579,9 @@ class KosJob(Base):
                 shutil.rmtree(self.temp, ignore_errors=True)
                 self.write_pulled(units=units)
                 runner = RedAs()
-                self.assertEqual(self.run_kos(runner)["reason"], "units_not_one")
+                out = self.run_kos(runner)
+                self.assertEqual((out["ok"], out["reason"], out["target"]), (False, "units_not_one", "t1"))
+                self.assertEqual(self.one(out)["reason"], "units_not_one")
                 self.assertEqual(runner.calls, [])
 
     def test_an_unsafe_tree_runs_nothing(self):
@@ -455,26 +593,29 @@ class KosJob(Base):
         self.write_pulled(tree_tar=buf.getvalue())
         runner = RedAs()
         out = self.run_kos(runner)
-        self.assertEqual((out["reason"], out["reasons"]), ("pulled_invalid", ["tree_unsafe"]))
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"]),
+                         (False, "pulled_invalid", ["tree_unsafe"], "t1"))
         self.assertEqual(runner.calls, [])
 
     def test_the_deps_artifact_is_taken_by_its_address(self):
-        # in/deps is the download of getir's out/deps: one <address>/ directory, which unit.verify takes by its
-        # hash (the whole hand-over is test_loop_getir.py); an artifact laid out flat runs nothing
+        # in/deps/t1 is t1's part of the download of getir's out/deps: one <address>/ directory, which
+        # unit.verify takes by its hash (the whole hand-over is test_loop_getir.py); laid out flat it runs nothing
         self.write_pulled()
-        write_tree(os.path.join(self.temp, "in", "deps"), {"manifest.json": "{}"})
+        deps = os.path.join(self.temp, "in", "deps", "t1")
+        write_tree(deps, {"manifest.json": "{}"})
         runner = RedAs()
-        self.assertEqual(self.run_kos(runner)["reason"], "deps_invalid")
+        out = self.run_kos(runner)
+        self.assertEqual((out["reason"], out["target"], self.one(out)["reason"]), ("deps_invalid", "t1", "deps_invalid"))
         self.assertEqual(runner.calls, [])
-        shutil.rmtree(os.path.join(self.temp, "in", "deps"))
-        write_tree(os.path.join(self.temp, "in", "deps"), {"ab" * 32 + "/manifest.json": "{}"})
-        out = self.run_kos()
-        self.assertEqual((out["index"]["base"]["verdict"], out["index"]["base"]["reasons"]),
+        shutil.rmtree(deps)
+        write_tree(deps, {"ab" * 32 + "/manifest.json": "{}"})
+        t1 = self.one(self.run_kos())
+        self.assertEqual((t1["index"]["base"]["verdict"], t1["index"]["base"]["reasons"]),
                          ("no_verdict", ["deps:address_mismatch"]))
         shutil.rmtree(self.results())
-        shutil.rmtree(os.path.join(self.temp, "in", "deps"))
-        os.makedirs(os.path.join(self.temp, "in", "deps"))
-        self.assertEqual(self.run_kos()["index"]["base"]["verdict"], "verified")
+        shutil.rmtree(deps)
+        os.makedirs(deps)
+        self.assertEqual(self.one(self.run_kos())["index"]["base"]["verdict"], "verified")
 
     def test_the_inputs_only(self):
         self.write_pulled()
@@ -488,16 +629,16 @@ class KosJob(Base):
     def test_the_targets_entry_reaches_the_staging(self):
         # the operator's excluded_paths keep a file out of the worktree: here the unit's own lint script
         self.write_pulled(target=dict(TARGET, excluded_paths=["pkg/lint.py"]))
-        out = self.run_kos()
-        self.assertEqual(out["index"]["base"]["verdict"], "refused")
-        self.assertIsNone(out["index"]["base_run_sha256"])
+        t1 = self.one(self.run_kos())
+        self.assertEqual(t1["index"]["base"]["verdict"], "refused")
+        self.assertIsNone(t1["index"]["base_run_sha256"])
 
     def test_secret_is_refused_before_anything_is_read(self):
         self.write_pulled()
         runner = RedAs()
         var = "WRITER_TOKEN"
         out = self.run_kos(runner, {var: "x"})
-        self.assertEqual(out["reason"], "secret_in_code_job:" + var)
+        self.assertEqual((out["ok"], out["reason"], "targets" in out), (False, "secret_in_code_job:" + var, False))
         self.assertEqual(runner.calls, [])
 
     def test_unusable(self):
@@ -506,10 +647,97 @@ class KosJob(Base):
         with self.assertRaises(J.Unusable):
             J.run("kos", {"RUNNER_TEMP": "relative"})
         self.write_pulled(units={"units": [recipe(lint_cmd="not a list")]})
-        out = self.run_kos()
-        self.assertEqual(out["index"]["base"]["verdict"], "refused")
+        self.assertEqual(self.one(self.run_kos())["index"]["base"]["verdict"], "refused")
         with self.assertRaises(J.Unusable):
             self.run_kos()
+
+    def serve(self, ids: list[str]) -> None:
+        root = os.path.dirname(self.pulled)
+        os.makedirs(root, exist_ok=True)
+        P.write_served(root, ids)
+
+    def test_two_targets_run_in_the_served_order(self):
+        # served.json's order, not the names': t2 before t1; each target its own candidates and results
+        self.serve(["t2", "t1"])
+        self.write_pulled_as("t1", cands={"good": candidate(GOOD)})
+        self.write_pulled_as("t2", cands={"breaks": candidate(BREAKS_TEST)})
+        runner = RedAs()
+        out = self.run_kos(runner)
+        self.assertEqual((out["ok"], out.get("reason"), out.get("target")), (True, None, None))
+        self.assertEqual([(t["target"], t["ok"], t["done"]) for t in out["targets"]],
+                         [("t2", True, ["D3"]), ("t1", True, ["D3"])])
+        t2, t1 = out["targets"]
+        self.assertEqual((sorted(t1["index"]["candidates"]), sorted(t2["index"]["candidates"])), (["good"], ["breaks"]))
+        self.assertEqual(sorted(os.listdir(os.path.join(self.temp, "out", "results"))), ["t1", "t2"])
+        for tid, entry in (("t1", t1), ("t2", t2)):
+            with open(os.path.join(self.temp, "out", "results", tid, "index.json")) as fh:
+                self.assertEqual(json.load(fh), entry["index"])
+        self.assertEqual(self.decide("good")["decision"], "merge")
+        # base lint and one candidate run, twice
+        self.assertEqual(runner.red_seen, 2 * (3 + 4))
+
+    def test_a_refused_target_stops_the_job(self):
+        # the first refused: the second is not run
+        self.serve(["t1", "t2"])
+        self.write_pulled_as("t1", units={"units": []})
+        self.write_pulled_as("t2")
+        runner = RedAs()
+        out = self.run_kos(runner)
+        self.assertEqual((out["ok"], out["reason"], out["target"]), (False, "units_not_one", "t1"))
+        self.assertEqual([(t["target"], t["ok"], t["reason"]) for t in out["targets"]], [("t1", False, "units_not_one")])
+        self.assertEqual(runner.calls, [])
+        self.assertFalse(os.path.exists(os.path.join(self.temp, "out", "results")))
+        # the second refused: the first's results stand, the line ends on the second
+        shutil.rmtree(self.temp)
+        self.serve(["t1", "t2"])
+        self.write_pulled_as("t1")
+        self.write_pulled_as("t2", units={"units": []})
+        out = self.run_kos()
+        self.assertEqual((out["ok"], out["reason"], out["target"]), (False, "units_not_one", "t2"))
+        self.assertEqual([(t["target"], t["ok"]) for t in out["targets"]], [("t1", True), ("t2", False)])
+        self.assertEqual(out["targets"][0]["index"]["base"]["verdict"], "verified")
+        self.assertEqual(os.listdir(os.path.join(self.temp, "out", "results")), ["t1"])
+
+    def test_a_manifest_target_other_than_its_directory(self):
+        # a well-formed pulled for t2 downloaded as t1's runs nothing
+        self.write_pulled(target=dict(TARGET, id="t2"))
+        self.assertEqual(P.read(self.pulled).target["id"], "t2")
+        runner = RedAs()
+        out = self.run_kos(runner)
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"]),
+                         (False, "pulled_invalid", ["target_mismatch"], "t1"))
+        self.assertEqual(self.one(out)["reasons"], ["target_mismatch"])
+        self.assertEqual(runner.calls, [])
+        self.assertFalse(os.path.exists(os.path.join(self.temp, "out", "results")))
+
+    def test_a_bad_served_runs_nothing(self):
+        root = os.path.dirname(self.pulled)
+
+        def extra_key():
+            with open(os.path.join(root, P.SERVED), "w") as fh:
+                json.dump({"schema": P.SERVED_SCHEMA, "targets": ["t1"], "extra": 1}, fh)
+
+        def missing():
+            os.remove(os.path.join(root, P.SERVED))
+            P.write_served(root, ["t1", "t2"])
+
+        def unlisted():
+            self.write_pulled_as("t2")
+
+        for change, want in ((extra_key, ["served_unreadable"]), (missing, ["served_missing:t2"]),
+                             (unlisted, ["unlisted:t2"]), (lambda: os.remove(os.path.join(root, P.SERVED)),
+                                                           ["served_unreadable"])):
+            with self.subTest(want=want):
+                shutil.rmtree(self.temp, ignore_errors=True)
+                self.write_pulled()
+                change()
+                runner = RedAs()
+                out = self.run_kos(runner)
+                self.assertEqual(out, {"job": "kos", "steps": list(J.JOBS["kos"].steps),
+                                       "mfs": list(J.JOBS["kos"].mfs), "ok": False,
+                                       "reason": "pulled_invalid", "reasons": want})
+                self.assertEqual(runner.calls, [])
+                self.assertFalse(os.path.exists(os.path.join(self.temp, "out", "results")))
 
     def test_command_line(self):
         env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "SYSTEMROOT")}
@@ -519,7 +747,9 @@ class KosJob(Base):
         proc = subprocess.run([sys.executable, "-m", "loop.job", "run", "kos"], cwd=REFEREE,
                               env=dict(env, RUNNER_TEMP=self.temp), capture_output=True)
         out = json.loads(proc.stdout)
-        self.assertEqual((proc.returncode, out["reason"], out["reasons"]), (1, "pulled_invalid", ["manifest_unreadable"]))
+        # no download at all: no served.json, nothing served
+        self.assertEqual((proc.returncode, out["reason"], out["reasons"], "targets" in out),
+                         (1, "pulled_invalid", ["served_unreadable"], False))
 
 
 if __name__ == "__main__":

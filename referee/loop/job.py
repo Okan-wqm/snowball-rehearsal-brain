@@ -29,13 +29,31 @@ that runs both jobs on the handed-over bytes, a stated unread download, or a pro
    and ``yaz`` (the pinned Sigstore from the control step's clone, through the seed's license gate, into
    ``$RUNNER_TEMP/sig``), ``claude`` in ``cagir`` (``npm ci`` of the pinned CLI lock in the control step's clone and
    the version check). They carry no secret: a job's secrets are only in its ``run`` step's ``env``.
-3. the writer App token (``yaz`` only), made inside the job.
-4. checkout of the run's own commit of the referee repository, ``persist-credentials: false``.
+3. checkout of the run's own commit of the referee repository, ``persist-credentials: false``.
+4. (``yaz`` only) the writer scope, ``python3 -m loop.job scope`` (``scope``: ``owner`` and ``repositories`` from
+   the ``repo`` of every ``targets[]`` entry of the checkout's ``setup/summary.json``, one owner), then the writer
+   App token made inside the job with those two inputs: no operator variable names the owner (tohum/29s).
 5. one download per artifact the job reads, by the producing job's artifact id, ``digest-mismatch: error``.
 6. ``python3 -m loop.job run <job>``, with the expected artifact digests and the job's secrets in ``env``.
 7. the upload of the job's artifact, whose id and digest are job outputs.
 
 Every step after ``control`` runs only if ``go`` is true; no step continues on error.
+
+**Targets** (tohum/29s "Hedefler"). A run serves every ``targets[]`` entry of the checkout's
+``setup/summary.json`` in the array's order (``loop.cek.targets``); no variable or trigger input chooses one. ``cek``
+alone decides which are served: a ``copy`` entry whose target has neither ``brain/state`` nor ``brain/integration``
+is not served this run (its line ``{target, waiting: copy_genesis, heads}``: it writes nothing and is not red, 29s);
+every other entry is. ``cek``'s ``out/pulled`` holds ``served.json``, the served ids in order, and one ``<id>/`` per
+served target (``loop.pulled`` "Served"); each later job reads that list from its ``in/pulled`` and serves each id
+in turn, every artifact path below being that target's own directory (``in/pulled/<id>``, ``out/deps/<id>``,
+``in/deps/<id>``, ``out/results/<id>``, ``in/results/<id>``, ``out/response/<id>``, ``in/response/<id>``; a
+``pulled`` whose ``target.id`` is not its directory's name is ``pulled_invalid`` ``target_mismatch``). The job line
+holds one line per target in ``targets``; the first target refused stops the job, no later target is served this
+run, and its ``reason``, ``reasons`` and id (``target``) are the job's (``run``). Each target's cycle has the same
+cycle id (``<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>``). D8's drill is the toy's (asama-0/08 row 4): off on any other
+kind. Out of scope, stated: the copy's genesis, and so 25a item 7's condition on the toy's cycles 1-5 that gates
+it, is not run by this workflow (``activate``, unwired: ``status/off_live.json``); a copy that has been opened is
+served like the toy.
 
 **What ``run`` does now.** It checks the job's environment contract first: a job that runs code (``getir``,
 ``kos``) refuses to start when any secret of another job, the OIDC request variables or ``GITHUB_TOKEN`` is in its
@@ -119,21 +137,19 @@ refused tree is ``pulled_invalid``). Then:
   brain commit with ``loop.fetch`` from ``loop.accepted.repo_url`` of ``bootstrap.json``'s ``brain_repo`` in the
   checkout (``loop.inputs.brain_repo``, tohum/29s) into ``$RUNNER_TEMP/work/cek-*/brain.git``, and compares its ``referee/`` hash with the last
   transfer row of the checkout's ``setup/imports.jsonl`` (``loop.accepted.last_import``, ``check_tree``). Then the
-  target half, for the target ``$LOOP_TARGET`` (the operator's repository variable ``LOOP_TARGET``, an assumption
-  that contradicts tohum/29s "Hedefler", which came after it: a run serves every ``targets[]`` entry in order, with
-  no variable choosing; the next change of this module): its ``targets[]`` entry in the checkout's
-  ``setup/summary.json`` (``loop.cek.target_entry``, the reader ``assemble`` uses), its ``repo`` made a URL by
+  target half, once per ``targets[]`` entry of the checkout's ``setup/summary.json`` in order (``loop.cek.targets``;
+  its refusals ``summary_unreadable``, ``targets_empty``, ``target_id_unsafe``, ``target_ambiguous``,
+  ``target_kind_invalid`` stop the job before any target is read), each in its own ``cek-*/<id>/``: its ``repo`` made a URL by
   ``loop.accepted.repo_url``, the heads of ``brain/state`` and ``brain/integration`` read credential-less with
   ``loop.fetch.heads``, ``brain/integration``'s head fetched with ``loop.fetch`` into ``cek-*/target.git``, and
   ``loop.cek.assemble`` run on the two repositories' objects with the checkout's ``policy.json``, writing ``pulled``
-  into ``cek-*/pulled``, not into ``out/pulled``: the upload takes the artifact only once D1's other checks pass.
-  An unset variable, an unusable ``bootstrap.json`` or ``brain_repo``, no ``sigstore`` step program, a bootstrap
+  into ``cek-*/<id>/pulled``, not into ``out/pulled``: the upload takes the artifact only once D1's other checks
+  pass for every target. An unset variable, an unusable ``bootstrap.json`` or ``brain_repo``, no ``sigstore`` step program, a bootstrap
   state that is absent, unreadable or unverified, an unreadable checkout file, a
   failed listing and a failed fetch (of a ``brain/state`` commit too) are unusable (exit 2: 29b's reader stops). Refusals (exit 1): ``imports_broken``,
   ``imports_no_transfer``, ``imports_invalid``, ``referee_tree_refused`` (with the hash's reasons),
-  ``referee_tree_mismatch``; ``summary_unreadable``, ``target_unknown``, ``target_ambiguous``,
-  ``target_repo_unsafe``; ``head_missing:<branch>`` for each head the target lacks (before genesis it has neither;
-  nothing of the target is fetched). Then MF1's ``verify --previous`` of ``brain/state`` (``loop.state``), before
+  ``referee_tree_mismatch``; ``target_repo_unsafe``; ``head_missing:<branch>`` for each head the target lacks (a
+  toy before genesis has neither, a copy with neither is waiting, above; nothing of the target is fetched). Then MF1's ``verify --previous`` of ``brain/state`` (``loop.state``), before
   anything else of the target is fetched: its head fetched with ``loop.fetch`` into ``cek-*/state.git``, its one
   parent (the version the previous cycle verified and extended), when it has one, into
   ``cek-*/state-previous.git``, and ``ledger.jsonl`` and ``chain/root.jsonl`` each verified as a chain and as an
@@ -157,12 +173,12 @@ refused tree is ``pulled_invalid``). Then:
   (``profile.unit_verify.check_recipe`` with the artifact's policy and ``targets[]`` entry: MF6's recipe rules and,
   on the tree, ``profile.derive check`` of the recipe against the referee's own derivation of that tree; a reason
   is ``recipe_refused`` with the reasons). A refusal after the assembly carries ``heads``, ``state``, ``root``
-  and ``assembled``. When all of it holds, the line has ``accepted`` (``brain_sha``, ``referee_tree_sha256``,
-  ``result_sha256``, ``artifact_id``), ``heads`` (branch to commit), ``state`` (``head``, ``previous``, ``rows``),
+  and ``assembled``. When all of it holds, the target's line has (``brain_sha``, ``referee_tree_sha256``,
+  ``result_sha256``, ``artifact_id``) at the job's top level; ``heads`` (branch to commit), ``state`` (``head``, ``previous``, ``rows``),
   ``root`` (``root``, ``rekor_uuid``), ``assembled`` (``target``, ``commit``, ``candidates``), ``profile``
-  (``unit_id``) and ``checked`` ``CEK_CHECKED``: every check of D1's row has run. Then the assembled directory,
-  the bytes MF4 judged, is moved to ``$RUNNER_TEMP/out/pulled`` (``_hand_over``; it must not exist before, else
-  exit 2), the line has ``ok`` true and ``done`` ``["D1"]``, exit 0, so the upload step runs and ``getir``, ``kos``,
+  (``unit_id``); the job's ``checked`` is ``CEK_CHECKED``: every check of D1's row has run. When every target
+  holds, each served target's assembled directory, the bytes MF4 judged, is moved to ``$RUNNER_TEMP/out/pulled/<id>``
+  and ``served.json`` written (``_hand_over``; ``out/pulled`` must not exist before, else exit 2), the line has ``ok`` true and ``done`` ``["D1"]``, exit 0, so the upload step runs and ``getir``, ``kos``,
   ``cagir`` and ``yaz`` download it. A refusal leaves ``out/pulled`` absent. The proposal stage 0 judges is the
   recipe alone (tohum/14); no other profile field is proposed, so none is compared.
 - ``cagir`` runs D4 (``cagir_d4``), and with it the whole job: it needs ``CAGIR_ENV`` set (the provider token;
@@ -238,7 +254,7 @@ from target import land as LN
 from target import write as W
 import cli
 
-USAGE = "usage: python -m loop.job render | run JOB"
+USAGE = "usage: python -m loop.job render | scope | run JOB"
 
 CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"  # v7.0.1
 UPLOAD = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"  # v7.0.2
@@ -260,15 +276,19 @@ CONTROL_RUN = (
     " --event \"$GITHUB_EVENT_NAME\" --github-output \"$GITHUB_OUTPUT\"\n"
 )
 
-# The writer App token: made in ``yaz``, limited to what target.write uses (tohum/25 item 6, MF9).
+# The writer App token: made in ``yaz``, limited to what target.write uses (tohum/25 item 6, MF9) and to the
+# repositories of ``targets[]`` (``scope``, from the checkout's setup/summary.json).
 APP_INPUTS = {
     "app-id": "${{ secrets.WRITER_APP_ID }}",
     "private-key": "${{ secrets.WRITER_APP_PRIVATE_KEY }}",
-    "owner": "${{ vars.TARGET_OWNER }}",
+    "owner": "${{ steps.scope.outputs.owner }}",
+    "repositories": "${{ steps.scope.outputs.repositories }}",
     "permission-contents": "write",
     "permission-pull-requests": "write",
     "permission-checks": "write",
 }
+
+SCOPE_RUN = "python3 -m loop.job scope\n"
 
 # Names a code-running job must not see (tohum/08 item 1). GITHUB_TOKEN is not in a job's environment unless a
 # step puts it there; the OIDC pair is there whenever the job has ``id-token: write``.
@@ -292,7 +312,7 @@ class Job(NamedTuple):
 
 JOBS: dict[str, Job] = {
     "cek": Job(("D1",), (1, 4, 11), False, {"contents": "read", "actions": "read"},
-               {"GITHUB_TOKEN": "${{ github.token }}", "LOOP_TARGET": "${{ vars.LOOP_TARGET }}"},
+               {"GITHUB_TOKEN": "${{ github.token }}"},
                (), (), "pulled", ("sigstore",)),
     "getir": Job(("D2",), (5,), True, {}, {}, ("cek",), ("pulled",), "deps"),
     "kos": Job(("D3", "D7"), (3, 6, 12), True, {}, {}, ("cek", "getir"), ("pulled", "deps"), "results"),
@@ -339,9 +359,10 @@ def _steps(name: str) -> list[dict[str, Any]]:
         {"name": "control", "id": "control", "env": {"LOOP_JOB": name}, "run": CONTROL_RUN},
     ]
     steps.extend({"name": step, "if": GO, "run": IN.STEPS[step]} for step in job.installs)
-    if name == "yaz":
-        steps.append({"name": "writer token", "id": "app", "if": GO, "uses": APP_TOKEN, "with": dict(APP_INPUTS)})
     steps.append({"name": "checkout", "if": GO, "uses": CHECKOUT, "with": {"persist-credentials": "false"}})
+    if name == "yaz":
+        steps.append({"name": "writer scope", "id": "scope", "if": GO, "run": SCOPE_RUN})
+        steps.append({"name": "writer token", "id": "app", "if": GO, "uses": APP_TOKEN, "with": dict(APP_INPUTS)})
     env: dict[str, str] = {}
     for artifact in job.downloads:
         producer = _producer(name, artifact)
@@ -446,20 +467,23 @@ def _dir(environ: dict[str, str], *parts: str) -> str:
     return os.path.join(temp, *parts)
 
 
-def _pulled_unit(environ: dict[str, str]) -> tuple[Any, Any, dict | None]:
-    """``$RUNNER_TEMP/in/pulled`` read by ``_read_unit``. Shared by ``getir``, ``kos`` and ``yaz``, so each reads the
-    same artifact the same way."""
-    return _read_unit(_dir(environ, "in", "pulled"))
+def _pulled_unit(environ: dict[str, str], tid: str) -> tuple[Any, Any, dict | None]:
+    """Target ``tid``'s ``pulled``, ``$RUNNER_TEMP/in/pulled/<tid>``, read by ``_read_unit``. Shared by ``getir``,
+    ``kos`` and ``yaz``, so each reads the same artifact the same way."""
+    return _read_unit(_dir(environ, "in", "pulled", tid), tid)
 
 
-def _read_unit(path: str) -> tuple[Any, Any, dict | None]:
-    """The ``pulled`` artifact at ``path`` read by ``loop.pulled.read`` and its one unit (stage 0 runs exactly one
-    entry of ``units``): ``(artifact, unit, None)``, or ``(None, None, {reason, reasons?})`` (``pulled_invalid``,
+def _read_unit(path: str, tid: str) -> tuple[Any, Any, dict | None]:
+    """Target ``tid``'s ``pulled`` at ``path`` read by ``loop.pulled.read`` and its one unit (stage 0 runs exactly
+    one entry of ``units``): ``(artifact, unit, None)``, or ``(None, None, {reason, reasons?})``
+    (``pulled_invalid``, with ``target_mismatch`` when the artifact's ``target.id`` is not ``tid``;
     ``units_not_one``). ``cek`` reads its own assembly with it, the other jobs their download."""
     try:
         art = P.read(path)
     except P.PulledError as exc:
         return None, None, {"reason": "pulled_invalid", "reasons": exc.reasons}
+    if art.target["id"] != tid:
+        return None, None, {"reason": "pulled_invalid", "reasons": ["target_mismatch"]}
     units = art.units.get("units") if isinstance(art.units, dict) else None
     if not (isinstance(units, list) and len(units) == 1):
         return None, None, {"reason": "units_not_one"}
@@ -520,9 +544,9 @@ def _watched(unfinished: list[str], head: str) -> tuple[str | None, dict | None]
     return None, {"reason": "sentinel_unplaced", "reasons": ["unfinished:%s" % sha for sha in unfinished]}
 
 
-def getir_d2(environ: dict[str, str], fetcher: Any = None) -> dict[str, Any]:
-    """D2 of ``getir`` (see the module docstring): ``{reason?, reasons?, deps?, licenses?}``."""
-    art, unit, refused = _pulled_unit(environ)
+def getir_d2(environ: dict[str, str], tid: str, fetcher: Any = None) -> dict[str, Any]:
+    """D2 of ``getir`` for target ``tid`` (see the module docstring): ``{reason?, reasons?, deps?, licenses?}``."""
+    art, unit, refused = _pulled_unit(environ, tid)
     if refused:
         return refused
     _, tree, refused = _pulled_tree(environ, art, "getir")
@@ -531,7 +555,7 @@ def getir_d2(environ: dict[str, str], fetcher: Any = None) -> dict[str, Any]:
     refused = _recipe_refused(art, unit, tree, "getir")
     if refused:
         return refused
-    out = _dir(environ, "out", "deps")
+    out = _dir(environ, "out", "deps", tid)
     try:
         os.makedirs(out)
     except FileExistsError:
@@ -548,13 +572,14 @@ def getir_d2(environ: dict[str, str], fetcher: Any = None) -> dict[str, Any]:
             "licenses": report["licenses"]}
 
 
-def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None = None) -> dict[str, Any]:
-    """D3 of ``kos``, with D7's sentinel when a merge is watched (see the module docstring): ``{reason, reasons?}``
-    or ``{index, done}``."""
-    art, unit, refused = _pulled_unit(environ)
+def kos_d3(environ: dict[str, str], tid: str, runner: Any = None,
+           red_control: dict | None = None) -> dict[str, Any]:
+    """D3 of ``kos`` for target ``tid``, with D7's sentinel when a merge is watched (see the module docstring):
+    ``{reason, reasons?}`` or ``{index, done}``."""
+    art, unit, refused = _pulled_unit(environ, tid)
     if refused:
         return refused
-    deps = _dir(environ, "in", "deps")
+    deps = _dir(environ, "in", "deps", tid)
     if not (os.path.isdir(deps) and os.listdir(deps)):
         deps = None
     else:
@@ -573,22 +598,22 @@ def kos_d3(environ: dict[str, str], runner: Any = None, red_control: dict | None
         return refused
     diffs = {cid: files["diff.patch"] for cid, files in art.candidates.items()}
     try:
-        index = K.results(unit, tree, art.policy, red_control or RED_CONTROL, diffs, _dir(environ, "out", "results"),
+        index = K.results(unit, tree, art.policy, red_control or RED_CONTROL, diffs, _dir(environ, "out", "results", tid),
                           deps, art.target, runner, base=root, watch=watch)
     except K.UNUSABLE as exc:
         raise Unusable("kos: %s" % cli.cause(exc)) from None
     return {"index": index, "done": ["D3", "D7"] if watch else ["D3"]}
 
 
-def yaz_d5(environ: dict[str, str]) -> tuple[dict[str, Any], Any, str | None]:
-    """D5 of ``yaz`` (see the module docstring): ``({reason?, reasons?, decisions?, merge?}, pulled, tree)``, the
+def yaz_d5(environ: dict[str, str], tid: str) -> tuple[dict[str, Any], Any, str | None]:
+    """D5 of ``yaz`` for target ``tid`` (see the module docstring): ``({reason?, reasons?, decisions?, merge?}, pulled, tree)``, the
     artifact and the extracted tree D6 writes from (``None`` with a reason)."""
     try:
         with open(_dir(environ, "control", "control.json"), encoding="utf-8") as fh:
             control = json.load(fh)
     except (OSError, ValueError) as exc:
         raise Unusable("yaz: control.json unreadable: %s" % cli.cause(exc)) from None
-    art, unit, refused = _pulled_unit(environ)
+    art, unit, refused = _pulled_unit(environ, tid)
     if refused:
         return refused, None, None
     unfinished, refused = _unfinished(art)
@@ -598,17 +623,17 @@ def yaz_d5(environ: dict[str, str]) -> tuple[dict[str, Any], Any, str | None]:
     if refused:
         return refused, None, None
     try:
-        return E.decide(art, unit, tree, _dir(environ, "in", "results"), control, unfinished), art, tree
+        return E.decide(art, unit, tree, _dir(environ, "in", "results", tid), control, unfinished), art, tree
     except (E.Unusable, D.DeriveError) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
-def yaz_d7(environ: dict[str, str], art: Any) -> tuple[dict[str, Any], dict | None, dict | None]:
+def yaz_d7(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any], dict | None, dict | None]:
     """D7's half in ``yaz`` (see the module docstring): ``({sentinel} or {reason, reasons}, end, base_lint)``:
     ``end`` the verified sentinel D6 ends (``loop.watch.read``'s answer, with ``facts`` on a red: D6 reverts a red
     and writes the end row of a green or flaky), or ``None``; ``base_lint``
     ``loop.watch.base_lint`` of the results."""
-    results = _dir(environ, "in", "results")
+    results = _dir(environ, "in", "results", tid)
     unfinished, refused = _unfinished(art)
     if not refused:
         watch, refused = _watched(unfinished, art.heads[B.INTEGRATION])
@@ -636,22 +661,24 @@ YAZ_ENV = ("WRITER_TOKEN", "GITHUB_REPOSITORY", "GITHUB_WORKSPACE", "GITHUB_RUN_
 
 def yaz_d8(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any]) -> dict[str, Any]:
     """D8 of ``yaz`` (see the module docstring): ``loop.drill.step`` of this cycle's state, before anything is
-    written; D6 writes what it answers."""
+    written; D6 writes what it answers. The drill is the toy's (asama-0/08 row 4, 10a #geri-alma): on a target of
+    another kind it is off, as without the seed."""
     workspace = environ.get("GITHUB_WORKSPACE")
-    if environ.get(DR.SEED_ENV) and not workspace:
+    toy = art.target.get("kind") == "toy"
+    if toy and environ.get(DR.SEED_ENV) and not workspace:
         raise Unusable("yaz: GITHUB_WORKSPACE is not set")
     unfinished, refused = _unfinished(art)
     if refused:  # yaz_d5 read the same ledger first
         raise Unusable("yaz: %s" % ", ".join(refused["reasons"]))
     try:
-        inp = DR.inputs(workspace, environ)
+        inp = DR.inputs(workspace, environ) if toy else None
         return DR.step(inp, art.state[B.STATE_LEDGER], unfinished, d5["merge"] is not None, tree,
                        environ.get("GITHUB_RUN_ID", ""))
     except DR.Unusable as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
-def yaz_d6(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
+def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
            signer: Any = None, now: Any = None, base_lint: dict | None = None,
            end: dict | None = None, drill: dict | None = None) -> dict[str, Any]:
     """D6 of ``yaz``, with D7's ``end`` (see the module docstring): ``{reason, reasons, written?}`` or
@@ -663,7 +690,7 @@ def yaz_d6(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any], tra
         if not environ.get(name):
             raise Unusable("yaz: %s is not set" % name)
     try:
-        cost = CG.read_response(_dir(environ, "in", "response"), art)
+        cost = CG.read_response(_dir(environ, "in", "response", tid), art)
     except CG.ResponseError as exc:
         return {"reason": "response_invalid", "reasons": exc.reasons}
     try:
@@ -702,22 +729,24 @@ def _signer(environ: dict[str, str]) -> SG.SigstoreSigner:
 CAGIR_ENV = ("CLAUDE_CODE_OAUTH_TOKEN", "GITHUB_WORKSPACE", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
 
 
-def cagir_d4(environ: dict[str, str], now: Any = None) -> dict[str, Any]:
-    """D4 of ``cagir`` (see the module docstring): ``{reason, reasons}`` or ``{call}``; with ``call``
-    ``out/response`` holds the artifact. ``now`` is the clock (``datetime.now(timezone.utc)`` when ``None``)."""
+def cagir_d4(environ: dict[str, str], tid: str, now: Any = None) -> dict[str, Any]:
+    """D4 of ``cagir`` for target ``tid`` (see the module docstring): ``{reason, reasons}`` or ``{call}``; with
+    ``call`` ``out/response/<tid>`` holds the artifact. ``now`` is the clock (``datetime.now(timezone.utc)`` when ``None``)."""
     for name in CAGIR_ENV:
         if not environ.get(name):
             raise Unusable("cagir: %s is not set" % name)
-    out = _dir(environ, "out", "response")  # must not exist: loop.cagir.d4's check, before anything is started
+    out = _dir(environ, "out", "response", tid)  # must not exist: loop.cagir.d4's check, before anything is started
     try:
         path = IN.claude(environ)
         model = IN.rival_model(environ["GITHUB_WORKSPACE"])
     except IN.InputError as exc:
         raise Unusable("cagir: %s" % cli.cause(exc)) from None
     try:
-        art = P.read(_dir(environ, "in", "pulled"))
+        art = P.read(_dir(environ, "in", "pulled", tid))
     except P.PulledError as exc:
         return {"reason": "pulled_invalid", "reasons": exc.reasons}
+    if art.target["id"] != tid:
+        return {"reason": "pulled_invalid", "reasons": ["target_mismatch"]}
     ts = (now or (lambda: datetime.datetime.now(datetime.timezone.utc)))().strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         # the bytes found after the claude step: MF15 hashes the file again before it starts it (loop.inputs)
@@ -734,7 +763,7 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
     """D1 of ``cek`` (see the module docstring): ``{reason?, reasons?, accepted?, heads?, state?, root?,
     assembled?, profile?}``; without a reason ``out/pulled`` holds the artifact. ``rekor`` reads Rekor entries (``entry(uuid)``; ``loop.rekor.RekorHttp``
     when ``None``); ``verifier`` runs both Sigstore checks."""
-    for name in ("GITHUB_REPOSITORY", "GITHUB_TOKEN", "GITHUB_WORKSPACE", "LOOP_TARGET"):
+    for name in ("GITHUB_REPOSITORY", "GITHUB_TOKEN", "GITHUB_WORKSPACE"):
         if not environ.get(name):
             raise Unusable("cek: %s is not set" % name)
     try:
@@ -772,34 +801,46 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
         pin = A.workflow_identity(environ["GITHUB_REPOSITORY"], A.LOOP_WORKFLOW)
     except A.StateError as exc:
         raise Unusable("cek: %s" % cli.cause(exc)) from None
+    targets, reasons = C.targets(files["setup/summary.json"])
+    if reasons:
+        return dict(_refused(reasons), accepted=accepted)
     entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, sigstore, verifier=verifier or A.run_verifier)
-    pulled = _cek_target(environ, files, brain_dir, sha, root, git, entries)
-    if "reason" not in pulled:
-        _hand_over(os.path.join(root, "pulled"), _dir(environ, "out", "pulled"))
-    return dict(pulled, accepted=accepted)
+    lines: list[dict[str, Any]] = []
+    for target in targets:
+        tid = target["id"]
+        os.makedirs(os.path.join(root, tid))
+        line = dict({"target": tid}, **_cek_target(environ, files, target, brain_dir, sha,
+                                                    os.path.join(root, tid), git, entries))
+        lines.append(line)
+        if "reason" in line:
+            return dict(_refused([line["reason"]] + line.get("reasons", [])), target=tid, targets=lines,
+                        accepted=accepted)
+    _hand_over(root, [line["target"] for line in lines if "waiting" not in line], _dir(environ, "out", "pulled"))
+    return {"accepted": accepted, "targets": lines}
 
 
-def _hand_over(assembled: str, out: str) -> None:
-    """D1 held: the assembled ``pulled`` (the bytes MF4 judged, read back) moved to ``out``, the upload step's path,
+def _hand_over(root: str, served: list[str], out: str) -> None:
+    """D1 held for every target: each served target's assembled ``pulled`` (the bytes MF4 judged, read back) moved
+    to ``out/<id>`` and ``served.json`` written (``loop.pulled.write_served``); ``out`` is the upload step's path,
     which must not exist before (an existing directory would be replaced or mixed with another run's)."""
     if os.path.lexists(out):
         raise Unusable("cek: %s exists" % out)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    shutil.move(assembled, out)
+    os.makedirs(out)
+    for tid in served:
+        shutil.move(os.path.join(root, tid, "pulled"), os.path.join(out, tid))
+    P.write_served(out, served)
 
 
 def _refused(reasons: list[str]) -> dict[str, Any]:
     return dict({"reason": reasons[0]}, **({"reasons": reasons[1:]} if reasons[1:] else {}))
 
 
-def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str, brain_sha: str, root: str,
-                git: str, entries: Any) -> dict[str, Any]:
-    """The target half of D1 (see the module docstring): ``{reason?, reasons?, heads?, state?, root?, assembled?,
-    profile?}``."""
-    target_id = environ["LOOP_TARGET"]
-    target, reasons = C.target_entry(files["setup/summary.json"], target_id)
-    if reasons:
-        return _refused(reasons)
+def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, brain_dir: str, brain_sha: str,
+                root: str, git: str, entries: Any) -> dict[str, Any]:
+    """The target half of D1 for one ``targets[]`` entry, in its own directory ``root`` (see the module
+    docstring): ``{reason?, reasons?, heads?, state?, root?, assembled?, profile?}``, or ``{waiting, heads}`` for a
+    copy not yet opened."""
+    target_id = target["id"]
     try:
         url = A.repo_url(target.get("repo"))
     except A.StateError:
@@ -810,6 +851,8 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
         raise Unusable("cek: target heads: %s" % ", ".join(exc.reasons)) from None
     heads = {branch: found[ref] for branch, ref in TARGET_REFS.items()}
     missing = ["head_missing:%s" % b for b, head in heads.items() if head is None]
+    if target["kind"] == "copy" and len(missing) == len(heads):
+        return {"waiting": "copy_genesis", "heads": heads}
     if missing:
         return dict(_refused(missing), heads=heads)
     state, chains, status = _cek_state(url, heads[B.STATE], root, git, environ)
@@ -838,7 +881,7 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], brain_dir: str
     # MF4's judgement (D1): the brain's proposal (units.json, its one unit) against the referee's own derivation
     # from the assembled tree, read back the way getir, kos and yaz read their download
     tree = os.path.join(root, "tree")
-    art, unit, refused = _read_unit(out)
+    art, unit, refused = _read_unit(out, target_id)
     if not refused:
         refused = _extract(art, tree) or _recipe_refused(art, unit, tree, "cek")
     if refused:
@@ -893,6 +936,9 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         fetcher: Any = None, http: Any = None, verifier: Any = None, git: str = "git",
         rekor: Any = None, now: Any = None, transport: Any = None,
         signer: Any = None) -> dict[str, Any]:
+    """The job's line: ``{job, steps, mfs, ok, targets?, reason?, reasons?, target?}``. ``targets`` holds one line
+    per target in the order served, each ``{target, ok, ...}``; the first target refused stops the job (no later
+    target is served) and its ``reason``, ``reasons`` and id (``target``) are the job's."""
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
     job = JOBS[name]
@@ -906,44 +952,104 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         if "reason" in d1:
             return dict(result, **d1)
         return dict(result, ok=True, done=["D1"], checked=list(CEK_CHECKED), **d1)
-    if name == "getir":
-        d2 = getir_d2(environ, fetcher)
-        if "reason" in d2:
-            return dict(result, **d2)
-        return dict(result, ok=True, done=["D2"], **d2)
-    if name == "kos":
-        d3 = kos_d3(environ, runner, red_control)
-        if "reason" in d3:
-            return dict(result, **d3)
-        return dict(result, ok=True, **d3)
-    if name == "cagir":
-        d4 = cagir_d4(environ, now)
-        if "reason" in d4:
-            return dict(result, **d4)
-        return dict(result, ok=True, done=["D4"], **d4)
-    if name == "yaz":
-        d5, art, tree = yaz_d5(environ)
-        if "reason" in d5:
-            return dict(result, **d5)
-        d7, end, lint = yaz_d7(environ, art)
-        if "reason" in d7:
-            return dict(result, done=["D5"], **d5, **d7)
-        d8 = yaz_d8(environ, art, tree, d5)
-        d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, end, d8)
-        if "reason" in d6:
-            return dict(result, done=["D5"], **d5, **d7, **d6)
-        done = ["D5", "D6"] + (["D7"] if end else []) + ([] if d8["action"] == "off" else ["D8"])
-        line = dict(result, ok=True, done=done, drill=DR.line(d8), **d5, **d7, **d6)
-        if d8.get("judged", {}).get("verdict") == "FAIL":
-            return dict(line, ok=False, reason="drill_fail")
-        return line
-    raise Unusable("job %r has no entry" % name)
+    if name not in TARGET_JOBS:
+        raise Unusable("job %r has no entry" % name)
+    try:
+        served = P.served(_dir(environ, "in", "pulled"))
+    except P.PulledError as exc:
+        return dict(result, reason="pulled_invalid", reasons=exc.reasons)
+    lines: list[dict[str, Any]] = []
+    for tid in served:
+        line = dict({"target": tid}, **TARGET_JOBS[name](environ, tid, runner=runner, red_control=red_control,
+                                                         fetcher=fetcher, now=now, transport=transport,
+                                                         signer=signer))
+        lines.append(line)
+        if not line["ok"]:
+            stop = {k: line[k] for k in ("reason", "reasons") if k in line}
+            return dict(result, target=tid, targets=lines, **stop)
+    return dict(result, ok=True, targets=lines)
+
+
+def _getir(environ: dict[str, str], tid: str, fetcher: Any = None, **_: Any) -> dict[str, Any]:
+    d2 = getir_d2(environ, tid, fetcher)
+    return dict(d2, ok=False) if "reason" in d2 else dict(d2, ok=True, done=["D2"])
+
+
+def _kos(environ: dict[str, str], tid: str, runner: Any = None, red_control: dict | None = None,
+         **_: Any) -> dict[str, Any]:
+    d3 = kos_d3(environ, tid, runner, red_control)
+    return dict(d3, ok="reason" not in d3)
+
+
+def _cagir(environ: dict[str, str], tid: str, now: Any = None, **_: Any) -> dict[str, Any]:
+    d4 = cagir_d4(environ, tid, now)
+    return dict(d4, ok=False) if "reason" in d4 else dict(d4, ok=True, done=["D4"])
+
+
+def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any = None, now: Any = None,
+         **_: Any) -> dict[str, Any]:
+    d5, art, tree = yaz_d5(environ, tid)
+    if "reason" in d5:
+        return dict(d5, ok=False)
+    d7, end, lint = yaz_d7(environ, tid, art)
+    if "reason" in d7:
+        return dict(ok=False, done=["D5"], **d5, **d7)
+    d8 = yaz_d8(environ, art, tree, d5)
+    d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8)
+    if "reason" in d6:
+        return dict(ok=False, done=["D5"], **d5, **d7, **d6)
+    done = ["D5", "D6"] + (["D7"] if end else []) + ([] if d8["action"] == "off" else ["D8"])
+    line = dict(ok=True, done=done, drill=DR.line(d8), **d5, **d7, **d6)
+    if d8.get("judged", {}).get("verdict") == "FAIL":
+        return dict(line, ok=False, reason="drill_fail")
+    return line
+
+
+# The jobs after ``cek``: each serves ``pulled``'s ``served.json``, one target at a time.
+TARGET_JOBS = {"getir": _getir, "kos": _kos, "cagir": _cagir, "yaz": _yaz}
+
+
+def scope(environ: dict[str, str]) -> str:
+    """The writer token's scope (``yaz``'s ``writer scope`` step): ``owner=<owner>`` and ``repositories=<name>,...``
+    lines for ``$GITHUB_OUTPUT``, from the ``repo`` of every ``targets[]`` entry of the checkout's
+    ``setup/summary.json`` (``loop.cek.targets``, the list ``cek`` serves). Unusable: no ``GITHUB_WORKSPACE``, an
+    unreadable file, a refused list, a ``repo`` that is no repository name (``loop.accepted.repo_name``), or
+    repositories of more than one owner (one App token is one installation's)."""
+    workspace = environ.get("GITHUB_WORKSPACE")
+    if not workspace:
+        raise Unusable("scope: GITHUB_WORKSPACE is not set")
+    try:
+        with open(os.path.join(workspace, "setup", "summary.json"), "rb") as fh:
+            summary = fh.read()
+    except OSError as exc:
+        raise Unusable("scope: setup/summary.json unreadable: %s" % cli.cause(exc)) from None
+    targets, reasons = C.targets(summary)
+    if reasons:
+        raise Unusable("scope: %s" % ", ".join(reasons))
+    try:
+        repos = [A.repo_name(t.get("repo")).split("/") for t in targets]
+    except A.StateError:
+        raise Unusable("scope: target_repo_unsafe") from None
+    owners = sorted({owner for owner, _ in repos})
+    if len(owners) != 1:
+        raise Unusable("scope: targets of %d owners: %s" % (len(owners), ", ".join(owners)))
+    names = list(dict.fromkeys(name for _, name in repos))
+    return "owner=%s\nrepositories=%s\n" % (owners[0], ",".join(names))
 
 
 def main(argv: list[str]) -> int:
     try:
         if argv == ["render"]:
             sys.stdout.write(render())
+            return 0
+        if argv == ["scope"]:
+            out = os.environ.get("GITHUB_OUTPUT")
+            if not out:
+                raise Unusable("scope: GITHUB_OUTPUT is not set")
+            text = scope(dict(os.environ))
+            with open(out, "a", encoding="utf-8") as fh:
+                fh.write(text)
+            sys.stdout.write(text)
             return 0
         if len(argv) == 2 and argv[0] == "run":
             out = run(argv[1], dict(os.environ))

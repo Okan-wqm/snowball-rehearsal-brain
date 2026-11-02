@@ -19,6 +19,15 @@ another job's output only by artifact and hash; the workflow's download checks t
     state/status.md             brain/state's ``status.md`` at that head, as read; absent when the head has none
     candidates/<cid>/finding.json, diff.patch, expect.json
 
+**Served** (tohum/29s "Hedefler": a run serves every ``targets[]`` entry, in the array's order). The uploaded
+artifact is a directory holding ``served.json`` ``{schema: "snowball-served/1", targets: [id, ...]}``, the ids of the
+targets ``cek`` serves this run in that order, and for each id a directory ``<id>/`` laid out as above; nothing
+else. ``cek`` alone decides which targets are served (``write_served``); every later job serves exactly that list,
+in that order (``served``: ``served_unreadable`` unless the file is a regular file holding exactly those two keys,
+the schema, and distinct ids each a target id, ``runner.kos.CANDIDATE_ID``; ``served_missing:<id>`` for an id
+without its directory, a link included; ``unlisted:<name>`` for any other entry). Each job's own artifact holds
+one ``<id>/`` per served target the same way (``out/deps/<id>/``, ``out/results/<id>/``, ``out/response/<id>/``).
+
 ``target`` is the ``targets[]`` entry of ``setup/summary.json`` for this target, as read (an object with a string
 ``id``; its lists are checked by ``profile.derive`` where they are used). ``<cid>`` is ``runner.kos``'s candidate id.
 ``state/`` is what the jobs after D1 know of the cycle's state: the ledger the stage brake sums (D4) and that D6
@@ -79,6 +88,8 @@ SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 CANDIDATES = "candidates"
 CANDIDATE_FILES = ("diff.patch", "expect.json", "finding.json")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
+SERVED = "served.json"
+SERVED_SCHEMA = "snowball-served/1"
 
 
 class PulledError(ValueError):
@@ -150,6 +161,35 @@ def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
     with open(os.path.join(out, MANIFEST), "xb") as fh:
         fh.write(_dump(manifest))
     return manifest
+
+
+def write_served(root: str, ids: list[str]) -> None:
+    """``served.json`` in ``root``, the ``cek`` job's ``out/pulled`` (see "Served" above)."""
+    with open(os.path.join(root, SERVED), "xb") as fh:
+        fh.write(_dump({"schema": SERVED_SCHEMA, "targets": list(ids)}))
+
+
+def served(root: str) -> list[str]:
+    """The targets ``root`` (a downloaded ``pulled``) serves, in order (see "Served" above); ``PulledError`` with
+    every reason."""
+    raw = D._read_regular(root, SERVED) if os.path.isdir(root) and not os.path.islink(root) else None
+    try:
+        doc = json.loads(raw.decode("utf-8")) if raw is not None else None
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        doc = None
+    if not (isinstance(doc, dict) and set(doc) == {"schema", "targets"} and doc["schema"] == SERVED_SCHEMA
+            and isinstance(doc["targets"], list)
+            and all(isinstance(t, str) and K.CANDIDATE_ID.fullmatch(t) for t in doc["targets"])
+            and len(set(doc["targets"])) == len(doc["targets"])):
+        raise PulledError(["served_unreadable"])
+    ids = doc["targets"]
+    entries = set(os.listdir(root)) - {SERVED}
+    reasons = ["served_missing:%s" % t for t in ids
+               if t not in entries or os.path.islink(os.path.join(root, t)) or not os.path.isdir(os.path.join(root, t))]
+    reasons += ["unlisted:%s" % n for n in sorted(entries - set(ids))]
+    if reasons:
+        raise PulledError(reasons)
+    return ids
 
 
 def _heads_valid(heads: Any) -> bool:

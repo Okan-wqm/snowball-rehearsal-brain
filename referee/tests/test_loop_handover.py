@@ -140,18 +140,23 @@ def _recorded(test_id: str, artifacts: tuple[tuple[str, tuple[str, ...], str | N
     return result.testsRun == 1 and result.wasSuccessful() and not result.skipped, tuple(calls)
 
 
+def _done(out: dict) -> bool:
+    """The call did a step: ``cek``'s ``done``, or a later job's for some served target (``loop.job.run``)."""
+    return bool(out.get("done")) or any(t.get("done") for t in out.get("targets") or [])
+
+
 def _handed_over(calls: tuple[Call, ...], artifact: str, producer: str, consumer: str) -> bool:
     for i, made in enumerate(calls):
         if made["job"] != producer or made["upload"] is None:
             continue
         for took in calls[i + 1:]:
-            if took["job"] == consumer and took["seen"].get(artifact) == made["upload"] and took["out"].get("done"):
+            if took["job"] == consumer and took["seen"].get(artifact) == made["upload"] and _done(took["out"]):
                 return True
     return False
 
 
 def _unread(calls: tuple[Call, ...], artifact: str, consumer: str) -> bool:
-    return any(c["job"] == consumer and c["seen"].get(artifact, "") is None and c["out"].get("done") for c in calls)
+    return any(c["job"] == consumer and c["seen"].get(artifact, "") is None and _done(c["out"]) for c in calls)
 
 
 def _unwritten(calls: tuple[Call, ...], producer: str) -> bool:
@@ -168,7 +173,7 @@ def _stops_at_once(producer: str, jobs: dict[str, J.Job]) -> bool:
         except J.Unusable:
             return False
         upload = jobs[producer].upload
-        return (out.get("reason") == "cycle_not_wired" and not out.get("done") and not out.get("ok")
+        return (out.get("reason") == "cycle_not_wired" and not _done(out) and not out.get("ok")
                 and not os.path.lexists(os.path.join(temp, "out", upload)))
     finally:
         shutil.rmtree(temp, ignore_errors=True)

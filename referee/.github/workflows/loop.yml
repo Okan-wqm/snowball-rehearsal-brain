@@ -47,7 +47,6 @@ jobs:
         if: steps.control.outputs.go == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          LOOP_TARGET: ${{ vars.LOOP_TARGET }}
         run: |
           python3 -m loop.job run cek
       - name: upload pulled
@@ -250,6 +249,16 @@ jobs:
           "$RUNNER_TEMP/sig/bin/pip" download --quiet --require-hashes --only-binary=:all: --no-deps -d "$RUNNER_TEMP/sigw" -r requirements/sign.txt
           python3 -m snowball_bootstrap licenses --root .. --wheels "$RUNNER_TEMP/sigw"
           "$RUNNER_TEMP/sig/bin/pip" install --quiet --no-index --find-links "$RUNNER_TEMP/sigw" --require-hashes --only-binary=:all: --no-deps -r requirements/sign.txt
+      - name: checkout
+        if: steps.control.outputs.go == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: writer scope
+        id: scope
+        if: steps.control.outputs.go == 'true'
+        run: |
+          python3 -m loop.job scope
       - name: writer token
         id: app
         if: steps.control.outputs.go == 'true'
@@ -257,15 +266,11 @@ jobs:
         with:
           app-id: ${{ secrets.WRITER_APP_ID }}
           private-key: ${{ secrets.WRITER_APP_PRIVATE_KEY }}
-          owner: ${{ vars.TARGET_OWNER }}
+          owner: ${{ steps.scope.outputs.owner }}
+          repositories: ${{ steps.scope.outputs.repositories }}
           permission-contents: write
           permission-pull-requests: write
           permission-checks: write
-      - name: checkout
-        if: steps.control.outputs.go == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
       - name: download pulled
         if: steps.control.outputs.go == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333

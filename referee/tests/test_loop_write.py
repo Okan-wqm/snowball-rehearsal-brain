@@ -1,12 +1,17 @@
 """Test 46 (asama-0/09), MF17, D6: ``yaz`` writes the cycle on the target (``loop.write_cycle``, ``loop.job run yaz``),
 on the in-process GitHub at ``pulled``'s heads, after ``kos`` ran the candidates with the fake runner; and the
-pieces D6 shares with ``activate`` (``ledger.events``, ``target.land``).
+pieces D6 shares with ``activate`` (``ledger.events``, ``target.land``). Unless said otherwise one target, t1, is
+served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line checked is the job line's one target line.
 
 - a cycle with a merge: the candidate's branch, pull request, check and merge on ``brain/integration``, then one
   ``brain/state`` commit on the head D1 read: the rows in order (cycle start, the base's ratchet base, decisions, the
   response's cost row, status), the whole ledger of ``ledger.schema``, an append-only extension, the root signed once and its row, the
   ``status.md`` block, and the merge unfinished for the next cycle, which merges nothing and writes its own commit;
 - a cycle without a merge writes only ``brain/state``;
+- two served targets (t1 then t2, each a toy on its own repository and fake GitHub behind one transport): both
+  written, every request to t1 before the first to t2 and their roots signed in that order, each ledger's rows under
+  the one cycle id of the run; a first target refused (its response missing) stops the job with its reason and id,
+  and the second is not served (no line for it): no request to either repository, nothing signed;
 - nothing is written when a head moved (a rerun of the same cycle included), when the response is not this cycle's,
   when a row carries a secret, or when the roots file is no chain (a hard stop); a root that cannot be signed after
   the merge is a hard stop naming the refs written; a block edited by hand is regenerated and recorded;
@@ -29,7 +34,9 @@ pieces D6 shares with ``activate`` (``ledger.events``, ``target.land``).
   ``PASS`` (by the loop and by ``harness.revert_drill``'s command) and the next drill committed, for a planted test
   regression and a planted lint regression; a catalog cause the loop does not give is judged ``FAIL`` and the job
   ends ``drill_fail``; the plant waits for a candidate's merge and its sentinel; a changed seed or a patch that no
-  longer applies commits again, and a catalog that does not fit commits nothing; without the seed the drill is off;
+  longer applies commits again, and a catalog that does not fit commits nothing; without the seed the drill is off,
+  and with it on a target of kind ``copy`` too (the drill is the toy's: no D8, no drill row, nothing planted) where
+  the toy with the same seed commits;
   unusable inputs (no catalog, an empty one, a patch outside its directory, missing, linked or not text, no
   workspace, a run id that is not digits) write nothing; ``loop.write_cycle`` refuses a plant beside a merge or an
   end and an action ``loop.drill`` does not give; ``harness.pass_row`` judges the state these cycles wrote (one root
@@ -74,7 +81,7 @@ from target import land as LN  # noqa: E402
 from target import write as W  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, FINDING, GOOD, diff, recipe  # noqa: E402
-from test_loop_kos import A_JS, HEADS, candidate  # noqa: E402
+from test_loop_kos import A_JS, HEADS, TARGET, RedAs, candidate  # noqa: E402
 from test_loop_yaz import OPEN, YazBase  # noqa: E402
 import yaz_world as YW  # noqa: E402
 
@@ -124,8 +131,8 @@ class StateBase(YazBase):
     def next_cycle(self, cands: dict, run_id: str, units=None) -> dict:
         """Cycle ``<run_id>-1`` on what the previous cycle wrote, as D1 would pull it: ``brain/state``'s files, both
         heads and ``brain/integration``'s tree read back from the fake GitHub (the same GitHub stays the target),
-        the previous ``pulled`` and results cleared, ``kos`` run, the cycle's response written. Returns ``kos``'s
-        line; ``self.state`` is the state the cycle reads."""
+        the previous ``pulled`` and results cleared, ``kos`` run, the cycle's response written. Returns t1's line
+        of ``kos``'s line; ``self.state`` is the state the cycle reads."""
         self.state = {p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}
         heads = {b: self.gh.refs[b] for b in P.HEAD_BRANCHES}
         tree = self.gh.trees[self.gh.commits[heads[B.INTEGRATION]]["tree"]]
@@ -140,6 +147,10 @@ class StateBase(YazBase):
         art = P.read(self.pulled)
         YW.write_response(self.temp, "t1", art.heads, [YW.cost_row("cagir-%s-1" % run_id, art.heads[B.INTEGRATION])])
         return out
+
+    def run_yaz(self, **env) -> dict:
+        """The job's line's one target line (``Cycle.line``: t1's, the job's ``ok`` and refusal its)."""
+        return self.line(super().run_yaz(**env))
 
     def writes(self) -> list[tuple]:
         return [(m, p) for m, p, _ in self.gh.requests if m != "GET"]
@@ -254,7 +265,7 @@ class D6(StateBase):
         self.control(OPEN)
         self.github()
         art = P.read(self.pulled)
-        response = os.path.join(self.temp, "in", "response")
+        response = os.path.join(self.temp, "in", "response", "t1")
         other = dict(art.heads, **{B.STATE: "d" * 40})
         cases = (
             (lambda: None, ["response_missing"]),
@@ -323,6 +334,65 @@ class D6(StateBase):
         self.assertEqual([r["kind"] for r in rows_of(new)][-2:], ["status_edited", "status"])
         self.assertEqual(SC.status_reasons(self.state_file(B.STATE_STATUS), new), [])
         self.assertNotIn(b"EDITED-BY-HAND", self.state_file(B.STATE_STATUS))
+
+    def two_targets(self, cands: dict) -> dict[str, "Router"]:
+        """``in/pulled`` serving t1 then t2 (``served.json``), each a toy on its own repository at ``HEADS`` with
+        ``cands``; ``kos`` run on both and its ``out/results/<id>`` handed over; ``control.json``. Returns each target's
+        fake GitHub by id (``acme/t1``, ``acme/t2``), the cycle's responses not written yet."""
+        served = os.path.dirname(self.pulled)
+        os.makedirs(served)
+        P.write_served(served, ["t1", "t2"])
+        for tid in ("t1", "t2"):
+            self.pulled = os.path.join(served, tid)
+            self.write_pulled(cands, target=dict(TARGET, id=tid, repo="acme/" + tid))
+        kos = J.run("kos", {"RUNNER_TEMP": self.temp}, runner=RedAs())
+        self.assertEqual((kos["ok"], [t["target"] for t in kos["targets"]]), (True, ["t1", "t2"]), kos)
+        shutil.move(os.path.join(self.temp, "out", "results"), os.path.join(self.temp, "in", "results"))
+        self.control(OPEN)
+        return {tid: YW.github_at(HEADS, YW.files_of(self.src), self.state, repo="acme/" + tid) for tid in ("t1", "t2")}
+
+    def test_two_served_targets_are_written_in_order_with_one_cycle_id(self):
+        ghs = self.two_targets({"good": candidate(GOOD)})
+        for tid in ("t1", "t2"):
+            YW.write_response(self.temp, tid, HEADS, [YW.cost_row(snapshot=HEADS[B.INTEGRATION])], at=tid)
+        router = Router(ghs)
+        out = J.run("yaz", YW.env(self.temp, self.workspace), transport=router, signer=self.signer,
+                    now=lambda: YW.NOW)
+        self.assertEqual((out["ok"], "reason" in out, "target" in out), (True, False, False), out)
+        self.assertEqual([t["target"] for t in out["targets"]], ["t1", "t2"])
+        roots = []
+        for line, (tid, gh) in zip(out["targets"], ghs.items()):
+            with self.subTest(target=tid):
+                self.assertEqual((line["ok"], line["done"], line["merge"]), (True, ["D5", "D6"], "good"))
+                self.assertEqual(line["written"]["state_sha"], gh.refs[B.STATE])
+                self.assertEqual(gh.refs[B.INTEGRATION], line["written"]["merge"]["merge_sha"])
+                # the rows of one cycle: the run's id on each target, each its own ledger's extension
+                old, new = self.state[B.STATE_LEDGER], gh.read_file(B.STATE, B.STATE_LEDGER)
+                self.assertTrue(CH.verify_bytes(new, old)["valid"])
+                added = rows_of(new)[len(rows_of(old)):]
+                self.assertEqual([r["row_id"] for r in added if r["part"] == "events"][0], "9-1:start")
+                self.assertEqual(added[0]["payload"]["cycle_id"], CYCLE)
+                self.assertEqual(rows_of(gh.read_file(B.STATE, B.STATE_ROOTS))[-1]["row_id"], "9-1:root")
+                roots.append(AN.root_of(AN.tips(new)).encode())
+        # served.json's order: every request to t1 before the first to t2, each root signed in that order
+        repos = [repo for repo, _ in router.calls]
+        self.assertEqual(repos, sorted(repos))
+        self.assertEqual(set(repos), {"acme/t1", "acme/t2"})
+        self.assertEqual(self.signer.payloads, roots)
+
+    def test_a_refused_first_target_stops_the_job_before_the_second(self):
+        ghs = self.two_targets({"good": candidate(GOOD)})
+        # t1's response is missing (cagir's artifact without its directory), t2's is right
+        YW.write_response(self.temp, "t2", HEADS, [YW.cost_row(snapshot=HEADS[B.INTEGRATION])], at="t2")
+        router = Router(ghs)
+        out = J.run("yaz", YW.env(self.temp, self.workspace), transport=router, signer=self.signer,
+                    now=lambda: YW.NOW)
+        [line] = out["targets"]  # t2 is not served
+        self.assertEqual((line["target"], line["ok"], line["reason"], line["reasons"], line["done"]),
+                         ("t1", False, "response_invalid", ["response_missing"], ["D5"]))
+        self.assertEqual((out["ok"], out["target"], out["reason"], out["reasons"]),
+                         (False, "t1", "response_invalid", ["response_missing"]))
+        self.assertEqual((router.calls, ghs["t1"].requests, ghs["t2"].requests, self.signer.payloads), ([], [], [], []))
 
     def test_the_environment_and_the_target_repository(self):
         self.kos({"good": candidate(GOOD)})
@@ -711,6 +781,25 @@ class D8(StateBase):
         self.assertEqual((out["ok"], out["done"], out["drill"]), (True, ["D5", "D6"], {"action": "off"}))
         self.assertNotIn("drill", [r["part"] for r in rows_of(self.state_file(B.STATE_LEDGER))])
 
+    def test_the_drill_is_the_toys_a_copy_with_the_seed_is_off(self):
+        doc = self.catalog(DRILL_CAUSES)
+        seed = seed_for(doc, "rd-test", "9")
+        for kind, want in (("copy", {"action": "off"}),
+                           ("toy", {"action": "commit", "payload": RD.commit_payload(RD.key(seed, "9", doc))})):
+            with self.subTest(kind=kind):
+                shutil.rmtree(os.path.join(self.temp, "in"), ignore_errors=True)
+                self.kos({}, target=dict(TARGET, kind=kind, repo=YW.REPO), units=SENTINEL_UNITS)
+                self.control(OPEN)
+                self.github()
+                self.assertEqual(P.read(self.pulled).target["kind"], kind)
+                out = self.yaz("9", seed)
+                self.assertEqual((out["ok"], out["done"], out["drill"]),
+                                 (True, ["D5", "D6"] + (["D8"] if kind == "toy" else []), want))
+                parts = [r["part"] for r in rows_of(self.state_file(B.STATE_LEDGER))]
+                self.assertEqual(parts.count("drill"), 0 if kind == "copy" else 1)
+                self.assertEqual([p for m, p in self.writes() if "/git/refs" in p],
+                                 ["/repos/acme/t1/git/refs/heads/brain/state"])  # nothing planted
+
     def test_write_cycle_refuses_a_plant_beside_a_merge_or_an_end_and_an_unknown_action(self):
         self.kos({"c": candidate(GOOD)}, units=SENTINEL_UNITS)
         self.control(OPEN)
@@ -727,6 +816,20 @@ class D8(StateBase):
                 WC.write(art, tree, decided, [], W.Writer(YW.REPO, self.gh), self.signer, b"", "9-1", YW.TS, lint,
                          end, drill)
         self.assertEqual(self.writes(), [])
+
+
+class Router:
+    """One transport for the targets' fake GitHubs, by the repository a request's path names (``/repos/<o>/<n>/``);
+    ``calls`` is ``(repository, path)`` in request order."""
+
+    def __init__(self, ghs: dict) -> None:
+        self.ghs = {gh.prefix: gh for gh in ghs.values()}
+        self.calls: list[tuple[str, str]] = []
+
+    def __call__(self, method: str, path: str, body):
+        [prefix] = [p for p in self.ghs if path.startswith(p)]
+        self.calls.append((prefix[len("/repos/"):-1], path))
+        return self.ghs[prefix](method, path, body)
 
 
 class LandRevert(unittest.TestCase):

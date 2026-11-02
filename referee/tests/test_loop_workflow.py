@@ -33,8 +33,12 @@ in the registry or the emitter shows as a violation of the committed file:
 - ``install_missing`` (tohum/29s): ``cek`` and ``yaz`` run the ``sigstore`` step (``cek`` verifies, ``yaz`` signs)
   and ``cagir`` the ``claude`` step, each once and before the job's ``python3 -m loop.job run`` (``install_order``
   otherwise); an install step carries no secret, since its step has no ``env``;
-- ``operator_variable`` (tohum/29s: no input of a run is an operator variable): every ``vars.<NAME>`` expression
-  names an entry of ``VARS``, each with why it is still there.
+- ``operator_variable`` (tohum/29s: no input of a run is an operator variable): no expression of any job holds the
+  ``vars`` context (``vars.X``, ``vars['X']``, ``toJSON(vars)``);
+- ``writer_scope`` (tohum/25 item 6, 29s "Hedefler"): ``yaz`` runs ``SCOPE_STEP`` (``python3 -m loop.job scope``,
+  the only other run a job holding a secret may have, and only in ``yaz``) once, before its one App token step,
+  whose ``owner`` and ``repositories`` are that step's outputs: the token is scoped to the repositories of
+  ``targets[]`` in the run's own ``setup/summary.json``.
 
 Stricter than 29p, on purpose: a job's ``if`` must be ``job_not_main``'s and no job or step continues on error
 (29p allows both keys). ``control_step`` is a copy of 29p's text; ``tests/test_control_step_spec.py`` at the
@@ -57,8 +61,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -111,12 +117,12 @@ INSTALL_RUN = {
         'test "$("$C/node_modules/.bin/claude" --version | cut -d\' \' -f1)" = "$pinned"\n'),
 }
 INSTALLS = {"cek": ("sigstore",), "yaz": ("sigstore",), "cagir": ("claude",)}  # 29s: who verifies, signs, calls
-# The operator variables still read, and why (29s: none of the run's three inputs is one).
-VARS = {
-    "TARGET_OWNER": "the writer App token's owner (tohum/25 item 6); no page names another source",
-    "LOOP_TARGET": "which targets[] entry a run serves; 29s 'Hedefler' says every one, in order: to be removed",
-}
-VARS_EXPR = re.compile(r"\$\{\{[^}]*?\bvars\.([A-Za-z0-9_]+)")
+# tohum/29s: no input of a run is an operator variable: any ``vars`` context in an expression (``vars.X``,
+# ``vars['X']``, ``toJSON(vars)``).
+VARS_EXPR = re.compile(r"\$\{\{[^}]*\bvars\b")
+# yaz's writer token scope (tohum/25 item 6, 29s "Hedefler"): the step, and the token's inputs it gives.
+SCOPE_STEP = {"name": "writer scope", "id": "scope", "if": GATE, "run": "python3 -m loop.job scope\n"}
+SCOPE_INPUTS = {"owner": "${{ steps.scope.outputs.owner }}", "repositories": "${{ steps.scope.outputs.repositories }}"}
 
 # tohum/29p "wiring kuralı": the keys allowed, everything else refused.
 WORKFLOW_KEYS = {"name", "run-name", "on", "permissions", "concurrency", "jobs"}
@@ -186,7 +192,7 @@ def violations(doc: dict) -> list[str]:
             allowed = SECRETS_ALLOWED.get(name, set())
             if allowed is not None and not secrets <= allowed:
                 out.append("secret_outside" + where)
-        if {m.group(1) for s in _strings(job) for m in VARS_EXPR.finditer(s)} - set(VARS):
+        if any(VARS_EXPR.search(s) for s in _strings(job)):
             out.append("operator_variable" + where)
         steps = job.get("steps")
         if not isinstance(steps, list) or not steps:
@@ -201,6 +207,13 @@ def violations(doc: dict) -> list[str]:
                 out.append("install_order" + where)
         if steps[0] != control_step(name):
             out.append("workflow_control_step" + where)
+        if name == "yaz":
+            tokens = [i for i, st in enumerate(steps) if isinstance(st, dict)
+                      and str(st.get("uses", "")).startswith(APP_ACTION)]
+            scoped = [i for i, st in enumerate(steps) if st == SCOPE_STEP]
+            if (len(tokens) != 1 or len(scoped) != 1 or scoped[0] > tokens[0]
+                    or {k: (steps[tokens[0]].get("with") or {}).get(k) for k in SCOPE_INPUTS} != SCOPE_INPUTS):
+                out.append("writer_scope" + where)
         for index, step in enumerate(steps):
             at = "%s:%d" % (where, index)
             if not isinstance(step, dict):
@@ -219,6 +232,7 @@ def violations(doc: dict) -> list[str]:
                 if CONTROL.search(run):
                     out.append("control_elsewhere" + at)
                 installed = any(step == install_step(i) for i in INSTALLS.get(name, ()))
+                installed = installed or (name == "yaz" and step == SCOPE_STEP)
                 if run != "python3 -m loop.job run %s\n" % name and not installed:
                     out.append(("secret_job_runs_code" if holds_secret else "unknown_run") + at)
             if uses is not None:
@@ -481,14 +495,40 @@ class EachRuleFires(unittest.TestCase):
                    + text[end:])
 
     def test_operator_variables(self):
-        self.assertEqual({m.group(1) for m in VARS_EXPR.finditer(committed())}, set(VARS))
+        # the refutation's reproducer: no vars context anywhere in the file
+        self.assertIsNone(re.search(r"vars\.", committed()))
+        self.assertIsNone(VARS_EXPR.search(committed()))
         for job, name in (("cek", "BRAIN_REPO"), ("cagir", "CANARY_MODEL"), ("cagir", "CLAUDE_CLI_SHA512"),
-                          ("yaz", "LOOP_TARGETS")):
+                          ("yaz", "LOOP_TARGETS"), ("cek", "LOOP_TARGET"), ("yaz", "TARGET_OWNER"),
+                          ("kos", "X"), ("getir", "X")):
             with self.subTest(var=name):
                 self.fires("operator_variable", _in_job(committed(), job, "    timeout-minutes: 60\n",
                                                         "    timeout-minutes: 60\n    env-x: ${{ vars.%s }}\n" % name))
                 self.fires("operator_variable", _in_job(committed(), job, "        run: |\n          python3 -m loop.job",
                                                         "        run: |\n          echo ${{vars.%s}}\n          python3 -m loop.job" % name))
+
+        for form in ("${{ vars['LOOP_TARGET'] }}", "${{ toJSON(vars) }}"):
+            with self.subTest(form=form):
+                self.fires("operator_variable", _in_job(committed(), "cek", "    timeout-minutes: 60\n",
+                                                        "    timeout-minutes: 60\n    env-x: %s\n" % form))
+
+    def test_writer_scope(self):
+        text = committed()
+        start, end = _job(text, "yaz")
+        block = text[start:end]
+        i = block.index("      - name: writer scope\n")
+        scope = block[i:block.index("      - name: ", i + 1)]
+        j = block.index("      - name: writer token\n")
+        token = block[j:block.index("      - name: ", j + 1)]
+        self.fires("writer_scope", _in_job(text, "yaz", scope, ""))
+        self.fires("writer_scope", text[:start] + block.replace(scope + token, token + scope) + text[end:])
+        self.fires("writer_scope", _in_job(text, "yaz", "owner: ${{ steps.scope.outputs.owner }}", "owner: acme"))
+        self.fires("writer_scope", _in_job(text, "yaz", "          repositories: ${{ steps.scope.outputs.repositories }}\n", ""))
+        # a changed scope command is neither the scope step nor allowed
+        self.assertTrue({"writer_scope", "secret_job_runs_code"} <= rules(
+            _in_job(text, "yaz", "python3 -m loop.job scope\n", "python3 -m loop.job scope --any\n")))
+        # the scope step in another job is no install there
+        self.fires("secret_job_runs_code", _in_job(text, "cek", "      - name: checkout\n", scope + "      - name: checkout\n"))
 
     def test_code_jobs_run_only_their_entry(self):
         self.fires("unknown_run", _in_job(committed(), "kos", "python3 -m loop.job run kos\n",
@@ -605,6 +645,56 @@ class Gating(unittest.TestCase):
         out = simulate(doc, {n: (0, "true") for n in JOBS})
         for name in JOBS:
             self.assertEqual(out[name], ("success", [s["name"] for s in doc["jobs"][name]["steps"]]))
+
+
+class Scope(unittest.TestCase):
+    """``loop.job.scope``: the writer token's owner and repositories from the checkout's ``targets[]``."""
+
+    def workspace(self, targets) -> str:
+        root = tempfile.mkdtemp(prefix="t-scope-")
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        os.makedirs(os.path.join(root, "setup"))
+        with open(os.path.join(root, "setup", "summary.json"), "w") as fh:
+            fh.write(targets if isinstance(targets, str) else json.dumps({"targets": targets}))
+        return root
+
+    def scope(self, targets) -> str:
+        from loop import job
+        return job.scope({"GITHUB_WORKSPACE": self.workspace(targets)})
+
+    def test_every_target_in_order(self):
+        toy = {"id": "toy", "kind": "toy", "repo": "acme/toy-repo"}
+        copy = {"id": "copy", "kind": "copy", "repo": "acme/copy-repo"}
+        self.assertEqual(self.scope([toy, copy]), "owner=acme\nrepositories=toy-repo,copy-repo\n")
+        self.assertEqual(self.scope([copy, toy]), "owner=acme\nrepositories=copy-repo,toy-repo\n")
+        self.assertEqual(self.scope([toy]), "owner=acme\nrepositories=toy-repo\n")
+
+    def test_unusable(self):
+        from loop import job
+        toy = {"id": "toy", "kind": "toy", "repo": "acme/toy-repo"}
+        for bad in ([toy, {"id": "copy", "kind": "copy", "repo": "other/copy-repo"}],  # two owners
+                    [dict(toy, repo="acme/../x")], [dict(toy, repo="acme")], [dict(toy, repo=None)],
+                    [], [toy, toy], [dict(toy, kind="real")], [dict(toy, id="../x")], "{", '{"targets": {}}'):
+            with self.subTest(bad=bad):
+                with self.assertRaises(job.Unusable):
+                    self.scope(bad)
+        with self.assertRaises(job.Unusable):
+            job.scope({})
+
+    def test_command_appends_to_github_output(self):
+        ws = self.workspace([{"id": "toy", "kind": "toy", "repo": "acme/toy-repo"}])
+        out = os.path.join(ws, "gh-output")
+        with open(out, "w") as fh:
+            fh.write("go=true\n")
+        base = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "SYSTEMROOT")}
+        proc = subprocess.run([sys.executable, "-m", "loop.job", "scope"], cwd=REFEREE, capture_output=True,
+                              env=dict(base, GITHUB_WORKSPACE=ws, GITHUB_OUTPUT=out))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        with open(out) as fh:
+            self.assertEqual(fh.read(), "go=true\nowner=acme\nrepositories=toy-repo\n")
+        proc = subprocess.run([sys.executable, "-m", "loop.job", "scope"], cwd=REFEREE, capture_output=True,
+                              env=dict(base, GITHUB_WORKSPACE=ws))
+        self.assertEqual(proc.returncode, 2)
 
 
 def run_job(name: str, env: dict[str, str]) -> tuple[int, dict]:

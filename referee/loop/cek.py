@@ -64,18 +64,49 @@ from loop import pulled as P
 from runner import kos as K
 from target import branches as B
 
+KINDS = ("toy", "copy")  # 26c: targets[].kind
 
-def target_entry(summary: bytes, target_id: str) -> tuple[dict | None, list[str]]:
+
+def _entries(summary: bytes) -> list | None:
+    """``setup/summary.json``'s ``targets`` list, or ``None`` when ``summary`` is not a JSON object holding one."""
     try:
         doc = json.loads(summary.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         doc = None
     if not (isinstance(doc, dict) and isinstance(doc.get("targets"), list)):
+        return None
+    return doc["targets"]
+
+
+def target_entry(summary: bytes, target_id: str) -> tuple[dict | None, list[str]]:
+    entries = _entries(summary)
+    if entries is None:
         return None, ["summary_unreadable"]
-    found = [t for t in doc["targets"] if isinstance(t, dict) and t.get("id") == target_id]
+    found = [t for t in entries if isinstance(t, dict) and t.get("id") == target_id]
     if len(found) != 1:
         return None, ["target_unknown" if not found else "target_ambiguous"]
     return found[0], []
+
+
+def targets(summary: bytes) -> tuple[list[dict], list[str]]:
+    """The targets a run serves (tohum/29s "Hedefler"): every ``targets[]`` entry of ``summary``, in the array's
+    order, as read; or ``([], reasons)``: ``summary_unreadable`` (``target_entry``'s), ``targets_empty``,
+    ``target_id_unsafe`` (an entry that is not an object whose ``id`` is a target id, ``assemble``'s rule),
+    ``target_ambiguous`` (an id twice), ``target_kind_invalid`` (``kind`` not ``toy`` or ``copy``, 26c). The one
+    reader of the list: ``cek`` serves it, ``loop.job scope`` scopes the writer token to its repositories."""
+    entries = _entries(summary)
+    if entries is None:
+        return [], ["summary_unreadable"]
+    reasons = [] if entries else ["targets_empty"]
+    ids = [t.get("id") if isinstance(t, dict) else None for t in entries]
+    if not all(isinstance(i, str) and K.CANDIDATE_ID.fullmatch(i) for i in ids):
+        reasons.append("target_id_unsafe")
+    named = [i for i in ids if isinstance(i, str)]
+    if len(set(named)) != len(named):
+        reasons.append("target_ambiguous")
+    if not all(isinstance(t, dict) and t.get("kind") in KINDS for t in entries):
+        reasons.append("target_kind_invalid")
+    return ([], reasons) if reasons else (entries, [])
 
 
 def _candidates(brain: G.Source, commit: str, target_id: str) -> tuple[dict[str, dict[str, bytes]], list[str]]:

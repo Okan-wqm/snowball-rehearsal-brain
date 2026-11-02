@@ -1,5 +1,8 @@
 """Test 46 (asama-0/09), MF17, D3 -> D5: ``yaz``'s decision (``loop.decide``, ``loop.job run yaz``) on what the
-``kos`` job wrote with the fake runner, and on the pulled candidates (asama-0/08 criteria 1-8).
+``kos`` job wrote with the fake runner, and on the pulled candidates (asama-0/08 criteria 1-8). One target is served
+here (``in/pulled/served.json`` listing t1): its ``pulled`` is ``in/pulled/t1``, ``kos``'s ``out/results/t1`` is
+handed over as ``in/results/t1``, and the job's line holds its one target line ``targets[0]`` (``target`` t1, the
+job's ``ok``; a refused target's ``reason``, ``reasons`` and id are the job's).
 
 - one cycle: a good candidate merges; a test-breaking and a ratchet-raising one are rejected for their own reasons;
   merges are serial (a second good candidate carries ``sentinel_pending``); the order is the ids' code-point order;
@@ -12,7 +15,9 @@
   ``brain/state`` ledger (``ledger.serial``: no merge, a merge, a planted merge, a reverted one) and ends ``ok``
   after D5 and D6 (D7 when it ends a sentinel; D8 off without its seed); its root signer is the ``sigstore`` step's
   program (tohum/29s), and without it the job is no verdict before anything is written; a ledger ``ledger.serial`` refuses is ``state_refused``, nothing decided; a refused
-  artifact, a missing ``control.json`` and an unusable recipe.
+  artifact (among them a ``pulled`` whose ``target.id`` is not its directory's name, ``target_mismatch``, nothing
+  decided), a ``served.json`` beside an unlisted directory (``pulled_invalid``, no target served), a missing
+  ``control.json`` and an unusable recipe.
 """
 
 from __future__ import annotations
@@ -54,16 +59,39 @@ class Cycle(Base):
 
     def kos(self, cands: dict, target: dict | None = None, units=None, **kw) -> dict:
         """The ``kos`` job on the pulled artifact; it ends ``ok`` (so the upload runs) and its ``out/results`` is
-        handed over to ``in/results`` as the download does. Returns ``kos``'s line."""
+        handed over to ``in/results`` as the download does (``out/results/t1`` to ``in/results/t1``). Returns the
+        target's line of ``kos``'s line (``line``)."""
         self.write_pulled(cands, target=target, units=units, **kw)
         out = J.run("kos", {"RUNNER_TEMP": self.temp}, runner=RedAs())
         self.assertTrue(out["ok"], out)
         self.assertNotIn("reason", out)
-        shutil.move(os.path.join(self.temp, "out", "results"), self.results())
-        return out
+        # the download of kos's out/results: its one directory per served target
+        os.makedirs(os.path.dirname(self.results()), exist_ok=True)
+        shutil.move(os.path.join(self.temp, "out", "results", TARGET["id"]), self.results())
+        os.rmdir(os.path.join(self.temp, "out", "results"))
+        return self.line(out)
 
     def results(self, *parts) -> str:
-        return os.path.join(self.temp, "in", "results", *parts)
+        return os.path.join(self.temp, "in", "results", TARGET["id"], *parts)
+
+    def line(self, out: dict, tid: str = "t1") -> dict:
+        """The job line's one target line, after checking it is ``tid``'s, that the job's ``ok`` is its, and that a
+        refused target's ``reason``/``reasons`` and id are the job's (``loop.job.run``)."""
+        [line] = out["targets"]
+        self.assertEqual(line["target"], tid)
+        self.assertEqual(out["ok"], line["ok"])
+        stop = {k: out[k] for k in ("reason", "reasons", "target") if k in out}
+        if line["ok"]:
+            self.assertEqual(stop, {})
+        else:
+            self.assertEqual(stop, {k: line[k] for k in ("reason", "reasons", "target") if k in line})
+        return line
+
+    def refused(self, out: dict, tid: str = "t1") -> dict:
+        """A job stopped at its one target (see ``line``)."""
+        line = self.line(out, tid)
+        self.assertFalse(line["ok"])
+        return line
 
     def tree(self) -> str:
         tree = os.path.join(self.base, "tree-%d" % len(os.listdir(self.base)))
@@ -231,7 +259,7 @@ class YazJob(YazBase):
         self.kos({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
         self.control(OPEN)
         self.github()
-        out = self.run_yaz()
+        out = self.line(self.run_yaz())
         # the default state's ledger holds no merge: nothing unfinished, good merges
         self.assertEqual((out["ok"], "reason" in out, out["done"], out["merge"]), (True, False, ["D5", "D6"], "good"))
         self.assertEqual(self.reasons(out), {"good": [], "breaks": ["tests_red"]})
@@ -246,7 +274,7 @@ class YazJob(YazBase):
                 shutil.rmtree(self.results())
                 self.kos({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)}, state=state_files(rows))
                 self.github()
-                out = self.run_yaz()
+                out = self.line(self.run_yaz())
                 self.assertEqual(out["done"], ["D5", "D6", "D7"] if want else ["D5", "D6"])
                 self.assertEqual(out["sentinel"] and (out["sentinel"]["merge_sha"], out["sentinel"]["verdict"]),
                                  want and (head, "green"))
@@ -282,7 +310,7 @@ class YazJob(YazBase):
                            ([{"row_id": "g1", "part": "genesis"}], None)):
             with self.subTest(want=want):
                 self.with_ledger(rows)
-                out = J.run("yaz", {"RUNNER_TEMP": self.temp})
+                out = self.refused(J.run("yaz", {"RUNNER_TEMP": self.temp}))
                 self.assertEqual((out["ok"], out["reason"]), (False, "state_refused"))
                 self.assertNotIn("decisions", out)
                 if want:
@@ -294,7 +322,7 @@ class YazJob(YazBase):
         self.kos({"good": candidate(GOOD)})
         self.control({"merge_paused": True})
         self.github()
-        out = self.run_yaz()
+        out = self.line(self.run_yaz())
         self.assertIn("merge_paused", out["decisions"]["good"]["reasons"])
         os.remove(os.path.join(self.temp, "control", "control.json"))
         with self.assertRaises(J.Unusable):
@@ -305,15 +333,33 @@ class YazJob(YazBase):
         self.control(OPEN)
         with open(os.path.join(self.pulled, "candidates/good/diff.patch"), "ab") as fh:
             fh.write(b" ")
-        out = J.run("yaz", {"RUNNER_TEMP": self.temp})
+        out = self.refused(J.run("yaz", {"RUNNER_TEMP": self.temp}))
         self.assertEqual((out["reason"], out["reasons"]), ("pulled_invalid", ["hash_mismatch:candidates/good/diff.patch"]))
+
+    def test_a_pulled_of_another_target(self):
+        # in/pulled/t1 holding target t2's artifact, every hash in it right: the directory names the target
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        shutil.rmtree(self.pulled)
+        self.write_pulled({"good": candidate(GOOD)}, target=dict(TARGET, id="t2", repo=YW.REPO))
+        out = self.refused(J.run("yaz", {"RUNNER_TEMP": self.temp}))
+        self.assertEqual((out["reason"], out["reasons"]), ("pulled_invalid", ["target_mismatch"]))
+        self.assertNotIn("decisions", out)
+
+    def test_an_unreadable_served_list(self):
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        os.makedirs(os.path.join(self.temp, "in", "pulled", "t9"))  # a directory served.json does not list
+        out = J.run("yaz", {"RUNNER_TEMP": self.temp})
+        self.assertEqual((out["ok"], out["reason"], out["reasons"]), (False, "pulled_invalid", ["unlisted:t9"]))
+        self.assertNotIn("targets", out)
 
     def test_two_units(self):
         self.kos({})
         self.control(OPEN)
         shutil.rmtree(self.pulled)
         self.write_pulled(units={"units": [recipe(), recipe(unit_id="b")]})
-        self.assertEqual(J.run("yaz", {"RUNNER_TEMP": self.temp})["reason"], "units_not_one")
+        self.assertEqual(self.refused(J.run("yaz", {"RUNNER_TEMP": self.temp}))["reason"], "units_not_one")
 
     def test_an_unusable_recipe(self):
         self.kos({"good": candidate(GOOD)})
@@ -325,9 +371,17 @@ class YazJob(YazBase):
 
     def test_command_line(self):
         env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "SYSTEMROOT")}
-        proc = subprocess.run([sys.executable, "-m", "loop.job", "run", "yaz"], cwd=REFEREE,
-                              env=dict(env, RUNNER_TEMP=self.temp), capture_output=True)
-        self.assertEqual((proc.returncode, json.loads(proc.stdout)), (2, {"ok": False, "reason": None}))
+
+        def run():
+            proc = subprocess.run([sys.executable, "-m", "loop.job", "run", "yaz"], cwd=REFEREE,
+                                  env=dict(env, RUNNER_TEMP=self.temp), capture_output=True)
+            return proc.returncode, json.loads(proc.stdout)
+        # no pulled downloaded: refused (exit 1) before any target is served
+        code, out = run()
+        self.assertEqual((code, out["ok"], out["reason"], "targets" in out), (1, False, "pulled_invalid", False))
+        # a served pulled and no control.json: no verdict (exit 2)
+        self.write_pulled({"good": candidate(GOOD)})
+        self.assertEqual(run(), (2, {"ok": False, "reason": None}))
 
 
 if __name__ == "__main__":

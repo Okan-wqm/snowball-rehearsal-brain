@@ -31,7 +31,7 @@ these are the operator's files and the run's own steps, not the brain's work.
 
 Out of scope, stated: what the two steps do (29s's text, run by Actions; test 46 checks the workflow carries them
 exactly and ``tests/test_install_steps_spec.py`` binds the copies to 29s); the other fields of ``bootstrap.json``
-(the bootstrap referee's); which targets a run serves (29s "Hedefler"; ``loop.job`` still reads ``LOOP_TARGET``).
+(the bootstrap referee's); which targets a run serves (29s "Hedefler": ``loop.cek.targets`` and ``loop.job``).
 """
 
 from __future__ import annotations

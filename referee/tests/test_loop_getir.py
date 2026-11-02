@@ -2,14 +2,18 @@
 the hand-over of its ``deps`` artifact to ``kos`` (``runner.deps_npm.artifact_in``), tarballs served by a mirror
 directory (the sandbox has no network; the HTTPS fetch is asama-0/10a #getir), ``kos`` with the fake runner.
 
-- the job: the recipe's lock in the pulled tree is fetched by MF5 into ``$RUNNER_TEMP/out/deps/<address>/``, which
-  MF5's ``verify`` takes; the line carries the address, the counts and the license report; exit 0 and ``ok`` true;
-- the hand-over: that directory, downloaded whole as ``in/deps``, is installed by ``kos`` (the unit's test reads
-  the unpacked package); a changed tarball byte after the hand-over is MF5's ``tarball_mismatch``; a downloaded
-  root that is not exactly one ``<address>/`` directory runs nothing (``deps_invalid``);
+- the job, per served target ``<id>`` (``in/pulled/<id>``): the recipe's lock in the pulled tree is fetched by MF5
+  into ``$RUNNER_TEMP/out/deps/<id>/<address>/``, which MF5's ``verify`` takes; the line's ``targets`` entry
+  ``{target: <id>, ...}`` carries the address, the counts and the license report; exit 0 and ``ok`` true; with two
+  served targets each is fetched into its own ``out/deps/<id>/``, in the served order;
+- the hand-over: ``out/deps``, downloaded whole as ``in/deps``, is installed by ``kos`` from ``in/deps/<id>`` (the
+  unit's test reads the unpacked package): a change to one target's ``in/deps/<id>`` is that target's alone, and
+  ``out/deps`` laid out without the ``<id>/`` level is not read; a changed tarball byte after the hand-over is
+  MF5's ``tarball_mismatch``; an ``in/deps/<id>`` that is not exactly one ``<address>/`` directory runs nothing
+  (``deps_invalid``);
 - refusals before and during the fetch: a refused artifact, two units, an unsafe tree and a recipe the static check
   refuses fetch nothing; a git dependency, a changed tarball byte and the recipe's ``limits.deps_bytes`` are MF5's
-  refusals (``deps_refused``), nothing written; a failed fetch and an existing ``out/deps`` are no verdict.
+  refusals (``deps_refused``), nothing written; a failed fetch and an existing ``out/deps/<id>`` are no verdict.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from loop import job as J  # noqa: E402
+from loop import pulled as P  # noqa: E402
 from runner import deps_npm as N  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 from test_deps_npm import Fixture  # noqa: E402
@@ -56,7 +61,8 @@ class Getir(Base):
         self.fx.add("left-pad", "1.3.0")
         self.write_lock()
         self.fetched: list[str] = []
-        self.out = os.path.join(self.temp, "out", "deps")
+        self.deps = os.path.join(self.temp, "out", "deps")  # getir's artifact: one <id>/ per served target
+        self.out = os.path.join(self.deps, "t1")
 
     def write_lock(self) -> None:
         write_tree(self.src, {"pkg/package-lock.json": self.fx.lock, "pkg/run_tests.py": USES_DEP})
@@ -69,10 +75,16 @@ class Getir(Base):
         return J.run("getir", dict({"RUNNER_TEMP": self.temp}, **(env or {})), fetcher=self.fetcher)
 
     def hand_over(self) -> str:
-        """The upload of ``out/deps`` and its download as ``in/deps``: the directory copied whole."""
+        """The upload of ``out/deps`` and its download as ``in/deps``: the directory copied whole; t1's part,
+        ``in/deps/t1``, is returned."""
         dest = os.path.join(self.temp, "in", "deps")
-        shutil.copytree(self.out, dest, symlinks=True)
-        return dest
+        shutil.copytree(self.deps, dest, symlinks=True)
+        return os.path.join(dest, "t1")
+
+    def one(self, out: dict) -> dict:
+        """The line's one target, ``t1``: its entry of ``targets``."""
+        self.assertEqual([t["target"] for t in out["targets"]], ["t1"])
+        return out["targets"][0]
 
     def run_kos(self, runner=None, env=None) -> dict:
         return J.run("kos", dict({"RUNNER_TEMP": self.temp}, **(env or {})), runner=runner or RedAs())
@@ -81,9 +93,12 @@ class Getir(Base):
 class Fetch(Getir):
     def test_the_lock_is_fetched_into_one_artifact_that_verifies(self):
         self.write_pulled()
-        out = self.run_getir()
-        self.assertEqual((out["ok"], out["done"], out["job"], "reason" in out), (True, ["D2"], "getir", False))
+        line = self.run_getir()
+        out = self.one(line)
+        self.assertEqual((line["ok"], line["job"], "reason" in line), (True, "getir", False))
+        self.assertEqual((out["ok"], out["done"], "reason" in out), (True, ["D2"], False))
         address = out["deps"]["address"]
+        self.assertEqual(os.listdir(self.deps), ["t1"])
         self.assertEqual(os.listdir(self.out), [address])
         self.assertEqual(N.verify(os.path.join(self.out, address)), {"ok": True, "reasons": [], "address": address})
         self.assertEqual(N.artifact_in(self.out), os.path.join(self.out, address))
@@ -100,8 +115,10 @@ class Fetch(Getir):
     def test_a_lock_without_packages_gives_an_artifact_with_none(self):
         write_tree(self.src, {"pkg/package-lock.json": TREE["pkg/package-lock.json"]})
         self.write_pulled()
-        out = self.run_getir()
-        self.assertEqual((out["ok"], out["deps"]["packages"], out["licenses"], self.fetched), (True, 0, [], []))
+        line = self.run_getir()
+        out = self.one(line)
+        self.assertEqual((line["ok"], out["ok"], out["deps"]["packages"], out["licenses"], self.fetched),
+                         (True, True, 0, [], []))
         self.assertTrue(N.verify(N.artifact_in(self.out))["ok"])
 
     def test_the_cli_exits_0_when_the_job_is_done(self):
@@ -111,7 +128,7 @@ class Fetch(Getir):
         proc = subprocess.run([sys.executable, "-m", "loop.job", "run", "getir"], cwd=REFEREE, capture_output=True,
                               env=dict(env, RUNNER_TEMP=self.temp))
         out = json.loads(proc.stdout)
-        self.assertEqual((proc.returncode, out["ok"], out["done"]), (0, True, ["D2"]), proc.stderr)
+        self.assertEqual((proc.returncode, out["ok"], self.one(out)["done"]), (0, True, ["D2"]), proc.stderr)
 
 
 class HandOver(Getir):
@@ -119,9 +136,10 @@ class HandOver(Getir):
         self.write_pulled()
         self.assertTrue(self.run_getir()["ok"])
         self.hand_over()
-        out = self.run_kos()
+        line = self.run_kos()
+        out = self.one(line)
         self.assertEqual(out["index"]["base"], {"verdict": "verified", "reasons": []})
-        self.assertEqual((out["ok"], out["done"]), (True, ["D3"]))
+        self.assertEqual((line["ok"], out["ok"], out["done"]), (True, True, ["D3"]))
 
     def test_without_the_artifact_kos_has_no_verdict(self):
         # the same tree with no in/deps: a lock with packages and no artifact is unusable input for kos
@@ -140,7 +158,7 @@ class HandOver(Getir):
             first = fh.read(1)
             fh.seek(0)
             fh.write(bytes([first[0] ^ 1]))
-        out = self.run_kos()
+        out = self.one(self.run_kos())
         self.assertEqual(out["index"]["base"]["verdict"], "no_verdict")
         self.assertEqual(out["index"]["base"]["reasons"], ["deps:tarball_mismatch:node_modules/left-pad"])
 
@@ -176,18 +194,20 @@ class HandOver(Getir):
                 change(self.hand_over())
                 runner = RedAs()
                 out = self.run_kos(runner)
-                self.assertEqual((out["ok"], out["reason"]), (False, "deps_invalid"))
+                self.assertEqual((out["ok"], out["reason"], out["target"]), (False, "deps_invalid", "t1"))
+                self.assertEqual(self.one(out)["reason"], "deps_invalid")
                 self.assertEqual(runner.calls, [])
                 self.assertFalse(os.path.exists(os.path.join(self.temp, "out", "results")))
 
 
 class Refusals(Getir):
     def assert_nothing_fetched(self, out, reason, reasons=None):
-        self.assertEqual((out["ok"], out["reason"]), (False, reason))
+        self.assertEqual((out["ok"], out["reason"], out["target"]), (False, reason, "t1"))
+        self.assertEqual((self.one(out)["ok"], self.one(out)["reason"]), (False, reason))
         if reasons is not None:
             self.assertEqual(out["reasons"], reasons)
         self.assertEqual(self.fetched, [])
-        self.assertFalse(os.path.exists(self.out) and os.listdir(self.out))
+        self.assertFalse(os.path.exists(self.deps) and os.listdir(self.deps))
 
     def test_a_refused_artifact_two_units_or_an_unsafe_tree_fetch_nothing(self):
         self.write_pulled()
@@ -232,9 +252,10 @@ class Refusals(Getir):
         self.fx.put(self.fx.lock["packages"]["node_modules/left-pad"]["resolved"], b"not the tarball")
         self.write_pulled()
         out = self.run_getir()
-        self.assertEqual((out["ok"], out["reason"], out["reasons"]),
-                         (False, "deps_refused", ["integrity_mismatch:node_modules/left-pad"]))
-        self.assertEqual(os.listdir(self.out), [])
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"]),
+                         (False, "deps_refused", ["integrity_mismatch:node_modules/left-pad"], "t1"))
+        self.assertEqual(self.one(out)["reason"], "deps_refused")
+        self.assertEqual((os.listdir(self.deps), os.listdir(self.out)), (["t1"], []))
 
     def test_the_recipes_deps_bytes_tightens_the_operators(self):
         size = len(self.fx.blobs[self.fx.lock["packages"]["node_modules/left-pad"]["resolved"]])
@@ -243,7 +264,7 @@ class Refusals(Getir):
                 shutil.rmtree(self.temp, ignore_errors=True)
                 self.write_pulled(units={"units": [recipe(limits={"deps_bytes": limit})]})
                 out = self.run_getir()
-                self.assertEqual(out["ok"], ok, out)
+                self.assertEqual((out["ok"], self.one(out)["ok"]), (ok, ok), out)
                 if not ok:
                     self.assertEqual((out["reason"], out["reasons"]), ("deps_refused", ["limit_hit:deps_bytes"]))
         # the operator's value binds when the recipe sets none
@@ -265,6 +286,56 @@ class Refusals(Getir):
         with self.assertRaises(J.Unusable):
             self.run_getir()
         self.assertEqual(self.fetched, [])
+
+
+class Targets(Getir):
+    """Two served targets, t2 before t1 (served.json's order), the same lock in each pulled tree."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        root = os.path.dirname(self.pulled)
+        os.makedirs(root)
+        P.write_served(root, ["t2", "t1"])
+        self.write_pulled_as("t1")
+        self.write_pulled_as("t2")
+
+    def test_each_served_target_gets_its_own_deps(self):
+        line = self.run_getir()
+        self.assertEqual((line["ok"], line.get("reason")), (True, None))
+        self.assertEqual([(t["target"], t["ok"], t["done"]) for t in line["targets"]],
+                         [("t2", True, ["D2"]), ("t1", True, ["D2"])])
+        self.assertEqual(sorted(os.listdir(self.deps)), ["t1", "t2"])
+        for entry in line["targets"]:
+            address = entry["deps"]["address"]
+            here = os.path.join(self.deps, entry["target"])
+            self.assertEqual(os.listdir(here), [address])
+            self.assertEqual(N.verify(os.path.join(here, address))["ok"], True)
+            self.assertEqual(N.artifact_in(here), os.path.join(here, address))
+        resolved = self.fx.lock["packages"]["node_modules/left-pad"]["resolved"]
+        self.assertEqual(self.fetched, [resolved, resolved])
+
+    def test_kos_reads_each_targets_own_deps(self):
+        self.assertTrue(self.run_getir()["ok"])
+        dest = N.artifact_in(os.path.join(os.path.dirname(self.hand_over()), "t2"))
+        tarballs = os.path.join(dest, "tarballs")
+        path = os.path.join(tarballs, os.listdir(tarballs)[0])
+        with open(path, "r+b") as fh:
+            first = fh.read(1)
+            fh.seek(0)
+            fh.write(bytes([first[0] ^ 1]))
+        line = self.run_kos()
+        self.assertEqual([t["target"] for t in line["targets"]], ["t2", "t1"])
+        t2, t1 = line["targets"]
+        self.assertEqual((t2["index"]["base"]["verdict"], t2["index"]["base"]["reasons"]),
+                         ("no_verdict", ["deps:tarball_mismatch:node_modules/left-pad"]))
+        self.assertEqual(t1["index"]["base"], {"verdict": "verified", "reasons": []})
+
+    def test_deps_without_the_id_level_are_not_read(self):
+        # t1's <address>/ handed over as in/deps itself: kos finds no in/deps/<id>, and the lock has packages
+        self.assertTrue(self.run_getir()["ok"])
+        shutil.copytree(self.out, os.path.join(self.temp, "in", "deps"), symlinks=True)
+        with self.assertRaises(J.Unusable):
+            self.run_kos()
 
 
 if __name__ == "__main__":

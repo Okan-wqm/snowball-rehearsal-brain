@@ -158,8 +158,8 @@
   {
    "id": "job_end_not_passed",
    "file": "loop/job.py",
-   "old": "d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, end, d8)",
-   "new": "d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, None, d8)",
+   "old": "d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8)",
+   "new": "d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, None, d8)",
    "tests": [
     "test_loop_write.py"
    ]

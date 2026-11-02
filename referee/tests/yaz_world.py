@@ -66,12 +66,14 @@ def files_of(root: str) -> dict[str, bytes]:
     return out
 
 
-def write_response(temp: str, target_id: str, heads: dict[str, str], rows: list[dict], **over) -> str:
-    """``$RUNNER_TEMP/in/response/response.json`` as ``loop.cagir.d4`` writes it."""
+def write_response(temp: str, target_id: str, heads: dict[str, str], rows: list[dict], at: str = "t1",
+                   **over) -> str:
+    """``$RUNNER_TEMP/in/response/<at>/response.json`` (``at`` the served target's directory) as ``loop.cagir.d4``
+    writes it."""
     doc = dict({"schema": CG.SCHEMA, "target": target_id, "heads": heads, "rows": rows, "outcome": "ok",
                 "reason": None, "sent": True, "run_valid": True, "output": {"echo": target_id},
                 "models_served": ["m"], "cost_usd_micros": 1234, "prompt_sha256": "2" * 64, "dropped": []}, **over)
-    root = os.path.join(temp, "in", "response")
+    root = os.path.join(temp, "in", "response", at)
     os.makedirs(root, exist_ok=True)
     with open(os.path.join(root, CG.RESPONSE), "w") as fh:
         json.dump(doc, fh)

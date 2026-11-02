@@ -120,8 +120,8 @@
   {
    "id": "fail_not_red",
    "file": "loop/job.py",
-   "old": "        if d8.get(\"judged\", {}).get(\"verdict\") == \"FAIL\":",
-   "new": "        if False:",
+   "old": "    if d8.get(\"judged\", {}).get(\"verdict\") == \"FAIL\":",
+   "new": "    if False:",
    "tests": [
     "test_loop_write.py"
    ]
