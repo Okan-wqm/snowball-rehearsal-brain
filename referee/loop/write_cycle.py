@@ -113,6 +113,38 @@ class _Dry:
 DRY = _Dry()
 
 
+def merge_change(art: P.Pulled, tree: str, merge: str | None) -> dict | None:
+    """D5's merge applied to the tree (``target.land.applied``): ``{reasons: [], path, content}``, ``None`` with no
+    merge; a reason means D5 chose a candidate that cannot be written (``Unusable``). Shared with ``activate``."""
+    if merge is None:
+        return None
+    change = land.applied(tree, art.candidates[merge]["diff.patch"].decode("utf-8", "surrogateescape"))
+    if change["reasons"]:
+        raise Unusable("merge %s cannot be written: %s" % (merge, ", ".join(change["reasons"])))
+    return change
+
+
+def status_facts(art: P.Pulled, cyc: dict) -> dict:
+    """``status.block``'s facts of the cycle ``cyc`` (``{cycle_id, ts, snapshot_id}``): its canary cap is
+    ``canary_usd`` of ``pulled``'s policy (``loop.cagir.CANARY_USD``). Shared with ``activate``."""
+    try:
+        cap = llm_call.policy_usd(art.policy_bytes, *cagir.CANARY_USD)
+    except llm_call.Unusable as exc:
+        raise Unusable(cli.cause(exc)) from None
+    return {"ts": cyc["ts"], "snapshot_id": cyc["snapshot_id"], "row_id": "%s:status" % cyc["cycle_id"],
+            "canary_cap_usd_micros": cap}
+
+
+def candidate_rows(cyc: dict, decided: dict, merged: dict | None) -> list[dict]:
+    """D5's decisions as rows, in code-point order of the candidate id (``ledger.events.decided``); ``merged`` is
+    the merge's ``{path, pull, head_sha, merge_sha}``. Shared with ``activate``."""
+    out: list[dict] = []
+    for cid in sorted(decided["decisions"]):
+        out += events.decided(cyc, cid, decided["decisions"][cid]["reasons"],
+                              merged if cid == decided["merge"] else None)
+    return out
+
+
 def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.Writer, signer: Any,
           imports: bytes, cycle_id: str, ts: str, base_lint: dict | None = None,
           end: dict | None = None, drill: dict | None = None) -> dict[str, Any]:
@@ -129,10 +161,7 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
     if merge is not None or planted:
         if base_lint is None:
             raise Unusable("merge %s: the base's lint totals are unreadable" % (merge or "planted"))
-    if merge is not None:
-        change = land.applied(tree, art.candidates[merge]["diff.patch"].decode("utf-8", "surrogateescape"))
-        if change["reasons"]:
-            raise Unusable("merge %s cannot be written: %s" % (merge, ", ".join(change["reasons"])))
+    change = merge_change(art, tree, merge)
     cause = red = None
     if end is not None:
         if merge is not None or end["merge_sha"] != art.heads[B.INTEGRATION]:
@@ -153,19 +182,13 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
     moved = ["head_moved:%s" % b for b in P.HEAD_BRANCHES if writer.head(b) != art.heads[b]]
     if moved:
         raise Refused(moved)
-    try:
-        cap = llm_call.policy_usd(art.policy_bytes, *cagir.CANARY_USD)
-    except llm_call.Unusable as exc:
-        raise Unusable(cli.cause(exc)) from None
-    facts = {"ts": ts, "snapshot_id": cyc["snapshot_id"], "row_id": "%s:status" % cycle_id,
-             "canary_cap_usd_micros": cap}
+    facts = status_facts(art, cyc)
 
     def rows(merged: dict | None, plant_sha: str) -> list[dict]:
         out = [events.start(cyc)]
         if merge is not None or planted:
             out.append(events.ratchet_base(cyc, base_lint["base_run_sha256"], base_lint["counts"]))
-        for cid in sorted(decided["decisions"]):
-            out += events.decided(cyc, cid, decided["decisions"][cid]["reasons"], merged if cid == merge else None)
+        out += candidate_rows(cyc, decided, merged)
         if red is not None:
             out.append(events.revert(cyc, red["merge_sha"], cause))
         elif end is not None:

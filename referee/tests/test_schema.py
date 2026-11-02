@@ -252,10 +252,11 @@ class Artifacts(unittest.TestCase):
 
     def test_activate_refuses_a_row_of_the_wrong_shape_before_writing(self):
         w = AW.World()
-        w.canary_cap = 1.5  # status.block refuses a float cap: a hard stop, brain/state not written
-        with self.assertRaises(activate.HardStop):
+        w.decided["decisions"]["bad-test"]["reasons"] = "tests_red"  # a reject's reasons not a list of strings
+        with self.assertRaises(activate.Refused) as ctx:  # the dry plan, before the cut: nothing written
             w.run()
-        self.assertNotIn("brain/state", w.gh.refs)
+        self.assertTrue(ctx.exception.reasons[0].startswith("state_unwritable: "), ctx.exception.reasons)
+        self.assertEqual(w.writes(), [])
         with self.assertRaises(cycle.Unusable):
             cycle.plan(b"", b"", b"", b"", None,
                        [dict(self.row("merge"), payload={"decision": "merge", "candidate": "x"})],

@@ -38,7 +38,8 @@ for the tree is the commit the tree was read from. Nothing here reads the networ
   (``object_missing:<sha>``, ``tree_submodule:<path>``, ...) are listed with the others. What the tree may hold
   (links leaving it, devices) is ``loop.pulled.extract_tree``'s rule in ``kos``, not repeated here.
 - ``state_incomplete``: ``state`` does not map exactly the paths of ``STATE_CHAINS`` to bytes;
-  ``heads_invalid``: ``state_head`` or ``commit`` is not 40 lowercase hex (``loop.pulled.write``'s rules).
+  ``heads_invalid``: ``state_head`` or ``commit`` is not 40 lowercase hex, ``state_head`` ``None`` (the genesis
+  cycle) only with both chains empty and no ``status`` (``loop.pulled.write``'s rules).
 
 Then ``loop.pulled.write`` writes the artifact and ``loop.pulled.read`` reads it back (its refusals, e.g.
 ``json_unreadable:units.json``, are this step's too, and the written directory is removed), so an artifact

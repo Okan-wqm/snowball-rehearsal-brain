@@ -1,9 +1,11 @@
 """A toy target for activation tests (tests 45 and 14): the in-process GitHub with ``main`` and the facts genesis
 reads (tohum/29o: the writer App, its installation, the three branches' rules and their rulesets, the toy's
-workflows or the copy's Actions permission, answered as ``overrides``), the operator files, the referee's base run
-and five ready candidates, the good one and asama-0/08's four bad ones (outside the fix
-range, a ratchet increase, a broken test, a forbidden path). Every input is written here by hand; hashes the
-tests expect are computed from these bytes, not by ``activate``.
+workflows or the copy's Actions permission, answered as ``overrides``), the operator files, the referee's base run,
+the genesis cycle's ``pulled`` (``loop.pulled.Pulled``: no ``brain/state`` head, ``brain/integration`` the base
+commit) with five ready candidates, the good one and asama-0/08's four bad ones (outside the fix range, a ratchet
+increase, a broken test, a forbidden path), and D5's answer on them (``loop.decide``'s shape, written here by hand:
+deciding is D5's, tested in test_loop_yaz; the activation writes the answer). Every input is written here by hand;
+hashes the tests expect are computed from these bytes, not by ``activate``.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import tempfile
 
 from fake_github import FakeGitHub
 from ledger import anchor, chain
+from loop import pulled
 from target import branches
 
 REPO = "acme/toy"
@@ -63,32 +66,25 @@ def diff(path: str, old_start: int, removed: list[str], added: list[str]) -> byt
     return (head + hunk + body).encode("utf-8")
 
 
-def candidate(cid: str, patch: bytes, cand_run: bytes, checks: bytes, line: int = 2, path: str = "src/a.js") -> dict:
-    files = {"finding.json": json.dumps({"rule_id": "no-var", "path": path, "line": line, "fix_range": [line, line],
-                                         "tool_output_sha256": sha(BASE_RUN)}).encode(),
-             "diff.patch": patch, "cand.jsonl": cand_run, "checks.json": checks}
-    files["hashes.json"] = json.dumps({"base.jsonl": sha(BASE_RUN), "cand.jsonl": sha(cand_run),
-                                       "checks.json": sha(checks)}).encode()
-    return dict(files, id=cid)
+def candidate(cid: str, patch: bytes, line: int = 2, path: str = "src/a.js") -> dict:
+    """A ready candidate as ``pulled`` carries it (``loop.pulled.CANDIDATE_FILES``)."""
+    return {"id": cid, "diff.patch": patch, "expect.json": b"{}\n",
+            "finding.json": json.dumps({"rule_id": "no-var", "path": path, "line": line, "fix_range": [line, line],
+                                        "tool_output_sha256": sha(BASE_RUN)}).encode()}
 
 
 def candidates() -> list[dict]:
-    fixed = run_file({"tool": "eslint", "violations": [violation(3)]})
     return [
         # good: line 2 fixed inside its fix range, nothing else changes
-        candidate("good", diff("src/a.js", 2, ["var x = 1;"], ["let x = 1;"]), fixed, CHECKS_GREEN),
+        candidate("good", diff("src/a.js", 2, ["var x = 1;"], ["let x = 1;"])),
         # outside the fix range: changes line 3 as well (scope_violation)
-        candidate("bad-scope", diff("src/a.js", 2, ["var x = 1;", "var y = 2;"], ["let x = 1;", "let y = 2;"]),
-                  run_file({"tool": "eslint", "violations": []}), CHECKS_GREEN),
+        candidate("bad-scope", diff("src/a.js", 2, ["var x = 1;", "var y = 2;"], ["let x = 1;", "let y = 2;"])),
         # ratchet: fixes line 2 but its tree has one more violation of the tool
-        candidate("bad-ratchet", diff("src/a.js", 2, ["var x = 1;"], ["let x = 1;"]),
-                  run_file({"tool": "eslint", "violations": [violation(3), violation(4, "eqeqeq"),
-                                                             violation(4, "no-undef")]}), CHECKS_GREEN),
+        candidate("bad-ratchet", diff("src/a.js", 2, ["var x = 1;"], ["let x = 1;"])),
         # a broken test
-        candidate("bad-test", diff("src/a.js", 2, ["var x = 1;"], ["let x = 1;"]), fixed, CHECKS_RED),
+        candidate("bad-test", diff("src/a.js", 2, ["var x = 1;"], ["let x = 1;"])),
         # a forbidden path: the lint configuration
-        candidate("bad-path", diff("eslint.config.js", 1, ["module.exports = [];"], ["module.exports = [{}];"]),
-                  fixed, CHECKS_GREEN),
+        candidate("bad-path", diff("eslint.config.js", 1, ["module.exports = [];"], ["module.exports = [{}];"])),
     ]
 
 
@@ -101,16 +97,24 @@ EXPECTED_REJECTS = {
 
 
 APP_ID = 4242
+POLICY = json.dumps({"stage_budgets": {"asama_0": {"canary_usd": 0.22}}}).encode() + b"\n"
 
 
-def facts(kind: str) -> dict:
+def decided() -> dict:
+    """D5's answer on ``candidates()``: the good one merges, each bad one has its reason (``EXPECTED_REJECTS``)."""
+    out = {"good": {"decision": "merge", "reasons": []}}
+    out.update({cid: {"decision": "reject", "reasons": [reason]} for cid, (reason, _) in EXPECTED_REJECTS.items()})
+    return {"decisions": out, "merge": "good"}
+
+
+def facts(kind: str, repo: str = REPO) -> dict:
     """The GitHub answers genesis reads when every precondition holds (``{(method, path): (status, body)}``)."""
-    p = "/repos/%s" % REPO
+    p = "/repos/%s" % repo
     rule = lambda kind_, ruleset, **params: dict({"type": kind_, "ruleset_id": ruleset},  # noqa: E731
                                                  **({"parameters": params} if params else {}))
     out = {
         "/app": {"id": APP_ID, "slug": "snowball-writer"},
-        "/installation/repositories": {"total_count": 1, "repositories": [{"full_name": REPO}]},
+        "/installation/repositories": {"total_count": 1, "repositories": [{"full_name": repo}]},
         p + "/rules/branches/brain/state": [rule("deletion", 1), rule("non_fast_forward", 1)],
         p + "/rules/branches/brain/integration": [
             rule("deletion", 2), rule("non_fast_forward", 2), rule("pull_request", 2, required_approving_review_count=0),
@@ -161,18 +165,23 @@ class World:
         self.recipe = json.dumps({"unit_id": "toy", "inputs": ["src/", "test/", "eslint.config.js",
                                                                "package.json"]}).encode()
         self.security = chained([{"row_id": "sec-1", "part": "security", "kind": "note", "payload": {}}])
-        self.files = {"summary.json": self.summary, "imports.jsonl": self.imports, "policy.json": b'{"p": 1}\n',
+        self.files = {"summary.json": self.summary, "imports.jsonl": self.imports, "policy.json": POLICY,
                       "security-ledger.jsonl": self.security,
                       "recipe.json": self.recipe, "base.jsonl": BASE_RUN}
+        self.base_run_sha256 = sha(BASE_RUN)  # D3's index's
         self.candidates = candidates()
+        self.decided = decided()
+        self.cost: list[dict] = []
         self.signer = anchor.FakeSigner(True, "referee@example", "rekor-1")
-        self.control = {"kill_switch": False, "merge_paused": False}
-        self.canary_cap = 220000000
         self.tree = None  # the base tree's directory; None: base_tree() at run
+        self.heads = {branches.STATE: None, branches.INTEGRATION: self.main}  # pulled's: a genesis cycle
 
-    def request(self) -> dict:
-        return {"target_id": "toy", "base_run_sha256": sha(self.files["base.jsonl"]), "cycle_id": CYCLE, "ts": TS,
-                "snapshot_id": SNAP, "candidates": sorted(c["id"] for c in self.candidates)}
+    def pulled(self) -> pulled.Pulled:
+        """The genesis cycle's ``pulled`` as ``loop.pulled.read`` gives it."""
+        summary = json.loads(self.files["summary.json"])
+        return pulled.Pulled(summary["targets"][0], {"units": [json.loads(self.recipe)]}, json.loads(POLICY), "",
+                             {c["id"]: {k: v for k, v in c.items() if k != "id"} for c in self.candidates},
+                             dict(self.heads), {p: b"" for p in branches.STATE_CHAINS}, POLICY, None)
 
     def base_tree(self) -> str:
         """A new directory holding the base commit's tree (D1's checkout), not ``main``'s head; removed when the
@@ -192,11 +201,11 @@ class World:
         from target import write
         return write.Writer(REPO, self.gh)
 
-    def run(self, req: dict | None = None):
+    def run(self, art: pulled.Pulled | None = None):
         import activate
         self.wr = self.writer()
-        return activate.activate(self.wr, self.files, self.request() if req is None else req, self.candidates,
-                                 self.tree or self.base_tree(), self.signer, self.control, self.canary_cap)
+        return activate.activate(self.wr, self.files, art or self.pulled(), self.tree or self.base_tree(),
+                                 self.decided, self.base_run_sha256, self.cost, self.signer, CYCLE, TS)
 
     def writes(self) -> list[tuple]:
         return [(m, p) for m, p, _ in self.gh.requests if m != "GET"]

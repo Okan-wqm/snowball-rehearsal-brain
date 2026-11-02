@@ -49,8 +49,8 @@
   {
    "id": "write_merge_row_dropped",
    "file": "loop/write_cycle.py",
-   "old": "            out += events.decided(cyc, cid, decided[\"decisions\"][cid][\"reasons\"], merged if cid == merge else None)",
-   "new": "            out += events.decided(cyc, cid, decided[\"decisions\"][cid][\"reasons\"], merged if cid == merge else None)[:1]",
+   "old": "        out += events.decided(cyc, cid, decided[\"decisions\"][cid][\"reasons\"],\n                              merged if cid == decided[\"merge\"] else None)",
+   "new": "        out += events.decided(cyc, cid, decided[\"decisions\"][cid][\"reasons\"],\n                              merged if cid == decided[\"merge\"] else None)[:1]",
    "tests": [
     "test_loop_write.py"
    ]

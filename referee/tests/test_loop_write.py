@@ -41,6 +41,13 @@ served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line ch
   workspace, a run id that is not digits) write nothing; ``loop.write_cycle`` refuses a plant beside a merge or an
   end and an action ``loop.drill`` does not give; ``harness.pass_row`` judges the state these cycles wrote (one root
   and one status row per cycle, the drill ``PASS`` or ``FAIL`` as the loop judged it);
+- the genesis cycle (``Genesis``): ``kos`` then ``yaz`` on a toy's ``pulled`` in loop.pulled's genesis form;
+  ``yaz`` runs ``activate`` with D5's answer, D3's base run and D4's cost row (the cut at main, the merge, the
+  orphan state with the genesis payload naming the counter's transfer, the checkout's security ledger, the pulled
+  policy and unit), and the next cycle is an ordinary one on it (D7 ends the merge's green sentinel); an
+  activation reason (``toy_workflows``, ``base_moved``) writes nothing and ends the job ``activation_refused``; a
+  base run that is not its index's is ``base_run_hash_mismatch``, no base run ``base_run_missing``, and no security
+  ledger is no verdict, nothing written;
 - ``target.land.applied``: one file applied; more than one file, a missing or linked base, a hunk that does not
   apply, a creation and an unusable diff each refused with their reason.
 """
@@ -83,6 +90,7 @@ from profile_tree import write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, FINDING, GOOD, diff, recipe  # noqa: E402
 from test_loop_kos import A_JS, HEADS, TARGET, RedAs, candidate  # noqa: E402
 from test_loop_yaz import OPEN, YazBase  # noqa: E402
+import activation_world as AW  # noqa: E402
 import yaz_world as YW  # noqa: E402
 
 GENESIS_TS = "2026-10-30T12:00:00Z"
@@ -839,6 +847,125 @@ class D8(StateBase):
             with self.subTest(name), self.assertRaises(WC.Unusable):
                 WC.write(art, tree, decided, [], W.Writer(YW.REPO, self.gh), self.signer, b"", "9-1", YW.TS, lint,
                          end, drill)
+        self.assertEqual(self.writes(), [])
+
+
+class Genesis(StateBase):
+    """The genesis cycle (``loop.pulled.genesis``): ``kos`` then ``yaz`` on a toy with neither head, whose
+    ``pulled`` was read from its ``main``; ``yaz`` runs ``activate`` with D5's answer, D3's base run and D4's cost
+    rows, and the next cycle is an ordinary one on what it wrote."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.state = dict({p: b"" for p in B.STATE_CHAINS}, **{B.STATE_STATUS: None})
+        self.transfer = YW.transfer()
+        summary = {"seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
+                                    "bootstrap_sha256": "4" * 64}],
+                   "targets": [dict(TARGET, repo=YW.REPO, base_sha="c" * 40, identifiers=[])]}
+        self.security = YW.chained([{"row_id": "sec-1", "part": "security", "kind": "note", "payload": {}}])
+        write_tree(self.workspace, {"setup/summary.json": json.dumps(summary), "setup/imports.jsonl":
+                                    self.transfer["imports"].decode(), J.SECURITY_LEDGER: self.security.decode()})
+        self.gh = None
+
+    def write_pulled(self, cands=None, **kw) -> dict:
+        kw.setdefault("heads", {B.STATE: None, B.INTEGRATION: self.main_at()})
+        return super().write_pulled(cands, **kw)
+
+    def main_at(self) -> str:
+        """The toy's GitHub: ``main`` only, at a commit holding the tree, and the facts genesis reads."""
+        if self.gh is None:
+            self.gh = YW.FakeGitHub(YW.REPO, required_check=B.CHECK)
+            self.gh.refs["main"] = self.gh.seed_commit("toy-main", files=YW.files_of(self.src))
+            self.gh.overrides.update(AW.facts("toy", YW.REPO))
+        return self.gh.refs["main"]
+
+    def github(self) -> None:
+        art = P.read(self.pulled)
+        shutil.rmtree(os.path.join(self.temp, "in", "response"), ignore_errors=True)
+        YW.write_response(self.temp, "t1", art.heads, [YW.cost_row(snapshot=art.heads[B.INTEGRATION])])
+
+    def test_the_activation_writes_the_cycle_and_the_next_cycle_extends_it(self):
+        write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})
+        main = self.main_at()
+        out = self.cycle({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
+        self.assertEqual((out["ok"], out["done"], out["merge"], out["drill"]),
+                         (True, ["D5", "D6"], "good", {"action": "off", "why": "genesis"}), out)
+        written = out["written"]
+        self.assertEqual(set(written), set(J.GENESIS_WRITTEN) | {"genesis"})
+        self.assertEqual((written["genesis"], written["integration_sha"]), (True, main))
+        # the cut at main, D5's merge on it, brain/state an orphan; main untouched
+        merge = written["merge"]
+        self.assertEqual((merge["candidate"], merge["path"]), ("good", "pkg/a.js"))
+        self.assertEqual(self.gh.refs[B.INTEGRATION], merge["merge_sha"])
+        self.assertEqual(self.gh.commits[merge["merge_sha"]]["parents"][0], main)
+        self.assertEqual(self.gh.refs["main"], main)
+        self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [])
+        ledger = self.state_file(B.STATE_LEDGER)
+        self.assertEqual(SC.ledger_reasons(ledger), [])
+        rows = rows_of(ledger)
+        self.assertEqual([(r["row_id"], r["kind"]) for r in rows],
+                         [("9-1:genesis", "genesis"), ("9-1:start", "cycle_start"), ("9-1:cut", "integration_cut"),
+                          ("9-1:ratchet", "ratchet_base"), ("9-1:c:breaks", "decision"), ("9-1:c:good", "decision"),
+                          ("9-1:m:good", "merge"), ("cagir-9-1", "cost"), ("9-1:status", "status")])
+        payload = rows[0]["payload"]
+        self.assertEqual((payload["target"], payload["base_sha"]), ("t1", main))
+        self.assertEqual(payload["import_line_sha256"], self.transfer["line_sha256"])
+        self.assertEqual(payload["seed_security_ledger_sha256"], hashlib.sha256(self.security).hexdigest())
+        art = P.read(self.pulled)
+        self.assertEqual(payload["policy_sha256"], hashlib.sha256(art.policy_bytes).hexdigest())
+        self.assertEqual(payload["recipe_sha256"], hashlib.sha256(CH.canonical(art.units["units"][0])).hexdigest())
+        with open(self.results("base.jsonl"), "rb") as fh:
+            base_run = fh.read()
+        self.assertEqual(rows[3]["payload"]["base_run_sha256"], hashlib.sha256(base_run).hexdigest())
+        self.assertEqual(rows[4]["payload"], {"decision": "reject", "candidate": "breaks", "reasons": ["tests_red"]})
+        self.assertEqual(SE.unfinished(ledger), [merge["merge_sha"]])
+        self.assertEqual(self.signer.payloads, [AN.root_of(AN.tips(ledger)).encode()])
+        # the next cycle: an ordinary one on the state the activation wrote; D7 ends the merge's green sentinel
+        other = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
+                     **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})
+        self.next_cycle({"good": other}, "10")
+        self.assertFalse(P.genesis(P.read(self.pulled)))
+        out = self.run_yaz(GITHUB_RUN_ID="10")
+        self.assertEqual((out["ok"], out["done"], out["sentinel"]["verdict"]), (True, ["D5", "D6", "D7"], "green"), out)
+        new = self.state_file(B.STATE_LEDGER)
+        self.assertTrue(CH.verify_bytes(new, ledger)["valid"])
+        self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [written["state_sha"]])
+        self.assertEqual(SE.unfinished(new), [])
+
+    def test_nothing_is_written_when_the_activation_refuses(self):
+        self.main_at()
+        self.gh.overrides[("GET", "/repos/%s/actions/workflows" % YW.REPO)] = (200, {"workflows": [{"id": 1}]})
+        out = self.cycle({"good": candidate(GOOD)})
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["done"]),
+                         (False, "activation_refused", ["toy_workflows"], ["D5"]))
+        self.assertEqual(self.writes(), [])
+        # main moved after D1 read it: base_moved
+        self.gh.overrides[("GET", "/repos/%s/actions/workflows" % YW.REPO)] = (200, {"workflows": []})
+        self.gh.refs["main"] = self.gh.seed_commit("toy-main-2", [self.gh.refs["main"]], files={"x": b"y"})
+        self.assertEqual(self.run_yaz()["reasons"], ["base_moved"])
+        self.assertEqual(self.writes(), [])
+
+    def test_inputs_the_genesis_cycle_needs(self):
+        """The checkout's seed security ledger (tohum/29o) and D3's base run; without either nothing is written."""
+        self.main_at()
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        self.github()
+        path = os.path.join(self.workspace, *J.SECURITY_LEDGER.split("/"))
+        os.rename(path, path + ".away")
+        with self.assertRaises(J.Unusable) as ctx:
+            self.run_yaz()
+        self.assertIn(J.SECURITY_LEDGER, str(ctx.exception))
+        self.assertEqual(self.writes(), [])
+        os.rename(path + ".away", path)
+        with open(self.results("base.jsonl"), "ab") as fh:  # not the base run D3's index names
+            fh.write(b"\n")
+        out = self.run_yaz()
+        self.assertEqual((out["reason"], out["reasons"]), ("activation_refused", ["base_run_hash_mismatch"]))
+        self.assertEqual(self.writes(), [])
+        os.remove(self.results("base.jsonl"))
+        out = self.run_yaz()
+        self.assertEqual((out["reason"], out["reasons"]), ("activation_refused", ["base_run_missing"]))
         self.assertEqual(self.writes(), [])
 
 

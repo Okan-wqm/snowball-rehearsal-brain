@@ -6,10 +6,11 @@ ratchet increase, a broken test, a forbidden path); each ``finding.json`` names 
 run as the referee's converter (``runner.lint_record``) reads it, with that violation's ``fix`` as ``fix_range``
 and ``tool_output_sha256`` the sha256 of the ``base.jsonl`` the converter writes from it (the file whose hash
 genesis records as ``ratchet.base_run_sha256``); the captured tool outputs of ``tests/fixtures/toy-candidates/``
-belong to the tree each ``diff.patch`` makes; and the referee's acceptance rule (``activate.decide``: MF7 then
-MF8) gives each candidate exactly the decision and reason its ``expect.json`` states, alone and inside one
-activation on the in-process GitHub holding the toy's tree (MF18), where the good candidate's merged file is the
-patched file.
+belong to the tree each ``diff.patch`` makes; and the referee's acceptance rule (D5, ``loop.decide``: criterion 1
+with the toy tree's guard profile, then MF7 and MF8 on ``koş``'s results built from the capture) gives each
+candidate exactly the decision and reason its ``expect.json`` states, alone and all five in one cycle, whose
+answer the activation on the in-process GitHub holding the toy's tree (MF18) writes, the good candidate's merged
+file being the patched file.
 
 Inputs that are not the referee's, stated: the fixtures were captured by ``tests/capture_toy_candidates.py``
 with ESLint 10.13.0 and node 22.23.4 outside a container (the recipe's own commands); ``checks.json`` is built
@@ -34,9 +35,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "referee"))
 sys.path.insert(0, os.path.join(ROOT, "referee", "tests"))
 
+from unittest import mock  # noqa: E402
+
 import activate  # noqa: E402
 import activation_world as AW  # noqa: E402
 from gate import diffguard  # noqa: E402
+from loop import decide as E  # noqa: E402
+from loop import pulled as P  # noqa: E402
+from target import land  # noqa: E402
 from profile import unit_verify as V  # noqa: E402
 from runner import kos as K  # noqa: E402
 from runner import lint_record as R  # noqa: E402
@@ -96,7 +102,7 @@ def checks(test_stdout: str, test_exit: int) -> bytes:
 
 
 def candidate(cid: str) -> dict:
-    """The candidate as ``activate`` reads it: its brain files plus the ``koş`` results built from the capture."""
+    """The candidate's brain files plus the ``koş`` results built from the capture (``c/<cid>/``'s files)."""
     got = load(os.path.join(CAPTURED, cid + ".json"))
     path, content = patched(cid)
     work = tempfile.mkdtemp()
@@ -114,6 +120,38 @@ def candidate(cid: str) -> dict:
     cand["hashes.json"] = json.dumps({"base.jsonl": sha(base_run()), "cand.jsonl": sha(cand["cand.jsonl"]),
                                       "checks.json": sha(cand["checks.json"])}).encode()
     return cand
+
+
+BRAIN_FILES = P.CANDIDATE_FILES  # what pulled carries of a candidate (diff.patch, expect.json, finding.json)
+RUN_FILES = ("cand.jsonl", "checks.json", "hashes.json")
+
+
+def d5(cands: list[dict]) -> dict:
+    """``loop.decide`` over ``cands`` as one cycle's: a ``pulled`` of the toy tree carrying their brain files, and
+    ``koş``'s results (``index.json`` verified, ``base.jsonl``, ``c/<cid>/``) built from the capture."""
+    results = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(results, "base.jsonl"), "wb") as fh:
+            fh.write(base_run())
+        index = {"candidates": {c["id"]: {"verdict": "verified"} for c in cands}, "base_run_sha256": sha(base_run())}
+        with open(os.path.join(results, "index.json"), "w") as fh:
+            json.dump(index, fh)
+        for c in cands:
+            os.makedirs(os.path.join(results, "c", c["id"]))
+            for name in RUN_FILES:
+                with open(os.path.join(results, "c", c["id"], name), "wb") as fh:
+                    fh.write(c[name])
+        art = P.Pulled(None, {"units": [recipe()]}, None, "", {c["id"]: brain_files(c) for c in cands}, {}, {}, b"",
+                       None)
+        return E.decide(art, recipe(), TOY, results, CONTROL, [])
+    finally:
+        shutil.rmtree(results)
+
+
+def brain_files(cand: dict) -> dict:
+    out = {name: cand[name] for name in BRAIN_FILES if name in cand}
+    out.setdefault("expect.json", raw(os.path.join(CANDIDATES, cand["id"], "expect.json")))
+    return out
 
 
 def expected(cid: str) -> list[str]:
@@ -141,7 +179,7 @@ class Shape(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(os.path.join(CANDIDATES, cid))),
                              ["diff.patch", "expect.json", "finding.json"], cid)
             self.assertEqual(set(load(os.path.join(CANDIDATES, cid, "finding.json"))), FINDING_FIELDS, cid)
-            self.assertEqual(activate.write.branch_reasons(activate.CANDIDATE_PREFIX + cid), [], cid)
+            self.assertEqual(activate.write.branch_reasons(land.CANDIDATE_PREFIX + cid), [], cid)
 
     def test_each_diff_is_one_in_place_change_of_its_finding_path(self):
         for cid in ids():
@@ -195,10 +233,12 @@ class Capture(unittest.TestCase):
 class Decision(unittest.TestCase):
     def test_each_alone_gets_exactly_its_expected_reasons(self):
         for cid in ids():
-            got = activate.decide(candidate(cid), base_run(), profile(), recipe(), CONTROL, [], TOY)
-            self.assertEqual(got["reasons"], expected(cid), cid)
-            if not got["reasons"]:
-                self.assertEqual(got["content"], patched(cid)[1])
+            got = d5([candidate(cid)])
+            self.assertEqual(got["decisions"][cid]["reasons"], expected(cid), cid)
+            self.assertEqual(got["merge"], None if expected(cid) else cid, cid)
+            if not expected(cid):
+                self.assertEqual(land.applied(TOY, raw(os.path.join(CANDIDATES, cid, "diff.patch")).decode())["content"],
+                                 patched(cid)[1])
 
     def test_the_bad_ones_are_rejected_for_their_own_fault_only(self):
         """bad-ratchet fixes its target and adds violations; bad-test with green tests and bad-path without the
@@ -211,10 +251,10 @@ class Decision(unittest.TestCase):
         cand["checks.json"] = candidate("good")["checks.json"]
         cand["hashes.json"] = json.dumps({"base.jsonl": sha(base_run()), "cand.jsonl": sha(cand["cand.jsonl"]),
                                           "checks.json": sha(cand["checks.json"])}).encode()
-        self.assertEqual(activate.decide(cand, base_run(), profile(), recipe(), CONTROL, [], TOY)["reasons"], [])
+        self.assertEqual(d5([cand])["decisions"]["bad-test"]["reasons"], [])
         loose = dict(profile(), security_paths=[])
-        self.assertEqual(activate.decide(candidate("bad-path"), base_run(), loose, recipe(), CONTROL, [], TOY)
-                         ["reasons"], [])
+        with mock.patch.object(E.V, "guard_profile", return_value=loose):
+            self.assertEqual(d5([candidate("bad-path")])["decisions"]["bad-path"]["reasons"], [])
 
 
 class ToyWorld(AW.World):
@@ -231,20 +271,26 @@ class ToyWorld(AW.World):
         self.gh.refs["main"] = self.main
         summary = json.loads(self.summary)
         summary["targets"][0]["base_sha"] = self.main
-        self.files.update({"summary.json": json.dumps(summary).encode(), "recipe.json": json.dumps(recipe()).encode(), "base.jsonl": base_run()})
-        self.candidates = [candidate(cid) for cid in ids()]
+        self.recipe = json.dumps(recipe()).encode()
+        self.files.update({"summary.json": json.dumps(summary).encode(), "recipe.json": self.recipe,
+                           "base.jsonl": base_run()})
+        self.base_run_sha256 = sha(base_run())
+        self.heads["brain/integration"] = self.main
+        cands = [candidate(cid) for cid in ids()]
+        self.candidates = [dict(brain_files(c), id=c["id"]) for c in cands]
+        self.decided = d5(cands)
 
 
 class Activation(unittest.TestCase):
     def test_one_activation_merges_the_good_and_rejects_each_bad_with_its_reason(self):
         w = ToyWorld()
-        out = w.run()
-        decisions = {d["candidate"]: d for d in out["decisions"]}
+        decisions = w.decided["decisions"]
         self.assertEqual(sorted(decisions), ids())
         for cid in ids():
-            self.assertEqual(decisions[cid].get("reasons", []), expected(cid), cid)  # a merge carries none
-        merged = [cid for cid in ids() if decisions[cid]["decision"] == "merge"]
-        self.assertEqual(merged, ["good"])
+            self.assertEqual(decisions[cid]["reasons"], expected(cid), cid)  # a merge carries none
+        self.assertEqual(w.decided["merge"], "good")
+        out = w.run()
+        self.assertEqual(out["merge"]["candidate"], "good")
         path, content = patched("good")
         head = w.gh.refs[activate.INTEGRATION]
         self.assertEqual(w.gh.blobs[w.gh.trees[w.gh.commits[head]["tree"]][path]], content)

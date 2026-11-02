@@ -112,12 +112,20 @@ def read(results: str, watch: str | None) -> dict | None:
             "flaky": doc["flaky"], "sha256": entry["sha256"]}
 
 
-def base_lint(results: str) -> dict | None:
-    """``{base_run_sha256, counts}`` of the results' base run, or ``None``; see the module docstring."""
+def base_run(results: str) -> tuple[bytes, str] | None:
+    """The results' base run as given: ``(base.jsonl's bytes, index.json's base_run_sha256)``, or ``None`` when
+    either is missing; nothing judged (``base_lint`` and ``activate``'s ratchet base judge it)."""
     sha = _index(results).get("base_run_sha256")
     raw = _bytes(os.path.join(results, kos.BASE))
-    if raw is None or not isinstance(sha, str):
+    return None if raw is None or not isinstance(sha, str) else (raw, sha)
+
+
+def base_lint(results: str) -> dict | None:
+    """``{base_run_sha256, counts}`` of the results' base run, or ``None``; see the module docstring."""
+    given = base_run(results)
+    if given is None:
         return None
+    raw, sha = given
     try:
         got = check.base_counts(raw, sha)
     except check.Unusable:

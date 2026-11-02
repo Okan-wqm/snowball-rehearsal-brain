@@ -31,10 +31,13 @@
   artifact moved from the job's work directory to ``out/pulled/<id>`` (``loop.pulled.read`` takes it there, with
   its own ``targets[]`` entry) next to ``served.json`` listing the served ids in the summary's order (reversing
   the summary reverses it; ``loop.pulled.served`` reads it), and getir, kos, cagir and yaz, each on its own copy of
-  it as the download hands it over, run their wired steps on it (cagir's canary with the fake ``claude``);
+  it as the download hands it over, run their wired steps on it (cagir's canary with the fake ``claude``), and so
+  do they on a toy's genesis ``pulled``, yaz's activation opening brain/state at the ``main`` cek read;
 - the targets: a copy with neither head waits (``{target, waiting: copy_genesis, heads}``, not red, the job ``ok``;
   not in ``served.json``, no directory, nothing of it fetched; a run whose only target waits serves none); a copy
-  with one head and a toy with none are ``head_missing:<branch>``; the first refused target stops cek: the job's
+  with one head is ``head_missing:<branch>``; a toy with neither is its genesis cycle on its ``main`` (``pulled``
+  in loop.pulled's genesis form, nothing of a state fetched or anchored), and without a ``main`` too
+  ``head_missing:main``; the first refused target stops cek: the job's
   ``reason``/``reasons`` and ``target`` are its, ``targets`` the lines so far, the next target's repository is
   never listed or fetched, and nothing is handed over, also when an earlier target held; ``LOOP_TARGET`` in the
   environment, whatever it names, changes nothing (the same line, the same served list);
@@ -647,6 +650,60 @@ class CekJob(unittest.TestCase):
         [cost] = [json.loads(line) for line in ledger.splitlines() if json.loads(line)["part"] == "cost"]
         self.assertEqual({k: v for k, v in cost.items() if k not in ("prev_hash", "row_hash")}, response["rows"][0])
 
+    def test_the_genesis_cycle_through_every_job(self):
+        """A toy with neither head: cek's genesis ``pulled`` handed over as above; getir, kos and cagir run on it as
+        on any cycle (the canary spends against an empty ledger), and yaz's activation opens brain/state with the
+        genesis row, the cut at the ``main`` cek read and D5's merge, the canary's cost row among its rows."""
+        import activation_world as AW
+        self.BRAIN = dict(self.BRAIN, **{"candidates/t1/breaks/%s" % f: d for f, d in candidate(BREAKS_TEST).items()})
+        _, main = S.store(self.TARGET)
+        summary = {"seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
+                                    "bootstrap_sha256": "4" * 64}],
+                   "targets": [dict(self.summary["targets"][0], base_sha=main, identifiers=[])]}
+        out, _, _ = self.run_cek(summary=summary, listing=b"%s\trefs/heads/main\n" % main.encode())
+        self.assertEqual((out["ok"], self.one(out)["genesis"]), (True, True))
+        temps = {}
+        for job in ("getir", "kos", "cagir", "yaz"):
+            temps[job] = os.path.join(self.base, job)
+            shutil.copytree(os.path.join(self.temp, "out", "pulled"), os.path.join(temps[job], "in", "pulled"),
+                            symlinks=True)
+        self.assertTrue(J.run("getir", {"RUNNER_TEMP": temps["getir"]})["ok"])
+        shutil.copytree(os.path.join(temps["getir"], "out", "deps"), os.path.join(temps["kos"], "in", "deps"))
+        got = J.run("kos", {"RUNNER_TEMP": temps["kos"]}, runner=RedAs())
+        self.assertEqual((got["ok"], self.one(got)["done"]), (True, ["D3"]))
+        claude_dir = os.path.dirname(fake_claude.install_for_loop(temps["cagir"]))
+        fake_claude.behave(claude_dir, test_loop_cagir.result(modelUsage={BOOTSTRAP["rival"]["model"]: {"costUSD": 0.01}}))
+        got = J.run("cagir", {"RUNNER_TEMP": temps["cagir"], "CLAUDE_CODE_OAUTH_TOKEN": "t",
+                              "GITHUB_WORKSPACE": self.work, "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"})
+        self.assertEqual((got["ok"], self.one(got)["call"]["outcome"]), (True, "ok"))
+        with open(os.path.join(temps["cagir"], "out", "response", "t1", "response.json")) as fh:
+            response = json.load(fh)
+        self.assertEqual(response["heads"], {"brain/state": None, "brain/integration": main})
+        shutil.copytree(os.path.join(temps["kos"], "out", "results"), os.path.join(temps["yaz"], "in", "results"))
+        shutil.copytree(os.path.join(temps["cagir"], "out", "response"), os.path.join(temps["yaz"], "in", "response"))
+        write_tree(os.path.join(temps["yaz"], "control"), {"control.json": {"merge_paused": False}})
+        write_tree(self.work, {J.SECURITY_LEDGER: YW.chained([{"row_id": "s1", "part": "security", "kind": "note",
+                                                               "payload": {}}]).decode()})
+        # the toy: main at the commit cek read (no brain/ branch), the facts genesis reads
+        gh = YW.FakeGitHub("o/target", required_check=YW.B.CHECK)
+        tree = YW.sha_of(["tree", "main"])
+        gh.trees[tree] = {path: gh._blob(data) for path, data in self.TARGET.items()}
+        gh.commits[main] = {"tree": tree, "parents": [], "message": "main"}
+        gh.refs["main"] = main
+        gh.overrides.update(AW.facts("toy", "o/target"))
+        got = J.run("yaz", YW.env(temps["yaz"], self.work, GITHUB_RUN_ID="1"), transport=gh, signer=YW.signer(),
+                    now=lambda: YW.NOW)
+        self.assertEqual((got["ok"], self.one(got)["done"]), (True, ["D5", "D6"]), got)
+        got = self.one(got)
+        self.assertEqual((got["merge"], got["written"]["genesis"], got["written"]["integration_sha"]),
+                         ("good", True, main))
+        ledger = gh.read_file("brain/state", "ledger.jsonl")
+        rows = [json.loads(line) for line in ledger.splitlines()]
+        self.assertEqual((rows[0]["kind"], rows[0]["payload"]["base_sha"]), ("genesis", main))
+        [cost] = [r for r in rows if r["part"] == "cost"]
+        self.assertEqual({k: v for k, v in cost.items() if k not in ("prev_hash", "row_hash")}, response["rows"][0])
+        self.assertEqual(gh.commits[gh.refs["brain/integration"]]["parents"][0], main)
+
     def test_an_existing_out_pulled_is_no_verdict_and_left_as_it_was(self):
         # another run's artifact (or anything) at the upload step's path is neither replaced nor mixed with
         self.run_cek()
@@ -687,7 +744,8 @@ class CekJob(unittest.TestCase):
     def test_a_missing_head_is_a_refusal_and_nothing_is_fetched(self):
         for listing, reasons in ((self.listing(None), ["head_missing:brain/integration"]),
                                  (self.listing("6" * 40, None), ["head_missing:brain/state"]),
-                                 (b"", ["head_missing:brain/state", "head_missing:brain/integration"])):
+                                 (b"", ["head_missing:brain/state", "head_missing:brain/integration",
+                                        "head_missing:main"])):
             with self.subTest(reasons=reasons):
                 os.remove(os.path.join(self.bin, "calls.jsonl")) if os.path.exists(
                     os.path.join(self.bin, "calls.jsonl")) else None
@@ -709,6 +767,28 @@ class CekJob(unittest.TestCase):
                          ["%s:refs/pulled" % self.state_genesis])
         self.assertIn("state.git", os.listdir(self.target_dir()))
         self.assertNotIn("state-previous.git", os.listdir(self.target_dir()))
+
+    def test_a_toy_with_neither_head_is_its_genesis_cycle_on_main(self):
+        """loop.pulled's genesis form: the tree of the toy's ``main``, no ``brain/state`` to verify or anchor."""
+        _, main = S.store(self.TARGET)
+        out, _, _ = self.run_cek(listing=b"%s\trefs/heads/main\n" % main.encode())
+        self.assertEqual((out["ok"], out["done"]), (True, ["D1"]), out)
+        line = self.one(out)
+        self.assertEqual((line["genesis"], line["state"], line["root"], line["heads"]),
+                         (True, None, None, {"brain/state": None, "brain/integration": None}))
+        self.assertEqual(line["assembled"]["commit"], main)
+        art = P.read(os.path.join(self.temp, "out", "pulled", "t1"))
+        self.assertTrue(P.genesis(art))
+        self.assertEqual((art.heads, art.state, art.status),
+                         ({"brain/state": None, "brain/integration": main},
+                          {"ledger.jsonl": b"", "chain/root.jsonl": b""}, None))
+        self.assertEqual(self.ls_remotes(), [self.URL["t1"]] * 2)  # the two heads, then main
+        self.assertEqual(self.fetched()[1:], [(self.URL["t1"], "%s:refs/pulled" % main)])  # no brain/state fetch
+        self.assertEqual(self.rekor.calls, [])
+        # a toy with one head is no genesis cycle
+        self.clean()
+        out, _, _ = self.run_cek(listing=self.listing(None) + b"%s\trefs/heads/main\n" % main.encode())
+        self.assertEqual(self.stopped(out)["reason"], "head_missing:brain/integration")
 
     def test_a_state_that_does_not_verify_is_a_refusal_before_the_target_is_fetched(self):
         for name, head, reasons in (
@@ -901,8 +981,8 @@ class CekJob(unittest.TestCase):
         for name, entry, listing, missing in (
                 ("copy, no integration", self.COPY, self.listing(None), ["head_missing:brain/integration"]),
                 ("copy, no state", self.COPY, self.listing("6" * 40, None), ["head_missing:brain/state"]),
-                ("toy, neither", self.summary["targets"][0], b"",
-                 ["head_missing:brain/state", "head_missing:brain/integration"])):
+                ("toy, neither, no main", self.summary["targets"][0], b"",
+                 ["head_missing:brain/state", "head_missing:brain/integration", "head_missing:main"])):
             with self.subTest(name):
                 self.clean()
                 self.two()

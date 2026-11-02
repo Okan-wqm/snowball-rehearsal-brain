@@ -75,7 +75,7 @@
   {
    "id": "heads_not_judged",
    "file": "loop/pulled.py",
-   "old": "    if HEADS in parsed and not _heads_valid(parsed[HEADS]):",
+   "old": "    if HEADS in parsed and not _heads_valid(parsed[HEADS], state, contents.get(STATUS)):",
    "new": "    if False:",
    "tests": [
     "test_loop_kos.py"

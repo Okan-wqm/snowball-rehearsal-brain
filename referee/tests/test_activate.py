@@ -1,18 +1,24 @@
 """Test 45 (asama-0/09): activation on the in-process GitHub, no git: the genesis row, the ``brain/integration``
-cut, the ratchet base, the ready candidates (the good one merges, each bad one is rejected with its own reason),
-one orphan ``brain/state`` commit; and group ``genesis`` (tohum/29o): genesis reads the facts and hashes them.
+cut, the ratchet base, D5's answer on the ready candidates (its merge landed, each reject recorded with its reason
+and cause), one orphan ``brain/state`` commit; and group ``genesis`` (tohum/29o): genesis reads the facts and hashes
+them. Deciding is D5's (``loop.decide``, test_loop_yaz, its guard profile included); the genesis cycle through the
+jobs is test_loop_write's ``Genesis``.
 
 - genesis: every payload value recomputed here from the input bytes and the facts; exactly the reads of the kind,
   each once (the copy's ``main`` is not read); the toy's base is the API's ``main``, the copy's the summary's; the
   last transfer row, not a later counter row; the recipe's canonical hash; each reason alone on its own fact,
   several at once; every malformed input and unrecorded read unusable;
-- activation: the good candidate's file is applied and merged through a pull request with the gate's check; four
-  bad candidates rejected with asama-0/08's reasons and a cause, nothing written for them; at most one merge;
-  ``merge_paused``; a diff that does not apply to the base file; ``brain/state`` is an orphan holding the ledger
-  (genesis, cycle_start, cut, ratchet base, decisions, status), the signed root and ``status.md``, which the chain,
-  the anchor, the schema and the status block read back;
-- refusals before any write (a genesis reason, the ratchet base); an integration branch GitHub refuses to create;
-  a hard stop after the cut names the refs written;
+- activation: D5's merge is applied and merged through a pull request with the gate's check; four rejects recorded
+  with their reasons and a cause, nothing written for them; no merge: only the cut and the state; the canary's
+  cost row as it is; a merge whose diff does not apply to the base file, or whose base file is absent or linked,
+  writes nothing; the copy cut at ``targets[].base_sha``; ``brain/state`` is an orphan holding the ledger
+  (genesis, cycle_start, cut, ratchet base, decisions, cost, status), the signed root and ``status.md``, which the
+  chain, the anchor, the schema and the status block read back;
+- refusals before any write: a genesis reason, ``base_moved`` (the toy's main moved after D1, a copy pulled at
+  another commit), a ``pulled`` that is no genesis cycle's, a base run hash that is not 64 hex, the ratchet base,
+  an existing state or integration branch, the wrong repository, a missing base commit, rows the dry plan refuses
+  (a secret, a cost row the schema refuses) and a policy without the canary's cap; an integration branch GitHub
+  refuses to create; a hard stop after the cut names the refs written;
 - ``gate.diffguard.apply``: context and removed lines must match, end of file, no fuzz;
 - the command line over a recorded API (``target.write.Replay``).
 """
@@ -33,8 +39,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import activate  # noqa: E402
 import activation_world as AW  # noqa: E402
+import yaz_world as YW  # noqa: E402
 from gate import diffguard  # noqa: E402
 from ledger import anchor, chain  # noqa: E402
+from ledger import schema as SC  # noqa: E402
 from target import write as W  # noqa: E402
 
 sha = AW.sha
@@ -77,7 +85,7 @@ class Genesis(unittest.TestCase):
         self.assertEqual(got["payload"], {
             "target": "toy", "base_sha": w.main, "referee_tree_sha256": "e" * 64, "result_sha256": "d" * 64,
             "import_line_sha256": sha(transfer_line), "seed_epoch": json.loads(w.summary)["seed_epochs"][-1],
-            "policy_sha256": sha(b'{"p": 1}\n'), "summary_sha256": sha(w.summary),
+            "policy_sha256": sha(AW.POLICY), "summary_sha256": sha(w.summary),
             "seed_security_ledger_sha256": sha(w.security), "seed_security_last_row_hash": sec["row_hash"],
             "recipe_sha256": canon_sha(json.loads(w.recipe)), "facts_sha256": canon_sha(toy_reads(w))})
 
@@ -274,30 +282,24 @@ class Genesis(unittest.TestCase):
 
 
 class Activation(unittest.TestCase):
-    def test_good_merges_bad_rejected_one_orphan_state(self):
+    def test_d5s_merge_landed_rejects_recorded_one_orphan_state(self):
         w = AW.World()
+        w.cost = [YW.cost_row("cagir-41-1", w.main)]
         out = w.run()
         gh = w.gh
-        # the cut, then the good candidate's merge on top of it
+        # the cut, then D5's merge on top of it
         merge = gh.refs["brain/integration"]
+        self.assertEqual(out["integration_sha"], w.main)
         self.assertEqual(gh.commits[merge]["parents"][0], w.main)
         self.assertEqual(gh.read_file("brain/integration", "src/a.js"), AW.SOURCE.replace(b"var x", b"let x"))
         self.assertEqual(gh.refs["main"], w.main)
-        good = [d for d in out["decisions"] if d["decision"] == "merge"]
-        self.assertEqual([d["candidate"] for d in good], ["good"])
-        self.assertEqual(good[0]["merge_sha"], merge)
-        self.assertEqual(gh.pulls[good[0]["pull"]]["base"], "brain/integration")
-        self.assertTrue(any(c["head_sha"] == good[0]["head_sha"] and c["conclusion"] == "success" and c["name"] == AW.GATE
-                            for c in gh.checks))
-        # each bad candidate: its own reason, a cause, nothing on the target
-        rejects = {d["candidate"]: d["reasons"] for d in out["decisions"] if d["decision"] == "reject"}
-        self.assertEqual(set(rejects), set(AW.EXPECTED_REJECTS))
-        for cid, (reason, _) in AW.EXPECTED_REJECTS.items():
-            self.assertIn(reason, rejects[cid], cid)
+        self.assertEqual(out["merge"]["candidate"], "good")
+        self.assertEqual(out["merge"]["merge_sha"], merge)
+        self.assertEqual(gh.pulls[out["merge"]["pull"]]["base"], "brain/integration")
+        self.assertTrue(any(c["head_sha"] == out["merge"]["head_sha"] and c["conclusion"] == "success"
+                            and c["name"] == AW.GATE for c in gh.checks))
+        for cid in AW.EXPECTED_REJECTS:  # a reject writes nothing on the target
             self.assertNotIn("brain/c/" + cid, gh.refs)
-        self.assertEqual(rejects["bad-test"], ["tests_red"])
-        self.assertEqual(rejects["bad-ratchet"], ["ratchet_increase"])
-        self.assertEqual(rejects["bad-scope"], ["scope_violation"])
         # brain/state: an orphan holding exactly the three state files
         state = gh.refs["brain/state"]
         self.assertEqual(state, out["state_sha"])
@@ -307,132 +309,85 @@ class Activation(unittest.TestCase):
         ledger = gh.read_file("brain/state", "ledger.jsonl")
         roots = gh.read_file("brain/state", "chain/root.jsonl")
         self.assertTrue(chain.verify_bytes(ledger)["valid"])
+        self.assertEqual(SC.ledger_reasons(ledger), [])
         rows = rows_of(ledger)
         self.assertEqual([(r["kind"], r["row_id"]) for r in rows], [
             ("genesis", AW.CYCLE + ":genesis"), ("cycle_start", AW.CYCLE + ":start"),
             ("integration_cut", AW.CYCLE + ":cut"), ("ratchet_base", AW.CYCLE + ":ratchet"),
             ("decision", AW.CYCLE + ":c:bad-path"), ("decision", AW.CYCLE + ":c:bad-ratchet"),
             ("decision", AW.CYCLE + ":c:bad-scope"), ("decision", AW.CYCLE + ":c:bad-test"),
-            ("decision", AW.CYCLE + ":c:good"), ("merge", AW.CYCLE + ":m:good"), ("status", AW.CYCLE + ":status")])
+            ("decision", AW.CYCLE + ":c:good"), ("merge", AW.CYCLE + ":m:good"), ("cost", "cagir-41-1"),
+            ("status", AW.CYCLE + ":status")])
         self.assertEqual(rows[0]["payload"], activate.genesis(AW.World().gh, w.files, "toy")["payload"])
         self.assertEqual(rows[1]["payload"], {"cycle_id": AW.CYCLE})
         self.assertEqual(rows[2]["payload"], {"branch": "brain/integration", "base_sha": w.main})
+        self.assertEqual(rows[3]["payload"], {"base_run_sha256": sha(AW.BASE_RUN), "counts": {"eslint": 2}})
+        self.assertEqual({(r["ts"], r["snapshot_id"]) for r in rows if r["part"] == "events"}, {(AW.TS, w.main)})
         for r in rows[4:8]:
-            self.assertEqual(r["payload"]["decision"], "reject")
-            self.assertEqual(r["cause"], AW.EXPECTED_REJECTS[r["payload"]["candidate"]][1], r["row_id"])
+            cid = r["payload"]["candidate"]
+            self.assertEqual(r["payload"], {"decision": "reject", "candidate": cid,
+                                            "reasons": [AW.EXPECTED_REJECTS[cid][0]]})
+            self.assertEqual(r["cause"], AW.EXPECTED_REJECTS[cid][1], r["row_id"])
         # the merge: its decision row, then tohum/26d's merge row with target.land's answer
         self.assertEqual(rows[8]["payload"], {"decision": "merge", "candidate": "good"})
-        self.assertEqual((rows[9]["part"], rows[9]["payload"]),
-                         ("events", {"candidate": "good", "path": "src/a.js", "pull": good[0]["pull"],
-                                     "head_sha": good[0]["head_sha"], "merge_sha": merge}))
+        self.assertEqual((rows[9]["part"], rows[9]["payload"]), ("events", out["merge"]))
+        self.assertEqual(out["merge"]["path"], "src/a.js")
         self.assertNotIn("cause", rows[8])
         self.assertNotIn("cause", rows[9])
+        self.assertEqual(rows[10]["payload"], w.cost[0]["payload"])  # the canary's cost row as it is
         self.assertEqual([r["row_hash"] for r in rows], out["row_hashes"])
+        self.assertEqual(out["rows"], len(rows))
         # the signed root verifies as the next D1 reads it
         rekor = {"entries": {out["entry"]["uuid"]: {"hash": out["entry"]["hash"], "identity": "referee@example"}}}
         self.assertEqual(anchor.verify(ledger, roots, rekor, "referee@example"), {"valid": True, "reasons": []})
         self.assertEqual(w.signer.payloads, [out["root"].encode()])
+        self.assertEqual((out["rekor_uuid"], out["edited"]), (out["entry"]["uuid"], False))
         status = gh.read_file("brain/state", "status.md").decode()
-        self.assertIn('- Last decision: "merge"\n', status)
         self.assertIn('- Cycle: "%s"\n- Last decision: "merge"\n- Base age: 0 s' % AW.CYCLE, status)
+        self.assertEqual(SC.status_reasons(status.encode(), ledger), [])
         # refs written: the cut, the candidate branch, the merge into the cut, the state; never main
         self.assertEqual(sorted(set(w.wr.written)), ["refs/heads/brain/c/good", "refs/heads/brain/integration",
                                                      "refs/heads/brain/state"])
 
+    def test_no_merge_cuts_and_writes_the_state_only(self):
+        w = AW.World()
+        w.decided = {"decisions": {"good": {"decision": "reject", "reasons": ["merge_paused"]}}, "merge": None}
+        out = w.run()
+        self.assertIsNone(out["merge"])
+        self.assertEqual(w.gh.refs["brain/integration"], w.main)
+        self.assertEqual(sorted(set(w.wr.written)), ["refs/heads/brain/integration", "refs/heads/brain/state"])
+        rows = rows_of(w.gh.read_file("brain/state", "ledger.jsonl"))
+        self.assertEqual([r["kind"] for r in rows], ["genesis", "cycle_start", "integration_cut", "ratchet_base",
+                                                     "decision", "status"])
+        self.assertEqual(rows[4]["payload"], {"decision": "reject", "candidate": "good", "reasons": ["merge_paused"]})
+        self.assertIn('- Last decision: "reject"\n', w.gh.read_file("brain/state", "status.md").decode())
+
     def test_the_ratchet_base_is_the_referees_run(self):
         w = AW.World()
-        w.run()
-        ratchet = rows_of(w.gh.read_file("brain/state", "ledger.jsonl"))[3]
-        self.assertEqual(ratchet["payload"], {"base_run_sha256": sha(AW.BASE_RUN), "counts": {"eslint": 2}})
-        w = AW.World()
         w.files["base.jsonl"] = AW.run_file({"tool": "biome", "violations": [AW.violation(n) for n in (1, 2, 3, 4)]})
-        w.candidates = []
+        w.base_run_sha256 = sha(w.files["base.jsonl"])
         w.run()
-        self.assertEqual(rows_of(w.gh.read_file("brain/state", "ledger.jsonl"))[3]["payload"]["counts"],
-                         {"biome": 4})
-        # a candidate whose koş took another base run is not judged against it
-        w = AW.World()
-        good = w.cand("good")
-        hashes = json.loads(good["hashes.json"])
-        hashes["base.jsonl"] = sha(b"another base run")
-        good["hashes.json"] = json.dumps(hashes).encode()
-        out = w.run()
-        self.assertEqual([d["reasons"] for d in out["decisions"] if d["candidate"] == "good"],
-                         [["artefact_hash_mismatch"]])
+        self.assertEqual(rows_of(w.gh.read_file("brain/state", "ledger.jsonl"))[3]["payload"],
+                         {"base_run_sha256": w.base_run_sha256, "counts": {"biome": 4}})
 
-    def test_at_most_one_merge(self):
+    def test_d5s_merge_that_cannot_be_written_writes_nothing(self):
+        """The merge is applied to the base file in the tree before any write (``loop.write_cycle.merge_change``)."""
         w = AW.World()
-        twin = dict(w.cand("good"), id="good2")
-        w.candidates.append(twin)
-        out = w.run()
-        by = {d["candidate"]: d for d in out["decisions"]}
-        self.assertEqual(by["good"]["decision"], "merge")
-        self.assertEqual(by["good2"]["reasons"], ["sentinel_pending"])
-        self.assertNotIn("brain/c/good2", w.gh.refs)
-
-    def test_merge_paused_rejects_everything(self):
-        for control in ({"merge_paused": True}, {}):
+        w.cand("good")["diff.patch"] = AW.diff("src/a.js", 2, ["var q = 1;"], ["let q = 1;"])
+        with self.assertRaises(activate.Unusable) as ctx:
+            w.run()
+        self.assertIn("patch_does_not_apply", str(ctx.exception))
+        self.assertEqual(w.writes(), [])
+        for case in ("absent", "file_link"):  # the base file is read from the tree only, never through a link
             w = AW.World()
-            w.control = control
-            out = w.run()
-            self.assertEqual({d["decision"] for d in out["decisions"]}, {"reject"})
-            self.assertIn("merge_paused", [d for d in out["decisions"] if d["candidate"] == "good"][0]["reasons"])
-            self.assertEqual(w.gh.refs["brain/integration"], w.main)
-
-    def test_a_diff_that_does_not_apply_to_the_base_file(self):
-        w = AW.World()
-        w.gh.refs["main"] = w.main = w.gh.seed_commit("toy-main-2", files={
-            "src/a.js": b"// toy\nvar x = 1;\nvar y = 2;\nmodule.exports = { x };\n", "eslint.config.js": b"x\n"})
-        good = w.cand("good")
-        good["diff.patch"] = AW.diff("src/a.js", 2, ["var x = 1;", "var y = 2;", "module.exports = { x, y };"],
-                                     ["let x = 1;", "var y = 2;", "module.exports = { x, y };"])
-        empty = AW.run_file({"tool": "eslint", "violations": []})
-        good["cand.jsonl"] = empty
-        # fix range covers the whole hunk so only the base content can refuse it
-        base = AW.run_file({"tool": "eslint", "violations": [AW.violation(2, fix=[2, 4]), AW.violation(3)]})
-        w.files["base.jsonl"] = base
-        hashes = json.loads(good["hashes.json"])
-        hashes["base.jsonl"], hashes["cand.jsonl"] = sha(base), sha(empty)
-        good["hashes.json"] = json.dumps(hashes).encode()
-        w.candidates = [good]
-        out = w.run()
-        self.assertEqual(out["decisions"][0]["reasons"], ["patch_does_not_apply"])
-        self.assertEqual(w.gh.refs["brain/integration"], w.main)
-        # the base file is read from the base tree: absent, a directory, or reached through a symbolic link
-        # (the file itself or a directory on its way) is base_file_missing, and nothing outside the tree is read
-        for case in ("absent", "directory", "file_link", "dir_link"):
-            w2 = AW.World()
-            w2.candidates = [w2.cand("good")]
-            tree = w2.base_tree()
-            src = os.path.join(tree, "src")
-            os.remove(os.path.join(src, "a.js"))
-            if case == "directory":
-                os.mkdir(os.path.join(src, "a.js"))
-            elif case == "file_link":
-                outside = os.path.join(w2.base_tree(), "src", "a.js")  # the right bytes, outside this tree
-                os.symlink(outside, os.path.join(src, "a.js"))
-            elif case == "dir_link":
-                os.rename(src, src + "-real")
-                with open(os.path.join(src + "-real", "a.js"), "wb") as fh:
-                    fh.write(AW.SOURCE)
-                os.symlink(src + "-real", src)
-            w2.tree = tree
-            self.assertEqual(w2.run()["decisions"][0]["reasons"], ["base_file_missing"], case)
-            self.assertEqual(w2.gh.refs["brain/integration"], w2.main, case)
-
-    def test_unusable_candidate_and_bad_id_are_rejected(self):
-        w = AW.World()
-        w.cand("good")["finding.json"] = b"{"
-        i = w.candidates.index(w.cand("bad-scope"))
-        w.candidates[i] = dict(w.candidates[i], id="../main")
-        req = w.request()
-        out = w.run(req)
-        by = {d["candidate"]: d["reasons"] for d in out["decisions"]}
-        self.assertEqual(by["good"], ["candidate_unusable"])
-        self.assertEqual(by["../main"], ["candidate_id_invalid"])
-        rows = rows_of(w.gh.read_file("brain/state", "ledger.jsonl"))
-        self.assertEqual({r["cause"] for r in rows if r["kind"] == "decision" and
-                          r["payload"]["candidate"] in ("good", "../main")}, {"unknown"})
+            w.tree = w.base_tree()
+            os.remove(os.path.join(w.tree, "src", "a.js"))
+            if case == "file_link":
+                os.symlink(os.path.join(w.base_tree(), "src", "a.js"), os.path.join(w.tree, "src", "a.js"))
+            with self.assertRaises(activate.Unusable, msg=case) as ctx:
+                w.run()
+            self.assertIn("base_file_missing", str(ctx.exception), case)
+            self.assertEqual(w.writes(), [], case)
 
     def test_copy_target_cut_at_base_sha(self):
         w = AW.World(kind="copy")
@@ -441,105 +396,6 @@ class Activation(unittest.TestCase):
         w.run()
         self.assertEqual(w.gh.commits[w.gh.refs["brain/integration"]]["parents"][0], w.main)
         self.assertEqual(w.gh.refs["main"], later)
-
-
-class GuardProfile(unittest.TestCase):
-    """Criterion 1's profile is derived from the base tree by ``profile.unit_verify.guard_profile`` (``yaz``'s
-    function): no input file lists the guarded paths, the tree, the target entry and the policy do."""
-
-    def good_only(self, change=None) -> tuple[AW.World, dict]:
-        w = AW.World()
-        w.candidates = [w.cand("good")]
-        w.tree = w.base_tree()
-        if change:
-            change(w)
-        out = w.run()
-        return w, out["decisions"][0]
-
-    def assert_not_merged(self, w: AW.World, decision: dict, reason: str):
-        self.assertEqual(decision["decision"], "reject")
-        self.assertIn(reason, decision["reasons"])
-        self.assertEqual(w.gh.refs["brain/integration"], w.main)
-        self.assertNotIn("brain/c/good", w.gh.refs)
-
-    def summary_target(self, w: AW.World, **fields):
-        summary = json.loads(w.files["summary.json"])
-        summary["targets"][0].update(fields)
-        w.files["summary.json"] = json.dumps(summary).encode()
-
-    def test_unguarded_control_merges(self):
-        w, d = self.good_only()
-        self.assertEqual(d["decision"], "merge")
-
-    def test_paths_named_in_the_tree_are_guarded(self):
-        """A security word (``auth``) and a physical safety word (``feeder``, tohum/05) in the base tree's names."""
-        for path in ("src/auth/session.js", "src/feeder/valve.js"):
-            w = AW.World()
-            cand = AW.candidate("named", AW.diff(path, 1, ["module.exports = {};"], ["module.exports = { a: 1 };"]),
-                                AW.run_file({"tool": "eslint", "violations": [AW.violation(3)]}), AW.CHECKS_GREEN,
-                                line=1, path=path)
-            w.candidates = [cand]
-            out = w.run()
-            self.assert_not_merged(w, out["decisions"][0], "security_path:" + path)
-            self.assertEqual(w.gh.refs["brain/integration"], w.main)
-
-    def test_codeowners_safety_owner_in_the_tree(self):
-        def owners(w):
-            with open(os.path.join(w.tree, "CODEOWNERS"), "w") as fh:
-                fh.write("src/ @acme/scada-team\n")
-        w, d = self.good_only(owners)
-        self.assert_not_merged(w, d, "security_path:src/a.js")
-
-    def test_owners_safety_paths_widen(self):
-        w, d = self.good_only(lambda w: self.summary_target(w, safety_paths=["src/a.js"]))
-        self.assert_not_merged(w, d, "security_path:src/a.js")
-
-    def test_operators_excluded_paths(self):
-        w, d = self.good_only(lambda w: self.summary_target(w, excluded_paths=["src/"]))
-        self.assert_not_merged(w, d, "excluded_path:src/a.js")
-
-    def test_policy_security_keywords(self):
-        policy = {"constitutional": {"security_keywords": ["a.js"]}}
-        w, d = self.good_only(lambda w: w.files.update({"policy.json": json.dumps(policy).encode()}))
-        self.assert_not_merged(w, d, "security_path:src/a.js")
-
-    def test_the_activation_and_yaz_judge_with_one_profile(self):
-        """The profile ``activate`` passes to criterion 1 is ``guard_profile``'s for the same tree and inputs."""
-        from profile import unit_verify as V
-        seen = []
-        real = activate.diffguard.check
-
-        def spy(text, profile, recipe):
-            seen.append(profile)
-            return real(text, profile, recipe)
-        w = AW.World()
-        w.tree = w.base_tree()
-        activate.diffguard.check = spy
-        try:
-            w.run()
-        finally:
-            activate.diffguard.check = real
-        target = json.loads(w.files["summary.json"])["targets"][0]
-        want = V.guard_profile(w.tree, target, json.loads(w.files["policy.json"]))
-        self.assertTrue(seen)
-        self.assertTrue(all(p == want for p in seen))
-        self.assertEqual(want["security_paths"], ["src/auth", "src/feeder"])
-
-    def test_a_tree_or_target_the_derivation_refuses_writes_nothing(self):
-        cases = {"not_a_directory": lambda w: setattr(w, "tree", os.path.join(w.base_tree(), "package.json")),
-                 "tree_is_a_link": lambda w: (os.symlink(w.base_tree(), w.tree + "-link"),
-                                              setattr(w, "tree", w.tree + "-link")),
-                 "safety_paths_malformed": lambda w: self.summary_target(w, safety_paths=[""]),
-                 "policy_keywords_malformed": lambda w: w.files.update(
-                     {"policy.json": b'{"constitutional": {"security_keywords": []}}'})}
-        for name, change in cases.items():
-            w = AW.World()
-            w.tree = w.base_tree()
-            change(w)
-            with self.assertRaises(activate.Unusable, msg=name) as ctx:
-                w.run()
-            self.assertTrue(str(ctx.exception).startswith("tree: "), name)
-            self.assertEqual(w.writes(), [], name)
 
 
 class Refusals(unittest.TestCase):
@@ -554,19 +410,50 @@ class Refusals(unittest.TestCase):
         self.assertEqual(ctx.exception.reasons, ["toy_workflows"])
         self.assert_nothing_written(w)
 
+    def test_the_base_must_be_the_commit_pulled_read(self):
+        """The toy's ``main`` moved after D1 read its tree: the cut, the base run and D5 would not be of one tree."""
+        w = AW.World()
+        moved = w.gh.seed_commit("toy-main-2", [w.main], files={"src/a.js": AW.SOURCE})
+        w.gh.overrides[("GET", "/repos/%s/git/ref/heads/main" % AW.REPO)] = (
+            200, {"ref": "refs/heads/main", "object": {"sha": moved, "type": "commit"}})
+        with self.assertRaises(W.Refused) as ctx:
+            w.run()
+        self.assertEqual(ctx.exception.reasons, ["base_moved"])
+        self.assert_nothing_written(w)
+        w = AW.World(kind="copy")  # a copy pulled at another commit than targets[].base_sha
+        w.heads["brain/integration"] = w.gh.seed_commit("other", [w.main], files={})
+        with self.assertRaises(W.Refused) as ctx:
+            w.run()
+        self.assertEqual(ctx.exception.reasons, ["base_moved"])
+        self.assert_nothing_written(w)
+
+    def test_only_a_genesis_cycles_pulled(self):
+        w = AW.World()
+        w.heads["brain/state"] = "5" * 40
+        with self.assertRaises(activate.Unusable):
+            w.run()
+        for bad in ("0" * 63, None, 7):
+            w = AW.World()
+            w.base_run_sha256 = bad
+            with self.assertRaises(activate.Unusable):
+                w.run()
+        w = AW.World()
+        del w.files["base.jsonl"]
+        with self.assertRaises(activate.Unusable):
+            w.run()
+        self.assert_nothing_written(w)
+
     def test_ratchet_base_refusals_write_nothing(self):
         lines = AW.BASE_RUN.split(b"\n")
-        cases = {"base_run_hash_mismatch": lambda w, req: req.update(base_run_sha256="0" * 64),
-                 "tool_nondeterministic": lambda w, req: w.files.update({"base.jsonl": b"\n".join(
-                     lines[:2] + [lines[2].replace(b'"line": 3', b'"line": 4')]) + b"\n"})}
-        for reason, change in cases.items():
+        for reason in ("base_run_hash_mismatch", "tool_nondeterministic"):
             w = AW.World()
-            req = w.request()
-            change(w, req)
-            if reason == "tool_nondeterministic":
-                req["base_run_sha256"] = sha(w.files["base.jsonl"])
+            if reason == "base_run_hash_mismatch":
+                w.base_run_sha256 = "0" * 64
+            else:
+                w.files["base.jsonl"] = b"\n".join(lines[:2] + [lines[2].replace(b'"line": 3', b'"line": 4')]) + b"\n"
+                w.base_run_sha256 = sha(w.files["base.jsonl"])
             with self.assertRaises(W.Refused) as ctx:
-                w.run(req)
+                w.run()
             self.assertEqual(ctx.exception.reasons, [reason])
             self.assert_nothing_written(w)
 
@@ -604,28 +491,29 @@ class Refusals(unittest.TestCase):
         summary = json.loads(w.files["summary.json"])
         summary["targets"][0]["base_sha"] = "7" * 40
         w.files["summary.json"] = json.dumps(summary).encode()
+        w.heads["brain/integration"] = "7" * 40
         with self.assertRaises(W.ApiError):
             w.run()
         self.assert_nothing_written(w)
 
-    def test_candidates_must_be_the_requests(self):
+    def test_rows_the_ledger_refuses_write_nothing(self):
+        """The dry plan runs before the cut: a secret in a row, a cost row the schema refuses."""
         w = AW.World()
-        req = w.request()
-        w.candidates.pop()
-        with self.assertRaises(activate.Unusable):
-            w.run(req)
-        w = AW.World()
-        w.files["recipe.json"] = b'{"inputs": "src/"}'
-        with self.assertRaises(activate.Unusable):
+        w.cost = [YW.cost_row("cagir-41-1", w.main, reason="leak ghp_" + "Q7x" * 12)]  # a token shape, not a token
+        with self.assertRaises(W.Refused) as ctx:
             w.run()
+        self.assertTrue(ctx.exception.reasons[0].startswith("state_unwritable: "), ctx.exception.reasons)
         self.assert_nothing_written(w)
         w = AW.World()
-        req = w.request()
-        w.candidates[0] = dict(w.candidates[0], id=None)
-        with self.assertRaises(activate.Unusable):
-            w.run(req)
+        row = YW.cost_row("cagir-41-1", w.main)
+        del row["payload"]["usd_micros"]
+        w.cost = [row]
+        with self.assertRaises(W.Refused) as ctx:
+            w.run()
+        self.assertTrue(ctx.exception.reasons[0].startswith("state_unwritable: "), ctx.exception.reasons)
+        self.assert_nothing_written(w)
         w = AW.World()
-        w.candidates.append(dict(w.cand("good")))  # the same id twice
+        w.pulled = lambda: AW.World.pulled(w)._replace(policy_bytes=b"{}")  # no canary_usd: no status facts
         with self.assertRaises(activate.Unusable):
             w.run()
         self.assert_nothing_written(w)
@@ -645,10 +533,6 @@ class Refusals(unittest.TestCase):
         self.assertIsInstance(ctx.exception, activate.append.HardStop)
         self.assertEqual(ctx.exception.written, ["refs/heads/brain/c/good", "refs/heads/brain/integration"])
         self.assertNotIn("brain/state", w.gh.refs)
-        w = AW.World()
-        w.cand("good")["diff.patch"] = AW.diff("src/a.js", 2, ["var x = 1;"], ["let x = 1; // ghp_" + "a" * 36])
-        out = w.run()  # a secret in a diff is the gate's reject, not a stop
-        self.assertIn("secret_in_diff", [d for d in out["decisions"] if d["candidate"] == "good"][0]["reasons"])
 
 
 class Apply(unittest.TestCase):

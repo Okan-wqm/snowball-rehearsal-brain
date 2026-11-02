@@ -4,7 +4,9 @@
 - the layout: what ``write`` writes, ``read`` gives back (``state/``: the heads and ``brain/state``'s chained files,
   byte for byte); every refusal of ``read`` on a tampered artifact (a changed byte, a missing, extra, symlinked or
   unlisted file, a path outside the layout, an incomplete candidate, a bad manifest, a file that is not JSON, heads
-  that are not the two branches' commits, a missing state file), and ``write`` refuses what ``read`` would;
+  that are not the two branches' commits, a missing state file), and ``write`` refuses what ``read`` would; the
+  genesis cycle's form (``brain/state`` null with empty chains and no ``status.md``) and every other combination
+  of a null head, refused by both;
 - served (``served``, ``write_served``): the downloaded ``pulled`` root's ``served.json`` gives the ids in its
   order; an absent, symlinked, non-JSON, extra-keyed or wrong-schema file, a non-id or repeated id is
   ``served_unreadable``; an id with no directory, a file or a link in its place is ``served_missing:<id>``; any other
@@ -31,6 +33,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -47,6 +50,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ledger import chain as CH  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
+from target import branches as B  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from test_revert_drill import ledger_with, reverted, row  # noqa: E402
@@ -294,6 +298,37 @@ class Layout(Base):
         with self.assertRaises(P.PulledError) as ctx:
             self.write_pulled(status="text")
         self.assertEqual(ctx.exception.reasons, ["state_incomplete"])
+
+    def test_the_genesis_cycles_form(self):
+        """``brain/state`` null: a target with neither head, whose cycle is its activation (loop.pulled.genesis):
+        both chains empty, no status.md, brain/integration the commit the tree was read from; nothing else."""
+        empty = {p: b"" for p in B.STATE_CHAINS}
+        genesis = {"brain/state": None, "brain/integration": "b" * 40}
+        self.write_pulled(heads=genesis, state=empty)
+        got = P.read(self.pulled)
+        self.assertEqual((got.heads, got.state, got.status, P.genesis(got)), (genesis, empty, None, True))
+        shutil.rmtree(self.pulled)
+        self.write_pulled()
+        self.assertFalse(P.genesis(P.read(self.pulled)))
+        for heads, state, status in ((genesis, state_files(), None),  # a ledger without a head
+                                     (genesis, dict(empty, **{"chain/root.jsonl": b"x\n"}), None),
+                                     (genesis, empty, b"# status\n"),  # a status.md without a head
+                                     ({"brain/state": None, "brain/integration": None}, empty, None),
+                                     ({"brain/state": "a" * 40, "brain/integration": None}, empty, None)):
+            with self.subTest(heads=heads, state=state, status=status):
+                shutil.rmtree(self.pulled, ignore_errors=True)
+                with self.assertRaises(P.PulledError) as ctx:
+                    self.write_pulled(heads=heads, state=state, status=status)
+                self.assertEqual(ctx.exception.reasons, ["heads_invalid"])
+                # read refuses the same artifact: written with both heads, then heads.json says genesis
+                self.write_pulled(state=state, status=status)
+                m = self.manifest()
+                data = json.dumps(heads).encode()
+                with open(os.path.join(self.pulled, "state", "heads.json"), "wb") as fh:
+                    fh.write(data)
+                m["files"]["state/heads.json"] = hashlib.sha256(data).hexdigest()
+                self.set_manifest(m)
+                self.assertEqual(self.reasons(), ["heads_invalid"])
 
     def test_write_refuses_what_read_would(self):
         with self.assertRaises(P.PulledError) as ctx:

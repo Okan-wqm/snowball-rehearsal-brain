@@ -6,8 +6,8 @@ job's ``ok``; a refused target's ``reason``, ``reasons`` and id are the job's).
 
 - one cycle: a good candidate merges; a test-breaking and a ratchet-raising one are rejected for their own reasons;
   merges are serial (a second good candidate carries ``sentinel_pending``); the order is the ids' code-point order;
-- criterion 1 through ``gate.diffguard`` with the profile ``kos`` staged with: a manifest change, and an operator
-  excluded path, which 29g says ``excluded_dirs`` carries (and ``kos`` refused too: ``kos:base_file_missing``);
+- criterion 1 through ``gate.diffguard`` with the profile ``kos`` staged with: a manifest change, a security
+  keyword of the policy, and an operator excluded path, which 29g says ``excluded_dirs`` carries (and ``kos`` refused too: ``kos:base_file_missing``);
 - criterion 2: a diff that adds a key id is ``secret_in_diff`` (MF2 reached through MF8);
 - criteria 7 and 8 from the inputs: ``merge_paused`` missing or true, an unfinished sentinel;
 - the artifacts by hash: a changed byte of a run file, a missing ``hashes.json``, an unusable diff or finding;
@@ -17,7 +17,10 @@ job's ``ok``; a refused target's ``reason``, ``reasons`` and id are the job's).
   program (tohum/29s), and without it the job is no verdict before anything is written; a ledger ``ledger.serial`` refuses is ``state_refused``, nothing decided; a refused
   artifact (among them a ``pulled`` whose ``target.id`` is not its directory's name, ``target_mismatch``, nothing
   decided), a ``served.json`` beside an unlisted directory (``pulled_invalid``, no target served), a missing
-  ``control.json`` and an unusable recipe.
+  ``control.json`` and an unusable recipe;
+- criterion 1's profile (``GuardProfile``, the two calls ``loop.decide`` makes): paths named in the tree (a
+  security and a physical safety word), a CODEOWNERS safety owner, the owner's ``safety_paths``, the operator's
+  excluded paths, the policy's security keywords; a tree or target the derivation refuses.
 """
 
 from __future__ import annotations
@@ -33,7 +36,10 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import activation_world as AW  # noqa: E402
+from gate import diffguard as G  # noqa: E402
 from loop import decide as E  # noqa: E402
+from profile import derive as D  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from profile import unit_verify as V  # noqa: E402
@@ -163,6 +169,13 @@ class Criteria(Cycle):
         art = P.read(self.pulled)
         self.assertIn("pkg/auth.js", V.guard_profile(self.tree(), art.target, art.policy)["security_paths"])
         self.assertIn("security_path:pkg/auth.js", self.reasons(self.decide())["sec"])
+
+    def test_criterion_1_the_policys_security_keywords(self):
+        """``pulled``'s policy reaches the guard profile: a keyword it names guards the file."""
+        doc = json.loads(policy())
+        doc["constitutional"] = {"security_keywords": ["a.js"]}
+        self.kos({"good": candidate(GOOD)}, policy=json.dumps(doc).encode())
+        self.assertIn("security_path:pkg/a.js", self.reasons(self.decide())["good"])
 
     def test_criterion_2_a_secret_in_the_diff(self):
         self.kos({"leak": candidate(LEAK)})
@@ -382,6 +395,64 @@ class YazJob(YazBase):
         # a served pulled and no control.json: no verdict (exit 2)
         self.write_pulled({"good": candidate(GOOD)})
         self.assertEqual(run(), (2, {"ok": False, "reason": None}))
+
+
+class GuardProfile(unittest.TestCase):
+    """Criterion 1's profile is derived from the tree by ``profile.unit_verify.guard_profile``, the one function
+    ``loop.decide`` judges every cycle with (the genesis cycle's too: ``activate`` takes D5's answer): no input file
+    lists the guarded paths, the tree, the target entry and the policy do. Each case is the two calls
+    ``loop.decide`` makes, ``guard_profile`` then ``gate.diffguard.check``, on activation_world's toy tree."""
+
+    def reasons(self, change=None, patch=None) -> list[str]:
+        w = AW.World()
+        w.tree = w.base_tree()
+        if change:
+            change(w)
+        target = json.loads(w.files["summary.json"])["targets"][0]
+        profile = V.guard_profile(w.tree, target, json.loads(w.files["policy.json"]))
+        return G.check((patch or w.cand("good")["diff.patch"]).decode(), profile, json.loads(w.recipe))
+
+    def summary_target(self, w: AW.World, **fields):
+        summary = json.loads(w.files["summary.json"])
+        summary["targets"][0].update(fields)
+        w.files["summary.json"] = json.dumps(summary).encode()
+
+    def test_unguarded_control(self):
+        self.assertEqual(self.reasons(), [])
+
+    def test_paths_named_in_the_tree_are_guarded(self):
+        """A security word (``auth``) and a physical safety word (``feeder``, tohum/05) in the base tree's names."""
+        for path in ("src/auth/session.js", "src/feeder/valve.js"):
+            patch = AW.diff(path, 1, ["module.exports = {};"], ["module.exports = { a: 1 };"])
+            self.assertEqual(self.reasons(patch=patch), ["security_path:" + path])
+
+    def test_codeowners_safety_owner_in_the_tree(self):
+        def owners(w):
+            with open(os.path.join(w.tree, "CODEOWNERS"), "w") as fh:
+                fh.write("src/ @acme/scada-team\n")
+        self.assertIn("security_path:src/a.js", self.reasons(owners))
+
+    def test_owners_safety_paths_widen(self):
+        self.assertIn("security_path:src/a.js", self.reasons(lambda w: self.summary_target(w, safety_paths=["src/a.js"])))
+
+    def test_operators_excluded_paths(self):
+        self.assertIn("excluded_path:src/a.js", self.reasons(lambda w: self.summary_target(w, excluded_paths=["src/"])))
+
+    def test_policy_security_keywords(self):
+        policy = {"constitutional": {"security_keywords": ["a.js"]}}
+        self.assertIn("security_path:src/a.js",
+                      self.reasons(lambda w: w.files.update({"policy.json": json.dumps(policy).encode()})))
+
+    def test_a_tree_or_target_the_derivation_refuses(self):
+        cases = {"not_a_directory": lambda w: setattr(w, "tree", os.path.join(w.base_tree(), "package.json")),
+                 "tree_is_a_link": lambda w: (os.symlink(w.base_tree(), w.tree + "-link"),
+                                              setattr(w, "tree", w.tree + "-link")),
+                 "safety_paths_malformed": lambda w: self.summary_target(w, safety_paths=[""]),
+                 "policy_keywords_malformed": lambda w: w.files.update(
+                     {"policy.json": b'{"constitutional": {"security_keywords": []}}'})}
+        for name, change in cases.items():
+            with self.assertRaises(D.DeriveError, msg=name):
+                self.reasons(change)
 
 
 if __name__ == "__main__":

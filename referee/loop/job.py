@@ -51,9 +51,29 @@ in turn, every artifact path below being that target's own directory (``in/pulle
 holds one line per target in ``targets``; the first target refused stops the job, no later target is served this
 run, and its ``reason``, ``reasons`` and id (``target``) are the job's (``run``). Each target's cycle has the same
 cycle id (``<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>``). D8's drill is the toy's (asama-0/08 row 4): off on any other
-kind. Out of scope, stated: the copy's genesis, and so 25a item 7's condition on the toy's cycles 1-5 that gates
-it, is not run by this workflow (``activate``, unwired: ``status/off_live.json``); a copy that has been opened is
-served like the toy.
+kind.
+
+**The genesis cycle** (tohum/26a ``activate``: the operator's first cycle, in ``koş`` and ``yaz``; tohum/25a row 7).
+A ``toy`` entry whose target has neither ``brain/state`` nor ``brain/integration`` is served as its genesis cycle:
+``cek`` reads its ``main`` (``refs/heads/main``, credential-less, ``loop.fetch.heads``; absent is
+``head_missing:main`` beside the two others) and assembles ``pulled`` from that commit's tree with
+``loop.pulled``'s genesis form (no ``brain/state`` head, both chains empty); there is no state to verify or anchor,
+so the target's line has ``genesis: true`` and ``state`` and ``root`` ``null``. ``getir``, ``kos`` and ``cagir`` run
+on it as on any cycle (no merge is unfinished: nothing is watched); ``yaz`` runs D5 as on any cycle and then, instead
+of ``loop.write_cycle``, ``activate.activate`` (``yaz_genesis``) with D5's answer, D3's base run
+(``loop.watch.base_run``: ``base.jsonl`` and the index's ``base_run_sha256``; absent is ``activation_refused``
+``base_run_missing``) and D4's cost rows, and the checkout's ``setup/summary.json``, ``setup/imports.jsonl`` and
+``seed/security-ledger.jsonl`` (tohum/29o; an unreadable one is unusable, exit 2), ``pulled``'s policy and its one
+unit as the recipe: the genesis row, the cut at that commit, D5's merge, the ratchet base and the orphan
+``brain/state`` commit. Its refusals before any write (``activate``'s reasons, ``base_moved`` among them) are
+``activation_refused`` with the reasons; a hard stop after the cut is ``hard_stop`` with ``written``. The line has
+``done`` ``["D5", "D6"]``, ``drill`` ``{action: off, why: genesis}`` (D8 starts in the next cycle) and ``written``
+(``GENESIS_WRITTEN`` of ``activate``'s answer, ``genesis: true``). The next run's ``cek`` finds both heads and serves
+an ordinary cycle. Out of scope, stated: a ``copy`` entry with neither head is not served (above) until 25a item
+7's condition on the toy's cycles 1-5, which gates the copy's genesis, is judged (not yet: no code here reads it);
+a target with exactly one of the two heads (an activation stopped after its cut) stays ``head_missing`` (25a's
+failure rule leaves it to the operator); a second genesis after a re-import (tohum/26d) is ``activate``'s
+``already_activated`` (seed-047).
 
 **What ``run`` does now.** It checks the job's environment contract first: a job that runs code (``getir``,
 ``kos``) refuses to start when any secret of another job, the OIDC request variables or ``GITHUB_TOKEN`` is in its
@@ -150,7 +170,8 @@ refused tree is ``pulled_invalid``). Then:
   failed listing and a failed fetch (of a ``brain/state`` commit too) are unusable (exit 2: 29b's reader stops). Refusals (exit 1): ``imports_broken``,
   ``imports_no_transfer``, ``imports_invalid``, ``referee_tree_refused`` (with the hash's reasons),
   ``referee_tree_mismatch``; ``target_repo_unsafe``; ``head_missing:<branch>`` for each head the target lacks (a
-  toy before genesis has neither, a copy with neither is waiting, above; nothing of the target is fetched). Then MF1's ``verify --previous`` of ``brain/state`` (``loop.state``), before
+  toy with neither is its genesis cycle and a copy with neither is waiting, above; nothing of the target is
+  fetched). Then, unless it is the genesis cycle, MF1's ``verify --previous`` of ``brain/state`` (``loop.state``), before
   anything else of the target is fetched: its head fetched with ``loop.fetch`` into ``cek-*/state.git``, its one
   parent (the version the previous cycle verified and extended), when it has one, into
   ``cek-*/state-previous.git``, and ``ledger.jsonl`` and ``chain/root.jsonl`` each verified as a chain and as an
@@ -196,8 +217,7 @@ refused tree is ``pulled_invalid``). Then:
   ``canary_usd`` that is no amount, a ledger that is not a chain and an existing ``out/response`` are unusable (exit
   2), nothing started.
 
-The rest of the D1-D8 composition inside the jobs (D7, D8) has no MF of asama-0/14 that owns it (reported in the
-founder ledger, spec-036).
+The D1-D8 composition inside the jobs is MF17's (spec-036, answered by seed epoch 35c8838).
 
 ``RED_CONTROL`` is the referee's own known-bad command, ``node -e process.exit(1)`` in the unit's image (the
 image's ``node``); it is not taken from ``pulled``, so nothing the Founder writes can choose it. A known-bad
@@ -232,6 +252,7 @@ from dispatcher import llm_call as LL
 from ledger import anchor as AN
 from ledger import append as LA
 from ledger import serial as SE
+import activate as AC
 from loop import accepted as A
 from loop import cagir as CG
 from loop import cek as C
@@ -329,6 +350,7 @@ JOBS: dict[str, Job] = {
 # What cek reads from the referee repository's checkout, and the target branches whose heads it reads (asama-0/01 D1).
 CEK_FILES = ("setup/imports.jsonl", "setup/summary.json", "policy.json")
 TARGET_REFS = {b: "refs/heads/" + b for b in (B.STATE, B.INTEGRATION)}
+MAIN_REF = "refs/heads/main"  # the toy's genesis cycle reads its tree here (tohum/07: brain/integration is cut from main)
 # What cek's line lists as checked when D1 holds: every check of asama-0/01's D1 row.
 CEK_CHECKED = ("accepted_sha", "referee_tree", "heads", "state_previous", "root", "assembled", "profile")
 
@@ -687,26 +709,11 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
     is the target's API (``target.write.HttpTransport`` with ``WRITER_TOKEN`` when ``None``), ``signer`` the root's
     (``loop.sign.SigstoreSigner`` pinned to ``loop.yml`` on ``$GITHUB_REPOSITORY`` when ``None``), ``now`` the
     clock."""
-    for name in YAZ_ENV:
-        if not environ.get(name):
-            raise Unusable("yaz: %s is not set" % name)
-    try:
-        cost = CG.read_response(_dir(environ, "in", "response", tid), art)
-    except CG.ResponseError as exc:
-        return {"reason": "response_invalid", "reasons": exc.reasons}
-    try:
-        with open(os.path.join(environ["GITHUB_WORKSPACE"], "setup", "imports.jsonl"), "rb") as fh:
-            imports = fh.read()
-    except OSError as exc:
-        raise Unusable("yaz: setup/imports.jsonl: %s" % cli.cause(exc)) from None
-    try:
-        repo = A.repo_name(art.target.get("repo"))
-    except A.StateError:
-        return {"reason": "target_repo_unsafe"}
-    writer = W.Writer(repo, transport or W.HttpTransport(environ["WRITER_TOKEN"]))
-    signer = signer or _signer(environ)
-    ts = (now or (lambda: datetime.datetime.now(datetime.timezone.utc)))().strftime("%Y-%m-%dT%H:%M:%SZ")
-    cycle_id = "%s-%s" % (environ["GITHUB_RUN_ID"], environ["GITHUB_RUN_ATTEMPT"])
+    got = _yaz_inputs(environ, tid, art, transport, signer, now)
+    if "reason" in got:
+        return got
+    writer, signer, imports, cost, cycle_id, ts = (got[k] for k in ("writer", "signer", "imports", "cost", "cycle_id",
+                                                                    "ts"))
     try:
         return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill)}
     except WC.Refused as exc:
@@ -715,6 +722,67 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
         return {"reason": "hard_stop", "reasons": [cli.cause(exc)], "written": sorted(set(writer.written))}
     except (WC.Unusable, W.ApiError, W.Refused) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
+
+
+def _workspace_file(environ: dict[str, str], path: str) -> bytes:
+    try:
+        with open(os.path.join(environ["GITHUB_WORKSPACE"], *path.split("/")), "rb") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise Unusable("yaz: %s: %s" % (path, cli.cause(exc))) from None
+
+
+def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, signer: Any,
+                now: Any) -> dict[str, Any]:
+    """What D6 writes with, in every cycle (the genesis cycle's too): ``{writer, signer, imports, cost, cycle_id,
+    ts}``, or ``{reason, reasons?}`` (``response_invalid``, ``target_repo_unsafe``) before anything is written."""
+    for name in YAZ_ENV:
+        if not environ.get(name):
+            raise Unusable("yaz: %s is not set" % name)
+    try:
+        cost = CG.read_response(_dir(environ, "in", "response", tid), art)
+    except CG.ResponseError as exc:
+        return {"reason": "response_invalid", "reasons": exc.reasons}
+    imports = _workspace_file(environ, "setup/imports.jsonl")
+    try:
+        repo = A.repo_name(art.target.get("repo"))
+    except A.StateError:
+        return {"reason": "target_repo_unsafe"}
+    return {"writer": W.Writer(repo, transport or W.HttpTransport(environ["WRITER_TOKEN"])),
+            "signer": signer or _signer(environ), "imports": imports, "cost": cost,
+            "cycle_id": "%s-%s" % (environ["GITHUB_RUN_ID"], environ["GITHUB_RUN_ATTEMPT"]),
+            "ts": (now or (lambda: datetime.datetime.now(datetime.timezone.utc)))().strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
+GENESIS_WRITTEN = ("merge", "state_sha", "integration_sha", "root", "rekor_uuid", "rows", "edited")
+SECURITY_LEDGER = "seed/security-ledger.jsonl"  # tohum/29o, 30e: the seed security ledger, in the checkout
+
+
+def yaz_genesis(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
+                signer: Any = None, now: Any = None) -> dict[str, Any]:
+    """D6 of the genesis cycle (``loop.pulled.genesis``; see the module docstring): ``activate.activate`` with this
+    cycle's D5 and D3 and the checkout's files: ``{reason, reasons, written?}`` or ``{written}``."""
+    got = _yaz_inputs(environ, tid, art, transport, signer, now)
+    if "reason" in got:
+        return got
+    given = WT.base_run(_dir(environ, "in", "results", tid))
+    if given is None:
+        return {"reason": "activation_refused", "reasons": ["base_run_missing"]}
+    files = {"summary.json": _workspace_file(environ, "setup/summary.json"), "imports.jsonl": got["imports"],
+             "policy.json": art.policy_bytes, "security-ledger.jsonl": _workspace_file(environ, SECURITY_LEDGER),
+             "recipe.json": json.dumps(art.units["units"][0], sort_keys=True).encode("utf-8"),
+             "base.jsonl": given[0]}
+    writer = got["writer"]
+    try:
+        done = AC.activate(writer, files, art, tree, d5, given[1], got["cost"], got["signer"], got["cycle_id"],
+                           got["ts"])
+    except AC.Refused as exc:
+        return {"reason": "activation_refused", "reasons": exc.reasons}
+    except LN.HardStop as exc:
+        return {"reason": "hard_stop", "reasons": [cli.cause(exc)], "written": sorted(set(writer.written))}
+    except (AC.Unusable, W.ApiError, W.Unusable) as exc:
+        raise Unusable("yaz: %s" % cli.cause(exc)) from None
+    return {"written": dict({k: done[k] for k in GENESIS_WRITTEN}, genesis=True)}
 
 
 def _signer(environ: dict[str, str]) -> SG.SigstoreSigner:
@@ -854,16 +922,26 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
     missing = ["head_missing:%s" % b for b, head in heads.items() if head is None]
     if target["kind"] == "copy" and len(missing) == len(heads):
         return {"waiting": "copy_genesis", "heads": heads}
-    if missing:
+    if len(missing) == len(heads):  # a toy with neither head: its genesis cycle, on its main (loop.pulled)
+        try:
+            commit = F.heads(os.path.join(root, "main.git"), url, [MAIN_REF], git=git, environ=environ)[MAIN_REF]
+        except P.PulledError as exc:
+            raise Unusable("cek: target heads: %s" % ", ".join(exc.reasons)) from None
+        if commit is None:
+            return dict(_refused(missing + ["head_missing:main"]), heads=heads)
+        state = anchored = status = None
+        chains = {p: b"" for p in B.STATE_CHAINS}
+    elif missing:
         return dict(_refused(missing), heads=heads)
-    state, chains, status = _cek_state(url, heads[B.STATE], root, git, environ)
-    if "reason" in state:
-        return dict(state, heads=heads)
-    anchored = _cek_root(chains, entries)
-    if "reason" in anchored:
-        return dict(anchored, heads=heads, state=state)
+    else:
+        state, chains, status = _cek_state(url, heads[B.STATE], root, git, environ)
+        if "reason" in state:
+            return dict(state, heads=heads)
+        anchored = _cek_root(chains, entries)
+        if "reason" in anchored:
+            return dict(anchored, heads=heads, state=state)
+        commit = heads[B.INTEGRATION]
     target_dir = os.path.join(root, "target.git")
-    commit = heads[B.INTEGRATION]
     try:
         F.fetch(target_dir, url, commit, git=git, environ=environ)
     except P.PulledError as exc:
@@ -887,8 +965,8 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
         refused = _extract(art, tree) or _recipe_refused(art, unit, tree, "cek")
     if refused:
         return dict(refused, heads=heads, state=state, root=anchored, assembled=assembled)
-    return {"heads": heads, "state": state, "root": anchored, "assembled": assembled,
-            "profile": {"unit_id": unit["unit_id"]}}
+    return dict({"heads": heads, "state": state, "root": anchored, "assembled": assembled,
+                 "profile": {"unit_id": unit["unit_id"]}}, **({"genesis": True} if state is None else {}))
 
 
 def _cek_state(url: str, head: str, root: str, git: str,
@@ -995,6 +1073,11 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
     d7, end, lint = yaz_d7(environ, tid, art)
     if "reason" in d7:
         return dict(ok=False, done=["D5"], **d5, **d7)
+    if P.genesis(art):  # the activation writes this cycle; D7 watched nothing, D8 starts in the next cycle
+        d6 = yaz_genesis(environ, tid, art, tree, d5, transport, signer, now)
+        if "reason" in d6:
+            return dict(ok=False, done=["D5"], **d5, **d7, **d6)
+        return dict(ok=True, done=["D5", "D6"], drill=GENESIS_DRILL, **d5, **d7, **d6)
     d8 = yaz_d8(environ, art, tree, d5)
     d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8)
     if "reason" in d6:
@@ -1005,6 +1088,8 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
         return dict(line, ok=False, reason="drill_fail")
     return line
 
+
+GENESIS_DRILL = {"action": "off", "why": "genesis"}
 
 # The jobs after ``cek``: each serves ``pulled``'s ``served.json``, one target at a time.
 TARGET_JOBS = {"getir": _getir, "kos": _kos, "cagir": _cagir, "yaz": _yaz}

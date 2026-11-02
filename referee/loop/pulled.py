@@ -13,7 +13,7 @@ another job's output only by artifact and hash; the workflow's download checks t
     tree.tar                    the target's tree as a tar archive (``git archive``'s format)
     units.json                  targets/<target>/units.json as read
     policy.json                 the referee repository's policy.json as read
-    state/heads.json            {"brain/state": commit, "brain/integration": commit}: the heads D1 read
+    state/heads.json            {"brain/state": commit | null, "brain/integration": commit}: the heads D1 read
     state/ledger.jsonl          brain/state's files at that head, the bytes D1 verified (``target.branches``'
     state/chain/root.jsonl        ``STATE_CHAINS``: MF1's verify --previous, MF11's root)
     state/status.md             brain/state's ``status.md`` at that head, as read; absent when the head has none
@@ -34,6 +34,12 @@ one ``<id>/`` per served target the same way (``out/deps/<id>/``, ``out/results/
 extends, the ``status.md`` whose block D6 regenerates, the heads D6 writes on and D7 watches; a job reads it here,
 never from the target.
 
+**The genesis cycle** (``genesis``): ``brain/state`` ``null`` in ``state/heads.json`` is a target that has neither
+``brain/state`` nor ``brain/integration`` yet, whose cycle is its activation (tohum/26a ``activate``: the operator's
+first cycle; ``yaz`` runs ``activate``). Then ``brain/integration`` is the commit the tree was read from, the one the
+activation cuts ``brain/integration`` at, both chained files are empty and there is no ``status.md``; any other
+combination is ``heads_invalid`` (``write`` refuses it the same way). Every other cycle has both heads.
+
 **Reading** (``read``; every reason that holds is listed, prefixed ``pulled:`` by the job): the manifest is a
 regular file holding a JSON object with exactly those three keys (``manifest_unreadable``), the schema
 (``schema_unknown``), the target (``target_invalid``); ``files`` maps each path to 64 lowercase hex
@@ -42,8 +48,8 @@ regular file holding a JSON object with exactly those three keys (``manifest_unr
 (``candidate_incomplete:<cid>``); every listed file is a regular file, no symlink on its way, with the listed
 sha256 (``file_missing:<path>``, ``hash_mismatch:<path>``); no other file or directory is in the artifact
 (``unlisted:<path>``). ``units.json``, ``policy.json`` and ``state/heads.json`` must be JSON
-(``json_unreadable:<path>``), and ``state/heads.json`` an object of exactly ``brain/state`` and ``brain/integration``, each 40 lowercase hex
-(``heads_invalid``). The chained files are not judged here: their reader verifies what it uses (the stage brake's
+(``json_unreadable:<path>``), and ``state/heads.json`` an object of exactly ``brain/state`` and ``brain/integration``, each 40 lowercase hex,
+``brain/state`` ``null`` only in the genesis cycle's form above (``heads_invalid``). The chained files are not judged here: their reader verifies what it uses (the stage brake's
 ``llm_call.CostBook`` verifies the ledger as a chain).
 
 **The tree** (``extract_tree``): Python's ``tarfile`` with its ``data`` filter, into a directory that must not
@@ -137,7 +143,7 @@ def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
     if sorted(state) != sorted(B.STATE_CHAINS) or not all(isinstance(d, bytes) for d in state.values()) \
             or not (status is None or isinstance(status, bytes)):
         raise PulledError(["state_incomplete"])
-    if not _heads_valid(heads):
+    if not _heads_valid(heads, state, status):
         raise PulledError(["heads_invalid"])
     files = {TREE: tree_tar, UNITS: units, POLICY: policy, HEADS: _dump(heads)}
     files.update({"%s/%s" % (STATE_DIR, p): d for p, d in state.items()})
@@ -192,9 +198,20 @@ def served(root: str) -> list[str]:
     return ids
 
 
-def _heads_valid(heads: Any) -> bool:
-    return isinstance(heads, dict) and sorted(heads) == sorted(HEAD_BRANCHES) \
-        and all(isinstance(v, str) and SHA40.fullmatch(v) for v in heads.values())
+def _heads_valid(heads: Any, state: dict[str, bytes], status: bytes | None) -> bool:
+    """``heads`` names both heads, each 40 lowercase hex, except the genesis cycle's ``brain/state`` ``null`` with
+    empty chains and no ``status.md`` (see "The genesis cycle")."""
+    if not (isinstance(heads, dict) and sorted(heads) == sorted(HEAD_BRANCHES)):
+        return False
+    shas = [heads[B.INTEGRATION]] + ([] if heads[B.STATE] is None else [heads[B.STATE]])
+    if not all(isinstance(v, str) and SHA40.fullmatch(v) for v in shas):
+        return False
+    return heads[B.STATE] is not None or (status is None and not any(state.values()))
+
+
+def genesis(art: Pulled) -> bool:
+    """Whether ``art`` is a genesis cycle's (see "The genesis cycle"): ``read`` checked its form."""
+    return art.heads[B.STATE] is None
 
 
 def _present(root: str) -> list[str]:
@@ -259,11 +276,11 @@ def read(root: str) -> Pulled:
                 parsed[path] = json.loads(contents[path].decode("utf-8"))
             except (UnicodeDecodeError, ValueError, RecursionError):
                 reasons.append("json_unreadable:%s" % path)
-    if HEADS in parsed and not _heads_valid(parsed[HEADS]):
+    state = {p: contents.get("%s/%s" % (STATE_DIR, p), b"") for p in B.STATE_CHAINS}
+    if HEADS in parsed and not _heads_valid(parsed[HEADS], state, contents.get(STATUS)):
         reasons.append("heads_invalid")
     if reasons:
         raise PulledError(reasons)
-    state = {p: contents["%s/%s" % (STATE_DIR, p)] for p in B.STATE_CHAINS}
     return Pulled(target, parsed[UNITS], parsed[POLICY], os.path.join(root, TREE), candidates, parsed[HEADS], state,
                   contents[POLICY], contents.get(STATUS))
 
