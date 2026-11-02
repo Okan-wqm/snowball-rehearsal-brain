@@ -217,6 +217,21 @@ class Artifacts(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assert_reason(dict(row, payload=bad), fragment)
 
+    def test_copy_gate_row_rules(self):
+        """The copy's genesis gate row (``harness.pass_row``, seed-048's draft): ``{conditions}``, a non-empty sorted
+        list of distinct strings, no cause; a missing or extra key, an empty, unsorted or repeating list do not."""
+        cyc = {"cycle_id": "46", "ts": AW.TS, "snapshot_id": AW.SNAP}
+        row = events.row(cyc, "gate", "copy_gate", {"conditions": ["#genesis", "#kok"]})
+        self.assertEqual(schema.row_reasons(stored(row)), [])
+        for bad, fragment in (({}, "payload.conditions: missing"),
+                              ({"conditions": ["#genesis"], "verdict": "open"}, "payload.verdict: not a field"),
+                              ({"conditions": []}, "payload.conditions: empty"),
+                              ({"conditions": ["#kok", "#genesis"]}, "payload.conditions"),
+                              ({"conditions": ["#kok", "#kok"]}, "payload.conditions"),
+                              ({"conditions": [1]}, "payload.conditions[0]")):
+            with self.subTest(fragment=fragment):
+                self.assert_reason(dict(row, payload=bad), fragment)
+
     def test_genesis_payload_rules(self):
         gen = self.row("genesis")
         p = gen["payload"]

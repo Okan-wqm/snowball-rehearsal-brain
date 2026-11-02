@@ -69,6 +69,7 @@ import test_loop_cagir
 import yaz_world as YW  # noqa: E402
 from loop_inputs_world import ABSENT, BOOTSTRAP, install_sigstore, write_bootstrap  # noqa: E402
 from loop import cek as C  # noqa: E402
+from harness import pass_row as PR  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from loop import treehash as T  # noqa: E402
@@ -414,10 +415,12 @@ class CekJob(unittest.TestCase):
         self.state_head = self.state_commit({p: n[1] for p, n in self.STATE.items()}, (self.state_genesis,),
                                             {"status.md": self.STATUS_MD})
 
+    ledger_rows: list | None = None  # the fixture ledger's rows, ``state_rows`` unless a test gives its own
+
     def state_commit(self, counts: dict, parents: tuple, extra: dict | None = None) -> str:
         """A ``brain/state`` commit whose chained files hold ``counts`` rows (``loop.state``'s rules); root row ``i``
         anchors the ledger's first ``ANCHORED[i]`` rows, its entry in the fake Rekor (``ledger.anchor``'s rules)."""
-        ledger = state_rows(max(self.ANCHORED))
+        ledger = self.ledger_rows or state_rows(max(self.ANCHORED))
         content = {}
         if "ledger.jsonl" in counts:
             content["ledger.jsonl"] = self.TA.chained(ledger[:counts["ledger.jsonl"]])
@@ -976,6 +979,136 @@ class CekJob(unittest.TestCase):
             self.assertEqual(self.served(), [])
             self.assertEqual(os.listdir(os.path.join(self.temp, "out", "pulled")), ["served.json"])
             self.assertEqual(len(self.fetched()), 1)  # the brain's only
+
+    def gated(self, gate: dict | None = None) -> None:
+        """The toy's ``brain/state`` (genesis and head) with a genesis first and, in the head, ``gate`` as row 3."""
+        import test_pass_row as TP
+        rows = state_rows(max(self.ANCHORED))
+        rows[0] = row("l0", "events", "genesis", TP.genesis_payload("t1"))
+        if gate is not None:
+            rows[3] = gate
+        self.ledger_rows = rows
+        self.setUp_state()
+
+    def copy_at(self, base: str, order=("t1", "t2")) -> dict:
+        summary = self.two(order)
+        return {"targets": [dict(t, base_sha=base) if t["id"] == "t2" else t for t in summary["targets"]]}
+
+    def test_an_open_gate_serves_the_copys_genesis_at_its_base(self):
+        """tohum/25a row 7: the toy's verified ledger holds the referee's ``copy_gate`` row after its genesis, so the
+        copy with neither head is served as its genesis cycle, its tree read at ``targets[].base_sha``."""
+        self.gated(row("l3", "events", "copy_gate", PR.gate_payload()))
+        _, base = S.store(self.TARGET)
+        out, _, _ = self.run_cek(summary=self.copy_at(base), listings=self.listings(t2=b""))
+        self.assertEqual((out["ok"], out["done"]), (True, ["D1"]), out)
+        lines = {t["target"]: t for t in out["targets"]}
+        self.assertNotIn("genesis", lines["t1"])
+        line = lines["t2"]
+        self.assertEqual((line["genesis"], line["state"], line["root"], line["heads"], line["assembled"]["commit"]),
+                         (True, None, None, {"brain/state": None, "brain/integration": None}, base))
+        self.assertEqual(self.served(), ["t1", "t2"])
+        art = P.read(os.path.join(self.temp, "out", "pulled", "t2"))
+        self.assertTrue(P.genesis(art))
+        self.assertEqual((art.target["kind"], art.heads, art.state, art.status),
+                         ("copy", {"brain/state": None, "brain/integration": base},
+                          {"ledger.jsonl": b"", "chain/root.jsonl": b""}, None))
+        # the copy: its heads listed once, its base fetched, nothing of a state fetched; no main read
+        self.assertEqual(self.ls_remotes(), [self.URL["t1"], self.URL["t2"]])
+        self.assertEqual([f for f in self.fetched() if f[0] == self.URL["t2"]],
+                         [(self.URL["t2"], "%s:refs/pulled" % base)])
+
+    def test_the_copys_genesis_cycle_through_every_job(self):
+        """The copy's genesis ``pulled`` cek handed over (served alone here: the toy's ordinary cycle is the other
+        tests'): getir, kos and cagir run on it, and yaz's activation opens the copy's brain/state with the genesis
+        row at ``targets[].base_sha`` and cuts brain/integration there."""
+        import activation_world as AW
+        self.gated(row("l3", "events", "copy_gate", PR.gate_payload()))
+        _, base = S.store(self.TARGET)
+        summary = dict(self.copy_at(base), seed_epochs=[{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64,
+                                                         "seed_sha256": "3" * 64, "bootstrap_sha256": "4" * 64}])
+        summary["targets"] = [dict(t, identifiers=[]) for t in summary["targets"]]
+        out, _, _ = self.run_cek(summary=summary, listings=self.listings(t2=b""))
+        self.assertEqual(out["ok"], True, out)
+        pulled = os.path.join(self.temp, "out", "pulled")
+        shutil.rmtree(os.path.join(pulled, "t1"))
+        os.unlink(os.path.join(pulled, P.SERVED))
+        P.write_served(pulled, ["t2"])
+        temps = {}
+        for job in ("getir", "kos", "cagir", "yaz"):
+            temps[job] = os.path.join(self.base, job)
+            shutil.copytree(pulled, os.path.join(temps[job], "in", "pulled"), symlinks=True)
+        self.assertTrue(J.run("getir", {"RUNNER_TEMP": temps["getir"]})["ok"])
+        shutil.copytree(os.path.join(temps["getir"], "out", "deps"), os.path.join(temps["kos"], "in", "deps"))
+        got = J.run("kos", {"RUNNER_TEMP": temps["kos"]}, runner=RedAs())
+        self.assertEqual((got["ok"], got["targets"][0]["done"]), (True, ["D3"]), got)
+        claude_dir = os.path.dirname(fake_claude.install_for_loop(temps["cagir"]))
+        fake_claude.behave(claude_dir, test_loop_cagir.result(modelUsage={BOOTSTRAP["rival"]["model"]: {"costUSD": 0.01}}))
+        got = J.run("cagir", {"RUNNER_TEMP": temps["cagir"], "CLAUDE_CODE_OAUTH_TOKEN": "t",
+                              "GITHUB_WORKSPACE": self.work, "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"})
+        self.assertEqual(got["ok"], True, got)
+        shutil.copytree(os.path.join(temps["kos"], "out", "results"), os.path.join(temps["yaz"], "in", "results"))
+        shutil.copytree(os.path.join(temps["cagir"], "out", "response"), os.path.join(temps["yaz"], "in", "response"))
+        write_tree(os.path.join(temps["yaz"], "control"), {"control.json": {"merge_paused": False}})
+        write_tree(self.work, {J.SECURITY_LEDGER: YW.chained([{"row_id": "s1", "part": "security", "kind": "note",
+                                                               "payload": {}}]).decode()})
+        # the copy: its base commit on GitHub, no brain/ branch, Actions off (the facts genesis reads)
+        gh = YW.FakeGitHub("o/copy", required_check=YW.B.CHECK)
+        tree = YW.sha_of(["tree", "base"])
+        gh.trees[tree] = {path: gh._blob(data) for path, data in self.TARGET.items()}
+        gh.commits[base] = {"tree": tree, "parents": [], "message": "base"}
+        gh.refs["main"] = base
+        gh.overrides.update(AW.facts("copy", "o/copy"))
+        gh.overrides[("GET", "/installation/repositories")] = (200, {  # the App on both targets of the summary
+            "total_count": 2, "repositories": [{"full_name": "o/target"}, {"full_name": "o/copy"}]})
+        got = J.run("yaz", YW.env(temps["yaz"], self.work, GITHUB_RUN_ID="1"), transport=gh, signer=YW.signer(),
+                    now=lambda: YW.NOW)
+        line = got["targets"][0]
+        self.assertEqual((got["ok"], line["target"], line["done"]), (True, "t2", ["D5", "D6"]), got)
+        self.assertNotIn("gate", line)  # judged on the toy only
+        self.assertEqual((line["written"]["genesis"], line["written"]["integration_sha"]), (True, base))
+        rows = [json.loads(x) for x in gh.read_file("brain/state", "ledger.jsonl").splitlines()]
+        self.assertEqual((rows[0]["kind"], rows[0]["payload"]["target"], rows[0]["payload"]["base_sha"]),
+                         ("genesis", "t2", base))
+
+    def test_the_copy_waits_unless_the_gate_is_the_referees_own_after_the_toys_genesis_and_before_it(self):
+        heads = {"brain/state": None, "brain/integration": None}
+        _, base = S.store(self.TARGET)
+        gate = row("l3", "events", "copy_gate", PR.gate_payload())
+        import test_pass_row as TP
+        for name, ledger_gate, order in (
+                ("no gate row", None, ("t1", "t2")),
+                ("a proposal of it", dict(gate, proposed_by="founder"), ("t1", "t2")),
+                ("before a later genesis", "regenesis", ("t1", "t2")),
+                ("the copy before the toy", gate, ("t2", "t1"))):
+            with self.subTest(name):
+                self.clean()
+                if ledger_gate == "regenesis":
+                    self.gated(gate)
+                    self.ledger_rows[4] = row("l4", "events", "genesis", TP.genesis_payload("t1"))
+                    self.setUp_state()
+                else:
+                    self.gated(ledger_gate)
+                out, _, _ = self.run_cek(summary=self.copy_at(base, order), listings=self.listings(t2=b""))
+                self.assertEqual(out["ok"], True, out)
+                lines = {t["target"]: t for t in out["targets"]}
+                self.assertEqual(lines["t2"], {"target": "t2", "waiting": "copy_genesis", "heads": heads})
+                self.assertEqual(self.served(), ["t1"])
+                self.assertEqual([f for f in self.fetched() if f[0] == self.URL["t2"]], [])
+
+    def test_an_open_gate_and_a_copy_base_that_is_no_commit_id(self):
+        self.gated(row("l3", "events", "copy_gate", PR.gate_payload()))
+        for base in (None, "B" * 40, "b" * 39):
+            with self.subTest(base=base):
+                self.clean()
+                summary = self.copy_at("0" * 40)
+                summary["targets"][1] = {k: v for k, v in summary["targets"][1].items() if k != "base_sha"}
+                if base is not None:
+                    summary["targets"][1]["base_sha"] = base
+                out, _, _ = self.run_cek(summary=summary, listings=self.listings(t2=b""))
+                line = self.stopped(out, "t2")
+                self.assertEqual((out["reason"], line["heads"]),
+                                 ("base_sha_invalid", {"brain/state": None, "brain/integration": None}))
+                self.assertEqual([f for f in self.fetched() if f[0] == self.URL["t2"]], [])
 
     def test_a_copy_with_one_head_and_a_toy_with_none_are_red(self):
         for name, entry, listing, missing in (

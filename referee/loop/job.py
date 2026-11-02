@@ -725,8 +725,10 @@ def yaz_gate(environ: dict[str, str], art: Any) -> dict[str, Any] | None:
     unreadable checkout file is unusable as in D6."""
     if art.target.get("kind") != "toy" or PR.gate_opened(art.state[B.STATE_LEDGER]):
         return None
+    if not environ.get("GITHUB_WORKSPACE"):
+        raise Unusable("yaz: GITHUB_WORKSPACE is not set")
     try:
-        inp = DR.inputs(environ.get("GITHUB_WORKSPACE", ""), environ)
+        inp = DR.inputs(environ["GITHUB_WORKSPACE"], environ)
     except DR.Unusable as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
     drill = {"seed": inp["seed"], "catalog": inp["catalog"]} if inp and "seed" in inp else None

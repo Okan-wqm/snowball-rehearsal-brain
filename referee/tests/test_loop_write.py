@@ -850,6 +850,106 @@ class D8(StateBase):
         self.assertEqual(self.writes(), [])
 
 
+GATE_CAUSES = {"rd-build": "build_break", "rd-lint": "lint_regression", "rd-test": "test_regression"}
+
+
+class Gate(StateBase):
+    """The copy's genesis gate (tohum/25a row 7): ``yaz`` judges it on the toy's ``pulled`` state with the drill seed
+    and the checkout's counter, and an open gate's ``copy_gate`` row is written in the toy's cycle, once."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        import test_pass_row as TP
+        self.TP = TP
+        self.toy = TP.toy_world()  # every condition holds on it (test_pass_row.Gate)
+        self.state = {B.STATE_LEDGER: self.toy.ledger, B.STATE_ROOTS: self.toy.roots, B.STATE_STATUS: self.toy.status}
+        with open(os.path.join(self.workspace, "setup", "imports.jsonl"), "wb") as fh:
+            fh.write(TP.IMPORTS)
+        root = os.path.join(self.workspace, *DR.CATALOG_DIR)
+        doc = drill_catalog(GATE_CAUSES)
+        self.assertEqual([(i["id"], i["cause"]) for i in doc["instances"]],
+                         [(i["id"], i["cause"]) for i in TP.CATALOG["instances"]])  # the same keys
+        write_tree(root, {DR.CATALOG: doc})
+        for item in doc["instances"]:
+            with open(os.path.join(root, item["patch"]), "wb") as fh:
+                fh.write(DRILL_PATCHES.get(item["id"], DRILL_PATCHES["rd-test"]))
+        self.seed = {DR.SEED_ENV: TP.SEED["seed"]}
+
+    def cycle_on(self, target=None, run="300", **env) -> dict:
+        shutil.rmtree(os.path.join(self.temp, "in"), ignore_errors=True)
+        self.kos({}, target=target or dict(TARGET, repo=YW.REPO), units=SENTINEL_UNITS)
+        self.control(OPEN)
+        self.github()
+        art = P.read(self.pulled)  # this run's response (its cost row id is the run's)
+        shutil.rmtree(os.path.join(self.temp, "in", "response"))
+        YW.write_response(self.temp, "t1", art.heads, [YW.cost_row("cagir-%s-1" % run, art.heads[B.INTEGRATION])])
+        return self.run_yaz(GITHUB_RUN_ID=run, **env)
+
+    def test_an_open_gate_writes_its_row_once(self):
+        old = self.state[B.STATE_LEDGER]
+        out = self.cycle_on(**self.seed)
+        self.assertEqual((out["ok"], out["gate"]), (True, {"verdict": "open", "conditions": {}}), out)
+        new = self.state_file(B.STATE_LEDGER)
+        self.assertTrue(CH.verify_bytes(new, old)["valid"])
+        self.assertEqual(SC.ledger_reasons(new), [])
+        added = rows_of(new)[len(rows_of(old)):]
+        [row] = [r for r in added if r["kind"] == "copy_gate"]
+        self.assertEqual((row["row_id"], row["part"], row["payload"], "proposed_by" in row),
+                         ("300-1:gate", "events", PR.gate_payload(), False))
+        kinds = [r["kind"] for r in added]  # after D8's row, before the cost and status rows
+        self.assertEqual(kinds[kinds.index("copy_gate") + 1:], ["cost", "status"])
+        self.assertTrue(PR.gate_opened(new))
+        # the next cycle on that state does not judge it again: no gate in the line, no second row
+        self.state = {p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}
+        out = self.cycle_on(run="301", **self.seed)
+        self.assertEqual(out["ok"], True, out)
+        self.assertNotIn("gate", out)
+        self.assertEqual([r["kind"] for r in rows_of(self.state_file(B.STATE_LEDGER))].count("copy_gate"), 1)
+
+    def test_a_closed_gate_writes_no_row_and_names_its_reasons(self):
+        old = self.state[B.STATE_LEDGER]
+        out = self.cycle_on()  # no seed: the drill is off and #geri-alma cannot be judged
+        self.assertEqual((out["ok"], out["gate"]),
+                         (True, {"verdict": "closed", "conditions": {"#geri-alma": ["toy:drill_inputs_missing"]}}))
+        self.assertNotIn("copy_gate", [r["kind"] for r in rows_of(self.state_file(B.STATE_LEDGER))])
+        self.assertTrue(CH.verify_bytes(self.state_file(B.STATE_LEDGER), old)["valid"])
+        # the toy's own state judged: a flaky sentinel closes it whatever the seed
+        self.toy = self.TP.toy_world(verdict="flaky")
+        self.state = {B.STATE_LEDGER: self.toy.ledger, B.STATE_ROOTS: self.toy.roots, B.STATE_STATUS: self.toy.status}
+        out = self.cycle_on(**self.seed)
+        self.assertEqual(out["gate"]["conditions"], {"#nobetci #hayatta": ["toy:sentinel_flaky:" + self.TP.h(0xa1)]})
+
+    def test_an_expectation_it_cannot_use_keeps_it_closed_and_the_cycle_goes_on(self):
+        bad = dict(candidate(GOOD), **{"expect.json": b'{"decision": "maybe"}'})
+        shutil.rmtree(os.path.join(self.temp, "in"), ignore_errors=True)
+        self.kos({"good": bad}, target=dict(TARGET, repo=YW.REPO), units=SENTINEL_UNITS)
+        self.control(OPEN)
+        self.github()
+        out = self.run_yaz(GITHUB_RUN_ID="300", **self.seed)
+        self.assertEqual((out["ok"], out["gate"]["verdict"], out["gate"]["conditions"]), (True, "closed", {}), out)
+        self.assertIn("expect.json", out["gate"]["unusable"])
+        self.assertNotIn("copy_gate", [r["kind"] for r in rows_of(self.state_file(B.STATE_LEDGER))])
+
+    def test_only_the_toy_is_judged(self):
+        out = self.cycle_on(target=dict(TARGET, kind="copy", repo=YW.REPO), **self.seed)
+        self.assertEqual(out["ok"], True, out)
+        self.assertNotIn("gate", out)
+        self.assertNotIn("copy_gate", [r["kind"] for r in rows_of(self.state_file(B.STATE_LEDGER))])
+
+    def test_write_cycle_writes_the_gate_row_it_is_given(self):
+        self.kos({}, units=SENTINEL_UNITS)
+        self.control(OPEN)
+        self.github()
+        art = P.read(self.pulled)
+        got = WC.write(art, self.src, {"decisions": {}, "merge": None}, [], W.Writer(YW.REPO, self.gh), self.signer,
+                       self.TP.IMPORTS, "301-1", "2026-11-02T10:00:00Z", gate={"conditions": ["#kok"]})
+        rows = rows_of(self.state_file(B.STATE_LEDGER))[len(rows_of(self.state[B.STATE_LEDGER])):]
+        self.assertEqual([(r["row_id"], r["kind"]) for r in rows],
+                         [("301-1:start", "cycle_start"), ("301-1:gate", "copy_gate"), ("301-1:status", "status")])
+        self.assertEqual(rows[1]["payload"], {"conditions": ["#kok"]})
+        self.assertEqual(got["rows"], 3)
+
+
 class Genesis(StateBase):
     """The genesis cycle (``loop.pulled.genesis``): ``kos`` then ``yaz`` on a toy with neither head, whose
     ``pulled`` was read from its ``main``; ``yaz`` runs ``activate`` with D5's answer, D3's base run and D4's cost
