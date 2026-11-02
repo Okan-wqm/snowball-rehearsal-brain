@@ -41,6 +41,13 @@ served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line ch
   workspace, a run id that is not digits) write nothing; ``loop.write_cycle`` refuses a plant beside a merge or an
   end and an action ``loop.drill`` does not give; ``harness.pass_row`` judges the state these cycles wrote (one root
   and one status row per cycle, the drill ``PASS`` or ``FAIL`` as the loop judged it);
+- the copy's genesis gate (``Gate``, tohum/25a row 7) on a toy whose ``pulled`` state is test_pass_row's passing
+  toy world, with the drill seed and the checkout's counter: an open gate writes the ``copy_gate`` row (the
+  referee's own, after D8's row, before the cost and status rows; the ledger an append-only extension of the
+  schema), and the next cycle neither judges it again nor writes a second; without the seed it is closed with
+  ``drill_inputs_missing`` and no row, a flaky sentinel closes it with the seed; an ``expect.json`` it cannot use
+  keeps it closed with ``unusable`` and the cycle written; a copy is not judged; ``loop.write_cycle`` writes the
+  row it is given at ``<cycle>:gate``;
 - the genesis cycle (``Genesis``): ``kos`` then ``yaz`` on a toy's ``pulled`` in loop.pulled's genesis form;
   ``yaz`` runs ``activate`` with D5's answer, D3's base run and D4's cost row (the cut at main, the merge, the
   orphan state with the genesis payload naming the counter's transfer, the checkout's security ledger, the pulled

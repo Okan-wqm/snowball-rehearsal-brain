@@ -66,7 +66,7 @@
   {
    "id": "root_not_compared",
    "file": "harness/pass_row.py",
-   "old": "([] if last == anchor.root_of(anchor.tips(ledger)) else [\"root_mismatch\"])",
+   "old": "([] if last == mine else [\"root_mismatch\"])",
    "new": "([] if last else [\"root_mismatch\"])",
    "tests": [
     "test_pass_row.py"

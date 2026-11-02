@@ -39,8 +39,8 @@
   {
    "id": "waiting_any_kind",
    "file": "loop/job.py",
-   "old": "    if target[\"kind\"] == \"copy\" and len(missing) == len(heads):\n",
-   "new": "    if len(missing) == len(heads):\n",
+   "old": "    if target[\"kind\"] == \"copy\" and len(missing) == len(heads) and not opened:\n",
+   "new": "    if len(missing) == len(heads) and not opened:\n",
    "tests": [
     "test_loop_cek.py"
    ]
@@ -48,8 +48,8 @@
   {
    "id": "waiting_one_head",
    "file": "loop/job.py",
-   "old": "    if target[\"kind\"] == \"copy\" and len(missing) == len(heads):\n",
-   "new": "    if target[\"kind\"] == \"copy\" and missing:\n",
+   "old": "    if target[\"kind\"] == \"copy\" and len(missing) == len(heads) and not opened:\n",
+   "new": "    if target[\"kind\"] == \"copy\" and missing and not opened:\n",
    "tests": [
     "test_loop_cek.py"
    ]

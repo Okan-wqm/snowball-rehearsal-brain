@@ -48,7 +48,7 @@
   {
    "id": "result_not_named_by_import",
    "file": "harness/pass_row.py",
-   "old": "    if row.get(\"result_sha256\") != hashlib.sha256(result).hexdigest():",
+   "old": "    if out[\"result_sha256\"] != hashlib.sha256(result).hexdigest():",
    "new": "    if False:",
    "tests": [
     "test_pass_row.py"

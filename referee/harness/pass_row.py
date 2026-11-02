@@ -15,8 +15,11 @@ stage-open's conditions 2-7).
 (seed-046 (b)-(e), still open): which (B) conditions are judged from the states (below; the others are in
 ``NOT_CHECKED``), and that ``write`` puts the row on the toy's ``brain/state`` as one cycle of its own
 (``ledger.cycle``: its ``cycle_start``, the ``pass`` row, the status row and block, one signed root), after ``judge``
-gave ``PASS``. Which job or command runs ``write``, and how it reads the copy's state, no page says: nothing calls it
-yet (``status/off_live.json``).
+gave ``PASS``. The module is on the live path through the copy's genesis gate (below: ``gate`` and
+``gate_opened``, called by ``loop.job``, and ``GATE_ROW`` by ``loop.write_cycle``); ``judge`` and ``write`` have no
+caller in the loop yet: 26d:9 and 29s:19-24 name the loop referee's run over both targets as the writer, but the PASS
+row's ``owner_exception`` needs the bytes of the signed (A) result, which no page puts where a run can read them
+(the import keeps only their hash in ``setup/imports.jsonl``; seed-048).
 
 **Inputs** (``judge(toy, copy, toy_expect, copy_expect, drill, imports, result)``): each state ``{ledger, roots}``, the
 bytes of ``brain/state``'s ``ledger.jsonl`` and ``chain/root.jsonl``; each target's expectations ``{candidate id:

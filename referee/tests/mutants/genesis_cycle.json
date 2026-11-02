@@ -147,8 +147,8 @@
   {
    "id": "cek_genesis_refused",
    "file": "loop/job.py",
-   "old": "    if len(missing) == len(heads):  # a toy with neither head",
-   "new": "    if False:  # a toy with neither head",
+   "old": "    elif len(missing) == len(heads):  # a toy with neither head",
+   "new": "    elif False:  # a toy with neither head",
    "tests": [
     "test_loop_cek.py"
    ]

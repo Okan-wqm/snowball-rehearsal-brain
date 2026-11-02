@@ -22,6 +22,12 @@ signed root per cycle) with ``ledger.events``' rows, the ones ``activate`` and D
 - expectations that are not ``{decision: merge}`` or ``{decision: reject, reason}``, a counter with no import or not
   a chain, a result the import does not name, without an ``exit`` object or with an owner exception not of
   tohum/02's form, and unreadable command-line inputs are unusable (exit 2);
+- the copy's genesis gate (``gate``): the toy's state alone, ``open`` on the world above with no copy state at all,
+  ``closed`` with exactly the toy's reasons ``judge`` gives (no drill inputs, a cause unshown, a flaky sentinel, a
+  reject expected for another reason, a model mismatch, another import), every condition ``state_invalid`` on a
+  toy state ``ledger.schema`` refuses, unusable expectations and counter; ``gate_opened``: the referee's own
+  ``copy_gate`` row after the last genesis (not before a later genesis, not a proposal, not another kind), and a
+  ledger not of the schema, not a chain or empty opens nothing; an empty copy state fails ``judge`` without error;
 - ``write`` on the in-process GitHub: a ``PASS`` is one ``brain/state`` commit on the head (``cycle_start``, the
   ``pass`` row with the judged payload, the status row; one root), an append-only extension of the ``ledger.schema``
   shape that is judged ``PASS`` again; a second PASS (``already_passed``) and a ``FAIL`` (``not_pass``) write

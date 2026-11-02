@@ -34,7 +34,12 @@
   it as the download hands it over, run their wired steps on it (cagir's canary with the fake ``claude``), and so
   do they on a toy's genesis ``pulled``, yaz's activation opening brain/state at the ``main`` cek read;
 - the targets: a copy with neither head waits (``{target, waiting: copy_genesis, heads}``, not red, the job ``ok``;
-  not in ``served.json``, no directory, nothing of it fetched; a run whose only target waits serves none); a copy
+  not in ``served.json``, no directory, nothing of it fetched; a run whose only target waits serves none) unless
+  the toy served before it has the referee's ``copy_gate`` row after its last genesis in its verified ledger: then
+  the copy is served as its genesis cycle at ``targets[].base_sha`` (loop.pulled's genesis form, its base fetched,
+  no state read), and getir, kos, cagir and yaz run on it, yaz's activation opening the copy's brain/state at that
+  base; no row, a proposal of it, a row before a later genesis or a copy before the toy leaves it waiting, and a
+  ``base_sha`` that is no commit id is ``base_sha_invalid`` with nothing of the copy fetched; a copy
   with one head is ``head_missing:<branch>``; a toy with neither is its genesis cycle on its ``main`` (``pulled``
   in loop.pulled's genesis form, nothing of a state fetched or anchored), and without a ``main`` too
   ``head_missing:main``; the first refused target stops cek: the job's
