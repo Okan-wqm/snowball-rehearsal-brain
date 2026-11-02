@@ -1,15 +1,16 @@
-"""The loop's ``events`` rows of a cycle, built in one place (stage 0; written by ``activate`` and D6 and D7 of
-``yaz``).
+"""The loop's ``events`` rows of a cycle, and D8's ``drill`` rows, built in one place (stage 0; written by
+``activate`` and D6, D7 and D8 of ``yaz``).
 
 Rules: tohum/26 (the ledger row; ``cause`` from its closed set on a failed or reverted event: a reject, a revert),
 ``ledger.schema`` (``events`` ``cycle_start``, ``ratchet_base``, ``decision``, ``revert`` and ``sentinel``: the shapes these rows
 must have; ``ledger.cycle`` checks them before anything is signed), asama-0/08 (a reject's reasons).
 
-``row(cycle, suffix, kind, payload, cause)``: ``row_id`` ``<cycle_id>:<suffix>``, ``ts`` and ``snapshot_id`` the
-cycle's, ``part`` ``events``, ``derivation`` ``tool``, ``trust`` ``verified``, no evidence refs; ``cause`` only when
+``row(cycle, suffix, kind, payload, cause, part)``: ``row_id`` ``<cycle_id>:<suffix>``, ``ts`` and ``snapshot_id``
+the cycle's, ``part`` ``events`` unless given, ``derivation`` ``tool``, ``trust`` ``verified``, no evidence refs; ``cause`` only when
 given. ``ratchet_base(cycle, base_run_sha256, counts)`` (row suffix ``ratchet``) and ``revert(cycle, merge_sha,
 cause)`` (suffix ``revert``, with the cause), ``sentinel(cycle, merge_sha, verdict, flaky, sentinel_sha256)`` (suffix
-``sentinel``, no cause). ``decision(cycle, cid, reasons, merged)``: a reject (``{decision:
+``sentinel``, no cause). ``drill(cycle, kind, payload)``: D8's row, part ``drill`` (suffix ``drill``; the payload
+``harness.revert_drill``'s). ``decision(cycle, cid, reasons, merged)``: a reject (``{decision:
 reject, candidate, reasons}``, row suffix ``c:<cid>``) with ``cause(reasons)``, or a merge (``{decision: merge,
 candidate, path, pull, head_sha, merge_sha}`` from ``merged``, ``target.land``'s answer and the path) without cause.
 
@@ -40,9 +41,9 @@ REJECT_CAUSES = (
 )
 
 
-def row(cycle: dict, suffix: str, kind: str, payload: dict, cause: str | None = None) -> dict:
-    """One ``events`` row of the cycle ``{cycle_id, ts, snapshot_id}``; see the module docstring."""
-    out = {"row_id": "%s:%s" % (cycle["cycle_id"], suffix), "ts": cycle["ts"], "part": PART, "kind": kind,
+def row(cycle: dict, suffix: str, kind: str, payload: dict, cause: str | None = None, part: str = PART) -> dict:
+    """One ``events`` row (or ``part``'s) of the cycle ``{cycle_id, ts, snapshot_id}``; see the module docstring."""
+    out = {"row_id": "%s:%s" % (cycle["cycle_id"], suffix), "ts": cycle["ts"], "part": part, "kind": kind,
            "payload": payload, "derivation": "tool", "trust": "verified", "snapshot_id": cycle["snapshot_id"],
            "evidence_refs": []}
     if cause is not None:
@@ -78,6 +79,12 @@ def sentinel(cycle: dict, merge_sha: str, verdict: str, flaky: list[str], sentin
     hash): the row that finishes its sentinel without a revert (``ledger.serial``)."""
     return row(cycle, "sentinel", "sentinel", {"merge_sha": merge_sha, "verdict": verdict, "flaky": flaky,
                                                "sentinel_sha256": sentinel_sha256})
+
+
+def drill(cycle: dict, kind: str, payload: dict) -> dict:
+    """D8's ``drill`` row of the cycle (suffix ``drill``): ``commit`` or ``plant`` with ``harness.revert_drill``'s
+    payload (``loop.drill``)."""
+    return row(cycle, "drill", kind, payload, part="drill")
 
 
 def decision(cycle: dict, cid: str, reasons: list[str], merged: Any = None) -> dict:

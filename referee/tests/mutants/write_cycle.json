@@ -12,8 +12,8 @@
   {
    "id": "dry_plan_signs_for_real",
    "file": "loop/write_cycle.py",
-   "old": "imports, facts, DRY,\n",
-   "new": "imports, facts, signer,\n",
+   "old": "imports, facts, DRY, root_row_id)",
+   "new": "imports, facts, signer, root_row_id)",
    "tests": [
     "test_loop_write.py"
    ]

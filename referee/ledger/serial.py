@@ -27,9 +27,9 @@ Reasons 2 and 3 are all collected, sorted, and raised together as ``Unusable``.
 **A merge's lint before** (``lint_before``, read by ``loop.watch`` for ``gate.revert``'s ``lint``): the
 ``counts`` of the last ``events``/``ratchet_base`` row between the merge row's cycle start (the last
 ``events``/``cycle_start`` before it) and the merge row: the lint totals of the base the merge's cycle judged, which
-is the merge's first parent (``activate`` and D6 write that row before their decisions). ``None`` for a
-``drill``/``plant`` merge (the drill merges onto whatever head it finds, which no ratchet base row records) and when
-the merge's cycle has no ratchet base row.
+is the merge's first parent (``activate`` and D6 write that row before their decisions; D8 writes it before its
+``drill``/``plant`` row, the planted merge's base being the head the cycle's ``kos`` ran). ``None`` when the merge's
+cycle has no ratchet base row (a plant ``harness.revert_drill.run_drill`` wrote outside the loop has none).
 The same schema check as ``unfinished`` first; a SHA no merge row names is ``Unusable`` (``not_merged:<sha>``).
 
 Out of scope, stated: whether a finisher's verdict is true (D7 writes it from a sentinel ``loop.watch`` verified;
@@ -105,5 +105,5 @@ def lint_before(ledger: bytes, merge_sha: str) -> dict[str, int] | None:
         elif _type(row) == RATCHET_BASE:
             counts = row["payload"]["counts"]
         elif _is_merge(row) and row["payload"].get("merge_sha") == merge_sha:
-            return counts if _type(row) == ("events", "decision") else None
+            return counts
     raise Unusable(["not_merged:%s" % merge_sha])

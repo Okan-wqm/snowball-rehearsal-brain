@@ -8,8 +8,9 @@ written by ``ledger.append`` (the cycle's writer) with rows of ``ledger.schema``
 - a revert or end row of no earlier merge (also one written before its merge), a second finisher of one merge (a
   revert after an end, two ends) and the same SHA merged twice answer nothing;
 - the reasons are all collected;
-- ``lint_before``: the merge's own cycle's last ratchet base before it; none for another cycle's, a later one, a
-  merge without a cycle start or a planted merge; a SHA no merge row names and an unreadable ledger answer nothing.
+- ``lint_before``: the merge's own cycle's last ratchet base before it; a planted merge's likewise (D8 writes
+  its cycle's ratchet base before the plant row); none for another cycle's, a later one, a merge without a cycle start
+  or a planted merge whose cycle has none; a SHA no merge row names and an unreadable ledger answer nothing.
 """
 
 from __future__ import annotations
@@ -138,8 +139,11 @@ class LintBefore(unittest.TestCase):
         self.assertIsNone(self.before(M1, start("s1"), merge("c1", M1), ratchet("b1", {"eslint": 4})))
         self.assertIsNone(self.before(M1, merge("c1", M1)))
 
-    def test_a_planted_merge_has_none(self):
-        self.assertIsNone(self.before(M2, start("s1"), ratchet("b1", {"eslint": 4}), plant("p1", "i1", M2)))
+    def test_a_planted_merge_reads_its_cycles_ratchet_base(self):
+        self.assertEqual(self.before(M2, start("s1"), ratchet("b1", {"eslint": 4}), plant("p1", "i1", M2)),
+                         {"eslint": 4})
+        self.assertIsNone(self.before(M2, start("s1"), plant("p1", "i1", M2)))
+        self.assertIsNone(self.before(M2, start("s1"), ratchet("b1", {"eslint": 4}), start("s2"), plant("p1", "i1", M2)))
 
     def test_refusals(self):
         for ledger, want in ((ledger_with([START, merge("c1", M1)]), ["not_merged:%s" % M2]),

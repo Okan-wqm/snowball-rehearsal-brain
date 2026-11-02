@@ -97,8 +97,16 @@ refused tree is ``pulled_invalid``). Then:
   (``head_moved:<branch>``, ``state_unwritable: ...``) are ``write_refused`` with the reasons; a hard stop
   (``target.land.HardStop``: a chain break, a root that cannot be signed, a write that failed after the first) is
   ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. On success the line
-  carries ``written`` (``loop.write_cycle``'s answer) and ``done`` ``["D5", "D6"]``; D8 is not wired, so the job still
-  ends ``cycle_not_wired``, exit 1.
+  carries ``written`` (``loop.write_cycle``'s answer), ``drill`` (D8's step without the planted file's content) and
+  ``done``: ``D5`` and ``D6``, ``D7`` when a sentinel was ended, ``D8`` unless the drill is off; ``ok`` is true (exit
+  0), except when D8 judged a drill ``FAIL`` (``drill_fail``, exit 1, after the writes: the cycle's state is written,
+  the drill's verdict is red). D8 (``yaz_d8``, ``loop.drill``) runs between D7 and D6 and writes nothing itself: with
+  ``DRILL_SEED`` (the drill seed secret, ``yaz`` only; unset turns the drill off) it reads the catalog from the
+  checkout's ``seed/drill/revert/`` (``GITHUB_WORKSPACE``; unreadable is unusable, exit 2, nothing written) and
+  answers this cycle's step from the same state: a commitment, a plant (D6 lands it as the cycle's one merge, with the
+  ``ratchet_base`` and ``plant`` rows; the next cycle's ``kos`` watches it and its ``yaz`` reverts it, D7), a wait,
+  or nothing that fits; the previous drill, once its planted merge is finished, is revealed and judged
+  (``harness.revert_drill.judge``) in the line's ``drill.judged``.
 - ``cek`` runs D1 (``cek_d1``), and with it the whole job. First the accepted-SHA check: it reads the bootstrap
   referee's last signed state with ``loop.accepted.read_state`` (the Actions API of ``$GITHUB_REPOSITORY`` with the
   job's ``GITHUB_TOKEN``, ``actions: read``; the artifact verified by ``sigstore`` on PATH), fetches the accepted
@@ -204,6 +212,7 @@ from loop import accepted as A
 from loop import cagir as CG
 from loop import cek as C
 from loop import decide as E
+from loop import drill as DR
 from loop import fetch as F
 from loop import gitobj as G
 from loop import pulled as P
@@ -285,7 +294,7 @@ JOBS: dict[str, Job] = {
                  ("cek",), ("pulled",), "response"),
     "yaz": Job(("D5", "D6", "D7", "D8"), (2, 7, 8, 9, 10, 11, 13, 14, 16), False,
                {"id-token": "write", "contents": "read"},
-               {"WRITER_TOKEN": "${{ steps.app.outputs.token }}"},
+               {"WRITER_TOKEN": "${{ steps.app.outputs.token }}", DR.SEED_ENV: "${{ secrets.DRILL_SEED }}"},
                ("cek", "getir", "kos", "cagir"), ("pulled", "deps", "results", "response"), None),
 }
 
@@ -617,9 +626,26 @@ def yaz_d7(environ: dict[str, str], art: Any) -> tuple[dict[str, Any], dict | No
 YAZ_ENV = ("WRITER_TOKEN", "GITHUB_REPOSITORY", "GITHUB_WORKSPACE", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
 
 
+def yaz_d8(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any]) -> dict[str, Any]:
+    """D8 of ``yaz`` (see the module docstring): ``loop.drill.step`` of this cycle's state, before anything is
+    written; D6 writes what it answers."""
+    workspace = environ.get("GITHUB_WORKSPACE")
+    if environ.get(DR.SEED_ENV) and not workspace:
+        raise Unusable("yaz: GITHUB_WORKSPACE is not set")
+    unfinished, refused = _unfinished(art)
+    if refused:  # yaz_d5 read the same ledger first
+        raise Unusable("yaz: %s" % ", ".join(refused["reasons"]))
+    try:
+        inp = DR.inputs(workspace, environ)
+        return DR.step(inp, art.state[B.STATE_LEDGER], unfinished, d5["merge"] is not None, tree,
+                       environ.get("GITHUB_RUN_ID", ""))
+    except DR.Unusable as exc:
+        raise Unusable("yaz: %s" % cli.cause(exc)) from None
+
+
 def yaz_d6(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
            signer: Any = None, now: Any = None, base_lint: dict | None = None,
-           end: dict | None = None) -> dict[str, Any]:
+           end: dict | None = None, drill: dict | None = None) -> dict[str, Any]:
     """D6 of ``yaz``, with D7's ``end`` (see the module docstring): ``{reason, reasons, written?}`` or
     ``{written}``. ``transport``
     is the target's API (``target.write.HttpTransport`` with ``WRITER_TOKEN`` when ``None``), ``signer`` the root's
@@ -646,7 +672,7 @@ def yaz_d6(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any], tra
     ts = (now or (lambda: datetime.datetime.now(datetime.timezone.utc)))().strftime("%Y-%m-%dT%H:%M:%SZ")
     cycle_id = "%s-%s" % (environ["GITHUB_RUN_ID"], environ["GITHUB_RUN_ATTEMPT"])
     try:
-        return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end)}
+        return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill)}
     except WC.Refused as exc:
         return {"reason": "write_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
@@ -882,10 +908,15 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         d7, end, lint = yaz_d7(environ, art)
         if "reason" in d7:
             return dict(result, done=["D5"], **d5, **d7)
-        d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, end)
+        d8 = yaz_d8(environ, art, tree, d5)
+        d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, end, d8)
         if "reason" in d6:
             return dict(result, done=["D5"], **d5, **d7, **d6)
-        return dict(result, reason="cycle_not_wired", done=["D5", "D6"], **d5, **d7, **d6)
+        done = ["D5", "D6"] + (["D7"] if end else []) + ([] if d8["action"] == "off" else ["D8"])
+        line = dict(result, ok=True, done=done, drill=DR.line(d8), **d5, **d7, **d6)
+        if d8.get("judged", {}).get("verdict") == "FAIL":
+            return dict(line, ok=False, reason="drill_fail")
+        return line
     raise Unusable("job %r has no entry" % name)
 
 

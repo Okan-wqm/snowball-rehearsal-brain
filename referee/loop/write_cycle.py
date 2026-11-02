@@ -1,4 +1,4 @@
-"""``yaz``'s D6: the cycle's writes on the target, from D5's decision and D7's red (stage 0).
+"""``yaz``'s D6: the cycle's writes on the target, from D5's decision, D7's end and D8's step (stage 0).
 
 Rules: asama-0/01 D6 (``yaz`` writes ``brain/c/<id>``, the pull request, the check and the merge, and one
 ``brain/state`` commit per cycle with the signed root and ``status.md``; every ref under ``refs/heads/brain/``;
@@ -15,7 +15,9 @@ the target's repository; ``signer``, the root's signer (``loop.sign.SigstoreSign
 the lint totals of the base this cycle's ``kos`` ran (``loop.watch.base_lint``: ``{base_run_sha256, counts}``,
 required when D5 chose a merge, else ``Unusable``); ``end``, D7's sentinel to end, ``{merge_sha, verdict, runs,
 flaky, sha256, facts?}`` (``loop.watch.read``'s verified answer at ``brain/integration``'s head, with
-``loop.watch.facts`` on a red), or ``None``.
+``loop.watch.facts`` on a red), or ``None``; ``drill``, ``loop.drill.step``'s answer or ``None``: only ``commit``
+(``{payload}``) and ``plant`` (``{instance_id, path, content}``) write; an action ``loop.drill`` does not give is
+``Unusable``.
 
 **Order.** Nothing is written on the target before every check holds, and nothing is signed before the rows are
 planned:
@@ -26,7 +28,8 @@ planned:
    unfinished), and MF12's ``gate.sentinel.decide`` of its runs must give its ``verdict`` (and ``flaky``): a red's
    ``gate.revert.assess`` of its runs and facts must be a revert, so its cause is known before any write; a green
    or flaky one is ended by a row (``ledger.serial``); anything else (a ``rerun``, a verdict its runs do not give)
-   is ``Unusable``;
+   is ``Unusable``. A ``plant`` is the cycle's one merge: with D5's merge or an ``end`` it is ``Unusable``, and like a
+   merge it needs ``base_lint``;
 2. both heads read from the target equal ``pulled``'s (``head_moved:<branch>``, ``Refused``): the state this cycle
    decided on is still the state it writes on, so a second run of the same cycle (a rerun of ``yaz`` after its
    first run wrote) writes nothing;
@@ -37,7 +40,9 @@ planned:
    stop, ``target.land.HardStop`` with nothing written);
 4. the merge landed (``target.land.land``) on ``brain/integration``'s head with the check ``target.branches.CHECK``,
    or a red ``end`` reverted (``target.land.revert``: the revert commit on ``brain/revert/<merge_sha>``, its pull
-   request, the same check and the merge); a green or flaky ``end`` writes nothing on ``brain/integration``;
+   request, the same check and the merge), or D8's plant landed (``target.land.plant``: ``brain/drill/<cycle_id>``,
+   its pull request, the same check, saying it is no gate decision, and the merge); a green or flaky ``end`` and a
+   ``commit`` write nothing on ``brain/integration``;
 5. ``ledger.cycle.commit`` on ``brain/state`` at ``pulled``'s head (``ledger.append.TargetState``: the writer
    refuses a moved head before creating anything): the rows, ``status.md``'s block and the signed root, one commit.
 
@@ -45,25 +50,27 @@ A failure after the first write of step 4 or 5 is ``target.land.HardStop`` namin
 (``writer.written``).
 
 **The rows**, in this order, each ``ledger.events``': ``cycle_start {cycle_id}``; ``ratchet_base {base_run_sha256,
-counts}`` when the cycle merges (``base_lint``: the merge's lint before, which a later revert reads with
+counts}`` when the cycle merges or plants (``base_lint``: the merge's lint before, which a later revert reads with
 ``ledger.serial.lint_before``); one ``decision`` per candidate in code-point order of its id (a reject with D5's
 reasons and ``ledger.events.cause``; the merge with ``path`` and ``target.land.land``'s ``{pull, head_sha,
 merge_sha}``); ``revert {merge_sha}`` with ``gate.revert``'s cause for a red ``end``, or ``sentinel {merge_sha,
 verdict, flaky, sentinel_sha256}`` for a green or flaky one (the row that finishes the merge's sentinel,
-``ledger.serial``); the response's cost rows as they are; then
+``ledger.serial``); D8's ``drill`` row (``commit`` with its payload, or ``plant`` with ``harness.revert_drill``'s
+``{drill, family, instance_id, merge_sha}``, the planted merge's SHA; ``ledger.events.drill``); the response's cost
+rows as they are; then
 ``status.block``'s rows (``ledger.cycle``). ``ts`` is the given time; ``snapshot_id`` is ``brain/integration``'s
 head in ``pulled`` (the snapshot D3 ran on and D5 judged; the cost row carries the same, ``loop.cagir``). Row ids are
 ``<cycle_id>:start``, ``<cycle_id>:ratchet``, ``<cycle_id>:c:<cid>``, ``<cycle_id>:revert`` or
-``<cycle_id>:sentinel``, ``<cycle_id>:status``
+``<cycle_id>:sentinel``, ``<cycle_id>:drill``, ``<cycle_id>:status``
 and the root row's ``<cycle_id>:root``. The
 status facts' ``canary_cap_usd_micros`` is ``canary_usd`` of ``pulled``'s policy (``loop.cagir.CANARY_USD``, the
 cap D4 called with).
 
 Returns ``{merge: {candidate, path, pull, head_sha, merge_sha} | None, revert: {reverted, cause, pull, commit,
-merge_sha} | None, state_sha, root, rekor_uuid, rows, edited}``.
+merge_sha} | None, plant: {instance_id, pull, head_sha, merge_sha} | None, state_sha, root, rekor_uuid, rows,
+edited}``.
 
-Out of scope, stated: D8's drill (not wired);
-whether GitHub's ruleset accepts the writes (``target.write``'s known limits); the signer's program (``loop.sign``).
+Out of scope, stated: which drill step is due (``loop.drill``); whether GitHub's ruleset accepts the writes (``target.write``'s known limits); the signer's program (``loop.sign``).
 """
 
 from __future__ import annotations
@@ -73,6 +80,7 @@ from typing import Any
 from dispatcher import llm_call
 from gate import revert as gate_revert
 from gate import sentinel
+from harness import revert_drill
 from ledger import append, cycle, events, schema
 from loop import cagir
 from loop import pulled as P
@@ -81,6 +89,7 @@ from target import land
 from target import write as W
 import cli
 
+DRILL_ACTIONS = (None, "off", "wait", "none", "commit", "plant")  # loop.drill.step's actions; only the last two write
 PLACEHOLDER = {"pull": 1, "head_sha": "0" * 40, "merge_sha": "0" * 40}  # the dry plan's merge answer
 
 
@@ -106,14 +115,21 @@ DRY = _Dry()
 
 def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.Writer, signer: Any,
           imports: bytes, cycle_id: str, ts: str, base_lint: dict | None = None,
-          end: dict | None = None) -> dict[str, Any]:
-    """D6, and D7's end of a sentinel (see the module docstring)."""
+          end: dict | None = None, drill: dict | None = None) -> dict[str, Any]:
+    """D6, D7's end of a sentinel and D8's step (see the module docstring)."""
     cyc = {"cycle_id": cycle_id, "ts": ts, "snapshot_id": art.heads[B.INTEGRATION]}
     merge = decided["merge"]
     change = None
-    if merge is not None:
+    action = (drill or {}).get("action")
+    planted = action == "plant"
+    if action not in DRILL_ACTIONS:
+        raise Unusable("drill: %r is no action of loop.drill" % (action,))
+    if planted and (merge is not None or end is not None):
+        raise Unusable("drill: a plant is the cycle's one merge, in a cycle that ends no sentinel")
+    if merge is not None or planted:
         if base_lint is None:
-            raise Unusable("merge %s: the base's lint totals are unreadable" % merge)
+            raise Unusable("merge %s: the base's lint totals are unreadable" % (merge or "planted"))
+    if merge is not None:
         change = land.applied(tree, art.candidates[merge]["diff.patch"].decode("utf-8", "surrogateescape"))
         if change["reasons"]:
             raise Unusable("merge %s cannot be written: %s" % (merge, ", ".join(change["reasons"])))
@@ -144,9 +160,9 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
     facts = {"ts": ts, "snapshot_id": cyc["snapshot_id"], "row_id": "%s:status" % cycle_id,
              "canary_cap_usd_micros": cap}
 
-    def rows(merged: dict | None) -> list[dict]:
+    def rows(merged: dict | None, plant_sha: str) -> list[dict]:
         out = [events.start(cyc)]
-        if merge is not None:
+        if merge is not None or planted:
             out.append(events.ratchet_base(cyc, base_lint["base_run_sha256"], base_lint["counts"]))
         for cid in sorted(decided["decisions"]):
             out.append(events.decision(cyc, cid, decided["decisions"][cid]["reasons"], merged if cid == merge else None))
@@ -154,20 +170,24 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
             out.append(events.revert(cyc, red["merge_sha"], cause))
         elif end is not None:
             out.append(events.sentinel(cyc, end["merge_sha"], end["verdict"], end["flaky"], end["sha256"]))
+        if planted:
+            out.append(events.drill(cyc, "plant", revert_drill.plant_payload(drill["instance_id"], plant_sha)))
+        elif action == "commit":
+            out.append(events.drill(cyc, "commit", drill["payload"]))
         return out + list(cost)
 
     ledger, roots = art.state[B.STATE_LEDGER], art.state[B.STATE_ROOTS]
     args = (ledger, ledger, roots, roots, art.status)
     root_row_id = "%s:root" % cycle_id
     try:
-        cycle.plan(*args, rows(dict(PLACEHOLDER, path=change["path"]) if change else None), imports, facts, DRY,
-                   root_row_id)
+        cycle.plan(*args, rows(dict(PLACEHOLDER, path=change["path"]) if change else None, PLACEHOLDER["merge_sha"]),
+                   imports, facts, DRY, root_row_id)
     except append.HardStop as exc:
         raise land.HardStop("state: %s" % cli.cause(exc), []) from None
     except cycle.FAILURES as exc:
         raise Refused(["state_unwritable: %s" % cli.cause(exc)]) from None
     state = append.TargetState(writer, art.heads[B.STATE])
-    merged = reverted = None
+    merged = reverted = plant = None
     try:
         if change is not None:
             merged = dict(land.land(writer, merge, change["path"], change["content"], art.heads[B.INTEGRATION],
@@ -175,10 +195,14 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         if red is not None:
             reverted = dict(land.revert(writer, red["merge_sha"], red["runs"], red["facts"], B.CHECK),
                             reverted=red["merge_sha"])
-        planned = cycle.commit(state, "cycle %s" % cycle_id, *args, rows(merged), imports, facts, signer, root_row_id)
+        if planted:
+            plant = dict(land.plant(writer, cycle_id, drill["path"], drill["content"], art.heads[B.INTEGRATION],
+                                    B.CHECK), instance_id=drill["instance_id"])
+        planned = cycle.commit(state, "cycle %s" % cycle_id, *args, rows(merged, plant and plant["merge_sha"]),
+                               imports, facts, signer, root_row_id)
     except (W.ApiError, W.Refused) + cycle.FAILURES as exc:
         raise land.HardStop("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
-    return {"merge": dict(merged, candidate=merge) if merged else None, "revert": reverted,
+    return {"merge": dict(merged, candidate=merge) if merged else None, "revert": reverted, "plant": plant,
             "state_sha": state.commits_made[-1],
             "root": planned["root"], "rekor_uuid": planned["entry"]["uuid"], "rows": len(planned["row_hashes"]),
             "edited": planned["edited"]}

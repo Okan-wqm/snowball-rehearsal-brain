@@ -101,15 +101,6 @@
    ]
   },
   {
-   "id": "serial_plant_takes_ratchet",
-   "file": "ledger/serial.py",
-   "old": "            return counts if _type(row) == (\"events\", \"decision\") else None",
-   "new": "            return counts",
-   "tests": [
-    "test_serial.py"
-   ]
-  },
-  {
    "id": "serial_unknown_merge_none",
    "file": "ledger/serial.py",
    "old": "    raise Unusable([\"not_merged:%s\" % merge_sha])\n",
@@ -131,7 +122,7 @@
   {
    "id": "write_no_ratchet_row",
    "file": "loop/write_cycle.py",
-   "old": "        if merge is not None:\n            out.append(events.ratchet_base(",
+   "old": "        if merge is not None or planted:\n            out.append(events.ratchet_base(",
    "new": "        if False:\n            out.append(events.ratchet_base(",
    "tests": [
     "test_loop_write.py"
@@ -167,8 +158,8 @@
   {
    "id": "job_end_not_passed",
    "file": "loop/job.py",
-   "old": "d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, end)",
-   "new": "d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, None)",
+   "old": "d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, end, d8)",
+   "new": "d6 = yaz_d6(environ, art, tree, d5, transport, signer, now, lint, None, d8)",
    "tests": [
     "test_loop_write.py"
    ]

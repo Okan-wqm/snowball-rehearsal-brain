@@ -45,7 +45,8 @@ append-only extension of the previous verified version (``ledger.chain.verify_by
 ``previous`` (else ``HardStop``, ``ledger.append``'s); its last revert-drill row must be a ``commit`` equal to
 ``commitment(key)`` for the given ``cycle_id`` (else ``NoCommitment``: nothing is planted, nothing written). Then
 the instance's ``files`` are committed on ``brain/drill/<cycle_id>`` from ``onto``'s head, a pull request opened,
-a check posted saying the merge is planted and is not a gate decision, the pull request merged (``target.write``);
+a check posted saying the merge is planted and is not a gate decision, the pull request merged (``target.land.pull_merge``,
+the sequence the loop's D8 plants with);
 ``observe(merge)`` gives ``(runs, facts)`` and ``gate.revert.revert_red`` decides and reverts onto
 ``brain/drill/<cycle_id>-revert`` (calls 12 -> 13 -> 14). It returns the key and the plant and revert payloads (the
 revert's ``cause`` beside it) for that cycle's ``ledger.append``; the verdict is ``judge`` over the appended ledger.
@@ -76,7 +77,7 @@ from typing import Any, Callable
 
 from gate import revert
 from ledger import append, chain
-from target import write
+from target import land, write
 import cli
 
 DRILL = "revert"
@@ -170,11 +171,11 @@ def _is(row: dict, part: str, kind: str) -> bool:
     return row.get("part") == part and row.get("kind") == kind and isinstance(row.get("payload"), dict)
 
 
-def _is_drill(row: dict, kind: str) -> bool:
+def is_drill(row: dict, kind: str) -> bool:
     return _is(row, "drill", kind) and row["payload"].get("drill") == DRILL
 
 
-def _rows(ledger: bytes) -> list[dict] | None:
+def chain_rows(ledger: bytes) -> list[dict] | None:
     """The rows of a valid chain, or None (``ledger.chain``, the one verifier)."""
     if not chain.verify_bytes(ledger)["valid"]:
         return None
@@ -186,16 +187,16 @@ def _rows(ledger: bytes) -> list[dict] | None:
 def judge(ledger: bytes, answer: Any) -> dict:
     """``{verdict: PASS|FAIL, reasons}`` (see the module docstring)."""
     answer = key_shape(answer)
-    rows = _rows(ledger)
+    rows = chain_rows(ledger)
     if rows is None:
         return {"verdict": "FAIL", "reasons": ["chain_broken"]}
-    plants = [i for i, row in enumerate(rows) if _is_drill(row, "plant")]
+    plants = [i for i, row in enumerate(rows) if is_drill(row, "plant")]
     if not plants:
         return {"verdict": "FAIL", "reasons": ["not_planted"]}
     p = plants[-1]
     plant = rows[p]["payload"]
     found = set()
-    commits = [row for row in rows[:p] if _is_drill(row, "commit")]
+    commits = [row for row in rows[:p] if is_drill(row, "commit")]
     if not commits:
         found.add("commitment_not_before_run")
     elif commits[-1]["payload"].get("commitment_sha256") != commitment(answer):
@@ -228,18 +229,13 @@ def run_drill(writer: Any, seed: Any, catalog: Any, cycle_id: str, files: Any, l
     verdict = chain.verify_bytes(ledger, previous)
     if not verdict["valid"]:
         raise HardStop("ledger: %s (%s)" % (verdict["reason"], verdict["broken_row"]))
-    drills = [row for row in _rows(ledger) if _is_drill(row, "commit") or _is_drill(row, "plant")]
+    drills = [row for row in chain_rows(ledger) if is_drill(row, "commit") or is_drill(row, "plant")]
     if not drills or drills[-1]["kind"] != "commit" or drills[-1]["payload"] != commit_payload(answer):
         raise NoCommitment("the ledger's last revert-drill row is not cycle %s's commitment" % cycle_id)
-    branch = "brain/drill/%s" % cycle_id
-    title = "drill %s: planted merge" % cycle_id
-    base = writer.head(onto)
-    writer.create_branch(branch, base)
-    head = writer.commit_files(branch, base, {p: t.encode("utf-8") for p, t in planted.items()}, title)
-    pull = writer.open_pull(branch, onto, title, "planted by exit.drill (revert)")
-    writer.check(head, check_name, "success",
-                 "planted by exit.drill (revert) for cycle %s; not a gate decision" % cycle_id)
-    merge = writer.merge(pull, head)
+    branch = land.DRILL_PREFIX + cycle_id
+    merge = land.pull_merge(writer, branch, writer.head(onto), {p: t.encode("utf-8") for p, t in planted.items()},
+                            onto, land.planted_title(cycle_id), land.PLANTED_BODY, check_name,
+                            land.planted_summary(cycle_id))["merge_sha"]
     runs, facts = observe(merge)
     done = revert.revert_red(writer, runs, facts, merge, onto, branch + "-revert")
     return {"key": answer, "plant": plant_payload(answer["instance_id"], merge), "reverted": done["reverted"],

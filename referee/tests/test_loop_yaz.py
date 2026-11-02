@@ -9,8 +9,8 @@
 - criteria 7 and 8 from the inputs: ``merge_paused`` missing or true, an unfinished sentinel;
 - the artifacts by hash: a changed byte of a run file, a missing ``hashes.json``, an unusable diff or finding;
 - the job: ``loop.job run yaz`` reads ``control.json`` and the two artifacts, takes criterion 8 from ``pulled``'s
-  ``brain/state`` ledger (``ledger.serial``: no merge, a merge, a planted merge, a reverted one) and ends
-  ``cycle_not_wired`` after D5; a ledger ``ledger.serial`` refuses is ``state_refused``, nothing decided; a refused
+  ``brain/state`` ledger (``ledger.serial``: no merge, a merge, a planted merge, a reverted one) and ends ``ok``
+  after D5 and D6 (D7 when it ends a sentinel; D8 off without its seed); a ledger ``ledger.serial`` refuses is ``state_refused``, nothing decided; a refused
   artifact, a missing ``control.json`` and an unusable recipe.
 """
 
@@ -230,8 +230,7 @@ class YazJob(YazBase):
         self.github()
         out = self.run_yaz()
         # the default state's ledger holds no merge: nothing unfinished, good merges
-        self.assertEqual((out["ok"], out["reason"], out["done"], out["merge"]),
-                         (False, "cycle_not_wired", ["D5", "D6"], "good"))
+        self.assertEqual((out["ok"], "reason" in out, out["done"], out["merge"]), (True, False, ["D5", "D6"], "good"))
         self.assertEqual(self.reasons(out), {"good": [], "breaks": ["tests_red"]})
         # kos and yaz read the same state: an unfinished merge is the head's, whose sentinel kos ran (green here)
         head = HEADS["brain/integration"]
@@ -245,7 +244,7 @@ class YazJob(YazBase):
                 self.kos({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)}, state=state_files(rows))
                 self.github()
                 out = self.run_yaz()
-                self.assertEqual(out["done"], ["D5", "D6"])
+                self.assertEqual(out["done"], ["D5", "D6", "D7"] if want else ["D5", "D6"])
                 self.assertEqual(out["sentinel"] and (out["sentinel"]["merge_sha"], out["sentinel"]["verdict"]),
                                  want and (head, "green"))
                 if want:

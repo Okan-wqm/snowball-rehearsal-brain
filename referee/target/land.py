@@ -19,6 +19,11 @@ to ``content``, a pull request into ``brain/integration``, a ``success`` check r
 the merge pinned to that commit; returns ``{pull, head_sha, merge_sha}``. Each step is one ``target.write`` call;
 an error leaves the earlier steps written (the caller's ``HardStop`` names them, ``writer.written``).
 
+``plant(writer, cycle_id, path, content, base, check)``: D8's planted merge (the revert drill's, ``loop.drill``), the
+same five steps on branch ``brain/drill/<cycle_id>``, its title and check summary saying it is planted by the drill
+and is not a gate decision; returns ``{pull, head_sha, merge_sha}``. ``harness.revert_drill.run_drill`` makes the same
+writes through the same function (``pull_merge``).
+
 ``revert(writer, merge_sha, runs, facts, check)``: D7's revert of ``merge_sha``, ``brain/integration``'s head, when
 ``runs`` are a verified red: ``gate.revert.revert_red`` (the revert commit, whose tree is the merge's first
 parent's, on ``brain/revert/<merge_sha>``, and its pull request into ``brain/integration``), then the same check and
@@ -41,6 +46,7 @@ from profile import derive
 from target import branches, write
 
 CANDIDATE_PREFIX = "brain/c/"
+DRILL_PREFIX = "brain/drill/"
 REVERT_PREFIX = "brain/revert/"
 
 
@@ -75,14 +81,38 @@ def applied(tree: str, diff_text: str) -> dict:
     return {"reasons": [], "path": path, "content": content}
 
 
+def pull_merge(writer: Any, branch: str, base: str, files: dict[str, bytes], onto: str, title: str, body: str,
+               check: str, summary: str) -> dict:
+    """``branch`` at ``base``, one commit of ``files``, a pull request into ``onto``, a ``success`` check named
+    ``check`` on the commit and the merge pinned to it: ``{pull, head_sha, merge_sha}``. One sequence for a candidate,
+    a planted drill merge and ``harness.revert_drill``'s."""
+    writer.create_branch(branch, base)
+    head = writer.commit_files(branch, base, files, title)
+    pull = writer.open_pull(branch, onto, title, body)
+    return {"pull": pull, "head_sha": head, "merge_sha": _checked_merge(writer, pull, head, check, summary)}
+
+
 def land(writer: Any, cid: str, path: str, content: bytes, base: str, check: str) -> dict:
     """Branch, commit, pull request, check and merge of one accepted candidate onto ``brain/integration``."""
-    branch = CANDIDATE_PREFIX + cid
-    title = "candidate %s" % cid
-    writer.create_branch(branch, base)
-    head = writer.commit_files(branch, base, {path: content}, title)
-    pull = writer.open_pull(branch, branches.INTEGRATION, title, "accepted by the gate (asama-0/08)")
-    return {"pull": pull, "head_sha": head, "merge_sha": _checked_merge(writer, pull, head, check, "gate: merge")}
+    return pull_merge(writer, CANDIDATE_PREFIX + cid, base, {path: content}, branches.INTEGRATION, "candidate %s" % cid,
+                      "accepted by the gate (asama-0/08)", check, "gate: merge")
+
+
+def plant(writer: Any, cycle_id: str, path: str, content: bytes, base: str, check: str) -> dict:
+    """D8's planted merge onto ``brain/integration`` (see the module docstring)."""
+    return pull_merge(writer, DRILL_PREFIX + cycle_id, base, {path: content}, branches.INTEGRATION,
+                      planted_title(cycle_id), PLANTED_BODY, check, planted_summary(cycle_id))
+
+
+PLANTED_BODY = "planted by exit.drill (revert)"
+
+
+def planted_title(cycle_id: str) -> str:
+    return "drill %s: planted merge" % cycle_id
+
+
+def planted_summary(cycle_id: str) -> str:
+    return "planted by exit.drill (revert) for cycle %s; not a gate decision" % cycle_id
 
 
 def revert(writer: Any, merge_sha: str, runs: Any, facts: Any, check: str) -> dict:

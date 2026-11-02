@@ -22,6 +22,17 @@ pieces D6 shares with ``activate`` (``ledger.events``, ``target.land``).
   write; ``loop.write_cycle.write`` given an end whose runs do not give its verdict (a green claimed of failing runs,
   a red claimed of passing runs, runs that ask for a rerun, a flaky list that differs) or of another merge than the
   head writes nothing; ``target.land.revert`` of runs that are not red (green, too few, flaky) writes nothing;
+- D8, the revert drill (``loop.drill``) over four cycles on one target, each cycle's ``pulled`` read back from what the
+  previous one wrote (``next_cycle``): a commitment (the hash only, the key nowhere in the line), the key's instance
+  planted as the cycle's one merge on ``brain/drill/<cycle>`` with its ratchet base and plant rows, the next cycle's
+  ``kos`` watching it red and ``yaz`` reverting it (D7) while the drill waits, then the key revealed and judged
+  ``PASS`` (by the loop and by ``harness.revert_drill``'s command) and the next drill committed, for a planted test
+  regression and a planted lint regression; a catalog cause the loop does not give is judged ``FAIL`` and the job
+  ends ``drill_fail``; the plant waits for a candidate's merge and its sentinel; a changed seed or a patch that no
+  longer applies commits again, and a catalog that does not fit commits nothing; without the seed the drill is off;
+  unusable inputs (no catalog, an empty one, a patch outside its directory, missing, linked or not text, no
+  workspace, a run id that is not digits) write nothing; ``loop.write_cycle`` refuses a plant beside a merge or an
+  end and an action ``loop.drill`` does not give;
 - ``target.land.applied``: one file applied; more than one file, a missing or linked base, a hunk that does not
   apply, a creation and an unusable diff each refused with their reason.
 """
@@ -29,6 +40,7 @@ pieces D6 shares with ``activate`` (``ledger.events``, ``target.land``).
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -48,9 +60,12 @@ from ledger import cycle as CY  # noqa: E402
 from ledger import events as EV  # noqa: E402
 from ledger import schema as SC  # noqa: E402
 from ledger import serial as SE  # noqa: E402
+from harness import revert_drill as RD  # noqa: E402
+from loop import drill as DR  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from loop import watch as WT  # noqa: E402
+from loop import write_cycle as WC  # noqa: E402
 from status import block as SB  # noqa: E402
 from target import branches as B  # noqa: E402
 from target import land as LN  # noqa: E402
@@ -104,6 +119,26 @@ class StateBase(YazBase):
     def control(self, doc) -> None:
         write_tree(os.path.join(self.temp, "control"), {"control.json": doc})
 
+    def next_cycle(self, cands: dict, run_id: str, units=None) -> dict:
+        """Cycle ``<run_id>-1`` on what the previous cycle wrote, as D1 would pull it: ``brain/state``'s files, both
+        heads and ``brain/integration``'s tree read back from the fake GitHub (the same GitHub stays the target),
+        the previous ``pulled`` and results cleared, ``kos`` run, the cycle's response written. Returns ``kos``'s
+        line; ``self.state`` is the state the cycle reads."""
+        self.state = {p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}
+        heads = {b: self.gh.refs[b] for b in P.HEAD_BRANCHES}
+        tree = self.gh.trees[self.gh.commits[heads[B.INTEGRATION]]["tree"]]
+        shutil.rmtree(self.src)
+        for path, blob in tree.items():
+            os.makedirs(os.path.dirname(os.path.join(self.src, path)), exist_ok=True)
+            with open(os.path.join(self.src, path), "wb") as fh:
+                fh.write(self.gh.blobs[blob])
+        shutil.rmtree(self.pulled)
+        shutil.rmtree(self.results())
+        out = self.kos(cands, heads=heads, units=units)
+        art = P.read(self.pulled)
+        YW.write_response(self.temp, "t1", art.heads, [YW.cost_row("cagir-%s-1" % run_id, art.heads[B.INTEGRATION])])
+        return out
+
     def writes(self) -> list[tuple]:
         return [(m, p) for m, p, _ in self.gh.requests if m != "GET"]
 
@@ -113,9 +148,10 @@ class StateBase(YazBase):
 
 class D6(StateBase):
     def test_a_cycle_merges_and_writes_one_state_commit(self):
+        write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})  # the next cycle's candidate's finding
         out = self.cycle({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
-        self.assertEqual((out["ok"], out["reason"], out["done"], out["merge"]),
-                         (False, "cycle_not_wired", ["D5", "D6"], "good"))
+        self.assertEqual((out["ok"], "reason" in out, out["done"], out["merge"], out["drill"]),
+                         (True, False, ["D5", "D6"], "good", {"action": "off"}))  # no DRILL_SEED: D8 is off
         written = out["written"]
         merge = written["merge"]
         self.assertEqual({k: merge[k] for k in ("candidate", "path", "pull")}, {"candidate": "good", "path": "pkg/a.js",
@@ -144,7 +180,7 @@ class D6(StateBase):
         first = json.loads(base_run.splitlines()[0])
         counts = {first["tool"]: len(first["violations"])}
         self.assertEqual(added[1]["payload"], {"base_run_sha256": hashlib.sha256(base_run).hexdigest(), "counts": counts})
-        self.assertEqual(counts, {first["tool"]: 1})  # pkg/a.js's one var
+        self.assertEqual(counts, {first["tool"]: 2})  # pkg/a.js's var and pkg/b.js's
         self.assertEqual(SE.lint_before(new, merge["merge_sha"]), counts)
         self.assertEqual(added[2]["payload"], {"decision": "reject", "candidate": "breaks", "reasons": ["tests_red"]})
         self.assertEqual(added[2]["cause"], "test_regression")
@@ -168,18 +204,14 @@ class D6(StateBase):
         self.assertEqual(sorted(self.gh.refs), ["brain/c/good", B.INTEGRATION, B.STATE])
         # the next cycle: the merge is unfinished (its sentinel is D7's), so nothing merges; its own commit is written
         self.assertEqual(SE.unfinished(new), [merge["merge_sha"]])
-        self.state = {p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}
         heads = dict(self.gh.refs)
-        shutil.rmtree(self.pulled)
-        shutil.rmtree(os.path.join(self.temp, "in", "results"))
-        self.kos({"good": candidate(GOOD)}, heads={b: heads[b] for b in P.HEAD_BRANCHES})
-        gh = self.gh
-        self.github()
-        self.gh = gh
-        art = P.read(self.pulled)
-        YW.write_response(self.temp, "t1", art.heads, [YW.cost_row("cagir-10-1", art.heads[B.INTEGRATION])])
-        out = self.run_yaz(GITHUB_RUN_ID="10")
-        self.assertEqual((out["done"], out["written"]["merge"]), (["D5", "D6"], None))
+        # GOOD is on the head now; the next candidate is another file's
+        other = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
+                     **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})
+        self.next_cycle({"good": other}, "10")
+        out = self.run_yaz(GITHUB_RUN_ID="10")  # D7 ends the merge's green sentinel; D5 merges nothing beside it
+        self.assertEqual((out["done"], out["written"]["merge"], out["sentinel"]["verdict"]),
+                         (["D5", "D6", "D7"], None, "green"))
         added = rows_of(self.state_file(B.STATE_LEDGER))[len(rows_of(self.state[B.STATE_LEDGER])):]
         self.assertEqual([(r["row_id"], r["payload"].get("reasons")) for r in added if r["kind"] == "decision"],
                          [("10-1:c:good", ["sentinel_pending"])])
@@ -334,17 +366,10 @@ class D7(StateBase):
         self.github()
         first = self.run_yaz()
         self.assertEqual((first["merge"], first["sentinel"]), ("c", None), first)
-        merged = self.gh.read_file(B.INTEGRATION, "pkg/a.js")
-        write_tree(self.src, {"pkg/a.js": merged.decode()})  # the tree kos pulls next is the merge's
-        self.state = {p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}
-        heads = {b: self.gh.refs[b] for b in P.HEAD_BRANCHES}
-        shutil.rmtree(self.pulled)
-        shutil.rmtree(self.results())
-        watched = self.kos({}, heads=heads, units=SENTINEL_UNITS)
+        watched = self.next_cycle({}, "10", units=SENTINEL_UNITS)
+        heads = P.read(self.pulled).heads
         self.assertEqual((watched["done"], watched["index"]["sentinel"]["merge_sha"]),
                          (["D3", "D7"], heads[B.INTEGRATION]))  # kos ends ok after D7 whatever the verdict
-        art = P.read(self.pulled)
-        YW.write_response(self.temp, "t1", art.heads, [YW.cost_row("cagir-10-1", art.heads[B.INTEGRATION])])
         return first["written"], heads
 
     def test_a_red_merge_is_reverted_with_its_cause(self):
@@ -355,7 +380,8 @@ class D7(StateBase):
             self.assertEqual(json.load(fh)["verdict"], "red")
         old_ledger = self.state[B.STATE_LEDGER]
         out = self.run_yaz(GITHUB_RUN_ID="10")
-        self.assertEqual((out["reason"], out["done"], out["merge"]), ("cycle_not_wired", ["D5", "D6"], None))
+        self.assertEqual((out["ok"], "reason" in out, out["done"], out["merge"], out["drill"]),
+                         (True, False, ["D5", "D6", "D7"], None, {"action": "off"}))
         [ratchet] = [r for r in rows_of(old_ledger) if r["kind"] == "ratchet_base"]
         (name, before), = ratchet["payload"]["counts"].items()
         self.assertEqual(out["sentinel"], {
@@ -408,16 +434,10 @@ class D7(StateBase):
                           False))
         self.assertEqual(SE.unfinished(new), [])
         # cycle 11-1: nothing is watched, and the next ready candidate merges on the green merge
-        self.state = {p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}
-        heads = {b: self.gh.refs[b] for b in P.HEAD_BRANCHES}
-        shutil.rmtree(self.pulled)
-        shutil.rmtree(self.results())
         nxt = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
                    **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})
-        watched = self.kos({"d": nxt}, heads=heads, units=SENTINEL_UNITS)
+        watched = self.next_cycle({"d": nxt}, "11", units=SENTINEL_UNITS)
         self.assertEqual((watched["done"], watched["index"]["sentinel"]), (["D3"], None))
-        art = P.read(self.pulled)
-        YW.write_response(self.temp, "t1", art.heads, [YW.cost_row("cagir-11-1", art.heads[B.INTEGRATION])])
         third = self.run_yaz(GITHUB_RUN_ID="11")
         self.assertEqual((third["merge"], third["sentinel"]), ("d", None), third)
         self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [third["written"]["merge"]["merge_sha"]])
@@ -458,6 +478,236 @@ class D7(StateBase):
                 out = self.run_yaz(GITHUB_RUN_ID="10")
                 self.assertEqual((out["reason"], out["reasons"], out["done"]), ("sentinel_refused", want, ["D5"]))
                 self.assertEqual(len(self.writes()), writes)
+
+
+# D8: the drill's catalog in the checkout (loop.drill's stated place). Each patch turns pkg/a.js red for the sentinel
+# (SENTINEL_RED); rd-lint also adds a ``var`` line, so the lint after rises over the plant cycle's ratchet base.
+DRILL_PATCHES = {"rd-test": RED_AT_HEAD,
+                 "rd-lint": diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // SENTINEL_RED", "var z = 2;"])}
+DRILL_CAUSES = {"rd-test": "test_regression", "rd-lint": "lint_regression"}
+
+
+def drill_catalog(causes: dict[str, str]) -> dict:
+    return {"instances": [{"id": i, "cause": c, "patch": i + ".patch"} for i, c in sorted(causes.items())]}
+
+
+def seed_for(catalog: dict, instance_id: str, run: str) -> dict:
+    """A drill seed whose key for ``run`` selects ``instance_id`` (searched, so no selection is written here)."""
+    for n in range(1000):
+        seed = {"seed": "drill-seed-%d" % n}
+        if RD.key(seed, run, catalog)["instance_id"] == instance_id:
+            return seed
+    raise AssertionError("no seed selects %s" % instance_id)
+
+
+class D8(StateBase):
+    """The revert drill over four cycles on one target: 9-1 commits, 10-1 plants the key's instance as the cycle's
+    one merge, 11-1's ``kos`` watches it red and its ``yaz`` reverts it (D7), 12-1 reveals and judges it and commits
+    the next drill."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        write_tree(self.src, {"pkg/sentinel.py": SENTINEL_PY})
+        self.catalog(DRILL_CAUSES)
+
+    def catalog(self, causes: dict[str, str], patches: dict[str, bytes] | None = None) -> dict:
+        root = os.path.join(self.workspace, *DR.CATALOG_DIR)
+        shutil.rmtree(root, ignore_errors=True)
+        doc = drill_catalog(causes)
+        write_tree(root, {DR.CATALOG: doc})
+        for item in doc["instances"]:
+            with open(os.path.join(root, item["patch"]), "wb") as fh:
+                fh.write((patches or DRILL_PATCHES)[item["id"]])
+        return doc
+
+    def yaz(self, run: str, seed: dict | None, **env) -> dict:
+        if seed is not None:
+            env[DR.SEED_ENV] = seed["seed"]
+        return self.run_yaz(GITHUB_RUN_ID=run, **env)
+
+    def added(self, old: bytes) -> list[dict]:
+        new = self.state_file(B.STATE_LEDGER)
+        self.assertTrue(CH.verify_bytes(new, old)["valid"])
+        self.assertEqual(SC.ledger_reasons(new), [])
+        return rows_of(new)[len(rows_of(old)):]
+
+    def commit_cycle(self, seed: dict) -> dict:
+        """Cycle 9-1 with no candidate: the drill's commitment, nothing on ``brain/integration``."""
+        self.kos({}, units=SENTINEL_UNITS)
+        self.control(OPEN)
+        self.github()
+        integration = self.gh.refs[B.INTEGRATION]
+        out = self.yaz("9", seed)
+        self.assertEqual((out["ok"], out["done"]), (True, ["D5", "D6", "D8"]), out)
+        self.assertEqual(self.gh.refs[B.INTEGRATION], integration)
+        return out
+
+    def chain(self, instance_id: str, causes: dict[str, str]) -> tuple[dict, dict]:
+        """Cycles 9-1 to 12-1 with the seed that selects ``instance_id``; returns (cycle 12-1's line, the key)."""
+        doc = self.catalog(causes)
+        seed = seed_for(doc, instance_id, "9")
+        key = RD.key(seed, "9", doc)
+        old = self.state[B.STATE_LEDGER]
+        out = self.commit_cycle(seed)
+        self.assertEqual(out["drill"], {"action": "commit", "payload": RD.commit_payload(key)})
+        self.assertNotIn(key["selection"], json.dumps(out))  # the key is not in the public line before the run
+        added = self.added(old)
+        self.assertEqual([(r["row_id"], r["part"], r["kind"]) for r in added],
+                         [("9-1:start", "events", "cycle_start"), ("9-1:drill", "drill", "commit"),
+                          ("cagir-9-1", "cost", "cost"), ("9-1:status", "events", "status")])
+        self.assertEqual(added[1]["payload"]["commitment_sha256"], RD.commitment(key))
+        # 10-1: nothing unfinished, no candidate: the key's instance is planted as the cycle's one merge
+        self.assertEqual(self.next_cycle({}, "10", units=SENTINEL_UNITS)["done"], ["D3"])
+        old, base = self.state[B.STATE_LEDGER], self.gh.refs[B.INTEGRATION]
+        out = self.yaz("10", seed)
+        self.assertEqual((out["ok"], out["done"], out["drill"]),
+                         (True, ["D5", "D6", "D8"], {"action": "plant", "instance_id": instance_id, "path": "pkg/a.js"}))
+        plant = out["written"]["plant"]
+        self.assertEqual((self.gh.refs[B.INTEGRATION], plant["instance_id"]), (plant["merge_sha"], instance_id))
+        self.assertEqual(self.gh.commits[plant["merge_sha"]]["parents"][0], base)
+        self.assertEqual(self.gh.refs["brain/drill/10-1"], plant["head_sha"])
+        self.assertEqual(self.gh.pulls[plant["pull"]]["head"], "brain/drill/10-1")
+        check = [c for c in self.gh.checks if c["head_sha"] == plant["head_sha"]]
+        self.assertEqual([(c["name"], c["conclusion"]) for c in check], [(B.CHECK, "success")])
+        self.assertIn("not a gate decision", json.dumps(check))
+        added = self.added(old)
+        self.assertEqual([(r["row_id"], r["kind"]) for r in added],
+                         [("10-1:start", "cycle_start"), ("10-1:ratchet", "ratchet_base"), ("10-1:drill", "plant"),
+                          ("cagir-10-1", "cost"), ("10-1:status", "status")])
+        self.assertEqual(added[2]["payload"], RD.plant_payload(instance_id, plant["merge_sha"]))
+        self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [plant["merge_sha"]])
+        # 11-1: kos watches the planted merge (red); yaz reverts it with gate.revert's cause; the drill waits
+        watched = self.next_cycle({}, "11", units=SENTINEL_UNITS)
+        self.assertEqual((watched["done"], watched["index"]["sentinel"]["merge_sha"]),
+                         (["D3", "D7"], plant["merge_sha"]))
+        old = self.state[B.STATE_LEDGER]
+        out = self.yaz("11", seed)
+        self.assertEqual((out["ok"], out["done"], out["sentinel"]["verdict"], out["drill"]),
+                         (True, ["D5", "D6", "D7", "D8"], "red", {"action": "wait", "why": "drill_unfinished"}))
+        self.assertEqual(out["written"]["revert"]["reverted"], plant["merge_sha"])
+        self.assertEqual(self.gh.read_file(B.INTEGRATION, "pkg/a.js"), A_JS.encode())
+        added = self.added(old)
+        self.assertEqual([(r["kind"], r.get("cause")) for r in added],
+                         [("cycle_start", None), ("revert", out["written"]["revert"]["cause"]), ("cost", None),
+                          ("status", None)])
+        # 12-1: the planted merge is finished: the key is revealed and judged, and the next drill committed
+        self.next_cycle({}, "12", units=SENTINEL_UNITS)
+        old = self.state[B.STATE_LEDGER]
+        out = self.yaz("12", seed)
+        self.assertEqual(out["drill"]["judged"]["key"], key)
+        self.assertEqual((out["drill"]["action"], out["drill"]["payload"]),
+                         ("commit", RD.commit_payload(RD.key(seed, "12", doc))))
+        self.assertEqual([(r["row_id"], r["kind"]) for r in self.added(old)][1], ("12-1:drill", "commit"))
+        return out, key
+
+    def test_each_planted_cause_is_reverted_with_the_keys_cause_and_judged_pass(self):
+        for instance_id in sorted(DRILL_CAUSES):
+            with self.subTest(instance_id):
+                self.setUp()
+                out, key = self.chain(instance_id, DRILL_CAUSES)
+                self.assertEqual((out["ok"], "reason" in out, out["drill"]["judged"]["verdict"],
+                                  out["drill"]["judged"]["reasons"]), (True, False, "PASS", []))
+                self.assertEqual(key["cause"], DRILL_CAUSES[instance_id])
+                # the seed's own judge, on the ledger as written, with the revealed key
+                ledger = os.path.join(self.base, "ledger.jsonl")
+                with open(ledger, "wb") as fh:
+                    fh.write(self.state_file(B.STATE_LEDGER))
+                keyfile = os.path.join(self.base, "key.json")
+                with open(keyfile, "w") as fh:
+                    json.dump(key, fh)
+                with mock.patch("sys.stdout", new=io.StringIO()) as printed:
+                    self.assertEqual(RD.main(["judge", ledger, keyfile]), 0)
+                self.assertEqual(json.loads(printed.getvalue()), {"verdict": "PASS", "reasons": []})
+
+    def test_a_catalog_cause_the_loop_does_not_give_is_judged_fail(self):
+        """The catalog says rd-test's planted merge is a build break; the loop reverts it as a test regression: the
+        judge's cause_mismatch makes the job red after its writes."""
+        out, key = self.chain("rd-test", dict(DRILL_CAUSES, **{"rd-test": "build_break"}))
+        self.assertEqual((out["ok"], out["reason"], out["drill"]["judged"]["verdict"],
+                          out["drill"]["judged"]["reasons"]), (False, "drill_fail", "FAIL", ["cause_mismatch"]))
+        self.assertIn("written", out)
+
+    def test_the_drill_waits_for_a_candidates_merge_and_its_sentinel(self):
+        seed = seed_for(drill_catalog(DRILL_CAUSES), "rd-test", "9")
+        write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})  # the candidate's finding, on the target from cycle 9-1
+        self.commit_cycle(seed)
+        nxt = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
+                   **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})
+        self.next_cycle({"d": nxt}, "10", units=SENTINEL_UNITS)
+        out = self.yaz("10", seed)
+        self.assertEqual((out["merge"], out["drill"], out["written"]["plant"]),
+                         ("d", {"action": "wait", "why": "candidate_merges"}, None))
+        self.next_cycle({}, "11", units=SENTINEL_UNITS)
+        out = self.yaz("11", seed)
+        self.assertEqual((out["sentinel"]["verdict"], out["drill"]), ("green", {"action": "wait", "why": "merge_unfinished"}))
+        self.next_cycle({}, "12", units=SENTINEL_UNITS)
+        self.assertEqual(self.yaz("12", seed)["drill"]["action"], "plant")
+
+    def test_a_changed_seed_or_a_patch_that_no_longer_applies_commits_again(self):
+        doc = drill_catalog(DRILL_CAUSES)
+        seed = seed_for(doc, "rd-test", "9")
+        self.commit_cycle(seed)
+        self.next_cycle({}, "10", units=SENTINEL_UNITS)
+        other = {"seed": seed["seed"] + "-changed"}
+        out = self.yaz("10", other)
+        self.assertEqual(out["drill"], {"action": "commit", "replaces": "commitment_mismatch",
+                                        "payload": RD.commit_payload(RD.key(other, "10", doc))})
+        self.assertIsNone(out["written"]["plant"])
+        # the key's patch no longer applies at the head: abandoned; no instance fits, so nothing is committed
+        self.next_cycle({}, "11", units=SENTINEL_UNITS)
+        self.catalog(DRILL_CAUSES, {i: diff("pkg/a.js", ["var q = 9;"], ["let q = 9;"]) for i in DRILL_CAUSES})
+        out = self.yaz("11", other)
+        self.assertEqual(out["drill"], {"action": "none", "replaces": "patch_does_not_apply",
+                                        "why": "patch_does_not_apply", "instances": sorted(DRILL_CAUSES)})
+        self.assertEqual([r["part"] for r in self.added(self.state[B.STATE_LEDGER])].count("drill"), 0)
+
+    def test_off_without_the_seed_and_unusable_inputs_write_nothing(self):
+        self.kos({}, units=SENTINEL_UNITS)
+        self.control(OPEN)
+        self.github()
+        root = os.path.join(self.workspace, *DR.CATALOG_DIR)
+        for name, change in (("no catalog", lambda: os.remove(os.path.join(root, DR.CATALOG))),
+                             ("a patch outside the directory",
+                              lambda: write_tree(root, {DR.CATALOG: {"instances": [
+                                  {"id": "x", "cause": "unknown", "patch": "../x.patch"}]}})),
+                             ("a missing patch", lambda: os.remove(os.path.join(root, "rd-lint.patch"))),
+                             ("a linked patch", lambda: (os.remove(os.path.join(root, "rd-lint.patch")),
+                                                         write_tree(root, {"rd-lint.patch": ("symlink", "rd-test.patch")}))),
+                             ("a patch that is no text", lambda: write_tree(root, {"rd-lint.patch": b"\xff"})),
+                             ("an empty catalog", lambda: write_tree(root, {DR.CATALOG: {"instances": []}})),
+                             ("no workspace", None)):
+            with self.subTest(name):
+                self.catalog(DRILL_CAUSES)
+                env = {"GITHUB_WORKSPACE": ""} if change is None else {}
+                if change is not None:
+                    change()
+                with self.assertRaises(J.Unusable):
+                    self.yaz("9", {"seed": "s"}, **env)
+                self.assertEqual(self.writes(), [])
+        with self.assertRaises(J.Unusable):  # a run id that is not decimal digits
+            self.catalog(DRILL_CAUSES)
+            self.yaz("9x", {"seed": "s"})
+        self.assertEqual(self.writes(), [])
+        out = self.yaz("9", None)
+        self.assertEqual((out["ok"], out["done"], out["drill"]), (True, ["D5", "D6"], {"action": "off"}))
+        self.assertNotIn("drill", [r["part"] for r in rows_of(self.state_file(B.STATE_LEDGER))])
+
+    def test_write_cycle_refuses_a_plant_beside_a_merge_or_an_end_and_an_unknown_action(self):
+        self.kos({"c": candidate(GOOD)}, units=SENTINEL_UNITS)
+        self.control(OPEN)
+        self.github()
+        art = P.read(self.pulled)
+        tree = self.tree()
+        plant = {"action": "plant", "instance_id": "rd-test", "path": "pkg/a.js", "content": b"x\n"}
+        lint = WT.base_lint(self.results())
+        for name, decided, end, drill in (
+                ("beside a merge", {"decisions": {"c": {"reasons": []}}, "merge": "c"}, None, plant),
+                ("beside an end", {"decisions": {}, "merge": None}, {"merge_sha": art.heads[B.INTEGRATION]}, plant),
+                ("unknown", {"decisions": {}, "merge": None}, None, {"action": "reveal"})):
+            with self.subTest(name), self.assertRaises(WC.Unusable):
+                WC.write(art, tree, decided, [], W.Writer(YW.REPO, self.gh), self.signer, b"", "9-1", YW.TS, lint,
+                         end, drill)
+        self.assertEqual(self.writes(), [])
 
 
 class LandRevert(unittest.TestCase):
