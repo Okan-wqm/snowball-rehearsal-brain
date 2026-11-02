@@ -36,7 +36,7 @@ diff no longer applies, so later rows are not its verdict):
 - ``#ret``: each candidate expected to be rejected has a first decision (``undecided:<cid>``) that is a reject
   (``merged:<cid>``) whose ``reasons`` is exactly ``[reason]`` (``reason_mismatch:<cid>``);
 - ``#nobetci #hayatta``: ``ledger.serial.unfinished`` reads the merges (``serial:<reason>`` when it refuses the
-  ledger); every candidate merge (a ``decision`` merge; a planted merge is the drill's) is finished
+  ledger); every candidate merge (an ``events``/``merge`` row, tohum/26d; a planted merge is the drill's) is finished
   (``sentinel_unfinished:<sha>``) by a ``sentinel`` row of verdict ``green`` (``sentinel_flaky:<sha>``: 10a asks
   for green) and not by a ``revert`` (``reverted:<sha>``);
 - ``#geri-alma``, the toy only: without ``drill``, ``drill_inputs_missing``. Each ``plant`` row is judged by
@@ -54,8 +54,8 @@ diff no longer applies, so later rows are not its verdict):
 
 ``verdict`` is ``PASS`` iff no judged condition has a reason; the conditions in ``NOT_CHECKED`` are listed with the
 place that holds their evidence and do not enter the verdict. ``payload`` (``PASS`` only, else ``None``): ``{stage:
-0, copy_genesis_row_hash, copy_merge_row_hashes, conditions, not_checked}``, the copy's merge rows its candidate
-merges in file order.
+0, copy_genesis_row_hash, copy_merge_row_hashes, conditions, not_checked}``, the copy's merge rows (its
+``events``/``merge`` rows, the ones 26d's stage-open counts) in file order.
 
 **The write** (``write(writer, head, toy, copy, ..., req, imports, signer, canary_cap_usd_micros)``, ``req``
 ``{cycle_id, ts, snapshot_id}``): nothing is written when the verdict is not ``PASS`` (``refused: [not_pass]``) or the
@@ -182,7 +182,7 @@ def _decided(rows: list[dict], expect: dict[str, dict]) -> tuple[list[str], list
 
 
 def _candidate_merges(rows: list[dict]) -> list[dict]:
-    return [row for row in rows if _is(row, "events", "decision") and row["payload"]["decision"] == "merge"]
+    return [row for row in rows if _is(row, "events", "merge")]
 
 
 def _sentinels(ledger: bytes, rows: list[dict]) -> list[str]:

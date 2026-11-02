@@ -1,19 +1,10 @@
 {
  "mutants": [
   {
-   "id": "schema_not_checked",
+   "id": "decision_counts_as_merge",
    "file": "ledger/serial.py",
-   "old": "    reasons = schema.ledger_reasons(ledger)\n",
-   "new": "    reasons = []\n",
-   "tests": [
-    "test_serial.py"
-   ]
-  },
-  {
-   "id": "reject_counts_as_merge",
-   "file": "ledger/serial.py",
-   "old": "        return row[\"payload\"].get(\"decision\") == \"merge\"",
-   "new": "        return True",
+   "old": "MERGES = ((\"events\", \"merge\"), (\"drill\", \"plant\"))",
+   "new": "MERGES = ((\"events\", \"merge\"), (\"drill\", \"plant\"), (\"events\", \"decision\"))",
    "tests": [
     "test_serial.py"
    ]
@@ -21,8 +12,26 @@
   {
    "id": "plant_not_a_merge",
    "file": "ledger/serial.py",
-   "old": "MERGES = ((\"events\", \"decision\"), (\"drill\", \"plant\"))",
-   "new": "MERGES = ((\"events\", \"decision\"),)",
+   "old": "MERGES = ((\"events\", \"merge\"), (\"drill\", \"plant\"))",
+   "new": "MERGES = ((\"events\", \"merge\"),)",
+   "tests": [
+    "test_serial.py"
+   ]
+  },
+  {
+   "id": "merge_row_not_a_merge",
+   "file": "ledger/serial.py",
+   "old": "MERGES = ((\"events\", \"merge\"), (\"drill\", \"plant\"))",
+   "new": "MERGES = ((\"drill\", \"plant\"),)",
+   "tests": [
+    "test_serial.py"
+   ]
+  },
+  {
+   "id": "schema_not_checked",
+   "file": "ledger/serial.py",
+   "old": "    reasons = schema.ledger_reasons(ledger)\n",
+   "new": "    reasons = []\n",
    "tests": [
     "test_serial.py"
    ]

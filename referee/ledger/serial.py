@@ -1,6 +1,7 @@
 """Merges are serial: which merges of a ``brain/state`` ledger have an unfinished sentinel (stage 0, D5's criterion 8).
 
-Rules: tohum/07 (the gate merges one candidate at a time; the next one waits until the previous merge's sentinel
+Rules: tohum/26f (a merge's sentinel ends at the first later ``sentinel`` or ``revert`` row naming its
+``merge_sha``; no merge while one is unfinished), tohum/07 (the gate merges one candidate at a time; the next one waits until the previous merge's sentinel
 run has finished; on a verified red the referee reverts that merge), asama-0/08 criterion 8 (no other merge whose
 sentinel is unfinished), asama-0/01 (D5 reads the cycle's state; D7, the sentinel, runs in the next cycle's ``koş``
 and ``yaz``), tohum/26 (the ledger row), ``ledger.schema`` (the row types the loop writes, one table).
@@ -11,12 +12,11 @@ a chain). **Rules** (``unfinished``):
 1. The ledger must conform to ``ledger.schema`` (``ledger_reasons``: a chain, every row of a known type with its
    payload's shape); else ``Unusable`` with those reasons, and nothing is answered (fail closed: a row this reader
    cannot read could be a merge).
-2. A **merge** is a row of ``MERGES``: ``events``/``decision`` with ``payload.decision == "merge"`` (the gate's
-   merge, ``activate`` and D6) and ``drill``/``plant`` (the revert drill's planted merge, which the sentinel must
-   see red, tohum/22a). Its id is ``payload.merge_sha``. The same SHA merged twice is ``merged_twice:<sha>``.
+2. A **merge** is a row of ``MERGES``, tohum/26f's two: ``events``/``merge`` (the gate's merge, tohum/26d's merge
+   row, ``activate`` and D6) and ``drill``/``plant`` (the revert drill's planted merge, which the sentinel must see
+   red, tohum/22a). Its id is ``payload.merge_sha``. The same SHA merged twice is ``merged_twice:<sha>``.
 3. A merge **finishes** at a row of ``FINISHERS``, read in file order, naming its ``merge_sha``: ``events``/``revert``
-   (D7's revert of a red) or ``events``/``sentinel`` (D7's end of a green or flaky sentinel, seed-043's draft as
-   this brain's stated assumption). A finisher naming a SHA that no earlier row merged is
+   (D7's revert of a red) or ``events``/``sentinel`` (D7's end of a green or flaky sentinel; both tohum/26f's). A finisher naming a SHA that no earlier row merged is
    ``finish_without_merge:<sha>`` (the ledger is append-only, so a revert before its merge is a broken state, not
    an unknown one); a second finisher of one merge is ``finished_twice:<sha>`` (a merge's sentinel ends once: a
    revert after a green end, or two ends, is a broken state).
@@ -43,7 +43,7 @@ from typing import Any
 from ledger import chain
 from ledger import schema
 
-MERGES = (("events", "decision"), ("drill", "plant"))
+MERGES = (("events", "merge"), ("drill", "plant"))
 FINISHERS = (("events", "revert"), ("events", "sentinel"))
 CYCLE_START = ("events", "cycle_start")
 RATCHET_BASE = ("events", "ratchet_base")
@@ -60,8 +60,6 @@ def _type(row: dict) -> tuple[Any, Any]:
 
 
 def _is_merge(row: dict) -> bool:
-    if _type(row) == ("events", "decision"):
-        return row["payload"].get("decision") == "merge"
     return _type(row) in MERGES
 
 

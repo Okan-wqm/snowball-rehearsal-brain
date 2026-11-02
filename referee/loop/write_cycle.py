@@ -51,16 +51,16 @@ A failure after the first write of step 4 or 5 is ``target.land.HardStop`` namin
 
 **The rows**, in this order, each ``ledger.events``': ``cycle_start {cycle_id}``; ``ratchet_base {base_run_sha256,
 counts}`` when the cycle merges or plants (``base_lint``: the merge's lint before, which a later revert reads with
-``ledger.serial.lint_before``); one ``decision`` per candidate in code-point order of its id (a reject with D5's
-reasons and ``ledger.events.cause``; the merge with ``path`` and ``target.land.land``'s ``{pull, head_sha,
-merge_sha}``); ``revert {merge_sha}`` with ``gate.revert``'s cause for a red ``end``, or ``sentinel {merge_sha,
-verdict, flaky, sentinel_sha256}`` for a green or flaky one (the row that finishes the merge's sentinel,
-``ledger.serial``); D8's ``drill`` row (``commit`` with its payload, or ``plant`` with ``harness.revert_drill``'s
+``ledger.serial.lint_before``); per candidate in code-point order of its id, ``ledger.events.decided``'s rows (a
+reject's ``decision`` with D5's reasons and ``ledger.events.cause``; the merge's ``decision`` and then its ``merge``
+row with ``path`` and ``target.land.land``'s ``{pull, head_sha, merge_sha}``); ``revert {merge_sha}`` with
+``gate.revert``'s cause for a red ``end``, or ``sentinel {merge_sha, verdict, red: [], flaky}`` for a green or flaky
+one (the row that finishes the merge's sentinel, ``ledger.serial``; tohum/26f); D8's ``drill`` row (``commit`` with its payload, or ``plant`` with ``harness.revert_drill``'s
 ``{drill, family, instance_id, merge_sha}``, the planted merge's SHA; ``ledger.events.drill``); the response's cost
 rows as they are; then
 ``status.block``'s rows (``ledger.cycle``). ``ts`` is the given time; ``snapshot_id`` is ``brain/integration``'s
 head in ``pulled`` (the snapshot D3 ran on and D5 judged; the cost row carries the same, ``loop.cagir``). Row ids are
-``<cycle_id>:start``, ``<cycle_id>:ratchet``, ``<cycle_id>:c:<cid>``, ``<cycle_id>:revert`` or
+``<cycle_id>:start``, ``<cycle_id>:ratchet``, ``<cycle_id>:c:<cid>``, ``<cycle_id>:m:<cid>``, ``<cycle_id>:revert`` or
 ``<cycle_id>:sentinel``, ``<cycle_id>:drill``, ``<cycle_id>:status``
 and the root row's ``<cycle_id>:root``. The
 status facts' ``canary_cap_usd_micros`` is ``canary_usd`` of ``pulled``'s policy (``loop.cagir.CANARY_USD``, the
@@ -165,11 +165,11 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         if merge is not None or planted:
             out.append(events.ratchet_base(cyc, base_lint["base_run_sha256"], base_lint["counts"]))
         for cid in sorted(decided["decisions"]):
-            out.append(events.decision(cyc, cid, decided["decisions"][cid]["reasons"], merged if cid == merge else None))
+            out += events.decided(cyc, cid, decided["decisions"][cid]["reasons"], merged if cid == merge else None)
         if red is not None:
             out.append(events.revert(cyc, red["merge_sha"], cause))
         elif end is not None:
-            out.append(events.sentinel(cyc, end["merge_sha"], end["verdict"], end["flaky"], end["sha256"]))
+            out.append(events.sentinel(cyc, end["merge_sha"], end["verdict"], end["flaky"]))
         if planted:
             out.append(events.drill(cyc, "plant", revert_drill.plant_payload(drill["instance_id"], plant_sha)))
         elif action == "commit":

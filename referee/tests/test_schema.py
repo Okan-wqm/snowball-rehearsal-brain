@@ -2,14 +2,15 @@
 rows, the root, the ``status.md`` block) conforms to tohum/26, 26b and 26c and the seed's vector pages' row words
 (29m, 29n, 29o), as ``ledger.schema`` writes them.
 
-- the artifacts of a real activation on the in-process GitHub (genesis, cycle start, cut, ratchet base, decision
-  and status rows, the root, the block), a cost row from ``llm.call``'s own constructor, the drill commit, plant and
+- the artifacts of a real activation on the in-process GitHub (genesis, cycle start, cut, ratchet base, decision,
+  merge (tohum/26d) and status rows, the root, the block), a cost row from ``llm.call``'s own constructor, the drill commit, plant and
   revert rows from ``harness.revert_drill``'s payloads, a status-edited row from ``status.block``: no reason;
 - each rule, broken on one of those artifacts at a time, gives its reason: a missing and an extra key, a float, a
   timestamp, a part, an unknown kind, each closed set, a reject without a cause, a revert without a cause, a merge
-  decision with a reject's field, a genesis payload field missing, extra, or of the wrong form, a bad hash,
+  decision with a reject's field or a merge row's, a merge row with a decision's field or without its SHA, a genesis payload field missing, extra, or of the wrong form, a bad hash,
   evidence lines out of order, a root row with an extra key, a hand-edited block, a file without a block, a broken
   chain;
+- the sentinel end row (tohum/26f): ``{merge_sha, verdict: green|flaky, red: [], flaky}``, no other key;
 - a writer that hands ``activate`` a row of the wrong shape writes nothing;
 - the PASS row (seed-046's draft): its payload conforms; a missing or extra key, a negative stage, a short hash and
   an unsorted condition list do not.
@@ -61,7 +62,13 @@ class Artifacts(unittest.TestCase):
 
     def test_activation_artifacts_conform(self):
         self.assertEqual({r["kind"] for r in self.rows},
-                         {"genesis", "cycle_start", "integration_cut", "ratchet_base", "decision", "status"})
+                         {"genesis", "cycle_start", "integration_cut", "ratchet_base", "decision", "merge", "status"})
+        merges = [r for r in self.rows if r["kind"] == "merge"]
+        decided = [r for r in self.rows if r["kind"] == "decision" and r["payload"]["decision"] == "merge"]
+        self.assertEqual([r["payload"]["candidate"] for r in merges], [r["payload"]["candidate"] for r in decided])
+        for d, m in zip(decided, merges):  # each merge row follows its decision row (ledger.events.decided)
+            self.assertEqual(self.rows.index(m), self.rows.index(d) + 1)
+            self.assertEqual(sorted(d["payload"]), ["candidate", "decision"])
         self.assertEqual(schema.ledger_reasons(self.ledger), [])
         self.assertEqual(schema.roots_reasons(self.roots), [])
         self.assertEqual(schema.status_reasons(self.status, self.ledger), [])
@@ -100,8 +107,10 @@ class Artifacts(unittest.TestCase):
         return {k: v for k, v in r.items() if k not in ("prev_hash", "row_hash")}
 
     def test_row_rules(self):
-        merge = self.row("decision", "merge")
+        merge = self.row("merge")
         self.assertEqual(schema.row_reasons(stored(merge)), [])
+        decided = self.row("decision", "merge")
+        self.assertEqual(schema.row_reasons(stored(decided)), [])
         reject = self.row("decision", "reject")
         cases = [
             ({k: v for k, v in merge.items() if k != "trust"}, "row.trust: missing"),
@@ -109,7 +118,7 @@ class Artifacts(unittest.TestCase):
             (dict(merge, ts="2026-10-30T12:00:00.5Z"), "row.ts"),
             (dict(merge, part="ledger"), "row.part"),
             (dict(merge, kind="merged"), "unknown_row_type events/merged"),
-            (dict(merge, kind="merge"), "unknown_row_type events/merge"),
+            (dict(merge, part="drill"), "unknown_row_type drill/merge"),
             (dict(merge, derivation="guess"), "row.derivation"),
             (dict(merge, trust="sure"), "row.trust"),
             (dict(merge, cause="bad_luck"), "row.cause"),
@@ -121,7 +130,12 @@ class Artifacts(unittest.TestCase):
             (dict(merge, payload=dict(merge["payload"], merge_sha="A" * 40)), "payload.merge_sha"),
             (dict(merge, payload=dict(merge["payload"], note="x")), "payload.note"),
             (dict(merge, payload=dict(merge["payload"], reasons=["x"])), "payload.reasons"),
-            (dict(merge, payload=dict(merge["payload"], decision="revert")), "payload.decision: not one of"),
+            (dict(merge, payload=dict(merge["payload"], decision="merge")), "payload.decision: not a field"),
+            (dict(merge, payload={k: v for k, v in merge["payload"].items() if k != "merge_sha"}),
+             "payload.merge_sha: missing"),
+            (dict(decided, payload=dict(decided["payload"], decision="revert")), "payload.decision: not one of"),
+            (dict(decided, payload=dict(decided["payload"], merge_sha="a" * 40)), "payload.merge_sha: not a field"),
+            (dict(decided, payload=dict(decided["payload"], pull=3)), "payload.pull: not a field"),
             ({k: v for k, v in reject.items() if k != "cause"}, "row.cause: missing"),
             (dict(reject, payload=dict(reject["payload"], reasons=[])), "payload.reasons"),
             (dict(reject, payload=dict(reject["payload"], pull=3)), "payload.pull"),
@@ -146,21 +160,25 @@ class Artifacts(unittest.TestCase):
                            "payload.usd_micros: missing")
 
     def test_sentinel_end_row_rules(self):
-        """D7's end of a green or flaky sentinel (seed-043's draft): ``ledger.events.sentinel`` conforms, without a
-        cause; a red (which ends at its revert), a rerun, a missing hash and an unsorted flaky list do not."""
+        """D7's end of a green or flaky sentinel (tohum/26f): ``ledger.events.sentinel`` is exactly ``{merge_sha,
+        verdict, red: [], flaky}``, without a cause; a red (which ends at its revert), a rerun, a non-empty or
+        missing ``red``, a key 26f does not name and an unsorted flaky list do not conform."""
         cyc = {"cycle_id": "43", "ts": AW.TS, "snapshot_id": AW.SNAP}
         for verdict, flaky in (("green", []), ("flaky", ["a", "b"])):
-            end = events.sentinel(cyc, "a" * 40, verdict, flaky, "b" * 64)
+            end = events.sentinel(cyc, "a" * 40, verdict, flaky)
             self.assertEqual((end["part"], end["kind"], end["row_id"], "cause" in end),
                              ("events", "sentinel", "43:sentinel", False))
+            self.assertEqual(end["payload"], {"merge_sha": "a" * 40, "verdict": verdict, "red": [], "flaky": flaky})
             self.assertEqual(schema.row_reasons(stored(end)), [])
-        end = events.sentinel(cyc, "a" * 40, "green", [], "b" * 64)
+        end = events.sentinel(cyc, "a" * 40, "green", [])
         for payload, fragment in ((dict(end["payload"], verdict="red"), "payload.verdict: not one of"),
                                   (dict(end["payload"], verdict="rerun"), "payload.verdict: not one of"),
-                                  ({k: v for k, v in end["payload"].items() if k != "sentinel_sha256"},
-                                   "payload.sentinel_sha256: missing"),
-                                  (dict(end["payload"], flaky=["b", "a"]), "payload.flaky"),
-                                  (dict(end["payload"], red=[]), "payload.red: not a field")):
+                                  (dict(end["payload"], red=["t1"]), "payload.red: not an empty list"),
+                                  (dict(end["payload"], red={}), "payload.red: not an empty list"),
+                                  ({k: v for k, v in end["payload"].items() if k != "red"}, "payload.red: missing"),
+                                  (dict(end["payload"], sentinel_sha256="b" * 64),
+                                   "payload.sentinel_sha256: not a field"),
+                                  (dict(end["payload"], flaky=["b", "a"]), "payload.flaky")):
             with self.subTest(fragment=fragment):
                 self.assert_reason(dict(end, payload=payload), fragment)
 
@@ -221,7 +239,7 @@ class Artifacts(unittest.TestCase):
         self.assertNotIn("brain/state", w.gh.refs)
         with self.assertRaises(cycle.Unusable):
             cycle.plan(b"", b"", b"", b"", None,
-                       [dict(self.row("decision", "merge"), payload={"decision": "merge", "candidate": "x"})],
+                       [dict(self.row("merge"), payload={"decision": "merge", "candidate": "x"})],
                        AW.World().imports, {"ts": AW.TS, "snapshot_id": "s", "row_id": "1:status",
                                             "canary_cap_usd_micros": 0}, AW.World().signer, "1:root")
 

@@ -2,8 +2,9 @@
 written by ``ledger.append`` (the cycle's writer) with rows of ``ledger.schema``.
 
 - no merge (a genesis without a ready candidate): nothing unfinished; a reject is no merge;
-- a gate merge and a planted drill merge are unfinished until a later revert or sentinel end row (green or flaky,
-  seed-043's draft) names them; order is file order;
+- a gate merge (an ``events``/``merge`` row, tohum/26d; its ``decision`` row is no merge) and a planted drill merge
+  are unfinished until a later revert or sentinel end row (green or flaky, tohum/26f) names them; order is file
+  order;
 - a ledger that is not a chain, or holds a row of no known type or of a wrong shape, answers nothing (``Unusable``);
 - a revert or end row of no earlier merge (also one written before its merge), a second finisher of one merge (a
   revert after an end, two ends) and the same SHA merged twice answer nothing;
@@ -31,13 +32,19 @@ START = row("s", "events", "cycle_start", {"cycle_id": "7"})
 
 
 def merge(row_id: str, sha: str) -> dict:
-    return row(row_id, "events", "decision", {"decision": "merge", "candidate": row_id, "path": "pkg/a.js",
-                                              "pull": 1, "head_sha": "f" * 40, "merge_sha": sha})
+    """The gate's merge row (tohum/26d ``kind: merge``)."""
+    return row(row_id, "events", "merge", {"candidate": row_id, "path": "pkg/a.js", "pull": 1, "head_sha": "f" * 40,
+                                           "merge_sha": sha})
+
+
+def decided_merge(row_id: str) -> dict:
+    """The decision row a merge row follows (``ledger.events.decided``): not itself a merge."""
+    return row(row_id, "events", "decision", {"decision": "merge", "candidate": row_id})
 
 
 def ended(row_id: str, sha: str, verdict: str = "green") -> dict:
-    return row(row_id, "events", "sentinel", {"merge_sha": sha, "verdict": verdict,
-                                              "flaky": ["a"] if verdict == "flaky" else [], "sentinel_sha256": "d" * 64})
+    return row(row_id, "events", "sentinel", {"merge_sha": sha, "verdict": verdict, "red": [],
+                                              "flaky": ["a"] if verdict == "flaky" else []})
 
 
 def reject(row_id: str) -> dict:
@@ -57,6 +64,9 @@ class Unfinished(unittest.TestCase):
     def test_no_merge_nothing_unfinished(self):
         self.assertEqual(self.unfinished(START), [])
         self.assertEqual(self.unfinished(START, reject("c1")), [])
+        # tohum/26f: a merge is an events/merge or drill/plant row; a merge's decision row alone is none
+        self.assertEqual(self.unfinished(START, decided_merge("c1")), [])
+        self.assertEqual(self.unfinished(START, decided_merge("c1"), merge("m1", M1)), [M1])
 
     def test_a_merge_is_unfinished_until_its_revert(self):
         self.assertEqual(self.unfinished(START, merge("c1", M1)), [M1])

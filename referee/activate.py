@@ -75,9 +75,10 @@ objects), no transfer row or one whose ``referee_tree_sha256`` is not 64 lowerca
    (``target.land.land``): branch ``brain/c/<cid>`` at the cut, one commit, a pull request into
    ``brain/integration``, a ``success`` check named ``target.branches.CHECK``, the merge. A reject writes nothing on the target.
 6. The state, ``events`` rows in this order: ``genesis`` (the payload), ``cycle_start {cycle_id}``,
-   ``integration_cut {branch, base_sha}``, ``ratchet_base {base_run_sha256, counts}``, one ``decision`` per
-   candidate (``{decision: merge, candidate, path, pull, head_sha, merge_sha}`` or ``{decision: reject, candidate,
-   reasons}`` with ``ledger.events.cause``; the rows are ``ledger.events``', the ones D6 writes), then
+   ``integration_cut {branch, base_sha}``, ``ratchet_base {base_run_sha256, counts}``, per candidate
+   ``ledger.events.decided``'s rows (a merge's ``decision {decision: merge, candidate}`` and its ``merge {candidate,
+   path, pull, head_sha, merge_sha}`` row, tohum/26d; or a reject's ``decision {decision: reject, candidate,
+   reasons}`` with ``ledger.events.cause``; the rows D6 writes), then
    ``status.block.plan``'s rows (MF16); ``ledger.cycle.plan`` over an empty ledger and roots file chains them
    (secret scan), checks the whole ledger against ``ledger.schema``, signs the root and writes its row;
    ``ledger.jsonl``, ``chain/root.jsonl`` and ``status.md`` go in one orphan commit that opens ``brain/state``.
@@ -396,12 +397,13 @@ def activate(writer: write.Writer, files: dict[str, bytes], req: Any, candidates
         for cand in sorted(candidates, key=lambda c: c["id"]):
             got = decide(cand, files["base.jsonl"], profile, recipe, control, merges, tree)
             if got["reasons"]:
-                rows.append(events.decision(req, cand["id"], got["reasons"]))
+                added = events.decided(req, cand["id"], got["reasons"])
             else:
                 done = land.land(writer, cand["id"], got["path"], got["content"], cut, branches.CHECK)
                 merges.append(done["merge_sha"])
-                rows.append(events.decision(req, cand["id"], [], dict(done, path=got["path"])))
-            decisions.append(rows[-1]["payload"])
+                added = events.decided(req, cand["id"], [], dict(done, path=got["path"]))
+            rows += added
+            decisions.append({k: v for row in added for k, v in row["payload"].items()})
         facts = {"ts": req["ts"], "snapshot_id": req["snapshot_id"], "row_id": "%s:status" % req["cycle_id"],
                  "canary_cap_usd_micros": canary_cap_usd_micros}
         state = cycle.plan(b"", b"", b"", b"", None, rows, files["imports.jsonl"], facts, signer,

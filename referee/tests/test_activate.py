@@ -313,17 +313,20 @@ class Activation(unittest.TestCase):
             ("integration_cut", AW.CYCLE + ":cut"), ("ratchet_base", AW.CYCLE + ":ratchet"),
             ("decision", AW.CYCLE + ":c:bad-path"), ("decision", AW.CYCLE + ":c:bad-ratchet"),
             ("decision", AW.CYCLE + ":c:bad-scope"), ("decision", AW.CYCLE + ":c:bad-test"),
-            ("decision", AW.CYCLE + ":c:good"), ("status", AW.CYCLE + ":status")])
+            ("decision", AW.CYCLE + ":c:good"), ("merge", AW.CYCLE + ":m:good"), ("status", AW.CYCLE + ":status")])
         self.assertEqual(rows[0]["payload"], activate.genesis(AW.World().gh, w.files, "toy")["payload"])
         self.assertEqual(rows[1]["payload"], {"cycle_id": AW.CYCLE})
         self.assertEqual(rows[2]["payload"], {"branch": "brain/integration", "base_sha": w.main})
         for r in rows[4:8]:
             self.assertEqual(r["payload"]["decision"], "reject")
             self.assertEqual(r["cause"], AW.EXPECTED_REJECTS[r["payload"]["candidate"]][1], r["row_id"])
-        self.assertEqual(rows[8]["payload"], {"decision": "merge", "candidate": "good", "path": "src/a.js",
-                                              "pull": good[0]["pull"], "head_sha": good[0]["head_sha"],
-                                              "merge_sha": merge})
+        # the merge: its decision row, then tohum/26d's merge row with target.land's answer
+        self.assertEqual(rows[8]["payload"], {"decision": "merge", "candidate": "good"})
+        self.assertEqual((rows[9]["part"], rows[9]["payload"]),
+                         ("events", {"candidate": "good", "path": "src/a.js", "pull": good[0]["pull"],
+                                     "head_sha": good[0]["head_sha"], "merge_sha": merge}))
         self.assertNotIn("cause", rows[8])
+        self.assertNotIn("cause", rows[9])
         self.assertEqual([r["row_hash"] for r in rows], out["row_hashes"])
         # the signed root verifies as the next D1 reads it
         rekor = {"entries": {out["entry"]["uuid"]: {"hash": out["entry"]["hash"], "identity": "referee@example"}}}

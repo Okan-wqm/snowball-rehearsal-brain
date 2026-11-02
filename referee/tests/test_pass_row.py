@@ -97,7 +97,10 @@ class State:
         self.run = int(run) if run else self.run + 1
         c = {"cycle_id": "%d-1" % self.run, "ts": TS, "snapshot_id": h(99)}
         rows = [EV.row(c, "genesis", "genesis", genesis_payload(self.target))] if genesis else []
-        rows += [EV.start(c)] + [m(c) for m in makers]
+        rows += [EV.start(c)]
+        for m in makers:  # a maker gives a row or a list of rows (ledger.events.decided)
+            made = m(c)
+            rows += made if isinstance(made, list) else [made]
         facts = {"ts": TS, "snapshot_id": h(99), "row_id": c["cycle_id"] + ":status",
                  "canary_cap_usd_micros": 1_000_000}
         planned = CY.plan(self.ledger, self.ledger, self.roots, self.roots, self.status, rows, IMPORTS, facts,
@@ -117,7 +120,7 @@ def merged(sha: str, pull: int = 1) -> dict:
 def genesis_cycle(state: State, decisions) -> None:
     state.cycle(lambda c: EV.row(c, "cut", "integration_cut", {"branch": B.INTEGRATION, "base_sha": h(1)}),
                 lambda c: EV.ratchet_base(c, h(20, 64), {"no-unused-vars": 0}),
-                *[(lambda c, d=d: EV.decision(c, *d)) for d in decisions], genesis=True)
+                *[(lambda c, d=d: EV.decided(c, *d)) for d in decisions], genesis=True)
 
 
 def drill(state: State, instance_id: str, cause: str, merge_sha: str, revert_cause: str | None = None,
@@ -137,7 +140,7 @@ def toy_world(**over) -> State:
     toy = State("toy")
     genesis_cycle(toy, over.get("decisions", [("bad-path", ["security_path:src/p.js"]), ("bad-test", ["tests_red"]),
                                               ("good", [], merged(h(0xa1)))]))
-    toy.cycle(lambda c: EV.sentinel(c, h(0xa1), over.get("verdict", "green"), [], h(30, 64)),
+    toy.cycle(lambda c: EV.sentinel(c, h(0xa1), over.get("verdict", "green"), []),
               lambda c: cost(c, **over.get("cost", {})))
     for n, (instance_id, cause) in enumerate(over.get("drills", [("rd-test", "test_regression"),
                                                                  ("rd-build", "build_break"),
@@ -149,9 +152,9 @@ def toy_world(**over) -> State:
 def copy_world() -> State:
     copy = State("copy")
     genesis_cycle(copy, [])
-    copy.cycle(lambda c: EV.decision(c, "bad-unit", ["tests_red"]), lambda c: EV.decision(c, "fix", [], merged(h(0xc1))),
+    copy.cycle(lambda c: EV.decided(c, "bad-unit", ["tests_red"]), lambda c: EV.decided(c, "fix", [], merged(h(0xc1))),
                cost)
-    copy.cycle(lambda c: EV.sentinel(c, h(0xc1), "green", [], h(31, 64)), cost)
+    copy.cycle(lambda c: EV.sentinel(c, h(0xc1), "green", []), cost)
     return copy
 
 
@@ -174,7 +177,8 @@ class Passes(unittest.TestCase):
         self.assertEqual(got["conditions"], {cond: [] for cond in PR.CONDITIONS})
         self.assertEqual(got["not_checked"], PR.NOT_CHECKED)
         rows = [json.loads(line) for line in copy.ledger.splitlines()]
-        merge = [r for r in rows if r["kind"] == "decision" and r["payload"]["decision"] == "merge"]
+        merge = [r for r in rows if r["kind"] == "merge"]  # tohum/26d's merge rows, not the decision rows
+        self.assertEqual([r["payload"]["merge_sha"] for r in merge], [h(0xc1)])
         self.assertEqual(got["payload"], {"stage": 0, "copy_genesis_row_hash": rows[0]["row_hash"],
                                           "copy_merge_row_hashes": [merge[0]["row_hash"]],
                                           "conditions": sorted(PR.CONDITIONS), "not_checked": sorted(PR.NOT_CHECKED)})
@@ -182,7 +186,7 @@ class Passes(unittest.TestCase):
 
     def test_a_merged_candidate_offered_again_is_judged_by_its_first_decision(self):
         toy = toy_world()
-        toy.cycle(lambda c: EV.decision(c, "good", ["kos:patch_does_not_apply"]), cost)
+        toy.cycle(lambda c: EV.decided(c, "good", ["kos:patch_does_not_apply"]), cost)
         self.assertEqual(judge(toy)["verdict"], "PASS")
 
 

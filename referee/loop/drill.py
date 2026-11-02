@@ -18,7 +18,10 @@ watched by the next cycle's ``kos`` and reverted by its ``yaz`` (D7, like any me
 by the first ``yaz`` after the planted merge is finished.
 
 **Inputs** (``inputs(workspace, environ)``): ``None`` when ``DRILL_SEED`` is unset or empty (the drill is off for the
-run: the operator has not given the secret). Otherwise the catalog must be readable JSON that
+run: the operator has not given the secret). ``{absent: <catalog path>}`` when the seed is set and no file of any kind
+is at the catalog's path (tohum/26f: the seed's live drill fixtures are not in this seed and their place comes with
+a seed epoch; until then D8 cannot run live, so the operator's secret alone turns nothing on and stops nothing).
+Otherwise the catalog must be readable JSON that
 ``harness.revert_drill.instances`` accepts, and every instance's ``patch`` a plain file name (no ``/``, not ``.`` or
 ``..``) of a regular file of that directory, UTF-8 text; else ``Unusable`` (exit 2 before any write).
 
@@ -26,7 +29,7 @@ run: the operator has not given the secret). Otherwise the catalog must be reada
 (``ledger.serial.unfinished``), whether D5 merges a candidate this cycle, the tree of ``brain/integration``'s head and
 this run's id. Let D be the ledger's revert-drill ``commit`` and ``plant`` rows (``harness.revert_drill``'s reading):
 
-1. no inputs: ``{action: off}``;
+1. no inputs: ``{action: off}``; inputs ``absent``: ``{action: off, why: fixtures_absent}`` (``yaz``'s line shows it);
 2. D's last row is a commitment C. Its cycle's run id is read (``commitment_unplaced`` when no ``cycle_start`` with a
    ``<digits>-<digits>`` id precedes it) and its key derived; a key whose commitment is not C's (the seed or the
    catalog changed since) abandons C: this cycle commits again (rule 4, ``replaces: commitment_mismatch``). Else, with
@@ -77,6 +80,8 @@ def inputs(workspace: str, environ: dict[str, str]) -> dict | None:
     if not seed:
         return None
     root = os.path.join(workspace, *CATALOG_DIR)
+    if not os.path.lexists(os.path.join(root, CATALOG)):
+        return {"absent": "/".join(CATALOG_DIR + (CATALOG,))}
     try:
         with open(os.path.join(root, CATALOG), "rb") as fh:
             catalog = chain.parse_row(fh.read().decode("utf-8"))
@@ -129,6 +134,8 @@ def step(inp: dict | None, ledger: bytes, unfinished: list[str], merging: bool, 
 def _step(inp: dict | None, ledger: bytes, unfinished: list[str], merging: bool, tree: str, this_run: str) -> dict:
     if inp is None:
         return {"action": "off"}
+    if "absent" in inp:
+        return {"action": "off", "why": "fixtures_absent"}
     rows = _rows(ledger)
     drills = [i for i, r in enumerate(rows) if RD.is_drill(r, "commit") or RD.is_drill(r, "plant")]
     last = rows[drills[-1]] if drills else None

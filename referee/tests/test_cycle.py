@@ -33,8 +33,9 @@ WORKFLOW = "https://github.com/acme/referee/.github/workflows/loop.yml@refs/head
 OPEN, CLOSE = b"<!-- status.block -->\n", b"<!-- /status.block -->\n"
 MERGE = "a" * 40
 LEDGER = ledger_with([row("s1", "events", "cycle_start", {"cycle_id": "4100"}),
-                      row("d1", "events", "decision", {"decision": "merge", "candidate": "c1", "path": "src/a.js",
-                                                       "pull": 1, "head_sha": "b" * 40, "merge_sha": MERGE})])
+                      row("d1", "events", "decision", {"decision": "merge", "candidate": "c1"}),
+                      row("m1", "events", "merge", {"candidate": "c1", "path": "src/a.js", "pull": 1,
+                                                    "head_sha": "b" * 40, "merge_sha": MERGE})])
 IMPORTS = ledger_with([{"ts": "2026-10-29T08:00:00Z", "stage": 0}])
 
 
@@ -82,7 +83,7 @@ class Plan(unittest.TestCase):
         ledger, roots = out["files"]["ledger.jsonl"], out["files"]["chain/root.jsonl"]
         self.assertTrue(chain.verify_bytes(ledger, LEDGER)["valid"])
         self.assertEqual(schema.ledger_reasons(ledger), [])
-        new = [json.loads(line) for line in ledger.splitlines()[2:]]
+        new = [json.loads(line) for line in ledger.splitlines()[3:]]
         self.assertEqual([(r["row_id"], r["kind"]) for r in new], [("s2", "cycle_start"), ("d2", "decision"),
                                                                    ("st1", "status")])
         self.assertEqual(out["row_hashes"], [r["row_hash"] for r in new])
@@ -171,7 +172,7 @@ class Refusals(unittest.TestCase):
 
     def test_a_ledger_not_of_the_schema(self):
         cases = {"unknown type": [row("x1", "events", "candidate", {})],
-                 "payload shape": [row("x1", "events", "decision", {"decision": "merge", "candidate": "c"})],
+                 "payload shape": [row("x1", "events", "merge", {"candidate": "c"})],
                  "reject without cause": [row("x1", "events", "decision",
                                               {"decision": "reject", "candidate": "c", "reasons": ["r"]})]}
         for name, rows in cases.items():

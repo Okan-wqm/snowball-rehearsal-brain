@@ -125,7 +125,8 @@ refused tree is ``pulled_invalid``). Then:
   0), except when D8 judged a drill ``FAIL`` (``drill_fail``, exit 1, after the writes: the cycle's state is written,
   the drill's verdict is red). D8 (``yaz_d8``, ``loop.drill``) runs between D7 and D6 and writes nothing itself: with
   ``DRILL_SEED`` (the drill seed secret, ``yaz`` only; unset turns the drill off) it reads the catalog from the
-  checkout's ``seed/drill/revert/`` (``GITHUB_WORKSPACE``; unreadable is unusable, exit 2, nothing written) and
+  checkout's ``seed/drill/revert/`` (``GITHUB_WORKSPACE``; no catalog there is ``off`` with ``why: fixtures_absent``,
+  tohum/26f; one that is there but unreadable is unusable, exit 2, nothing written) and
   answers this cycle's step from the same state: a commitment, a plant (D6 lands it as the cycle's one merge, with the
   ``ratchet_base`` and ``plant`` rows; the next cycle's ``kos`` watches it and its ``yaz`` reverts it, D7), a wait,
   or nothing that fits; the previous drill, once its planted merge is finished, is revealed and judged

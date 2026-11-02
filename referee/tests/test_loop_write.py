@@ -186,7 +186,8 @@ class D6(StateBase):
         added = rows_of(new)[len(rows_of(old)):]
         self.assertEqual([(r["row_id"], r["kind"]) for r in added],
                          [("9-1:start", "cycle_start"), ("9-1:ratchet", "ratchet_base"), ("9-1:c:breaks", "decision"),
-                          ("9-1:c:good", "decision"), ("cagir-9-1", "cost"), ("9-1:status", "status")])
+                          ("9-1:c:good", "decision"), ("9-1:m:good", "merge"), ("cagir-9-1", "cost"),
+                          ("9-1:status", "status")])
         # the merge's lint before: the base kos ran, its sha256 and its first record's violations per tool
         with open(self.results("base.jsonl"), "rb") as fh:
             base_run = fh.read()
@@ -197,11 +198,14 @@ class D6(StateBase):
         self.assertEqual(SE.lint_before(new, merge["merge_sha"]), counts)
         self.assertEqual(added[2]["payload"], {"decision": "reject", "candidate": "breaks", "reasons": ["tests_red"]})
         self.assertEqual(added[2]["cause"], "test_regression")
-        self.assertEqual(added[3]["payload"], dict(merge, decision="merge"))
+        # the merge: its decision row, then tohum/26d's merge row carrying target.land's answer (ledger.events.decided)
+        self.assertEqual(added[3]["payload"], {"decision": "merge", "candidate": "good"})
+        self.assertEqual((added[4]["part"], added[4]["payload"]), ("events", merge))
         self.assertNotIn("cause", added[3])
+        self.assertNotIn("cause", added[4])
         self.assertEqual({(r["ts"], r["snapshot_id"]) for r in added if r["part"] == "events"},
                          {(YW.TS, HEADS[B.INTEGRATION])})
-        self.assertEqual((written["rows"], written["revert"]), (6, None))
+        self.assertEqual((written["rows"], written["revert"]), (7, None))
         # the root of the new ledger, signed once, its row appended; status.md's block is the last status row's
         root = AN.root_of(AN.tips(new))
         self.assertEqual(self.signer.payloads, [root.encode()])
@@ -493,6 +497,7 @@ class D7(StateBase):
             file_sha = hashlib.sha256(fh.read()).hexdigest()
         out = self.run_yaz(GITHUB_RUN_ID="10")
         self.assertEqual((out["sentinel"]["verdict"], out["written"]["revert"], out["merge"]), ("green", None, None))
+        self.assertEqual(out["sentinel"]["sha256"], file_sha)  # the verified file's hash is the line's, not the row's
         self.assertEqual(self.gh.refs[B.INTEGRATION], heads[B.INTEGRATION])  # the merge is left
         new = self.state_file(B.STATE_LEDGER)
         self.assertTrue(CH.verify_bytes(new, old_ledger)["valid"])
@@ -502,8 +507,7 @@ class D7(StateBase):
                          [("10-1:start", "cycle_start"), ("10-1:sentinel", "sentinel"), ("cagir-10-1", "cost"),
                           ("10-1:status", "status")])
         self.assertEqual((added[1]["payload"], "cause" in added[1]),
-                         ({"merge_sha": merge_sha, "verdict": "green", "flaky": [], "sentinel_sha256": file_sha},
-                          False))
+                         ({"merge_sha": merge_sha, "verdict": "green", "red": [], "flaky": []}, False))  # tohum/26f
         self.assertEqual(SE.unfinished(new), [])
         # cycle 11-1: nothing is watched, and the next ready candidate merges on the green merge
         nxt = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
@@ -755,7 +759,9 @@ class D8(StateBase):
         self.control(OPEN)
         self.github()
         root = os.path.join(self.workspace, *DR.CATALOG_DIR)
-        for name, change in (("no catalog", lambda: os.remove(os.path.join(root, DR.CATALOG))),
+        for name, change in (("a dangling linked catalog",  # a file of a kind is there: not absent, unreadable
+                              lambda: (os.remove(os.path.join(root, DR.CATALOG)),
+                                       write_tree(root, {DR.CATALOG: ("symlink", "gone.json")}))),
                              ("a patch outside the directory",
                               lambda: write_tree(root, {DR.CATALOG: {"instances": [
                                   {"id": "x", "cause": "unknown", "patch": "../x.patch"}]}})),
@@ -779,6 +785,22 @@ class D8(StateBase):
         self.assertEqual(self.writes(), [])
         out = self.yaz("9", None)
         self.assertEqual((out["ok"], out["done"], out["drill"]), (True, ["D5", "D6"], {"action": "off"}))
+        self.assertNotIn("drill", [r["part"] for r in rows_of(self.state_file(B.STATE_LEDGER))])
+
+    def test_with_the_seed_and_no_catalog_the_drill_is_off_and_the_cycle_is_written(self):
+        """tohum/26f: the seed's live drill fixtures are not in this seed, so the operator's DRILL_SEED with no file
+        at the catalog's path turns D8 off for the run (``fixtures_absent`` in the line), and the cycle's state is
+        written as without the seed; a catalog that is there but unreadable stays unusable (the test above)."""
+        self.kos({}, units=SENTINEL_UNITS)
+        self.control(OPEN)
+        self.github()
+        self.catalog(DRILL_CAUSES)
+        shutil.rmtree(os.path.join(self.workspace, *DR.CATALOG_DIR))
+        out = self.yaz("9", {"seed": "s"})
+        self.assertEqual((out["ok"], out["done"], out["drill"]),
+                         (True, ["D5", "D6"], {"action": "off", "why": "fixtures_absent"}))
+        self.assertEqual([p for m, p in self.writes() if p.endswith("git/refs/heads/brain/state")],
+                         ["/repos/acme/t1/git/refs/heads/brain/state"])
         self.assertNotIn("drill", [r["part"] for r in rows_of(self.state_file(B.STATE_LEDGER))])
 
     def test_the_drill_is_the_toys_a_copy_with_the_seed_is_off(self):
