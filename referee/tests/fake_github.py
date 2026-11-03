@@ -15,6 +15,12 @@ It models what the writer depends on and the target's rulesets (tohum/25a row 3)
 - blobs hold bytes and trees map paths to blobs (``base_tree`` entries kept, the new ones set on top), so
   ``read_file`` gives a branch's file content back.
 
+**Object ids.** A blob, a tree and a commit the API creates (``POST git/blobs``, ``git/trees``, ``git/commits``, a
+merge) has the id git gives the same object (``git_store``'s format: every file ``100644``, a fixed author), as
+GitHub's ids are git's, so the same commit can be read by ``loop.gitobj`` (``git_objects``: every such object in git's
+format, for ``git_store``'s fake ``git``). ``seed_files`` seeds a commit the same way; ``seed_commit`` and a test that
+fills ``commits`` or ``trees`` by hand give made-up ids, which ``git_objects`` refuses (``NotGit``).
+
 It also answers routes the writer must never call (``PUT contents``, ``POST merges``, ``DELETE`` of a ref), so
 a test can see that the guard, not the fake, stopped them: ``requests`` records every request received.
 """
@@ -26,6 +32,7 @@ import copy
 import hashlib
 import re
 
+import git_store
 from ledger.chain import canonical
 from target import branches
 
@@ -34,6 +41,10 @@ SHA = re.compile(r"[0-9a-f]{40}")
 
 def sha_of(obj) -> str:
     return hashlib.sha1(canonical(obj)).hexdigest()
+
+
+class NotGit(Exception):
+    """An object ``git_objects`` cannot give in git's format: a made-up id, or one it does not hold."""
 
 
 class FakeGitHub:
@@ -60,6 +71,41 @@ class FakeGitHub:
         sha = sha_of(rec)
         self.commits[sha] = rec
         return sha
+
+    def seed_files(self, files: dict[str, bytes], parents=(), msg="seed") -> str:
+        """A commit of ``files`` on ``parents`` with git's ids (see "Object ids"), as the API would create it."""
+        tree = self._tree({path: self._blob(data) for path, data in files.items()})
+        return self._new_commit({"tree": tree, "parents": list(parents), "message": msg})
+
+    def _tree(self, files: dict[str, str]) -> str:
+        sha = git_store.store_tree({path: self.blobs[blob] for path, blob in files.items()}, {})
+        self.trees[sha] = files
+        return sha
+
+    def _new_commit(self, rec: dict) -> str:
+        sha = git_store.commit({}, rec["tree"], rec["message"].encode("utf-8"), tuple(rec["parents"]))
+        self.commits[sha] = rec
+        return sha
+
+    def git_objects(self, commits) -> dict[str, tuple[str, bytes]]:
+        """Every object reachable from ``commits`` (their parents, trees and blobs), sha -> (type, content) in git's
+        format; ``NotGit`` when one of them does not have git's id."""
+        objects: dict = {}
+        todo, seen = list(commits), set()
+        while todo:
+            sha = todo.pop()
+            if sha in seen:
+                continue
+            seen.add(sha)
+            rec = self.commits.get(sha)
+            if rec is None or rec["tree"] not in self.trees:
+                raise NotGit("commit %s is not held" % sha)
+            got = git_store.store_tree({p: self.blobs[b] for p, b in self.trees[rec["tree"]].items()}, objects)
+            made = git_store.commit(objects, got, rec["message"].encode("utf-8"), tuple(rec["parents"]))
+            if (got, made) != (rec["tree"], sha):
+                raise NotGit("commit %s has a made-up id" % sha)
+            todo.extend(rec["parents"])
+        return objects
 
     def _blob(self, data: bytes) -> str:
         sha = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
@@ -137,9 +183,7 @@ class FakeGitHub:
                     any(p not in self.commits for p in body["parents"]):
                 return 422, {"message": "tree or parent does not exist"}
             rec = {"tree": body["tree"], "parents": list(body["parents"]), "message": body["message"]}
-            sha = sha_of(rec)
-            self.commits[sha] = rec
-            return 201, self._commit(sha)
+            return 201, self._commit(self._new_commit(rec))
         if rest == "git/blobs":
             return 201, {"sha": self._blob(base64.b64decode(body["content"]))}
         if rest == "git/trees":
@@ -150,9 +194,7 @@ class FakeGitHub:
                 if entry["sha"] not in self.blobs:
                     return 422, {"message": "blob does not exist"}
                 files[entry["path"]] = entry["sha"]
-            sha = sha_of(["tree", sorted([p, b] for p, b in files.items())])
-            self.trees[sha] = files
-            return 201, {"sha": sha}
+            return 201, {"sha": self._tree(files)}
         if rest == "pulls":
             if body["head"] not in self.refs or body["base"] not in self.refs:
                 return 422, {"message": "head or base does not exist"}
@@ -192,8 +234,7 @@ class FakeGitHub:
                 return 405, {"message": "merge conflict (not modelled)"}
             rec = {"tree": self.commits[head]["tree"], "parents": [base_head, head],
                    "message": "Merge pull request #%s" % m.group(1)}
-            sha = sha_of(rec)
-            self.commits[sha] = rec
+            sha = self._new_commit(rec)
             self.refs[p["base"]] = sha
             p["state"], p["merged"] = "closed", True
             return 200, {"sha": sha, "merged": True, "message": "Pull Request successfully merged"}

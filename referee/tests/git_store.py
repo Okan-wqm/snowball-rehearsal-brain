@@ -66,6 +66,11 @@ def _build(objects: dict, files: dict) -> str:
     return tree(objects, [(here[n][0], n.encode(), here[n][1]) for n in order])
 
 
+def store_tree(files: dict, objects: dict) -> str:
+    """The id of the tree holding ``files`` (``store``'s input), its objects added to ``objects``."""
+    return _build(objects, files)
+
+
 def store(files: dict, parents: tuple = (), objects: dict | None = None) -> tuple[dict, str]:
     """``objects`` (a new dict when ``None``) with a commit of ``files`` on ``parents`` added; the commit's id."""
     objects = {} if objects is None else objects
