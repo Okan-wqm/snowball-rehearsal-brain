@@ -62,6 +62,96 @@
    "tests": [
     "test_mutate.py"
    ]
+  },
+  {
+   "id": "renames_detected",
+   "old": "\"--name-only\", \"--no-renames\", rev",
+   "new": "\"--name-only\", rev",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "untracked_ignored",
+   "old": "\"--others\",\n",
+   "new": "\"--others\", \"--\", \":(exclude)*\",\n",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "packages_not_run_first",
+   "old": "reached = depmap.with_packages(depmap.reachable(edges, [names[p] for p in paths if p in names]), modules)",
+   "new": "reached = depmap.reachable(edges, [names[p] for p in paths if p in names])",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "removed_modules_unnamed",
+   "old": "found.update({depmap.module_name(p[len(prefix):]): p for p in removed",
+   "new": "found.update({depmap.module_name(p[len(prefix):]): p for p in []",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "mutant_file_change_ignored",
+   "old": "if os.path.relpath(path, brain) in changed:",
+   "new": "if False:",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "closure_only_the_roots",
+   "old": "return set(paths) | {modules[n] for n in reached}",
+   "new": "return set(paths)",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "patterns_not_globbed",
+   "old": "fnmatch(os.path.basename(t), pat)",
+   "new": "os.path.basename(t) == pat",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "mutated_file_not_a_root",
+   "old": "roots = [\"referee/\" + m[\"file\"]] + [",
+   "new": "roots = [] + [",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "tests_names_second",
+   "old": "spaces = (\"referee/tests/\", \"referee/\")",
+   "new": "spaces = (\"referee/\", \"referee/tests/\")",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "selection_not_applied",
+   "old": "mutants = select(brain, mutants, changed)",
+   "new": "pass",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
   }
  ]
 }

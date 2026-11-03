@@ -127,11 +127,24 @@ def python_modules(root: str) -> dict[str, str]:
         for name in sorted(filenames):
             if not name.endswith(".py"):
                 continue
-            stem = name[:-3]
-            dotted = ".".join(parts if stem == "__init__" else parts + [stem])
+            rel = "/".join(parts + [name])
+            dotted = module_name(rel)
             if dotted:
-                modules[dotted] = "/".join(parts + [name])
+                modules[dotted] = rel
     return modules
+
+
+def module_name(rel: str) -> str:
+    """The dotted name of a ``.py`` path relative to its root (``a/b.py`` is ``a.b``, ``a/__init__.py`` is ``a``;
+    the root's own ``__init__.py`` is ``""``)."""
+    parts = rel[:-3].split("/")
+    return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+
+
+def with_packages(names: set[str], modules: dict[str, str]) -> set[str]:
+    """``names`` and every package among ``modules`` holding one of them: importing ``a.b.c`` runs ``a`` and ``a.b``
+    first."""
+    return set(names) | {".".join(n.split(".")[:i]) for n in names for i in range(1, n.count(".") + 1)} & set(modules)
 
 
 def _deepest(name: str, modules: dict[str, str]) -> str | None:
@@ -227,7 +240,7 @@ def brain_map(root: str) -> dict[str, Any]:
     started = workflow_modules(root)
     roots = [m for m in started if m in modules]
     live = reachable(edges, roots)
-    live |= {".".join(n.split(".")[:i]) for n in live for i in range(1, n.count(".") + 1)} & set(modules)
+    live = with_packages(live, modules)
     return {
         "modules": modules,
         "edges": {k: sorted(v) for k, v in sorted(edges.items())},
