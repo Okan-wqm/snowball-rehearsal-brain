@@ -61,7 +61,7 @@ from target import branches as B  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, diff, recipe  # noqa: E402
 from test_loop_cek import POLICY, install_listing_git  # noqa: E402
 from test_loop_kos import FINDING, TREE, RedAs  # noqa: E402
-from test_loop_write import SENTINEL_PY, SENTINEL_UNITS, drill_catalog  # noqa: E402
+from test_loop_write import DRILL_PATCHES as D8_PATCHES, SENTINEL_PY, SENTINEL_UNITS, drill_catalog  # noqa: E402
 from test_rekor import entry_for  # noqa: E402
 from harness import revert_drill as RD  # noqa: E402
 from loop import drill as DR  # noqa: E402
@@ -129,9 +129,10 @@ def _candidate(diff: bytes, expect: dict) -> dict[str, bytes]:
 class Flow:
     """The world above and its runs, under ``base``."""
 
-    def __init__(self, base: str, drill: dict | None = None, seed: str = "7" * 64) -> None:
-        """``drill``: the checkout's drill catalog ``{instance id: cause}`` (its patches ``DRILL_PATCHES``, the
-        units' sentinel ``SENTINEL_UNITS``, which those patches turn red), or none; ``seed``: ``DRILL_SEED``."""
+    def __init__(self, base: str, drill: dict | None = None, seed: str = "7" * 64,
+                 patches: dict[str, bytes] = DRILL_PATCHES) -> None:
+        """``drill``: the checkout's drill catalog ``{instance id: cause}`` (each instance's patch from ``patches``,
+        the units' sentinel ``SENTINEL_UNITS``, which those patches turn red), or none; ``seed``: ``DRILL_SEED``."""
         self.base, self.runs, self.seed = base, 0, seed
         self.state_heads: list = []  # the toy's brain/state head after each run
         self.work = os.path.join(base, "checkout")
@@ -169,7 +170,7 @@ class Flow:
             self.catalog = drill_catalog(drill)
             write_tree(os.path.join(self.work, *DR.CATALOG_DIR),
                        dict({DR.CATALOG: self.catalog},
-                            **{i["patch"]: DRILL_PATCHES[i["id"]].decode() for i in self.catalog["instances"]}))
+                            **{i["patch"]: patches[i["id"]].decode() for i in self.catalog["instances"]}))
         self.rekor = Rekor()
         self.signer = RekorSigner(self.rekor.entries, A.workflow_identity(REFEREE_REPO, A.LOOP_WORKFLOW))
         zipped = TA.zip_of({"result.json": TA.result(self.brain_sha), "result.json.sigstore.json": b"{}"})
@@ -373,6 +374,23 @@ class Rehearsal(unittest.TestCase):
         self.assertEqual(records[-1]["stopped"], {"job": "yaz", "target": "t1", "reason": "drill_fail", "reasons": []})
         self.assertEqual(records[-1]["t1"]["drill"]["judged"], ["rd-build", "FAIL", ["cause_mismatch"]])
         self.assertEqual(sorted(flow.hubs["o/copy"].refs), ["main"])
+
+
+    def test_drill_patches_on_a_line_the_toys_merge_changed_never_apply(self):
+        """``test_loop_write.D8``'s patches change ``var a = 1;``, the line ``good`` changes at the genesis: on
+        ``brain/integration``'s head after that merge no instance applies, so no drill is ever committed and the flow
+        stalls as without fixtures, the gate closed on every cause (seed-045: the fixtures must apply to the toy
+        after its candidates' merges, not only to the tree signed in (A), 26f:35)."""
+        causes = {"rd-test": "test_regression", "rd-lint": "lint_regression"}
+        flow = Flow(self.base, drill=causes, patches=D8_PATCHES)
+        none = {"action": "none", "why": "patch_does_not_apply"}
+        unshown = ["cause_unshown:%s" % c for c in ("test_regression", "build_break", "lint_regression")]
+        self.assertEqual(self.rehearse(flow), [
+            {"waiting": ["c1"], "t1": GENESIS},
+            {"waiting": ["c1"], "t1": toy(sentinel="green", drill=none, done=("D5", "D6", "D7", "D8"),
+                                          gate=closed(nobetci=["sentinel_unfinished:<sha>"], geri_alma=unshown))},
+            {"waiting": ["c1"], "t1": toy(drill=none, done=("D5", "D6", "D8"), gate=closed(geri_alma=unshown))},
+            {"waiting": ["c1"], "t1": toy(drill=none, done=("D5", "D6", "D8"), gate=closed(geri_alma=unshown))}])
 
 
 if __name__ == "__main__":
