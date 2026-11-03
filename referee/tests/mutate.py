@@ -12,7 +12,26 @@ A mutant is data (``tests/mutants/<topic>.json``): ``{"mutants": [{"id", "file",
 - each distinct ``tests`` list is first run once on an unchanged copy: if it is not green there, its mutants are
   ``baseline_red`` and not run (a red test kills every mutant and proves nothing).
 
-Exit 0 only when every mutant is ``killed``. The brain itself is only read.
+Exit 0 only when every mutant is ``killed`` (no mutant run is exit 1: nothing was shown). The brain itself is
+only read.
+
+``--touched REV`` runs only the mutants a change since ``REV`` can concern. The changed paths are git's: every path
+``git diff --name-only --no-renames REV`` names (``REV`` against the working tree, staged or not, committed or not;
+a rename names both its paths) and every untracked path ``git ls-files --others --exclude-standard`` names. A
+mutant is selected when a changed path is
+
+- the mutant's own file under ``tests/mutants/`` (a new or edited mutant), or
+- a ``.py`` file in the import closure of its ``file`` or of a ``.py`` file under ``referee/tests`` whose name one
+  of its ``tests`` patterns matches (``fnmatch``; discover runs these or fewer), its ``file`` included. The closure
+  is ``status.depmap``'s reading of import statements (one reader of imports) and every package holding a module
+  reached (Python runs it first), over the working tree's modules as the test run sees them: ``referee/tests``'s
+  files by their names inside ``tests``, then ``referee/``'s outside it; a changed ``.py`` path the working tree no
+  longer has (removed, renamed away) is a module still, reached by a file that imports its name.
+
+Not seen by ``--touched``, stated: a change to a file that is not Python (a fixture, a JSON, a workflow) or that
+a test reaches without an import statement (opened by path, run as a subprocess, imported by a built name); the
+imports of a file that does not parse (it is selected by its own path, it reaches nothing further). Before a push
+that changes such a file, run the full set.
 
 Out of scope, stated: tests outside ``referee/tests`` (the brain's root ``tests/``), mutants that are not one
 textual replacement, and equivalent mutants (a ``survived`` mutant may be one: the runner says it survived,
@@ -30,9 +49,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Any
+from fnmatch import fnmatch
+from typing import Any, Callable
 
 BRAIN = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(BRAIN, "referee"))
+
+from status import depmap  # noqa: E402
 FIELDS = ("id", "file", "old", "new", "tests")
 
 
@@ -113,9 +136,71 @@ def run_one(brain: str, mutant: dict[str, Any], timeout: float) -> str:
     return {"red": "killed", "green": "survived"}.get(verdict, verdict)
 
 
-def run(brain: str, files: list[str], jobs: int, timeout: float) -> list[dict[str, str]]:
-    """One row per mutant, in file and mutant order: ``{file, id, outcome}``."""
+def touched(brain: str, rev: str) -> set[str]:
+    """The paths changed since ``rev``, relative to the brain (rules in the module docstring); a ``rev`` git
+    cannot read raises ``ValueError``."""
+    def git(*args: str) -> list[str]:
+        done = subprocess.run(["git", "-C", brain, *args], capture_output=True, text=True)
+        if done.returncode != 0:
+            raise ValueError("git %s: %s" % (" ".join(args), done.stderr.strip()))
+        return [line for line in done.stdout.splitlines() if line]
+    git("rev-parse", "--verify", "--quiet", rev + "^{commit}")
+    return set(git("diff", "--name-only", "--no-renames", rev, "--")) | set(git("ls-files", "--others",
+                                                                                 "--exclude-standard"))
+
+
+def closure_of(brain: str, changed: set[str]) -> Callable[[list[str]], set[str]]:
+    """``paths -> closure``: brain-relative ``.py`` paths to the brain-relative paths of every module their import
+    statements reach and every package holding one (Python runs it first), themselves included. A changed
+    ``.py`` path the working tree no longer has is a module with no imports, so a file still importing it reaches
+    it."""
+    removed = sorted(p for p in changed if p.endswith(".py") and not os.path.exists(os.path.join(brain, p)))
+    modules: dict[str, str] = {}
+    spaces = ("referee/tests/", "referee/")  # the test run's order: tests' own names first
+    for prefix in spaces:
+        found = {n: prefix + rel for n, rel in depmap.python_modules(os.path.join(brain, prefix)).items()}
+        found.update({depmap.module_name(p[len(prefix):]): p for p in removed
+                      if next((s for s in spaces if p.startswith(s)), None) == prefix})
+        for name, path in sorted(found.items()):
+            if name:
+                modules.setdefault(name, path)
+    names = {rel: n for n, rel in modules.items()}
+    edges: dict[str, set[str]] = {}
+    for name, rel in modules.items():
+        try:
+            with open(os.path.join(brain, rel), encoding="utf-8") as fh:
+                edges[name] = depmap.module_imports(fh.read(), name, rel.endswith("__init__.py"), modules)
+        except (FileNotFoundError, SyntaxError):  # removed, or its imports cannot be read: it reaches nothing
+            edges[name] = set()
+
+    def closure(paths: list[str]) -> set[str]:
+        reached = depmap.with_packages(depmap.reachable(edges, [names[p] for p in paths if p in names]), modules)
+        return set(paths) | {modules[n] for n in reached}
+    return closure
+
+
+def select(brain: str, items: list[tuple[str, dict[str, Any]]], changed: set[str]) -> list[tuple[str, dict]]:
+    """The ``(mutant file, mutant)`` items a change to ``changed`` (brain-relative paths) can concern."""
+    closure = closure_of(brain, changed)
+    root = os.path.join(brain, "referee", "tests")
+    tests = sorted("referee/tests/" + rel for rel in depmap.python_modules(root).values())
+
+    def concerned(path: str, m: dict[str, Any]) -> bool:
+        if os.path.relpath(path, brain) in changed:
+            return True
+        roots = ["referee/" + m["file"]] + [t for t in tests if any(fnmatch(os.path.basename(t), pat)
+                                                                    for pat in m["tests"])]
+        return bool(closure(roots) & changed)
+    return [(path, m) for path, m in items if concerned(path, m)]
+
+
+def run(brain: str, files: list[str], jobs: int, timeout: float,
+        changed: set[str] | None = None) -> list[dict[str, str]]:
+    """One row per mutant, in file and mutant order: ``{file, id, outcome}``; with ``changed``, only the mutants
+    ``select`` keeps."""
     mutants = [(path, m) for path in files for m in load(path)]
+    if changed is not None:
+        mutants = select(brain, mutants, changed)
     suites = sorted({tuple(m["tests"]) for _, m in mutants if not applicable(brain, m)})
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
         base = dict(zip(suites, pool.map(lambda t: baseline(brain, list(t), timeout), suites)))
@@ -140,9 +225,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--brain", default=BRAIN)
     parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
     parser.add_argument("--timeout", type=float, default=900.0, help="seconds per test pattern")
+    parser.add_argument("--touched", metavar="REV", help="only the mutants a change since REV can concern")
     args = parser.parse_args(argv)
-    files = args.files or sorted(glob.glob(os.path.join(args.brain, "referee", "tests", "mutants", "*.json")))
-    rows = run(os.path.abspath(args.brain), [os.path.abspath(f) for f in files], args.jobs, args.timeout)
+    brain = os.path.abspath(args.brain)
+    files = args.files or sorted(glob.glob(os.path.join(brain, "referee", "tests", "mutants", "*.json")))
+    changed = touched(brain, args.touched) if args.touched else None
+    rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed)
+    if changed is not None:
+        print("--touched %s: %d changed paths, %d mutants selected" % (args.touched, len(changed), len(rows)),
+              file=sys.stderr)
     for row in rows:
         print(json.dumps(row, sort_keys=True))
     return 0 if rows and all(r["outcome"] == "killed" for r in rows) else 1

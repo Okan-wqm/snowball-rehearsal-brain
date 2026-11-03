@@ -12,9 +12,11 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import git_store  # noqa: E402
 import mutate  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 
@@ -96,6 +98,118 @@ class Runner(unittest.TestCase):
                     json.dump(data, fh)
                 with self.assertRaises(ValueError):
                     mutate.load(path)
+
+
+class Select(unittest.TestCase):
+    """``--touched``'s rule: which mutants a set of changed paths selects, on a small brain made here."""
+
+    TREE = {
+        "referee/pkg/__init__.py": "",
+        "referee/pkg/util.py": "def one():\n    return 1\n",
+        "referee/mod.py": "from pkg import util\n\n\ndef add(a, b):\n    return a + b + util.one() - 1\n",
+        "referee/other.py": "def sub(a, b):\n    return a - b\n",
+        "referee/data.json": "{}\n",
+        "referee/helper.py": "VALUE = 6\n",
+        "referee/tests/helper.py": "VALUE = 5\n",
+        "referee/tests/test_mod.py": TEST.replace("import mod\n", "import helper\nimport mod\n"),
+        "referee/tests/test_other.py": "import other\n",
+        "referee/tests/mutants/a.json": {"mutants": [
+            mutant("on_mod", "return a + b", "return a - b"),
+            mutant("on_other", "return a - b", "return a + b", ["test_other.py"], "other.py"),
+            mutant("on_other_by_glob", "return a - b", "return a * b", ["test_o*.py"], "other.py"),
+            mutant("not_imported", "return a - b", "return a", ["test_mod.py"], "other.py")]},  # e.g. a subprocess
+        "referee/tests/mutants/b.json": {"mutants": [mutant("b_on_other", "return a - b", "return b",
+                                                            ["test_other.py"], "other.py")]},
+    }
+    BY_TEST = ["on_mod", "not_imported"]
+    ON_OTHER = ["on_other", "on_other_by_glob", "not_imported", "b_on_other"]
+
+    def setUp(self):
+        self.brain = tempfile.mkdtemp(prefix="t-select-")
+        self.addCleanup(shutil.rmtree, self.brain, ignore_errors=True)
+        write_tree(self.brain, self.TREE)
+
+    def selected(self, changed: set[str]) -> list[str]:
+        files = sorted(glob.glob(os.path.join(self.brain, "referee", "tests", "mutants", "*.json")))
+        items = [(path, m) for path in files for m in mutate.load(path)]
+        return [m["id"] for _, m in mutate.select(self.brain, items, changed)]
+
+    def test_nothing_changed_selects_nothing(self):
+        self.assertEqual(self.selected(set()), [])
+
+    def test_each_path_a_mutant_is_concerned_by(self):
+        for rel, ids in (("referee/mod.py", self.BY_TEST),                 # its file, imported by its test
+                         ("referee/other.py", self.ON_OTHER),
+                         ("referee/tests/test_mod.py", self.BY_TEST),       # its test file
+                         ("referee/tests/helper.py", self.BY_TEST),         # imported by its test
+                         ("referee/pkg/util.py", self.BY_TEST),             # imported by an imported file
+                         ("referee/pkg/__init__.py", self.BY_TEST),         # the package run first
+                         ("referee/tests/mutants/b.json", ["b_on_other"]),  # its mutant file
+                         ("referee/helper.py", []),                         # shadowed by tests/helper.py
+                         ("referee/data.json", []),                         # not Python: stated out of scope
+                         ("tests/test_mod.py", [])):                        # the brain's root tests: not referee's
+            with self.subTest(rel=rel):
+                self.assertEqual(self.selected({rel}), ids)
+
+    def test_a_module_the_tree_no_longer_has_is_reached_by_its_name(self):
+        for old, new in (("referee/tests/helper.py", "referee/tests/helper2.py"),  # its shadow is not taken
+                         ("referee/pkg/util.py", "referee/pkg/util2.py")):
+            with self.subTest(removed=old):
+                write_tree(self.brain, self.TREE)
+                os.rename(os.path.join(self.brain, old), os.path.join(self.brain, new))
+                self.assertEqual(self.selected({old}), self.BY_TEST)
+                self.assertEqual(self.selected({new}), [])
+                os.remove(os.path.join(self.brain, new))
+
+    def test_a_file_that_does_not_parse_is_selected_by_its_own_path(self):
+        write_tree(self.brain, {"referee/other.py": "def (\n", "referee/tests/helper.py": "def (\n"})
+        self.assertEqual(self.selected({"referee/other.py"}), self.ON_OTHER)
+        self.assertEqual(self.selected({"referee/tests/helper.py"}), self.BY_TEST)
+
+
+class Touched(unittest.TestCase):
+    """``touched``, git's half of ``--touched``, against a fake ``git`` (the referee's sandbox has none): what it
+    asks git and how it joins the answers. Real git's answers to the same questions are not tested here."""
+
+    def setUp(self):
+        self.bin = tempfile.mkdtemp(prefix="t-touched-")
+        self.addCleanup(shutil.rmtree, self.bin, ignore_errors=True)
+        self.brain = tempfile.mkdtemp(prefix="t-touched-brain-")
+        self.addCleanup(shutil.rmtree, self.brain, ignore_errors=True)
+        write_tree(self.brain, Select.TREE)
+        patcher = mock.patch.dict(os.environ, {"PATH": self.bin + os.pathsep + os.environ.get("PATH", "")})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def fake(self, diff: bytes, others: bytes, exits: dict | None = None) -> None:
+        git_store.install_git(self.bin, {}, exits=exits,
+                              outputs={"rev-parse": b"1" * 40 + b"\n", "diff": diff, "ls-files": others})
+
+    def test_the_questions_and_the_union_of_their_answers(self):
+        self.fake(b"referee/mod.py\nreferee/pkg/util.py\n", b"referee/tests/mutants/c.json\n")
+        self.assertEqual(mutate.touched(self.brain, "REV"),
+                         {"referee/mod.py", "referee/pkg/util.py", "referee/tests/mutants/c.json"})
+        self.assertEqual([c["argv"] for c in git_store.calls(self.bin)], [
+            ["-C", self.brain, "rev-parse", "--verify", "--quiet", "REV^{commit}"],
+            ["-C", self.brain, "diff", "--name-only", "--no-renames", "REV", "--"],
+            ["-C", self.brain, "ls-files", "--others", "--exclude-standard"]])
+
+    def test_a_rev_git_cannot_read_raises(self):
+        for failing in ("rev-parse", "diff", "ls-files"):
+            with self.subTest(failing=failing):
+                self.fake(b"", b"", exits={failing: 128})
+                with self.assertRaises(ValueError):
+                    mutate.touched(self.brain, "REV")
+
+    def test_main_runs_only_the_selected(self):
+        self.fake(b"referee/mod.py\n", b"")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = mutate.main(["--brain", self.brain, "-j", "2", "--touched", "REV"])
+        rows = [json.loads(line) for line in out.getvalue().splitlines()]
+        self.assertEqual([(r["id"], r["outcome"]) for r in rows], [("on_mod", "killed"), ("not_imported", "survived")])
+        self.assertEqual(code, 1)
+        self.assertIn("1 changed paths, 2 mutants selected", err.getvalue())
 
 
 class Kept(unittest.TestCase):

@@ -9,9 +9,10 @@ that a tree built here has the id real git gave the same files.
 ``install_git(directory, answers)`` writes an executable ``git`` that speaks ``cat-file --batch``: for each
 requested line it writes ``answers[line]`` (raw bytes, given hex-encoded in ``answers.json`` beside it) or
 ``<line> missing``, and exits after answering a line in ``exit_after``; it appends its argv, environment and
-what its stdin and stdout are (``fds``) to ``calls.jsonl`` beside itself. Its ``init`` (the first argument after the options, ``-c`` taking a value)
-creates the directory named last, its ``fetch`` does nothing and its ``ls-remote`` writes ``listing``; each exits with ``exits[<command>]`` (0 when
-absent): the objects it then answers stand for what a fetch brought.
+what its stdin and stdout are (``fds``) to ``calls.jsonl`` beside itself. Its ``init`` (the first argument after the options, ``-c`` and ``-C`` taking a value)
+creates the directory named last, its ``fetch`` does nothing, its ``ls-remote`` writes ``listing`` and any command named
+in ``outputs`` writes its bytes; each exits with ``exits[<command>]`` (0 when absent): the objects it then answers
+stand for what a fetch brought.
 
 ``HistoryGit(directory)`` writes a ``git`` that answers ``ledger.founder``'s ref check from a linear history (see
 the class); real git's answers to the same tests are its check.
@@ -119,12 +120,11 @@ with open(os.path.join(here, "answers.json")) as fh:
     doc = json.load(fh)
 args, i = sys.argv[1:], 0
 while i < len(args) and args[i].startswith("-"):
-    i += 2 if args[i] == "-c" else 1
-if i < len(args) and args[i] in ("init", "fetch", "ls-remote"):
+    i += 2 if args[i] in ("-c", "-C") else 1
+if i < len(args) and (args[i] in ("init", "fetch") or args[i] in doc["outputs"]):
     if args[i] == "init":
         os.makedirs(args[-1])
-    if args[i] == "ls-remote":
-        sys.stdout.buffer.write(bytes.fromhex(doc["listing"]))
+    sys.stdout.buffer.write(bytes.fromhex(doc["outputs"].get(args[i], "")))
     sys.exit(doc["exits"].get(args[i], 0))
 answers = {k: bytes.fromhex(v) for k, v in doc["answers"].items()}
 out = sys.stdout.buffer
@@ -138,14 +138,15 @@ for line in sys.stdin.buffer:
 
 
 def install_git(directory: str, answers: dict[str, bytes], exit_after: tuple = (), exits: dict | None = None,
-                listing: bytes = b"") -> str:
+                listing: bytes = b"", outputs: dict[str, bytes] | None = None) -> str:
     path = os.path.join(directory, "git")
     with open(path, "w") as fh:
         fh.write(SCRIPT % sys.executable)
     os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
     with open(os.path.join(directory, "answers.json"), "w") as fh:
         json.dump({"answers": {k: v.hex() for k, v in answers.items()}, "exit_after": list(exit_after),
-                   "exits": exits or {}, "listing": listing.hex()}, fh)
+                   "exits": exits or {},
+                   "outputs": {k: v.hex() for k, v in ({"ls-remote": listing} | (outputs or {})).items()}}, fh)
     return path
 
 
