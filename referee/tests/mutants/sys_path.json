@@ -127,15 +127,6 @@
    ]
   },
   {
-   "id": "dm_dir_not_module",
-   "file": "status/depmap.py",
-   "old": "                                if posixpath.join(d, top) + \".py\" in file_set or posixpath.join(d, top) in dir_set),",
-   "new": "                                if posixpath.join(d, top) + \".py\" in file_set),",
-   "tests": [
-    "test_depmap.py"
-   ]
-  },
-  {
    "id": "dm_edge_kind_python",
    "file": "status/depmap.py",
    "old": "edge(here, there, \"sys.path\")",
@@ -151,6 +142,69 @@
    "new": "isinstance(index.value, int))",
    "tests": [
     "test_profile_pypath.py"
+   ]
+  },
+  {
+   "id": "dm_dir_not_module",
+   "file": "status/depmap.py",
+   "old": "return next((posixpath.join(d, top) for d in inserted if posixpath.join(d, top) in dir_set), None)",
+   "new": "return None",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "dm_module_before_package",
+   "file": "status/depmap.py",
+   "old": "        if path + \"/__init__.py\" in file_set:\n            return path\n        if path + \".py\" in file_set:\n            return path + \".py\"\n",
+   "new": "        if path + \".py\" in file_set:\n            return path + \".py\"\n        if path + \"/__init__.py\" in file_set:\n            return path\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "dm_namespace_in_first_dir",
+   "file": "status/depmap.py",
+   "old": "        if path + \".py\" in file_set:\n            return path + \".py\"\n    return next(",
+   "new": "        if path + \".py\" in file_set:\n            return path + \".py\"\n        if path in dir_set:\n            return path\n    return next(",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "dm_module_as_its_directory",
+   "file": "status/depmap.py",
+   "old": "return path + \".py\"",
+   "new": "return path",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "dm_no_package_boxes",
+   "file": "status/depmap.py",
+   "old": "    for d in package_boxes:\n        projects.add(d, \"path\", d)\n",
+   "new": "",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "dm_package_box_owned",
+   "file": "status/depmap.py",
+   "old": "in dir_set and projects.owner(through) is None})",
+   "new": "in dir_set})",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "dm_package_box_module_file",
+   "file": "status/depmap.py",
+   "old": "                            in dir_set and projects.owner",
+   "new": "                            and projects.owner",
+   "tests": [
+    "test_depmap.py"
    ]
   }
  ]
