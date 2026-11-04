@@ -143,24 +143,6 @@
    "tests": [
     "test_pass_row.py"
    ]
-  },
-  {
-   "id": "already_passed_not_checked",
-   "file": "harness/pass_row.py",
-   "old": "    elif any(_is(row, \"events\", \"pass\") for row in rows[_last_genesis(rows):]):",
-   "new": "    elif False:",
-   "tests": [
-    "test_pass_row.py"
-   ]
-  },
-  {
-   "id": "fail_written",
-   "file": "harness/pass_row.py",
-   "old": "    if got[\"verdict\"] != \"PASS\":\n        refused.append(\"not_pass\")",
-   "new": "    if False:\n        refused.append(\"not_pass\")",
-   "tests": [
-    "test_pass_row.py"
-   ]
   }
  ]
 }

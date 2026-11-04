@@ -30,8 +30,8 @@
   {
    "id": "gate_opened_any_kind",
    "file": "harness/pass_row.py",
-   "old": "return any(_is(row, *GATE_ROW) and",
-   "new": "return any(row[\"part\"] == GATE_ROW[0] and",
+   "old": "return any(_is(row, *part_kind) and",
+   "new": "return any(row[\"part\"] == part_kind[0] and",
    "tests": [
     "test_pass_row.py"
    ]

@@ -10,16 +10,14 @@ exactly ``[reason]``), tohum/29m (``harness.revert_drill``: key, commitment, jud
 ``payload``; the referee's own row; (B) runs on each ledger's last genesis and only the rows from it on count;
 stage-open's conditions 2-7).
 
-**The row** (tohum/26d): ``events``/``pass`` (26d leaves ``kind`` free; ``ledger.schema``'s type), written by
-``ledger.events.row``: ``derivation`` ``tool``, ``trust`` ``verified``, no ``proposed_by``. **Stated assumptions**
-(seed-046 (b)-(e), still open): which (B) conditions are judged from the states (below; the others are in
-``NOT_CHECKED``), and that ``write`` puts the row on the toy's ``brain/state`` as one cycle of its own
-(``ledger.cycle``: its ``cycle_start``, the ``pass`` row, the status row and block, one signed root), after ``judge``
-gave ``PASS``. The module is on the live path through the copy's genesis gate (below: ``gate`` and
-``gate_opened``, called by ``loop.job``, and ``GATE_ROW`` by ``loop.write_cycle``); ``judge`` and ``write`` have no
-caller in the loop yet: 26d:9 and 29s:19-24 name the loop referee's run over both targets as the writer, but the PASS
-row's ``owner_exception`` needs the bytes of the signed (A) result, which no page puts where a run can read them
-(the import keeps only their hash in ``setup/imports.jsonl``; seed-048).
+**The row** (tohum/26d): ``events``/``pass`` (``PASS_ROW``; 26d leaves ``kind`` free; ``ledger.schema``'s type),
+written by ``ledger.events.row``: ``derivation`` ``tool``, ``trust`` ``verified``, no ``proposed_by``. Its writer is
+the loop referee's run over both targets (26d:9, 29s:19-24): ``loop.job``'s ``yaz`` calls ``judge`` on the toy's
+ordinary cycle once the copy's genesis gate is open (``gate_opened``), with the toy's and the copy's states as this
+run's D1 verified them, the checkout's ``setup/imports.jsonl`` and the (A) result at ``result_path`` (26c, 29s), and
+``loop.write_cycle`` adds the row with ``payload`` to the toy's cycle, unless the toy's run already holds one
+(``passed``). **Stated assumption** (seed-046 (b), still open): which (B) conditions are judged from the states
+(below; the others are in ``NOT_CHECKED``).
 
 **Inputs** (``judge(toy, copy, toy_expect, copy_expect, drill, imports, result)``): each state ``{ledger, roots}``, the
 bytes of ``brain/state``'s ``ledger.jsonl`` and ``chain/root.jsonl``; each target's expectations ``{candidate id:
@@ -84,13 +82,13 @@ copy_merge_row_hashes, owner_exception?, conditions, not_checked}``: the import'
 copy's last genesis; the copy's run's ``events``/``merge`` rows (the ones 26d's stage-open counts) in file order;
 the (A) result's ``exit.owner_exception`` as read, absent when the result has none.
 
-**The write** (``write(writer, head, toy, copy, ..., req, imports, result, signer, canary_cap_usd_micros)``,
-``req`` ``{cycle_id, ts, snapshot_id}``): nothing is written when the verdict is not ``PASS`` (``refused:
-[not_pass]``) or the toy's run already holds a ``pass`` row (``already_passed``; a PASS before a later genesis is
-another run's); else ``ledger.cycle.commit`` on ``brain/state`` at ``head`` (``ledger.append.TargetState``; a
-branch no longer at ``head`` is ``target.write``'s ``state_head_moved``).
-Any refusal or failure of that commit is a ``target.land.HardStop`` naming the refs written. The answer is
-``judge``'s with ``refused`` and ``written`` (``{state_sha, row_hashes, root}`` or ``None``).
+**Held rows** (``gate_opened``, ``passed``): the referee's own row of the kind (no ``proposed_by``; tohum/26d: a
+proposal counts for nothing) after the ledger's last genesis (a row before a later genesis is another run's); a
+ledger that does not conform to ``ledger.schema`` holds none.
+
+**The (A) result's place** (``result_path``, tohum/26c, 29s): ``setup/results/<result_sha256>.json`` of the referee
+repository's checkout, ``result_sha256`` the counter's last import's; one that is not 64 lowercase hex names no
+file (``Unusable``), so no other path is read.
 
 **The copy's genesis gate** (tohum/25a row 7 and 29s: the copy's genesis waits until the toy's cycles 1-5, asama-0/08
 rows 1-5, are green, read from the toy's ``brain/state``). ``gate(toy, toy_expect, drill, imports)`` judges every
@@ -129,10 +127,10 @@ import sys
 from typing import Any
 
 from harness import revert_drill as RD
-from ledger import anchor, append, chain, cycle, events, schema, serial
+from ledger import anchor, chain, schema, serial
 from loop import accepted as AC
 from loop import drill as DR
-from target import branches, land, write as W
+from target import branches
 import cli
 
 TARGETS = ("toy", "copy")
@@ -141,6 +139,8 @@ CONDITIONS = ("#genesis", "#taban", "#merge", "#ret", "#kapsama-kaydi", "#nobetc
               "#durum", "#model #belirtec")
 DRILL_CAUSES = DR.CAUSES  # loop.drill's, the one list (tohum/26f)
 GATE_ROW = ("events", "copy_gate")  # the toy's record that the copy's genesis gate opened (ledger.schema)
+PASS_ROW = ("events", "pass")  # tohum/26d's PASS row on the toy (ledger.schema)
+RESULTS = "setup/results/%s.json"  # tohum/26c, 29s: the (A) result the last import names, in the referee checkout
 NOT_CHECKED = {
     "#aktarim": "the import's signed result and the referee repository's setup/imports.jsonl (tohum/25a)",
     "#oyuncak": "the toy tree's hash beside (A)'s toy_tree_sha256 (the activation's input)",
@@ -406,46 +406,37 @@ def gate(toy: dict, toy_expect: Any, drill: dict | None, imports: bytes) -> dict
     return {"verdict": "closed" if any(conditions.values()) else "open", "conditions": conditions, "state": invalid}
 
 
-def gate_opened(ledger: bytes) -> bool:
-    """Whether the toy's ledger (the bytes D1 verified) holds the referee's own ``events``/``copy_gate`` row after its
-    last genesis (see "The copy's genesis gate" above); a ledger that does not conform to ``ledger.schema`` opens
-    nothing."""
+def _held(ledger: bytes, part_kind: tuple[str, str]) -> bool:
+    """Whether the ledger holds the referee's own row of ``part_kind`` after its last genesis ("Held rows" above)."""
     if schema.ledger_reasons(ledger):
         return False
     rows = _rows(ledger)
-    return any(_is(row, *GATE_ROW) and "proposed_by" not in row for row in rows[_last_genesis(rows):])
+    return any(_is(row, *part_kind) and "proposed_by" not in row for row in rows[_last_genesis(rows):])
+
+
+def gate_opened(ledger: bytes) -> bool:
+    """Whether the toy's ledger (the bytes D1 verified) holds the ``copy_gate`` row (see "The copy's genesis gate"
+    and "Held rows" above)."""
+    return _held(ledger, GATE_ROW)
+
+
+def passed(ledger: bytes) -> bool:
+    """Whether the toy's ledger holds the PASS row of this run (``PASS_ROW``, "Held rows" above)."""
+    return _held(ledger, PASS_ROW)
+
+
+def result_path(imports: bytes) -> str:
+    """The checkout path of the (A) result the counter's last import names ("The (A) result's place" above), else
+    ``Unusable``."""
+    sha = import_keys(imports)["result_sha256"]
+    if not (isinstance(sha, str) and chain.HEX64.match(sha)):
+        raise Unusable("imports: the last import's result_sha256 is not 64 lowercase hex")
+    return RESULTS % sha
 
 
 def gate_payload() -> dict:
     """The ``copy_gate`` row's payload: the conditions ``gate`` judged."""
     return {"conditions": sorted(CONDITIONS)}
-
-
-def write(writer: W.Writer, head: str, toy: dict, copy: dict, toy_expect: Any, copy_expect: Any, drill: dict | None,
-          req: dict, imports: bytes, result: bytes, signer: Any, canary_cap_usd_micros: int) -> dict:
-    """The PASS row on the toy's ``brain/state`` at ``head`` (see the module docstring); ``toy`` also carries the
-    head's ``status`` bytes (``None`` without a ``status.md``)."""
-    got = judge(toy, copy, toy_expect, copy_expect, drill, imports, result)
-    rows = _rows(toy["ledger"])
-    refused = []
-    if got["verdict"] != "PASS":
-        refused.append("not_pass")
-    elif any(_is(row, "events", "pass") for row in rows[_last_genesis(rows):]):
-        refused.append("already_passed")
-    if refused:
-        return dict(got, refused=refused, written=None)
-    rows = [events.start(req), events.row(req, "pass", "pass", got["payload"])]
-    facts = {"ts": req["ts"], "snapshot_id": req["snapshot_id"], "row_id": "%s:status" % req["cycle_id"],
-             "canary_cap_usd_micros": canary_cap_usd_micros}
-    state = append.TargetState(writer, head)
-    try:
-        planned = cycle.commit(state, "pass: cycle %s" % req["cycle_id"], toy["ledger"], toy["ledger"],
-                               toy["roots"], toy["roots"], toy["status"], rows, imports, facts, signer,
-                               "%s:root" % req["cycle_id"])
-    except (W.ApiError, W.Refused) + cycle.FAILURES as exc:
-        raise land.HardStop("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
-    return dict(got, refused=[], written={"state_sha": state.commits_made[-1], "row_hashes": planned["row_hashes"],
-                                          "root": planned["root"]})
 
 
 # ---------------------------------------------------------------- command line

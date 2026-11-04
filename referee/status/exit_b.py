@@ -44,7 +44,8 @@ import cli
 BRAIN = founder.BRAIN
 PAGE = os.path.join(BRAIN, "spec", "asama-0", "10a-cikis-canli-dongu.md")
 DOC = os.path.join(BRAIN, "docs", "exit-b.md")
-WRITTEN = {"#pass": "`harness.pass_row.write` on the toy's `brain/state`; no job calls it yet (seed-046, seed-048)"}
+WRITTEN = {"#pass": "`yaz` on the toy's cycle once the gate's row is held (`loop.job.yaz_pass`, `loop.write_cycle`), "
+                     "after `harness.pass_row.judge` gave `PASS` on both states"}
 ROW = re.compile(r"^\|\s*(#[^\s#|][^|]*?)\s*\|")  # a lone ``#`` is the header's column name
 TAG = re.compile(r"#[^\s#|]+\Z")
 CASE_MARK = "<!-- case:%s -->"
