@@ -15,7 +15,7 @@ the brain's committed drawing is the one its code gives today.
   arrows ``npm``, ``cargo`` (``path`` and ``workspace = true``), ``import`` (relative, bare workspace name and
   subpath, tsconfig alias exact and wildcard with ``baseUrl``, a commented tsconfig) and ``python``; the deepest
   project owns a file; the coverage counts each specifier's outcome;
-- the helpers: segment globs, the tsconfig dialect keeps ``//`` inside strings;
+- the helpers: segment globs (the tsconfig dialect and the aliases are profile.jsimports's, test_profile_jsimports);
 - the command line: exits 0, 1 (``check`` with a problem) and 2.
 """
 
@@ -217,7 +217,9 @@ class Target(unittest.TestCase):
                 "const r = import('react');",
                 "import './local';",
                 "import { b } from '@t/ui/button';",
-                "// import { z } from '@t/web-old';",
+                "import { z } from '@t/web-old';",
+                "// import { c } from '@t/ui';",
+                "const doc = \"import { d } from '@t/ui'\";",
                 "import { gone } from '../../../../outside';",
                 "import { s } from '../../../scripts/s';",
                 ""]),
@@ -297,7 +299,8 @@ class Target(unittest.TestCase):
             "cross_project": 6,       # util, feat/a, deep/x, ui/button (main.ts); @t/web (ui); pyk2 (tool.py)
             "same_project": 2,        # ./local; pyk2's from pyk import core
             "external_package": 1,    # react
-            "outside_projects": 4,    # the commented-out @t/web-old (an alias to no project), main.ts into
+            "outside_projects": 4,    # @t/web-old (an alias to no project; the commented and quoted @t/ui are
+                                      # not imports, jsimports.specifiers), main.ts into
                                       # scripts/, scripts/s.ts's import, scripts/run.py's pyk
             "leaves_root": 1,         # ../../../../outside
             "python_external": 1,     # os
@@ -322,20 +325,6 @@ class Helpers(unittest.TestCase):
         self.assertEqual(D.glob_dirs(["a?c/*", "!axc/*"], dirs), ["abc/d"])
         self.assertEqual(D.glob_dirs(["a.b/*"], dirs + ["axb/c"]), ["a.b/c"])
         self.assertEqual(D.glob_dirs(["./libs/*/"], dirs), ["libs/x"])
-
-    def test_exact_alias_before_wildcard(self):
-        root = tempfile.mkdtemp()
-        write(root, {"tsconfig.json": json.dumps({"compilerOptions": {"baseUrl": "src",
-                                                                      "paths": {"@a/*": ["w/*"], "@a/b": ["e"]}}})})
-        cov = {"unparsed_manifests": []}
-        aliases = D._tsconfig_aliases(root, {"tsconfig.json"}, cov)
-        self.assertEqual(D._alias_path("@a/b", aliases), "src/e")
-        self.assertEqual(D._alias_path("@a/c/d", aliases), "src/w/c/d")
-        self.assertIsNone(D._alias_path("@ab", aliases))
-
-    def test_jsonc_keeps_strings(self):
-        self.assertEqual(D.jsonc_loads('{"u": "http://x/*y*/", // c\n "v": [1,],}'), {"u": "http://x/*y*/", "v": [1]})
-        self.assertEqual(D.jsonc_loads('{"q": "a\\"//b"}'), {"q": 'a"//b'})
 
 
 class CommandLine(unittest.TestCase):
