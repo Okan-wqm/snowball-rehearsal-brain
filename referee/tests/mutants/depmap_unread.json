@@ -1,0 +1,121 @@
+{
+ "mutants": [
+  {
+   "id": "um_root_pkg_counted",
+   "file": "status/depmap.py",
+   "old": "            if d and d not in npm_dirs:\n",
+   "new": "            if d not in npm_dirs:\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "um_workspace_counted",
+   "file": "status/depmap.py",
+   "old": "            if d and d not in npm_dirs:\n",
+   "new": "            if d:\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "um_pkg_not_counted",
+   "file": "status/depmap.py",
+   "old": "                found.setdefault(name, []).append(rel)\n            continue\n",
+   "new": "                pass\n            continue\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "um_fnmatch_case",
+   "file": "status/depmap.py",
+   "old": "fnmatch.fnmatchcase(name, p)",
+   "new": "fnmatch.fnmatch(name.lower(), p.lower())",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "um_path_match",
+   "file": "status/depmap.py",
+   "old": "fnmatch.fnmatchcase(name, p)",
+   "new": "fnmatch.fnmatchcase(rel, \"*\" + p)",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "um_examples_unsorted",
+   "file": "status/depmap.py",
+   "old": "\"examples\": sorted(v)[:UNREAD_EXAMPLES]",
+   "new": "\"examples\": sorted(v)",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "um_count_examples",
+   "file": "status/depmap.py",
+   "old": "{\"count\": len(v),",
+   "new": "{\"count\": len(v[:UNREAD_EXAMPLES]),",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "um_not_wired",
+   "file": "status/depmap.py",
+   "old": "    coverage[\"unread_manifests\"] = unread_manifests(files, set(manifests))\n",
+   "new": "    pass\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "um_npm_dirs_wrong",
+   "file": "status/depmap.py",
+   "old": "unread_manifests(files, set(manifests))",
+   "new": "unread_manifests(files, set(projects.by_dir))",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "py_outside_not_counted",
+   "file": "status/depmap.py",
+   "old": "                coverage[\"python_files_outside_projects\"] += 1\n",
+   "new": "                pass\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "render_py_outside",
+   "file": "status/depmap.py",
+   "old": "cov[\"python_files_outside_projects\"], cov[\"python_files_unparsed\"]",
+   "new": "cov[\"python_files_unparsed\"], cov[\"python_files_outside_projects\"]",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "render_no_ellipsis",
+   "file": "status/depmap.py",
+   "old": "(\", ...\" if v[\"count\"] > len(",
+   "new": "(\"\" if v[\"count\"] > len(",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "list_no_go",
+   "file": "status/depmap.py",
+   "old": "    \"go.mod\",                                                               # Go\n",
+   "new": "                                                                            # Go\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  }
+ ]
+}

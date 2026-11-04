@@ -68,9 +68,14 @@ the session that reads the target, not by a test).
   "../x.rs"``: the file belongs to the project holding it), a Python package that is a single module file, Go's and every other
   language's imports (counted by extension in ``coverage.unread_code_files``), whether a resolved path exists,
   project references in ``tsconfig``;
-- ``coverage`` says how much of the checkout this map holds: files, JS/TS and Python files read, specifiers by
-  outcome (an import in a file of no project, or into no project, is ``outside_projects``), manifests that could
-  not be parsed, and code files of languages not read, in all and in no project.
+- ``coverage`` says how much of the checkout this map holds: files, JS/TS and Python files read, each also in no
+  project, specifiers by outcome (an import in a file of no project, or into no project, is ``outside_projects``),
+  manifests that could not be parsed, code files of languages not read (by extension, ``OTHER_CODE_EXTENSIONS``),
+  in all and in no project, and ``unread_manifests``: the dependency manifests found whose dependencies draw no
+  arrow, by the first pattern of ``MANIFESTS_NOT_READ`` a file's name matches, plus every ``package.json`` below
+  the root outside the npm workspace projects (an Nx project's own ``package.json`` too); a count and the first
+  three paths each. It names a missing ecosystem adapter; a manifest kind outside that list (and a build file
+  under another name) is not counted, and a counted file is not opened.
 
 Command line, run from ``referee/``::
 
@@ -85,6 +90,7 @@ exit 0, 1 when ``check`` finds a problem, or 2 on a bad command line or a root t
 from __future__ import annotations
 
 import ast
+import fnmatch
 import json
 import os
 import posixpath
@@ -107,6 +113,25 @@ OTHER_CODE_EXTENSIONS = {".rs", ".go", ".java", ".kt", ".rb", ".php", ".cs", ".c
                          ".swift", ".scala", ".sh", ".vue", ".svelte"}
 NPM_DEP_FIELDS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 CARGO_DEP_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
+# Dependency manifests of ecosystems target_map does not read, each a pattern matched (fnmatchcase) against a
+# file's name: the one list coverage.unread_manifests counts by.
+MANIFESTS_NOT_READ = (
+    "go.mod",                                                               # Go
+    "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "build.sbt",  # JVM
+    "Gemfile", "*.gemspec",                                                 # Ruby
+    "composer.json",                                                        # PHP
+    "*.csproj", "*.fsproj", "*.vbproj",                                     # .NET
+    "Package.swift", "Podfile",                                             # Swift
+    "pubspec.yaml",                                                         # Dart
+    "mix.exs", "rebar.config",                                              # Elixir, Erlang
+    "setup.py", "setup.cfg", "Pipfile", "requirements*.txt",                # Python beside pyproject.toml
+    "CMakeLists.txt", "meson.build", "conanfile.txt", "conanfile.py", "vcpkg.json",  # C and C++
+    "*.cabal", "stack.yaml",                                                # Haskell
+    "deno.json", "deno.jsonc",                                              # Deno
+    "MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel",                         # Bazel
+    "build.zig", "dune-project", "Project.toml",                            # Zig, OCaml, Julia
+)
+UNREAD_EXAMPLES = 3
 
 
 # ---------------------------------------------------------------------------------------------------- the brain
@@ -441,6 +466,25 @@ def cargo_dep_paths(d: str, manifest: dict, top_dir: str, top: dict) -> list[str
     return sorted(found)
 
 
+def unread_manifests(files: list[str], npm_dirs: set[str]) -> dict[str, dict[str, Any]]:
+    """Per pattern of ``MANIFESTS_NOT_READ`` that a file's name matches (the first pattern in the list), and under
+    ``package.json`` every one outside the root whose directory is not an npm workspace project (its dependencies
+    draw nothing): ``{"count", "examples"}``, the first ``UNREAD_EXAMPLES`` paths in path order; patterns with no
+    file are left out."""
+    found: dict[str, list[str]] = {}
+    for rel in files:
+        name = posixpath.basename(rel)
+        d = posixpath.dirname(rel)
+        if name == "package.json":
+            if d and d not in npm_dirs:
+                found.setdefault(name, []).append(rel)
+            continue
+        pattern = next((p for p in MANIFESTS_NOT_READ if fnmatch.fnmatchcase(name, p)), None)
+        if pattern is not None:
+            found.setdefault(pattern, []).append(rel)
+    return {k: {"count": len(v), "examples": sorted(v)[:UNREAD_EXAMPLES]} for k, v in sorted(found.items())}
+
+
 def target_map(root: str) -> dict[str, Any]:
     import tomllib
 
@@ -449,7 +493,8 @@ def target_map(root: str) -> dict[str, Any]:
     coverage: dict[str, Any] = {"files": len(files), "unparsed_manifests": [], "unread_code_files": {},
                                 "unread_code_files_outside_projects": {},
                                 "source_files": 0, "source_files_outside_projects": 0,
-                                "python_files": 0, "python_files_unparsed": 0,
+                                "python_files": 0, "python_files_outside_projects": 0, "python_files_unparsed": 0,
+                                "unread_manifests": {},
                                 "specifiers": {"cross_project": 0, "same_project": 0, "external_package": 0,
                                                "outside_projects": 0, "leaves_root": 0, "python_external": 0,
                                                "python_relative": 0}}
@@ -562,6 +607,8 @@ def target_map(root: str) -> dict[str, Any]:
                 continue
             coverage["python_files"] += 1
             here = projects.owner(rel)
+            if here is None:
+                coverage["python_files_outside_projects"] += 1
             for level, name, _names in statements:
                 if level:
                     counts["python_relative"] += 1
@@ -619,6 +666,7 @@ def target_map(root: str) -> dict[str, Any]:
                 counts["cross_project"] += 1
                 edge(here, there, "import")
 
+    coverage["unread_manifests"] = unread_manifests(files, set(manifests))
     coverage["unparsed_manifests"] = sorted(set(coverage["unparsed_manifests"]))
     for key in ("unread_code_files", "unread_code_files_outside_projects"):
         coverage[key] = dict(sorted(coverage[key].items()))
@@ -718,17 +766,23 @@ def render_target(m: dict[str, Any], source: str) -> str:
              "`npm` or `cargo` (A's manifest names B, for Cargo also through its workspace or a `[patch]`), "
              "`import` (a JS/TS file of A imports into B), `python` (a Python file of A imports a package of B). Rules and what is not read: `referee/status/depmap.py`.", "",
              "Projects %d (npm %d, nx %d, cargo %d, python %d), arrows %d. Files %d; JS/TS files read %d (%d outside "
-             "any project), Python files read %d (%d not parsed). Imports: %d across projects, %d inside one, %d "
+             "any project), Python files read %d (%d outside any project, %d not parsed). Imports: %d across "
+             "projects, %d inside one, %d "
              "of external JS packages, %d of Python modules no project holds, %d relative Python (not drawn), %d "
              "from or into no project, %d leaving the root." % (
                  cov["projects"], cov["projects_by_kind"]["npm"], cov["projects_by_kind"]["nx"],
                  cov["projects_by_kind"]["cargo"], cov["projects_by_kind"]["python"], len(m["edges"]), cov["files"],
                  cov["source_files"], cov["source_files_outside_projects"], cov["python_files"],
-                 cov["python_files_unparsed"], sp["cross_project"], sp["same_project"], sp["external_package"],
+                 cov["python_files_outside_projects"], cov["python_files_unparsed"], sp["cross_project"],
+                 sp["same_project"], sp["external_package"],
                  sp["python_external"], sp["python_relative"], sp["outside_projects"], sp["leaves_root"]), "",
              "Code files of languages whose imports are not read: %s." % (
                  ", ".join("%s %d (%d in no project)" % (ext, n, cov["unread_code_files_outside_projects"].get(ext, 0))
-                           for ext, n in cov["unread_code_files"].items()) or "none"), ""]
+                           for ext, n in cov["unread_code_files"].items()) or "none"), "",
+             "Dependency manifests found and not read (`MANIFESTS_NOT_READ`; `package.json` outside the npm "
+             "workspaces): %s." % (
+                 "; ".join("%s %d (%s)" % (k, v["count"], ", ".join(v["examples"]) + (", ..." if v["count"] > len(
+                     v["examples"]) else "")) for k, v in cov["unread_manifests"].items()) or "none"), ""]
     if cov["unparsed_manifests"]:
         lines += ["Manifests not parsed: %s." % ", ".join(cov["unparsed_manifests"]), ""]
     lines += ["```mermaid", "flowchart LR"]
