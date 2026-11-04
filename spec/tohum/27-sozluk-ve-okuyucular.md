@@ -56,6 +56,8 @@ dosyaları içindir; kod dizinlerinin çağıranları `24` ve `26a`'dadır. Hede
 | `setup/imports.jsonl`, hakem reposu | `import` | döngü hakemi D1, genesis, `status.block`, operatör | Kabul edilmiş `referee/` hash'i; insan dokunuşu sayacı | Aşama 0 çıkışı |
 | `setup/stage.json`, hakem reposu | `stage-open`, operatör iter | önyükleme hakemi her `pull`'da | Sonraki aşamanın tablosu ve testleri geçerli mi | Aşama 0 PASS |
 | `setup/honesty-key.json`, hakem reposu | operatör | önyükleme hakemi, çıkışta | #durustluk | Aşama 0 çıkışı |
+| `setup/results/<result_sha256>.json`, hakem reposu | `import` (`26c`) | döngünün `yaz`'ı (PASS satırının `owner_exception`'ı, `26d`), `stage-open` | (A)'nın imzalı sonucu: PASS satırı ve kilidin açılışı | Aşama 0 çıkışı |
+| `setup/security-ledger.jsonl`, hakem reposu | operatör, tohumdan (`25` 3, 10b) | genesis (`29o`) | Tohum güvenlik defterinin hash'i; `security_ledger_broken` | Aşama 0 çıkışı |
 | `vectors/`, `seats/`, `bootstrap/stages/`, hakem reposu | operatör, tohumdan | önyükleme hakemi, `agent.dispatch` | Kabul, koltuk promptu, `done_mf` ve MF testleri (Aşama 1'in partileri `26e`) | Kurulum |
 | `bootstrap/requirements/sign.txt`, hakem reposu | operatör, tohumdan | önyükleme hakemi; döngünün `çek` ve `yaz`'ı (`29s`) | Hangi Sigstore'un kurulacağı (hash'e sabitli, lisans kapısından) | Kurulum |
 | Önyükleme koşu artefaktları, Rekor kayıtları, `status-stage0.md` | önyükleme hakemi | Kurucu, başlatıcı, `import`, sonraki koşu (imzalı durum), operatör | Neyin düzeltileceği, oturum başlatma, aktarılacak SHA, sonraki karar | Aşama 0 |

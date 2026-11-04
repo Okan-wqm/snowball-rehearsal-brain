@@ -28,10 +28,10 @@ hakemin kendi satırı olmadığı için durdurur); `trust` `verified` ya da `ob
 saklandığı değerdir, `26`); `derivation` `tool`, `static_analysis` ya da `test_verified`'dır (`26`: merge kararına giren
 kanıtın üçü). Genesis, merge ve PASS satırları hakemin kendi satırlarıdır, `part: events`:
 - **Genesis satırı**: `kind: genesis` (`29n`'nin okuduğu tür); `payload`'ı `29o`'nun yüküdür (`target`, `base_sha`, …).
-  Defterin ilk satırı o hedefin genesis'idir (`25a` 7). `25a` 3 `brain/state`'i silinmez ve yeniden yazılamaz kılar: (B)
-  kırmızı olunca operatör aktarımı geri alıp düzeltilmiş SHA'yı aktarırsa (`asama-0/10a` "Başarısızlık") ve dal
-  silinmezse ilk genesis yerinde kalır, (B) iki hedefte yeni aktarım satırını adlandıran yeni bir genesis satırıyla
-  yeniden koşar. (B)'nin koştuğu genesis defterin son genesis satırıdır; aşağıdaki kural yalnız ondan sonrakileri sayar.
+  Defterin ilk satırı o hedefin genesis'idir (`25a` 7). (B) kırmızı olunca operatör hedeflerin `brain/` dallarını
+  arşivleyip siler, aktarımı geri alır ve düzeltilmiş SHA'yı aktarır (`25a` "Başarısızlık"); (B) iki hedefte yeni bir
+  defterin ilk genesis'inden koşar, döngü bir defterde tek genesis yazar. Defterde yine de birden çok genesis varsa
+  (B)'nin koştuğu genesis defterin son genesis satırıdır; aşağıdaki kural yalnız ondan sonrakileri sayar.
 - **Merge satırı**: `kind: merge`; `payload`'ı serbesttir.
 - **PASS satırı**: oyuncak defterinde; `kind` serbesttir. `payload` bir nesnedir ve şu alanları taşır (başka alan da
   taşıyabilir):
@@ -44,7 +44,7 @@ kanıtın üçü). Genesis, merge ve PASS satırları hakemin kendi satırlarıd
     genesis'ten sonra gelen bir merge satırının `row_hash`'i.
   - `owner_exception`: (A) sonucunun `exit.owner_exception` nesnesi aynen, `{anchor, stage, carry_to, reason,
     carry_commitment, measured}` (`02` "Sahip istisnası"; `anchor` `#`'siz yazılır: `durustluk`). (A) sonucunda yoksa
-    PASS satırında da yoktur.
+    PASS satırında da yoktur. (A) sonucu son aktarım satırının `setup/results/<result_sha256>.json`'udur (`26c`).
 
 **Kök.** Kök satırının Rekor kaydı (`13`, `29j`) bir Rekor v1 `hashedrekord`'dur: gövdesi `apiVersion` `0.0.1`,
 `spec.data.hash`'i `{algorithm: sha256, value: <kök>}`; verinin hash'i kökün kendisidir, zincirin verdiği sha256 (uçların
@@ -54,9 +54,9 @@ verilmezse TUF imza yapılandırmasının listelediği en yüksek sürümü seç
 **`stage-open`'ın kuralı.** Komut iki hedefin `brain/state` başını operatörün yerel klonunda okur, iki defterin ve iki
 kök zincirinin her satırını tohumun koduyla doğrular ve şunları denetler; biri tutmazsa nedeni adlandırıp durur (çıkış
 2) ve hiçbir şey yazmaz:
-1. Sayaç, `setup/summary.json` ve hakem ağacı `--referee` klonunun commit'inden okunur, çalışma ağacından değil. Sayacın
-   son aktarım satırı Aşama 0'ındır; `--result` o satırın `result_sha256`'sının adlandırdığı imzalı (A) sonucudur;
-   `--referee` klonunun commit'indeki hakem ağacı (korunanlar hariç, git'ten `26c`'nin hash'i) o satırınkidir.
+1. Sayaç, `setup/summary.json`, (A) sonucu ve hakem ağacı `--referee` klonunun commit'inden okunur, çalışma ağacından
+   değil. Sayacın son aktarım satırı Aşama 0'ındır; (A) sonucu o satırın `setup/results/<result_sha256>.json`'udur
+   (`26c`); `--referee` klonunun commit'indeki hakem ağacı (korunanlar hariç, git'ten `26c`'nin hash'i) o satırınkidir.
 2. Her hedef defterinin ilk satırı o hedefin genesis satırıdır; son genesis satırının `payload.target`'ı
    `setup/summary.json` `targets[]`'taki o hedefin `id`'si (bir oyuncak, bir kopya), kopyada `payload.base_sha` o
    satırın `base_sha`'sı (kopyanın bir tabanı vardır), ikisinde de `payload.import_line_sha256`,

@@ -35,14 +35,14 @@ safety_paths[]?}` (`identifiers` genellik denetiminin ad listesidir; `excluded_p
 `{stage: 0, carry_to: 1, reason}`'ı (`02` "Sahip istisnası"; yanındaki taahhüt taşıma hedefinin ekimidir, o olmadan istisna
 koşulu kaldırmaz); ilk koşu işareti.
 
-**setup/imports.jsonl**: her aktarım bir satır `{ts, stage, batch?, brain_sha, referee_tree_sha256, result_sha256, toy_tree_sha256?}`, zincirli (`26`); insan dokunuşu
-sayacı. `referee_tree_sha256`: `brain_sha`'nın ağacında, blob baytlarıyla (git öznitelikleri, filtreler ve satır sonu dönüşümü uygulanmadan), `referee/` altındaki her düzenli dosya için bir satır:
+**setup/imports.jsonl**: her aktarım bir satır `{ts, stage, batch?, brain_sha, referee_tree_sha256, result_sha256, toy_tree_sha256?}`, zincirli (`26`); insan dokunuşu sayacı. Aktarım satırla aynı commit'te doğruladığı imzalı sonucu yazar: **setup/results/<result_sha256>.json**, sonucun baytları aynen, adı satırın `result_sha256`'sı, Sigstore paketi yok (imza aktarımda doğrulanır, `25a` 1). Okuyan (döngünün `yaz`'ı PASS satırının `owner_exception`'ı için, `stage-open`; `26d`) dosyayı son aktarım satırının `result_sha256`'sıyla adlandırır ve baytlarının sha256'sını onunla denetler; olmayan ya da tutmayan dosya kullanılamaz girdidir.
+`referee_tree_sha256`: `brain_sha`'nın ağacında, blob baytlarıyla (git öznitelikleri, filtreler ve satır sonu dönüşümü uygulanmadan), `referee/` altındaki her düzenli dosya için bir satır:
 içeriğin sha256'sı (küçük onaltılık), iki boşluk, `referee/`'ye göre yol, LF. Satırlar bayt sırasıyla dizilip birleştirilir;
 sonucun sha256'sı küçük onaltılıktır; dizinler ve yürütme biti girmez. Hash yoktur (ret): arşivin herhangi bir yerinde, yalnız `referee/` altında değil, bağ ya da özel dosya, ya da UTF-8 olmayan, kontrol karakteri, ters bölü ya da iki nokta taşıyan, mutlak, `..` ya da `.git` bileşenli (harf duyarsız) bir yol varsa;
 `referee/` altında büyük-küçük harf duyarsız dosya sisteminde (casefold) tek ad olan iki yol ya da yol üstü iki dizin, `referee/`'nin tepesinde bir operatör adı ya da `bootstrap` (casefold, `asama-0/10` #agac) varsa ya da `referee/` altında hiç dosya yoksa. Bilinen
 cevaplı örnek (bir vektör vakası değildir, hakem onu koşmaz; beklenen değer `/vec`'te yoktur, yalnız bu sayfadadır): `/vec/treehash/three-files.tar` → `d255bfaa4f3afb55f037a81d40ba8e44896babc20fbd5883ca291f003cd25037`.
 **setup/stage.json**: `{stage, pass_row_sha256, toy_state_head, copy_state_head, import_line_sha256}`; `stage-open` yazar,
-operatör iter (`asama-0/10a`). **setup/honesty-key.json**: taahhüdün açılan hâli; ekim biçiminde ekim kimlikleri, tespit
+operatör iter (`asama-0/10a`). **setup/security-ledger.jsonl**: tohum güvenlik defterinin (`30e`; tohumda `seed/security-ledger.jsonl`) hakem reposundaki kopyası, baytı baytına; tohum dönemi teslim eder (`25` 3, 10b), aktarım `setup/`'ı `main`'den korur (`25a` 1), genesis onu işin checkout'unda okur ve hash'ler (`29o`, `29s`). **setup/honesty-key.json**: taahhüdün açılan hâli; ekim biçiminde ekim kimlikleri, tespit
 yüklemleri, kardeş girdi; kaydedilmiş plan biçiminde planın kendisi (`snowball-honesty-plan/1`); `sha256(canonical(…))`'ı
 `honesty_commitment`'la tutmalıdır; çıkışta operatör ekler. **setup/honesty-result.json** (`snowball-honesty-result/1`):
 kaydedilmiş plan biçiminde değerlendiricinin çıktısı; çıkışta operatör ekler (insan dokunuşu).
