@@ -827,7 +827,9 @@ class D8(StateBase):
             "an instance key more": instances(lambda items: items[0].update(file="x")),
             "an id that is not 32 hex": instances(lambda items: items[0].update(id="rd-test")),
             "an id in upper case": instances(lambda items: items[0].update(id=items[0]["id"].upper())),
-            "a cause outside 26f's three": instances(lambda items: items[0].update(cause="unknown")),
+            # a fourth instance, so the three causes stay balanced and only the cause rule refuses it
+            "a cause outside 26f's three": instances(lambda items: items.append(dict(items[0], id="e0" * 16,
+                                                                                    cause="unknown"))),
             "an empty patch": instances(lambda items: items[0].update(patch="")),
             "a repeated id": instances(lambda items: items[1].update(id=items[0]["id"])),
             "a cause given twice": instances(lambda items: items.append(dict(items[0], id="e0" * 16))),
