@@ -150,7 +150,7 @@ def commands(tree: str, path: str) -> dict:
         try:
             out[name + "_cmd"], extra = nx(tree, path)
         except X.NotComposed as exc:
-            out["sources"][name] = "none:%s" % exc
+            out["sources"][name] = "none:" + exc.reasons[0]
             continue
         out["sources"][name] = "nx_target"
         out["inputs"] += extra

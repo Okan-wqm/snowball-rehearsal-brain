@@ -59,7 +59,7 @@ class Tokens(unittest.TestCase):
                                        ("src/{projectRoot}", ".", "token:projectRoot")]:
             with self.assertRaises(X.NotComposed) as cm:
                 X.nx_interpolate(template, root, "n")
-            self.assertEqual(str(cm.exception), reason)
+            self.assertEqual(cm.exception.reasons, [reason])
 
     def test_resolve_tokens_as_nx_options(self):
         self.assertEqual(X.resolve_tokens("{workspaceRoot}/a/{projectRoot}/{projectRoot}", "p", None), "a/p/p")
@@ -70,7 +70,7 @@ class Tokens(unittest.TestCase):
                                     ("{projectName}", "", "token:projectName")]:
             with self.assertRaises(X.NotComposed) as cm:
                 X.resolve_tokens(value, "p", name)
-            self.assertEqual(str(cm.exception), reason)
+            self.assertEqual(cm.exception.reasons, [reason])
 
 
 class Base(unittest.TestCase):
@@ -97,7 +97,7 @@ class Base(unittest.TestCase):
     def refused(self, fn, reason: str, path: str = "libs/a") -> None:
         with self.assertRaises(X.NotComposed) as cm:
             fn(self.tree, path)
-        self.assertEqual(str(cm.exception), reason)
+        self.assertEqual(cm.exception.reasons, [reason])
 
 
 class Target(Base):

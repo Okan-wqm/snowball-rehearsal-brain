@@ -72,7 +72,11 @@ REPLACEMENT = re.compile(r"{([\s\S]+?)}")
 
 
 class NotComposed(Exception):
-    """The target is outside the rules above; ``str(exc)`` is the reason."""
+    """The target is outside the rules above; ``reasons`` is ``[<the reason code>]`` (``cli.KEPT_ATTRIBUTES``)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reasons = [reason]
 
 
 def resolve_tokens(value: str, root: str, name: Any) -> str:
