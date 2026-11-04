@@ -369,7 +369,7 @@ class Rehearsal(unittest.TestCase):
         """``docs/exit-b.md`` holds this case's section as these records give it (a stale document is red)."""
         with open(EB.DOC, encoding="utf-8") as fh:
             doc = fh.read()
-        self.assertIn(case_section(name, records), doc,
+        self.assertTrue(case_section(name, records) in doc,
                       "docs/exit-b.md is stale for %s: regenerate it with 'python tests/test_rehearsal.py --doc' "
                       "from referee/" % name)
 

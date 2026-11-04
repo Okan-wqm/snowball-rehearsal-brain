@@ -56,7 +56,7 @@ class Page(unittest.TestCase):
     def test_the_register_in_the_document_is_current(self):
         with open(EB.DOC, encoding="utf-8") as fh:
             doc = fh.read()
-        self.assertIn(EB.render_register(PAGE), doc,
+        self.assertTrue(EB.render_register(PAGE) in doc,
                       "docs/exit-b.md is stale: regenerate it with 'python tests/test_rehearsal.py --doc' from referee/")
 
 
