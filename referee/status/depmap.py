@@ -51,7 +51,12 @@ the session that reads the target, not by a test).
   directory named by several manifests is one project with every kind. A directory a Python file puts on
   ``sys.path`` (``profile.pypath``: only what it resolves, present in the checkout, not the root) that no project
   of those manifests holds is a project of kind ``path``, named by its directory; this is decided against the
-  manifests' projects only, so two nested inserted directories are both projects;
+  manifests' projects only, so two nested inserted directories are both projects. Then a directory an absolute
+  import of a ``.py`` file reaches through a directory the same file inserts (``sys_path_target``: a package or a
+  namespace package, not a module file) that no project holds is a project of kind ``path`` too, named by its
+  directory: only the root's can be, as every other inserted directory present is a box or inside a project by
+  then, so this is the top-level package ``t`` of ``import t`` after ``sys.path.insert(0, <the root>)``; a
+  module file ``t.py`` at the root reached so makes no box;
 - a file belongs to the project with the deepest directory holding it;
 - an arrow A -> B, labelled with how it was found: ``npm`` (a key of ``dependencies``, ``devDependencies``,
   ``peerDependencies`` or ``optionalDependencies`` of A's ``package.json`` is B's npm name), ``cargo`` (a dependency
@@ -64,14 +69,17 @@ the session that reads the target, not by a test).
   ``python`` (a ``.py`` file of A, read by ``import_statements``, imports by an absolute name whose first part is
   a top-level package of B: a directory ``B/<name>/`` or ``B/src/<name>/`` holding ``__init__.py``; the first
   project in path order wins a name two projects hold; a relative import is counted, never drawn), ``sys.path``
-  (a ``.py`` file of A imports by an absolute name whose first part ``t`` is ``D/t.py`` or a directory ``D/t`` for
-  a directory ``D`` the same file puts on ``sys.path``, the first such ``D`` in source order, and B holds that
-  path; tried before the ``python`` rule, so that import draws no ``python`` arrow);
+  (a ``.py`` file of A imports by an absolute name whose first part ``t`` reaches, by ``sys_path_target``, a
+  package ``D/t/``, a module ``D/t.py`` or a directory ``D/t`` for a directory ``D`` the same file puts on
+  ``sys.path``, and B holds that path; tried before the ``python`` rule, so that import draws no ``python``
+  arrow);
 - an import specifier is one ``jsimports.specifiers`` reads (as written: a commented-out import counts, an
   import whose specifier is not a string literal does not);
 - not read, stated: a ``sys.path`` insertion reaching other files (a ``conftest.py``'s reaching its tests, a
   module's reaching its importers), the directory of a script run directly (Python's ``sys.path[0]``), ``PYTHONPATH``
-  and pytest's ``pythonpath``, Python's order between an inserted directory and the others; nested npm workspaces (a ``package.json`` workspace below the root), Rust ``use`` lines (the
+  and pytest's ``pythonpath``, Python's order between an inserted directory and the others (the inserted ones are
+  taken in source order, ``insert`` and ``append`` alike), a module of another kind (``.pyc``, an extension
+  module); nested npm workspaces (a ``package.json`` workspace below the root), Rust ``use`` lines (the
   manifest is Cargo's own list), a Cargo target file outside its package's directory (``[[test]] path =
   "../x.rs"``: the file belongs to the project holding it), a Python package that is a single module file, Go's and every other
   language's imports (counted by extension in ``coverage.unread_code_files``), whether a resolved path exists,
@@ -479,6 +487,21 @@ def cargo_dep_paths(d: str, manifest: dict, top_dir: str, top: dict) -> list[str
     return sorted(found)
 
 
+def sys_path_target(top: str, inserted: list[str], file_set: set[str], dir_set: set[str]) -> str | None:
+    """What an absolute import whose first name is ``top`` reaches through ``inserted`` (directories in their
+    source order), as Python's path finder takes it: in the first directory ``D`` holding a package ``D/top/``
+    with ``__init__.py`` or a module ``D/top.py``, that package (before the module in the same ``D``) or module;
+    else the first ``D/top`` that is a directory (a namespace package); else None. The module is the path
+    ``D/top.py``, the packages the directory."""
+    for d in inserted:
+        path = posixpath.join(d, top)
+        if path + "/__init__.py" in file_set:
+            return path
+        if path + ".py" in file_set:
+            return path + ".py"
+    return next((posixpath.join(d, top) for d in inserted if posixpath.join(d, top) in dir_set), None)
+
+
 def unread_manifests(files: list[str], npm_dirs: set[str]) -> dict[str, dict[str, Any]]:
     """Per pattern of ``MANIFESTS_NOT_READ`` that a file's name matches (the first pattern in the list), and under
     ``package.json`` every one outside the root whose directory is not an npm workspace project (its dependencies
@@ -616,6 +639,13 @@ def target_map(root: str) -> dict[str, Any]:
     new_boxes = sorted({d for _s, ds in python.values() for d in ds if d and projects.owner(d) is None})
     for d in new_boxes:
         projects.add(d, "path", d)
+    # a package directory an import reaches through an inserted directory, when no project holds it (only the
+    # root's can be: every other inserted directory present is a box or inside a project by now)
+    package_boxes = sorted({through for statements, ds in python.values() for level, name, _n in statements or ()
+                            if not level and (through := sys_path_target(name.split(".")[0], ds, file_set, dir_set))
+                            in dir_set and projects.owner(through) is None})
+    for d in package_boxes:
+        projects.add(d, "path", d)
 
     edges: dict[tuple[str, str], set[str]] = {}
 
@@ -654,9 +684,7 @@ def target_map(root: str) -> dict[str, Any]:
                     counts["python_relative"] += 1
                     continue
                 top = name.split(".")[0]
-                through = next((posixpath.join(d, top) for d in inserted
-                                if posixpath.join(d, top) + ".py" in file_set or posixpath.join(d, top) in dir_set),
-                               None)
+                through = sys_path_target(top, inserted, file_set, dir_set)
                 if through is not None:
                     sys_path["imports"] += 1
                     there = projects.owner(through)
@@ -820,7 +848,8 @@ def render_target(m: dict[str, Any], source: str) -> str:
     lines = ["# The target's dependency map", "", GENERATED % ("target ROOT --source ...", source), "",
              "A box is a project (a directory named by the root's npm workspaces, an Nx `project.json`, a Cargo "
              "package's `Cargo.toml` or a `pyproject.toml`, or of kind `path`: a directory a Python file puts on "
-             "`sys.path` that no such project holds); an arrow A --> B is labelled with how it was found: "
+             "`sys.path` that no such project holds, or a package directory a Python file imports through one it puts there, "
+             "found only at the root); an arrow A --> B is labelled with how it was found: "
              "`npm` or `cargo` (A's manifest names B, for Cargo also through its workspace or a `[patch]`), "
              "`import` (a JS/TS file of A imports into B), `python` (a Python file of A imports a package of B), "
              "`sys.path` (a Python file of A imports a name found in a directory the same file puts on `sys.path`, "

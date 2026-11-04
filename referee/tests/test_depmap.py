@@ -19,7 +19,9 @@ the brain's committed drawing is the one its code gives today.
 - ``sys.path`` (``SysPath``): a directory a Python file inserts becomes a ``path`` box when no manifest's project
   holds it (nested ones both, a missing one none, one inside a project none), an import through it draws
   ``sys.path`` (a module file or a directory, before a ``pyproject.toml`` package), the coverage's ``sys_path`` and
-  the drawing's line;
+  the drawing's line; ``RootPackages``: a package or namespace directory an import reaches through the root's
+  insertion becomes a ``path`` box (a module file at the root, a directory a project holds: none), Python's finder
+  order in ``sys_path_target`` (package, module, then namespace);
 - the unread manifests: counted by the first ``MANIFESTS_NOT_READ`` pattern a file's name matches (case-sensitive,
   the name only, a near name not counted), a ``package.json`` outside the npm workspace projects (an Nx project's,
   an unparsed workspace's) counted and the root's not, ``SKIP_DIRS`` not entered; three examples in path order and
@@ -405,6 +407,74 @@ class SysPath(unittest.TestCase):
                       "5 imports resolved through them.", text)
         self.assertIn("| aria | aria | python | tools/poc (sys.path) |", text)
         self.assertIn("| tools/poc | tools/poc | path | aria (sys.path) |", text)
+
+
+class RootPackages(unittest.TestCase):
+    """A directory an import reaches through an inserted directory (``sys_path_target``, Python's finder order:
+    package, then module, in the first directory holding one; else the first namespace directory) is a ``path``
+    box when no project holds it, which only the root's insertion can give: the top-level packages."""
+
+    HEAD = "import sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path(__file__).resolve().parents[1]))\n"
+
+    def checkout(self) -> str:
+        root = tempfile.mkdtemp()
+        write(root, {
+            "app/pyproject.toml": "[project]\nname = \"app\"\n",
+            "app/main.py": self.HEAD + "import tools.shared.x\nimport ns.a\nimport mod\nimport pkg\nimport both\n"
+                                       "import lib\nimport app_k\nimport json\n",
+            "app/app_k/__init__.py": "",
+            "lib/pyproject.toml": "[project]\nname = \"lib\"\n",
+            "lib/lib/__init__.py": "",
+            "tools/__init__.py": "",
+            "tools/shared/x.py": "import tools.shared\n",
+            "tools/run.sh": "echo\n",
+            "tools/poc/p.py": "",
+            "ns/a.py": "",                  # a namespace package: a directory without __init__.py
+            "mod.py": "",                   # a module file at the root: no box
+            "pkg.py": "", "pkg/b.py": "",   # a module beats a namespace directory of the same name
+            "both.py": "", "both/__init__.py": "",  # a package beats a module of the same name
+            "other/o.py": "import sys\nsys.path.insert(0, '/abs')\nimport other\n",
+            "scripts/s.py": "import sys\nfrom pathlib import Path\n"
+                            "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'poc'))\n",
+        })
+        return root
+
+    def test_boxes_and_arrows(self):
+        m = D.target_map(self.checkout())
+        self.assertEqual([(p["dir"], p["kinds"]) for p in m["projects"]], [
+            ("app", ["python"]), ("both", ["path"]), ("lib", ["python"]), ("ns", ["path"]), ("tools", ["path"]),
+            ("tools/poc", ["path"]),  # s.py's insertion; the nested box stays its own
+        ])
+        self.assertEqual([(e["from"], e["to"], e["kinds"]) for e in m["edges"]], [
+            ("app", "both", ["sys.path"]), ("app", "lib", ["sys.path"]), ("app", "ns", ["sys.path"]),
+            ("app", "tools", ["sys.path"]),
+        ])
+
+    def test_files_join_the_box_and_the_rest_is_counted(self):
+        cov = D.target_map(self.checkout())["coverage"]
+        # tools/shared/x.py and tools/poc/p.py are in boxes; mod.py, pkg.py, pkg/b.py, both.py (both/ is the box,
+        # not the module beside it), other/o.py and scripts/s.py are not
+        self.assertEqual(cov["python_files_outside_projects"], 6)
+        self.assertEqual(cov["sys_path"]["imports"], 6)  # tools, ns, mod, pkg, both, lib; not app_k, json, sys, pathlib
+        sp = cov["specifiers"]
+        # across: tools, ns, both, lib; outside: mod and pkg (module files at the root); inside: app_k, app's own
+        # pyproject package (tools/shared/x.py's tools.shared, with no insertion, is no project's package)
+        self.assertEqual((sp["cross_project"], sp["outside_projects"], sp["same_project"]), (4, 2, 1))
+
+    def test_render(self):
+        text = D.render_target(D.target_map(self.checkout()), "x")
+        self.assertIn("Projects 6 (npm 0, nx 0, cargo 0, python 2, path 4), arrows 4.", text)
+        self.assertIn("| app | app | python | both (sys.path), lib (sys.path), ns (sys.path), tools (sys.path) |", text)
+
+    def test_finder_order(self):
+        files = {"a/t/__init__.py", "a/t.py", "b/t.py", "c/t/x.py", "d/u.py"}
+        dirs = {"a", "a/t", "b", "c", "c/t", "d"}
+        self.assertEqual(D.sys_path_target("t", ["a", "b"], files, dirs), "a/t")      # package before module
+        self.assertEqual(D.sys_path_target("t", ["b", "a"], files, dirs), "b/t.py")   # the first directory
+        self.assertEqual(D.sys_path_target("t", ["c", "b"], files, dirs), "b/t.py")   # namespace last
+        self.assertEqual(D.sys_path_target("t", ["d", "c"], files, dirs), "c/t")
+        self.assertIsNone(D.sys_path_target("t", ["d"], files, dirs))
+        self.assertEqual(D.sys_path_target("u", ["", "d"], {"u/__init__.py", "d/u.py"}, {"", "u", "d"}), "u")
 
 
 class UnreadManifests(unittest.TestCase):
