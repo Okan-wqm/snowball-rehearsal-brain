@@ -75,9 +75,10 @@ the command composed here fails in the run, ESLint 9 refusing a pattern whose fi
 targets cache.
 
 Not reproduced (a run shows any difference): Nx's ``.env`` files loaded into a task's environment, a target a plugin
-infers other than the ``lint`` above, a project declared only in ``package.json``'s ``nx`` field, ``nx:run-commands`` and other executors, the eslintrc
-configuration, files a configuration imports (a root ``jest.preset.js``, a config's own imports), whether the
-programs exist in the installed packages (``unit_verify.check_recipe`` judges the ``.bin`` paths against the lock).
+infers other than the ``lint`` above, a project declared only in ``package.json``'s ``nx`` field, ``nx:run-commands``
+and other executors, the eslintrc configuration, a file a configuration names in a value (a jest ``preset`` such as
+a root ``jest.preset.js``; a configuration's imports and a tsconfig's ``extends`` are ``profile.fit.reached``'s),
+whether the programs exist in the installed packages (``unit_verify.check_recipe`` judges the ``.bin`` paths against the lock).
 """
 
 from __future__ import annotations
