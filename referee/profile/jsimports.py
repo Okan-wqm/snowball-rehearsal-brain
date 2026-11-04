@@ -11,6 +11,9 @@ JS/TS file, a tsconfig's ``extends``, the root tsconfig's path aliases and the p
   (so an apostrophe in JSX text blanks the rest of its line only); a template ends at its closing backtick, its
   ``${...}`` included (an import inside one is not read); a ``/`` starts a regular expression after nothing, after
   one of ``REGEX_AFTER`` or after a word of ``REGEX_WORDS``, else it is division.
+- ``TSCONFIG``: a TypeScript configuration file's name, matched whole against a base name: ``tsconfig.json`` or
+  ``tsconfig.<anything>.json`` (``tsconfig.lib.json``, ``tsconfig.base.json``); the one rule ``profile.fit`` and
+  ``status.depmap`` read a tsconfig by.
 - ``extends``: a tsconfig's ``extends``, a string or a list of strings (TypeScript 5), read as ``jsonc_loads``
   reads tsconfig's dialect; ``[]`` when the text does not parse or holds none.
 - ``jest_preset``: a jest configuration's (``JEST_CONFIG``) ``preset``, the first ``preset: '<value>'`` of its code
@@ -37,6 +40,7 @@ from typing import Any
 SKIP_DIRS = {".git", "node_modules", "dist", "coverage", ".nx", ".next", ".turbo", ".cache", "target"}
 SOURCE_EXTENSIONS = {".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}
 ALIAS_FILES = ("tsconfig.base.json", "tsconfig.json")
+TSCONFIG = re.compile(r"tsconfig(\.[^/]*)?\.json")
 FILL = "x"
 JEST_CONFIG = re.compile(r"jest\.config\.(?:js|ts|mjs|cjs|mts|cts)")
 PRESET = re.compile(r"""(?<![\w$.])['"]?preset['"]?\s*:\s*(['"])([^'"\n]+)\1""")

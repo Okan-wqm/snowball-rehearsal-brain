@@ -102,7 +102,6 @@ TEST_CMD = ("run", "--silent", "test")
 UNSAFE_ID = re.compile(r"[^A-Za-z0-9._-]")
 EXTENSIONS = (".ts", ".tsx", ".d.ts", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json")
 PROJECT_MARKERS = ("package.json", "project.json")
-TSCONFIG = re.compile(r"tsconfig(\.[^/]*)?\.json")
 
 
 def unit_id(path: str) -> str:
@@ -175,7 +174,7 @@ def _references(tree: str, entry: str) -> list[tuple[str, str]]:
         names = [entry]
     out = []
     for name in names:
-        is_tsconfig = TSCONFIG.fullmatch(posixpath.basename(name)) is not None
+        is_tsconfig = J.TSCONFIG.fullmatch(posixpath.basename(name)) is not None
         if not is_tsconfig and posixpath.splitext(name)[1] not in J.SOURCE_EXTENSIONS:
             continue
         data = D._read_regular(tree, name)

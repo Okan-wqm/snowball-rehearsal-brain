@@ -48,7 +48,13 @@ the session that reads the target, not by a test).
   ``[package].name``, else the directory's last segment; a manifest with only ``[workspace]`` is no project);
   every ``pyproject.toml`` below the root (its
   ``[project].name``, else the directory's last segment). The root directory itself is never a project. A
-  directory named by several manifests is one project with every kind. A directory a Python file puts on
+  directory named by several manifests is one project with every kind. A directory below the root holding a
+  TypeScript configuration (a file named by ``jsimports.TSCONFIG``: ``tsconfig.json``, ``tsconfig.lib.json``, ...;
+  ``tsc -p`` builds the files it includes as one program) that no project of those manifests holds is a project
+  of kind ``tsconfig``, named by its directory: a library a root tsconfig alias reaches, or a test suite, with no
+  ``package.json`` or ``project.json``; decided against the manifests' projects only, so nested ones are both
+  projects and one inside a manifest's project is none (whether its ``include`` covers the files is not read: the
+  deepest project owns a file, as for every kind). A directory a Python file puts on
   ``sys.path`` (``profile.pypath``: only what it resolves, present in the checkout, not the root) that no project
   of those manifests holds is a project of kind ``path``, named by its directory; this is decided against the
   manifests' projects only, so two nested inserted directories are both projects. Then a directory an absolute
@@ -161,7 +167,7 @@ MANIFESTS_NOT_READ = (
     "build.zig", "dune-project", "Project.toml",                            # Zig, OCaml, Julia
 )
 UNREAD_EXAMPLES = 3
-PROJECT_KINDS = ("npm", "nx", "cargo", "python", "path")
+PROJECT_KINDS = ("npm", "nx", "cargo", "python", "tsconfig", "path")
 
 
 # ---------------------------------------------------------------------------------------------------- the brain
@@ -620,6 +626,11 @@ def target_map(root: str) -> dict[str, Any]:
         if holder in projects.by_dir and "python" in projects.by_dir[holder]["kinds"]:
             py_packages.setdefault(parts[-2], holder)
 
+    # TypeScript configurations no manifest's project holds, decided now (against the manifests' projects only),
+    # boxed after the Python boxes, which are decided against the manifests' projects only too
+    ts_boxes = sorted({posixpath.dirname(rel) for rel in files if posixpath.dirname(rel)
+                       and J.TSCONFIG.fullmatch(posixpath.basename(rel)) and projects.owner(rel) is None})
+
     # Python files: read once; the directories each puts on sys.path (profile.pypath) become boxes when no
     # manifest's project holds them, decided against the manifest projects only (so the order does not matter)
     dir_set = set(dirs)
@@ -655,6 +666,8 @@ def target_map(root: str) -> dict[str, Any]:
                             in dir_set and projects.owner(through) is None})
     for d in package_boxes:
         projects.add(d, "path", d)
+    for d in ts_boxes:
+        projects.add(d, "tsconfig", d)
 
     edges: dict[tuple[str, str], set[str]] = {}
 
@@ -856,7 +869,8 @@ def render_target(m: dict[str, Any], source: str) -> str:
         groups.setdefault(p["dir"].split("/")[0], []).append(p)
     lines = ["# The target's dependency map", "", GENERATED % ("target ROOT --source ...", source), "",
              "A box is a project (a directory named by the root's npm workspaces, an Nx `project.json`, a Cargo "
-             "package's `Cargo.toml` or a `pyproject.toml`, or of kind `path`: a directory a Python file puts on "
+             "package's `Cargo.toml` or a `pyproject.toml`; of kind `tsconfig`: a directory holding a TypeScript "
+             "configuration that no such project holds; or of kind `path`: a directory a Python file puts on "
              "`sys.path` that no such project holds, or a package directory a Python file imports through one it puts there, "
              "found only at the root); an arrow A --> B is labelled with how it was found: "
              "`npm` or `cargo` (A's manifest names B, for Cargo also through its workspace or a `[patch]`), "
@@ -864,13 +878,14 @@ def render_target(m: dict[str, Any], source: str) -> str:
              "`sys.path` (a Python file of A imports a name found in a directory the same file puts on `sys.path`, "
              "and B holds it). Rules and what is not read: `referee/status/depmap.py` and "
              "`referee/profile/pypath.py`.", "",
-             "Projects %d (npm %d, nx %d, cargo %d, python %d, path %d), arrows %d. Files %d; JS/TS files read %d (%d outside "
+             "Projects %d (npm %d, nx %d, cargo %d, python %d, tsconfig %d, path %d), arrows %d. Files %d; JS/TS files read %d (%d outside "
              "any project), Python files read %d (%d outside any project, %d not parsed). Imports: %d across "
              "projects, %d inside one, %d "
              "of external JS packages, %d of Python modules no project holds, %d relative Python (not drawn), %d "
              "from or into no project, %d leaving the root." % (
                  cov["projects"], cov["projects_by_kind"]["npm"], cov["projects_by_kind"]["nx"],
-                 cov["projects_by_kind"]["cargo"], cov["projects_by_kind"]["python"], cov["projects_by_kind"]["path"],
+                 cov["projects_by_kind"]["cargo"], cov["projects_by_kind"]["python"], cov["projects_by_kind"]["tsconfig"],
+                 cov["projects_by_kind"]["path"],
                  len(m["edges"]), cov["files"],
                  cov["source_files"], cov["source_files_outside_projects"], cov["python_files"],
                  cov["python_files_outside_projects"], cov["python_files_unparsed"], sp["cross_project"],
