@@ -1,17 +1,24 @@
 """Run kept mutants: each in its own copy of the brain, each against the tests named for it.
 
 A mutant is data (``tests/mutants/<topic>.json``): ``{"mutants": [{"id", "file", "old", "new", "tests"}]}``,
-``file`` relative to ``referee/``, ``tests`` a list of ``referee/tests`` file patterns. For each mutant:
+``file`` relative to ``referee/``, ``tests`` a list whose entries are each either a ``referee/tests`` file pattern
+(an entry ending in ``.py``) or a unittest id (``<module>.<Class>`` or ``<module>.<Class>.<method>``, dotted
+identifiers, ``<module>`` the file ``referee/tests/<module>.py``); any other entry is malformed. For each mutant:
 
 - ``old`` must occur in ``file`` exactly once in the brain as it is: ``stale`` (zero; a refactor removed the code
   the mutant was written for) or ``ambiguous`` (more), and nothing is run;
 - the brain is copied (``.git`` included: some tests read the brain's commits), ``old`` is replaced by ``new`` in
-  the copy, and ``python -m unittest discover -s tests -p <pattern>`` runs in the copy's ``referee/`` for each
-  pattern in order: ``killed`` when one exits non-zero, ``survived`` when all exit 0, ``timeout`` when one runs
+  the copy, and each entry runs in order in the copy's ``referee/``: a pattern as
+  ``python -m unittest discover -s tests -p <pattern>``, an id as unittest's ``main`` over that one name with
+  ``referee/tests`` first on ``sys.path`` (what discover puts there), so an id runs in the same directory and
+  imports the same modules as its file's discover run, only fewer tests. ``killed`` when one exits non-zero (a
+  run of no test is non-zero: Python 3.12's exit 5), ``survived`` when all exit 0, ``timeout`` when one runs
   longer than the limit (reported, neither killed nor survived);
 - each distinct ``tests`` list is first run once on an unchanged copy: if it is not green there, its mutants are
   ``baseline_red`` and not run (a red test kills every mutant and proves nothing).
 
+Each row ``{file, id, outcome}`` is printed and flushed as its mutant finishes, so the rows come in the order
+the mutants finish, and a run that is cut keeps the rows it printed (the baselines run first and print nothing).
 Exit 0 only when every mutant is ``killed`` (no mutant run is exit 1: nothing was shown). The brain itself is
 only read.
 
@@ -22,7 +29,8 @@ mutant is selected when a changed path is
 
 - the mutant's own file under ``tests/mutants/`` (a new or edited mutant), or
 - a ``.py`` file in the import closure of its ``file`` or of a ``.py`` file under ``referee/tests`` whose name one
-  of its ``tests`` patterns matches (``fnmatch``; discover runs these or fewer), its ``file`` included. The closure
+  of its ``tests`` entries names (a pattern by ``fnmatch``, discover runs these or fewer; an id by its
+  ``<module>``), its ``file`` included. The closure
   is ``status.depmap``'s reading of import statements (one reader of imports) and every package holding a module
   reached (Python runs it first), over the working tree's modules as the test run sees them: ``referee/tests``'s
   files by their names inside ``tests``, then ``referee/``'s outside it; a changed ``.py`` path the working tree no
@@ -45,10 +53,12 @@ import concurrent.futures
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from fnmatch import fnmatch
 from typing import Any, Callable
 
@@ -57,6 +67,19 @@ sys.path.insert(0, os.path.join(BRAIN, "referee"))
 
 from status import depmap  # noqa: E402
 FIELDS = ("id", "file", "old", "new", "tests")
+TEST_ID = re.compile(r"[A-Za-z_]\w*(\.[A-Za-z_]\w*){1,2}", re.ASCII)
+# One name run as discover would: referee/tests first on sys.path, the cwd (referee/) after it.
+RUN_ID = ("import os, sys, unittest; sys.path.insert(0, os.path.abspath('tests')); "
+          "unittest.main(module=None, argv=['unittest', sys.argv[1]])")
+
+
+def test_file(entry: str) -> str:
+    """The ``referee/tests`` file pattern of a ``tests`` entry: a pattern itself, an id its ``<module>.py``."""
+    return entry if entry.endswith(".py") else entry.split(".", 1)[0] + ".py"
+
+
+def _entry(entry: Any) -> bool:
+    return isinstance(entry, str) and (entry.endswith(".py") or bool(TEST_ID.fullmatch(entry)))
 
 
 def load(path: str) -> list[dict[str, Any]]:
@@ -70,7 +93,7 @@ def load(path: str) -> list[dict[str, Any]]:
         if not (isinstance(m, dict) and sorted(m) == sorted(FIELDS)
                 and all(isinstance(m[k], str) and m[k] for k in ("id", "file", "old"))
                 and isinstance(m["new"], str) and m["new"] != m["old"]
-                and isinstance(m["tests"], list) and m["tests"] and all(isinstance(t, str) and t for t in m["tests"])):
+                and isinstance(m["tests"], list) and m["tests"] and all(_entry(t) for t in m["tests"])):
             raise ValueError("%s: malformed mutant %r" % (path, m.get("id") if isinstance(m, dict) else m))
     ids = [m["id"] for m in mutants]
     if len(set(ids)) != len(ids):
@@ -97,10 +120,12 @@ def _copy(brain: str) -> str:
 
 
 def _run_tests(copy: str, tests: list[str], timeout: float) -> str:
-    """``green``, ``red`` or ``timeout`` for the patterns run in order in the copy's ``referee/``."""
-    for pattern in tests:
+    """``green``, ``red`` or ``timeout`` for the entries run in order in the copy's ``referee/``."""
+    for entry in tests:
+        argv = ([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", entry] if entry.endswith(".py")
+                else [sys.executable, "-c", RUN_ID, entry])
         try:
-            done = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", pattern],
+            done = subprocess.run(argv,
                                   cwd=os.path.join(copy, "referee"), stdout=subprocess.DEVNULL,
                                   stderr=subprocess.DEVNULL, timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -188,16 +213,16 @@ def select(brain: str, items: list[tuple[str, dict[str, Any]]], changed: set[str
     def concerned(path: str, m: dict[str, Any]) -> bool:
         if os.path.relpath(path, brain) in changed:
             return True
-        roots = ["referee/" + m["file"]] + [t for t in tests if any(fnmatch(os.path.basename(t), pat)
-                                                                    for pat in m["tests"])]
+        roots = ["referee/" + m["file"]] + [t for t in tests if any(fnmatch(os.path.basename(t), test_file(e))
+                                                                    for e in m["tests"])]
         return bool(closure(roots) & changed)
     return [(path, m) for path, m in items if concerned(path, m)]
 
 
-def run(brain: str, files: list[str], jobs: int, timeout: float,
-        changed: set[str] | None = None) -> list[dict[str, str]]:
+def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[str] | None = None,
+        emit: Callable[[dict[str, str]], None] | None = None) -> list[dict[str, str]]:
     """One row per mutant, in file and mutant order: ``{file, id, outcome}``; with ``changed``, only the mutants
-    ``select`` keeps."""
+    ``select`` keeps; ``emit`` is called with each row as its mutant finishes (one thread at a time)."""
     mutants = [(path, m) for path in files for m in load(path)]
     if changed is not None:
         mutants = select(brain, mutants, changed)
@@ -205,18 +230,19 @@ def run(brain: str, files: list[str], jobs: int, timeout: float,
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
         base = dict(zip(suites, pool.map(lambda t: baseline(brain, list(t), timeout), suites)))
 
-        def one(item: tuple[str, dict[str, Any]]) -> str:
-            _, m = item
-            reason = applicable(brain, m)
-            if reason:
-                return reason
-            if base[tuple(m["tests"])] != "green":
-                return "baseline_red"
-            return run_one(brain, m, timeout)
+        lock = threading.Lock()
 
-        outcomes = list(pool.map(one, mutants))
-    return [{"file": os.path.relpath(path, brain), "id": m["id"], "outcome": outcome}
-            for (path, m), outcome in zip(mutants, outcomes)]
+        def one(item: tuple[str, dict[str, Any]]) -> dict[str, str]:
+            path, m = item
+            outcome = applicable(brain, m) or ("baseline_red" if base[tuple(m["tests"])] != "green"
+                                               else run_one(brain, m, timeout))
+            row = {"file": os.path.relpath(path, brain), "id": m["id"], "outcome": outcome}
+            if emit:
+                with lock:
+                    emit(row)
+            return row
+
+        return list(pool.map(one, mutants))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -224,18 +250,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("files", nargs="*", help="mutant files (default: every referee/tests/mutants/*.json)")
     parser.add_argument("--brain", default=BRAIN)
     parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
-    parser.add_argument("--timeout", type=float, default=900.0, help="seconds per test pattern")
+    parser.add_argument("--timeout", type=float, default=900.0, help="seconds per tests entry")
     parser.add_argument("--touched", metavar="REV", help="only the mutants a change since REV can concern")
     args = parser.parse_args(argv)
     brain = os.path.abspath(args.brain)
     files = args.files or sorted(glob.glob(os.path.join(brain, "referee", "tests", "mutants", "*.json")))
     changed = touched(brain, args.touched) if args.touched else None
-    rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed)
+    rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,
+               lambda row: print(json.dumps(row, sort_keys=True), flush=True))
     if changed is not None:
         print("--touched %s: %d changed paths, %d mutants selected" % (args.touched, len(changed), len(rows)),
               file=sys.stderr)
-    for row in rows:
-        print(json.dumps(row, sort_keys=True))
     return 0 if rows and all(r["outcome"] == "killed" for r in rows) else 1
 
 
