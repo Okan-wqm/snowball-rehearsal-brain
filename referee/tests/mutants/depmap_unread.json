@@ -116,6 +116,42 @@
    "tests": [
     "test_depmap.py"
    ]
+  },
+  {
+   "id": "uc_no_terraform",
+   "file": "status/depmap.py",
+   "old": "                         \".tf\", \".hcl\",\n",
+   "new": "                         \".hcl\",\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "uc_no_sql",
+   "file": "status/depmap.py",
+   "old": "                         \".sql\", \".graphql\", \".gql\", \".proto\"}",
+   "new": "                         \".graphql\", \".gql\", \".proto\"}",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "uc_markup_counted",
+   "file": "status/depmap.py",
+   "old": "                         \".sql\", \".graphql\", \".gql\", \".proto\"}",
+   "new": "                         \".sql\", \".graphql\", \".gql\", \".proto\", \".md\", \".css\", \".yaml\"}",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "uc_any_extension",
+   "file": "status/depmap.py",
+   "old": "            if ext in OTHER_CODE_EXTENSIONS:\n",
+   "new": "            if ext:\n",
+   "tests": [
+    "test_depmap.py"
+   ]
   }
  ]
 }

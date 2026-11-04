@@ -8,7 +8,7 @@ Projects 74 (npm 24, nx 59, cargo 17, python 1, path 3), arrows 230. Files 15201
 
 `sys.path` insertions in Python files: 231 calls; 244 directories resolved (0 not in the checkout), 0 leaving the root, 5 calls or values not resolved (4 files: aria-kernel/aria_kernel/_validation_unittest_child.py, aria-kernel/tests/test_daily_report_anchor_invariant.py, aria-kernel/tests/test_judgment_funnel.py, ...); 1217 imports resolved through them.
 
-Code files of languages whose imports are not read: .h 1 (0 in no project), .rs 447 (0 in no project), .sh 81 (21 in no project).
+Code files whose references are not read (`OTHER_CODE_EXTENSIONS`: other languages, shell, Terraform, SQL, GraphQL, protobuf): .graphql 2 (0 in no project), .h 1 (0 in no project), .hcl 1 (1 in no project), .ps1 1 (0 in no project), .rs 447 (0 in no project), .sh 81 (21 in no project), .sql 52 (28 in no project), .tf 56 (55 in no project).
 
 Dependency manifests found and not read (`MANIFESTS_NOT_READ`; `package.json` outside the npm workspaces): package.json 7 (e2e/package.json, infrastructure/simulators/nodered/data/package.json, scripts/nats/package.json, ...).
 

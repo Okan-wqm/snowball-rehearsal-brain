@@ -82,7 +82,8 @@ the session that reads the target, not by a test).
   module); nested npm workspaces (a ``package.json`` workspace below the root), Rust ``use`` lines (the
   manifest is Cargo's own list), a Cargo target file outside its package's directory (``[[test]] path =
   "../x.rs"``: the file belongs to the project holding it), a Python package that is a single module file, Go's and every other
-  language's imports (counted by extension in ``coverage.unread_code_files``), whether a resolved path exists,
+  language's references (imports, Terraform module sources, SQL table names; counted by extension in
+  ``coverage.unread_code_files``), whether a resolved path exists,
   project references in ``tsconfig``;
 - ``coverage`` says how much of the checkout this map holds: files, JS/TS and Python files read, each also in no
   project, specifiers by outcome (an import in a file of no project, or into no project, is ``outside_projects``),
@@ -129,8 +130,16 @@ REGISTER = "status/off_live.json"
 OFF_LIVE_KINDS = ("session_tool", "unwired")
 WORKFLOW_MODULE = re.compile(r"\bpython3?\s+-m\s+([A-Za-z_][A-Za-z0-9_.]*)")
 
+# Code files whose references target_map does not read, by extension (the name's last suffix, case as written):
+# programming languages, shell scripts, infrastructure code (Terraform: a module calls another by path) and
+# query or schema languages (SQL, GraphQL, protobuf: a file names tables, types or messages another defines).
+# Markup, styles, data and configuration (.md, .html, .css, .json, .yaml, .toml) are not code here; neither is
+# a file named by no extension (Dockerfile, a git hook).
 OTHER_CODE_EXTENSIONS = {".rs", ".go", ".java", ".kt", ".rb", ".php", ".cs", ".c", ".cc", ".cpp", ".h",
-                         ".swift", ".scala", ".sh", ".vue", ".svelte"}
+                         ".swift", ".scala", ".vue", ".svelte",
+                         ".sh", ".bash", ".ps1",
+                         ".tf", ".hcl",
+                         ".sql", ".graphql", ".gql", ".proto"}
 NPM_DEP_FIELDS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 CARGO_DEP_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
 # Dependency manifests of ecosystems target_map does not read, each a pattern matched (fnmatchcase) against a
@@ -876,7 +885,8 @@ def render_target(m: dict[str, Any], source: str) -> str:
                      ", ..." if sp_ins["unresolved_files"]["count"] > len(sp_ins["unresolved_files"]["examples"])
                      else "") or "none",
                  sp_ins["imports"]), "",
-             "Code files of languages whose imports are not read: %s." % (
+             "Code files whose references are not read (`OTHER_CODE_EXTENSIONS`: other languages, shell, Terraform, "
+             "SQL, GraphQL, protobuf): %s." % (
                  ", ".join("%s %d (%d in no project)" % (ext, n, cov["unread_code_files_outside_projects"].get(ext, 0))
                            for ext, n in cov["unread_code_files"].items()) or "none"), "",
              "Dependency manifests found and not read (`MANIFESTS_NOT_READ`; `package.json` outside the npm "
