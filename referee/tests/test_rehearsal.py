@@ -7,9 +7,9 @@ each target's ``units.json``, the toy's candidates ``good`` and ``breaks`` with 
 ``good``) in ``git_store``'s fake ``git``, which also answers every object and ``ls-remote`` of both GitHubs as they
 are at the run's start; one fake Rekor that the root signer of ``yaz`` writes each signed root's entry into, so the
 next run's D1 reads it back; the checkout with ``policy.json``, ``bootstrap.json``, ``setup/imports.jsonl``,
-``seed/security-ledger.jsonl`` and ``DRILL_SEED`` set in ``yaz``; either no ``seed/drill/revert/`` (the seed as it
-is, tohum/26f: no live drill fixtures) or a catalog of this test's (``DRILL_PATCHES``, with the sentinel those patches
-turn red, ``test_loop_write.SENTINEL_UNITS``), in ``loop.drill``'s stated place (seed-045). The fake runner runs the
+``setup/security-ledger.jsonl`` and ``DRILL_SEED`` set in ``yaz``; either no ``DRILL_FIXTURES`` (the operator has not
+written the live drill fixtures secret, tohum/26f) or fixtures of this test's (``DRILL_PATCHES``, bound to the
+checkout's counter, with the sentinel those patches turn red, ``test_loop_write.SENTINEL_UNITS``). The fake runner runs the
 tree's Python (``test_loop_kos.RedAs``), the fake ``claude`` answers the canary.
 
 **A run** (``Flow.run``) is the workflow's order with each job on its own runner: ``cek``; its ``out/pulled`` copied
@@ -23,7 +23,7 @@ reads has moved but the cycle's own rows), or a job that is not ``ok``; no stall
 test (a drill that keeps passing never repeats a record: its phases alternate). ``Rehearsal`` asserts every run's
 record up to it, so a change that moves (B) one step, or breaks an earlier one, changes this test in the same push.
 Today (B) stalls, without the fixtures, with the gate closed on ``#geri-alma`` alone; with them, at the build-break
-drill (seed-044). Each run after the genesis also checks that D1 verified the state the run before wrote.
+drill (seed-044); with patches on the file a merged candidate changed (a set 26f's producer refuses), on every cause. Each run after the genesis also checks that D1 verified the state the run before wrote.
 
 Out of scope, stated: the real runner, git, GitHub, Rekor, Sigstore and model (the jobs' own tests and 10a's live
 run); the toy fixture of ``tests/fixtures/toy-repo`` (node; the fake runner runs Python only, so the world's tree is
@@ -73,9 +73,9 @@ TARGETS = (("t1", "toy", "o/toy"), ("c1", "copy", "o/copy"))
 MERGE = {"decision": "merge"}
 CANDIDATES = {"t1": {"good": (GOOD, MERGE), "breaks": (BREAKS_TEST, {"decision": "reject", "reason": "tests_red"})},
               "c1": {"good": (GOOD, MERGE)}}
-# The drill's patches (``test_loop_write.D8``'s, moved to line 2): each turns the sentinel red, rd-lint also adds a
+# The drill's patches (``test_loop_write.D8``'s, moved to line 2): each turns the sentinel red, RD_LINT also adds a
 # ``var`` line. They change ``const b``, a line ``good`` leaves as it was, so they apply after its merge.
-# rd-build is the catalog's build break: the same red, which stage 0's D7 can only call a test regression.
+# RD_BUILD is the set's build break: the same red, which stage 0's D7 can only call a test regression.
 DRILL_PATCHES = {RD_TEST: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED"], start=2),
                  RD_LINT: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED", "var z = 2;"], start=2),
                  RD_BUILD: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED BUILD"], start=2)}
@@ -133,7 +133,7 @@ class Flow:
 
     def __init__(self, base: str, drill: dict | None = None, seed: str = "7" * 64,
                  patches: dict[str, bytes] = DRILL_PATCHES) -> None:
-        """``drill``: the checkout's drill catalog ``{instance id: cause}`` (each instance's patch from ``patches``,
+        """``drill``: ``DRILL_FIXTURES``' instances ``{instance id: cause}`` (each instance's patch from ``patches``,
         the units' sentinel ``SENTINEL_UNITS``, which those patches turn red), or none; ``seed``: ``DRILL_SEED``."""
         self.base, self.runs, self.seed = base, 0, seed
         self.state_heads: list = []  # the toy's brain/state head after each run
@@ -332,11 +332,13 @@ def stale_patches(base: str) -> Flow:
 
 # ``docs/exit-b.md``'s cases (``status.exit_b.render_case``), in its order: name, title, the world, the open reports
 # the stop waits for (a seed epoch answering one of them closes it, and this test's expected stall then moves).
-SEED_044, SEED_045 = "seed-044-revert-facts-producers", "seed-045-drill-live-inputs-unnamed"
+SEED_044 = "seed-044-revert-facts-producers"
 CASES = (
-    ("without-fixtures", "The seed as it is: no drill fixtures", without_fixtures, [SEED_045]),
-    ("with-fixtures", "A drill catalog of the three causes", with_fixtures, [SEED_044, SEED_045]),
-    ("stale-patches", "Drill patches on a line the toy's merge changed", stale_patches, [SEED_045]),
+    ("without-fixtures", "No drill fixtures secret (the operator writes it at the activation, tohum/26f)",
+     without_fixtures, []),
+    ("with-fixtures", "Drill fixtures of the three causes", with_fixtures, [SEED_044]),
+    ("stale-patches", "Drill patches on the file the toy's merge changed (a set 26f's producer refuses)",
+     stale_patches, []),
 )
 
 
@@ -375,10 +377,9 @@ class Rehearsal(unittest.TestCase):
                       "from referee/" % name)
 
     def test_without_the_drills_fixtures_b_stalls_at_the_drill(self):
-        """The seed as it is (tohum/26f: no live drill fixtures, DRILL_SEED set): the toy's genesis merges ``good``
-        and rejects ``breaks``, the next run watches the merge green and ends it, and from then on every run is
-        the same: the gate stays closed on ``#geri-alma`` alone and the copy waits (26f:33-36: D8 cannot run live
-        and #geri-alma cannot be measured until a seed epoch brings the fixtures)."""
+        """DRILL_SEED set, no DRILL_FIXTURES (tohum/26f: the operator writes it before the activation, 25a row 7):
+        the toy's genesis merges ``good`` and rejects ``breaks``, the next run watches the merge green and ends it,
+        and from then on every run is the same: the gate stays closed on ``#geri-alma`` alone and the copy waits."""
         flow = without_fixtures(self.base)
         off = {"action": "off", "why": "fixtures_absent"}
         gate = closed(geri_alma=["drill_inputs_missing"])
@@ -395,10 +396,10 @@ class Rehearsal(unittest.TestCase):
         self.assertEqual(sorted(hub.refs), ["main"])  # the copy was never written
 
     def test_with_the_drills_fixtures_b_stalls_at_build_break(self):
-        """A catalog of the three causes 10a #geri-alma asks for, with a seed that plants rd-test, rd-lint and
-        rd-build in turn: each drill is committed, planted as the cycle's one merge, watched red and reverted by
-        D7, then revealed and judged. rd-test and rd-lint pass and leave the gate closed on ``build_break`` alone;
-        rd-build is reverted as a test regression (stage 0's ``build_ok`` is always true, ``loop.watch.facts``;
+        """Fixtures of the three causes 10a #geri-alma asks for, with a seed that plants RD_TEST, RD_LINT and
+        RD_BUILD in turn: each drill is committed, planted as the cycle's one merge, watched red and reverted by
+        D7, then revealed and judged. RD_TEST and RD_LINT pass and leave the gate closed on ``build_break`` alone;
+        RD_BUILD is reverted as a test regression (stage 0's ``build_ok`` is always true, ``loop.watch.facts``;
         seed-044), so its judgement is ``FAIL`` and ``yaz`` stops red: (B) cannot open the copy's genesis."""
         flow = with_fixtures(self.base)
         unshown = ["cause_unshown:%s" % c for c in ("test_regression", "build_break", "lint_regression")]
@@ -436,8 +437,8 @@ class Rehearsal(unittest.TestCase):
     def test_drill_patches_on_a_line_the_toys_merge_changed_never_apply(self):
         """``test_loop_write.D8``'s patches change ``var a = 1;``, the line ``good`` changes at the genesis: on
         ``brain/integration``'s head after that merge no instance applies, so no drill is ever committed and the flow
-        stalls as without fixtures, the gate closed on every cause (seed-045: the fixtures must apply to the toy
-        after its candidates' merges, not only to the tree signed in (A), 26f:35)."""
+        stalls as without fixtures, the gate closed on every cause. tohum/26f:52-55 (seed-045's answer) forbids such
+        a set: no candidate expected to merge changes a file a patch changes; the loop still answers it safely."""
         flow = stale_patches(self.base)
         none = {"action": "none", "why": "patch_does_not_apply"}
         unshown = ["cause_unshown:%s" % c for c in ("test_regression", "build_break", "lint_regression")]

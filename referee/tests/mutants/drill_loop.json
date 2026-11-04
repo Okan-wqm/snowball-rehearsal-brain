@@ -64,15 +64,6 @@
    ]
   },
   {
-   "id": "linked_patch_read",
-   "file": "loop/drill.py",
-   "old": "            if os.path.islink(path) or not os.path.isfile(path):",
-   "new": "            if not os.path.isfile(path):",
-   "tests": [
-    "test_loop_write.py"
-   ]
-  },
-  {
    "id": "no_ratchet_on_plant",
    "file": "loop/write_cycle.py",
    "old": "        if merge is not None or planted:\n            out.append(events.ratchet_base",
@@ -142,6 +133,96 @@
    "new": "    return \"gate: merge\"",
    "tests": [
     "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "fixtures_import_unbound",
+   "file": "loop/drill.py",
+   "old": "    if doc[\"import_line_sha256\"] != hashlib.sha256(line).hexdigest():",
+   "new": "    if False:",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "fixtures_absent_unusable",
+   "file": "loop/drill.py",
+   "old": "        return {\"off\": \"fixtures_absent\"}",
+   "new": "        raise Unusable(\"drill: no fixtures\")",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "fixtures_not_canonical",
+   "file": "loop/drill.py",
+   "old": "    if not canonical:",
+   "new": "    if False:",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "fixtures_id_any_text",
+   "file": "loop/drill.py",
+   "old": " and isinstance(item[\"id\"], str)\n                and HEX32.match(item[\"id\"])",
+   "new": " and isinstance(item[\"id\"], str)\n                and item[\"id\"]",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "fixtures_any_cause",
+   "file": "loop/drill.py",
+   "old": "and item[\"cause\"] in CAUSES",
+   "new": "and isinstance(item[\"cause\"], str)",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "fixtures_unbalanced",
+   "file": "loop/drill.py",
+   "old": "    if len(set(counts.values())) != 1 or not counts[CAUSES[0]]:",
+   "new": "    if not counts[CAUSES[0]]:",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "fixtures_repeated_id",
+   "file": "loop/drill.py",
+   "old": "    if len({item[\"id\"] for item in items}) != len(items):",
+   "new": "    if False:",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "fixtures_extra_key",
+   "file": "loop/drill.py",
+   "old": "    if sorted(doc) != sorted(FIXTURE_KEYS) or",
+   "new": "    if not set(FIXTURE_KEYS) <= set(doc) or",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "fixtures_message_names_id",
+   "file": "loop/drill.py",
+   "old": "            raise Unusable(\"drill: %s's instance %d is not {id: 32 hex, cause, patch}\" % (FIXTURES_ENV, n))",
+   "new": "            raise Unusable(\"drill: %s's instance %r is not {id: 32 hex, cause, patch}\" % (FIXTURES_ENV, item))",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "yaz_fixtures_secret_dropped",
+   "file": "loop/job.py",
+   "old": ",\n                DR.FIXTURES_ENV: \"${{ secrets.DRILL_FIXTURES }}\"},",
+   "new": "},",
+   "tests": [
+    "test_loop_workflow.py"
    ]
   }
  ]

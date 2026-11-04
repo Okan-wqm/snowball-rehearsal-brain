@@ -63,24 +63,6 @@
    "tests": [
     "test_pass_row.py"
    ]
-  },
-  {
-   "id": "drill_absent_is_unusable",
-   "file": "loop/drill.py",
-   "old": "        return {\"absent\": \"/\".join(CATALOG_DIR + (CATALOG,))}",
-   "new": "        raise Unusable(\"drill: no catalog\")",
-   "tests": [
-    "test_loop_write.py"
-   ]
-  },
-  {
-   "id": "drill_dangling_link_absent",
-   "file": "loop/drill.py",
-   "old": "    if not os.path.lexists(os.path.join(root, CATALOG)):",
-   "new": "    if not os.path.exists(os.path.join(root, CATALOG)):",
-   "tests": [
-    "test_loop_write.py"
-   ]
   }
  ]
 }

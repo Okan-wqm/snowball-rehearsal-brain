@@ -14,7 +14,8 @@ live drill fixtures ``DRILL_FIXTURES``. ``inputs(environ, imports)`` with ``impo
 
 1. ``DRILL_SEED`` unset or empty: ``None`` (the drill is off for the run: the operator has not given the secret);
 2. ``DRILL_FIXTURES`` unset or empty: ``{off: fixtures_absent}`` (the seed alone turns nothing on and stops nothing);
-3. the fixtures' value is one line of base64 (RFC 4648 alphabet, padded; an LF or anything else is refused) whose
+3. the fixtures' value is one line of base64 (RFC 4648 alphabet, padded; ``base64.b64decode(validate=True)``: an
+   LF, a blank or any other byte is refused) whose
    bytes are UTF-8 RFC 8785 JSON (the bytes equal ``ledger.chain.canonical`` of what they parse to) of exactly
    ``{import_line_sha256, instances}``: ``import_line_sha256`` 64 lowercase hex; ``instances`` a non-empty list of
    exactly ``{id, cause, patch}``, ``id`` 32 lowercase hex and unique, ``cause`` one of ``CAUSES``, ``patch`` a
@@ -69,7 +70,6 @@ merging every other cycle delays the plant (the candidate goes first).
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
 import re
 from typing import Any
@@ -85,9 +85,7 @@ FIXTURES_ENV = "DRILL_FIXTURES"
 CAUSES = ("test_regression", "build_break", "lint_regression")  # tohum/26f: a fixture's cause, each shown equally
 FIXTURE_KEYS = ("import_line_sha256", "instances")
 INSTANCE_KEYS = ("cause", "id", "patch")
-BASE64 = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
 HEX32 = re.compile(r"[0-9a-f]{32}\Z")
-HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 CYCLE_ID = re.compile(r"([0-9]+)-[0-9]+\Z")
 
 
@@ -117,18 +115,19 @@ def inputs(environ: dict[str, str], imports: bytes) -> dict | None:
 
 def fixtures(value: str) -> dict:
     """The fixtures secret's value decoded and checked (rule 3 of the module docstring), else ``Unusable``."""
-    if not BASE64.match(value) or len(value) % 4:
-        raise Unusable("drill: %s is not one line of padded base64" % FIXTURES_ENV)
     try:
-        data = base64.b64decode(value, validate=True)
+        data = base64.b64decode(value, validate=True)  # any byte outside the alphabet or its padding is an error
+    except ValueError:  # binascii.Error, and a str that is not ASCII
+        raise Unusable("drill: %s is not one line of padded base64" % FIXTURES_ENV) from None
+    try:
         doc = chain.parse_row(data.decode("utf-8"))
         canonical = chain.canonical(doc) == data
-    except (binascii.Error, UnicodeDecodeError, chain.ChainError):
+    except (UnicodeDecodeError, chain.ChainError):
         raise Unusable("drill: %s is not a JSON object in base64" % FIXTURES_ENV) from None
     if not canonical:
         raise Unusable("drill: %s is not RFC 8785 JSON" % FIXTURES_ENV)
     if sorted(doc) != sorted(FIXTURE_KEYS) or not isinstance(doc["import_line_sha256"], str) \
-            or not HEX64.match(doc["import_line_sha256"]):
+            or not chain.HEX64.match(doc["import_line_sha256"]):
         raise Unusable("drill: %s is not {import_line_sha256, instances}" % FIXTURES_ENV)
     items = doc["instances"]
     if not isinstance(items, list) or not items:

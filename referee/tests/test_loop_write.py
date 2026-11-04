@@ -32,13 +32,15 @@ served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line ch
   planted as the cycle's one merge on ``brain/drill/<cycle>`` with its ratchet base and plant rows, the next cycle's
   ``kos`` watching it red and ``yaz`` reverting it (D7) while the drill waits, then the key revealed and judged
   ``PASS`` (by the loop and by ``harness.revert_drill``'s command) and the next drill committed, for a planted test
-  regression and a planted lint regression; a catalog cause the loop does not give is judged ``FAIL`` and the job
-  ends ``drill_fail``; the plant waits for a candidate's merge and its sentinel; a changed seed or a patch that no
-  longer applies commits again, and a catalog that does not fit commits nothing; without the seed the drill is off,
+  regression and a planted lint regression, the fixtures (``DRILL_FIXTURES``, tohum/26f) bound to the checkout's
+  counter; the fixtures' build break, which stage 0's D7 reverts as a test regression, is judged ``FAIL`` and the
+  job ends ``drill_fail``; the plant waits for a candidate's merge and its sentinel; a changed seed or a patch that
+  no longer applies commits again, and fixtures that do not fit commit nothing; without the seed the drill is off,
   and with it on a target of kind ``copy`` too (the drill is the toy's: no D8, no drill row, nothing planted) where
-  the toy with the same seed commits;
-  unusable inputs (no catalog, an empty one, a patch outside its directory, missing, linked or not text, no
-  workspace, a run id that is not digits) write nothing; ``loop.write_cycle`` refuses a plant beside a merge or an
+  the toy with the same seed commits; without the fixtures, or with fixtures bound to another import, it is off
+  with the reason named and the cycle written; fixtures ``loop.drill.fixtures`` refuses (each rule broken once; the
+  message names no value of the secret), a counter with no import, no workspace and a run id that is not digits
+  write nothing; ``loop.write_cycle`` refuses a plant beside a merge or an
   end and an action ``loop.drill`` does not give; ``harness.pass_row`` judges the state these cycles wrote (one root
   and one status row per cycle, the drill ``PASS`` or ``FAIL`` as the loop judged it);
 - the copy's genesis gate (``Gate``, tohum/25a row 7) on a toy whose ``pulled`` state is test_pass_row's passing
@@ -813,7 +815,9 @@ class D8(StateBase):
         cases = {
             "not base64": "@" * 8,
             "base64 with an LF": self.fixtures + "\n",
-            "base64 unpadded": self.fixtures.rstrip("="),
+            "base64 unpadded": self.fixtures.rstrip("=") if self.fixtures.endswith("=") else self.fixtures[:-1],
+            "base64 with a blank": self.fixtures[:4] + " " + self.fixtures[4:],
+            "not ASCII": "\u00c4" * 8,
             "not JSON": base64.b64encode(b"not json").decode(),
             "not a JSON object": enc([good]),
             "JSON that is not RFC 8785": base64.b64encode(json.dumps(good, indent=1).encode()).decode(),

@@ -39,7 +39,7 @@ From `spec/asama-0/10a-cikis-canli-dongu.md` and `referee/harness/pass_row.py` (
 ## The rehearsal's stops
 
 <!-- case:without-fixtures -->
-### The seed as it is: no drill fixtures
+### No drill fixtures secret (the operator writes it at the activation, tohum/26f)
 
 (B) stops at run 4: run 4 repeats run 3. The toy's gate: closed. The copy: waiting (never served).
 
@@ -56,10 +56,10 @@ From `spec/asama-0/10a-cikis-canli-dongu.md` and `referee/harness/pass_row.py` (
 | `#durum` | no reason |
 | `#model #belirtec` | no reason |
 
-Waits for: `seed-045-drill-live-inputs-unnamed` (open)
+Waits for: no report (the stop is the case's own input)
 
 <!-- case:with-fixtures -->
-### A drill catalog of the three causes
+### Drill fixtures of the three causes
 
 (B) stops at run 11: `yaz` stopped on `drill_fail` (target `t1`). The toy's gate: closed. The copy: waiting (never served).
 
@@ -71,15 +71,15 @@ Waits for: `seed-045-drill-live-inputs-unnamed` (open)
 | `#ret` | no reason |
 | `#kapsama-kaydi` | no reason |
 | `#nobetci #hayatta` | no reason |
-| `#geri-alma` | `toy:drill_fail:rd-build:cause_mismatch`, `toy:cause_unshown:build_break` |
+| `#geri-alma` | `toy:drill_fail:b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0:cause_mismatch`, `toy:cause_unshown:build_break` |
 | `#kok` | no reason |
 | `#durum` | no reason |
 | `#model #belirtec` | no reason |
 
-Waits for: `seed-044-revert-facts-producers` (open), `seed-045-drill-live-inputs-unnamed` (open)
+Waits for: `seed-044-revert-facts-producers` (open)
 
 <!-- case:stale-patches -->
-### Drill patches on a line the toy's merge changed
+### Drill patches on the file the toy's merge changed (a set 26f's producer refuses)
 
 (B) stops at run 4: run 4 repeats run 3. The toy's gate: closed. The copy: waiting (never served).
 
@@ -96,5 +96,5 @@ Waits for: `seed-044-revert-facts-producers` (open), `seed-045-drill-live-inputs
 | `#durum` | no reason |
 | `#model #belirtec` | no reason |
 
-Waits for: `seed-045-drill-live-inputs-unnamed` (open)
+Waits for: no report (the stop is the case's own input)
 
