@@ -63,9 +63,9 @@ entry, read for executor ``nx:run-commands`` (the ``command`` sugar is resolved 
 plugin's target is ``eslint .`` (``eslint ./src`` for the root) run by ``nx:run-commands`` with ``cwd`` the
 candidate's directory and the workspace's ``node_modules/.bin`` on ``PATH``, the caller's arguments appended::
 
-    env -C <path> /work/node_modules/.bin/eslint <. or ./src or ./lib> --format json
+    /bin/sh -c 'cd -- "$0" && exec "$@"' <path> /work/node_modules/.bin/eslint <. or ./src or ./lib> --format json
 
-``env -C`` (GNU coreutils 8.28 and later; BusyBox's ``env`` lacks it and the run fails) gives ESLint the
+The POSIX shell (``CD_EXEC``; the path is its ``$0``, an argument, never part of the script text) gives ESLint the
 candidate's directory as its working directory, where it looks up the flat config from (the root's, as no
 configuration lies between) and where the config's own code resolves relative paths; the program is the root lock's
 (``/work`` is the tree's root in every run, ``runner.contained.WORKDIR``). Every flat config at the root joins the
@@ -97,6 +97,7 @@ FLAT_CONFIGS = ("eslint.config.cjs", "eslint.config.js", "eslint.config.mjs", "e
 ESLINTRC = (".eslintrc", ".eslintrc.js", ".eslintrc.cjs", ".eslintrc.yaml", ".eslintrc.yml", ".eslintrc.json")
 EXTENSIONS = ("ts", "cts", "mts", "tsx", "js", "cjs", "mjs", "jsx", "html", "vue")
 PLUGIN = "@nx/eslint/plugin"
+CD_EXEC = 'cd -- "$0" && exec "$@"'
 PLUGIN_KEYS = ("plugin", "options")
 PLUGIN_OPTIONS = ("targetName", "extensions")
 PROJECT_FILES = ("project.json", "package.json")
@@ -352,7 +353,7 @@ def inferred_lint(tree: str, path: str, nx: dict) -> tuple[list[str], list[str]]
             raise NotComposed("no_standalone_src")
         pattern = "./" + src[0]
     _check_defaults(nx, "lint", "nx:run-commands")
-    return (["env", "-C", path, C.WORKDIR + "/node_modules/.bin/eslint", pattern, "--format", "json"],
+    return (["/bin/sh", "-c", CD_EXEC, path, C.WORKDIR + "/node_modules/.bin/eslint", pattern, "--format", "json"],
             [f for f in FLAT_CONFIGS if os.path.isfile(os.path.join(tree, f))])
 
 

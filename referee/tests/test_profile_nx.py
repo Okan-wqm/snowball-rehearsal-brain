@@ -8,7 +8,7 @@ by ``profile.fit`` when the candidate has no npm script.
 - lint: default and explicit patterns, the nearest flat config in Nx's name order, no flat config, ESLint's major;
 - test: the command, the config as an input, the missing option;
 - lint inferred by ``@nx/eslint/plugin``: the command and its inputs (a project.json or package.json project, the
-  root candidate's ``src``/``lib``), run with ``env -C`` from the candidate's directory; every plugin, config,
+  root candidate's ``src``/``lib``), run by ``/bin/sh`` from the candidate's directory; every plugin, config,
   lintable-file and ``targetDefaults`` refusal; an explicit target still replacing the inferred one;
 - fit: the npm script wins, an Nx command is judged by ``check_recipe`` like any other (``.bin`` against the lock),
   ``sources`` says which form each command took.
@@ -207,7 +207,7 @@ class Test(Base):
 
 
 def inferred(path: str, pattern: str = ".") -> list:
-    return ["env", "-C", path, "/work/node_modules/.bin/eslint", pattern, "--format", "json"]
+    return ["/bin/sh", "-c", X.CD_EXEC, path, "/work/node_modules/.bin/eslint", pattern, "--format", "json"]
 
 
 class Inferred(Base):
@@ -312,12 +312,18 @@ class Inferred(Base):
         self.assertEqual(X.lint(self.tree, "libs/a")[0], inferred("libs/a"))
 
     def test_the_command_runs_from_the_candidates_directory(self):
-        # The composed argv run as is, /work standing for the tree: env -C gives ESLint the candidate's directory.
-        write_tree(self.tree, {"node_modules/.bin/eslint": "#!/bin/sh\npwd\nprintf '%s\\n' \"$@\"\n"})
+        # The composed argv run as is, /work standing for the tree: the shell gives ESLint the candidate's directory.
+        write_tree(self.tree, {"node_modules/.bin/eslint": "#!/bin/sh\npwd -P\nprintf '%s\\n' \"$@\"\n"})
         os.chmod(os.path.join(self.tree, "node_modules/.bin/eslint"), 0o755)
-        cmd = [self.tree + e[len("/work"):] if e.startswith("/work/") else e for e in X.lint(self.tree, "libs/a")[0]]
-        out = subprocess.run(cmd, cwd=self.tree, capture_output=True, text=True, check=True).stdout.splitlines()
-        self.assertEqual(out, [os.path.realpath(os.path.join(self.tree, "libs/a")), ".", "--format", "json"])
+        # A directory name the shell would read as an option, a word break, a command or a substitution is only an
+        # argument: the path is the script's $0, never its text.
+        hostile = "-a b;touch x$(touch y)"
+        write_tree(self.tree, {hostile + "/project.json": {"name": "h"}, hostile + "/src/x.ts": ""})
+        for path in ("libs/a", hostile):
+            cmd = [self.tree + e[len("/work"):] if e.startswith("/work/") else e for e in X.lint(self.tree, path)[0]]
+            out = subprocess.run(cmd, cwd=self.tree, capture_output=True, text=True, check=True).stdout.splitlines()
+            self.assertEqual(out, [os.path.realpath(os.path.join(self.tree, path)), ".", "--format", "json"])
+            self.assertEqual([f for f in ("x", "y") if os.path.exists(os.path.join(self.tree, f))], [])
 
 
 class Fit(Base):

@@ -300,8 +300,8 @@
   {
    "id": "nx_inferred_no_chdir",
    "file": "profile/nx.py",
-   "old": "    return ([\"env\", \"-C\", path, C.WORKDIR",
-   "new": "    return ([\"env\", \"-u\", path, C.WORKDIR",
+   "old": "    return ([\"/bin/sh\", \"-c\", CD_EXEC, path, C.WORKDIR",
+   "new": "    return ([\"/bin/sh\", \"-c\", 'exec \"$@\"', path, C.WORKDIR",
    "tests": [
     "test_profile_nx.py"
    ]
@@ -320,6 +320,42 @@
    "file": "profile/nx.py",
    "old": "    if not any(os.path.isfile(os.path.join(tree, _rel(path, f))) for f in PROJECT_FILES):",
    "new": "    if False:",
+   "tests": [
+    "test_profile_nx.py"
+   ]
+  },
+  {
+   "id": "nx_inferred_cd_unquoted",
+   "file": "profile/nx.py",
+   "old": "CD_EXEC = 'cd -- \"$0\" && exec \"$@\"'",
+   "new": "CD_EXEC = 'cd -- $0 && exec \"$@\"'",
+   "tests": [
+    "test_profile_nx.py"
+   ]
+  },
+  {
+   "id": "nx_inferred_cd_no_end_of_options",
+   "file": "profile/nx.py",
+   "old": "CD_EXEC = 'cd -- \"$0\" && exec \"$@\"'",
+   "new": "CD_EXEC = 'cd \"$0\" && exec \"$@\"'",
+   "tests": [
+    "test_profile_nx.py"
+   ]
+  },
+  {
+   "id": "nx_inferred_path_in_script_text",
+   "file": "profile/nx.py",
+   "old": "CD_EXEC = 'cd -- \"$0\" && exec \"$@\"'",
+   "new": "CD_EXEC = 'cd -- \"%s\" && exec \"$@\"'",
+   "tests": [
+    "test_profile_nx.py"
+   ]
+  },
+  {
+   "id": "nx_inferred_path_interpolated",
+   "file": "profile/nx.py",
+   "old": "    return ([\"/bin/sh\", \"-c\", CD_EXEC, path, C.WORKDIR",
+   "new": "    return ([\"/bin/sh\", \"-c\", \"cd -- %s && exec \\\"$@\\\"\" % path, path, C.WORKDIR",
    "tests": [
     "test_profile_nx.py"
    ]
