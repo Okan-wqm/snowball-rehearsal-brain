@@ -10,9 +10,10 @@ the brain's committed drawing is the one its code gives today.
 - the register of the off-live: the brain's ``status/off_live.json`` has no problem; each problem
   (``off_live_unnamed``, ``named_but_live``, ``named_unknown``, ``entry_invalid``, ``register_unreadable``) on a
   tree made for it, an empty package (docstring only) not named and one with code named; the drawing's last column;
-- the target: projects from the root's npm workspaces (globs, ``**``, negation), Nx ``project.json``, the root
-  Cargo workspace (members minus exclude) and ``pyproject.toml``; ``SKIP_DIRS`` and symbolic links not entered;
-  arrows ``npm``, ``cargo`` (``path`` and ``workspace = true``), ``import`` (relative, bare workspace name and
+- the target: projects from the root's npm workspaces (globs, ``**``, negation), Nx ``project.json``, every Cargo
+  ``[package]`` (an excluded one too; a virtual manifest is none) and ``pyproject.toml``; ``SKIP_DIRS`` and
+  symbolic links not entered; arrows ``npm``, ``cargo`` (``path``, ``workspace = true``, ``[patch.crates-io]``,
+  each through the workspace root Cargo finds: ``Cargo`` below), ``import`` (relative, bare workspace name and
   subpath, tsconfig alias exact and wildcard with ``baseUrl``, a commented tsconfig) and ``python``; the deepest
   project owns a file; the coverage counts each specifier's outcome;
 - the helpers: segment globs (the tsconfig dialect and the aliases are profile.jsimports's, test_profile_jsimports);
@@ -256,6 +257,8 @@ class Target(unittest.TestCase):
             "scripts/run.py": "from pyk import z\n",
             "scripts/bad.py": "def (:\n",
             "scripts/run.sh": "echo\n",
+            "crates/a/src/lib.rs": "",
+            "tools/x.rs": "",
         })
         os.symlink(os.path.join(root, "libs", "ui"), os.path.join(root, "libs", "link"))
         return root
@@ -267,6 +270,7 @@ class Target(unittest.TestCase):
             ("crates/a", "a", ["cargo"]),
             ("crates/b", "b", ["cargo"]),
             ("crates/c", "c", ["cargo"]),
+            ("crates/ex", "ex", ["cargo"]),             # excluded from the workspace, still a package
             ("libs/deep/x", "x", ["npm"]),              # ** reaches it
             ("libs/feat/a", "feat-a", ["nx"]),
             ("libs/feat/a/src/inner", "feat-a-inner", ["nx"]),
@@ -284,13 +288,14 @@ class Target(unittest.TestCase):
             ("apps/web", "libs/util", ["import"]),          # exact alias, baseUrl
             ("crates/a", "crates/b", ["cargo"]),            # path
             ("crates/c", "crates/b", ["cargo"]),            # workspace = true, in a [target.*] table
+            ("crates/ex", "crates/b", ["cargo"]),           # path, from a package that is its own root
             ("libs/ui", "apps/web", ["import"]),            # require of a workspace name
             ("libs/util", "py", ["python"]),                # pyk2 is a package of py (no src/)
         ])
 
     def test_coverage(self):
         cov = D.target_map(self.checkout())["coverage"]
-        self.assertEqual(cov["projects_by_kind"], {"npm": 3, "nx": 4, "cargo": 3, "python": 1})
+        self.assertEqual(cov["projects_by_kind"], {"npm": 3, "nx": 4, "cargo": 4, "python": 1})
         self.assertEqual(cov["source_files"], 5)       # main, local, libs/ui, i.js, scripts/s.ts; not dist, node_modules
         self.assertEqual(cov["source_files_outside_projects"], 1)
         self.assertEqual(cov["python_files"], 4)
@@ -306,14 +311,112 @@ class Target(unittest.TestCase):
             "python_external": 1,     # os
             "python_relative": 1,     # from . import rel
         })
-        self.assertEqual(cov["unread_code_files"], {".sh": 1})
+        self.assertEqual(cov["unread_code_files"], {".rs": 2, ".sh": 1})
+        self.assertEqual(cov["unread_code_files_outside_projects"], {".rs": 1, ".sh": 1})  # tools/x.rs, run.sh
 
     def test_render_lists_every_project_and_arrow(self):
         text = D.render_target(D.target_map(self.checkout()), "a test checkout")
         self.assertIn("a test checkout", text)
         self.assertIn("| @t/web | apps/web | npm nx | x (import npm), feat-a (import), @t/ui (import npm), util (import) |",
                       text)
-        self.assertEqual(text.count(" -->|"), 8)
+        self.assertEqual(text.count(" -->|"), 9)
+        self.assertIn("Code files of languages whose imports are not read: .rs 2 (1 in no project), "
+                      ".sh 1 (1 in no project).", text)
+
+
+class Cargo(unittest.TestCase):
+    """Cargo packages anywhere, each dependency resolved through the workspace root Cargo finds for its package."""
+
+    def tree(self, files: dict[str, str]) -> dict:
+        root = tempfile.mkdtemp()
+        write(root, files)
+        m = D.target_map(root)
+        return {"projects": [(p["dir"], p["name"]) for p in m["projects"]],
+                "edges": [(e["from"], e["to"]) for e in m["edges"]], "unparsed": m["coverage"]["unparsed_manifests"]}
+
+    ROOT_WS = ("[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/ex\", \"gw\"]\n"
+               "[workspace.dependencies]\nb = { path = \"crates/b\" }\nq = \"1\"\n"
+               "r = { version = \"1\", package = \"real-r\" }\ng = { git = \"https://example.invalid/g\" }\n"
+               "[patch.crates-io]\nq = { path = \"vendor/q\" }\nreal-r = { path = \"vendor/r\" }\n"
+               "s = { path = \"vendor/s\" }\n")
+
+    def test_every_package_is_a_project_and_a_virtual_manifest_is_none(self):
+        got = self.tree({"Cargo.toml": self.ROOT_WS,
+                         "crates/a/Cargo.toml": "[package]\nname = \"a\"\n",
+                         "crates/ex/Cargo.toml": "[package]\nname = \"ex\"\n",
+                         "crates/nameless/Cargo.toml": "[package]\nversion = \"1\"\n",
+                         "virtual/Cargo.toml": "[workspace]\nmembers = []\n",
+                         "broken/Cargo.toml": "[package\n",
+                         "fixtures/deep/k/Cargo.toml": "[package]\nname = \"k-fixture\"\n"})
+        self.assertEqual(got["projects"], [("crates/a", "a"), ("crates/ex", "ex"), ("crates/nameless", "nameless"),
+                                           ("fixtures/deep/k", "k-fixture")])
+        self.assertEqual(got["unparsed"], ["broken/Cargo.toml"])
+
+    def test_a_root_package_is_no_project_and_still_the_workspace_root(self):
+        got = self.tree({"Cargo.toml": "[package]\nname = \"top\"\n[workspace]\n"
+                                       "[patch.crates-io]\nq = { path = \"vendor/q\" }\n",
+                         "vendor/q/Cargo.toml": "[package]\nname = \"q\"\n",
+                         "a/Cargo.toml": "[package]\nname = \"a\"\n[dependencies]\nq = \"1\"\n"})
+        self.assertEqual(got["projects"], [("a", "a"), ("vendor/q", "q")])
+        self.assertEqual(got["edges"], [("a", "vendor/q")])
+
+    def test_patch_and_workspace_dependencies_resolve_from_the_root(self):
+        got = self.tree({"Cargo.toml": self.ROOT_WS,
+                         "vendor/q/Cargo.toml": "[package]\nname = \"q\"\n",
+                         "vendor/r/Cargo.toml": "[package]\nname = \"real-r\"\n",
+                         "vendor/s/Cargo.toml": "[package]\nname = \"s\"\n",
+                         "crates/b/Cargo.toml": "[package]\nname = \"b\"\n",
+                         # a plain version, a renamed one and an inherited version string are patched
+                         "crates/a/Cargo.toml": "[package]\nname = \"a\"\n[dependencies]\nq = \"1\"\n"
+                                                "[dev-dependencies]\nalias = { version = \"1\", package = \"s\" }\n",
+                         "crates/c/Cargo.toml": "[package]\nname = \"c\"\n[dependencies]\nq = { workspace = true }\n"
+                                                "r = { workspace = true }\nb = { workspace = true }\n",
+                         # a git, a registry and a missing workspace entry are not patched
+                         "crates/d/Cargo.toml": "[package]\nname = \"d\"\n[dependencies]\n"
+                                                "q = { git = \"https://example.invalid/q\" }\n"
+                                                "s = { version = \"1\", registry = \"other\" }\n"
+                                                "g = { workspace = true }\n",
+                         # s is patched but no [workspace.dependencies] entry: Cargo refuses, nothing is drawn
+                         "crates/e/Cargo.toml": "[package]\nname = \"e\"\n[dependencies]\ns = { workspace = true }\n"})
+        self.assertEqual(got["edges"], [("crates/a", "vendor/q"), ("crates/a", "vendor/s"),
+                                        ("crates/c", "crates/b"), ("crates/c", "vendor/q"), ("crates/c", "vendor/r")])
+
+    def test_an_excluded_package_and_a_nested_workspace_are_their_own_roots(self):
+        got = self.tree({"Cargo.toml": self.ROOT_WS,
+                         "vendor/q/Cargo.toml": "[package]\nname = \"q\"\n",
+                         "own/q/Cargo.toml": "[package]\nname = \"q\"\n",
+                         # excluded, at and below the excluded path: the root's patch does not reach them
+                         "crates/ex/Cargo.toml": "[package]\nname = \"ex\"\n[dependencies]\nq = \"1\"\n",
+                         "crates/ex/sub/Cargo.toml": "[package]\nname = \"sub\"\n[dependencies]\nq = \"1\"\n",
+                         # a nested workspace's own patch, written from its own directory
+                         "gw/Cargo.toml": "[package]\nname = \"gw\"\n[workspace]\n[dependencies]\nq = \"1\"\n"
+                                          "[patch.crates-io]\nq = { path = \"../own/q\" }\n",
+                         "gw/fuzz/Cargo.toml": "[package]\nname = \"fz\"\n[dependencies]\nq = \"1\"\n"
+                                               "gw = { path = \"..\" }\n",
+                         # a member's own [patch] is ignored (Cargo reads it from the root only)
+                         "crates/m/Cargo.toml": "[package]\nname = \"m\"\n[dependencies]\nq = \"1\"\n"
+                                                "[patch.crates-io]\nq = { path = \"../../own/q\" }\n"})
+        self.assertEqual(got["edges"], [("crates/m", "vendor/q"), ("gw", "own/q"), ("gw/fuzz", "gw"),
+                                        ("gw/fuzz", "own/q")])
+
+    def test_package_workspace_names_the_root(self):
+        got = self.tree({"ws/Cargo.toml": "[workspace]\n[patch.crates-io]\nq = { path = \"../vendor/q\" }\n",
+                         "vendor/q/Cargo.toml": "[package]\nname = \"q\"\n",
+                         "far/p/Cargo.toml": "[package]\nname = \"p\"\nworkspace = \"../../ws\"\n"
+                                             "[dependencies]\nq = \"1\"\n",
+                         "far/n/Cargo.toml": "[package]\nname = \"n\"\nworkspace = \"../nowhere\"\n"
+                                             "[dependencies]\nq = \"1\"\n"})
+        self.assertEqual(got["edges"], [("far/p", "vendor/q")])
+
+    def test_cargo_workspace_finds_the_root_as_cargo_does(self):
+        roots = {"": {"workspace": {"exclude": ["x", 3]}}, "x/y": {"workspace": {}}}
+        self.assertEqual(D.cargo_workspace("a/b", {"package": {}}, roots), "")
+        self.assertIsNone(D.cargo_workspace("x", {"package": {}}, roots))
+        self.assertIsNone(D.cargo_workspace("x/z", {"package": {}}, roots))
+        self.assertEqual(D.cargo_workspace("xz", {"package": {}}, roots), "")   # a prefix by segments, not text
+        self.assertEqual(D.cargo_workspace("x/y/z", {"package": {}}, roots), "x/y")
+        self.assertEqual(D.cargo_workspace("x/y", {"package": {}}, roots), "x/y")
+        self.assertIsNone(D.cargo_workspace("a", {"package": {}}, {}))
 
 
 class Helpers(unittest.TestCase):

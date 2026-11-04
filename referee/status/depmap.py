@@ -43,16 +43,19 @@ the session that reads the target, not by a test).
   root ``package.json`` (an array, or ``{packages: [...]}``; each pattern matched segment by segment with ``*`` and
   ``?`` inside a segment, ``**`` any number of segments, a leading ``!`` excluding; a match is a directory holding
   a ``package.json``; its name the manifest's ``name``, else the directory); every Nx ``project.json`` (its
-  ``name``, else the directory's last segment); the members of the root ``Cargo.toml``'s ``[workspace]`` (globs as
-  above, minus ``exclude``; the name ``[package].name``); every ``pyproject.toml`` below the root (its
+  ``name``, else the directory's last segment); every ``Cargo.toml`` below the root whose ``[package]`` is a table
+  (a workspace member, an excluded package, a nested workspace's root and a test fixture alike; its
+  ``[package].name``, else the directory's last segment; a manifest with only ``[workspace]`` is no project);
+  every ``pyproject.toml`` below the root (its
   ``[project].name``, else the directory's last segment). The root directory itself is never a project. A
   directory named by several manifests is one project with every kind;
 - a file belongs to the project with the deepest directory holding it;
 - an arrow A -> B, labelled with how it was found: ``npm`` (a key of ``dependencies``, ``devDependencies``,
   ``peerDependencies`` or ``optionalDependencies`` of A's ``package.json`` is B's npm name), ``cargo`` (a dependency
   of A's ``Cargo.toml``, in ``[dependencies]``, ``[dev-dependencies]``, ``[build-dependencies]`` or a
-  ``[target.*]`` one, whose ``path``, or whose ``[workspace.dependencies]`` entry's ``path`` when it is
-  ``workspace = true``, is B's directory), ``import`` (a JS/TS file of A, one of ``jsimports.SOURCE_EXTENSIONS``,
+  ``[target.*]`` one, that Cargo resolves to B's directory: by its ``path``, through A's workspace root's
+  ``[workspace.dependencies]`` when it is ``workspace = true``, or by that root's ``[patch.crates-io]`` for a
+  crates.io dependency; the root as Cargo finds it, ``cargo_workspace``, and the rules in ``cargo_dep_paths``), ``import`` (a JS/TS file of A, one of ``jsimports.SOURCE_EXTENSIONS``,
   holds an import specifier resolving into B: a relative one by its path, a bare one equal to B's npm name or starting
   with it and ``/``, or one matching an alias of the root tsconfig (``jsimports.aliases``)),
   ``python`` (a ``.py`` file of A, read by ``import_statements``, imports by an absolute name whose first part is
@@ -60,13 +63,14 @@ the session that reads the target, not by a test).
   project in path order wins a name two projects hold; a relative import is counted, never drawn);
 - an import specifier is one ``jsimports.specifiers`` reads (as written: a commented-out import counts, an
   import whose specifier is not a string literal does not);
-- not read, stated: nested workspaces (a ``package.json`` or ``Cargo.toml`` workspace below the root), Rust ``use``
-  lines (the manifest is Cargo's own list), a Python package that is a single module file, Go's and every other
+- not read, stated: nested npm workspaces (a ``package.json`` workspace below the root), Rust ``use`` lines (the
+  manifest is Cargo's own list), a Cargo target file outside its package's directory (``[[test]] path =
+  "../x.rs"``: the file belongs to the project holding it), a Python package that is a single module file, Go's and every other
   language's imports (counted by extension in ``coverage.unread_code_files``), whether a resolved path exists,
   project references in ``tsconfig``;
 - ``coverage`` says how much of the checkout this map holds: files, JS/TS and Python files read, specifiers by
   outcome (an import in a file of no project, or into no project, is ``outside_projects``), manifests that could
-  not be parsed, and code files of languages not read.
+  not be parsed, and code files of languages not read, in all and in no project.
 
 Command line, run from ``referee/``::
 
@@ -364,12 +368,86 @@ def _cargo_deps(manifest: dict) -> list[tuple[str, Any]]:
     return deps
 
 
+def _under(path: str, base: str) -> bool:
+    """``path`` is ``base`` or inside it, segment by segment (``""`` is the root)."""
+    return base == "" or path == base or path.startswith(base + "/")
+
+
+def cargo_workspace(d: str, manifest: dict, roots: dict[str, dict]) -> str | None:
+    """The directory of the workspace root package ``d`` belongs to, as Cargo finds it, or None (its own root).
+
+    ``package.workspace``, when a string, names it (a path from ``d``); else ``d`` itself when its manifest has a
+    ``[workspace]``; else the nearest directory above ``d`` whose manifest has one, unless that one's ``exclude``
+    holds ``d`` (an exclude entry is a path from the workspace root, ``d`` excluded when at or below it), which
+    leaves ``d`` its own root. Cargo also refuses a package under a workspace that neither lists nor excludes it;
+    membership is not checked here."""
+    package = manifest.get("package") or {}
+    if isinstance(package.get("workspace"), str):
+        named = _norm(posixpath.join(d, package["workspace"]))
+        return named if named in roots else None
+    if d in roots:
+        return d
+    probe = d
+    while probe:
+        probe = posixpath.dirname(probe)
+        if probe in roots:
+            excludes = (roots[probe].get("workspace") or {}).get("exclude") or []
+            for ex in excludes:
+                path = _norm(posixpath.join(probe, ex)) if isinstance(ex, str) else None
+                if path is not None and _under(d, path):
+                    return None
+            return probe
+    return None
+
+
+def _crate(key: str, spec: dict) -> str:
+    """The crate a dependency (or a patch) entry names: its ``package`` when it renames, else its key."""
+    return spec["package"] if isinstance(spec.get("package"), str) else key
+
+
+def cargo_dep_paths(d: str, manifest: dict, top_dir: str, top: dict) -> list[str]:
+    """The directories (normalised, inside the root) Cargo resolves package ``d``'s dependencies to, sorted.
+
+    ``top`` is the manifest of ``d``'s workspace root at ``top_dir`` (``d``'s own when it has none). A dependency is
+    each entry of ``_cargo_deps``; its directory is its ``path`` from ``d``; for ``workspace = true``, the ``path``
+    of ``top``'s ``[workspace.dependencies]`` entry of that name, from ``top_dir``; else, for a crates.io one (no
+    ``path``, ``git`` or ``registry``, here or in that entry), the ``path`` of ``top``'s ``[patch.crates-io]`` entry
+    for the same crate (an entry's crate is its ``package`` when it renames, else its key; a ``workspace = true`` entry
+    absent from the table resolves to nothing), from ``top_dir``. Not read, stated: ``[replace]``,
+    ``[patch]`` of another source, a ``git`` dependency's repository."""
+    ws_deps = (top.get("workspace") or {}).get("dependencies") or {}
+    patches = (top.get("patch") or {}).get("crates-io") or {}
+    found: set[str] = set()
+    for name, spec in _cargo_deps(manifest):
+        spec = spec if isinstance(spec, dict) else {}
+        path = None
+        base = d
+        if spec.get("workspace") is True:
+            inherited = ws_deps.get(name)
+            if not isinstance(inherited, (dict, str)):
+                continue
+            spec = inherited if isinstance(inherited, dict) else {}
+            base = top_dir
+        if isinstance(spec.get("path"), str):
+            path = _norm(posixpath.join(base, spec["path"]))
+        elif not any(k in spec for k in ("git", "registry")):
+            crate = _crate(name, spec)
+            patch = next((p for key, p in sorted(patches.items()) if isinstance(p, dict) and _crate(key, p) == crate
+                          and isinstance(p.get("path"), str)), None)
+            if patch is not None:
+                path = _norm(posixpath.join(top_dir, patch["path"]))
+        if path is not None and path != d:
+            found.add(path)
+    return sorted(found)
+
+
 def target_map(root: str) -> dict[str, Any]:
     import tomllib
 
     files, dirs = J.walk(root)
     file_set = set(files)
     coverage: dict[str, Any] = {"files": len(files), "unparsed_manifests": [], "unread_code_files": {},
+                                "unread_code_files_outside_projects": {},
                                 "source_files": 0, "source_files_outside_projects": 0,
                                 "python_files": 0, "python_files_unparsed": 0,
                                 "specifiers": {"cross_project": 0, "same_project": 0, "external_package": 0,
@@ -410,26 +488,25 @@ def target_map(root: str) -> dict[str, Any]:
                 continue
             d = posixpath.dirname(rel)
             projects.add(d, "nx", pj.get("name") if isinstance(pj.get("name"), str) else posixpath.basename(d))
-    # Cargo workspace
+    # Cargo packages: every manifest below the root with a [package] table
     cargo: dict[str, dict] = {}
-    root_cargo: dict = {}
-    if "Cargo.toml" in file_set:
+    cargo_roots: dict[str, dict] = {}
+    for rel in files:
+        if posixpath.basename(rel) != "Cargo.toml":
+            continue
+        d = posixpath.dirname(rel)
         try:
-            root_cargo = tomllib.loads(_read(root, "Cargo.toml") or "")
+            manifest = tomllib.loads(_read(root, rel) or "")
         except tomllib.TOMLDecodeError:
-            coverage["unparsed_manifests"].append("Cargo.toml")
-        ws = root_cargo.get("workspace") or {}
-        crate_dirs = [d for d in dirs if d + "/Cargo.toml" in file_set]
-        members = glob_dirs(list(ws.get("members") or []), crate_dirs)
-        members = [d for d in members if d not in set(glob_dirs(list(ws.get("exclude") or []), crate_dirs))]
-        for d in members:
-            try:
-                manifest = tomllib.loads(_read(root, d + "/Cargo.toml") or "")
-            except tomllib.TOMLDecodeError:
-                coverage["unparsed_manifests"].append(d + "/Cargo.toml")
-                continue
+            coverage["unparsed_manifests"].append(rel)
+            continue
+        if isinstance(manifest.get("workspace"), dict):
+            cargo_roots[d] = manifest
+        package = manifest.get("package")
+        if d and isinstance(package, dict):
             cargo[d] = manifest
-            projects.add(d, "cargo", (manifest.get("package") or {}).get("name") or posixpath.basename(d))
+            name = package.get("name")
+            projects.add(d, "cargo", name if isinstance(name, str) else posixpath.basename(d))
 
     # Python projects: a pyproject.toml below the root; their top-level packages
     py_packages: dict[str, str] = {}
@@ -462,18 +539,12 @@ def target_map(root: str) -> dict[str, Any]:
             for name in sorted(pkg.get(field) or {}):
                 if name in npm_names:
                     edge(d, npm_names[name], "npm")
-    ws_deps = (root_cargo.get("workspace") or {}).get("dependencies") or {}
     for d, manifest in cargo.items():
-        for name, spec in _cargo_deps(manifest):
-            if not isinstance(spec, dict):
-                continue
-            path = None
-            if isinstance(spec.get("path"), str):
-                path = _norm(posixpath.join(d, spec["path"]))
-            elif spec.get("workspace") is True and isinstance(ws_deps.get(name), dict) \
-                    and isinstance(ws_deps[name].get("path"), str):
-                path = _norm(ws_deps[name]["path"])
-            if path is not None and path in projects.by_dir:
+        top = cargo_workspace(d, manifest, cargo_roots)
+        top_dir = d if top is None else top
+        top_manifest = manifest if top is None else cargo_roots[top]
+        for path in cargo_dep_paths(d, manifest, top_dir, top_manifest):
+            if path in projects.by_dir:
                 edge(d, path, "cargo")
 
     aliases = _tsconfig_aliases(root, file_set, coverage)
@@ -511,6 +582,9 @@ def target_map(root: str) -> dict[str, Any]:
         if ext not in J.SOURCE_EXTENSIONS:
             if ext in OTHER_CODE_EXTENSIONS:
                 coverage["unread_code_files"][ext] = coverage["unread_code_files"].get(ext, 0) + 1
+                if projects.owner(rel) is None:
+                    outside = coverage["unread_code_files_outside_projects"]
+                    outside[ext] = outside.get(ext, 0) + 1
             continue
         text = _read(root, rel)
         if text is None:
@@ -546,7 +620,8 @@ def target_map(root: str) -> dict[str, Any]:
                 edge(here, there, "import")
 
     coverage["unparsed_manifests"] = sorted(set(coverage["unparsed_manifests"]))
-    coverage["unread_code_files"] = dict(sorted(coverage["unread_code_files"].items()))
+    for key in ("unread_code_files", "unread_code_files_outside_projects"):
+        coverage[key] = dict(sorted(coverage[key].items()))
     coverage["projects"] = len(projects.by_dir)
     coverage["projects_by_kind"] = {k: sum(1 for p in projects.by_dir.values() if k in p["kinds"])
                                     for k in ("npm", "nx", "cargo", "python")}
@@ -638,10 +713,10 @@ def render_target(m: dict[str, Any], source: str) -> str:
     for p in m["projects"]:
         groups.setdefault(p["dir"].split("/")[0], []).append(p)
     lines = ["# The target's dependency map", "", GENERATED % ("target ROOT --source ...", source), "",
-             "A box is a project (a directory named by the root's npm workspaces, an Nx `project.json`, the root "
-             "Cargo workspace or a `pyproject.toml`); an arrow A --> B is labelled with how it was found: `npm` or "
-             "`cargo` (A's manifest names B), `import` (a JS/TS file of A imports into B), `python` (a Python "
-             "file of A imports a package of B). Rules and what is not read: `referee/status/depmap.py`.", "",
+             "A box is a project (a directory named by the root's npm workspaces, an Nx `project.json`, a Cargo "
+             "package's `Cargo.toml` or a `pyproject.toml`); an arrow A --> B is labelled with how it was found: "
+             "`npm` or `cargo` (A's manifest names B, for Cargo also through its workspace or a `[patch]`), "
+             "`import` (a JS/TS file of A imports into B), `python` (a Python file of A imports a package of B). Rules and what is not read: `referee/status/depmap.py`.", "",
              "Projects %d (npm %d, nx %d, cargo %d, python %d), arrows %d. Files %d; JS/TS files read %d (%d outside "
              "any project), Python files read %d (%d not parsed). Imports: %d across projects, %d inside one, %d "
              "of external JS packages, %d of Python modules no project holds, %d relative Python (not drawn), %d "
@@ -652,7 +727,8 @@ def render_target(m: dict[str, Any], source: str) -> str:
                  cov["python_files_unparsed"], sp["cross_project"], sp["same_project"], sp["external_package"],
                  sp["python_external"], sp["python_relative"], sp["outside_projects"], sp["leaves_root"]), "",
              "Code files of languages whose imports are not read: %s." % (
-                 ", ".join("%s %d" % kv for kv in cov["unread_code_files"].items()) or "none"), ""]
+                 ", ".join("%s %d (%d in no project)" % (ext, n, cov["unread_code_files_outside_projects"].get(ext, 0))
+                           for ext, n in cov["unread_code_files"].items()) or "none"), ""]
     if cov["unparsed_manifests"]:
         lines += ["Manifests not parsed: %s." % ", ".join(cov["unparsed_manifests"]), ""]
     lines += ["```mermaid", "flowchart LR"]
