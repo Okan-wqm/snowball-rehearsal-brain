@@ -22,6 +22,9 @@ the brain's committed drawing is the one its code gives today.
   the drawing's line; ``RootPackages``: a package or namespace directory an import reaches through the root's
   insertion becomes a ``path`` box (a module file at the root, a directory a project holds: none), Python's finder
   order in ``sys_path_target`` (package, module, then namespace);
+- ``TsConfig``: a directory holding a file ``jsimports.TSCONFIG`` names (``tsconfig.json``, ``tsconfig.<x>.json``;
+  near names not) that no manifest's project holds is a ``tsconfig`` box (nested ones both, one inside a ``path``
+  box too; one inside a manifest's project, the root and ``SKIP_DIRS`` none), alias and relative imports into it draw arrows, and the drawing's line;
 - the unread manifests: counted by the first ``MANIFESTS_NOT_READ`` pattern a file's name matches (case-sensitive,
   the name only, a near name not counted), a ``package.json`` outside the npm workspace projects (an Nx project's,
   an unparsed workspace's) counted and the root's not, ``SKIP_DIRS`` not entered; three examples in path order and
@@ -312,7 +315,7 @@ class Target(unittest.TestCase):
 
     def test_coverage(self):
         cov = D.target_map(self.checkout())["coverage"]
-        self.assertEqual(cov["projects_by_kind"], {"npm": 3, "nx": 4, "cargo": 4, "python": 1, "path": 0})
+        self.assertEqual(cov["projects_by_kind"], {"npm": 3, "nx": 4, "cargo": 4, "python": 1, "tsconfig": 0, "path": 0})
         self.assertEqual(cov["source_files"], 5)       # main, local, libs/ui, i.js, scripts/s.ts; not dist, node_modules
         self.assertEqual(cov["source_files_outside_projects"], 1)
         self.assertEqual(cov["python_files"], 4)
@@ -410,7 +413,7 @@ class SysPath(unittest.TestCase):
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Projects 3 (npm 0, nx 0, cargo 0, python 1, path 2), arrows 3.", text)
+        self.assertIn("Projects 3 (npm 0, nx 0, cargo 0, python 1, tsconfig 0, path 2), arrows 3.", text)
         self.assertIn("`sys.path` insertions in Python files: 8 calls; 6 directories resolved (1 not in the "
                       "checkout), 1 leaving the root, 1 calls or values not resolved (1 files: scripts/s.py); "
                       "5 imports resolved through them.", text)
@@ -472,7 +475,7 @@ class RootPackages(unittest.TestCase):
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Projects 6 (npm 0, nx 0, cargo 0, python 2, path 4), arrows 4.", text)
+        self.assertIn("Projects 6 (npm 0, nx 0, cargo 0, python 2, tsconfig 0, path 4), arrows 4.", text)
         self.assertIn("| app | app | python | both (sys.path), lib (sys.path), ns (sys.path), tools (sys.path) |", text)
 
     def test_finder_order(self):
@@ -484,6 +487,81 @@ class RootPackages(unittest.TestCase):
         self.assertEqual(D.sys_path_target("t", ["d", "c"], files, dirs), "c/t")
         self.assertIsNone(D.sys_path_target("t", ["d"], files, dirs))
         self.assertEqual(D.sys_path_target("u", ["", "d"], {"u/__init__.py", "d/u.py"}, {"", "u", "d"}), "u")
+
+
+class TsConfig(unittest.TestCase):
+    """A directory holding a TypeScript configuration that no manifest's project holds is a ``tsconfig`` box."""
+
+    def checkout(self) -> str:
+        root = tempfile.mkdtemp()
+        write(root, {
+            "package.json": json.dumps({"workspaces": ["apps/*"]}),
+            "tsconfig.base.json": json.dumps({"compilerOptions": {"paths": {"@t/cqrs": ["libs/cqrs/src/index.ts"]}}}),
+            "apps/web/package.json": json.dumps({"name": "@t/web"}),
+            "apps/web/tsconfig.app.json": "{}",                # inside a manifest's project: no box
+            "apps/web/src/sub/tsconfig.json": "{}",            # inside one, deeper: no box either
+            "apps/web/src/main.ts": "import { bus } from '@t/cqrs';\nimport { e } from '../../../e2e/suite/x';\n",
+            "libs/cqrs/tsconfig.lib.json": "{}",               # only a tsconfig.<x>.json: a box
+            "libs/cqrs/src/index.ts": "export * from './bus';\n",
+            "libs/cqrs/src/bus.ts": "export const bus = 1;\n",
+            "e2e/suite/tsconfig.json": "{}",                   # a test suite: a box
+            "e2e/suite/x.ts": "import { bus } from '@t/cqrs';\n",
+            "e2e/suite/inner/tsconfig.spec.json": "{}",        # nested in a tsconfig box: a box too
+            "e2e/suite/inner/y.ts": "import { x } from '../x';\n",
+            "tools/tsconfig-old.json": "{}",                   # near names are not a TypeScript configuration
+            "tools/tsconfig.json.bak": "{}",
+            "tools/xtsconfig.json": "{}",
+            "tools/t.ts": "import { bus } from '@t/cqrs';\n",
+            "apps/web/node_modules/m/tsconfig.json": "{}",     # SKIP_DIRS not entered
+            "py/pyproject.toml": "[project]\nname = \"p\"\n",
+            "py/tsconfig.json": "{}",                          # a Python project's directory: the manifest's box
+            "pyt/run.py": "import sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path(__file__).parent))\n",
+            "pyt/lint/tsconfig.json": "{}",                    # inside a sys.path box (not a manifest's): a box
+            "pyt/lint/rule.ts": "import { x } from '../../e2e/suite/x';\n",
+        })
+        return root
+
+    def test_boxes_and_arrows(self):
+        m = D.target_map(self.checkout())
+        self.assertEqual([(p["dir"], p["name"], p["kinds"]) for p in m["projects"]], [
+            ("apps/web", "@t/web", ["npm"]),
+            ("e2e/suite", "e2e/suite", ["tsconfig"]),
+            ("e2e/suite/inner", "e2e/suite/inner", ["tsconfig"]),
+            ("libs/cqrs", "libs/cqrs", ["tsconfig"]),
+            ("py", "p", ["python"]),
+            ("pyt", "pyt", ["path"]),
+            ("pyt/lint", "pyt/lint", ["tsconfig"]),
+        ])
+        self.assertEqual([(e["from"], e["to"], e["kinds"]) for e in m["edges"]], [
+            ("apps/web", "e2e/suite", ["import"]),
+            ("apps/web", "libs/cqrs", ["import"]),
+            ("e2e/suite", "libs/cqrs", ["import"]),
+            ("e2e/suite/inner", "e2e/suite", ["import"]),
+            ("pyt/lint", "e2e/suite", ["import"]),
+        ])
+
+    def test_coverage(self):
+        cov = D.target_map(self.checkout())["coverage"]
+        self.assertEqual(cov["projects_by_kind"], {"npm": 1, "nx": 0, "cargo": 0, "python": 1, "tsconfig": 4,
+                                                   "path": 1})
+        self.assertEqual(cov["source_files_outside_projects"], 1)              # tools/t.ts
+        self.assertEqual(cov["specifiers"]["outside_projects"], 1)             # its import
+        self.assertEqual(cov["specifiers"]["cross_project"], 5)
+        self.assertEqual(cov["specifiers"]["same_project"], 1)                 # index.ts's ./bus
+
+    def test_render(self):
+        text = D.render_target(D.target_map(self.checkout()), "x")
+        self.assertIn("Projects 7 (npm 1, nx 0, cargo 0, python 1, tsconfig 4, path 1), arrows 5.", text)
+        self.assertIn("of kind `tsconfig`: a directory holding a TypeScript configuration that no such project holds",
+                      text)
+        self.assertIn("| libs/cqrs | libs/cqrs | tsconfig |  |", text)
+
+    def test_the_name_rule(self):
+        from profile import jsimports as J
+        for name in ("tsconfig.json", "tsconfig.lib.json", "tsconfig.base.json", "tsconfig.app.spec.json"):
+            self.assertIsNotNone(J.TSCONFIG.fullmatch(name), name)
+        for name in ("tsconfig-old.json", "tsconfig.json.bak", "xtsconfig.json", "tsconfig.jsonc", "jsconfig.json"):
+            self.assertIsNone(J.TSCONFIG.fullmatch(name), name)
 
 
 class UnreadManifests(unittest.TestCase):
