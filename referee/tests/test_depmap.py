@@ -15,7 +15,11 @@ the brain's committed drawing is the one its code gives today.
   symbolic links not entered; arrows ``npm``, ``cargo`` (``path``, ``workspace = true``, ``[patch.crates-io]``,
   each through the workspace root Cargo finds: ``Cargo`` below), ``import`` (relative, bare workspace name and
   subpath, tsconfig alias exact and wildcard with ``baseUrl``, a commented tsconfig) and ``python``; the deepest
-  project owns a file; the coverage counts each specifier's outcome;
+  project owns a file; the coverage counts each specifier's outcome and the Python files in no project;
+- the unread manifests: counted by the first ``MANIFESTS_NOT_READ`` pattern a file's name matches (case-sensitive,
+  the name only, a near name not counted), a ``package.json`` outside the npm workspace projects (an Nx project's,
+  an unparsed workspace's) counted and the root's not, ``SKIP_DIRS`` not entered; three examples in path order and
+  the drawing's line;
 - the helpers: segment globs (the tsconfig dialect and the aliases are profile.jsimports's, test_profile_jsimports);
 - the command line: exits 0, 1 (``check`` with a problem) and 2.
 """
@@ -299,7 +303,9 @@ class Target(unittest.TestCase):
         self.assertEqual(cov["source_files"], 5)       # main, local, libs/ui, i.js, scripts/s.ts; not dist, node_modules
         self.assertEqual(cov["source_files_outside_projects"], 1)
         self.assertEqual(cov["python_files"], 4)
+        self.assertEqual(cov["python_files_outside_projects"], 1)  # scripts/run.py; bad.py is not parsed
         self.assertEqual(cov["python_files_unparsed"], 1)
+        self.assertEqual(cov["unread_manifests"], {"package.json": {"count": 1, "examples": ["libs/skip/package.json"]}})
         self.assertEqual(cov["specifiers"], {
             "cross_project": 6,       # util, feat/a, deep/x, ui/button (main.ts); @t/web (ui); pyk2 (tool.py)
             "same_project": 2,        # ./local; pyk2's from pyk import core
@@ -322,6 +328,67 @@ class Target(unittest.TestCase):
         self.assertEqual(text.count(" -->|"), 9)
         self.assertIn("Code files of languages whose imports are not read: .rs 2 (1 in no project), "
                       ".sh 1 (1 in no project).", text)
+        self.assertIn("Python files read 4 (1 outside any project, 1 not parsed).", text)
+        self.assertIn("workspaces): package.json 1 (libs/skip/package.json).", text)
+
+
+class UnreadManifests(unittest.TestCase):
+    """Manifests of ecosystems the map does not read are counted by MANIFESTS_NOT_READ's patterns; a package.json
+    is counted when it is not an npm workspace project's (the root's is read for its workspaces)."""
+
+    def tree(self, files: dict[str, str]) -> dict:
+        root = tempfile.mkdtemp()
+        write(root, files)
+        return D.target_map(root)
+
+    def test_patterns_count_by_file_name(self):
+        cov = self.tree({
+            "package.json": json.dumps({"workspaces": ["apps/*"]}),
+            "apps/a/package.json": json.dumps({"name": "a"}),          # a workspace: read
+            "e2e/package.json": json.dumps({"name": "e"}),             # an Nx project's own: not read
+            "e2e/project.json": json.dumps({"name": "e2e"}),
+            "tools/sup/package.json": "{}",                            # in no workspace
+            "svc/one/go.mod": "", "svc/two/go.mod": "", "svc/three/go.mod": "", "svc/four/go.mod": "",
+            "requirements-dev.txt": "", "py/requirements.txt": "", "py/setup.py": "",
+            "net/App.csproj": "", "jvm/build.gradle.kts": "", "rb/Gemfile": "",
+            "svc/go.mod.bak": "", "Requirements.txt": "", "py/notrequirements.txt": "",  # no pattern matches
+            "py/pyproject.toml": "[project]\nname = \"p\"\n", "Cargo.toml": "[workspace]\n",  # read manifests
+        })["coverage"]
+        self.assertEqual(cov["unread_manifests"], {
+            "*.csproj": {"count": 1, "examples": ["net/App.csproj"]},
+            "Gemfile": {"count": 1, "examples": ["rb/Gemfile"]},
+            "build.gradle.kts": {"count": 1, "examples": ["jvm/build.gradle.kts"]},
+            "go.mod": {"count": 4, "examples": ["svc/four/go.mod", "svc/one/go.mod", "svc/three/go.mod"]},
+            "package.json": {"count": 2, "examples": ["e2e/package.json", "tools/sup/package.json"]},
+            "requirements*.txt": {"count": 2, "examples": ["py/requirements.txt", "requirements-dev.txt"]},
+            "setup.py": {"count": 1, "examples": ["py/setup.py"]},
+        })
+        self.assertEqual(cov["python_files"], 1)
+        self.assertEqual(cov["python_files_outside_projects"], 0)  # py/setup.py lies in the py project
+
+    def test_an_unparsed_workspace_manifest_is_unread_and_a_skipped_directory_is_not_entered(self):
+        cov = self.tree({
+            "package.json": json.dumps({"workspaces": ["apps/*"]}),
+            "apps/a/package.json": "{",
+            "apps/a/node_modules/dep/package.json": "{}",
+            "apps/a/node_modules/dep/go.mod": "",
+        })["coverage"]
+        self.assertEqual(cov["unparsed_manifests"], ["apps/a/package.json"])
+        self.assertEqual(cov["unread_manifests"], {"package.json": {"count": 1, "examples": ["apps/a/package.json"]}})
+
+    def test_render_names_each_with_its_examples_and_none(self):
+        m = self.tree({"a/go.mod": "", "b/go.mod": "", "c/go.mod": "", "d/go.mod": "", "e/pom.xml": ""})
+        text = D.render_target(m, "x")
+        self.assertIn("workspaces): go.mod 4 (a/go.mod, b/go.mod, c/go.mod, ...); pom.xml 1 (e/pom.xml).", text)
+        self.assertIn("workspaces): none.", D.render_target(self.tree({"a.py": ""}), "x"))
+        self.assertIn("Python files read 1 (1 outside any project, 0 not parsed).",
+                      D.render_target(self.tree({"a.py": ""}), "x"))
+
+    def test_the_list_is_names_only_and_distinct(self):
+        self.assertEqual(len(D.MANIFESTS_NOT_READ), len(set(D.MANIFESTS_NOT_READ)))
+        for p in D.MANIFESTS_NOT_READ:
+            self.assertNotIn("/", p)
+            self.assertNotIn(p, ("package.json", "project.json", "Cargo.toml", "pyproject.toml"))
 
 
 class Cargo(unittest.TestCase):
