@@ -10,8 +10,9 @@
   ``alias_file``'s order; a text that does not parse raises;
 - ``package_name`` and ``is_relative``; ``walk``: ``SKIP_DIRS`` and links are not entered;
 - ``code_view``, which passes code between two of ``/ ' " ` `` whole: the same view as ``reference_view``, the
-  lexer read one character at a time (the rules as first written, kept here as the oracle), on texts drawn from
-  the lexer's delimiters, blanks, words and ``REGEX_WORDS`` (a fixed seed).
+  lexer read one character at a time (kept here as the oracle), on texts drawn from the lexer's delimiters,
+  blanks, words, ``.`` and ``REGEX_WORDS`` (a fixed seed); a blank or a comment ends a word and a word after a
+  ``.`` is a property name, not a keyword.
 """
 
 from __future__ import annotations
@@ -37,6 +38,8 @@ def reference_view(text: str) -> str:
     i, n = 0, len(text)
     last = ""
     word = ""
+    member = False  # the word follows a "."
+    gap = False  # a blank or a comment since ``last``
     while i < n:
         c = text[i]
         if text.startswith("//", i) or text.startswith("/*", i):
@@ -44,8 +47,9 @@ def reference_view(text: str) -> str:
             end = n if end < 0 else end if text[i + 1] == "/" else end + 2
             for k in range(i, end):
                 out[k] = "\n" if text[k] == "\n" else " "
-            i = end
-        elif c in "'\"`" or (c == "/" and (last == "" or last in J.REGEX_AFTER or word in J.REGEX_WORDS)):
+            i, gap = end, True
+        elif c in "'\"`" or (c == "/" and (last == "" or last in J.REGEX_AFTER
+                                           or (word in J.REGEX_WORDS and not member))):
             j, in_class = i + 1, False
             while j < n:
                 d = text[j]
@@ -61,19 +65,25 @@ def reference_view(text: str) -> str:
                 j += 1
             for k in range(i + 1, min(j, n)):
                 out[k] = text[k] if text[k] == "\n" else J.FILL
-            i, last, word = j + 1, c, ""
+            i, last, word, member, gap = j + 1, c, "", False, False
         else:
-            if not c.isspace():
-                word = word + c if (c.isalnum() or c in "_$") and (last.isalnum() or last in "_$") else \
-                    (c if c.isalnum() or c in "_$" else "")
-                last = c
+            if c.isspace():
+                gap = True
+            else:
+                if not (c.isalnum() or c in "_$"):
+                    word, member = "", False
+                elif (last.isalnum() or last in "_$") and not gap:
+                    word += c
+                else:
+                    word, member = c, last == "."
+                last, gap = c, False
             i += 1
     return "".join(out)
 
 
 PIECES = ["/", "//", "/*", "*/", "'", '"', "`", "\\", "\n", "\r\n", " ", "\t", "[", "]", "(", ")", "=", "!",
           "}", "{", "${", ";", "+", "x", "a1", "_", "$", "\u00e9", "\u0661", "ab cd", "import", " from ",
-          "'a'", "require('b')"] + sorted(J.REGEX_WORDS)
+          "'a'", "require('b')", ".", "?.", "..."] + sorted(J.REGEX_WORDS)
 
 
 class Specifiers(unittest.TestCase):
@@ -133,9 +143,30 @@ class Specifiers(unittest.TestCase):
             self.assertEqual(J.code_view(text), reference_view(text), repr(text))
 
     def test_a_long_run_of_code_is_read_for_its_last_word(self):
-        # blanks between word characters do not end a word (the rule as written); a non-word character does
-        for text in ("x = 1 +\n  typeof /a'/", "a.  return /b'/", "await  /c'/", "1 + 2 / 3 / 'd'", "x\nreturn /e'/"):
+        for text in ("x = 1 +\n  typeof /a'/", "a.  return /b'/", "await  /c'/", "1 + 2 / 3 / 'd'", "x\nreturn /e'/",
+                     "ret/**/urn /f'/", "a./* c */return /g'/"):
             self.assertEqual(J.code_view(text), reference_view(text), text)
+
+    def test_a_blank_or_a_comment_ends_a_word(self):
+        # a statement without a semicolon, then a keyword and a regular expression: the keyword is the word
+        for text in ("x\nreturn /a'/; import q from 'q'", "f()\n  typeof /a'/; import q from 'q'",
+                     "y /* c */ return /a'/; import q from 'q'", "i\tawait /a'/\nimport q from 'q'"):
+            self.assertEqual(J.specifiers(text), ["q"], text)
+        # ... and words a comment or a blank splits are two words, neither a keyword
+        for text in ("ret/**/urn /2; import q from 'q' // '", "re turn /2; import q from 'q' // '"):
+            self.assertEqual(J.specifiers(text), ["q"], text)
+
+    def test_a_word_after_a_dot_is_a_property_name(self):
+        for text in ("a.in /2; import q from 'q' // '", "a.\n  return /2; import q from 'q' // '",
+                     "a./* c */ typeof /2; import q from 'q' // '", "a?.of / 2; import q from 'q' // '"):
+            self.assertEqual(J.specifiers(text), ["q"], text)
+        # stated as not told apart: a spread before a keyword reads its "/" as division
+        self.assertEqual(J.code_view("[...await /a/]"), "[...await /a/]")
+
+    def test_a_keyword_in_jsx_text_starts_a_regex_to_its_next_slash(self):
+        text = "<p>Transfers in/out</p>; import a from 'a'"
+        self.assertEqual(J.code_view(text), "<p>Transfers in/xxxx/p>; import a from 'x'")
+        self.assertEqual(J.specifiers(text), ["a"])
 
     def test_a_specifier_that_is_not_a_string_literal_is_not_read(self):
         self.assertEqual(J.specifiers("const m = require(name); import(`x/${y}`);"), [])

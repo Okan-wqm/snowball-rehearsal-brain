@@ -10,7 +10,13 @@ JS/TS file, a tsconfig's ``extends``, the root tsconfig's path aliases and the p
   literal. ``code_view``'s lexing, stated: a ``'`` or ``"`` string ends at its closing quote or at the line's end
   (so an apostrophe in JSX text blanks the rest of its line only); a template ends at its closing backtick, its
   ``${...}`` included (an import inside one is not read); a ``/`` starts a regular expression after nothing, after
-  one of ``REGEX_AFTER`` or after a word of ``REGEX_WORDS``, else it is division.
+  one of ``REGEX_AFTER`` or after a word of ``REGEX_WORDS``, else it is division. The word is the run of word
+  characters (``_is_word``) ending at the last code character, so a blank or a comment ends a word (``x\nreturn``
+  ends in ``return``); a word after a ``.`` (blanks and comments between them allowed) is a property name, never
+  one of ``REGEX_WORDS`` (``a.in / 2`` is division). Not told apart: a spread (``...await /a/``) and a number
+  ending in ``.`` (``1.in /a/``), both read as a property name, so their ``/`` is division. JSX text is read as
+  code: in ``<p>in/out</p>`` the ``/`` after ``in`` starts a regular expression, which ends at its next ``/`` or
+  the line's end.
 - ``TSCONFIG``: a TypeScript configuration file's name, matched whole against a base name: ``tsconfig.json`` or
   ``tsconfig.<anything>.json`` (``tsconfig.lib.json``, ``tsconfig.base.json``); the one rule ``profile.fit`` and
   ``status.depmap`` read a tsconfig by.
@@ -82,11 +88,11 @@ def code_view(text: str) -> str:
     """``text`` of the same length with every comment blanked (newlines kept) and the inside of every string,
     template and regular-expression literal written ``FILL`` (a quote, a newline and the delimiters kept), so a
     keyword or quote inside one is not code. Code between two of ``/ ' " ` `` is passed whole (``_VIEW_STOP``)
-    and only its last code character and last word are read from it."""
+    and only its last code character and last word (none after a ``.``) are read from it."""
     out: list[str] = []
     i, n = 0, len(text)
     last = ""  # the last code character that is not a blank, "" at the start
-    word = ""  # the last word of code: word characters of code, blanks between them not ending it
+    word = ""  # the word ending at the last code character, "" when that is not a word or the word follows a "."
     while i < n:
         m = _VIEW_STOP.search(text, i)
         p = m.start() if m else n
@@ -131,22 +137,23 @@ def _is_word(c: str) -> bool:
 
 
 def _code_tail(text: str, i: int, p: int, last: str, word: str) -> tuple[str, str]:
-    """``last`` and ``word`` after the code ``text[i:p]`` (none of ``_VIEW_STOP`` in it), read backwards."""
+    """``last`` and ``word`` after the code ``text[i:p]`` (none of ``_VIEW_STOP`` in it), read backwards; ``last``
+    is the code character before ``text[i]`` (a comment or blanks between them)."""
     k = p - 1
     while k >= i and text[k].isspace():
         k -= 1
     if k < i:
         return last, word
-    tail: list[str] = []
+    if not _is_word(text[k]):
+        return text[k], ""
     m = k
-    while m >= i:
-        c = text[m]
-        if not c.isspace():
-            if not _is_word(c):
-                return text[k], "".join(reversed(tail))
-            tail.append(c)
+    while m >= i and _is_word(text[m]):
         m -= 1
-    return text[k], (word if _is_word(last) else "") + "".join(reversed(tail))
+    start = m + 1
+    while m >= i and text[m].isspace():
+        m -= 1
+    before = text[m] if m >= i else last
+    return text[k], "" if before == "." else text[start:k + 1]
 
 
 def specifiers(text: str) -> list[str]:
