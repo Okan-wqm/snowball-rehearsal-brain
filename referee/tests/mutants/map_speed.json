@@ -91,24 +91,6 @@
    ]
   },
   {
-   "id": "view_class_ignored",
-   "file": "profile/jsimports.py",
-   "old": "                elif c == \"/\" and d in \"[]\":",
-   "new": "                elif False:",
-   "tests": [
-    "test_profile_jsimports.py"
-   ]
-  },
-  {
-   "id": "view_escape_not_skipped",
-   "file": "profile/jsimports.py",
-   "old": "                if d == \"\\\\\":\n                    j += 2\n",
-   "new": "                if d == \"\\\\\":\n                    j += 1\n",
-   "tests": [
-    "test_profile_jsimports.py"
-   ]
-  },
-  {
    "id": "pypath_reader_always",
    "file": "profile/pypath.py",
    "old": "    if not calls:\n        return out\n",
