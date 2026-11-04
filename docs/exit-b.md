@@ -34,7 +34,7 @@ From `spec/asama-0/10a-cikis-canli-dongu.md` and `referee/harness/pass_row.py` (
 | `#durum` | `#durum` | judged by `harness.pass_row` (`#durum`) |
 | `#main` `#guvenlik-yolu` | `#main` | not checked: the target's rulesets and target.write's refusals; brain/state records no write |
 | `#main` `#guvenlik-yolu` | `#guvenlik-yolu` | not checked: the target's rulesets and target.write's refusals; brain/state records no write |
-| `#pass` | `#pass` | written: `harness.pass_row.write` on the toy's `brain/state`; no job calls it yet (seed-046, seed-048) |
+| `#pass` | `#pass` | written: `yaz` on the toy's cycle once the gate's row is held (`loop.job.yaz_pass`, `loop.write_cycle`), after `harness.pass_row.judge` gave `PASS` on both states |
 
 ## The rehearsal's stops
 
