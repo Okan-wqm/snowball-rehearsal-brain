@@ -7,7 +7,9 @@ segments, ``str``, ``os.fspath``, ``parent``, ``parents[n]``, ``/``, ``os.path.j
 twice or by an argument; leaving the root (``parents``, a fold above the root, an absolute segment); the
 unresolved forms (working directory, environment, ``or``, a relative string, a wrong argument count, a call outside
 the list, a negative or non-literal index, a rebound ``__file__``); the calls not counted (an alias of ``sys``,
-slice assignment); a function's body counted; source order; a source that does not parse.
+slice assignment); a function's body counted; source order; a source that does not parse; ``tree_insertions``
+(a parsed source, the reader ``status.depmap`` calls) gives ``insertions``'s result and reads a file's bindings only
+when it holds an insertion call.
 """
 
 from __future__ import annotations
@@ -116,6 +118,29 @@ class Unresolved(unittest.TestCase):
                      "sys.path[0:0] = [os.path.dirname(__file__)]\n",
                      "code = 'sys.path.insert(0, x)'\n"):
             self.assertEqual(dirs(body)["calls"], 0, body)
+
+    def test_a_parsed_source_reads_its_bindings_only_with_an_insertion_call(self):
+        import ast
+        with_call = HEAD + "R = Path(__file__).parent\nsys.path.insert(0, str(R / 'x'))\n"
+        without = HEAD + "R = Path(__file__).parent\nprint(sys.path, R)\n"
+        self.assertEqual(P.tree_insertions(ast.parse(with_call), FILE), P.insertions(with_call, FILE))
+        self.assertEqual(P.tree_insertions(ast.parse(with_call), FILE)["dirs"], ["a/b/x"])
+        built = []
+        real = P._Reader
+
+        class Counted(real):
+            def __init__(self, tree, rel):
+                built.append(rel)
+                super().__init__(tree, rel)
+        P._Reader = Counted
+        try:
+            self.assertEqual(P.tree_insertions(ast.parse(without), FILE),
+                             {"calls": 0, "dirs": [], "unresolved": 0, "leaves_root": 0})
+            self.assertEqual(built, [])
+            P.tree_insertions(ast.parse(with_call), FILE)
+            self.assertEqual(built, [FILE])
+        finally:
+            P._Reader = real
 
     def test_a_source_that_does_not_parse(self):
         with self.assertRaises(SyntaxError):

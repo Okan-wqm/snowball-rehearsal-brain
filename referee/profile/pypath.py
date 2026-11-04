@@ -222,15 +222,19 @@ def _insert_arg(node: ast.Call) -> tuple[bool, ast.AST | None]:
 
 
 def insertions(source: str, rel: str) -> dict[str, Any]:
-    tree = ast.parse(source)
-    reader = _Reader(tree, rel)
+    return tree_insertions(ast.parse(source), rel)
+
+
+def tree_insertions(tree: ast.AST, rel: str) -> dict[str, Any]:
+    """``insertions`` of a parsed source; the file's bindings are read only when it holds an insertion call."""
     out: dict[str, Any] = {"calls": 0, "dirs": [], "unresolved": 0, "leaves_root": 0}
-    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)]
-    calls.sort(key=lambda n: (n.lineno, n.col_offset))
-    for node in calls:
-        is_insert, arg = _insert_arg(node)
-        if not is_insert:
-            continue
+    calls = [(n, arg) for n in ast.walk(tree) if isinstance(n, ast.Call) for is_insert, arg in [_insert_arg(n)]
+             if is_insert]
+    if not calls:
+        return out
+    reader = _Reader(tree, rel)
+    calls.sort(key=lambda c: (c[0].lineno, c[0].col_offset))
+    for _node, arg in calls:
         out["calls"] += 1
         values = reader.values(arg) if arg is not None else None
         if values is None or any(v != LEAVES and v[0] != "path" for v in values):

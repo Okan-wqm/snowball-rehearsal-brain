@@ -1,0 +1,130 @@
+{
+ "mutants": [
+  {
+   "id": "reads_all_at_once",
+   "file": "status/depmap.py",
+   "old": "for rel in itertools.islice(rest, READ_AHEAD))",
+   "new": "for rel in rest)",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "reads_one_thread",
+   "file": "status/depmap.py",
+   "old": "READERS = 16\n",
+   "new": "READERS = 1\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "reads_out_of_order",
+   "file": "status/depmap.py",
+   "old": "            rel, text = pending.popleft()\n",
+   "new": "            rel, text = pending.pop()\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "reads_window_not_refilled",
+   "file": "status/depmap.py",
+   "old": "            for more in itertools.islice(rest, 1):\n",
+   "new": "            for more in itertools.islice(rest, 0):\n",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "sources_out_of_order",
+   "file": "status/depmap.py",
+   "old": "    sources = _reads(root, [rel for rel in files if posixpath.splitext(rel)[1] in J.SOURCE_EXTENSIONS])",
+   "new": "    sources = _reads(root, sorted([rel for rel in files if posixpath.splitext(rel)[1] in J.SOURCE_EXTENSIONS], reverse=True))",
+   "tests": [
+    "test_depmap.py"
+   ]
+  },
+  {
+   "id": "view_word_not_continued",
+   "file": "profile/jsimports.py",
+   "old": "    return text[k], (word if _is_word(last) else \"\") + \"\".join(reversed(tail))",
+   "new": "    return text[k], \"\".join(reversed(tail))",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "view_word_not_ended",
+   "file": "profile/jsimports.py",
+   "old": "                return text[k], \"\".join(reversed(tail))",
+   "new": "                break",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "view_last_blank",
+   "file": "profile/jsimports.py",
+   "old": "    while k >= i and text[k].isspace():\n        k -= 1\n",
+   "new": "",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "view_block_comment_missed",
+   "file": "profile/jsimports.py",
+   "old": "        if text.startswith(\"//\", p) or text.startswith(\"/*\", p):",
+   "new": "        if text.startswith(\"//\", p):",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "view_template_ends_at_newline",
+   "file": "profile/jsimports.py",
+   "old": "\"`\": re.compile(r\"[\\\\`]\")",
+   "new": "\"`\": re.compile(r\"[\\\\\\n`]\")",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "view_class_ignored",
+   "file": "profile/jsimports.py",
+   "old": "                elif c == \"/\" and d in \"[]\":",
+   "new": "                elif False:",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "view_escape_not_skipped",
+   "file": "profile/jsimports.py",
+   "old": "                if d == \"\\\\\":\n                    j += 2\n",
+   "new": "                if d == \"\\\\\":\n                    j += 1\n",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "pypath_reader_always",
+   "file": "profile/pypath.py",
+   "old": "    if not calls:\n        return out\n",
+   "new": "",
+   "tests": [
+    "test_profile_pypath.py"
+   ]
+  },
+  {
+   "id": "pypath_every_call",
+   "file": "profile/pypath.py",
+   "old": "for is_insert, arg in [_insert_arg(n)]\n             if is_insert]",
+   "new": "for is_insert, arg in [_insert_arg(n)]]",
+   "tests": [
+    "test_profile_pypath.py"
+   ]
+  }
+ ]
+}
