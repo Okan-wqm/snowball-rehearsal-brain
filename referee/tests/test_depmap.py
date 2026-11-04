@@ -16,6 +16,10 @@ the brain's committed drawing is the one its code gives today.
   each through the workspace root Cargo finds: ``Cargo`` below), ``import`` (relative, bare workspace name and
   subpath, tsconfig alias exact and wildcard with ``baseUrl``, a commented tsconfig) and ``python``; the deepest
   project owns a file; the coverage counts each specifier's outcome and the Python files in no project;
+- ``sys.path`` (``SysPath``): a directory a Python file inserts becomes a ``path`` box when no manifest's project
+  holds it (nested ones both, a missing one none, one inside a project none), an import through it draws
+  ``sys.path`` (a module file or a directory, before a ``pyproject.toml`` package), the coverage's ``sys_path`` and
+  the drawing's line;
 - the unread manifests: counted by the first ``MANIFESTS_NOT_READ`` pattern a file's name matches (case-sensitive,
   the name only, a near name not counted), a ``package.json`` outside the npm workspace projects (an Nx project's,
   an unparsed workspace's) counted and the root's not, ``SKIP_DIRS`` not entered; three examples in path order and
@@ -299,7 +303,7 @@ class Target(unittest.TestCase):
 
     def test_coverage(self):
         cov = D.target_map(self.checkout())["coverage"]
-        self.assertEqual(cov["projects_by_kind"], {"npm": 3, "nx": 4, "cargo": 4, "python": 1})
+        self.assertEqual(cov["projects_by_kind"], {"npm": 3, "nx": 4, "cargo": 4, "python": 1, "path": 0})
         self.assertEqual(cov["source_files"], 5)       # main, local, libs/ui, i.js, scripts/s.ts; not dist, node_modules
         self.assertEqual(cov["source_files_outside_projects"], 1)
         self.assertEqual(cov["python_files"], 4)
@@ -330,6 +334,77 @@ class Target(unittest.TestCase):
                       ".sh 1 (1 in no project).", text)
         self.assertIn("Python files read 4 (1 outside any project, 1 not parsed).", text)
         self.assertIn("workspaces): package.json 1 (libs/skip/package.json).", text)
+
+
+class SysPath(unittest.TestCase):
+    """A directory a Python file puts on ``sys.path`` (``profile.pypath``): a box of kind ``path`` when no manifest's
+    project holds it, decided against those projects only; an import of a name an inserted directory of the same
+    file holds resolves there (before a ``pyproject.toml`` package of the same name) and draws ``sys.path``."""
+
+    HEAD = "import os\nimport sys\nfrom pathlib import Path\n"
+
+    def checkout(self, extra: dict[str, str] | None = None) -> str:
+        root = tempfile.mkdtemp()
+        h = self.HEAD
+        write(root, {
+            "aria/pyproject.toml": "[project]\nname = \"aria\"\n",
+            "aria/aria_k/__init__.py": "",
+            "aria/tests/test_a.py": h + "_ROOT = Path(__file__).resolve().parents[2]\n"
+                                    "sys.path.insert(0, str(_ROOT / 'tools' / 'poc'))\n"
+                                    "import poc_mod\nimport aria_k\nimport json\n",
+            "aria/tests/conf.py": h + "sys.path.insert(0, str(Path(__file__).parent))\nimport helper\n",
+            "aria/tests/helper.py": "",
+            "tools/poc/poc_mod.py": h + "sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'aria'))\n"
+                                    "import aria_k.core\n",
+            "tools/poc/sub/x.py": "import json\n",
+            "tools/other/y.py": h + "sys.path.insert(0, str(Path(__file__).parent.parent))\nimport poc\n",
+            "scripts/s.py": h + "sys.path.append(os.path.join(os.path.dirname(__file__), 'gone'))\n"
+                                "sys.path.insert(0, os.getcwd())\n",
+            "scripts/r.py": h + "sys.path.insert(0, str(Path(__file__).parents[1]))\nimport tools\n",
+            "scripts/l.py": h + "sys.path.insert(0, str(Path(__file__).parents[5]))\n",
+            **(extra or {}),
+        })
+        return root
+
+    def test_boxes_and_arrows(self):
+        m = D.target_map(self.checkout())
+        self.assertEqual([(p["dir"], p["name"], p["kinds"]) for p in m["projects"]], [
+            ("aria", "aria", ["python"]),
+            ("tools", "tools", ["path"]),          # y.py's parent.parent; nested boxes do not hide each other
+            ("tools/poc", "tools/poc", ["path"]),  # test_a.py's insertion; aria/tests is inside aria: no box
+        ])
+        self.assertEqual([(e["from"], e["to"], e["kinds"]) for e in m["edges"]], [
+            ("aria", "tools/poc", ["sys.path"]),   # import poc_mod through tools/poc
+            ("tools", "tools/poc", ["sys.path"]),  # import poc: a directory in an inserted directory
+            ("tools/poc", "aria", ["sys.path"]),   # import aria_k.core through aria
+        ])
+
+    def test_coverage(self):
+        cov = D.target_map(self.checkout())["coverage"]
+        self.assertEqual(cov["sys_path"], {
+            "calls": 8, "dirs": 6, "missing": 1, "leaves_root": 1, "unresolved": 1,
+            "imports": 5,   # poc_mod, helper, aria_k.core, poc, tools (r.py: into the root's tools box)
+            "unresolved_files": {"count": 1, "examples": ["scripts/s.py"]}})
+        self.assertEqual(cov["projects_by_kind"]["path"], 2)
+        self.assertEqual(cov["python_files_outside_projects"], 3)  # scripts/*.py; tools/** now in boxes
+        sp = cov["specifiers"]
+        self.assertEqual((sp["cross_project"], sp["same_project"], sp["outside_projects"]), (3, 2, 1))
+        self.assertEqual(sp["python_external"], 23)  # os, sys and pathlib in 7 files, json in 2: in no inserted dir
+
+    def test_an_inserted_directory_wins_over_a_package_and_a_missing_name_falls_through(self):
+        m = D.target_map(self.checkout({"tools/poc/aria_k.py": ""}))
+        edges = [(e["from"], e["to"], e["kinds"]) for e in m["edges"]]
+        self.assertIn(("aria", "tools/poc", ["sys.path"]), edges)
+        self.assertEqual(m["coverage"]["specifiers"]["same_project"], 1)  # aria_k now resolves in tools/poc
+
+    def test_render(self):
+        text = D.render_target(D.target_map(self.checkout()), "x")
+        self.assertIn("Projects 3 (npm 0, nx 0, cargo 0, python 1, path 2), arrows 3.", text)
+        self.assertIn("`sys.path` insertions in Python files: 8 calls; 6 directories resolved (1 not in the "
+                      "checkout), 1 leaving the root, 1 calls or values not resolved (1 files: scripts/s.py); "
+                      "5 imports resolved through them.", text)
+        self.assertIn("| aria | aria | python | tools/poc (sys.path) |", text)
+        self.assertIn("| tools/poc | tools/poc | path | aria (sys.path) |", text)
 
 
 class UnreadManifests(unittest.TestCase):
