@@ -88,6 +88,20 @@ target with exactly one of the two heads (an activation stopped after its cut) s
 failure rule leaves it to the operator); a second genesis after a re-import (tohum/26d) is ``activate``'s
 ``already_activated`` (seed-047).
 
+**The PASS row** (tohum/26d, asama-0/08 row 9, 10a ``#pass``; ``harness.pass_row``). ``yaz`` judges it on each toy's
+ordinary cycle once the toy's run holds the gate's row (``yaz_pass``, before anything is written), until the run holds
+its PASS row (``harness.pass_row.passed``): ``harness.pass_row.judge`` on the toy's and the copy's ``pulled`` states
+(the bytes this run's D1 verified; the copy is the one served target of kind ``copy``, read from its
+``in/pulled/<id>``), each one's candidates' ``expect.json``, D8's seed and catalog, the checkout's
+``setup/imports.jsonl`` and the (A) result its last import names, ``setup/results/<result_sha256>.json``
+(``harness.pass_row.result_path``; tohum/26c, 29s). The line has ``pass`` ``{verdict: PASS|FAIL, conditions,
+unusable?}``, or ``{waiting: copy_not_served|copy_genesis}`` when no copy with a state is served this run (a copy
+waiting for its genesis or in its genesis cycle). A ``PASS`` adds the ``events``/``pass`` row with the judge's
+payload to the cycle D6 writes (``loop.write_cycle``'s ``passed``); a ``FAIL`` writes nothing more and the cycle
+goes on. An input the judge cannot use is ``FAIL`` with ``unusable``; an unreadable checkout file (the result
+among them) and a second served copy are unusable (exit 2), nothing written. Both states are the ones this run
+started from: the copy's cycle of the same run comes after the toy's in ``targets[]`` and is judged by the next run.
+
 **What ``run`` does now.** It checks the job's environment contract first: a job that runs code (``getir``,
 ``kos``) refuses to start when any secret of another job, the OIDC request variables or ``GITHUB_TOKEN`` is in its
 environment (``secret_in_code_job:<NAME>``, exit 1). Every job that reads the tree extracts it from ``pulled`` into
@@ -718,6 +732,31 @@ def yaz_d8(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any]) -> 
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
+def _judge_inputs(environ: dict[str, str]) -> tuple[dict | None, bytes]:
+    """What ``harness.pass_row`` judges with besides the states, for the gate and the PASS row: D8's ``{seed,
+    catalog}`` (``loop.drill.inputs``; ``None`` when the drill is off) and the checkout's counter."""
+    if not environ.get("GITHUB_WORKSPACE"):
+        raise Unusable("yaz: GITHUB_WORKSPACE is not set")
+    try:
+        inp = _drill_inputs(environ)
+    except DR.Unusable as exc:
+        raise Unusable("yaz: %s" % cli.cause(exc)) from None
+    drill = {"seed": inp["seed"], "catalog": inp["catalog"]} if inp and "seed" in inp else None
+    return drill, _workspace_file(environ, IMPORTS)
+
+
+def _expectations(art: Any) -> dict:
+    """``{cid: expect.json}`` of ``pulled``'s candidates, as JSON (``harness.pass_row.expectations`` checks them)."""
+    return {cid: json.loads(files["expect.json"].decode("utf-8")) for cid, files in art.candidates.items()}
+
+
+def _state(art: Any) -> dict:
+    return {"ledger": art.state[B.STATE_LEDGER], "roots": art.state[B.STATE_ROOTS]}
+
+
+JUDGE_UNUSABLE = (UnicodeDecodeError, json.JSONDecodeError, RecursionError, PR.Unusable)
+
+
 def yaz_gate(environ: dict[str, str], art: Any) -> dict[str, Any] | None:
     """The copy's genesis gate on the toy's cycle (``harness.pass_row.gate``; see the module docstring): ``None`` on
     a target that is not a toy or whose run already holds the gate's row; else ``{verdict: open|closed,
@@ -727,27 +766,58 @@ def yaz_gate(environ: dict[str, str], art: Any) -> dict[str, Any] | None:
     unreadable checkout file is unusable as in D6."""
     if art.target.get("kind") != "toy" or PR.gate_opened(art.state[B.STATE_LEDGER]):
         return None
-    if not environ.get("GITHUB_WORKSPACE"):
-        raise Unusable("yaz: GITHUB_WORKSPACE is not set")
+    drill, imports = _judge_inputs(environ)
     try:
-        inp = _drill_inputs(environ)
-    except DR.Unusable as exc:
-        raise Unusable("yaz: %s" % cli.cause(exc)) from None
-    drill = {"seed": inp["seed"], "catalog": inp["catalog"]} if inp and "seed" in inp else None
-    imports = _workspace_file(environ, IMPORTS)
-    try:
-        expect = {cid: json.loads(files["expect.json"].decode("utf-8")) for cid, files in art.candidates.items()}
-        got = PR.gate({"ledger": art.state[B.STATE_LEDGER], "roots": art.state[B.STATE_ROOTS]}, expect, drill,
-                      imports)
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, PR.Unusable) as exc:
+        got = PR.gate(_state(art), _expectations(art), drill, imports)
+    except JUDGE_UNUSABLE as exc:
         return {"verdict": "closed", "conditions": {}, "unusable": cli.cause(exc)}
     return {"verdict": got["verdict"], "conditions": {c: r for c, r in got["conditions"].items() if r}}
 
 
+def yaz_pass(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any] | None, dict | None]:
+    """The PASS row on the toy's cycle (``harness.pass_row.judge``; see the module docstring): ``(line, payload)``.
+    ``(None, None)`` on a target that is not a toy, before the copy's genesis gate opened, or when the toy's run
+    already holds its PASS row; ``({waiting: copy_not_served|copy_genesis}, None)`` when no copy with a state is
+    served this run; else ``{verdict: PASS|FAIL, conditions}`` (only those with reasons) and, on ``PASS``, the
+    row's payload, judged before anything is written. An input the judge cannot use (an ``expect.json``, a counter
+    with no import, a result that is not the one the import names) is ``FAIL`` with ``unusable``: the toy's cycle
+    goes on; an unreadable checkout file is unusable as in D6."""
+    ledger = art.state[B.STATE_LEDGER]
+    if art.target.get("kind") != "toy" or not PR.gate_opened(ledger) or PR.passed(ledger):
+        return None, None
+    try:  # run read served.json first; D1 verified each served state
+        others = [P.read(_dir(environ, "in", "pulled", other)) for other in P.served(_dir(environ, "in", "pulled"))
+                  if other != tid]
+    except P.PulledError as exc:
+        raise Unusable("yaz: pulled: %s" % ", ".join(exc.reasons)) from None
+    copies = [other for other in others if other.target.get("kind") == "copy"]
+    if len(copies) > 1:
+        raise Unusable("yaz: more than one copy served (tohum/26c: one toy, one copy)")
+    if not copies:
+        return {"waiting": "copy_not_served"}, None
+    if P.genesis(copies[0]):
+        return {"waiting": "copy_genesis"}, None
+    drill, imports = _judge_inputs(environ)
+    try:
+        path = PR.result_path(imports)
+    except PR.Unusable as exc:
+        return {"verdict": "FAIL", "conditions": {}, "unusable": cli.cause(exc)}, None
+    result = _workspace_file(environ, path)
+    try:
+        got = PR.judge(_state(art), _state(copies[0]), _expectations(art), _expectations(copies[0]), drill, imports,
+                       result)
+    except JUDGE_UNUSABLE as exc:
+        return {"verdict": "FAIL", "conditions": {}, "unusable": cli.cause(exc)}, None
+    line = {"verdict": got["verdict"], "conditions": {c: r for c, r in got["conditions"].items() if r}}
+    return line, got["payload"]
+
+
 def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
            signer: Any = None, now: Any = None, base_lint: dict | None = None,
-           end: dict | None = None, drill: dict | None = None, gate: dict | None = None) -> dict[str, Any]:
-    """D6 of ``yaz``, with D7's ``end``, D8's step and the gate's row (see the module docstring): ``{reason, reasons,
+           end: dict | None = None, drill: dict | None = None, gate: dict | None = None,
+           passed: dict | None = None) -> dict[str, Any]:
+    """D6 of ``yaz``, with D7's ``end``, D8's step, the gate's and the PASS row (see the module docstring): ``{reason,
+    reasons,
     written?}`` or
     ``{written}``. ``transport``
     is the target's API (``target.write.HttpTransport`` with ``WRITER_TOKEN`` when ``None``), ``signer`` the root's
@@ -760,7 +830,7 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
                                                                     "ts"))
     try:
         return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill,
-                                    gate)}
+                                    gate, passed)}
     except WC.Refused as exc:
         return {"reason": "write_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
@@ -1142,8 +1212,9 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
     d8 = yaz_d8(environ, art, tree, d5)
     gate = yaz_gate(environ, art)
     opened = PR.gate_payload() if gate is not None and gate["verdict"] == "open" else None
-    d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened)
-    shown = {} if gate is None else {"gate": gate}
+    judged, passed = yaz_pass(environ, tid, art)
+    d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened, passed)
+    shown = dict({} if gate is None else {"gate": gate}, **({} if judged is None else {"pass": judged}))
     if "reason" in d6:
         return dict(ok=False, done=["D5"], **d5, **d7, **d6, **shown)
     done = ["D5", "D6"] + (["D7"] if end else []) + ([] if d8["action"] == "off" else ["D8"])

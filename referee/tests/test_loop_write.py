@@ -50,6 +50,15 @@ served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line ch
   ``drill_inputs_missing`` and no row, a flaky sentinel closes it with the seed; an ``expect.json`` it cannot use
   keeps it closed with ``unusable`` and the cycle written; a copy is not judged; ``loop.write_cycle`` writes the
   row it is given at ``<cycle>:gate``;
+- the PASS row (``Pass``, tohum/26d) on a toy whose run holds the gate's row, served with the copy (test_pass_row's
+  passing worlds) and the checkout's counter and (A) result: a PASS writes the ``pass`` row with the judge's payload
+  on the toy's cycle (the referee's own, after D8's row, before the cost and status rows; the copy's state
+  untouched), the state written is judged PASS again, and the next cycle neither judges it again nor writes a
+  second; without the seed it fails with ``drill_inputs_missing`` and the cycle is written; the copy's own state
+  is judged (a model mismatch of its canary fails it); before the gate's row, on a copy, it is not judged, without
+  a served copy, with the copy in its genesis form or only another toy it waits; a result that is not the import's
+  and an ``expect.json`` of the copy it cannot use fail it with ``unusable``; a missing result (nothing written)
+  and a second copy are unusable; ``loop.write_cycle`` writes the row it is given at ``<cycle>:pass``;
 - the genesis cycle (``Genesis``): ``kos`` then ``yaz`` on a toy's ``pulled`` in loop.pulled's genesis form;
   ``yaz`` runs ``activate`` with D5's answer, D3's base run and D4's cost row (the cut at main, the merge, the
   orphan state with the genesis payload naming the counter's transfer, the checkout's security ledger, the pulled
@@ -1009,6 +1018,187 @@ class Gate(StateBase):
                          [("301-1:start", "cycle_start"), ("301-1:gate", "copy_gate"), ("301-1:status", "status")])
         self.assertEqual(rows[1]["payload"], {"conditions": ["#kok"]})
         self.assertEqual(got["rows"], 3)
+
+
+class Pass(StateBase):
+    """The PASS row (tohum/26d, asama-0/08 row 9): once the toy's run holds the gate's row, ``yaz`` judges
+    ``harness.pass_row.judge`` on the toy's and the copy's ``pulled`` states with the checkout's counter and the (A)
+    result it names, and a PASS row is added to the toy's cycle, once."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        import test_pass_row as TP
+        self.TP = TP
+        toy = TP.toy_world()  # every condition holds on it and on the copy world (test_pass_row.Passes)
+        toy.cycle(TP.gate_row, TP.cost)  # the gate opened in an earlier cycle of the run
+        self.toy, self.copy = toy, TP.copy_world()
+        for path, data in (("imports.jsonl", TP.IMPORTS),
+                           ("results/%s.json" % hashlib.sha256(TP.RESULT).hexdigest(), TP.RESULT)):
+            write_tree(os.path.join(self.workspace, "setup"), {path: data})
+        doc = drill_catalog(DRILL_CAUSES)
+        self.seed = {DR.SEED_ENV: TP.SEED["seed"], DR.FIXTURES_ENV: fixtures_value(doc, TP.IMPORTS)}
+
+    def states(self) -> dict:
+        return {tid: {B.STATE_LEDGER: w.ledger, B.STATE_ROOTS: w.roots, B.STATE_STATUS: w.status}
+                for tid, w in (("t1", self.toy), ("t2", self.copy))}
+
+    def served(self, kinds=(("t1", "toy"), ("t2", "copy")), run="300", genesis=(), cands=None) -> dict:
+        """``in/pulled`` serving ``kinds`` in order, each on its own state (``states``; a target in ``genesis`` in
+        loop.pulled's genesis form) with ``cands[tid]`` (none by default), ``kos`` run on all, the run's responses
+        written. Returns the fake GitHubs."""
+        shutil.rmtree(os.path.join(self.temp, "in"), ignore_errors=True)
+        served = os.path.dirname(self.pulled)
+        os.makedirs(served)
+        P.write_served(served, [tid for tid, _ in kinds])
+        states = self.states()
+        for tid, kind in kinds:
+            self.pulled = os.path.join(served, tid)
+            state = states.get(tid, states["t2"])
+            offered = (cands or {}).get(tid, {})
+            if tid in genesis:
+                self.write_pulled(offered, target=dict(TARGET, id=tid, kind=kind, repo="acme/" + tid),
+                                  units=SENTINEL_UNITS, heads={B.STATE: None, B.INTEGRATION: HEADS[B.INTEGRATION]},
+                                  state={p: b"" for p in B.STATE_CHAINS}, status=None)
+            else:
+                self.write_pulled(offered, target=dict(TARGET, id=tid, kind=kind, repo="acme/" + tid),
+                                  units=SENTINEL_UNITS, state={p: state[p] for p in B.STATE_CHAINS},
+                                  status=state[B.STATE_STATUS])
+        self.pulled = os.path.join(served, "t1")
+        kos = J.run("kos", {"RUNNER_TEMP": self.temp}, runner=RedAs())
+        self.assertEqual(kos["ok"], True, kos)
+        shutil.move(os.path.join(self.temp, "out", "results"), os.path.join(self.temp, "in", "results"))
+        self.control(OPEN)
+        for tid, _ in kinds:
+            YW.write_response(self.temp, tid, HEADS, [YW.cost_row("cagir-%s-%s" % (run, tid), HEADS[B.INTEGRATION])],
+                              at=tid)
+        return {tid: YW.github_at(HEADS, YW.files_of(self.src), states.get(tid, states["t2"]), repo="acme/" + tid)
+                for tid, _ in kinds}
+
+    def run_both(self, ghs: dict, run="300", **env) -> dict:
+        return J.run("yaz", YW.env(self.temp, self.workspace, GITHUB_RUN_ID=run, **env), transport=Router(ghs),
+                     signer=self.signer, now=lambda: YW.NOW)
+
+    def judged(self, **env) -> tuple:
+        """``loop.job.yaz_pass`` on t1's ``pulled`` as served."""
+        return J.yaz_pass(YW.env(self.temp, self.workspace, **env), "t1", P.read(self.pulled))
+
+    def test_a_pass_writes_its_row_on_the_toys_cycle_once(self):
+        ghs = self.served()
+        out = self.run_both(ghs, **self.seed)
+        self.assertEqual(out["ok"], True, out)
+        toy, copy = out["targets"]
+        self.assertEqual(toy["pass"], {"verdict": "PASS", "conditions": {}}, toy)
+        self.assertNotIn("pass", copy)  # the copy is not judged on its own cycle
+        old, new = self.toy.ledger, ghs["t1"].read_file(B.STATE, B.STATE_LEDGER)
+        self.assertTrue(CH.verify_bytes(new, old)["valid"])
+        self.assertEqual(SC.ledger_reasons(new), [])
+        added = rows_of(new)[len(rows_of(old)):]
+        [row] = [r for r in added if r["kind"] == "pass"]
+        want = PR.judge(self.TP.State.files(self.toy), self.copy.files(), {}, {},
+                        {"seed": self.TP.SEED, "catalog": self.TP.CATALOG}, self.TP.IMPORTS, self.TP.RESULT)
+        self.assertEqual(want["verdict"], "PASS")
+        # tohum/26d: the referee's own row, part events, the judge's payload (the copy's genesis and merge rows)
+        self.assertEqual((row["row_id"], row["part"], row["trust"], row["derivation"], "proposed_by" in row),
+                         ("300-1:pass", "events", "verified", "tool", False))
+        self.assertEqual(row["payload"], want["payload"])
+        copy_rows = rows_of(self.copy.ledger)
+        self.assertEqual(row["payload"]["copy_genesis_row_hash"], copy_rows[0]["row_hash"])
+        self.assertEqual(row["payload"]["copy_merge_row_hashes"],
+                         [r["row_hash"] for r in copy_rows if r["kind"] == "merge"])
+        kinds = [r["kind"] for r in added]  # after D8's row, before the cost and status rows
+        self.assertEqual(kinds[kinds.index("pass") - 1:], ["commit", "pass", "cost", "status"])
+        self.assertNotIn("pass", [r["kind"] for r in rows_of(ghs["t2"].read_file(B.STATE, B.STATE_LEDGER))])
+        # the state written: PASS again, and its run holds the row
+        written = {"ledger": new, "roots": ghs["t1"].read_file(B.STATE, B.STATE_ROOTS)}
+        self.assertEqual(PR.judge(written, self.copy.files(), {}, {}, {"seed": self.TP.SEED, "catalog":
+                                  self.TP.CATALOG}, self.TP.IMPORTS, self.TP.RESULT)["verdict"], "PASS")
+        self.assertTrue(PR.passed(new))
+        # the next cycle on that state does not judge it again: no pass in the line, no second row
+        self.toy.ledger, self.toy.roots = new, written["roots"]
+        self.toy.status = ghs["t1"].read_file(B.STATE, B.STATE_STATUS)
+        ghs = self.served(run="301")
+        out = self.run_both(ghs, run="301", **self.seed)
+        self.assertEqual(out["ok"], True, out)
+        self.assertNotIn("pass", out["targets"][0])
+        self.assertEqual([r["kind"] for r in rows_of(ghs["t1"].read_file(B.STATE, B.STATE_LEDGER))].count("pass"), 1)
+
+    def test_a_fail_writes_no_row_and_names_its_reasons(self):
+        ghs = self.served()
+        out = self.run_both(ghs)  # no seed: the drill is off and #geri-alma cannot be judged
+        self.assertEqual(out["ok"], True, out)
+        self.assertEqual(out["targets"][0]["pass"],
+                         {"verdict": "FAIL", "conditions": {"#geri-alma": ["toy:drill_inputs_missing"]}})
+        new = ghs["t1"].read_file(B.STATE, B.STATE_LEDGER)
+        self.assertTrue(CH.verify_bytes(new, self.toy.ledger)["valid"])  # the cycle is written
+        self.assertNotIn("pass", [r["kind"] for r in rows_of(new)])
+        # the copy's own state judged: a served model of the copy's canary that is not the requested one fails it
+        # whatever the seed
+        row = self.copy.cycle(lambda c: self.TP.cost(c, served=["other"]))["cycle_id"]
+        self.served()
+        line, payload = self.judged(**self.seed)
+        self.assertEqual((line, payload), ({"verdict": "FAIL", "conditions": {
+            "#model #belirtec": ["copy:model_mismatch:cagir-%s" % row]}}, None))
+
+    def test_not_judged_before_the_gate_or_on_a_copy_or_without_a_copy_with_a_state(self):
+        self.toy = self.TP.toy_world()  # no gate row: the gate's cycle, not the PASS's
+        self.served()
+        self.assertEqual(self.judged(**self.seed), (None, None))
+        self.setUp()
+        self.served(kinds=(("t1", "copy"), ("t2", "toy")))  # t1 is a copy: never judged on it
+        self.assertEqual(self.judged(**self.seed), (None, None))
+        self.setUp()
+        self.served(kinds=(("t1", "toy"),))
+        self.assertEqual(self.judged(**self.seed), ({"waiting": "copy_not_served"}, None))
+        self.served(genesis=("t2",))
+        self.assertEqual(self.judged(**self.seed), ({"waiting": "copy_genesis"}, None))
+        self.served(kinds=(("t1", "toy"), ("t2", "toy")))  # another toy is no copy
+        self.assertEqual(self.judged(**self.seed), ({"waiting": "copy_not_served"}, None))
+
+    def test_inputs_it_cannot_use_fail_it_and_the_cycle_goes_on(self):
+        result = os.path.join(self.workspace, "setup", "results", "%s.json" % hashlib.sha256(self.TP.RESULT).hexdigest())
+        with open(result, "wb") as fh:  # at the right name, other bytes: not the result the import names
+            fh.write(self.TP.RESULT + b" ")
+        ghs = self.served()
+        out = self.run_both(ghs, **self.seed)
+        self.assertEqual(out["ok"], True, out)
+        got = out["targets"][0]["pass"]
+        self.assertEqual((got["verdict"], got["conditions"]), ("FAIL", {}))
+        self.assertIn("result_sha256", got["unusable"])
+        self.assertNotIn("pass", [r["kind"] for r in rows_of(ghs["t1"].read_file(B.STATE, B.STATE_LEDGER))])
+        # an expect.json of the copy's candidates it cannot use
+        with open(result, "wb") as fh:
+            fh.write(self.TP.RESULT)
+        self.served(cands={"t2": {"bad": dict(candidate(GOOD), **{"expect.json": b'{"decision": "maybe"}'})}})
+        line, payload = self.judged(**self.seed)
+        self.assertEqual((line["verdict"], line["conditions"], payload), ("FAIL", {}, None))
+        self.assertIn("expect.json", line["unusable"])
+
+    def test_a_missing_result_or_a_second_copy_is_unusable_before_any_write(self):
+        os.remove(os.path.join(self.workspace, "setup", "results", "%s.json" % hashlib.sha256(self.TP.RESULT).hexdigest()))
+        ghs = self.served()
+        with self.assertRaises(J.Unusable) as caught:
+            self.run_both(ghs, **self.seed)
+        self.assertIn("setup/results/", str(caught.exception))
+        self.assertEqual([r for gh in ghs.values() for r in gh.requests if r[0] != "GET"], [])
+        self.setUp()
+        self.served(kinds=(("t1", "toy"), ("t2", "copy"), ("t3", "copy")))
+        with self.assertRaises(J.Unusable) as caught:
+            self.judged(**self.seed)
+        self.assertIn("more than one copy", str(caught.exception))
+
+    def test_write_cycle_writes_the_pass_row_it_is_given(self):
+        self.served(kinds=(("t1", "toy"),))
+        art = P.read(self.pulled)
+        gh = YW.github_at(art.heads, YW.files_of(self.src), self.states()["t1"], repo="acme/t1")
+        payload = self.TP.judge()["payload"]
+        got = WC.write(art, self.src, {"decisions": {}, "merge": None}, [], W.Writer("acme/t1", gh), self.signer,
+                       self.TP.IMPORTS, "301-1", "2026-11-02T10:00:00Z", passed=payload)
+        new = gh.read_file(B.STATE, B.STATE_LEDGER)
+        rows = rows_of(new)[len(rows_of(self.toy.ledger)):]
+        self.assertEqual([(r["row_id"], r["kind"]) for r in rows],
+                         [("301-1:start", "cycle_start"), ("301-1:pass", "pass"), ("301-1:status", "status")])
+        self.assertEqual(rows[1]["payload"], payload)
+        self.assertEqual((got["rows"], SC.ledger_reasons(new)), (3, []))
 
 
 class Genesis(StateBase):

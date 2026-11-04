@@ -25,13 +25,16 @@ signed root per cycle) with ``ledger.events``' rows, the ones ``activate`` and D
 - the copy's genesis gate (``gate``): the toy's state alone, ``open`` on the world above with no copy state at all,
   ``closed`` with exactly the toy's reasons ``judge`` gives (no drill inputs, a cause unshown, a flaky sentinel, a
   reject expected for another reason, a model mismatch, another import), every condition ``state_invalid`` on a
-  toy state ``ledger.schema`` refuses, unusable expectations and counter; ``gate_opened``: the referee's own
-  ``copy_gate`` row after the last genesis (not before a later genesis, not a proposal, not another kind), and a
-  ledger not of the schema, not a chain or empty opens nothing; an empty copy state fails ``judge`` without error;
-- ``write`` on the in-process GitHub: a ``PASS`` is one ``brain/state`` commit on the head (``cycle_start``, the
-  ``pass`` row with the judged payload, the status row; one root), an append-only extension of the ``ledger.schema``
-  shape that is judged ``PASS`` again; a second PASS (``already_passed``) and a ``FAIL`` (``not_pass``) write
-  nothing; a moved head and a root that cannot be signed are hard stops with nothing written.
+  toy state ``ledger.schema`` refuses, unusable expectations and counter; an empty copy state fails ``judge``
+  without error;
+- ``passed`` reads the PASS row as ``gate_opened`` reads the gate's (one reader, ``Held``): the referee's own row
+  after the last genesis, not a proposal, not another kind, not before a later genesis; a ledger not of the schema,
+  not a chain or empty holds neither; the two kinds are not each other's;
+- ``result_path``: the last import's ``setup/results/<result_sha256>.json`` (tohum/26c, 29s); a ``result_sha256``
+  absent or not 64 lowercase hex (a path, upper case, short, a trailing LF or path, a number) and a counter with no
+  import name no file (unusable).
+
+The PASS row's write (the toy's cycle in ``yaz``, ``loop.write_cycle``) is tested in test_loop_write.Pass.
 
 The loop's own drill ledger (D8 over four cycles) is judged in test_loop_write.D8.
 """
@@ -58,8 +61,6 @@ from ledger import cycle as CY  # noqa: E402
 from ledger import events as EV  # noqa: E402
 from ledger import schema as SC  # noqa: E402
 from target import branches as B  # noqa: E402
-from target import land as LN  # noqa: E402
-from target import write as W  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 from test_revert_drill import ledger_with  # noqa: E402
 import yaz_world as YW  # noqa: E402
@@ -496,116 +497,77 @@ class Gate(unittest.TestCase):
         with self.assertRaises(PR.Unusable):
             gate(imports=b"")
 
-    def test_opened_reads_the_referees_own_row_after_the_last_genesis(self):
+
+def pass_row(c: dict, **over) -> dict:
+    return dict(EV.row(c, "pass", "pass", judge()["payload"]), **over)
+
+
+class Held(unittest.TestCase):
+    """``gate_opened`` and ``passed``, one reader of the referee's own row after the last genesis."""
+
+    def test_the_referees_own_row_after_the_last_genesis(self):
+        for name, held, make in (("gate_opened", PR.gate_opened, gate_row), ("passed", PR.passed, pass_row)):
+            with self.subTest(name):
+                toy = toy_world()
+                self.assertFalse(held(toy.ledger))
+                toy.cycle(make, cost)
+                self.assertEqual(SC.ledger_reasons(toy.ledger), [])
+                self.assertTrue(held(toy.ledger))
+                # a later genesis (a re-import) starts a run without it: an earlier run's row is not this run's
+                toy_world(toy, genesis=genesis_payload("toy"))
+                self.assertFalse(held(toy.ledger))
+                # a player's proposal of the row counts for nothing (tohum/26d: proposed_by)
+                toy.cycle(lambda c: make(c, proposed_by="founder"), cost)
+                self.assertFalse(held(toy.ledger))
+                toy.cycle(make, cost)
+                self.assertTrue(held(toy.ledger))
+                # another row kind of the same part is not it
+                other = State("toy")
+                toy_world(other)
+                other.cycle(lambda c: EV.row(c, "gate", "status_edited", {"found_sha256": None,
+                                                                          "recorded_sha256": None}), cost)
+                self.assertFalse(held(other.ledger))
+        # the two kinds are not each other's
         toy = toy_world()
-        self.assertFalse(PR.gate_opened(toy.ledger))
         toy.cycle(gate_row, cost)
-        self.assertTrue(PR.gate_opened(toy.ledger))
-        # a later genesis (a re-import) starts a run without it
-        toy_world(toy, genesis=genesis_payload("toy"))
-        self.assertFalse(PR.gate_opened(toy.ledger))
-        # a player's proposal of the row opens nothing (tohum/26d: proposed_by)
-        toy.cycle(lambda c: gate_row(c, proposed_by="founder"), cost)
-        self.assertFalse(PR.gate_opened(toy.ledger))
-        toy.cycle(gate_row, cost)
-        self.assertTrue(PR.gate_opened(toy.ledger))
-        # another row kind of the same part, or the kind in another part, is no gate
-        other = State("toy")
-        toy_world(other)
-        other.cycle(lambda c: EV.row(c, "gate", "status_edited", {"found_sha256": None, "recorded_sha256": None}),
-                    cost)
-        self.assertFalse(PR.gate_opened(other.ledger))
+        self.assertEqual((PR.gate_opened(toy.ledger), PR.passed(toy.ledger)), (True, False))
+        toy.cycle(pass_row, cost)
+        self.assertEqual((PR.gate_opened(toy.ledger), PR.passed(toy.ledger)), (True, True))
 
-    def test_opened_on_a_ledger_not_of_the_schema_opens_nothing(self):
-        toy = toy_world()
-        toy.cycle(gate_row, cost)
-        self.assertTrue(PR.gate_opened(toy.ledger))
-        bad = State("toy")
-        bad.ledger = toy.ledger
-        raw_cycle(bad, [dict(EV.start({"cycle_id": "900-1", "ts": TS, "snapshot_id": h(99)}), trust="nope")])
-        self.assertFalse(PR.gate_opened(bad.ledger))
-        self.assertFalse(PR.gate_opened(toy.ledger[:-2]))  # not a chain
-        self.assertFalse(PR.gate_opened(b""))
+    def test_a_ledger_not_of_the_schema_holds_nothing(self):
+        for name, held, make in (("gate_opened", PR.gate_opened, gate_row), ("passed", PR.passed, pass_row)):
+            with self.subTest(name):
+                toy = toy_world()
+                toy.cycle(make, cost)
+                self.assertTrue(held(toy.ledger))
+                bad = State("toy")
+                bad.ledger = toy.ledger
+                raw_cycle(bad, [dict(EV.start({"cycle_id": "900-1", "ts": TS, "snapshot_id": h(99)}), trust="nope")])
+                self.assertFalse(held(bad.ledger))
+                self.assertFalse(held(toy.ledger[:-2]))  # not a chain
+                self.assertFalse(held(b""))
 
 
-class Write(unittest.TestCase):
-    """``write`` on the in-process GitHub whose ``brain/state`` holds the toy world's files."""
+class ResultPath(unittest.TestCase):
+    """tohum/26c, 29s: the (A) result is ``setup/results/<result_sha256>.json`` of the last import."""
 
-    HEADS = {B.STATE: h(0x5a), B.INTEGRATION: h(0x1a)}
-    REQ = {"cycle_id": "900-1", "ts": TS, "snapshot_id": h(0x1a)}
+    def test_the_last_imports_result(self):
+        self.assertEqual(PR.result_path(IMPORTS), "setup/results/%s.json" % hashlib.sha256(RESULT).hexdigest())
+        later = YW.transfer({"requested": False})  # a later import names another result
+        self.assertEqual(PR.result_path(later["imports"]),
+                         "setup/results/%s.json" % hashlib.sha256(later["result"]).hexdigest())
 
-    def setUp(self) -> None:
-        self.toy = toy_world()
-        self.gh = YW.github_at(self.HEADS, {"src/a.js": b"var a = 1;\n"},
-                               {B.STATE_LEDGER: self.toy.ledger, B.STATE_ROOTS: self.toy.roots,
-                                B.STATE_STATUS: self.toy.status})
-
-    def write(self, toy: dict | None = None, head: str | None = None, signer=None, drill_inputs=True,
-              req: dict | None = None) -> dict:
-        toy = dict(self.toy.files(), status=self.toy.status) if toy is None else toy
-        return PR.write(W.Writer(YW.REPO, self.gh), head or self.gh.refs[B.STATE], toy, copy_world().files(),
-                        TOY_EXPECT, COPY_EXPECT, {"seed": SEED, "catalog": CATALOG} if drill_inputs else None,
-                        req or self.REQ, IMPORTS, RESULT, signer or AN.FakeSigner(True, YW.IDENTITY, "rekor-pass"), 1_000_000)
-
-    def writes(self) -> list:
-        return [(m, p) for m, p, _ in self.gh.requests if m != "GET"]
-
-    def state(self) -> dict:
-        return {name: self.gh.read_file(B.STATE, path) for name, path in
-                (("ledger", B.STATE_LEDGER), ("roots", B.STATE_ROOTS), ("status", B.STATE_STATUS))}
-
-    def test_a_pass_is_one_cycle_on_the_toys_state(self):
-        got = self.write()
-        self.assertEqual((got["verdict"], got["refused"]), ("PASS", []))
-        self.assertEqual(self.gh.refs[B.STATE], got["written"]["state_sha"])
-        self.assertEqual(self.gh.commits[got["written"]["state_sha"]]["parents"], [self.HEADS[B.STATE]])
-        self.assertEqual(self.gh.refs[B.INTEGRATION], self.HEADS[B.INTEGRATION])
-        new = self.state()
-        self.assertTrue(CH.verify_bytes(new["ledger"], self.toy.ledger)["valid"])
-        self.assertTrue(CH.verify_bytes(new["roots"], self.toy.roots)["valid"])
-        self.assertEqual(SC.ledger_reasons(new["ledger"]), [])
-        added = [json.loads(line) for line in new["ledger"].splitlines()][len(self.toy.ledger.splitlines()):]
-        self.assertEqual([(r["row_id"], r["kind"]) for r in added],
-                         [("900-1:start", "cycle_start"), ("900-1:pass", "pass"), ("900-1:status", "status")])
-        self.assertEqual(added[1]["payload"], got["payload"])
-        # tohum/26d: the referee's own row (no proposed_by, trust verified, derivation tool), part events
-        self.assertEqual((added[1]["part"], added[1]["trust"], added[1]["derivation"], "proposed_by" in added[1]),
-                         ("events", "verified", "tool", False))
-        self.assertEqual([r["row_hash"] for r in added], got["written"]["row_hashes"])
-        # the state written is still judged PASS: its cycle has its root and its status row
-        self.assertEqual(PR.judge({"ledger": new["ledger"], "roots": new["roots"]}, copy_world().files(), TOY_EXPECT,
-                                  COPY_EXPECT, {"seed": SEED, "catalog": CATALOG}, IMPORTS, RESULT)["verdict"], "PASS")
-        # a second PASS on it is refused, nothing written
-        before = len(self.writes())
-        again = self.write(toy=new, head=got["written"]["state_sha"])
-        self.assertEqual((again["refused"], again["written"], len(self.writes())), (["already_passed"], None, before))
-
-    def test_a_pass_of_an_earlier_run_does_not_refuse_the_next(self):
-        first = self.write()
-        toy = State("toy")
-        toy.ledger, toy.roots, toy.status, toy.run = (self.state()["ledger"], self.state()["roots"],
-                                                       self.state()["status"], 900)
-        toy_world(toy)  # a new genesis and the whole (B) run after it
-        self.gh = YW.github_at({B.STATE: h(0x5c), B.INTEGRATION: h(0x1a)}, {"src/a.js": b"var a = 1;\n"},
-                               {B.STATE_LEDGER: toy.ledger, B.STATE_ROOTS: toy.roots, B.STATE_STATUS: toy.status})
-        got = self.write(toy=dict(toy.files(), status=toy.status), req=dict(self.REQ, cycle_id="990-1"))
-        self.assertEqual((first["refused"], got["refused"]), ([], []))
-        self.assertIsNotNone(got["written"])
-
-    def test_a_fail_writes_nothing(self):
-        got = self.write(drill_inputs=False)
-        self.assertEqual((got["verdict"], got["refused"], got["written"], self.writes()),
-                         ("FAIL", ["not_pass"], None, []))
-
-    def test_a_moved_head_or_an_unsignable_root_is_a_hard_stop_before_any_write(self):
-        for kw, cause in (({"head": h(0x5b)}, "state_head_moved"), ({"signer": AN.FakeSigner(False)}, "Unsignable")):
-            with self.subTest(cause=cause):
-                self.setUp()
-                with self.assertRaises(LN.HardStop) as caught:
-                    self.write(**kw)
-                self.assertIn(cause, str(caught.exception))
-                self.assertEqual((caught.exception.written, self.writes()), ([], []))
-                self.assertEqual(self.gh.refs[B.STATE], self.HEADS[B.STATE])
+    def test_a_result_sha256_that_is_no_hash_names_no_file(self):
+        for value in (None, "", "../../etc/passwd", "A" * 64, "a" * 63, "a" * 64 + "\n", "a" * 64 + "/x", 7):
+            with self.subTest(value=value):
+                row = {"ts": TS, "stage": 0, "referee_tree_sha256": "2" * 64}
+                if value is not None:
+                    row["result_sha256"] = value
+                with self.assertRaises(PR.Unusable):
+                    PR.result_path(YW.chained(YW.IMPORTS_ROWS + [row]))
+        for imports in (b"", YW.chained(YW.IMPORTS_ROWS)):  # no import at all
+            with self.subTest(imports=imports), self.assertRaises(PR.Unusable):
+                PR.result_path(imports)
 
 
 class Unusable(unittest.TestCase):
