@@ -20,8 +20,8 @@ D1'in okuduğu son imzalı sonuç bu reponun önyükleme hakeminindir (`asama-0/
 sırasıyla hizmet eder: her hedefte bir devir, her hedefin defterinde aynı `cycle_id` (koşunun kimliği, `asama-0/01`).
 Zamanlanmış koşu ile operatörün elle tetiklediği koşu aynı hedefleri koşar; hedef seçen bir değişken ya da tetik girdisi
 yoktur. Aşama 0'da iki hedef vardır, `kind: toy` ve `kind: copy` (`26c`). Kopyanın genesis'i `25a` 7'nin şartını
-(oyuncağın 1–5. devirleri yeşil) oyuncağın `brain/state`'inden okur; şart tutana kadar kopyanın devri hiçbir şey yazmaz
-ve koşuyu kırmızı yapmaz.
+(oyuncağın 1–5. devirleri yeşil) oyuncağın `brain/state`'indeki kopya kapısı satırından (`26f`) okur; şart tutana kadar
+kopyanın devri hiçbir şey yazmaz ve koşuyu kırmızı yapmaz.
 
 **Sigstore.** Döngünün Sigstore'u önyükleme hakeminin pinli kümesidir (`asama-0/01`: tohumun Sigstore pinleri döngü iş
 akışına da hizmet eder): hakem reposunda `bootstrap/requirements/sign.txt`, `sigstore==4.5.0` ve bağımlılıkları, CPython
@@ -67,3 +67,8 @@ kurulur; sır yalnız modeli çağıran adımın `env`'indedir:
 Program `$RUNNER_TEMP/control/bootstrap/requirements/claude-cli/node_modules/.bin/claude`'dur. Kanaryanın istediği
 model `bootstrap.json`'un `rival.model`'idir: operatör dosyasının adlandırdığı tek model; kanarya modelden bağımsız bir
 sözleşmeyi sınar (sunulan model istenen, tavan, `cost` satırı; `asama-0/10a` #model).
+
+**Hakem reposunun iki dosyası daha.** İşin checkout'unda, hakem reposunun `main`'inden okunur; artefaktla ya da Actions
+API'siyle değil: tohum güvenlik defteri `setup/security-ledger.jsonl` (genesis okur ve hash'ler, `29o`, `26c`) ve son
+aktarım satırının adlandırdığı imzalı (A) sonucu `setup/results/<result_sha256>.json` (`yaz` PASS satırının
+`owner_exception`'ını ondan alır, `26d`; adı ve denetimi `26c`). İkisini yalnız operatör yazar (tohum dönemi, aktarım).

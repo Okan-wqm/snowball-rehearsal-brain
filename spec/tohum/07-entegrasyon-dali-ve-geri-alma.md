@@ -6,13 +6,13 @@ Okunma: her döngü başında ve her merge'de
 
 ---
 
-**Entegrasyon dalı.** `brain/integration`, etkinleştirmede (`25a`) hedefin `main`'inden kesilir.
-Aşama 0 ve 1'de `main` ona senkronlanmaz: senkron, hedefin iş akışı dosyalarını da taşıdığı için
-yazar App'ine `workflows` izni gerektirir ve bu izin, uzlaşmış bir hakem işinin sırlı iş akışlarını
-yeniden yazabilmesi demektir. Taban yaşı (dalın kesildiği `main` SHA'sından bu yana geçen süre ve
-commit sayısı) `status.md`'dedir. Senkron, ölçülmüş ihtiyaçla (eskimiş bulgu oranı sinyali, `17`)
-ve kendi güvenlik kararıyla Aşama 2 spec'inde açılır; açıldığında senkron PR'ının başı tam olarak
-bir `main` SHA'sı olmalı ve `git merge-tree` sonucuna eşit olmalıdır. Çakışma çözülmez: çakışan
+**Entegrasyon dalı.** `brain/integration`, etkinleştirmede (`25a`) hedefin `main`'inden kesilir; (B) kırmızı olunca
+operatör dalı siler ve yeni etkinleştirme onu yeniden keser (`25a` "Başarısızlık"): bu ne senkron ne zorla itmedir.
+Aşama 0 ve 1'de `main` ona senkronlanmaz: senkron, hedefin iş akışı dosyalarını da taşıdığı için yazar App'ine
+`workflows` izni gerektirir ve bu izin uzlaşmış bir hakem işinin sırlı iş akışlarını yeniden yazabilmesi demektir. Taban
+yaşı (dalın kesildiği `main` SHA'sından bu yana geçen süre ve commit sayısı) `status.md`'dedir. Senkron, ölçülmüş
+ihtiyaçla (eskimiş bulgu oranı sinyali, `17`) ve kendi güvenlik kararıyla Aşama 2 spec'inde açılır; açıldığında senkron
+PR'ının başı tam olarak bir `main` SHA'sı olmalı ve `git merge-tree` sonucuna eşit olmalıdır. Çakışma çözülmez: çakışan
 beyin değişikliği geri alınır, `blocked` yazılır ve yeni bir mikro görev olur. Zorla itme yoktur.
 
 **`main`'i okumak dokunmak değildir.** Senkron yokken de sahibin `main`'i salt okunur, yeni izin ya da
