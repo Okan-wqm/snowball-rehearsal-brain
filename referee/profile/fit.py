@@ -1,5 +1,5 @@
-"""``profile.fit``: for each unit candidate of a tree, the stage-0 recipe its own npm scripts give, judged by
-``unit_verify.check_recipe``; the first candidate that passes is the brain's ``units.json`` proposal (stage 0).
+"""``profile.fit``: for each unit candidate of a tree, the stage-0 recipe its own npm scripts (or Nx targets) give,
+judged by ``unit_verify.check_recipe``; the first candidate that passes is the brain's ``units.json`` proposal (stage 0).
 
 Rules: asama-0/08 "Birim seçimi" (the operator names the candidate units in order in ``targets[]``; MF4 and MF6
 check the bold criteria mechanically; when a candidate fails, the next one is tried), tohum/26c (the recipe; the
@@ -33,11 +33,18 @@ and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this modul
   (``script_missing``, ``script_not_installed``). Not judged here: whether the lint tool is ESLint and takes
   ``--format json`` (``verify``'s ``lint_output:`` shows it), whether the tests need services, and anything
   else only a run shows.
+- When ``path/package.json`` has no ``lint`` (or no ``test``) script, that command (``test`` giving
+  ``affected_test_cmd`` too) is the candidate's Nx target as ``profile.nx`` composes it (an ``@nx/eslint:lint`` or
+  ``@nx/jest:jest`` target of ``path/project.json`` in a workspace whose ``nx.json`` and lock are at the tree's
+  root; its rules and refusals are there), and the files it names (the flat ESLint config, the jest config) join
+  ``inputs``; when ``profile.nx`` refuses, the npm form above stays and ``check_recipe`` refuses it
+  (``script_missing``). The npm script, when there is one, always wins.
 - ``services``: ``[]``; ``limits``: ``{}`` (the operator's values apply).
 
-**Result** (``fit``): ``{candidates, fit, rows}``: one row ``{path, reasons, recipe}`` per candidate of the
+**Result** (``fit``): ``{candidates, fit, rows}``: one row ``{path, reasons, recipe, sources}`` per candidate of the
 derivation, in its order, ``reasons`` being ``check_recipe``'s (an ineligible candidate shows as
-``profile:units[0]:unit_not_eligible:<path>``); ``fit`` lists the paths with no reason. Passing this static
+``profile:units[0]:unit_not_eligible:<path>``; ``sources`` from ``commands``, ``{lint, test}`` each ``npm_script``,
+``nx_target`` or ``none:<profile.nx's reason>``); ``fit`` lists the paths with no reason. Passing this static
 check is not verification: ``verify`` (3/3 at HEAD, contained) is.
 
 Command line, no stdin; one JSON line on stdout::
@@ -60,6 +67,7 @@ import sys
 from typing import Any
 
 from profile import derive as D
+from profile import nx as X
 from profile import unit_verify as U
 from runner import deps_npm as N
 import cli
@@ -125,8 +133,33 @@ def workspace_folders(tree: str, path: str, lock: str | None) -> list[str]:
     return sorted(found)
 
 
+def commands(tree: str, path: str) -> dict:
+    """``{lint_cmd, test_cmd, inputs, sources}`` of candidate ``path``: for ``lint`` and ``test`` each, the npm form
+    when ``<path>/package.json`` has the script, else the Nx target's command when ``profile.nx`` composes it, else
+    the npm form (which ``check_recipe`` refuses as ``script_missing``); ``sources[name]`` is ``npm_script``,
+    ``nx_target`` or ``none:<profile.nx's reason>``; ``inputs`` the files the Nx commands add."""
+    _, manifest = D._json(tree, "package.json" if path == "." else posixpath.join(path, "package.json"))
+    scripts = manifest.get("scripts") if isinstance(manifest, dict) else None
+    npm = {"lint": ["npm", "--prefix", path] + list(LINT_CMD), "test": ["npm", "--prefix", path] + list(TEST_CMD)}
+    out: dict = {"inputs": [], "sources": {}}
+    for name, nx in (("lint", X.lint), ("test", X.test)):
+        out[name + "_cmd"] = npm[name]
+        if isinstance(scripts, dict) and isinstance(scripts.get(name), str):
+            out["sources"][name] = "npm_script"
+            continue
+        try:
+            out[name + "_cmd"], extra = nx(tree, path)
+        except X.NotComposed as exc:
+            out["sources"][name] = "none:%s" % exc
+            continue
+        out["sources"][name] = "nx_target"
+        out["inputs"] += extra
+    return out
+
+
 def compose(tree: str, path: str, images: dict | None = None) -> dict:
     """The recipe of candidate ``path`` (module docstring)."""
+    found = commands(tree, path)
     lock = D.nearest_lock(tree, path)
     version_file, text = U.nearest_version(tree, path)
     version = text[1:] if text and text.startswith("v") else (text or "")
@@ -134,14 +167,15 @@ def compose(tree: str, path: str, images: dict | None = None) -> dict:
     return {
         "unit_id": unit_id(path),
         "path": path,
-        "inputs": D.minimal([p for p in (path, lock, version_file) if p] + workspace_folders(tree, path, lock)),
+        "inputs": D.minimal([p for p in (path, lock, version_file) if p] + workspace_folders(tree, path, lock)
+                            + found["inputs"]),
         "toolchain": "node@" + version,
         "env_image": image if isinstance(image, str) else "",
         "lockfiles": [lock] if lock else [],
         "install_scripts_required": install_marks(tree, lock),
-        "lint_cmd": ["npm", "--prefix", path] + list(LINT_CMD),
-        "test_cmd": ["npm", "--prefix", path] + list(TEST_CMD),
-        "affected_test_cmd": ["npm", "--prefix", path] + list(TEST_CMD),
+        "lint_cmd": found["lint_cmd"],
+        "test_cmd": found["test_cmd"],
+        "affected_test_cmd": list(found["test_cmd"]),
         "services": [],
         "limits": {},
     }
@@ -157,7 +191,7 @@ def fit(tree: str, target: Any = None, policy: Any = None, images: dict | None =
             continue
         recipe = compose(tree, candidate["path"], images)
         rows.append({"path": candidate["path"], "reasons": U.check_recipe(recipe, policy, tree, target, derived),
-                     "recipe": recipe})
+                     "recipe": recipe, "sources": commands(tree, candidate["path"])["sources"]})
     return {"candidates": len(rows), "fit": [r["path"] for r in rows if not r["reasons"]], "rows": rows}
 
 
