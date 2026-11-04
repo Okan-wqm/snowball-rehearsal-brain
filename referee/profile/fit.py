@@ -36,8 +36,8 @@ and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this modul
 - When ``path/package.json`` has no ``lint`` (or no ``test``) script, that command (``test`` giving
   ``affected_test_cmd`` too) is the candidate's Nx target as ``profile.nx`` composes it (an ``@nx/eslint:lint`` or
   ``@nx/jest:jest`` target of ``path/project.json`` in a workspace whose ``nx.json`` and lock are at the tree's
-  root; its rules and refusals are there), and the files it names (the flat ESLint config, the jest config) join
-  ``inputs``; when ``profile.nx`` refuses, the npm form above stays and ``check_recipe`` refuses it
+  root, or, with no ``lint`` key in ``project.json``, the ``lint`` target ``@nx/eslint/plugin`` infers; its rules
+  and refusals are there), and the files it names (the flat ESLint config, the jest config) join ``inputs``; when ``profile.nx`` refuses, the npm form above stays and ``check_recipe`` refuses it
   (``script_missing``). The npm script, when there is one, always wins.
 - ``services``: ``[]``; ``limits``: ``{}`` (the operator's values apply).
 
