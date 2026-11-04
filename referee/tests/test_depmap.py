@@ -25,6 +25,10 @@ the brain's committed drawing is the one its code gives today.
 - ``TsConfig``: a directory holding a file ``jsimports.TSCONFIG`` names (``tsconfig.json``, ``tsconfig.<x>.json``;
   near names not) that no manifest's project holds is a ``tsconfig`` box (nested ones both, one inside a ``path``
   box too; one inside a manifest's project, the root and ``SKIP_DIRS`` none), alias and relative imports into it draw arrows, and the drawing's line;
+- the kinds of a file (``FileKinds``): ``file_kind``'s order (read, code by ``CODE_FILE_NAMES`` then by
+  ``OTHER_CODE_EXTENSIONS``, ``NOT_CODE_EXTENSIONS``, unclassified, no extension), case as written, near names and
+  a leading dot; the lists disjoint; ``unclassified_files`` and ``files_without_extension`` counted with three
+  examples (a skipped directory not seen) and the drawing's line;
 - the unread manifests: counted by the first ``MANIFESTS_NOT_READ`` pattern a file's name matches (case-sensitive,
   the name only, a near name not counted), a ``package.json`` outside the npm workspace projects (an Nx project's,
   an unparsed workspace's) counted and the root's not, ``SKIP_DIRS`` not entered; three examples in path order and
@@ -336,10 +340,13 @@ class Target(unittest.TestCase):
             "python_external": 1,     # os
             "python_relative": 1,     # from . import rel
         })
-        # Terraform, SQL and GraphQL are code; Markdown, CSS, YAML and a file with no extension are not
-        self.assertEqual(cov["unread_code_files"], {".graphql": 1, ".rs": 2, ".sh": 1, ".sql": 1, ".tf": 1})
-        self.assertEqual(cov["unread_code_files_outside_projects"],  # tools/x.rs, run.sh, infra/, db/, api/
-                         {".graphql": 1, ".rs": 1, ".sh": 1, ".sql": 1, ".tf": 1})
+        # Terraform, SQL, GraphQL and a Dockerfile (by name) are code; Markdown, CSS and YAML are not
+        self.assertEqual(cov["unread_code_files"],
+                         {".graphql": 1, ".rs": 2, ".sh": 1, ".sql": 1, ".tf": 1, "Dockerfile": 1})
+        self.assertEqual(cov["unread_code_files_outside_projects"],  # tools/x.rs, run.sh, infra/, db/, api/, Dockerfile
+                         {".graphql": 1, ".rs": 1, ".sh": 1, ".sql": 1, ".tf": 1, "Dockerfile": 1})
+        self.assertEqual(cov["unclassified_files"], {})
+        self.assertEqual(cov["files_without_extension"], {"count": 0, "examples": []})
 
     def test_render_lists_every_project_and_arrow(self):
         text = D.render_target(D.target_map(self.checkout()), "a test checkout")
@@ -347,8 +354,11 @@ class Target(unittest.TestCase):
         self.assertIn("| @t/web | apps/web | npm nx | x (import npm), feat-a (import), @t/ui (import npm), util (import) |",
                       text)
         self.assertEqual(text.count(" -->|"), 9)
-        self.assertIn("SQL, GraphQL, protobuf): .graphql 1 (1 in no project), .rs 2 (1 in no project), "
-                      ".sh 1 (1 in no project), .sql 1 (1 in no project), .tf 1 (1 in no project).", text)
+        self.assertIn("SQL, GraphQL, protobuf, jq): .graphql 1 (1 in no project), .rs 2 (1 in no project), "
+                      ".sh 1 (1 in no project), .sql 1 (1 in no project), .tf 1 (1 in no project), "
+                      "Dockerfile 1 (1 in no project).", text)
+        self.assertIn("`NOT_CODE_EXTENSIONS`): none; files with no extension and no `CODE_FILE_NAMES` name: none.",
+                      text)
         self.assertIn("Python files read 4 (1 outside any project, 1 not parsed).", text)
         self.assertIn("workspaces): package.json 1 (libs/skip/package.json).", text)
 
@@ -565,6 +575,65 @@ class TsConfig(unittest.TestCase):
             self.assertIsNotNone(J.TSCONFIG.fullmatch(name), name)
         for name in ("tsconfig-old.json", "tsconfig.json.bak", "xtsconfig.json", "tsconfig.jsonc", "jsconfig.json"):
             self.assertIsNone(J.TSCONFIG.fullmatch(name), name)
+
+
+class FileKinds(unittest.TestCase):
+    """Every file is of one kind, decided in file_kind's order: read, code by name, code by extension, not code,
+    unclassified, no extension; the coverage counts the last two with examples."""
+
+    def test_each_rule_in_order(self):
+        cases = {
+            "a/m.py": ("read", ".py"), "a/m.tsx": ("read", ".tsx"),
+            "Dockerfile.py": ("read", ".py"),                        # read wins over a name pattern
+            "infra/Dockerfile": ("code", "Dockerfile"),
+            "infra/Dockerfile.backend.dev": ("code", "Dockerfile.*"),  # the name wins over the suffix .dev
+            "infra/Dockerfile.sql": ("code", "Dockerfile.*"),       # and over a code suffix
+            "infra/api.Dockerfile": ("code", "*.Dockerfile"), "Makefile": ("code", "Makefile"),
+            "x/run.sh": ("code", ".sh"), "q/select.jq": ("code", ".jq"),
+            "README.md": ("not_code", ".md"), "a/b.json": ("not_code", ".json"), "f.woff2": ("not_code", ".woff2"),
+            "x/a.service": ("unclassified", ".service"), ".env.example": ("unclassified", ".example"),
+            "README.MD": ("unclassified", ".MD"), "x/run.SH": ("unclassified", ".SH"),  # case as written
+            "x/dockerfile": ("no_extension", ""), "Dockerfiles": ("no_extension", ""),  # near names
+            ".gitattributes": ("no_extension", ""), "LICENSE": ("no_extension", ""),  # a leading dot is no suffix
+        }
+        for rel, want in cases.items():
+            self.assertEqual(D.file_kind(rel), want, rel)
+            self.assertIn(want[0], D.FILE_KINDS)
+
+    def test_the_lists_are_disjoint_and_names_only(self):
+        self.assertFalse(D.OTHER_CODE_EXTENSIONS & D.NOT_CODE_EXTENSIONS)
+        from profile import jsimports as J
+        for listed in (D.OTHER_CODE_EXTENSIONS, D.NOT_CODE_EXTENSIONS):
+            self.assertFalse(listed & (J.SOURCE_EXTENSIONS | {".py"}))
+            for ext in listed:
+                self.assertRegex(ext, r"^\.[^./]+$")
+        self.assertEqual(len(D.CODE_FILE_NAMES), len(set(D.CODE_FILE_NAMES)))
+        for p in D.CODE_FILE_NAMES:
+            self.assertNotIn("/", p)
+
+    def tree(self, files: dict[str, str]) -> dict:
+        root = tempfile.mkdtemp()
+        write(root, files)
+        return D.target_map(root)
+
+    def test_coverage_counts_the_unknown_with_examples(self):
+        m = self.tree({
+            "svc/a.service": "", "svc/b.service": "", "svc/c.service": "", "x/d.service": "",
+            "deploy/s.yaml.template": "", ".dockerignore": "", "bin/tool": "", "LICENSE": "",
+            "Dockerfile.api": "", "README.md": "", "a.py": "", "w.ts": "",
+            "node_modules/p/z.service": "",                        # a skipped directory is not seen
+        })
+        cov = m["coverage"]
+        self.assertEqual(cov["unclassified_files"], {
+            ".service": {"count": 4, "examples": ["svc/a.service", "svc/b.service", "svc/c.service"]},
+            ".template": {"count": 1, "examples": ["deploy/s.yaml.template"]},
+        })
+        self.assertEqual(cov["files_without_extension"],
+                         {"count": 3, "examples": [".dockerignore", "LICENSE", "bin/tool"]})
+        self.assertEqual(cov["unread_code_files"], {"Dockerfile.*": 1})
+        self.assertIn("`NOT_CODE_EXTENSIONS`): .service 4 (svc/a.service, svc/b.service, svc/c.service, ...); "
+                      ".template 1 (deploy/s.yaml.template); files with no extension and no `CODE_FILE_NAMES` "
+                      "name: 3 (.dockerignore, LICENSE, bin/tool).", D.render_target(m, "x"))
 
 
 class UnreadManifests(unittest.TestCase):
