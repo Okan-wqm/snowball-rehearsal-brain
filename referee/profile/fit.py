@@ -14,15 +14,34 @@ and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this modul
 - ``lockfiles``: ``[derive.nearest_lock]`` (the lock MF4 reads for the candidate), ``[]`` when there is none.
 - ``toolchain``: ``node@<text>`` of ``unit_verify.nearest_version`` with a leading ``v`` dropped (``node@`` when
   there is no version file); ``env_image``: ``images[<that text>]`` when given, else ``""``.
-- ``inputs``: ``path``, the lock, the version file and the workspace folders ``path`` needs, the ones another covers
-  left out (``derive.minimal``). The workspace folders (``workspace_folders``): each name ``path/package.json``
-  declares in ``unit_verify.DEP_FIELDS`` is looked up as Node does, ``<dir>/node_modules/<name>`` for ``<dir>``
-  the candidate's directory and then each directory above it up to the lock's, the first key of the lock found
-  winning; when that key is a workspace link MF5 takes (``runner.deps_npm.live_workspaces``, an in-repo ``file:``
-  dependency included, since npm writes it in the same form), its folder is added and its own ``package.json``
-  read the same way, transitively (each folder once). Not added: a workspace package reached otherwise (a
-  TypeScript path alias, an Nx implicit dependency, an import of an undeclared name), and root configuration
-  (``tsconfig.base.json``, ESLint and test configuration): their need shows only in ``verify``'s 3/3 run.
+- ``inputs``: ``path``, the lock, the version file, the files the Nx commands name (below) and what they reach
+  (``reached``), the ones another covers left out (``derive.minimal``). What an input reaches, transitively from
+  ``path`` and those files (``path`` ``.`` covers the tree and reaches nothing more):
+
+  - a directory input's ``package.json`` names in ``unit_verify.DEP_FIELDS``, each looked up as Node does,
+    ``<dir>/node_modules/<name>`` for ``<dir>`` the input's directory and then each directory above it up to the
+    lock's, the first key of the lock found winning: when that key is a workspace link MF5 takes
+    (``runner.deps_npm.live_workspaces``, an in-repo ``file:`` dependency included, since npm writes it in the
+    same form), its folder, an input as the lock names it (a folder missing from the tree is ``check_recipe``'s
+    ``input_missing``);
+  - every import specifier (``jsimports.specifiers``) of a JS/TS file (``jsimports.SOURCE_EXTENSIONS``) of an
+    input, a directory being walked by ``jsimports.walk``, and every ``extends`` of a ``tsconfig*.json`` there: a
+    relative one is the path it names from the file's directory (none when it leaves the tree); a bare one is
+    both the path a root tsconfig alias gives (``jsimports.alias_path``) and the workspace folder its package
+    (``jsimports.package_name``) links to by the lookup above, started at the file's directory;
+  - a reached path an input already covers brings nothing. Another, but a linked folder, brings the deepest
+    directory at or above it, below the root, holding a ``package.json`` or ``project.json``, else the path
+    itself; the path is the one that exists as written (a directory too) or with one of ``EXTENSIONS`` (no
+    symbolic link on its way); a path that does not exist brings the project of a directory above it only, so a
+    path into no project brings nothing.
+
+  So a workspace package reached by an alias or by an undeclared import, and the root tsconfig a project's
+  extends, are inputs. Not reached, stated (their need shows only in ``verify``'s 3/3 run): an Nx implicit
+  dependency, a path written in a configuration value that is not an import or ``extends`` (a jest ``preset`` or
+  ``moduleNameMapper``, ESLint's ``parserOptions.project``), an import whose specifier is not a string literal,
+  a ``paths`` alias of a tsconfig other than the root's, tsconfig ``references``, a file read at run time, and a
+  file type other than JS/TS and tsconfig (``.vue``, ``.svelte``, CSS). A commented-out import is read as
+  written, so an input may be more than the run needs.
 - ``install_scripts_required``: the lock keys whose entry says ``hasInstallScript: true`` (MF5's lock reading),
   sorted. A script only a tarball declares is not known before the fetch (MF5 refuses it then).
 - ``lint_cmd``: ``npm --prefix <path> run --silent lint -- --format json``; ``test_cmd`` and
@@ -37,7 +56,8 @@ and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this modul
   ``affected_test_cmd`` too) is the candidate's Nx target as ``profile.nx`` composes it (an ``@nx/eslint:lint`` or
   ``@nx/jest:jest`` target of ``path/project.json`` in a workspace whose ``nx.json`` and lock are at the tree's
   root, or, with no ``lint`` key in ``project.json``, the ``lint`` target ``@nx/eslint/plugin`` infers; its rules
-  and refusals are there), and the files it names (the flat ESLint config, the jest config) join ``inputs``; when ``profile.nx`` refuses, the npm form above stays and ``check_recipe`` refuses it
+  and refusals are there), and the files it names (the flat ESLint config, the jest config) join ``inputs``;
+  when ``profile.nx`` refuses, the npm form above stays and ``check_recipe`` refuses it
   (``script_missing``). The npm script, when there is one, always wins.
 - ``services``: ``[]``; ``limits``: ``{}`` (the operator's values apply).
 
@@ -61,12 +81,14 @@ error}``).
 from __future__ import annotations
 
 import json
+import os
 import posixpath
 import re
 import sys
 from typing import Any
 
 from profile import derive as D
+from profile import jsimports as J
 from profile import nx as X
 from profile import unit_verify as U
 from runner import deps_npm as N
@@ -75,6 +97,9 @@ import cli
 LINT_CMD = ("run", "--silent", "lint", "--", "--format", "json")
 TEST_CMD = ("run", "--silent", "test")
 UNSAFE_ID = re.compile(r"[^A-Za-z0-9._-]")
+EXTENSIONS = (".ts", ".tsx", ".d.ts", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json")
+PROJECT_MARKERS = ("package.json", "project.json")
+TSCONFIG = re.compile(r"tsconfig(\.[^/]*)?\.json")
 
 
 def unit_id(path: str) -> str:
@@ -98,38 +123,122 @@ def _declared(tree: str, directory: str) -> list[str]:
     return sorted(names)
 
 
-def workspace_folders(tree: str, path: str, lock: str | None) -> list[str]:
-    """The workspace folders candidate ``path`` needs (module docstring), as tree paths, sorted."""
-    if lock is None:
-        return []
-    _, parsed = D._json(tree, lock)
-    packages = parsed.get("packages") if isinstance(parsed, dict) else None
-    if not isinstance(packages, dict):
-        return []
-    links, _ = N.live_workspaces(packages)
-    lock_dir = posixpath.dirname(lock) or "."
+def _lookup(packages: dict, start: str, name: str) -> str | None:
+    """Node's lookup of ``name`` from directory ``start`` (relative to the lock's directory): the first lock key
+    ``<dir>/node_modules/<name>`` for ``<dir>`` ``start`` and then each directory above it, up to the lock's."""
+    directory = start
+    while True:
+        key = "node_modules/" + name if directory == "." else directory + "/node_modules/" + name
+        if key in packages:
+            return key
+        if directory == ".":
+            return None
+        directory = posixpath.dirname(directory) or "."
 
-    def in_lock(tree_path: str) -> str:  # tree path -> path relative to the lock's directory
-        return "." if tree_path == lock_dir else tree_path if lock_dir == "." else tree_path[len(lock_dir) + 1:]
 
-    found, todo = set(), [path]
+def _existing(tree: str, path: str) -> str | None:
+    """``path``, or the first of it with an extension Node or TypeScript adds (``.json`` too, for a tsconfig's
+    ``extends``), that exists with no symbolic link on its way; None when none does (a directory exists as
+    written, so its ``index`` file needs no try of its own)."""
+    tries = [path] + [path + e for e in EXTENSIONS]
+    return next((t for t in tries if os.path.lexists(os.path.join(tree, t)) and D._input_where(tree, t) == ""), None)
+
+
+def _is_file(tree: str, path: str) -> bool:
+    return os.path.isfile(os.path.join(tree, path)) and D._input_where(tree, path) == ""
+
+
+def _unit(tree: str, path: str) -> str | None:
+    """The input a reached tree path brings (module docstring): its deepest project directory, else the existing
+    path itself, else nothing."""
+    found = _existing(tree, path)
+    is_dir = found is not None and os.path.isdir(os.path.join(tree, found))
+    probe = found if is_dir else posixpath.dirname(found or path)
+    while probe:
+        if any(_is_file(tree, posixpath.join(probe, m)) for m in PROJECT_MARKERS):
+            return probe
+        probe = posixpath.dirname(probe)
+    return found
+
+
+def _references(tree: str, entry: str) -> list[tuple[str, str]]:
+    """``(file, reference)`` for every JS/TS file and tsconfig of input ``entry`` (a file, or a directory walked by
+    ``jsimports.walk``): the file's import specifiers, the tsconfig's ``extends``."""
+    if os.path.isdir(os.path.join(tree, entry)):
+        if D._real_dir(tree, entry):
+            return []
+        names = [posixpath.join(entry, f) for f in J.walk(os.path.join(tree, entry))[0]]
+    else:
+        names = [entry]
+    out = []
+    for name in names:
+        is_tsconfig = TSCONFIG.fullmatch(posixpath.basename(name)) is not None
+        if not is_tsconfig and posixpath.splitext(name)[1] not in J.SOURCE_EXTENSIONS:
+            continue
+        data = D._read_regular(tree, name)
+        text = data.decode("utf-8", "replace") if data is not None else ""
+        out += [(name, r) for r in (J.extends(text) if is_tsconfig else J.specifiers(text))]
+    return out
+
+
+def reached(tree: str, path: str, lock: str | None, seeds=(), memo: dict | None = None) -> list[str]:
+    """The inputs candidate ``path`` reaches beyond itself and ``seeds`` (module docstring), as tree paths, sorted;
+    ``memo`` (one per tree, unchanged while it is used) keeps each input's references for the next call."""
+    memo = {} if memo is None else memo
+    if path == ".":
+        return []
+    packages, links = {}, {}
+    if lock is not None:
+        _, parsed = D._json(tree, lock)
+        packages = parsed.get("packages") if isinstance(parsed, dict) else None
+        packages = packages if isinstance(packages, dict) else {}
+        links, _ = N.live_workspaces(packages) if packages else ({}, None)
+    lock_dir = posixpath.dirname(lock) if lock else ""
+    alias_name = J.alias_file({n for n in J.ALIAS_FILES if D._read_regular(tree, n) is not None})
+    try:
+        table = J.aliases(D._read_regular(tree, alias_name).decode("utf-8")) if alias_name else []
+    except (ValueError, UnicodeDecodeError, RecursionError, AttributeError):
+        table = []
+
+    def in_lock(tree_path: str) -> str | None:  # tree path -> relative to the lock's directory, None outside it
+        if not lock_dir:
+            return tree_path or "."
+        if tree_path == lock_dir:
+            return "."
+        return tree_path[len(lock_dir) + 1:] if tree_path.startswith(lock_dir + "/") else None
+
+    def linked(start: str, name: str) -> str | None:  # a workspace folder, as a tree path, by Node's lookup
+        here = in_lock(start)
+        key = _lookup(packages, here, name) if here is not None and packages else None
+        folder = links.get(key) if key else None
+        return (posixpath.join(lock_dir, folder) if lock_dir else folder) if folder else None
+
+    have = [path] + list(seeds)
+    found: set[str] = set()
+    todo = list(have)
     while todo:
-        here = in_lock(todo.pop())
-        for name in _declared(tree, here if lock_dir == "." else posixpath.join(lock_dir, here)):
-            directory = here
-            while True:  # Node's lookup: <dir>/node_modules/<name>, then each directory above, up to the lock's
-                key = "node_modules/" + name if directory == "." else directory + "/node_modules/" + name
-                if key in packages:
-                    break
-                if directory == ".":
-                    key = None
-                    break
-                directory = posixpath.dirname(directory) or "."
-            folder = links.get(key) if key else None
-            folder = (folder if lock_dir == "." else posixpath.join(lock_dir, folder)) if folder else None
-            if folder and folder not in found:
-                found.add(folder)
-                todo.append(folder)
+        entry = todo.pop()
+        targets = []  # (tree path, whether it is an input as it is: a workspace folder the lock links)
+        if os.path.isdir(os.path.join(tree, entry)):
+            targets += [(linked(entry, name), True) for name in _declared(tree, entry)]
+        if entry not in memo:
+            memo[entry] = _references(tree, entry)
+        for name, ref in memo[entry]:
+            if J.is_relative(ref):
+                targets.append((posixpath.join(posixpath.dirname(name), ref), False))
+                continue
+            targets.append((J.alias_path(ref, table), False))
+            package = J.package_name(ref)
+            if package is not None:
+                targets.append((linked(posixpath.dirname(name) or ".", package), True))
+        for target, direct in targets:
+            target = D.norm_path(target)
+            if target in (None, ".") or any(D.covers(q, target) for q in have + sorted(found)):
+                continue
+            unit = target if direct else _unit(tree, target)
+            if unit is not None and not any(D.covers(q, unit) for q in have + sorted(found)):
+                found.add(unit)
+                todo.append(unit)
     return sorted(found)
 
 
@@ -157,7 +266,7 @@ def commands(tree: str, path: str) -> dict:
     return out
 
 
-def compose(tree: str, path: str, images: dict | None = None) -> dict:
+def compose(tree: str, path: str, images: dict | None = None, memo: dict | None = None) -> dict:
     """The recipe of candidate ``path`` (module docstring)."""
     found = commands(tree, path)
     lock = D.nearest_lock(tree, path)
@@ -167,8 +276,8 @@ def compose(tree: str, path: str, images: dict | None = None) -> dict:
     return {
         "unit_id": unit_id(path),
         "path": path,
-        "inputs": D.minimal([p for p in (path, lock, version_file) if p] + workspace_folders(tree, path, lock)
-                            + found["inputs"]),
+        "inputs": D.minimal([p for p in (path, lock, version_file) if p] + found["inputs"]
+                            + reached(tree, path, lock, found["inputs"], memo)),
         "toolchain": "node@" + version,
         "env_image": image if isinstance(image, str) else "",
         "lockfiles": [lock] if lock else [],
@@ -184,12 +293,12 @@ def compose(tree: str, path: str, images: dict | None = None) -> dict:
 def fit(tree: str, target: Any = None, policy: Any = None, images: dict | None = None) -> dict:
     """Every candidate's composed recipe and ``check_recipe``'s reasons (module docstring)."""
     derived = U.derived_profile(tree, target, policy)
-    rows = []
+    rows, memo = [], {}
     for candidate in derived["unit_candidates"]:
         if D.norm_path(candidate["path"]) is None:
             rows.append({"path": candidate["path"], "reasons": ["invalid:path"], "recipe": None})
             continue
-        recipe = compose(tree, candidate["path"], images)
+        recipe = compose(tree, candidate["path"], images, memo)
         rows.append({"path": candidate["path"], "reasons": U.check_recipe(recipe, policy, tree, target, derived),
                      "recipe": recipe, "sources": commands(tree, candidate["path"])["sources"]})
     return {"candidates": len(rows), "fit": [r["path"] for r in rows if not r["reasons"]], "rows": rows}

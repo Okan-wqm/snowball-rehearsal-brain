@@ -1,7 +1,9 @@
 """``profile.fit``: each unit candidate's recipe composed from its own npm scripts, judged by ``check_recipe``.
 
-- the composition: unit id, nearest lock and version file, minimal inputs with the workspace folders a candidate
-  declares (Node's lookup through the lock's keys, transitive), install-script marks from the lock,
+- the composition: unit id, nearest lock and version file, minimal inputs with what a candidate reaches: the
+  workspace folders it declares (Node's lookup through the lock's keys, transitive) and its imports and tsconfig
+  ``extends`` (aliases, links, relative paths; the deepest project or the file; seeds followed; links, missing
+  paths, commented and quoted imports bring nothing), install-script marks from the lock,
   the image map, the three ``npm --prefix <path> run --silent`` commands;
 - the result: one row per candidate in the derivation's order, its reasons exactly ``check_recipe``'s (the one
   judge), the passing paths;
@@ -103,8 +105,8 @@ class Compose(Base):
 
 
 class WorkspaceFolders(unittest.TestCase):
-    """``workspace_folders``: the folders of the workspace packages a candidate declares, by Node's lookup through
-    the lock's keys, transitively."""
+    """``reached`` by declared names: the folders of the workspace packages a candidate declares, by Node's lookup
+    through the lock's keys, transitively."""
 
     def setUp(self) -> None:
         self.base = writable_base("t-fit-ws-")
@@ -133,24 +135,131 @@ class WorkspaceFolders(unittest.TestCase):
 
     def test_declared_links_transitively_by_nodes_lookup(self):
         self.write()
-        self.assertEqual(F.workspace_folders(self.tree, "apps/web", "package-lock.json"),
+        self.assertEqual(F.reached(self.tree, "apps/web", "package-lock.json"),
                          ["libs/a", "libs/b", "tools/tool"])
         self.assertEqual(F.compose(self.tree, "apps/web")["inputs"],
                          ["apps/web", "libs/a", "libs/b", "package-lock.json", "tools/tool"])
 
     def test_below_a_lock_in_a_subdirectory(self):
         self.write("sub/")
-        self.assertEqual(F.workspace_folders(self.tree, "sub/apps/web", "sub/package-lock.json"),
+        self.assertEqual(F.reached(self.tree, "sub/apps/web", "sub/package-lock.json"),
                          ["sub/libs/a", "sub/libs/b", "sub/tools/tool"])
 
     def test_no_lock_or_unreadable_lock_or_manifest(self):
         self.write()
-        self.assertEqual(F.workspace_folders(self.tree, "apps/web", None), [])
+        self.assertEqual(F.reached(self.tree, "apps/web", None), [])
         write_tree(self.tree, {"package-lock.json": "not json"})
-        self.assertEqual(F.workspace_folders(self.tree, "apps/web", "package-lock.json"), [])
+        self.assertEqual(F.reached(self.tree, "apps/web", "package-lock.json"), [])
         self.write()
         write_tree(self.tree, {"libs/a/package.json": "not json"})
-        self.assertEqual(F.workspace_folders(self.tree, "apps/web", "package-lock.json"), ["libs/a", "tools/tool"])
+        self.assertEqual(F.reached(self.tree, "apps/web", "package-lock.json"), ["libs/a", "tools/tool"])
+
+
+class Reached(unittest.TestCase):
+    """``reached`` by references: imports and tsconfig ``extends``, through aliases, links and relative paths, to
+    the deepest project directory or the file itself, transitively, from the candidate and the seeds."""
+
+    def setUp(self) -> None:
+        self.base = writable_base("t-fit-reach-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.tree = os.path.join(self.base, "tree")
+        link = lambda folder: {"resolved": folder, "link": True}  # noqa: E731
+        write_tree(self.tree, {
+            "package-lock.json": lock(**{"node_modules/@w/linked": link("libs/linked"),
+                                         "node_modules/@w/cfg": link("tools/cfg"),
+                                         "node_modules/react": entry("react")}),
+            "tsconfig.base.json": "// the aliases, in tsconfig's dialect\n" + json.dumps({"compilerOptions": {"paths": {
+                "@w/exact": ["libs/exact/src/index.ts"], "@w/wild/*": ["libs/wild/src/*"],
+                "@w/chained": ["libs/chained/src/index.ts"], "@w/testing/*": ["libs/testing/src/*"],
+                "@w/nowhere": ["libs/none/index.ts"]}}}),
+            "eslint.config.mjs": "import shared from './tools/eslint-shared.mjs';\n",
+            "tools/eslint-shared.mjs": "export default [];\n",
+            "tools/cfg/package.json": package(name="@w/cfg"),
+            "tools/cfg/base.json": "{}",
+            "apps/web/package.json": package(dependencies={"react": "1"}),
+            "apps/web/tsconfig.json": json.dumps({"extends": "../../tsconfig.base"}),
+            "apps/web/tsconfig.lib.json": json.dumps({"extends": ["./tsconfig.json", "@w/cfg/base.json"]}),
+            "apps/web/src/main.ts": "\n".join([
+                "import { e } from '@w/exact';",
+                "import { w } from '@w/wild/deep/x';",
+                "import { l } from '@w/linked/sub/path';",       # undeclared, linked in the lock
+                "import React from 'react';",                    # a registry package: nothing
+                "import { n } from '@w/nowhere';",               # an alias to no file: nothing
+                "import { own } from './own';",                  # the candidate's own file
+                "import { h } from '../../../../libs/helper';",   # leaves the tree: nothing
+                "import { u } from '../../../loose/util';",      # a file of no project
+                "import { d } from '../../../loose/dir';",       # a directory of no project: itself
+                "// import { c } from '../../../libs/commented';",
+                "const q = \"import { s } from '../../../libs/quoted'\";",
+                "import { k } from '../../../libs/linked/src/k';",  # reached already, by the link
+                "",
+            ]),
+            "apps/web/src/own.ts": "export const own = 1;\n",
+            "apps/web/vitest.config.ts": "import policy from '@w/testing/vitest';\n",  # no such file, its project
+            "libs/exact/project.json": json.dumps({"name": "exact"}),
+            "libs/exact/src/index.ts": "export * from '@w/chained';\n",
+            "libs/wild/package.json": package(name="@w/wild"),
+            "libs/wild/src/deep/x.ts": "export const w = 1;\n",
+            "libs/linked/package.json": package(name="@w/linked"),
+            "libs/linked/src/k.ts": "export const k = 1;\n",
+            "libs/chained/project.json": json.dumps({"name": "chained"}),
+            "libs/chained/src/index.ts": "export const c = 1;\n",
+            "libs/commented/project.json": json.dumps({"name": "commented"}),
+            "libs/quoted/project.json": json.dumps({"name": "quoted"}),
+            "libs/testing/package.json": package(name="@w/testing"),
+            "libs/testing/src/index.ts": "export const t = 1;\n",
+            "libs/helper.ts": "export const h = 1;\n",
+            "loose/util.ts": "export const u = 1;\n",
+            "loose/dir/index.ts": "export const d = 1;\n",
+        })
+
+    WEB = ["libs/chained", "libs/exact", "libs/linked", "libs/testing", "libs/wild", "loose/dir",
+           "loose/util.ts", "tools/cfg", "tsconfig.base.json"]
+
+    def test_every_route_from_the_candidate(self):
+        self.assertEqual(F.reached(self.tree, "apps/web", "package-lock.json"), self.WEB)
+
+    def test_the_seeds_are_followed_and_the_root_reaches_nothing_more(self):
+        self.assertEqual(F.reached(self.tree, "apps/web", "package-lock.json", ["eslint.config.mjs"]),
+                         sorted(self.WEB + ["tools/eslint-shared.mjs"]))
+        memo: dict = {}
+        self.assertEqual(F.reached(self.tree, ".", "package-lock.json", ["eslint.config.mjs"], memo), [])
+        self.assertEqual(memo, {})  # nothing read: "." covers the tree
+
+    def test_without_a_lock_links_are_not_followed(self):
+        # libs/linked stays, reached by main.ts's relative import of libs/linked/src/k
+        self.assertEqual(F.reached(self.tree, "apps/web", None), [p for p in self.WEB if p != "tools/cfg"])
+
+    def test_extensions_and_directories(self):
+        write_tree(self.tree, {"apps/web/src/more.ts": "import a from '../../../loose/a';\n"
+                                                       "import b from '../../../loose/b';\n",
+                               "loose/a.mjs": "export default 1;\n", "loose/b/index.tsx": "export default 1;\n"})
+        self.assertEqual(F.reached(self.tree, "apps/web", None),
+                         sorted([p for p in self.WEB if p != "tools/cfg"] + ["loose/a.mjs", "loose/b"]))
+
+    def test_a_link_or_a_missing_target_brings_nothing(self):
+        write_tree(self.tree, {"apps/web/src/more.ts": "import a from '../../../real/a';\n"
+                                                       "import b from '../../../gone/b';\n"
+                                                       "import c from '../../../loose/missing/c';\n",
+                               "elsewhere/a.ts": "export const a = 1;\n", "elsewhere/package.json": package(),
+                               "real": ("symlink", "elsewhere")})
+        self.assertEqual(F.reached(self.tree, "apps/web", "package-lock.json"), self.WEB)
+
+    def test_a_reached_projects_own_references_are_followed(self):
+        write_tree(self.tree, {"libs/chained/tsconfig.json": json.dumps({"extends": "../../tools/ts/strict.json"}),
+                               "tools/ts/strict.json": "{}"})
+        self.assertIn("tools/ts/strict.json", F.reached(self.tree, "apps/web", "package-lock.json"))
+
+    def test_the_memo_gives_the_same_answer(self):
+        memo: dict = {}
+        first = F.reached(self.tree, "apps/web", "package-lock.json", (), memo)
+        self.assertIn("apps/web", memo)
+        self.assertEqual(F.reached(self.tree, "apps/web", "package-lock.json", (), memo), first)
+        self.assertEqual(F.reached(self.tree, "libs/exact", "package-lock.json", (), memo), ["libs/chained"])
+
+    def test_the_composed_inputs(self):
+        self.assertEqual(F.compose(self.tree, "apps/web")["inputs"],
+                         sorted(["apps/web", "package-lock.json"] + self.WEB))
 
 
 class Fit(Base):
