@@ -89,13 +89,17 @@ the session that reads the target, not by a test).
   module); nested npm workspaces (a ``package.json`` workspace below the root), Rust ``use`` lines (the
   manifest is Cargo's own list), a Cargo target file outside its package's directory (``[[test]] path =
   "../x.rs"``: the file belongs to the project holding it), a Python package that is a single module file, Go's and every other
-  language's references (imports, Terraform module sources, SQL table names; counted by extension in
-  ``coverage.unread_code_files``), whether a resolved path exists,
+  language's references (imports, Terraform module sources, SQL table names, a Dockerfile's ``COPY``; counted by
+  extension or name in ``coverage.unread_code_files``), whether a resolved path exists,
   project references in ``tsconfig``;
 - ``coverage`` says how much of the checkout this map holds: files, JS/TS and Python files read, each also in no
   project, specifiers by outcome (an import in a file of no project, or into no project, is ``outside_projects``),
-  manifests that could not be parsed, code files of languages not read (by extension, ``OTHER_CODE_EXTENSIONS``),
-  in all and in no project, and ``unread_manifests``: the dependency manifests found whose dependencies draw no
+  manifests that could not be parsed, code files of languages not read (``file_kind``'s ``code``: by name,
+  ``CODE_FILE_NAMES``, or by extension, ``OTHER_CODE_EXTENSIONS``), in all and in no project; ``unclassified_files``:
+  the files whose extension no list states (not read, not code, not ``NOT_CODE_EXTENSIONS``) per extension, and
+  ``files_without_extension``, each a count and the first three paths, so a language or format the map does not
+  know shows as a number (whether such a file is code is not decided; a file in a skipped directory is not
+  seen); and ``unread_manifests``: the dependency manifests found whose dependencies draw no
   arrow, by the first pattern of ``MANIFESTS_NOT_READ`` a file's name matches, plus every ``package.json`` below
   the root outside the npm workspace projects (an Nx project's own ``package.json`` too); a count and the first
   three paths each, and ``sys_path``: insertion calls, directories resolved (``missing``: not in the checkout,
@@ -116,7 +120,6 @@ exit 0, 1 when ``check`` finds a problem, or 2 on a bad command line or a root t
 
 from __future__ import annotations
 
-import ast
 import ast
 import collections
 import fnmatch
@@ -141,16 +144,36 @@ REGISTER = "status/off_live.json"
 OFF_LIVE_KINDS = ("session_tool", "unwired")
 WORKFLOW_MODULE = re.compile(r"\bpython3?\s+-m\s+([A-Za-z_][A-Za-z0-9_.]*)")
 
-# Code files whose references target_map does not read, by extension (the name's last suffix, case as written):
-# programming languages, shell scripts, infrastructure code (Terraform: a module calls another by path) and
-# query or schema languages (SQL, GraphQL, protobuf: a file names tables, types or messages another defines).
-# Markup, styles, data and configuration (.md, .html, .css, .json, .yaml, .toml) are not code here; neither is
-# a file named by no extension (Dockerfile, a git hook).
+# Every file of a checkout is of one kind (``file_kind``), decided in this order: ``read`` (a ``.py`` file or a JS/TS
+# file, jsimports.SOURCE_EXTENSIONS: its imports draw arrows); ``code`` (its references are not read), by name
+# first (``CODE_FILE_NAMES``, fnmatchcase on the name, the first pattern that matches is the key) and then by
+# extension (``OTHER_CODE_EXTENSIONS``; an extension is the name's last suffix, case as written, a name's leading
+# dot not one); ``not_code`` (``NOT_CODE_EXTENSIONS``); ``unclassified`` (any other extension: a kind no list
+# states, counted so a new language or format shows as a number); ``no_extension`` (no name pattern, no suffix).
+# Code: programming languages, shell scripts, infrastructure code (Terraform: a module calls another by path; a
+# Dockerfile copies paths and names images; a Makefile runs targets and files) and query or schema languages (SQL,
+# GraphQL, protobuf, jq: a file names tables, types, messages or fields another defines).
 OTHER_CODE_EXTENSIONS = {".rs", ".go", ".java", ".kt", ".rb", ".php", ".cs", ".c", ".cc", ".cpp", ".h",
                          ".swift", ".scala", ".vue", ".svelte",
                          ".sh", ".bash", ".ps1",
                          ".tf", ".hcl",
-                         ".sql", ".graphql", ".gql", ".proto"}
+                         ".sql", ".graphql", ".gql", ".proto", ".jq"}
+CODE_FILE_NAMES = ("Dockerfile", "Dockerfile.*", "*.Dockerfile", "*.dockerfile", "Containerfile",
+                   "Makefile", "GNUmakefile", "makefile", "Jenkinsfile", "Justfile", "justfile", "Vagrantfile",
+                   "Rakefile", "Tiltfile")
+# Not code: what no map draws an arrow from, by group: documents and markup; data and configuration; styles;
+# images, fonts and media; archives and binaries; keys, certificates and digests; build and tool outputs.
+NOT_CODE_EXTENSIONS = {".md", ".mdx", ".markdown", ".rst", ".adoc", ".txt", ".html", ".htm", ".xml", ".svg", ".pdf",
+                       ".json", ".jsonc", ".json5", ".jsonl", ".ndjson", ".yaml", ".yml", ".toml", ".ini", ".cfg",
+                       ".conf", ".properties", ".csv", ".tsv", ".lock",
+                       ".css", ".scss", ".sass", ".less",
+                       ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".avif",
+                       ".woff", ".woff2", ".ttf", ".otf", ".eot", ".mp3", ".mp4", ".webm", ".wav",
+                       ".zip", ".gz", ".tgz", ".tar", ".bz2", ".xz", ".7z", ".jar", ".wasm", ".so", ".dll", ".exe",
+                       ".bin",
+                       ".pem", ".crt", ".cer", ".key", ".pub", ".asc", ".sig", ".sha256",
+                       ".map", ".tsbuildinfo", ".snap", ".log"}
+FILE_KINDS = ("read", "code", "not_code", "unclassified", "no_extension")
 NPM_DEP_FIELDS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 CARGO_DEP_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
 # Dependency manifests of ecosystems target_map does not read, each a pattern matched (fnmatchcase) against a
@@ -544,6 +567,28 @@ def sys_path_target(top: str, inserted: list[str], file_set: set[str], dir_set: 
     return next((posixpath.join(d, top) for d in inserted if posixpath.join(d, top) in dir_set), None)
 
 
+def file_kind(rel: str) -> tuple[str, str]:
+    """A file's kind (``FILE_KINDS``) and its key: the extension, the ``CODE_FILE_NAMES`` pattern that matched, or
+    ``""`` for ``no_extension``; the rule is the comment above ``OTHER_CODE_EXTENSIONS``."""
+    name = posixpath.basename(rel)
+    ext = posixpath.splitext(name)[1]
+    if ext == ".py" or ext in J.SOURCE_EXTENSIONS:
+        return "read", ext
+    pattern = next((p for p in CODE_FILE_NAMES if fnmatch.fnmatchcase(name, p)), None)
+    if pattern is not None:
+        return "code", pattern
+    if ext in OTHER_CODE_EXTENSIONS:
+        return "code", ext
+    if ext in NOT_CODE_EXTENSIONS:
+        return "not_code", ext
+    return ("unclassified", ext) if ext else ("no_extension", "")
+
+
+def _examples(found: dict[str, list[str]]) -> dict[str, dict[str, Any]]:
+    """``{key: {"count", "examples"}}``, the first ``UNREAD_EXAMPLES`` paths in path order, keys sorted."""
+    return {k: {"count": len(v), "examples": sorted(v)[:UNREAD_EXAMPLES]} for k, v in sorted(found.items())}
+
+
 def unread_manifests(files: list[str], npm_dirs: set[str]) -> dict[str, dict[str, Any]]:
     """Per pattern of ``MANIFESTS_NOT_READ`` that a file's name matches (the first pattern in the list), and under
     ``package.json`` every one outside the root whose directory is not an npm workspace project (its dependencies
@@ -560,7 +605,7 @@ def unread_manifests(files: list[str], npm_dirs: set[str]) -> dict[str, dict[str
         pattern = next((p for p in MANIFESTS_NOT_READ if fnmatch.fnmatchcase(name, p)), None)
         if pattern is not None:
             found.setdefault(pattern, []).append(rel)
-    return {k: {"count": len(v), "examples": sorted(v)[:UNREAD_EXAMPLES]} for k, v in sorted(found.items())}
+    return _examples(found)
 
 
 def target_map(root: str) -> dict[str, Any]:
@@ -715,6 +760,7 @@ def target_map(root: str) -> dict[str, Any]:
 
     aliases = _tsconfig_aliases(root, file_set, coverage)
     counts = coverage["specifiers"]
+    unknown: dict[str, list[str]] = {}
     sources = _reads(root, [rel for rel in files if posixpath.splitext(rel)[1] in J.SOURCE_EXTENSIONS])
     for rel in files:
         ext = posixpath.splitext(rel)[1]
@@ -757,11 +803,14 @@ def target_map(root: str) -> dict[str, Any]:
                     edge(here, there, "python")
             continue
         if ext not in J.SOURCE_EXTENSIONS:
-            if ext in OTHER_CODE_EXTENSIONS:
-                coverage["unread_code_files"][ext] = coverage["unread_code_files"].get(ext, 0) + 1
+            kind, key = file_kind(rel)
+            if kind == "code":
+                coverage["unread_code_files"][key] = coverage["unread_code_files"].get(key, 0) + 1
                 if projects.owner(rel) is None:
                     outside = coverage["unread_code_files_outside_projects"]
-                    outside[ext] = outside.get(ext, 0) + 1
+                    outside[key] = outside.get(key, 0) + 1
+            elif kind in ("unclassified", "no_extension"):
+                unknown.setdefault(key, []).append(rel)
             continue
         _rel, text = next(sources)
         if text is None:
@@ -797,6 +846,9 @@ def target_map(root: str) -> dict[str, Any]:
                 edge(here, there, "import")
 
     coverage["unread_manifests"] = unread_manifests(files, set(manifests))
+    unknown_counted = _examples(unknown)  # key "": the files with no extension
+    coverage["files_without_extension"] = unknown_counted.pop("", {"count": 0, "examples": []})
+    coverage["unclassified_files"] = unknown_counted
     coverage["unparsed_manifests"] = sorted(set(coverage["unparsed_manifests"]))
     for key in ("unread_code_files", "unread_code_files_outside_projects"):
         coverage[key] = dict(sorted(coverage[key].items()))
@@ -884,6 +936,13 @@ def render_brain(m: dict[str, Any], source: str = "`referee/`") -> str:
     return "\n".join(lines) + "\n"
 
 
+def _listed(counted: dict[str, dict[str, Any]]) -> str:
+    """``key count (example, example, example, ...)`` per entry of ``_examples``'s form, ``; ``-joined; an entry of
+    count 0 left out."""
+    return "; ".join("%s %d (%s)" % (k, v["count"], ", ".join(v["examples"]) + (
+        ", ..." if v["count"] > len(v["examples"]) else "")) for k, v in counted.items() if v["count"])
+
+
 def render_target(m: dict[str, Any], source: str) -> str:
     dirs = [p["dir"] for p in m["projects"]]
     ids = _ids(dirs)
@@ -926,14 +985,16 @@ def render_target(m: dict[str, Any], source: str) -> str:
                      ", ..." if sp_ins["unresolved_files"]["count"] > len(sp_ins["unresolved_files"]["examples"])
                      else "") or "none",
                  sp_ins["imports"]), "",
-             "Code files whose references are not read (`OTHER_CODE_EXTENSIONS`: other languages, shell, Terraform, "
-             "SQL, GraphQL, protobuf): %s." % (
+             "Code files whose references are not read (`OTHER_CODE_EXTENSIONS` by extension, `CODE_FILE_NAMES` "
+             "by name: other languages, shell, Terraform, Dockerfiles, Makefiles, SQL, GraphQL, protobuf, jq): %s." % (
                  ", ".join("%s %d (%d in no project)" % (ext, n, cov["unread_code_files_outside_projects"].get(ext, 0))
                            for ext, n in cov["unread_code_files"].items()) or "none"), "",
              "Dependency manifests found and not read (`MANIFESTS_NOT_READ`; `package.json` outside the npm "
-             "workspaces): %s." % (
-                 "; ".join("%s %d (%s)" % (k, v["count"], ", ".join(v["examples"]) + (", ..." if v["count"] > len(
-                     v["examples"]) else "")) for k, v in cov["unread_manifests"].items()) or "none"), ""]
+             "workspaces): %s." % (_listed(cov["unread_manifests"]) or "none"), "",
+             "Files of no stated kind (an extension in none of the lists, nor in `NOT_CODE_EXTENSIONS`): %s; "
+             "files with no extension and no `CODE_FILE_NAMES` name: %s." % (
+                 _listed(cov["unclassified_files"]) or "none",
+                 _listed({"": cov["files_without_extension"]}).lstrip() or "none"), ""]
     if cov["unparsed_manifests"]:
         lines += ["Manifests not parsed: %s." % ", ".join(cov["unparsed_manifests"]), ""]
     lines += ["```mermaid", "flowchart LR"]
