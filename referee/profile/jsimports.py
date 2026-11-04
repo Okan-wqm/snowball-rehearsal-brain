@@ -13,6 +13,9 @@ JS/TS file, a tsconfig's ``extends``, the root tsconfig's path aliases and the p
   one of ``REGEX_AFTER`` or after a word of ``REGEX_WORDS``, else it is division.
 - ``extends``: a tsconfig's ``extends``, a string or a list of strings (TypeScript 5), read as ``jsonc_loads``
   reads tsconfig's dialect; ``[]`` when the text does not parse or holds none.
+- ``jest_preset``: a jest configuration's (``JEST_CONFIG``) ``preset``, the first ``preset: '<value>'`` of its code
+  (a quoted key too); none when the code names ``rootDir``. Not read: a preset built at run time or given by a
+  variable, a configuration in ``package.json`` or in a JSON file.
 - ``alias_file`` and ``aliases``: the ``compilerOptions.paths`` of the root ``tsconfig.base.json``, else
   ``tsconfig.json`` (only the root's: a ``paths`` of a nested tsconfig is not read), each alias with the first
   target of its list, ``baseUrl`` honoured (one leaving the root is the root), exact aliases before ``*`` ones;
@@ -35,6 +38,9 @@ SKIP_DIRS = {".git", "node_modules", "dist", "coverage", ".nx", ".next", ".turbo
 SOURCE_EXTENSIONS = {".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}
 ALIAS_FILES = ("tsconfig.base.json", "tsconfig.json")
 FILL = "x"
+JEST_CONFIG = re.compile(r"jest\.config\.(?:js|ts|mjs|cjs|mts|cts)")
+PRESET = re.compile(r"""(?<![\w$.])['"]?preset['"]?\s*:\s*(['"])([^'"\n]+)\1""")
+ROOT_DIR = re.compile(r"""(?<![\w$.])['"]?rootDir['"]?\s*:""")
 REGEX_AFTER = set("(,=:[!&|?{};+-*%~^")
 REGEX_WORDS = {"return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw", "yield", "await"}
 SPECIFIER = re.compile(
@@ -137,6 +143,26 @@ def jsonc_loads(text: str) -> Any:
             out.append(c)
             i += 1
     return json.loads(re.sub(r",(\s*[}\]])", r"\1", "".join(out)))
+
+
+def jest_preset(text: str) -> str | None:
+    """The string of the first ``preset`` key of a jest configuration's code (``code_view``), written
+    ``preset: '<value>'`` or with ``"``; None when there is none or the configuration's code names ``rootDir``
+    (a preset is resolved from ``rootDir``, which this reader does not evaluate)."""
+    view = code_view(text)
+    if _in_code(ROOT_DIR, text, view):
+        return None
+    m = _in_code(PRESET, text, view)
+    return m.group(2) if m else None
+
+
+def _in_code(regex: re.Pattern, text: str, view: str) -> re.Match | None:
+    """The first match of ``regex`` (a key and its ``:``) over ``text`` whose first character and first ``:`` are
+    code (the same in ``code_view``), so a key inside a comment or a string is not one."""
+    def code(i: int) -> bool:
+        return view[i] == text[i]
+    return next((m for m in regex.finditer(text)
+                 if code(m.start()) and code(m.start() + m.group(0).index(":"))), None)
 
 
 def extends(text: str) -> list[str]:

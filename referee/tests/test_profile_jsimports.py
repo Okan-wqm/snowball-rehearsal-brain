@@ -4,6 +4,8 @@
   not one; a ``/`` after an operand is division; a ``'`` string ends at the line's end; the specifier is read from
   the text as written;
 - ``extends``: a string, a list, comments and trailing commas, nothing when the text does not parse;
+- ``jest_preset``: the first ``preset`` key of the code (quoted or not; not in a comment, a string, an assignment
+  or a longer name), only a string value, none when the code names ``rootDir``; the config names;
 - ``aliases``: exact before ``*``, ``baseUrl`` (one leaving the root is the root), the first target only;
   ``alias_file``'s order; a text that does not parse raises;
 - ``package_name`` and ``is_relative``; ``walk``: ``SKIP_DIRS`` and links are not entered.
@@ -86,6 +88,34 @@ class Extends(unittest.TestCase):
         self.assertEqual(J.extends('{"compilerOptions": {}}'), [])
         self.assertEqual(J.extends("not json"), [])
         self.assertEqual(J.extends("[1]"), [])
+
+
+class JestPreset(unittest.TestCase):
+    def test_the_first_preset_key_of_the_code(self):
+        cases = {
+            "export default {\n  displayName: 'x',\n  preset: '../../jest.preset.js',\n};": "../../jest.preset.js",
+            'module.exports = {"preset": "ts-jest", preset2: "no"};': "ts-jest",
+            "// preset: 'commented'\nmodule.exports = { preset: 'real' };": "real",
+            "const doc = \"preset: 'quoted'\"; module.exports = { preset: 'real' };": "real",
+            "config.preset = 'assigned'; const o = { mypreset: 'x', a.preset: 'y' };": None,
+            "module.exports = { preset: base };": None,
+            "module.exports = {};": None,
+            "module.exports = { 'my preset': 'spaced', preset: 'real' };": "real",
+        }
+        for text, preset in cases.items():
+            self.assertEqual(J.jest_preset(text), preset, text)
+
+    def test_a_root_dir_in_code_gives_none(self):
+        self.assertIsNone(J.jest_preset("export default { rootDir: '..', preset: './p.js' };"))
+        self.assertIsNone(J.jest_preset("export default { 'rootDir': '..', preset: './p.js' };"))
+        self.assertEqual(J.jest_preset("/* rootDir: '..' */ const s = 'rootDir: 1'; export default { preset: './p' };"),
+                         "./p")
+
+    def test_the_config_names(self):
+        self.assertEqual([bool(J.JEST_CONFIG.fullmatch(n)) for n in
+                          ("jest.config.ts", "jest.config.cts", "jest.config.mjs", "jest.config.json",
+                           "jest.preset.js")],
+                         [True, True, True, False, False])
 
 
 class Aliases(unittest.TestCase):

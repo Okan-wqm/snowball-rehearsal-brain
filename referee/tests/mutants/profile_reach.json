@@ -57,8 +57,8 @@
   {
    "id": "reach_no_extends",
    "file": "profile/fit.py",
-   "old": "out += [(name, r) for r in (J.extends(text) if is_tsconfig else J.specifiers(text))]",
-   "new": "out += [(name, r) for r in ([] if is_tsconfig else J.specifiers(text))]",
+   "old": "        refs = J.extends(text) if is_tsconfig else J.specifiers(text)\n",
+   "new": "        refs = [] if is_tsconfig else J.specifiers(text)\n",
    "tests": [
     "test_profile_fit.py"
    ]
@@ -261,6 +261,60 @@
    "new": "        for spec in [mm.group(2) or mm.group(4) or mm.group(6) or mm.group(8) for mm in J.SPECIFIER.finditer(text)]:",
    "tests": [
     "test_depmap.py"
+   ]
+  },
+  {
+   "id": "preset_not_followed",
+   "file": "profile/fit.py",
+   "old": "            refs += [p for p in [J.jest_preset(text)] if p]\n",
+   "new": "",
+   "tests": [
+    "test_profile_fit.py"
+   ]
+  },
+  {
+   "id": "preset_any_file",
+   "file": "profile/fit.py",
+   "old": "        if J.JEST_CONFIG.fullmatch(posixpath.basename(name)):",
+   "new": "        if True:",
+   "tests": [
+    "test_profile_fit.py"
+   ]
+  },
+  {
+   "id": "preset_root_dir_ignored",
+   "file": "profile/jsimports.py",
+   "old": "    if _in_code(ROOT_DIR, text, view):\n        return None\n",
+   "new": "",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "preset_in_strings",
+   "file": "profile/jsimports.py",
+   "old": "                 if code(m.start()) and code(m.start() + m.group(0).index(\":\"))), None)",
+   "new": "                 if code(m.start())), None)",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "preset_in_comments",
+   "file": "profile/jsimports.py",
+   "old": "                 if code(m.start()) and code(m.start() + m.group(0).index(\":\"))), None)",
+   "new": "                 if code(m.start() + m.group(0).index(\":\"))), None)",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "preset_longer_name",
+   "file": "profile/jsimports.py",
+   "old": "PRESET = re.compile(r\"\"\"(?<![\\w$.])",
+   "new": "PRESET = re.compile(r\"\"\"(?<![$])",
+   "tests": [
+    "test_profile_jsimports.py"
    ]
   }
  ]

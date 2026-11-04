@@ -1,9 +1,9 @@
 """``profile.fit``: each unit candidate's recipe composed from its own npm scripts, judged by ``check_recipe``.
 
 - the composition: unit id, nearest lock and version file, minimal inputs with what a candidate reaches: the
-  workspace folders it declares (Node's lookup through the lock's keys, transitive) and its imports and tsconfig
-  ``extends`` (aliases, links, relative paths; the deepest project or the file; seeds followed; links, missing
-  paths, commented and quoted imports bring nothing), install-script marks from the lock,
+  workspace folders it declares (Node's lookup through the lock's keys, transitive), its imports, tsconfig
+  ``extends`` and a jest config's ``preset`` (aliases, links, relative paths; the deepest project or the file;
+  seeds followed; links, missing paths, commented and quoted imports bring nothing), install-script marks from the lock,
   the image map, the three ``npm --prefix <path> run --silent`` commands;
 - the result: one row per candidate in the derivation's order, its reasons exactly ``check_recipe``'s (the one
   judge), the passing paths;
@@ -249,6 +249,16 @@ class Reached(unittest.TestCase):
         write_tree(self.tree, {"libs/chained/tsconfig.json": json.dumps({"extends": "../../tools/ts/strict.json"}),
                                "tools/ts/strict.json": "{}"})
         self.assertIn("tools/ts/strict.json", F.reached(self.tree, "apps/web", "package-lock.json"))
+
+    def test_a_jest_configs_preset(self):
+        write_tree(self.tree, {"libs/exact/jest.config.ts": "export default { preset: '../../jest.preset.js' };\n",
+                               "jest.preset.js": "module.exports = require('./tools/jest-base.js');\n",
+                               "tools/jest-base.js": "module.exports = {};\n",
+                               "apps/web/jest.config.cts": "module.exports = { preset: '@w/cfg' };\n",
+                               "apps/web/src/jest.config.notes.ts": "export default { preset: '../../../nope.js' };\n",
+                               "nope.js": "\n"})
+        self.assertEqual(F.reached(self.tree, "apps/web", "package-lock.json"),
+                         sorted(self.WEB + ["jest.preset.js", "tools/jest-base.js"]))
 
     def test_the_memo_gives_the_same_answer(self):
         memo: dict = {}

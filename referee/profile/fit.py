@@ -25,7 +25,8 @@ and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this modul
     same form), its folder, an input as the lock names it (a folder missing from the tree is ``check_recipe``'s
     ``input_missing``);
   - every import specifier (``jsimports.specifiers``) of a JS/TS file (``jsimports.SOURCE_EXTENSIONS``) of an
-    input, a directory being walked by ``jsimports.walk``, and every ``extends`` of a ``tsconfig*.json`` there: a
+    input, a directory being walked by ``jsimports.walk``, the ``preset`` of a jest configuration there
+    (``jsimports.jest_preset``) and every ``extends`` of a ``tsconfig*.json`` there: a
     relative one is the path it names from the file's directory (none when it leaves the tree); a bare one is
     both the path a root tsconfig alias gives (``jsimports.alias_path``) and the workspace folder its package
     (``jsimports.package_name``) links to by the lookup above, started at the file's directory;
@@ -37,11 +38,13 @@ and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this modul
 
   So a workspace package reached by an alias or by an undeclared import, and the root tsconfig a project's
   extends, are inputs. Not reached, stated (their need shows only in ``verify``'s 3/3 run): an Nx implicit
-  dependency, a path written in a configuration value that is not an import or ``extends`` (a jest ``preset`` or
-  ``moduleNameMapper``, ESLint's ``parserOptions.project``), an import whose specifier is not a string literal,
-  a ``paths`` alias of a tsconfig other than the root's, tsconfig ``references``, a file read at run time, and a
-  file type other than JS/TS and tsconfig (``.vue``, ``.svelte``, CSS). A commented-out import is read as
-  written, so an input may be more than the run needs.
+  dependency, a path written in a configuration value other than an import, a tsconfig ``extends`` and a jest
+  ``preset`` (jest's ``moduleNameMapper`` or ``setupFiles``, ESLint's ``parserOptions.project``), a bare jest
+  preset's own ``jest-preset`` file (its package is the lock's, or the link's folder), an import whose specifier is
+  not a string literal, a ``paths`` alias of a tsconfig other than the root's, tsconfig ``references``, a file
+  read at run time, and a file type other than JS/TS and tsconfig (``.vue``, ``.svelte``, CSS). An import inside
+  a comment or a string is not one (``jsimports.code_view``, whose lexing limits are stated there); a whole
+  project directory is an input when one of its files is reached, so an input may be more than the run needs.
 - ``install_scripts_required``: the lock keys whose entry says ``hasInstallScript: true`` (MF5's lock reading),
   sorted. A script only a tarball declares is not known before the fetch (MF5 refuses it then).
 - ``lint_cmd``: ``npm --prefix <path> run --silent lint -- --format json``; ``test_cmd`` and
@@ -177,7 +180,10 @@ def _references(tree: str, entry: str) -> list[tuple[str, str]]:
             continue
         data = D._read_regular(tree, name)
         text = data.decode("utf-8", "replace") if data is not None else ""
-        out += [(name, r) for r in (J.extends(text) if is_tsconfig else J.specifiers(text))]
+        refs = J.extends(text) if is_tsconfig else J.specifiers(text)
+        if J.JEST_CONFIG.fullmatch(posixpath.basename(name)):
+            refs += [p for p in [J.jest_preset(text)] if p]
+        out += [(name, r) for r in refs]
     return out
 
 
