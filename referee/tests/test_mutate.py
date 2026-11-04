@@ -3,6 +3,7 @@ on a small brain made here, the brain left unchanged, and every kept mutant stil
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import glob
 import io
@@ -26,6 +27,12 @@ TEST = ("import os, sys, unittest\nsys.path.insert(0, os.path.dirname(os.path.di
         "        self.assertEqual(mod.add(2, 3), 5)\n")
 RED = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_red(self):\n        self.fail()\n"
 SLOW = "import time, unittest\n\n\nclass T(unittest.TestCase):\n    def test_slow(self):\n        time.sleep(30)\n"
+# Two classes, so an id can name one: T tests add (and that its run sees tests/helper.py before referee/helper.py
+# and runs in referee/, as discover does); U does not test add.
+IDS = ("import helper\n" + TEST
+       + "        self.assertEqual(helper.VALUE, 5)\n        self.assertTrue(os.path.isdir('tests'))\n\n"
+       "    def test_other(self):\n        pass\n\n\nclass U(unittest.TestCase):\n    def test_nothing(self):\n"
+       "        pass\n")
 
 
 def mutant(id_: str, old: str, new: str, tests: list[str] | None = None, file: str = "mod.py") -> dict:
@@ -39,11 +46,37 @@ class Runner(unittest.TestCase):
         write_tree(self.brain, {"referee/mod.py": MOD, "referee/tests/test_mod.py": TEST,
                                 "referee/tests/test_red.py": RED, "referee/tests/test_slow.py": SLOW})
 
-    def outcomes(self, mutants: list[dict], timeout: float = 120.0) -> dict[str, str]:
+    def outcomes(self, mutants: list[dict], timeout: float = 120.0, emit=None) -> dict[str, str]:
         path = os.path.join(self.brain, "m.json")
         with open(path, "w") as fh:
             json.dump({"mutants": mutants}, fh)
-        return {r["id"]: r["outcome"] for r in mutate.run(self.brain, [path], 4, timeout)}
+        return {r["id"]: r["outcome"] for r in mutate.run(self.brain, [path], 4, timeout, emit=emit)}
+
+    def test_an_id_runs_only_the_tests_it_names_as_discover_would(self):
+        write_tree(self.brain, {"referee/tests/test_ids.py": IDS, "referee/tests/helper.py": "VALUE = 5\n",
+                                "referee/helper.py": "VALUE = 6\n"})
+        got = self.outcomes([
+            mutant("class_testing_add", "return a + b", "return a - b", ["test_ids.T"]),
+            mutant("method_testing_add", "return a + b", "return a * b", ["test_ids.T.test_add"]),
+            mutant("class_not_testing_add", "return a + b", "return a - 1", ["test_ids.U"]),
+            mutant("method_not_testing_add", "return a + b", "return b - a", ["test_ids.T.test_other"]),
+            mutant("unknown_name", "return a + b", "return 0", ["test_ids.Nope"]),
+            mutant("no_such_module", "return a + b", "return 1", ["test_none.T"]),
+            mutant("id_then_red_file", "return a + b", "return 2", ["test_ids.U", "test_red.py"]),
+        ])
+        self.assertEqual(got, {"class_testing_add": "killed", "method_testing_add": "killed",
+                               "class_not_testing_add": "survived", "method_not_testing_add": "survived",
+                               "unknown_name": "baseline_red", "no_such_module": "baseline_red",
+                               "id_then_red_file": "baseline_red"})
+
+    def test_each_row_is_emitted_as_its_mutant_finishes(self):
+        hang = "import mod, time\nif mod.add(2, 3) != 5:\n    time.sleep(6)\n"
+        write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + hang)})
+        emitted = []
+        self.outcomes([mutant("slow_first", "return a + b", "return a - b", ["test_hang.py"]),
+                       mutant("quick_second", "return a + a", "return 2 * a")], emit=emitted.append)
+        self.assertEqual([r["id"] for r in emitted], ["quick_second", "slow_first"])
+        self.assertEqual(emitted[0], {"file": "m.json", "id": "quick_second", "outcome": "survived"})
 
     def test_each_outcome(self):
         got = self.outcomes([
@@ -78,7 +111,7 @@ class Runner(unittest.TestCase):
                 with contextlib.redirect_stdout(out):
                     self.assertEqual(mutate.main(["--brain", self.brain, "-j", "2", path]), code)
                 rows = [json.loads(line) for line in out.getvalue().splitlines()]
-                self.assertEqual([(r["file"], r["id"]) for r in rows], [("m.json", m["id"]) for m in mutants])
+                self.assertEqual(sorted((r["file"], r["id"]) for r in rows), sorted(("m.json", m["id"]) for m in mutants))
 
     def test_a_mutant_over_the_limit_is_a_timeout(self):
         slow = "import mod, time\nif mod.add(2, 3) != 5:\n    time.sleep(30)\n"
@@ -91,6 +124,11 @@ class Runner(unittest.TestCase):
         for label, data in (("no list", {}), ("empty", {"mutants": []}), ("extra field", {"mutants": [good | {"x": 1}]}),
                             ("no change", {"mutants": [good | {"new": good["old"]}]}),
                             ("no tests", {"mutants": [good | {"tests": []}]}),
+                            ("a bare module", {"mutants": [good | {"tests": ["test_mod"]}]}),
+                            ("an id too deep", {"mutants": [good | {"tests": ["test_mod.T.test_add.x"]}]}),
+                            ("an id not dotted names", {"mutants": [good | {"tests": ["test_mod.T-1"]}]}),
+                            ("an id with a path", {"mutants": [good | {"tests": ["../test_mod.T"]}]}),
+                            ("an empty entry", {"mutants": [good | {"tests": [""]}]}),
                             ("duplicate id", {"mutants": [good, good]})):
             with self.subTest(label=label):
                 path = os.path.join(self.brain, "bad.json")
@@ -98,6 +136,13 @@ class Runner(unittest.TestCase):
                     json.dump(data, fh)
                 with self.assertRaises(ValueError):
                     mutate.load(path)
+
+    def test_well_formed_entries(self):
+        path = os.path.join(self.brain, "good.json")
+        tests = ["test_mod.py", "test_*.py", "test_mod.T", "test_mod.T.test_add"]
+        with open(path, "w") as fh:
+            json.dump({"mutants": [mutant("k", "return a + b", "return a - b", tests)]}, fh)
+        self.assertEqual(mutate.load(path)[0]["tests"], tests)
 
 
 class Select(unittest.TestCase):
@@ -161,6 +206,14 @@ class Select(unittest.TestCase):
                 self.assertEqual(self.selected({new}), [])
                 os.remove(os.path.join(self.brain, new))
 
+    def test_an_id_is_concerned_by_its_modules_file(self):
+        items = [("x.json", mutant("by_id", "return a - b", "return a", ["test_mod.T"], "other.py")),
+                 ("x.json", mutant("by_other_id", "return a - b", "return b", ["test_other.T"], "other.py"))]
+        for rel, ids in (("referee/tests/helper.py", ["by_id"]), ("referee/tests/test_mod.py", ["by_id"]),
+                         ("referee/pkg/util.py", ["by_id"]), ("referee/other.py", ["by_id", "by_other_id"])):
+            with self.subTest(rel=rel):
+                self.assertEqual([m["id"] for _, m in mutate.select(self.brain, items, {rel})], ids)
+
     def test_a_file_that_does_not_parse_is_selected_by_its_own_path(self):
         write_tree(self.brain, {"referee/other.py": "def (\n", "referee/tests/helper.py": "def (\n"})
         self.assertEqual(self.selected({"referee/other.py"}), self.ON_OTHER)
@@ -207,9 +260,20 @@ class Touched(unittest.TestCase):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = mutate.main(["--brain", self.brain, "-j", "2", "--touched", "REV"])
         rows = [json.loads(line) for line in out.getvalue().splitlines()]
-        self.assertEqual([(r["id"], r["outcome"]) for r in rows], [("on_mod", "killed"), ("not_imported", "survived")])
+        self.assertEqual(sorted((r["id"], r["outcome"]) for r in rows),
+                         [("not_imported", "survived"), ("on_mod", "killed")])
         self.assertEqual(code, 1)
         self.assertIn("1 changed paths, 2 mutants selected", err.getvalue())
+
+
+def defines(path: str, names: list[str]) -> bool:
+    """Whether the module at ``path`` defines the class ``names[0]`` at its top level (and its method ``names[1]``)."""
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    classes = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == names[0]]
+    if not classes or len(names) == 1:
+        return bool(classes)
+    return any(isinstance(n, ast.FunctionDef) and n.name == names[1] for n in classes[0].body)
 
 
 class Kept(unittest.TestCase):
@@ -220,8 +284,11 @@ class Kept(unittest.TestCase):
             for m in mutate.load(path):
                 with self.subTest(file=os.path.basename(path), id=m["id"]):
                     self.assertIsNone(mutate.applicable(mutate.BRAIN, m))
-                    for pattern in m["tests"]:
-                        self.assertTrue(glob.glob(os.path.join(mutate.BRAIN, "referee", "tests", pattern)), pattern)
+                    for entry in m["tests"]:
+                        found = glob.glob(os.path.join(mutate.BRAIN, "referee", "tests", mutate.test_file(entry)))
+                        self.assertTrue(found, entry)
+                        if not entry.endswith(".py"):  # the id's class (and method) are defined in its module
+                            self.assertTrue(defines(found[0], entry.split(".")[1:]), entry)
 
 
 if __name__ == "__main__":

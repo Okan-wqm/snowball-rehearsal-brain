@@ -11,8 +11,8 @@
   },
   {
    "id": "baseline_ignored",
-   "old": "if base[tuple(m[\"tests\"])] != \"green\":",
-   "new": "if False:",
+   "old": "(\"baseline_red\" if base[tuple(m[\"tests\"])] != \"green\"",
+   "new": "(\"baseline_red\" if False",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -119,8 +119,8 @@
   },
   {
    "id": "patterns_not_globbed",
-   "old": "fnmatch(os.path.basename(t), pat)",
-   "new": "os.path.basename(t) == pat",
+   "old": "fnmatch(os.path.basename(t), test_file(e))",
+   "new": "os.path.basename(t) == test_file(e)",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -148,6 +148,69 @@
    "id": "selection_not_applied",
    "old": "mutants = select(brain, mutants, changed)",
    "new": "pass",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "ids_run_as_patterns",
+   "old": "else [sys.executable, \"-c\", RUN_ID, entry])",
+   "new": "else [sys.executable, \"-m\", \"unittest\", \"discover\", \"-s\", \"tests\", \"-p\", test_file(entry)])",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "ids_after_the_cwd",
+   "old": "sys.path.insert(0, os.path.abspath('tests'))",
+   "new": "sys.path.append(os.path.abspath('tests'))",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "ids_not_mapped_to_their_file",
+   "old": "else entry.split(\".\", 1)[0] + \".py\"",
+   "new": "else entry",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "any_entry_accepted",
+   "old": "and all(_entry(t) for t in m[\"tests\"])",
+   "new": "and all(isinstance(t, str) for t in m[\"tests\"])",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "ids_any_depth",
+   "old": "(\\.[A-Za-z_]\\w*){1,2}",
+   "new": "(\\.[A-Za-z_]\\w*)*",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "ids_partly_matched",
+   "old": "bool(TEST_ID.fullmatch(entry))",
+   "new": "bool(TEST_ID.match(entry))",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "rows_held_to_the_end",
+   "old": "            if emit:\n                with lock:\n                    emit(row)\n",
+   "new": "",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"

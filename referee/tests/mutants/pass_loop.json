@@ -6,7 +6,7 @@
    "old": " or not PR.gate_opened(ledger) or PR.passed(ledger):",
    "new": " or not PR.gate_opened(ledger):",
    "tests": [
-    "test_loop_write.py"
+    "test_loop_write.Pass"
    ]
   },
   {
@@ -15,7 +15,7 @@
    "old": " or not PR.gate_opened(ledger) or PR.passed(ledger):",
    "new": " or PR.passed(ledger):",
    "tests": [
-    "test_loop_write.py"
+    "test_loop_write.Pass"
    ]
   },
   {
@@ -24,7 +24,7 @@
    "old": "copies = [other for other in others if other.target.get(\"kind\") == \"copy\"]",
    "new": "copies = [other for other in others]",
    "tests": [
-    "test_loop_write.py"
+    "test_loop_write.Pass"
    ]
   },
   {
@@ -33,7 +33,7 @@
    "old": "    if P.genesis(copies[0]):\n",
    "new": "    if False:\n",
    "tests": [
-    "test_loop_write.py"
+    "test_loop_write.Pass"
    ]
   },
   {
@@ -42,7 +42,7 @@
    "old": "    if len(copies) > 1:\n",
    "new": "    if False:\n",
    "tests": [
-    "test_loop_write.py"
+    "test_loop_write.Pass"
    ]
   },
   {
@@ -51,7 +51,7 @@
    "old": "JUDGE_UNUSABLE = (UnicodeDecodeError, json.JSONDecodeError, RecursionError, PR.Unusable)",
    "new": "JUDGE_UNUSABLE = (UnicodeDecodeError, json.JSONDecodeError, RecursionError)",
    "tests": [
-    "test_loop_write.py"
+    "test_loop_write.Pass"
    ]
   },
   {
@@ -60,7 +60,7 @@
    "old": "lint, end, d8, opened, passed)",
    "new": "lint, end, d8, opened, None)",
    "tests": [
-    "test_loop_write.py"
+    "test_loop_write.Pass"
    ]
   },
   {
@@ -69,7 +69,7 @@
    "old": "**({} if judged is None else {\"pass\": judged})",
    "new": "**{}",
    "tests": [
-    "test_loop_write.py"
+    "test_loop_write.Pass"
    ]
   },
   {
@@ -78,7 +78,7 @@
    "old": "        if passed is not None:\n            out.append(",
    "new": "        if False:\n            out.append(",
    "tests": [
-    "test_loop_write.py"
+    "test_loop_write.Pass"
    ]
   },
   {
@@ -87,7 +87,7 @@
    "old": "\"payload\": _payload(copy, imp) if passed else None}",
    "new": "\"payload\": _payload(copy, imp)}",
    "tests": [
-    "test_loop_write.py",
+    "test_loop_write.Pass",
     "test_pass_row.py"
    ]
   },
