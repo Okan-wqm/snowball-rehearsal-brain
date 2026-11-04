@@ -65,6 +65,7 @@ from test_loop_write import DRILL_PATCHES as D8_PATCHES, SENTINEL_PY, SENTINEL_U
 from test_rekor import entry_for  # noqa: E402
 from harness import revert_drill as RD  # noqa: E402
 from loop import drill as DR  # noqa: E402
+from status import exit_b as EB  # noqa: E402
 
 REFEREE_REPO = "o/referee"
 TARGETS = (("t1", "toy", "o/toy"), ("c1", "copy", "o/copy"))
@@ -293,40 +294,96 @@ def closed(**conditions) -> dict:
     return {"verdict": "closed", "conditions": {names[k]: ["toy:" + r for r in v] for k, v in conditions.items()}}
 
 
-class Rehearsal(unittest.TestCase):
-    MAX_RUNS = 14
+MAX_RUNS = 14
 
+
+def rehearse(flow: Flow) -> list[dict]:
+    """Each run's ``step`` up to and including the stall (see the module docstring). After the genesis every run's
+    D1 verified the toy's ``brain/state`` that the run before wrote, as an extension of the one before that, and its
+    root's entry read from Rekor; else ``AssertionError``, as with no stall in ``MAX_RUNS`` runs."""
+    records: list[dict] = []
+    for _ in range(MAX_RUNS):
+        lines = flow.run()
+        records.append(step(Flow.record(lines)))
+        line = lines["cek"]["targets"][0]
+        if len(flow.state_heads) > 1:
+            previous = flow.state_heads[-3] if len(flow.state_heads) > 2 else None
+            got = (line["state"]["head"], line["state"]["previous"])
+            if got != (flow.state_heads[-2], previous) or line["root"]["rekor_uuid"] not in flow.rekor.entries:
+                raise AssertionError("run %d: D1 did not verify the state the run before wrote: %s" % (flow.runs, got))
+        if "stopped" in records[-1] or records[-1:] == records[-2:-1]:
+            return records
+    raise AssertionError("no stall in %d runs: %s" % (MAX_RUNS, records))
+
+
+def without_fixtures(base: str) -> Flow:
+    return Flow(base)
+
+
+def with_fixtures(base: str) -> Flow:
+    return Flow(base, drill=DRILL_CAUSES,
+                seed=seed_choosing(drill_catalog(DRILL_CAUSES), {"2": "rd-test", "5": "rd-lint", "8": "rd-build"}))
+
+
+def stale_patches(base: str) -> Flow:
+    return Flow(base, drill={"rd-test": "test_regression", "rd-lint": "lint_regression"}, patches=D8_PATCHES)
+
+
+# ``docs/exit-b.md``'s cases (``status.exit_b.render_case``), in its order: name, title, the world, the open reports
+# the stop waits for (a seed epoch answering one of them closes it, and this test's expected stall then moves).
+SEED_044, SEED_045 = "seed-044-revert-facts-producers", "seed-045-drill-live-inputs-unnamed"
+CASES = (
+    ("without-fixtures", "The seed as it is: no drill fixtures", without_fixtures, [SEED_045]),
+    ("with-fixtures", "A drill catalog of the three causes", with_fixtures, [SEED_044, SEED_045]),
+    ("stale-patches", "Drill patches on a line the toy's merge changed", stale_patches, [SEED_045]),
+)
+
+
+def case_section(name: str, records: list[dict]) -> str:
+    _, title, _, waits = next(c for c in CASES if c[0] == name)
+    return EB.render_case(name, title, records, waits, EB.reports_by_id())
+
+
+def write_doc() -> None:
+    """``docs/exit-b.md`` from each case's rehearsal (``python tests/test_rehearsal.py --doc``)."""
+    sections = []
+    for name, _, world, _ in CASES:
+        base = writable_base("t-rehearsal-doc-")
+        try:
+            sections.append(case_section(name, rehearse(world(base))))
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+    with open(EB.DOC, "w", encoding="utf-8") as fh:
+        fh.write(EB.render(EB.read_page(), sections))
+
+
+class Rehearsal(unittest.TestCase):
     def setUp(self) -> None:
         self.base = writable_base("t-rehearsal-")
         self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
 
     def rehearse(self, flow: Flow) -> list[dict]:
-        """Each run's ``step`` up to and including the stall (see the module docstring). After the genesis every
-        run's D1 verified the toy's ``brain/state`` that the run before wrote, as an extension of the one before
-        that, and its root's entry read from Rekor."""
-        records: list[dict] = []
-        for _ in range(self.MAX_RUNS):
-            lines = flow.run()
-            records.append(step(Flow.record(lines)))
-            line = lines["cek"]["targets"][0]
-            if len(flow.state_heads) > 1:
-                previous = flow.state_heads[-3] if len(flow.state_heads) > 2 else None
-                self.assertEqual((line["state"]["head"], line["state"]["previous"]),
-                                 (flow.state_heads[-2], previous))
-                self.assertIn(line["root"]["rekor_uuid"], flow.rekor.entries)
-            if "stopped" in records[-1] or records[-1:] == records[-2:-1]:
-                return records
-        self.fail("no stall in %d runs: %s" % (self.MAX_RUNS, records))
+        return rehearse(flow)
+
+    def assert_documented(self, name: str, records: list[dict]) -> None:
+        """``docs/exit-b.md`` holds this case's section as these records give it (a stale document is red)."""
+        with open(EB.DOC, encoding="utf-8") as fh:
+            doc = fh.read()
+        self.assertTrue(case_section(name, records) in doc,
+                      "docs/exit-b.md is stale for %s: regenerate it with 'python tests/test_rehearsal.py --doc' "
+                      "from referee/" % name)
 
     def test_without_the_drills_fixtures_b_stalls_at_the_drill(self):
         """The seed as it is (tohum/26f: no live drill fixtures, DRILL_SEED set): the toy's genesis merges ``good``
         and rejects ``breaks``, the next run watches the merge green and ends it, and from then on every run is
         the same: the gate stays closed on ``#geri-alma`` alone and the copy waits (26f:33-36: D8 cannot run live
         and #geri-alma cannot be measured until a seed epoch brings the fixtures)."""
-        flow = Flow(self.base)
+        flow = without_fixtures(self.base)
         off = {"action": "off", "why": "fixtures_absent"}
         gate = closed(geri_alma=["drill_inputs_missing"])
-        self.assertEqual(self.rehearse(flow), [
+        records = self.rehearse(flow)
+        self.assert_documented("without-fixtures", records)
+        self.assertEqual(records, [
             {"waiting": ["c1"], "t1": GENESIS},
             {"waiting": ["c1"], "t1": toy(sentinel="green", drill=off, done=("D5", "D6", "D7"),
                                           gate=closed(nobetci=["sentinel_unfinished:<sha>"],
@@ -342,15 +399,14 @@ class Rehearsal(unittest.TestCase):
         D7, then revealed and judged. rd-test and rd-lint pass and leave the gate closed on ``build_break`` alone;
         rd-build is reverted as a test regression (stage 0's ``build_ok`` is always true, ``loop.watch.facts``;
         seed-044), so its judgement is ``FAIL`` and ``yaz`` stops red: (B) cannot open the copy's genesis."""
-        catalog = drill_catalog(DRILL_CAUSES)
-        flow = Flow(self.base, drill=DRILL_CAUSES,
-                    seed=seed_choosing(catalog, {"2": "rd-test", "5": "rd-lint", "8": "rd-build"}))
+        flow = with_fixtures(self.base)
         unshown = ["cause_unshown:%s" % c for c in ("test_regression", "build_break", "lint_regression")]
         wait = {"action": "wait", "why": "drill_unfinished"}
         commit = {"action": "commit"}
         d8 = ("D5", "D6", "D8")
         d78 = ("D5", "D6", "D7", "D8")
         records = self.rehearse(flow)
+        self.assert_documented("with-fixtures", records)
         self.assertEqual(records[:-1], [
             {"waiting": ["c1"], "t1": GENESIS},
             {"waiting": ["c1"], "t1": toy(sentinel="green", drill=commit, done=d78,
@@ -381,11 +437,12 @@ class Rehearsal(unittest.TestCase):
         ``brain/integration``'s head after that merge no instance applies, so no drill is ever committed and the flow
         stalls as without fixtures, the gate closed on every cause (seed-045: the fixtures must apply to the toy
         after its candidates' merges, not only to the tree signed in (A), 26f:35)."""
-        causes = {"rd-test": "test_regression", "rd-lint": "lint_regression"}
-        flow = Flow(self.base, drill=causes, patches=D8_PATCHES)
+        flow = stale_patches(self.base)
         none = {"action": "none", "why": "patch_does_not_apply"}
         unshown = ["cause_unshown:%s" % c for c in ("test_regression", "build_break", "lint_regression")]
-        self.assertEqual(self.rehearse(flow), [
+        records = self.rehearse(flow)
+        self.assert_documented("stale-patches", records)
+        self.assertEqual(records, [
             {"waiting": ["c1"], "t1": GENESIS},
             {"waiting": ["c1"], "t1": toy(sentinel="green", drill=none, done=("D5", "D6", "D7", "D8"),
                                           gate=closed(nobetci=["sentinel_unfinished:<sha>"], geri_alma=unshown))},
@@ -394,4 +451,7 @@ class Rehearsal(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    if sys.argv[1:] == ["--doc"]:
+        write_doc()
+    else:
+        unittest.main()

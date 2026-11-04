@@ -10,5 +10,9 @@
   "status.depmap": {
     "kind": "session_tool",
     "why": "the dependency drawings, run in a session and by test 42; the loop never runs it"
+  },
+  "status.exit_b": {
+    "kind": "session_tool",
+    "why": "the exit audit of asama-0/10a against harness.pass_row and the generated docs/exit-b.md, run by a session (python tests/test_rehearsal.py --doc) and by test 45 (tests/test_exit_b.py, tests/test_rehearsal.py); the loop never runs it"
   }
 }

@@ -492,6 +492,7 @@ def _inject_argv(f: str, d: str) -> dict:
         "runner.lint_record": [[d]],
         "status.block": [["render", f, f, f]],
         "status.depmap": [["brain", d], ["check", d], ["coverage", d], ["target", d, "--source", "x"]],
+        "status.exit_b": [["check"], ["register"]],
         "target.write": [["replay", f]],
     }
 
