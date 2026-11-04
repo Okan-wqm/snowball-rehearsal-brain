@@ -852,6 +852,105 @@ class Helpers(unittest.TestCase):
         self.assertEqual(D.glob_dirs(["./libs/*/"], dirs), ["libs/x"])
 
 
+def node(d: str, name: str | None = None, kinds: tuple[str, ...] = ("npm",)) -> dict[str, Any]:
+    return {"dir": d, "name": name or d, "kinds": list(kinds)}
+
+
+def arrow(a: str, b: str, kinds: tuple[str, ...] = ("import",)) -> dict[str, Any]:
+    return {"from": a, "to": b, "kinds": list(kinds)}
+
+
+class Delta(unittest.TestCase):
+    BASE = {"projects": [node("a"), node("b"), node("c")],
+            "edges": [arrow("a", "b"), arrow("b", "c"), arrow("c", "a")],
+            "coverage": {"files": 3}}
+
+    def delta(self, **head: Any) -> dict[str, Any]:
+        return D.map_delta(self.BASE, dict(self.BASE, **head))
+
+    def test_same(self):
+        d = self.delta()
+        self.assertEqual(d, {"projects": {"added": [], "removed": [], "changed": []},
+                             "edges": {"added": [], "removed": [], "changed": []}, "coverage": [], "same": True})
+
+    def test_projects_by_dir(self):
+        d = self.delta(projects=[node("c", kinds=("cargo", "npm")), node("b", "B"), node("e"), node("d")])
+        self.assertEqual(d["projects"], {"added": [node("d"), node("e")], "removed": [node("a")],
+                                         "changed": [{"dir": "b", "base": node("b"), "head": node("b", "B")},
+                                                     {"dir": "c", "base": node("c"),
+                                                      "head": node("c", kinds=("cargo", "npm"))}]})
+        self.assertFalse(d["same"])
+        self.assertEqual(d["edges"], {"added": [], "removed": [], "changed": []})
+
+    def test_edges_by_pair(self):
+        d = self.delta(edges=[arrow("c", "a", ("import", "npm")), arrow("a", "c"), arrow("b", "c"), arrow("a", "d")])
+        self.assertEqual(d["edges"], {"added": [arrow("a", "c"), arrow("a", "d")], "removed": [arrow("a", "b")],
+                                      "changed": [{"from": "c", "to": "a", "base": arrow("c", "a"),
+                                                   "head": arrow("c", "a", ("import", "npm"))}]})
+        self.assertFalse(d["same"])
+        # the pair is the key, not its order: b -> a is not a -> b
+        self.assertEqual(self.delta(edges=[arrow("b", "a"), arrow("b", "c"), arrow("c", "a")])["edges"],
+                         {"added": [arrow("b", "a")], "removed": [arrow("a", "b")], "changed": []})
+
+    def test_coverage_leaves(self):
+        base = {"files": 3, "sys_path": {"calls": 1, "dirs": 2}, "unclassified_files": {
+                    ".utf8": {"count": 2, "examples": ["x.utf8", "y.utf8"]}, ".tpl": {"count": 1, "examples": ["t.tpl"]}},
+                "kinds": {"npm": 1}, "list": [1, 2], "gone": {"deep": 1}, "flag": 1, "real": 1}
+        head = {"files": 4, "sys_path": {"calls": 1, "dirs": 3}, "unclassified_files": {
+                    ".utf8": {"count": 2, "examples": ["x.utf8", "z.utf8"]}, ".service": {"count": 1, "examples": ["s.service"]}},
+                "kinds": 1, "list": [2, 1], "new": 0, "flag": True, "real": 1.0}
+        d = D.map_delta(dict(self.BASE, coverage=base), dict(self.BASE, coverage=head))
+        self.assertEqual(d["coverage"], [
+            {"path": ["files"], "base": 3, "head": 4},
+            {"path": ["flag"], "base": 1, "head": True},
+            {"path": ["gone"], "base": {"deep": 1}},
+            {"path": ["kinds"], "base": {"npm": 1}, "head": 1},
+            {"path": ["list"], "base": [1, 2], "head": [2, 1]},
+            {"path": ["new"], "head": 0},
+            {"path": ["real"], "base": 1, "head": 1.0},
+            {"path": ["sys_path", "dirs"], "base": 2, "head": 3},
+            {"path": ["unclassified_files", ".service"], "head": {"count": 1, "examples": ["s.service"]}},
+            {"path": ["unclassified_files", ".tpl"], "base": {"count": 1, "examples": ["t.tpl"]}},
+            {"path": ["unclassified_files", ".utf8", "examples"], "base": ["x.utf8", "y.utf8"],
+             "head": ["x.utf8", "z.utf8"]}])
+        self.assertFalse(d["same"])
+        # an equal nested object gives nothing
+        self.assertEqual(D.map_delta(dict(self.BASE, coverage=base), dict(self.BASE, coverage=dict(base)))["coverage"],
+                         [])
+
+    def test_same_needs_every_part_empty(self):
+        for head in ({"coverage": {"files": 4}}, {"edges": self.BASE["edges"][1:]},
+                     {"projects": self.BASE["projects"][:2] + [node("c", "C")]}):
+            self.assertFalse(self.delta(**head)["same"], head)
+
+    def test_usable_maps(self):
+        D.check_map(dict(self.BASE, other=[1]))  # other keys are not read
+        bad = [[], {"edges": [], "coverage": {}}, dict(self.BASE, projects={}), dict(self.BASE, edges=None),
+               dict(self.BASE, coverage=[]), dict(self.BASE, projects=[{"dir": "a", "kinds": []}]),
+               dict(self.BASE, projects=[{"dir": 1, "name": "a", "kinds": []}]),
+               dict(self.BASE, projects=[{"dir": "a", "name": "a", "kinds": [1]}]),
+               dict(self.BASE, projects=[{"dir": "a", "name": "a", "kinds": "npm"}]),
+               dict(self.BASE, projects=["a"]), dict(self.BASE, edges=[{"from": "a", "kinds": []}]),
+               dict(self.BASE, projects=[node("a"), node("a", "other")]),
+               dict(self.BASE, edges=[arrow("a", "b"), arrow("a", "b", ("npm",))])]
+        for m in bad:
+            with self.assertRaises(D.MapUnusable, msg=m):
+                D.check_map(m)
+
+    def test_target_maps(self):
+        """Two checkouts of a target through ``target_map``: a new workspace and its import show in the delta."""
+        root = tempfile.mkdtemp()
+        write(root, {"package.json": json.dumps({"workspaces": ["p/*"]}),
+                     "p/a/package.json": json.dumps({"name": "a"}), "p/a/i.ts": "export const x = 1;\n"})
+        base = D.target_map(root)
+        self.assertTrue(D.map_delta(base, D.target_map(root))["same"])
+        write(root, {"p/b/package.json": json.dumps({"name": "b"}), "p/b/i.ts": "import { x } from 'a';\n"})
+        d = D.map_delta(base, D.target_map(root))
+        self.assertEqual(d["projects"]["added"], [{"dir": "p/b", "name": "b", "kinds": ["npm"]}])
+        self.assertEqual(d["edges"]["added"], [{"from": "p/b", "to": "p/a", "kinds": ["import"]}])
+        self.assertIn({"path": ["files"], "base": 3, "head": 5}, d["coverage"])
+
+
 class CommandLine(unittest.TestCase):
     def run_cli(self, *argv: str) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-m", "status.depmap", *argv], cwd=REFEREE, capture_output=True,
@@ -873,9 +972,50 @@ class CommandLine(unittest.TestCase):
         write(root, {"status/off_live.json": json.dumps({n: {"kind": "unwired", "why": "w"} for n in "ab"})})
         good = self.run_cli("check", root)
         self.assertEqual((good.returncode, json.loads(good.stdout)), (0, {"ok": True, "problems": []}))
-        for argv in ([], ["brain"], ["check"], ["check", root, "extra"], ["brain", os.path.join(root, "nope")], ["target", root], ["other", root],
+        for argv in ([], ["brain"], ["check"], ["map"], ["map", root, "x"], ["delta", root], ["delta", "a", "b", "c"], ["check", root, "extra"], ["brain", os.path.join(root, "nope")], ["target", root], ["other", root],
                      ["brain", root, "extra"]):
             self.assertEqual(self.run_cli(*argv).returncode, 2, argv)
+
+
+    def test_map_and_delta(self):
+        root = tempfile.mkdtemp()
+        write(root, {"package.json": json.dumps({"workspaces": ["p/*"]}), "p/a/package.json": json.dumps({"name": "a"})})
+        out = self.run_cli("map", root)
+        self.assertEqual((out.returncode, json.loads(out.stdout)), (0, D.target_map(root)))
+        base = os.path.join(root, "base.json")
+        with open(base, "w", encoding="utf-8") as f:
+            f.write(out.stdout)
+        same = self.run_cli("delta", base, base)
+        self.assertEqual((same.returncode, json.loads(same.stdout)["same"]), (0, True))
+        write(root, {"p/b/package.json": json.dumps({"name": "b"})})
+        head = os.path.join(root, "head.json")
+        with open(head, "w", encoding="utf-8") as f:
+            f.write(self.run_cli("map", root).stdout)
+        moved = self.run_cli("delta", base, head)
+        self.assertEqual(moved.returncode, 1)
+        self.assertEqual(json.loads(moved.stdout), D.map_delta(D.read_map(base), D.read_map(head)))
+        self.assertEqual(json.loads(moved.stdout)["projects"]["added"], [{"dir": "p/b", "name": "b", "kinds": ["npm"]}])
+
+    def test_delta_unusable(self):
+        root = tempfile.mkdtemp()
+        good = os.path.join(root, "good.json")
+        files = {"good.json": json.dumps(Delta.BASE), "bad.json": "{", "list.json": "[]",
+                 "shape.json": json.dumps(dict(Delta.BASE, coverage=None))}
+        write(root, files)
+        extra = self.run_cli("delta", good, good, good)
+        self.assertEqual((extra.returncode, extra.stdout, extra.stderr.strip()), (2, "", D.USAGE))
+        latin = os.path.join(root, "latin.json")
+        with open(latin, "wb") as f:
+            f.write(b'{"projects": "\xe9"}')
+        for name, error in (("bad.json", "JSONDecodeError at line 1 column 2"), ("list.json", "map is not an object"),
+                            ("shape.json", "coverage is not an object"),
+                            ("latin.json", "UnicodeDecodeError at position 14 (utf-8)"),
+                            ("none.json", "No such file or directory")):
+            path = os.path.join(root, name)
+            for argv in (("delta", good, path), ("delta", path, good)):
+                r = self.run_cli(*argv)
+                self.assertEqual((r.returncode, json.loads(r.stdout)), (2, {"ok": False, "error": "%s: %s" % (path, error)}),
+                                 argv)
 
 
 if __name__ == "__main__":
