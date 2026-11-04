@@ -23,8 +23,8 @@ the brain's committed drawing is the one its code gives today.
   insertion becomes a ``path`` box (a module file at the root, a directory a project holds: none), Python's finder
   order in ``sys_path_target`` (package, module, then namespace);
 - ``TsConfig``: a directory holding a file ``jsimports.TSCONFIG`` names (``tsconfig.json``, ``tsconfig.<x>.json``;
-  near names not) that no manifest's project holds is a ``tsconfig`` box (nested ones both; one inside a manifest's
-  project, the root and ``SKIP_DIRS`` none), alias and relative imports into it draw arrows, and the drawing's line;
+  near names not) that no manifest's project holds is a ``tsconfig`` box (nested ones both, one inside a ``path``
+  box too; one inside a manifest's project, the root and ``SKIP_DIRS`` none), alias and relative imports into it draw arrows, and the drawing's line;
 - the unread manifests: counted by the first ``MANIFESTS_NOT_READ`` pattern a file's name matches (case-sensitive,
   the name only, a near name not counted), a ``package.json`` outside the npm workspace projects (an Nx project's,
   an unparsed workspace's) counted and the root's not, ``SKIP_DIRS`` not entered; three examples in path order and
@@ -515,6 +515,9 @@ class TsConfig(unittest.TestCase):
             "apps/web/node_modules/m/tsconfig.json": "{}",     # SKIP_DIRS not entered
             "py/pyproject.toml": "[project]\nname = \"p\"\n",
             "py/tsconfig.json": "{}",                          # a Python project's directory: the manifest's box
+            "pyt/run.py": "import sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path(__file__).parent))\n",
+            "pyt/lint/tsconfig.json": "{}",                    # inside a sys.path box (not a manifest's): a box
+            "pyt/lint/rule.ts": "import { x } from '../../e2e/suite/x';\n",
         })
         return root
 
@@ -526,26 +529,29 @@ class TsConfig(unittest.TestCase):
             ("e2e/suite/inner", "e2e/suite/inner", ["tsconfig"]),
             ("libs/cqrs", "libs/cqrs", ["tsconfig"]),
             ("py", "p", ["python"]),
+            ("pyt", "pyt", ["path"]),
+            ("pyt/lint", "pyt/lint", ["tsconfig"]),
         ])
         self.assertEqual([(e["from"], e["to"], e["kinds"]) for e in m["edges"]], [
             ("apps/web", "e2e/suite", ["import"]),
             ("apps/web", "libs/cqrs", ["import"]),
             ("e2e/suite", "libs/cqrs", ["import"]),
             ("e2e/suite/inner", "e2e/suite", ["import"]),
+            ("pyt/lint", "e2e/suite", ["import"]),
         ])
 
     def test_coverage(self):
         cov = D.target_map(self.checkout())["coverage"]
-        self.assertEqual(cov["projects_by_kind"], {"npm": 1, "nx": 0, "cargo": 0, "python": 1, "tsconfig": 3,
-                                                   "path": 0})
+        self.assertEqual(cov["projects_by_kind"], {"npm": 1, "nx": 0, "cargo": 0, "python": 1, "tsconfig": 4,
+                                                   "path": 1})
         self.assertEqual(cov["source_files_outside_projects"], 1)              # tools/t.ts
         self.assertEqual(cov["specifiers"]["outside_projects"], 1)             # its import
-        self.assertEqual(cov["specifiers"]["cross_project"], 4)
+        self.assertEqual(cov["specifiers"]["cross_project"], 5)
         self.assertEqual(cov["specifiers"]["same_project"], 1)                 # index.ts's ./bus
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Projects 5 (npm 1, nx 0, cargo 0, python 1, tsconfig 3, path 0), arrows 4.", text)
+        self.assertIn("Projects 7 (npm 1, nx 0, cargo 0, python 1, tsconfig 4, path 1), arrows 5.", text)
         self.assertIn("of kind `tsconfig`: a directory holding a TypeScript configuration that no such project holds",
                       text)
         self.assertIn("| libs/cqrs | libs/cqrs | tsconfig |  |", text)

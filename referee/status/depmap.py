@@ -53,7 +53,8 @@ the session that reads the target, not by a test).
   ``tsc -p`` builds the files it includes as one program) that no project of those manifests holds is a project
   of kind ``tsconfig``, named by its directory: a library a root tsconfig alias reaches, or a test suite, with no
   ``package.json`` or ``project.json``; decided against the manifests' projects only, so nested ones are both
-  projects and one inside a manifest's project is none (whether its ``include`` covers the files is not read: the
+  projects, one inside a ``path`` project below is one too (a TypeScript program inside a directory Python puts
+  on ``sys.path``) and one inside a manifest's project is none (whether its ``include`` covers the files is not read: the
   deepest project owns a file, as for every kind). A directory a Python file puts on
   ``sys.path`` (``profile.pypath``: only what it resolves, present in the checkout, not the root) that no project
   of those manifests holds is a project of kind ``path``, named by its directory; this is decided against the
