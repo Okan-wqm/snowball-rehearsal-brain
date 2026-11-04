@@ -18,7 +18,8 @@ exit request unseen (f581).
 **The document** (``render``): the register (``render_register``: each 10a row, each tag and its place) and one
 section per rehearsal case (``render_case``: the run (B) stops at in ``tests/test_rehearsal.py``'s in-process world,
 why it stops, the toy's gate reasons per judged condition at that run, whether the copy was served, and the open
-reports the stop waits for, with their state read from ``reports/``). ``tests/test_exit_b.py`` checks the register
+reports the stop waits for, with their state read from ``reports/``, or none: a stop that is the case's own input, an
+operator's secret not given or a set the seed's producer refuses). ``tests/test_exit_b.py`` checks the register
 section current and the audit empty; ``tests/test_rehearsal.py`` checks each case's section against the records it
 asserts; ``python tests/test_rehearsal.py --doc`` writes the file. Out of scope, stated: the rehearsal is a fake
 world (no real runner, git, GitHub, Rekor or model; see that test's docstring), so "no reason" in a case's table means
@@ -131,7 +132,8 @@ def render_case(name: str, title: str, records: list[dict], waits: list[str], re
     for key in PR.CONDITIONS:
         reasons = conds.get(key, [])
         lines.append("| `%s` | %s |" % (key, ", ".join("`%s`" % r for r in reasons) or "no reason"))
-    lines += ["", "Waits for: " + ", ".join("`%s` (%s)" % (r, _report_state(r, reports)) for r in waits), ""]
+    lines += ["", "Waits for: " + (", ".join("`%s` (%s)" % (r, _report_state(r, reports)) for r in waits)
+                                   or "no report (the stop is the case's own input)"), ""]
     return "\n".join(lines) + "\n"
 
 

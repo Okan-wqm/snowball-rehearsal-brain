@@ -139,7 +139,7 @@ TARGETS = ("toy", "copy")
 IMPORT_KEYS = ("import_line_sha256", "referee_tree_sha256", "result_sha256")  # a genesis row's, the import's (29o)
 CONDITIONS = ("#genesis", "#taban", "#merge", "#ret", "#kapsama-kaydi", "#nobetci #hayatta", "#geri-alma", "#kok",
               "#durum", "#model #belirtec")
-DRILL_CAUSES = ("test_regression", "build_break", "lint_regression")
+DRILL_CAUSES = DR.CAUSES  # loop.drill's, the one list (tohum/26f)
 GATE_ROW = ("events", "copy_gate")  # the toy's record that the copy's genesis gate opened (ledger.schema)
 NOT_CHECKED = {
     "#aktarim": "the import's signed result and the referee repository's setup/imports.jsonl (tohum/25a)",

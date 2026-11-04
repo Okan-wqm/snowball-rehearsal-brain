@@ -32,13 +32,15 @@ served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line ch
   planted as the cycle's one merge on ``brain/drill/<cycle>`` with its ratchet base and plant rows, the next cycle's
   ``kos`` watching it red and ``yaz`` reverting it (D7) while the drill waits, then the key revealed and judged
   ``PASS`` (by the loop and by ``harness.revert_drill``'s command) and the next drill committed, for a planted test
-  regression and a planted lint regression; a catalog cause the loop does not give is judged ``FAIL`` and the job
-  ends ``drill_fail``; the plant waits for a candidate's merge and its sentinel; a changed seed or a patch that no
-  longer applies commits again, and a catalog that does not fit commits nothing; without the seed the drill is off,
+  regression and a planted lint regression, the fixtures (``DRILL_FIXTURES``, tohum/26f) bound to the checkout's
+  counter; the fixtures' build break, which stage 0's D7 reverts as a test regression, is judged ``FAIL`` and the
+  job ends ``drill_fail``; the plant waits for a candidate's merge and its sentinel; a changed seed or a patch that
+  no longer applies commits again, and fixtures that do not fit commit nothing; without the seed the drill is off,
   and with it on a target of kind ``copy`` too (the drill is the toy's: no D8, no drill row, nothing planted) where
-  the toy with the same seed commits;
-  unusable inputs (no catalog, an empty one, a patch outside its directory, missing, linked or not text, no
-  workspace, a run id that is not digits) write nothing; ``loop.write_cycle`` refuses a plant beside a merge or an
+  the toy with the same seed commits; without the fixtures, or with fixtures bound to another import, it is off
+  with the reason named and the cycle written; fixtures ``loop.drill.fixtures`` refuses (each rule broken once; the
+  message names no value of the secret), a counter with no import, no workspace and a run id that is not digits
+  write nothing; ``loop.write_cycle`` refuses a plant beside a merge or an
   end and an action ``loop.drill`` does not give; ``harness.pass_row`` judges the state these cycles wrote (one root
   and one status row per cycle, the drill ``PASS`` or ``FAIL`` as the loop judged it);
 - the copy's genesis gate (``Gate``, tohum/25a row 7) on a toy whose ``pulled`` state is test_pass_row's passing
@@ -61,6 +63,7 @@ served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line ch
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -84,6 +87,7 @@ from ledger import schema as SC  # noqa: E402
 from ledger import serial as SE  # noqa: E402
 from harness import pass_row as PR  # noqa: E402
 from harness import revert_drill as RD  # noqa: E402
+from loop import accepted as AC  # noqa: E402
 from loop import drill as DR  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
@@ -97,6 +101,7 @@ from profile_tree import write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, FINDING, GOOD, diff, recipe  # noqa: E402
 from test_loop_kos import A_JS, HEADS, TARGET, RedAs, candidate  # noqa: E402
 from test_loop_yaz import OPEN, YazBase  # noqa: E402
+from test_pass_row import RD_BUILD, RD_LINT, RD_TEST  # noqa: E402
 import activation_world as AW  # noqa: E402
 import yaz_world as YW  # noqa: E402
 
@@ -574,15 +579,28 @@ class D7(StateBase):
                 self.assertEqual(len(self.writes()), writes)
 
 
-# D8: the drill's catalog in the checkout (loop.drill's stated place). Each patch turns pkg/a.js red for the sentinel
-# (SENTINEL_RED); rd-lint also adds a ``var`` line, so the lint after rises over the plant cycle's ratchet base.
-DRILL_PATCHES = {"rd-test": RED_AT_HEAD,
-                 "rd-lint": diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // SENTINEL_RED", "var z = 2;"])}
-DRILL_CAUSES = {"rd-test": "test_regression", "rd-lint": "lint_regression"}
+# D8: the live drill fixtures, yaz's DRILL_FIXTURES secret (tohum/26f). Each patch turns pkg/a.js red for the
+# sentinel (SENTINEL_RED); RD_LINT also adds a ``var`` line, so the lint after rises over the plant cycle's ratchet
+# base; RD_BUILD is the set's build break, the same red, which stage 0's D7 can only call a test regression (26f asks
+# every cause once: the chains below plant RD_TEST and RD_LINT).
+DRILL_PATCHES = {RD_TEST: RED_AT_HEAD,
+                 RD_LINT: diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // SENTINEL_RED", "var z = 2;"]),
+                 RD_BUILD: diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // SENTINEL_RED BUILD"])}
+DRILL_CAUSES = {RD_TEST: "test_regression", RD_LINT: "lint_regression", RD_BUILD: "build_break"}
 
 
-def drill_catalog(causes: dict[str, str]) -> dict:
-    return {"instances": [{"id": i, "cause": c, "patch": i + ".patch"} for i, c in sorted(causes.items())]}
+def drill_catalog(causes: dict[str, str], patches: dict[str, bytes] | None = None) -> dict:
+    """The fixtures' instances (tohum/26f ``{id, cause, patch}``), each patch from ``patches`` (``DRILL_PATCHES``)."""
+    return {"instances": [{"id": i, "cause": c, "patch": (patches or DRILL_PATCHES)[i].decode()}
+                          for i, c in sorted(causes.items())]}
+
+
+def fixtures_value(doc: dict, imports: bytes) -> str:
+    """``DRILL_FIXTURES``'s value: base64 of the RFC 8785 ``{import_line_sha256, instances}``, bound to the counter's
+    last transfer line (``imports``)."""
+    _, line = AC.last_import(imports)
+    body = {"import_line_sha256": hashlib.sha256(line).hexdigest(), "instances": doc["instances"]}
+    return base64.b64encode(CH.canonical(body)).decode()
 
 
 def seed_for(catalog: dict, instance_id: str, run: str) -> dict:
@@ -602,21 +620,24 @@ class D8(StateBase):
     def setUp(self) -> None:
         super().setUp()
         write_tree(self.src, {"pkg/sentinel.py": SENTINEL_PY})
+        with open(os.path.join(self.workspace, "setup", "imports.jsonl"), "wb") as fh:  # the fixtures' import
+            fh.write(YW.transfer()["imports"])
         self.catalog(DRILL_CAUSES)
 
     def catalog(self, causes: dict[str, str], patches: dict[str, bytes] | None = None) -> dict:
-        root = os.path.join(self.workspace, *DR.CATALOG_DIR)
-        shutil.rmtree(root, ignore_errors=True)
-        doc = drill_catalog(causes)
-        write_tree(root, {DR.CATALOG: doc})
-        for item in doc["instances"]:
-            with open(os.path.join(root, item["patch"]), "wb") as fh:
-                fh.write((patches or DRILL_PATCHES)[item["id"]])
+        """Sets the fixtures ``yaz`` is given from now on (bound to the checkout's counter); returns them."""
+        doc = drill_catalog(causes, patches)
+        self.fixtures = fixtures_value(doc, self.imports())
         return doc
+
+    def imports(self) -> bytes:
+        with open(os.path.join(self.workspace, "setup", "imports.jsonl"), "rb") as fh:
+            return fh.read()
 
     def yaz(self, run: str, seed: dict | None, **env) -> dict:
         if seed is not None:
             env[DR.SEED_ENV] = seed["seed"]
+            env.setdefault(DR.FIXTURES_ENV, self.fixtures)
         return self.run_yaz(GITHUB_RUN_ID=run, **env)
 
     def added(self, old: bytes) -> list[dict]:
@@ -695,7 +716,7 @@ class D8(StateBase):
         return out, key
 
     def test_each_planted_cause_is_reverted_with_the_keys_cause_and_judged_pass(self):
-        for instance_id in sorted(DRILL_CAUSES):
+        for instance_id in (RD_LINT, RD_TEST):
             with self.subTest(instance_id):
                 self.setUp()
                 out, key = self.chain(instance_id, DRILL_CAUSES)
@@ -714,9 +735,9 @@ class D8(StateBase):
                 self.assertEqual(json.loads(printed.getvalue()), {"verdict": "PASS", "reasons": []})
 
     def test_a_catalog_cause_the_loop_does_not_give_is_judged_fail(self):
-        """The catalog says rd-test's planted merge is a build break; the loop reverts it as a test regression: the
-        judge's cause_mismatch makes the job red after its writes."""
-        out, key = self.chain("rd-test", dict(DRILL_CAUSES, **{"rd-test": "build_break"}))
+        """The fixtures say RD_BUILD's planted merge is a build break; the loop reverts it as a test regression
+        (stage 0's D7): the judge's cause_mismatch makes the job red after its writes."""
+        out, key = self.chain(RD_BUILD, DRILL_CAUSES)
         self.assertEqual((out["ok"], out["reason"], out["drill"]["judged"]["verdict"],
                           out["drill"]["judged"]["reasons"]), (False, "drill_fail", "FAIL", ["cause_mismatch"]))
         self.assertIn("written", out)
@@ -724,24 +745,24 @@ class D8(StateBase):
     def test_the_pass_row_judge_reads_the_drills_the_loop_wrote(self):
         """``harness.pass_row`` on the state these cycles wrote: one root and one status row per cycle, the drill
         judged as the loop judged it; the causes not planted here are unshown."""
-        for causes, geri in ((DRILL_CAUSES, ["toy:cause_unshown:build_break", "toy:cause_unshown:lint_regression"]),
-                             (dict(DRILL_CAUSES, **{"rd-test": "build_break"}),
-                              ["toy:drill_fail:rd-test:cause_mismatch", "toy:cause_unshown:test_regression",
-                               "toy:cause_unshown:build_break", "toy:cause_unshown:lint_regression"])):
-            with self.subTest(causes=causes):
+        for planted, geri in ((RD_TEST, ["toy:cause_unshown:build_break", "toy:cause_unshown:lint_regression"]),
+                              (RD_BUILD, ["toy:drill_fail:%s:cause_mismatch" % RD_BUILD,
+                                          "toy:cause_unshown:test_regression", "toy:cause_unshown:build_break",
+                                          "toy:cause_unshown:lint_regression"])):
+            with self.subTest(planted=planted):
                 self.setUp()
-                self.chain("rd-test", causes)
-                doc = drill_catalog(causes)
+                self.chain(planted, DRILL_CAUSES)
+                doc = drill_catalog(DRILL_CAUSES)
                 state = {"ledger": self.state_file(B.STATE_LEDGER), "roots": self.state_file(B.STATE_ROOTS)}
                 counter = YW.transfer()
-                got = PR.judge(state, state, {}, {}, {"seed": seed_for(doc, "rd-test", "9"), "catalog": doc},
+                got = PR.judge(state, state, {}, {}, {"seed": seed_for(doc, planted, "9"), "catalog": doc},
                                counter["imports"], counter["result"])
                 self.assertEqual(got["conditions"]["#geri-alma"], geri)
                 self.assertEqual([got["conditions"][c] for c in ("#kok", "#durum", "#nobetci #hayatta")],
                                  [[], [], []])
 
     def test_the_drill_waits_for_a_candidates_merge_and_its_sentinel(self):
-        seed = seed_for(drill_catalog(DRILL_CAUSES), "rd-test", "9")
+        seed = seed_for(drill_catalog(DRILL_CAUSES), RD_TEST, "9")
         write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})  # the candidate's finding, on the target from cycle 9-1
         self.commit_cycle(seed)
         nxt = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
@@ -758,7 +779,7 @@ class D8(StateBase):
 
     def test_a_changed_seed_or_a_patch_that_no_longer_applies_commits_again(self):
         doc = drill_catalog(DRILL_CAUSES)
-        seed = seed_for(doc, "rd-test", "9")
+        seed = seed_for(doc, RD_TEST, "9")
         self.commit_cycle(seed)
         self.next_cycle({}, "10", units=SENTINEL_UNITS)
         other = {"seed": seed["seed"] + "-changed"}
@@ -775,57 +796,93 @@ class D8(StateBase):
         self.assertEqual([r["part"] for r in self.added(self.state[B.STATE_LEDGER])].count("drill"), 0)
 
     def test_off_without_the_seed_and_unusable_inputs_write_nothing(self):
+        """``loop.drill.fixtures``'s rules, each broken once: ``yaz`` stops before any write (exit 2), and the
+        message names the rule, never a value of the secret (no patch, no id)."""
         self.kos({}, units=SENTINEL_UNITS)
         self.control(OPEN)
         self.github()
-        root = os.path.join(self.workspace, *DR.CATALOG_DIR)
-        for name, change in (("a dangling linked catalog",  # a file of a kind is there: not absent, unreadable
-                              lambda: (os.remove(os.path.join(root, DR.CATALOG)),
-                                       write_tree(root, {DR.CATALOG: ("symlink", "gone.json")}))),
-                             ("a patch outside the directory",
-                              lambda: write_tree(root, {DR.CATALOG: {"instances": [
-                                  {"id": "x", "cause": "unknown", "patch": "../x.patch"}]}})),
-                             ("a missing patch", lambda: os.remove(os.path.join(root, "rd-lint.patch"))),
-                             ("a linked patch", lambda: (os.remove(os.path.join(root, "rd-lint.patch")),
-                                                         write_tree(root, {"rd-lint.patch": ("symlink", "rd-test.patch")}))),
-                             ("a patch that is no text", lambda: write_tree(root, {"rd-lint.patch": b"\xff"})),
-                             ("an empty catalog", lambda: write_tree(root, {DR.CATALOG: {"instances": []}})),
-                             ("no workspace", None)):
+        doc = self.catalog(DRILL_CAUSES)
+        good = json.loads(base64.b64decode(self.fixtures))
+
+        def enc(body) -> str:
+            return base64.b64encode(CH.canonical(body)).decode()
+
+        def instances(change) -> str:
+            items = [dict(i) for i in good["instances"]]
+            change(items)
+            return enc(dict(good, instances=items))
+
+        cases = {
+            "not base64": "@" * 8,
+            "base64 with an LF": self.fixtures + "\n",
+            "base64 unpadded": self.fixtures.rstrip("=") if self.fixtures.endswith("=") else self.fixtures[:-1],
+            "base64 with a blank": self.fixtures[:4] + " " + self.fixtures[4:],
+            "not ASCII": "\u00c4" * 8,
+            "not JSON": base64.b64encode(b"not json").decode(),
+            "not a JSON object": enc([good]),
+            "JSON that is not RFC 8785": base64.b64encode(json.dumps(good, indent=1).encode()).decode(),
+            "a key more": enc(dict(good, more=1)),
+            "an import hash that is not hex": enc(dict(good, import_line_sha256="Z" * 64)),
+            "no instances": enc(dict(good, instances=[])),
+            "an instance key more": instances(lambda items: items[0].update(file="x")),
+            "an id that is not 32 hex": instances(lambda items: items[0].update(id="rd-test")),
+            "an id in upper case": instances(lambda items: items[0].update(id=items[0]["id"].upper())),
+            "a cause outside 26f's three": instances(lambda items: items[0].update(cause="unknown")),
+            "an empty patch": instances(lambda items: items[0].update(patch="")),
+            "a repeated id": instances(lambda items: items[1].update(id=items[0]["id"])),
+            "a cause given twice": instances(lambda items: items.append(dict(items[0], id="e0" * 16))),
+            "a cause missing": instances(lambda items: items.pop()),
+        }
+        for name, value in cases.items():
             with self.subTest(name):
-                self.catalog(DRILL_CAUSES)
-                env = {"GITHUB_WORKSPACE": ""} if change is None else {}
-                if change is not None:
-                    change()
-                with self.assertRaises(J.Unusable):
-                    self.yaz("9", {"seed": "s"}, **env)
+                with self.assertRaises(J.Unusable) as raised:
+                    self.yaz("9", {"seed": "s"}, **{DR.FIXTURES_ENV: value})
+                for item in doc["instances"]:
+                    self.assertNotIn(item["id"], str(raised.exception))
+                    self.assertNotIn(item["patch"].splitlines()[-1], str(raised.exception))
                 self.assertEqual(self.writes(), [])
+        imports = os.path.join(self.workspace, "setup", "imports.jsonl")
+        for name, change in (("no workspace", None), ("a counter with no import", b"")):
+            with self.subTest(name), self.assertRaises(J.Unusable):
+                if change is not None:
+                    with open(imports, "wb") as fh:
+                        fh.write(change)
+                self.yaz("9", {"seed": "s"}, **({"GITHUB_WORKSPACE": ""} if change is None else {}))
+            self.assertEqual(self.writes(), [])
         with self.assertRaises(J.Unusable):  # a run id that is not decimal digits
-            self.catalog(DRILL_CAUSES)
             self.yaz("9x", {"seed": "s"})
         self.assertEqual(self.writes(), [])
-        out = self.yaz("9", None)
+        out = self.yaz("9", None, **{DR.FIXTURES_ENV: self.fixtures})  # the fixtures without the seed: off
         self.assertEqual((out["ok"], out["done"], out["drill"]), (True, ["D5", "D6"], {"action": "off"}))
         self.assertNotIn("drill", [r["part"] for r in rows_of(self.state_file(B.STATE_LEDGER))])
 
-    def test_with_the_seed_and_no_catalog_the_drill_is_off_and_the_cycle_is_written(self):
-        """tohum/26f: the seed's live drill fixtures are not in this seed, so the operator's DRILL_SEED with no file
-        at the catalog's path turns D8 off for the run (``fixtures_absent`` in the line), and the cycle's state is
-        written as without the seed; a catalog that is there but unreadable stays unusable (the test above)."""
-        self.kos({}, units=SENTINEL_UNITS)
-        self.control(OPEN)
-        self.github()
-        self.catalog(DRILL_CAUSES)
-        shutil.rmtree(os.path.join(self.workspace, *DR.CATALOG_DIR))
-        out = self.yaz("9", {"seed": "s"})
-        self.assertEqual((out["ok"], out["done"], out["drill"]),
-                         (True, ["D5", "D6"], {"action": "off", "why": "fixtures_absent"}))
-        self.assertEqual([p for m, p in self.writes() if p.endswith("git/refs/heads/brain/state")],
-                         ["/repos/acme/t1/git/refs/heads/brain/state"])
-        self.assertNotIn("drill", [r["part"] for r in rows_of(self.state_file(B.STATE_LEDGER))])
+    def test_without_fixtures_or_with_another_imports_the_drill_is_off_and_the_cycle_is_written(self):
+        """tohum/26f: the seed without the fixtures secret turns D8 off (``fixtures_absent``), and fixtures bound to
+        another import than the counter's last are off too, the reason named (``fixtures_import_mismatch``); the
+        cycle's state is written as without the seed."""
+        doc = self.catalog(DRILL_CAUSES)
+        bound = json.loads(base64.b64decode(self.fixtures))
+        self.assertEqual(bound["import_line_sha256"], hashlib.sha256(AC.last_import(self.imports())[1]).hexdigest())
+        # another import's line: the counter's previous line, the one a red (B)'s burnt set was bound to (25a)
+        other = hashlib.sha256(self.imports().rstrip(b"\n").split(b"\n")[0]).hexdigest()
+        self.assertNotEqual(other, bound["import_line_sha256"])
+        stale = base64.b64encode(CH.canonical(dict(bound, import_line_sha256=other))).decode()
+        for name, value, why in (("absent", "", "fixtures_absent"), ("stale", stale, "fixtures_import_mismatch")):
+            with self.subTest(name):
+                self.setUp()
+                self.kos({}, units=SENTINEL_UNITS)
+                self.control(OPEN)
+                self.github()
+                out = self.yaz("9", {"seed": "s"}, **{DR.FIXTURES_ENV: value})
+                self.assertEqual((out["ok"], out["done"], out["drill"]),
+                                 (True, ["D5", "D6"], {"action": "off", "why": why}))
+                self.assertEqual([p for m, p in self.writes() if p.endswith("git/refs/heads/brain/state")],
+                                 ["/repos/acme/t1/git/refs/heads/brain/state"])
+                self.assertNotIn("drill", [r["part"] for r in rows_of(self.state_file(B.STATE_LEDGER))])
 
     def test_the_drill_is_the_toys_a_copy_with_the_seed_is_off(self):
         doc = self.catalog(DRILL_CAUSES)
-        seed = seed_for(doc, "rd-test", "9")
+        seed = seed_for(doc, RD_TEST, "9")
         for kind, want in (("copy", {"action": "off"}),
                            ("toy", {"action": "commit", "payload": RD.commit_payload(RD.key(seed, "9", doc))})):
             with self.subTest(kind=kind):
@@ -848,7 +905,7 @@ class D8(StateBase):
         self.github()
         art = P.read(self.pulled)
         tree = self.tree()
-        plant = {"action": "plant", "instance_id": "rd-test", "path": "pkg/a.js", "content": b"x\n"}
+        plant = {"action": "plant", "instance_id": RD_TEST, "path": "pkg/a.js", "content": b"x\n"}
         lint = WT.base_lint(self.results())
         for name, decided, end, drill in (
                 ("beside a merge", {"decisions": {"c": {"reasons": []}}, "merge": "c"}, None, plant),
@@ -858,9 +915,6 @@ class D8(StateBase):
                 WC.write(art, tree, decided, [], W.Writer(YW.REPO, self.gh), self.signer, b"", "9-1", YW.TS, lint,
                          end, drill)
         self.assertEqual(self.writes(), [])
-
-
-GATE_CAUSES = {"rd-build": "build_break", "rd-lint": "lint_regression", "rd-test": "test_regression"}
 
 
 class Gate(StateBase):
@@ -875,15 +929,10 @@ class Gate(StateBase):
         self.state = {B.STATE_LEDGER: self.toy.ledger, B.STATE_ROOTS: self.toy.roots, B.STATE_STATUS: self.toy.status}
         with open(os.path.join(self.workspace, "setup", "imports.jsonl"), "wb") as fh:
             fh.write(TP.IMPORTS)
-        root = os.path.join(self.workspace, *DR.CATALOG_DIR)
-        doc = drill_catalog(GATE_CAUSES)
+        doc = drill_catalog(DRILL_CAUSES)
         self.assertEqual([(i["id"], i["cause"]) for i in doc["instances"]],
                          [(i["id"], i["cause"]) for i in TP.CATALOG["instances"]])  # the same keys
-        write_tree(root, {DR.CATALOG: doc})
-        for item in doc["instances"]:
-            with open(os.path.join(root, item["patch"]), "wb") as fh:
-                fh.write(DRILL_PATCHES.get(item["id"], DRILL_PATCHES["rd-test"]))
-        self.seed = {DR.SEED_ENV: TP.SEED["seed"]}
+        self.seed = {DR.SEED_ENV: TP.SEED["seed"], DR.FIXTURES_ENV: fixtures_value(doc, TP.IMPORTS)}
 
     def cycle_on(self, target=None, run="300", **env) -> dict:
         shutil.rmtree(os.path.join(self.temp, "in"), ignore_errors=True)
