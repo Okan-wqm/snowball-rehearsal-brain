@@ -15,7 +15,11 @@ the brain's committed drawing is the one its code gives today.
   symbolic links not entered; arrows ``npm``, ``cargo`` (``path``, ``workspace = true``, ``[patch.crates-io]``,
   each through the workspace root Cargo finds: ``Cargo`` below), ``import`` (relative, bare workspace name and
   subpath, tsconfig alias exact and wildcard with ``baseUrl``, a commented tsconfig) and ``python``; the deepest
-  project owns a file; the coverage counts each specifier's outcome;
+  project owns a file; the coverage counts each specifier's outcome and the Python files in no project;
+- the unread manifests: counted by the first ``MANIFESTS_NOT_READ`` pattern a file's name matches (case-sensitive,
+  the name only, a near name not counted), a ``package.json`` outside the npm workspace projects (an Nx project's,
+  an unparsed workspace's) counted and the root's not, ``SKIP_DIRS`` not entered; three examples in path order and
+  the drawing's line;
 - the helpers: segment globs (the tsconfig dialect and the aliases are profile.jsimports's, test_profile_jsimports);
 - the command line: exits 0, 1 (``check`` with a problem) and 2.
 """
