@@ -269,6 +269,13 @@ class Target(unittest.TestCase):
             "scripts/run.sh": "echo\n",
             "crates/a/src/lib.rs": "",
             "tools/x.rs": "",
+            "infra/main.tf": "module \"m\" { source = \"./m\" }\n",
+            "db/001_init.sql": "create table t (id int);\n",
+            "api/schema.graphql": "type T { id: ID }\n",
+            "infra/README.md": "",
+            "web/site.css": "",
+            "ci.yaml": "",
+            "Dockerfile": "FROM scratch\n",
         })
         os.symlink(os.path.join(root, "libs", "ui"), os.path.join(root, "libs", "link"))
         return root
@@ -323,8 +330,10 @@ class Target(unittest.TestCase):
             "python_external": 1,     # os
             "python_relative": 1,     # from . import rel
         })
-        self.assertEqual(cov["unread_code_files"], {".rs": 2, ".sh": 1})
-        self.assertEqual(cov["unread_code_files_outside_projects"], {".rs": 1, ".sh": 1})  # tools/x.rs, run.sh
+        # Terraform, SQL and GraphQL are code; Markdown, CSS, YAML and a file with no extension are not
+        self.assertEqual(cov["unread_code_files"], {".graphql": 1, ".rs": 2, ".sh": 1, ".sql": 1, ".tf": 1})
+        self.assertEqual(cov["unread_code_files_outside_projects"],  # tools/x.rs, run.sh, infra/, db/, api/
+                         {".graphql": 1, ".rs": 1, ".sh": 1, ".sql": 1, ".tf": 1})
 
     def test_render_lists_every_project_and_arrow(self):
         text = D.render_target(D.target_map(self.checkout()), "a test checkout")
@@ -332,8 +341,8 @@ class Target(unittest.TestCase):
         self.assertIn("| @t/web | apps/web | npm nx | x (import npm), feat-a (import), @t/ui (import npm), util (import) |",
                       text)
         self.assertEqual(text.count(" -->|"), 9)
-        self.assertIn("Code files of languages whose imports are not read: .rs 2 (1 in no project), "
-                      ".sh 1 (1 in no project).", text)
+        self.assertIn("SQL, GraphQL, protobuf): .graphql 1 (1 in no project), .rs 2 (1 in no project), "
+                      ".sh 1 (1 in no project), .sql 1 (1 in no project), .tf 1 (1 in no project).", text)
         self.assertIn("Python files read 4 (1 outside any project, 1 not parsed).", text)
         self.assertIn("workspaces): package.json 1 (libs/skip/package.json).", text)
 
