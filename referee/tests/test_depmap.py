@@ -29,6 +29,9 @@ the brain's committed drawing is the one its code gives today.
   the name only, a near name not counted), a ``package.json`` outside the npm workspace projects (an Nx project's,
   an unparsed workspace's) counted and the root's not, ``SKIP_DIRS`` not entered; three examples in path order and
   the drawing's line;
+- reading (``Reads``): ``_reads`` gives every file's ``_read`` in the files' order (one not UTF-8 and one missing
+  ``None``), past ``READ_AHEAD`` files, never more than ``READ_AHEAD`` reads ahead of the file taken, on
+  ``READERS`` threads at once;
 - the helpers: segment globs (the tsconfig dialect and the aliases are profile.jsimports's, test_profile_jsimports);
 - the command line: exits 0, 1 (``check`` with a problem) and 2.
 """
@@ -716,6 +719,57 @@ class Cargo(unittest.TestCase):
         self.assertEqual(D.cargo_workspace("x/y/z", {"package": {}}, roots), "x/y")
         self.assertEqual(D.cargo_workspace("x/y", {"package": {}}, roots), "x/y")
         self.assertIsNone(D.cargo_workspace("a", {"package": {}}, {}))
+
+
+class Reads(unittest.TestCase):
+    def test_order_contents_and_unreadable_files(self):
+        with tempfile.TemporaryDirectory() as root:
+            n = D.READ_AHEAD * 2 + 7
+            rels = ["d%d/f%03d.py" % (i % 5, i) for i in range(n)]
+            write(root, {rel: "text %s" % rel for rel in rels})
+            with open(os.path.join(root, rels[3]), "wb") as f:
+                f.write(b"\xff\xfe not utf-8")
+            got = list(D._reads(root, rels + ["missing.py"]))
+            self.assertEqual([r for r, _t in got], rels + ["missing.py"])
+            self.assertEqual([t for _r, t in got],
+                             ["text %s" % r if i != 3 else None for i, r in enumerate(rels)] + [None])
+            self.assertEqual(list(D._reads(root, [])), [])
+
+    def test_bounded_read_ahead_on_threads(self):
+        import threading
+        import time
+        n = D.READ_AHEAD * 3
+        started: list[str] = []
+        at_once = [0, 0]
+        lock = threading.Lock()
+
+        def slow(root, rel):
+            with lock:
+                started.append(rel)
+                at_once[0] += 1
+                at_once[1] = max(at_once)
+            time.sleep(0.001)
+            with lock:
+                at_once[0] -= 1
+            return rel.upper()
+        real = D._read
+        D._read = slow
+        try:
+            taken = 0
+            for rel, text in D._reads("/nowhere", ["f%d" % i for i in range(n)]):
+                self.assertEqual(text, rel.upper())
+                taken += 1
+                if taken in (1, D.READ_AHEAD + 5):
+                    time.sleep(0.3)  # the readers have time to run ahead; they stop at the window
+                    with lock:
+                        self.assertEqual(len(started), taken + D.READ_AHEAD)
+                with lock:
+                    self.assertLessEqual(len(started), taken + D.READ_AHEAD)
+        finally:
+            D._read = real
+        self.assertEqual(taken, n)
+        self.assertGreater(at_once[1], 1)
+        self.assertLessEqual(at_once[1], D.READERS)
 
 
 class Helpers(unittest.TestCase):

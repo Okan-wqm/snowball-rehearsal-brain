@@ -8,7 +8,10 @@
   or a longer name), only a string value, none when the code names ``rootDir``; the config names;
 - ``aliases``: exact before ``*``, ``baseUrl`` (one leaving the root is the root), the first target only;
   ``alias_file``'s order; a text that does not parse raises;
-- ``package_name`` and ``is_relative``; ``walk``: ``SKIP_DIRS`` and links are not entered.
+- ``package_name`` and ``is_relative``; ``walk``: ``SKIP_DIRS`` and links are not entered;
+- ``code_view``, which passes code between two of ``/ ' " ` `` whole: the same view as ``reference_view``, the
+  lexer read one character at a time (the rules as first written, kept here as the oracle), on texts drawn from
+  the lexer's delimiters, blanks, words and ``REGEX_WORDS`` (a fixed seed).
 """
 
 from __future__ import annotations
@@ -23,7 +26,54 @@ import unittest
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
+import random  # noqa: E402
+
 from profile import jsimports as J  # noqa: E402
+
+
+def reference_view(text: str) -> str:
+    """``code_view``'s rules read one character at a time."""
+    out = list(text)
+    i, n = 0, len(text)
+    last = ""
+    word = ""
+    while i < n:
+        c = text[i]
+        if text.startswith("//", i) or text.startswith("/*", i):
+            end = text.find("\n", i) if text[i + 1] == "/" else text.find("*/", i + 2)
+            end = n if end < 0 else end if text[i + 1] == "/" else end + 2
+            for k in range(i, end):
+                out[k] = "\n" if text[k] == "\n" else " "
+            i = end
+        elif c in "'\"`" or (c == "/" and (last == "" or last in J.REGEX_AFTER or word in J.REGEX_WORDS)):
+            j, in_class = i + 1, False
+            while j < n:
+                d = text[j]
+                if d == "\\":
+                    j += 2
+                    continue
+                if d == "\n" and c != "`":
+                    break
+                if c == "/" and d in "[]":
+                    in_class = d == "["
+                elif d == c and not in_class:
+                    break
+                j += 1
+            for k in range(i + 1, min(j, n)):
+                out[k] = text[k] if text[k] == "\n" else J.FILL
+            i, last, word = j + 1, c, ""
+        else:
+            if not c.isspace():
+                word = word + c if (c.isalnum() or c in "_$") and (last.isalnum() or last in "_$") else \
+                    (c if c.isalnum() or c in "_$" else "")
+                last = c
+            i += 1
+    return "".join(out)
+
+
+PIECES = ["/", "//", "/*", "*/", "'", '"', "`", "\\", "\n", "\r\n", " ", "\t", "[", "]", "(", ")", "=", "!",
+          "}", "{", "${", ";", "+", "x", "a1", "_", "$", "\u00e9", "\u0661", "ab cd", "import", " from ",
+          "'a'", "require('b')"] + sorted(J.REGEX_WORDS)
 
 
 class Specifiers(unittest.TestCase):
@@ -75,6 +125,17 @@ class Specifiers(unittest.TestCase):
             "const b = \"\\\\\"; import three from 'three';",
         ])
         self.assertEqual(J.specifiers(text), ["one", "two", "three"])
+
+    def test_the_view_is_the_reference_lexers(self):
+        rng = random.Random(20261104)
+        for _ in range(30000):
+            text = "".join(rng.choice(PIECES) for _ in range(rng.randint(0, 30)))
+            self.assertEqual(J.code_view(text), reference_view(text), repr(text))
+
+    def test_a_long_run_of_code_is_read_for_its_last_word(self):
+        # blanks between word characters do not end a word (the rule as written); a non-word character does
+        for text in ("x = 1 +\n  typeof /a'/", "a.  return /b'/", "await  /c'/", "1 + 2 / 3 / 'd'", "x\nreturn /e'/"):
+            self.assertEqual(J.code_view(text), reference_view(text), text)
 
     def test_a_specifier_that_is_not_a_string_literal_is_not_read(self):
         self.assertEqual(J.specifiers("const m = require(name); import(`x/${y}`);"), [])

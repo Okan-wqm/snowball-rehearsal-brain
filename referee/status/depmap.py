@@ -117,12 +117,16 @@ exit 0, 1 when ``check`` finds a problem, or 2 on a bad command line or a root t
 from __future__ import annotations
 
 import ast
+import ast
+import collections
 import fnmatch
+import itertools
 import json
 import os
 import posixpath
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import cli
@@ -169,6 +173,10 @@ MANIFESTS_NOT_READ = (
 )
 UNREAD_EXAMPLES = 3
 PROJECT_KINDS = ("npm", "nx", "cargo", "python", "tsconfig", "path")
+# target_map reads its Python and JS/TS files READERS at a time, at most READ_AHEAD files ahead of the one it
+# parses: a checkout on a network or virtual file system answers each open slowly, and threads wait in parallel
+READERS = 16
+READ_AHEAD = 256
 
 
 # ---------------------------------------------------------------------------------------------------- the brain
@@ -218,8 +226,13 @@ def import_statements(source: str) -> list[tuple[int, str, list[str]]]:
     """Every import statement of a Python source, anywhere in it: ``(level, module, names)``; ``import a.b`` is
     ``(0, "a.b", [])``, ``from ..x import y, z`` is ``(2, "x", ["y", "z"])``, ``from . import y`` is
     ``(1, "", ["y"])``. ``SyntaxError`` when the source does not parse. The one reader of both maps."""
+    return tree_import_statements(ast.parse(source))
+
+
+def tree_import_statements(tree: ast.AST) -> list[tuple[int, str, list[str]]]:
+    """``import_statements`` of a parsed source."""
     out: list[tuple[int, str, list[str]]] = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             out.extend((0, alias.name, []) for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
@@ -378,6 +391,19 @@ def _read(root: str, rel: str) -> str | None:
             return f.read()
     except (OSError, UnicodeDecodeError):
         return None
+
+
+def _reads(root: str, rels: list[str]):
+    """``(rel, _read(root, rel))`` for each of ``rels``, in their order, read by ``READERS`` threads at most
+    ``READ_AHEAD`` files ahead of the one taken."""
+    with ThreadPoolExecutor(READERS) as pool:
+        rest = iter(rels)
+        pending = collections.deque((rel, pool.submit(_read, root, rel)) for rel in itertools.islice(rest, READ_AHEAD))
+        while pending:
+            rel, text = pending.popleft()
+            for more in itertools.islice(rest, 1):
+                pending.append((more, pool.submit(_read, root, more)))
+            yield rel, text.result()
 
 
 class _Projects:
@@ -637,13 +663,11 @@ def target_map(root: str) -> dict[str, Any]:
     dir_set = set(dirs)
     python: dict[str, tuple[list | None, list[str]]] = {}
     sys_path = coverage["sys_path"]
-    for rel in files:
-        if not rel.endswith(".py"):
-            continue
-        text = _read(root, rel)
+    for rel, text in _reads(root, [rel for rel in files if rel.endswith(".py")]):
         try:
-            statements = import_statements(text) if text is not None else None
-            inserted = pypath.insertions(text, rel) if text is not None else None
+            tree = ast.parse(text) if text is not None else None
+            statements = tree_import_statements(tree) if tree is not None else None
+            inserted = pypath.tree_insertions(tree, rel) if tree is not None else None
         except (SyntaxError, ValueError):
             statements = inserted = None
         if inserted is None:
@@ -691,6 +715,7 @@ def target_map(root: str) -> dict[str, Any]:
 
     aliases = _tsconfig_aliases(root, file_set, coverage)
     counts = coverage["specifiers"]
+    sources = _reads(root, [rel for rel in files if posixpath.splitext(rel)[1] in J.SOURCE_EXTENSIONS])
     for rel in files:
         ext = posixpath.splitext(rel)[1]
         if ext == ".py":
@@ -738,7 +763,7 @@ def target_map(root: str) -> dict[str, Any]:
                     outside = coverage["unread_code_files_outside_projects"]
                     outside[ext] = outside.get(ext, 0) + 1
             continue
-        text = _read(root, rel)
+        _rel, text = next(sources)
         if text is None:
             continue
         coverage["source_files"] += 1

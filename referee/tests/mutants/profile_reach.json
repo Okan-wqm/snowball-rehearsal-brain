@@ -120,7 +120,7 @@
   {
    "id": "view_no_comments",
    "file": "profile/jsimports.py",
-   "old": "        if text.startswith(\"//\", i) or text.startswith(\"/*\", i):",
+   "old": "        if text.startswith(\"//\", p) or text.startswith(\"/*\", p):",
    "new": "        if False:",
    "tests": [
     "test_profile_jsimports.py",
@@ -130,8 +130,8 @@
   {
    "id": "view_no_strings",
    "file": "profile/jsimports.py",
-   "old": "        elif c in \"'\\\"`\" or (c == \"/\"",
-   "new": "        elif c in \"`\" or (c == \"/\"",
+   "old": "        elif c != \"/\" or last == \"\" or last in REGEX_AFTER or word in REGEX_WORDS:",
+   "new": "        elif c == \"`\" or (c == \"/\" and (last == \"\" or last in REGEX_AFTER or word in REGEX_WORDS)):",
    "tests": [
     "test_profile_jsimports.py",
     "test_profile_fit.py"
@@ -140,8 +140,8 @@
   {
    "id": "view_no_regex",
    "file": "profile/jsimports.py",
-   "old": "or (c == \"/\" and (last == \"\" or last in REGEX_AFTER or word in REGEX_WORDS))",
-   "new": "",
+   "old": "        elif c != \"/\" or last == \"\" or last in REGEX_AFTER or word in REGEX_WORDS:",
+   "new": "        elif c != \"/\":",
    "tests": [
     "test_profile_jsimports.py"
    ]
@@ -149,8 +149,8 @@
   {
    "id": "view_regex_always",
    "file": "profile/jsimports.py",
-   "old": "(c == \"/\" and (last == \"\" or last in REGEX_AFTER or word in REGEX_WORDS))",
-   "new": "(c == \"/\")",
+   "old": "        elif c != \"/\" or last == \"\" or last in REGEX_AFTER or word in REGEX_WORDS:",
+   "new": "        elif True:",
    "tests": [
     "test_profile_jsimports.py"
    ]
@@ -158,8 +158,8 @@
   {
    "id": "view_string_crosses_lines",
    "file": "profile/jsimports.py",
-   "old": "                if d == \"\\n\" and c != \"`\":\n                    break\n",
-   "new": "",
+   "old": "_LITERAL_STOP = {\"'\": re.compile(r\"[\\\\\\n']\"), '\"': re.compile(r'[\\\\\\n\"]'),",
+   "new": "_LITERAL_STOP = {\"'\": re.compile(r\"[\\\\']\"), '\"': re.compile(r'[\\\\\"]'),",
    "tests": [
     "test_profile_jsimports.py"
    ]
@@ -167,8 +167,8 @@
   {
    "id": "view_no_escape",
    "file": "profile/jsimports.py",
-   "old": "                if d == \"\\\\\":\n                    j += 2\n                    continue\n",
-   "new": "",
+   "old": "                if d == \"\\\\\":\n                    j += 2\n",
+   "new": "                if d == \"\\\\\":\n                    j += 1\n",
    "tests": [
     "test_profile_jsimports.py"
    ]

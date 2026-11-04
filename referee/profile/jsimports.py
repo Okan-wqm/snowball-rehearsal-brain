@@ -52,6 +52,10 @@ SPECIFIER = re.compile(
     r"""|\bimport\s*(['"])([^'"\n]+)\3"""
     r"""|\bimport\s*\(\s*(['"])([^'"\n]+)\5\s*\)"""
     r"""|\brequire\s*\(\s*(['"])([^'"\n]+)\7\s*\)""")
+_VIEW_STOP = re.compile(r"""[/'"`]""")
+_LITERAL_STOP = {"'": re.compile(r"[\\\n']"), '"': re.compile(r'[\\\n"]'), "`": re.compile(r"[\\`]"),
+                 "/": re.compile(r"[\\\n\[\]/]")}
+_NOT_NEWLINE = re.compile(r"[^\n]")
 
 
 def walk(root: str) -> tuple[list[str], list[str]]:
@@ -77,43 +81,72 @@ def walk(root: str) -> tuple[list[str], list[str]]:
 def code_view(text: str) -> str:
     """``text`` of the same length with every comment blanked (newlines kept) and the inside of every string,
     template and regular-expression literal written ``FILL`` (a quote, a newline and the delimiters kept), so a
-    keyword or quote inside one is not code."""
-    out = list(text)
+    keyword or quote inside one is not code. Code between two of ``/ ' " ` `` is passed whole (``_VIEW_STOP``)
+    and only its last code character and last word are read from it."""
+    out: list[str] = []
     i, n = 0, len(text)
     last = ""  # the last code character that is not a blank, "" at the start
-    word = ""  # the last word of code
+    word = ""  # the last word of code: word characters of code, blanks between them not ending it
     while i < n:
-        c = text[i]
-        if text.startswith("//", i) or text.startswith("/*", i):
-            end = text.find("\n", i) if text[i + 1] == "/" else text.find("*/", i + 2)
-            end = n if end < 0 else end if text[i + 1] == "/" else end + 2
-            for k in range(i, end):
-                out[k] = "\n" if text[k] == "\n" else " "
+        m = _VIEW_STOP.search(text, i)
+        p = m.start() if m else n
+        if p > i:
+            out.append(text[i:p])
+            last, word = _code_tail(text, i, p, last, word)
+        if p == n:
+            break
+        c = text[p]
+        if text.startswith("//", p) or text.startswith("/*", p):
+            end = text.find("\n", p) if text[p + 1] == "/" else text.find("*/", p + 2)
+            end = n if end < 0 else end if text[p + 1] == "/" else end + 2
+            out.append(_NOT_NEWLINE.sub(" ", text[p:end]))
             i = end
-        elif c in "'\"`" or (c == "/" and (last == "" or last in REGEX_AFTER or word in REGEX_WORDS)):
-            j, in_class = i + 1, False
-            while j < n:
-                d = text[j]
+        elif c != "/" or last == "" or last in REGEX_AFTER or word in REGEX_WORDS:
+            j, in_class, stop = p + 1, False, _LITERAL_STOP[c]
+            while True:
+                s = stop.search(text, j)
+                if s is None:
+                    j = n
+                    break
+                j, d = s.start(), s.group()
                 if d == "\\":
                     j += 2
-                    continue
-                if d == "\n" and c != "`":
-                    break
-                if c == "/" and d in "[]":
+                elif c == "/" and d in "[]":
                     in_class = d == "["
-                elif d == c and not in_class:
+                    j += 1
+                elif d == "\n" or not in_class:
                     break
-                j += 1
-            for k in range(i + 1, min(j, n)):
-                out[k] = text[k] if text[k] == "\n" else FILL
+                else:
+                    j += 1
+            out.append(c + _NOT_NEWLINE.sub(FILL, text[p + 1:min(j, n)]) + text[j:j + 1])
             i, last, word = j + 1, c, ""
         else:
-            if not c.isspace():
-                word = word + c if (c.isalnum() or c in "_$") and (last.isalnum() or last in "_$") else \
-                    (c if c.isalnum() or c in "_$" else "")
-                last = c
-            i += 1
+            out.append(c)
+            i, last, word = p + 1, c, ""
     return "".join(out)
+
+
+def _is_word(c: str) -> bool:
+    return c.isalnum() or c in "_$"
+
+
+def _code_tail(text: str, i: int, p: int, last: str, word: str) -> tuple[str, str]:
+    """``last`` and ``word`` after the code ``text[i:p]`` (none of ``_VIEW_STOP`` in it), read backwards."""
+    k = p - 1
+    while k >= i and text[k].isspace():
+        k -= 1
+    if k < i:
+        return last, word
+    tail: list[str] = []
+    m = k
+    while m >= i:
+        c = text[m]
+        if not c.isspace():
+            if not _is_word(c):
+                return text[k], "".join(reversed(tail))
+            tail.append(c)
+        m -= 1
+    return text[k], (word if _is_word(last) else "") + "".join(reversed(tail))
 
 
 def specifiers(text: str) -> list[str]:
