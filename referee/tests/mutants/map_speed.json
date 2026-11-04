@@ -46,24 +46,6 @@
    ]
   },
   {
-   "id": "view_word_not_continued",
-   "file": "profile/jsimports.py",
-   "old": "    return text[k], (word if _is_word(last) else \"\") + \"\".join(reversed(tail))",
-   "new": "    return text[k], \"\".join(reversed(tail))",
-   "tests": [
-    "test_profile_jsimports.py"
-   ]
-  },
-  {
-   "id": "view_word_not_ended",
-   "file": "profile/jsimports.py",
-   "old": "                return text[k], \"\".join(reversed(tail))",
-   "new": "                break",
-   "tests": [
-    "test_profile_jsimports.py"
-   ]
-  },
-  {
    "id": "view_last_blank",
    "file": "profile/jsimports.py",
    "old": "    while k >= i and text[k].isspace():\n        k -= 1\n",
@@ -106,6 +88,42 @@
    "new": "for is_insert, arg in [_insert_arg(n)]]",
    "tests": [
     "test_profile_pypath.py"
+   ]
+  },
+  {
+   "id": "view_blank_continues_word",
+   "file": "profile/jsimports.py",
+   "old": "    while m >= i and _is_word(text[m]):",
+   "new": "    while m >= i and (_is_word(text[m]) or text[m].isspace()):",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "view_dot_not_read",
+   "file": "profile/jsimports.py",
+   "old": "    return text[k], \"\" if before == \".\" else text[start:k + 1]",
+   "new": "    return text[k], text[start:k + 1]",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "view_dot_before_comment_lost",
+   "file": "profile/jsimports.py",
+   "old": "    before = text[m] if m >= i else last",
+   "new": "    before = text[m] if m >= i else \"\"",
+   "tests": [
+    "test_profile_jsimports.py"
+   ]
+  },
+  {
+   "id": "view_nonword_keeps_word",
+   "file": "profile/jsimports.py",
+   "old": "    if not _is_word(text[k]):\n        return text[k], \"\"",
+   "new": "    if not _is_word(text[k]):\n        return text[k], word",
+   "tests": [
+    "test_profile_jsimports.py"
    ]
   }
  ]
