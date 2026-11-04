@@ -13,7 +13,7 @@ D5's ``loop.decide``, whose answer it takes.
 
 **Genesis** (``genesis``), a dry run: it reads through a transport (``target.write``'s; the vector's is
 ``target.write.Replay`` over a recorded API) and writes nothing. Inputs: ``setup/summary.json``, the
-``setup/imports.jsonl`` rows, the referee policy, ``seed/security-ledger.jsonl`` and the verified recipe, as bytes,
+``setup/imports.jsonl`` rows, the referee policy, ``setup/security-ledger.jsonl`` (tohum/26c) and the verified recipe, as bytes,
 and the target id.
 
 The reads, exactly these, each once (``reads``): ``GET /app``, ``GET /installation/repositories``, ``GET

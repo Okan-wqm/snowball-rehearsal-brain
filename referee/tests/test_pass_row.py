@@ -69,8 +69,11 @@ COUNTER = YW.transfer()  # the counter's last import and the (A) result it names
 IMPORTS, RESULT = COUNTER["imports"], COUNTER["result"]
 OWNER_EXCEPTION = {"anchor": "durustluk", "stage": 0, "carry_to": 1, "reason": "no plant before the stage",
                    "carry_commitment": "c" * 64, "measured": False}
-CATALOG = {"instances": [{"id": "rd-build", "cause": "build_break"}, {"id": "rd-lint", "cause": "lint_regression"},
-                         {"id": "rd-test", "cause": "test_regression"}]}
+# tohum/26f: a drill instance's id is 32 lowercase hex that does not tell its cause; these three are the tests'
+# (test_loop_write and test_rehearsal use them too), in the code point order of the causes' names.
+RD_BUILD, RD_LINT, RD_TEST = "b0" * 16, "c0" * 16, "d0" * 16
+CATALOG = {"instances": [{"id": RD_BUILD, "cause": "build_break"}, {"id": RD_LINT, "cause": "lint_regression"},
+                         {"id": RD_TEST, "cause": "test_regression"}]}
 SEED = {"seed": "pass-row-seed"}
 TOY_EXPECT = {"bad-path": {"decision": "reject", "reason": "security_path:src/p.js"},
               "bad-test": {"decision": "reject", "reason": "tests_red"}, "good": {"decision": "merge"}}
@@ -169,9 +172,9 @@ def toy_world(toy: State | None = None, **over) -> State:
                                               ("good", [], merged(h(0xa1 + shift)))]), over.get("genesis", True))
     toy.cycle(lambda c: EV.sentinel(c, h(0xa1 + shift), over.get("verdict", "green"), []),
               lambda c: cost(c, **over.get("cost", {})))
-    for n, (instance_id, cause) in enumerate(over.get("drills", [("rd-test", "test_regression"),
-                                                                 ("rd-build", "build_break"),
-                                                                 ("rd-lint", "lint_regression")])):
+    for n, (instance_id, cause) in enumerate(over.get("drills", [(RD_TEST, "test_regression"),
+                                                                 (RD_BUILD, "build_break"),
+                                                                 (RD_LINT, "lint_regression")])):
         drill(toy, instance_id, cause, h(0xd0 + n + shift), **over.get("drill_over", {}).get(instance_id, {}))
     return toy
 
@@ -287,31 +290,31 @@ class Fails(unittest.TestCase):
         self.assertEqual(self.reasons(judge(toy), "#nobetci #hayatta"), ["toy:serial:finished_twice:" + h(0xa1)])
 
     def test_each_drill_cause_is_shown_by_a_pass(self):
-        got = judge(toy_world(drills=[("rd-test", "test_regression")]))
+        got = judge(toy_world(drills=[(RD_TEST, "test_regression")]))
         self.assertEqual(self.reasons(got, "#geri-alma"), ["toy:cause_unshown:build_break",
                                                            "toy:cause_unshown:lint_regression"])
         self.assertEqual(self.reasons(judge(drill_inputs=False), "#geri-alma"), ["toy:drill_inputs_missing"])
 
     def test_a_drill_judged_fail_is_named(self):
-        toy = toy_world(drill_over={"rd-build": {"revert_cause": "test_regression"}})
-        self.assertEqual(self.reasons(judge(toy), "#geri-alma"), ["toy:drill_fail:rd-build:cause_mismatch",
+        toy = toy_world(drill_over={RD_BUILD: {"revert_cause": "test_regression"}})
+        self.assertEqual(self.reasons(judge(toy), "#geri-alma"), ["toy:drill_fail:%s:cause_mismatch" % RD_BUILD,
                                                                   "toy:cause_unshown:build_break"])
-        toy = toy_world(drill_over={"rd-lint": {"reverted": False}})
-        self.assertEqual(self.reasons(judge(toy), "#geri-alma"), ["toy:drill_fail:rd-lint:not_reverted",
+        toy = toy_world(drill_over={RD_LINT: {"reverted": False}})
+        self.assertEqual(self.reasons(judge(toy), "#geri-alma"), ["toy:drill_fail:%s:not_reverted" % RD_LINT,
                                                                   "toy:cause_unshown:lint_regression"])
 
     def test_a_plant_without_commitment(self):
         toy = toy_world()
-        toy.cycle(lambda c: EV.drill(c, "plant", RD.plant_payload("rd-test", h(0xe1))), cost)
+        toy.cycle(lambda c: EV.drill(c, "plant", RD.plant_payload(RD_TEST, h(0xe1))), cost)
         toy.cycle(lambda c: EV.revert(c, h(0xe1), "test_regression"), cost)
         # judged against the last commitment before it, rd-lint's, already used
-        self.assertEqual(self.reasons(judge(toy), "#geri-alma"), ["toy:drill_fail:rd-test:cause_mismatch",
-                                                                  "toy:drill_fail:rd-test:instance_mismatch"])
+        self.assertEqual(self.reasons(judge(toy), "#geri-alma"), ["toy:drill_fail:%s:cause_mismatch" % RD_TEST,
+                                                                  "toy:drill_fail:%s:instance_mismatch" % RD_TEST])
         toy = State("toy")
         genesis_cycle(toy, [("bad-path", ["security_path:src/p.js"]), ("bad-test", ["tests_red"]),
                             ("good", [], merged(h(0xa1)))])
-        toy.cycle(lambda c: EV.drill(c, "plant", RD.plant_payload("rd-test", h(0xe1))), cost)
-        self.assertIn("toy:drill_uncommitted:rd-test", self.reasons(judge(toy), "#geri-alma"))
+        toy.cycle(lambda c: EV.drill(c, "plant", RD.plant_payload(RD_TEST, h(0xe1))), cost)
+        self.assertIn("toy:drill_uncommitted:%s" % RD_TEST, self.reasons(judge(toy), "#geri-alma"))
 
     def test_roots_and_status(self):
         toy = toy_world()
@@ -418,16 +421,16 @@ class Regenesis(unittest.TestCase):
         self.assertFalse(set(got["payload"]["copy_merge_row_hashes"]) & set(old_copy_merges))
 
     def test_a_plant_and_its_commitment_count_only_in_the_run(self):
-        toy = toy_world(drills=[("rd-test", "test_regression")])
-        run = run_for("rd-build", toy.run)
+        toy = toy_world(drills=[(RD_TEST, "test_regression")])
+        run = run_for(RD_BUILD, toy.run)
         key = RD.key(SEED, run, CATALOG)
         toy.cycle(lambda c: EV.drill(c, "commit", RD.commit_payload(key)), cost, run=run)  # before the new genesis
         toy_world(toy, drills=[])
         toy.cycle(lambda c: EV.ratchet_base(c, h(21, 64), {"no-unused-vars": 0}),
-                  lambda c: EV.drill(c, "plant", RD.plant_payload("rd-build", h(0xe2))), cost)
+                  lambda c: EV.drill(c, "plant", RD.plant_payload(RD_BUILD, h(0xe2))), cost)
         toy.cycle(lambda c: EV.revert(c, h(0xe2), "build_break"), cost)
         got = judge(toy)
-        self.assertEqual(got["conditions"]["#geri-alma"], ["toy:drill_uncommitted:rd-build",
+        self.assertEqual(got["conditions"]["#geri-alma"], ["toy:drill_uncommitted:%s" % RD_BUILD,
                                                            "toy:cause_unshown:test_regression",
                                                            "toy:cause_unshown:build_break",
                                                            "toy:cause_unshown:lint_regression"])
@@ -458,7 +461,7 @@ class Gate(unittest.TestCase):
     def test_closed_by_any_toy_condition_judge_names(self):
         """The same reasons ``judge`` gives for the toy, one change of the toy's world at a time."""
         cases = {"no drill inputs": (toy_world(), {"drill_inputs": False}),
-                 "a cause unshown": (toy_world(drills=[("rd-test", "test_regression")]), {}),
+                 "a cause unshown": (toy_world(drills=[(RD_TEST, "test_regression")]), {}),
                  "a flaky sentinel": (toy_world(verdict="flaky"), {}),
                  "a reject expected for another reason": (toy_world(), {"toy_expect": dict(
                      TOY_EXPECT, **{"bad-test": {"decision": "reject", "reason": "ratchet_increase"}})}),

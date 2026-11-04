@@ -63,7 +63,7 @@ on it as on any cycle (no merge is unfinished: nothing is watched); ``yaz`` runs
 of ``loop.write_cycle``, ``activate.activate`` (``yaz_genesis``) with D5's answer, D3's base run
 (``loop.watch.base_run``: ``base.jsonl`` and the index's ``base_run_sha256``; absent is ``activation_refused``
 ``base_run_missing``) and D4's cost rows, and the checkout's ``setup/summary.json``, ``setup/imports.jsonl`` and
-``seed/security-ledger.jsonl`` (tohum/29o; an unreadable one is unusable, exit 2), ``pulled``'s policy and its one
+``setup/security-ledger.jsonl`` (tohum/26c, 29o; an unreadable one is unusable, exit 2), ``pulled``'s policy and its one
 unit as the recipe: the genesis row, the cut at that commit, D5's merge, the ratchet base and the orphan
 ``brain/state`` commit. Its refusals before any write (``activate``'s reasons, ``base_moved`` among them) are
 ``activation_refused`` with the reasons; a hard stop after the cut is ``hard_stop`` with ``written``. The line has
@@ -74,7 +74,7 @@ an ordinary cycle.
 **The copy's genesis gate** (tohum/25a row 7, 29s: the copy's genesis waits until the toy's cycles 1-5 are green,
 read from the toy's ``brain/state``; ``harness.pass_row`` "The copy's genesis gate"). ``yaz`` judges it on each toy's
 ordinary cycle (``yaz_gate``, before anything is written: ``harness.pass_row.gate`` on ``pulled``'s state with the
-toy's candidates' ``expect.json``, D8's seed and catalog, ``loop.drill.inputs``, and the checkout's
+toy's candidates' ``expect.json``, D8's seed and catalog (``loop.drill.inputs``), and the checkout's
 ``setup/imports.jsonl``), unless the toy's run already holds the gate's row; the line has ``gate`` ``{verdict:
 open|closed, conditions, unusable?}`` (only the conditions with reasons). An open gate adds the ``events``/
 ``copy_gate`` row to the cycle D6 writes (``loop.write_cycle``'s ``gate``). The next run's ``cek`` reads it: after a
@@ -157,9 +157,10 @@ refused tree is ``pulled_invalid``). Then:
   ``done``: ``D5`` and ``D6``, ``D7`` when a sentinel was ended, ``D8`` unless the drill is off; ``ok`` is true (exit
   0), except when D8 judged a drill ``FAIL`` (``drill_fail``, exit 1, after the writes: the cycle's state is written,
   the drill's verdict is red). D8 (``yaz_d8``, ``loop.drill``) runs between D7 and D6 and writes nothing itself: with
-  ``DRILL_SEED`` (the drill seed secret, ``yaz`` only; unset turns the drill off) it reads the catalog from the
-  checkout's ``seed/drill/revert/`` (``GITHUB_WORKSPACE``; no catalog there is ``off`` with ``why: fixtures_absent``,
-  tohum/26f; one that is there but unreadable is unusable, exit 2, nothing written) and
+  ``DRILL_SEED`` and ``DRILL_FIXTURES`` (tohum/26f: the drill seed and the live drill fixtures, two secrets of
+  ``yaz``'s step only; no seed turns the drill off, no fixtures is ``off`` with ``why: fixtures_absent``, fixtures
+  bound to another import than the checkout's counter's last is ``off`` with ``why: fixtures_import_mismatch``,
+  fixtures ``loop.drill.fixtures`` refuses are unusable, exit 2, nothing written; ``loop.drill.inputs``) it
   answers this cycle's step from the same state: a commitment, a plant (D6 lands it as the cycle's one merge, with the
   ``ratchet_base`` and ``plant`` rows; the next cycle's ``kos`` watches it and its ``yaz`` reverts it, D7), a wait,
   or nothing that fits; the previous drill, once its planted merge is finished, is revealed and judged
@@ -358,12 +359,14 @@ JOBS: dict[str, Job] = {
                  ("cek",), ("pulled",), "response", ("claude",)),
     "yaz": Job(("D5", "D6", "D7", "D8"), (2, 7, 8, 9, 10, 11, 13, 14, 16), False,
                {"id-token": "write", "contents": "read"},
-               {"WRITER_TOKEN": "${{ steps.app.outputs.token }}", DR.SEED_ENV: "${{ secrets.DRILL_SEED }}"},
+               {"WRITER_TOKEN": "${{ steps.app.outputs.token }}", DR.SEED_ENV: "${{ secrets.DRILL_SEED }}",
+                DR.FIXTURES_ENV: "${{ secrets.DRILL_FIXTURES }}"},
                ("cek", "getir", "kos", "cagir"), ("pulled", "deps", "results", "response"), None, ("sigstore",)),
 }
 
 # What cek reads from the referee repository's checkout, and the target branches whose heads it reads (asama-0/01 D1).
-CEK_FILES = ("setup/imports.jsonl", "setup/summary.json", "policy.json")
+IMPORTS = "setup/imports.jsonl"  # tohum/26c: the counter, in the referee checkout
+CEK_FILES = (IMPORTS, "setup/summary.json", "policy.json")
 TARGET_REFS = {b: "refs/heads/" + b for b in (B.STATE, B.INTEGRATION)}
 MAIN_REF = "refs/heads/main"  # the toy's genesis cycle reads its tree here (tohum/07: brain/integration is cut from main)
 # What cek's line lists as checked when D1 holds: every check of asama-0/01's D1 row.
@@ -701,15 +704,14 @@ def yaz_d8(environ: dict[str, str], art: Any, tree: str, d5: dict[str, Any]) -> 
     """D8 of ``yaz`` (see the module docstring): ``loop.drill.step`` of this cycle's state, before anything is
     written; D6 writes what it answers. The drill is the toy's (asama-0/08 row 4, 10a #geri-alma): on a target of
     another kind it is off, as without the seed."""
-    workspace = environ.get("GITHUB_WORKSPACE")
     toy = art.target.get("kind") == "toy"
-    if toy and environ.get(DR.SEED_ENV) and not workspace:
+    if toy and environ.get(DR.SEED_ENV) and not environ.get("GITHUB_WORKSPACE"):
         raise Unusable("yaz: GITHUB_WORKSPACE is not set")
     unfinished, refused = _unfinished(art)
     if refused:  # yaz_d5 read the same ledger first
         raise Unusable("yaz: %s" % ", ".join(refused["reasons"]))
     try:
-        inp = DR.inputs(workspace, environ) if toy else None
+        inp = _drill_inputs(environ) if toy else None
         return DR.step(inp, art.state[B.STATE_LEDGER], unfinished, d5["merge"] is not None, tree,
                        environ.get("GITHUB_RUN_ID", ""))
     except DR.Unusable as exc:
@@ -728,11 +730,11 @@ def yaz_gate(environ: dict[str, str], art: Any) -> dict[str, Any] | None:
     if not environ.get("GITHUB_WORKSPACE"):
         raise Unusable("yaz: GITHUB_WORKSPACE is not set")
     try:
-        inp = DR.inputs(environ["GITHUB_WORKSPACE"], environ)
+        inp = _drill_inputs(environ)
     except DR.Unusable as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
     drill = {"seed": inp["seed"], "catalog": inp["catalog"]} if inp and "seed" in inp else None
-    imports = _workspace_file(environ, "setup/imports.jsonl")
+    imports = _workspace_file(environ, IMPORTS)
     try:
         expect = {cid: json.loads(files["expect.json"].decode("utf-8")) for cid, files in art.candidates.items()}
         got = PR.gate({"ledger": art.state[B.STATE_LEDGER], "roots": art.state[B.STATE_ROOTS]}, expect, drill,
@@ -767,6 +769,12 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
+def _drill_inputs(environ: dict[str, str]) -> dict | None:
+    """``loop.drill.inputs`` with the checkout's counter, read only when both drill secrets are given."""
+    given = environ.get(DR.SEED_ENV) and environ.get(DR.FIXTURES_ENV)
+    return DR.inputs(environ, _workspace_file(environ, IMPORTS) if given else b"")
+
+
 def _workspace_file(environ: dict[str, str], path: str) -> bytes:
     try:
         with open(os.path.join(environ["GITHUB_WORKSPACE"], *path.split("/")), "rb") as fh:
@@ -786,7 +794,7 @@ def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, sig
         cost = CG.read_response(_dir(environ, "in", "response", tid), art)
     except CG.ResponseError as exc:
         return {"reason": "response_invalid", "reasons": exc.reasons}
-    imports = _workspace_file(environ, "setup/imports.jsonl")
+    imports = _workspace_file(environ, IMPORTS)
     try:
         repo = A.repo_name(art.target.get("repo"))
     except A.StateError:
@@ -798,7 +806,7 @@ def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, sig
 
 
 GENESIS_WRITTEN = ("merge", "state_sha", "integration_sha", "root", "rekor_uuid", "rows", "edited")
-SECURITY_LEDGER = "seed/security-ledger.jsonl"  # tohum/29o, 30e: the seed security ledger, in the checkout
+SECURITY_LEDGER = "setup/security-ledger.jsonl"  # tohum/26c, 29o, 29s: the seed security ledger, in the checkout
 
 
 def yaz_genesis(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
@@ -902,7 +910,7 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
     except P.PulledError as exc:
         raise Unusable("cek: brain fetch: %s" % ", ".join(exc.reasons)) from None
     try:
-        imported, _ = A.last_import(files["setup/imports.jsonl"])
+        imported, _ = A.last_import(files[IMPORTS])
         with G.GitBatch(brain_dir, git=git, environ=environ) as brain:
             tree = A.check_tree(brain, sha, imported)
     except A.StateError as exc:

@@ -7,29 +7,42 @@ sentinel and reverted by ``gate.revert``), tohum/29m (``harness.revert_drill``: 
 the judge, used here as they are), tohum/08 item 1 (the seed is a secret, so only a job that runs no code holds it:
 ``yaz``), tohum/07 (merges are serial: a planted merge is a merge, ``ledger.serial``).
 
-**Stated assumptions** (seed-045: no page names them; its draft): the catalog is the referee checkout's
-``seed/drill/revert/catalog.json`` (29m's ``{instances: [{id, cause, ...}]}``), each instance's ``patch`` the name of
-a file in that directory holding a unified diff of one file (``target.land.applied``'s, the one application a
-candidate's diff gets); the drill seed is the ``DRILL_SEED`` secret of ``yaz``; the commitment's ``cycle_id`` is the
+**Inputs** (tohum/26f "D8'in canli girdileri", "Canli prova fikstürleri"; seed-045, answered by seed epoch e884cbb):
+two secrets of ``yaz``'s step, named here and in ``loop.yml`` (``loop.job``): the drill seed ``DRILL_SEED`` and the
+live drill fixtures ``DRILL_FIXTURES``. ``inputs(environ, imports)`` with ``imports`` the checkout's
+``setup/imports.jsonl`` bytes:
+
+1. ``DRILL_SEED`` unset or empty: ``None`` (the drill is off for the run: the operator has not given the secret);
+2. ``DRILL_FIXTURES`` unset or empty: ``{off: fixtures_absent}`` (the seed alone turns nothing on and stops nothing);
+3. the fixtures' value is one line of base64 (RFC 4648 alphabet, padded; an LF or anything else is refused) whose
+   bytes are UTF-8 RFC 8785 JSON (the bytes equal ``ledger.chain.canonical`` of what they parse to) of exactly
+   ``{import_line_sha256, instances}``: ``import_line_sha256`` 64 lowercase hex; ``instances`` a non-empty list of
+   exactly ``{id, cause, patch}``, ``id`` 32 lowercase hex and unique, ``cause`` one of ``CAUSES``, ``patch`` a
+   non-empty string; every cause of ``CAUSES`` has the same number of instances, at least one. Any other value is
+   ``Unusable`` (exit 2 before any write); its message names the rule broken and never a value of the secret;
+4. ``import_line_sha256`` is not the sha256 of the counter's last transfer line without its LF
+   (``loop.accepted.last_import``, the one reader; a counter it refuses is ``Unusable``): ``{off:
+   fixtures_import_mismatch}`` (26f: the drill is off and the reason named; each import gets a new set);
+5. else ``{seed: {seed}, catalog: {instances: [{id, cause}]}, patches: {id: patch}}``, the catalog in
+   ``harness.revert_drill``'s form (it reads ``id`` and ``cause`` only) and each patch a unified diff of one file
+   (``target.land.applied``'s, the one application a candidate's diff gets).
+
+Not checked here, stated: the rules 26f gives the producer (``drill-fixtures``: each patch gives exactly its cause
+on the toy's tree, touches no file a candidate expected to merge touches, no security path, the 48 KB cap); a patch
+that does not apply to ``brain/integration``'s head is the step's ``patch_does_not_apply`` below.
+
+**Stated assumptions** (26f leaves MF17's composition to the Founder): the commitment's ``cycle_id`` is the
 Actions run id of the cycle that writes it (29m: decimal digits), recovered by a later cycle from the
 ``events``/``cycle_start`` row of the commitment's cycle (its ``<run id>-<attempt>``); the drill is committed in cycle
 N's ``yaz``, planted in a later cycle's ``yaz`` (with that cycle's ``ratchet_base``, so the revert has a lint before),
 watched by the next cycle's ``kos`` and reverted by its ``yaz`` (D7, like any merge), and the key revealed and judged
 by the first ``yaz`` after the planted merge is finished.
 
-**Inputs** (``inputs(workspace, environ)``): ``None`` when ``DRILL_SEED`` is unset or empty (the drill is off for the
-run: the operator has not given the secret). ``{absent: <catalog path>}`` when the seed is set and no file of any kind
-is at the catalog's path (tohum/26f: the seed's live drill fixtures are not in this seed and their place comes with
-a seed epoch; until then D8 cannot run live, so the operator's secret alone turns nothing on and stops nothing).
-Otherwise the catalog must be readable JSON that
-``harness.revert_drill.instances`` accepts, and every instance's ``patch`` a plain file name (no ``/``, not ``.`` or
-``..``) of a regular file of that directory, UTF-8 text; else ``Unusable`` (exit 2 before any write).
-
 **The step** (``step``), from ``brain/state``'s ledger as D1 verified it, its unfinished merges
 (``ledger.serial.unfinished``), whether D5 merges a candidate this cycle, the tree of ``brain/integration``'s head and
 this run's id. Let D be the ledger's revert-drill ``commit`` and ``plant`` rows (``harness.revert_drill``'s reading):
 
-1. no inputs: ``{action: off}``; inputs ``absent``: ``{action: off, why: fixtures_absent}`` (``yaz``'s line shows it);
+1. no inputs: ``{action: off}``; inputs ``{off: why}``: ``{action: off, why}`` (``yaz``'s line shows it);
 2. D's last row is a commitment C. Its cycle's run id is read (``commitment_unplaced`` when no ``cycle_start`` with a
    ``<digits>-<digits>`` id precedes it) and its key derived; a key whose commitment is not C's (the seed or the
    catalog changed since) abandons C: this cycle commits again (rule 4, ``replaces: commitment_mismatch``). Else, with
@@ -48,25 +61,33 @@ this run's id. Let D be the ledger's revert-drill ``commit`` and ``plant`` rows 
 The key and the instance are never in the step's answer before the plant (``commit`` carries the hash only); the
 plant names its instance (29m's plant row does), and the key is in the answer only once judged.
 
-Out of scope, stated: how often a drill runs (one after another, as the ledger allows: an assumption, seed-045); a
+Out of scope, stated: how often a drill runs (one after another, as the ledger allows: this brain's choice); a
 row for the verdict (29m gives commit and plant rows only; the verdict is in ``yaz``'s line); a candidate that keeps
 merging every other cycle delays the plant (the candidate goes first).
 """
 
 from __future__ import annotations
 
-import os
+import base64
+import binascii
+import hashlib
 import re
 from typing import Any
 
 from harness import revert_drill as RD
 from ledger import chain
+from loop import accepted as AC
 from target import land
 import cli
 
-CATALOG_DIR = ("seed", "drill", "revert")
-CATALOG = "catalog.json"
 SEED_ENV = "DRILL_SEED"
+FIXTURES_ENV = "DRILL_FIXTURES"
+CAUSES = ("test_regression", "build_break", "lint_regression")  # tohum/26f: a fixture's cause, each shown equally
+FIXTURE_KEYS = ("import_line_sha256", "instances")
+INSTANCE_KEYS = ("cause", "id", "patch")
+BASE64 = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
+HEX32 = re.compile(r"[0-9a-f]{32}\Z")
+HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 CYCLE_ID = re.compile(r"([0-9]+)-[0-9]+\Z")
 
 
@@ -74,30 +95,55 @@ class Unusable(ValueError):
     pass
 
 
-def inputs(workspace: str, environ: dict[str, str]) -> dict | None:
-    """``{seed, catalog, patches}`` or ``None`` (see the module docstring)."""
+def inputs(environ: dict[str, str], imports: bytes) -> dict | None:
+    """``None``, ``{off}`` or ``{seed, catalog, patches}`` (see the module docstring)."""
     seed = environ.get(SEED_ENV)
     if not seed:
         return None
-    root = os.path.join(workspace, *CATALOG_DIR)
-    if not os.path.lexists(os.path.join(root, CATALOG)):
-        return {"absent": "/".join(CATALOG_DIR + (CATALOG,))}
+    value = environ.get(FIXTURES_ENV)
+    if not value:
+        return {"off": "fixtures_absent"}
+    doc = fixtures(value)
     try:
-        with open(os.path.join(root, CATALOG), "rb") as fh:
-            catalog = chain.parse_row(fh.read().decode("utf-8"))
-        patches = {}
-        for item in RD.instances(catalog):
-            name = item.get("patch")
-            if not isinstance(name, str) or name in ("", ".", "..") or "/" in name or "\\" in name:
-                raise Unusable("instance %r: patch must be a file name of the catalog's directory" % item["id"])
-            path = os.path.join(root, name)
-            if os.path.islink(path) or not os.path.isfile(path):
-                raise Unusable("instance %r: %s is not a regular file" % (item["id"], name))
-            with open(path, "rb") as fh:
-                patches[item["id"]] = fh.read().decode("utf-8")
-    except (OSError, UnicodeDecodeError, chain.ChainError, RD.Unusable) as exc:
-        raise Unusable("drill: %s" % cli.cause(exc)) from None
-    return {"seed": {"seed": seed}, "catalog": catalog, "patches": patches}
+        _, line = AC.last_import(imports)
+    except AC.StateError as exc:
+        raise Unusable("drill: imports: %s" % exc.reasons[0]) from None
+    if doc["import_line_sha256"] != hashlib.sha256(line).hexdigest():
+        return {"off": "fixtures_import_mismatch"}
+    return {"seed": {"seed": seed},
+            "catalog": {"instances": [{"id": i["id"], "cause": i["cause"]} for i in doc["instances"]]},
+            "patches": {i["id"]: i["patch"] for i in doc["instances"]}}
+
+
+def fixtures(value: str) -> dict:
+    """The fixtures secret's value decoded and checked (rule 3 of the module docstring), else ``Unusable``."""
+    if not BASE64.match(value) or len(value) % 4:
+        raise Unusable("drill: %s is not one line of padded base64" % FIXTURES_ENV)
+    try:
+        data = base64.b64decode(value, validate=True)
+        doc = chain.parse_row(data.decode("utf-8"))
+        canonical = chain.canonical(doc) == data
+    except (binascii.Error, UnicodeDecodeError, chain.ChainError):
+        raise Unusable("drill: %s is not a JSON object in base64" % FIXTURES_ENV) from None
+    if not canonical:
+        raise Unusable("drill: %s is not RFC 8785 JSON" % FIXTURES_ENV)
+    if sorted(doc) != sorted(FIXTURE_KEYS) or not isinstance(doc["import_line_sha256"], str) \
+            or not HEX64.match(doc["import_line_sha256"]):
+        raise Unusable("drill: %s is not {import_line_sha256, instances}" % FIXTURES_ENV)
+    items = doc["instances"]
+    if not isinstance(items, list) or not items:
+        raise Unusable("drill: %s's instances is not a non-empty list" % FIXTURES_ENV)
+    for n, item in enumerate(items):
+        if not (isinstance(item, dict) and sorted(item) == list(INSTANCE_KEYS) and isinstance(item["id"], str)
+                and HEX32.match(item["id"]) and item["cause"] in CAUSES and isinstance(item["patch"], str)
+                and item["patch"]):
+            raise Unusable("drill: %s's instance %d is not {id: 32 hex, cause, patch}" % (FIXTURES_ENV, n))
+    if len({item["id"] for item in items}) != len(items):
+        raise Unusable("drill: %s repeats an instance id" % FIXTURES_ENV)
+    counts = {c: sum(item["cause"] == c for item in items) for c in CAUSES}
+    if len(set(counts.values())) != 1 or not counts[CAUSES[0]]:
+        raise Unusable("drill: %s's causes are not each given the same number of instances" % FIXTURES_ENV)
+    return doc
 
 
 def run_id(cycle_id: str) -> str:
@@ -134,8 +180,8 @@ def step(inp: dict | None, ledger: bytes, unfinished: list[str], merging: bool, 
 def _step(inp: dict | None, ledger: bytes, unfinished: list[str], merging: bool, tree: str, this_run: str) -> dict:
     if inp is None:
         return {"action": "off"}
-    if "absent" in inp:
-        return {"action": "off", "why": "fixtures_absent"}
+    if "off" in inp:
+        return {"action": "off", "why": inp["off"]}
     rows = _rows(ledger)
     drills = [i for i, r in enumerate(rows) if RD.is_drill(r, "commit") or RD.is_drill(r, "plant")]
     last = rows[drills[-1]] if drills else None

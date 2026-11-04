@@ -308,5 +308,6 @@ jobs:
           LOOP_RESPONSE_DIGEST: ${{ needs.cagir.outputs.response_digest }}
           WRITER_TOKEN: ${{ steps.app.outputs.token }}
           DRILL_SEED: ${{ secrets.DRILL_SEED }}
+          DRILL_FIXTURES: ${{ secrets.DRILL_FIXTURES }}
         run: |
           python3 -m loop.job run yaz

@@ -61,7 +61,8 @@ from target import branches as B  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, diff, recipe  # noqa: E402
 from test_loop_cek import POLICY, install_listing_git  # noqa: E402
 from test_loop_kos import FINDING, TREE, RedAs  # noqa: E402
-from test_loop_write import DRILL_PATCHES as D8_PATCHES, SENTINEL_PY, SENTINEL_UNITS, drill_catalog  # noqa: E402
+from test_loop_write import DRILL_PATCHES as D8_PATCHES, SENTINEL_PY, SENTINEL_UNITS, drill_catalog, fixtures_value  # noqa: E402,E501
+from test_pass_row import RD_BUILD, RD_LINT, RD_TEST  # noqa: E402
 from test_rekor import entry_for  # noqa: E402
 from harness import revert_drill as RD  # noqa: E402
 from loop import drill as DR  # noqa: E402
@@ -75,10 +76,10 @@ CANDIDATES = {"t1": {"good": (GOOD, MERGE), "breaks": (BREAKS_TEST, {"decision":
 # The drill's patches (``test_loop_write.D8``'s, moved to line 2): each turns the sentinel red, rd-lint also adds a
 # ``var`` line. They change ``const b``, a line ``good`` leaves as it was, so they apply after its merge.
 # rd-build is the catalog's build break: the same red, which stage 0's D7 can only call a test regression.
-DRILL_PATCHES = {"rd-test": diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED"], start=2),
-                 "rd-lint": diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED", "var z = 2;"], start=2),
-                 "rd-build": diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED BUILD"], start=2)}
-DRILL_CAUSES = {"rd-test": "test_regression", "rd-lint": "lint_regression", "rd-build": "build_break"}
+DRILL_PATCHES = {RD_TEST: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED"], start=2),
+                 RD_LINT: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED", "var z = 2;"], start=2),
+                 RD_BUILD: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED BUILD"], start=2)}
+DRILL_CAUSES = {RD_TEST: "test_regression", RD_LINT: "lint_regression", RD_BUILD: "build_break"}
 SHA40 = re.compile(r"\b[0-9a-f]{40}\b")
 LISTED = {"brain/state": B.STATE, "brain/integration": B.INTEGRATION, "main": "main"}
 
@@ -167,11 +168,11 @@ class Flow:
         with open(os.path.join(self.work, "policy.json"), "wb") as fh:
             fh.write(POLICY)
         write_bootstrap(self.work)
+        self.fixtures = ""
         if drill:
-            self.catalog = drill_catalog(drill)
-            write_tree(os.path.join(self.work, *DR.CATALOG_DIR),
-                       dict({DR.CATALOG: self.catalog},
-                            **{i["patch"]: patches[i["id"]].decode() for i in self.catalog["instances"]}))
+            self.catalog = drill_catalog(drill, patches)
+            with open(os.path.join(self.work, "setup", "imports.jsonl"), "rb") as fh:
+                self.fixtures = fixtures_value(self.catalog, fh.read())
         self.rekor = Rekor()
         self.signer = RekorSigner(self.rekor.entries, A.workflow_identity(REFEREE_REPO, A.LOOP_WORKFLOW))
         zipped = TA.zip_of({"result.json": TA.result(self.brain_sha), "result.json.sigstore.json": b"{}"})
@@ -227,7 +228,7 @@ class Flow:
         write_tree(os.path.join(temps["yaz"], "control"), {"control.json": {"merge_paused": False}})
         now = YW.NOW + datetime.timedelta(hours=self.runs)
         lines["yaz"] = J.run("yaz", YW.env(temps["yaz"], self.work, GITHUB_REPOSITORY=REFEREE_REPO,
-                                           DRILL_SEED=self.seed, **run_id),
+                                           DRILL_SEED=self.seed, DRILL_FIXTURES=self.fixtures, **run_id),
                              transport=Router(self.hubs), signer=self.signer, now=lambda: now)
         self.state_heads.append(self.hubs[TARGETS[0][2]].refs.get(B.STATE))
         return lines
@@ -322,11 +323,11 @@ def without_fixtures(base: str) -> Flow:
 
 def with_fixtures(base: str) -> Flow:
     return Flow(base, drill=DRILL_CAUSES,
-                seed=seed_choosing(drill_catalog(DRILL_CAUSES), {"2": "rd-test", "5": "rd-lint", "8": "rd-build"}))
+                seed=seed_choosing(drill_catalog(DRILL_CAUSES), {"2": RD_TEST, "5": RD_LINT, "8": RD_BUILD}))
 
 
 def stale_patches(base: str) -> Flow:
-    return Flow(base, drill={"rd-test": "test_regression", "rd-lint": "lint_regression"}, patches=D8_PATCHES)
+    return Flow(base, drill=DRILL_CAUSES, patches=D8_PATCHES)
 
 
 # ``docs/exit-b.md``'s cases (``status.exit_b.render_case``), in its order: name, title, the world, the open reports
@@ -411,24 +412,24 @@ class Rehearsal(unittest.TestCase):
             {"waiting": ["c1"], "t1": GENESIS},
             {"waiting": ["c1"], "t1": toy(sentinel="green", drill=commit, done=d78,
                                           gate=closed(nobetci=["sentinel_unfinished:<sha>"], geri_alma=unshown))},
-            {"waiting": ["c1"], "t1": toy(drill={"action": "plant", "instance_id": "rd-test"}, done=d8,
+            {"waiting": ["c1"], "t1": toy(drill={"action": "plant", "instance_id": RD_TEST}, done=d8,
                                           gate=closed(geri_alma=unshown))},
             {"waiting": ["c1"], "t1": toy(sentinel="red", drill=wait, done=d78,
-                                          gate=closed(geri_alma=["drill_fail:rd-test:not_reverted"] + unshown))},
-            {"waiting": ["c1"], "t1": toy(drill=dict(commit, judged=["rd-test", "PASS", []]), done=d8,
+                                          gate=closed(geri_alma=["drill_fail:%s:not_reverted" % RD_TEST] + unshown))},
+            {"waiting": ["c1"], "t1": toy(drill=dict(commit, judged=[RD_TEST, "PASS", []]), done=d8,
                                           gate=closed(geri_alma=unshown[1:]))},
-            {"waiting": ["c1"], "t1": toy(drill={"action": "plant", "instance_id": "rd-lint"}, done=d8,
+            {"waiting": ["c1"], "t1": toy(drill={"action": "plant", "instance_id": RD_LINT}, done=d8,
                                           gate=closed(geri_alma=unshown[1:]))},
             {"waiting": ["c1"], "t1": toy(sentinel="red", drill=wait, done=d78,
-                                          gate=closed(geri_alma=["drill_fail:rd-lint:not_reverted"] + unshown[1:]))},
-            {"waiting": ["c1"], "t1": toy(drill=dict(commit, judged=["rd-lint", "PASS", []]), done=d8,
+                                          gate=closed(geri_alma=["drill_fail:%s:not_reverted" % RD_LINT] + unshown[1:]))},
+            {"waiting": ["c1"], "t1": toy(drill=dict(commit, judged=[RD_LINT, "PASS", []]), done=d8,
                                           gate=closed(geri_alma=unshown[1:2]))},
-            {"waiting": ["c1"], "t1": toy(drill={"action": "plant", "instance_id": "rd-build"}, done=d8,
+            {"waiting": ["c1"], "t1": toy(drill={"action": "plant", "instance_id": RD_BUILD}, done=d8,
                                           gate=closed(geri_alma=unshown[1:2]))},
             {"waiting": ["c1"], "t1": toy(sentinel="red", drill=wait, done=d78,
-                                          gate=closed(geri_alma=["drill_fail:rd-build:not_reverted"] + unshown[1:2]))}])
+                                          gate=closed(geri_alma=["drill_fail:%s:not_reverted" % RD_BUILD] + unshown[1:2]))}])
         self.assertEqual(records[-1]["stopped"], {"job": "yaz", "target": "t1", "reason": "drill_fail", "reasons": []})
-        self.assertEqual(records[-1]["t1"]["drill"]["judged"], ["rd-build", "FAIL", ["cause_mismatch"]])
+        self.assertEqual(records[-1]["t1"]["drill"]["judged"], [RD_BUILD, "FAIL", ["cause_mismatch"]])
         self.assertEqual(sorted(flow.hubs["o/copy"].refs), ["main"])
 
 
