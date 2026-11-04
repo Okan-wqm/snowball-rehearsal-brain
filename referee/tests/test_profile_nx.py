@@ -7,6 +7,9 @@ by ``profile.fit`` when the candidate has no npm script.
   option, a ``targetDefaults`` entry by executor, name or glob;
 - lint: default and explicit patterns, the nearest flat config in Nx's name order, no flat config, ESLint's major;
 - test: the command, the config as an input, the missing option;
+- lint inferred by ``@nx/eslint/plugin``: the command and its inputs (a project.json or package.json project, the
+  root candidate's ``src``/``lib``), run by ``/bin/sh`` from the candidate's directory; every plugin, config,
+  lintable-file and ``targetDefaults`` refusal; an explicit target still replacing the inferred one;
 - fit: the npm script wins, an Nx command is judged by ``check_recipe`` like any other (``.bin`` against the lock),
   ``sources`` says which form each command took.
 """
@@ -15,6 +18,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 import unittest
 
@@ -202,6 +206,126 @@ class Test(Base):
             self.refused(X.test, reason)
 
 
+def inferred(path: str, pattern: str = ".") -> list:
+    return ["/bin/sh", "-c", X.CD_EXEC, path, "/work/node_modules/.bin/eslint", pattern, "--format", "json"]
+
+
+class Inferred(Base):
+    def setUp(self) -> None:
+        super().setUp()
+        write_tree(self.tree, {"nx.json": {"plugins": ["@nx/eslint/plugin"],
+                                           "targetDefaults": {"lint": {"inputs": ["default"], "cache": True}}},
+                               "libs/a/src/x.ts": "export {};\n"})
+        self.project(test=JEST)
+
+    def plugins(self, *entries) -> None:
+        write_tree(self.tree, {"nx.json": {"plugins": list(entries)}})
+
+    def test_the_plugins_target_as_nx_runs_it(self):
+        self.assertEqual(X.lint(self.tree, "libs/a"), (inferred("libs/a"), ["eslint.config.mjs"]))
+        self.plugins({"plugin": "@nx/eslint/plugin", "options": {"targetName": "lint", "extensions": [".ts"]}},
+                     {"plugin": "@nx/eslint/plugin", "options": {"targetName": "eslint"}})
+        self.assertEqual(X.lint(self.tree, "libs/a")[0], inferred("libs/a"))
+        # Every flat config at the root joins the inputs; a project declared by package.json alone is a project.
+        write_tree(self.tree, {"eslint.config.js": ""})
+        os.remove(os.path.join(self.tree, "libs/a/project.json"))
+        self.assertEqual(X.lint(self.tree, "libs/a"), (inferred("libs/a"), ["eslint.config.js", "eslint.config.mjs"]))
+        # An explicit target replaces the inferred one, refusals included.
+        self.project(lint=LINT)  # (its flat config by Nx's name order: .js before .mjs)
+        self.assertEqual(X.lint(self.tree, "libs/a")[0], eslint_cmd("eslint.config.js", "libs/a"))
+        self.project(lint={"executor": "nx:run-commands"})
+        self.refused(X.lint, "executor:nx:run-commands")
+
+    def test_the_root_candidate_lints_src_then_lib(self):
+        write_tree(self.tree, {"lib/x.js": ""})
+        self.assertEqual(X.lint(self.tree, ".")[0], inferred(".", "./lib"))
+        write_tree(self.tree, {"src/x.js": ""})
+        self.assertEqual(X.lint(self.tree, ".")[0], inferred(".", "./src"))
+        shutil.rmtree(os.path.join(self.tree, "src"))
+        shutil.rmtree(os.path.join(self.tree, "lib"))
+        write_tree(self.tree, {"x.js": ""})
+        self.refused(X.lint, "no_standalone_src", ".")
+
+    def test_plugins_outside_the_rules(self):
+        for plugins, reason in [
+                ("@nx/eslint/plugin", "plugins"),
+                (["@nx/eslint/plugin", "@nx/jest/plugin"], "plugin:@nx/jest/plugin"),
+                ([{"plugin": 5}], "plugin:5"),
+                ([{"plugin": "@nx/eslint/plugin", "include": ["libs/**/*"]}], "plugin_key:include"),
+                ([{"plugin": "@nx/eslint/plugin", "options": "x"}], "plugin_option:options"),
+                ([{"plugin": "@nx/eslint/plugin", "options": {"cacheLocation": "x"}}], "plugin_option:cacheLocation"),
+                ([{"plugin": "@nx/eslint/plugin", "options": {"targetName": 3}}], "plugin_option:targetName"),
+                ([{"plugin": "@nx/eslint/plugin", "options": {"extensions": "ts"}}], "plugin_option:extensions"),
+                (["@nx/eslint/plugin", {"plugin": "@nx/eslint/plugin"}], "plugin_entries"),
+                ([{"plugin": "@nx/eslint/plugin", "options": {"targetName": "eslint"}}], "no_target"),
+                ([], "no_target")]:
+            write_tree(self.tree, {"nx.json": {"plugins": plugins}})
+            self.refused(X.lint, reason)
+        write_tree(self.tree, {"nx.json": {}})
+        self.refused(X.lint, "no_target")
+
+    def test_the_project_and_its_eslint_root(self):
+        write_tree(self.tree, {"libs/a/package.json": package({}, name="@w/a", nx={"targets": {"lint": {}}})})
+        self.refused(X.lint, "package_nx_target")
+        write_tree(self.tree, {"libs/b/src/x.ts": ""})
+        self.refused(X.lint, "no_target", "libs/b")
+        write_tree(self.tree, {"libs/a/package.json": package({}, name="@w/a")})
+        for config in ("libs/eslint.config.mjs", "libs/a/.eslintrc.json"):
+            write_tree(self.tree, {config: ""})
+            self.refused(X.lint, "config_below_root")
+            os.remove(os.path.join(self.tree, config))
+        write_tree(self.tree, {".eslintrc.yml": ""})
+        self.refused(X.lint, "eslintrc")
+        os.remove(os.path.join(self.tree, ".eslintrc.yml"))
+        os.remove(os.path.join(self.tree, "eslint.config.mjs"))
+        self.refused(X.lint, "no_target")
+        write_tree(self.tree, {"eslint.config.cjs": "", "package-lock.json": lock(**{
+            "node_modules/eslint": entry("eslint", "8.57.0", bin={"eslint": "bin/eslint.js"})})})
+        self.refused(X.lint, "eslint_version")
+
+    def test_a_lintable_file_of_the_project(self):
+        os.remove(os.path.join(self.tree, "libs/a/src/x.ts"))
+        write_tree(self.tree, {"libs/a/x.py": "", "libs/a/node_modules/m/i.js": "", "libs/a/.git/h.js": "",
+                               "libs/a/sub/package.json": {}, "libs/a/sub/y.ts": "",
+                               "libs/a/nest/project.json": {}, "libs/a/nest/z.tsx": "",
+                               "libs/a/dir.ts/README": ""})
+        self.refused(X.lint, "no_lintable_files")
+        write_tree(self.tree, {"libs/a/deep/er/w.vue": ""})
+        self.assertEqual(X.lint(self.tree, "libs/a")[0], inferred("libs/a"))
+        self.plugins({"plugin": "@nx/eslint/plugin", "options": {"extensions": ["..py"]}})
+        os.remove(os.path.join(self.tree, "libs/a/deep/er/w.vue"))
+        self.assertEqual(X.lint(self.tree, "libs/a")[0], inferred("libs/a"))
+        # The root's files are those under no other project: libs/a's are libs/a's.
+        self.assertFalse(X.has_lintable(self.tree, ".", ["ts", "py"]))
+        write_tree(self.tree, {"tools/t.ts": ""})
+        self.assertTrue(X.has_lintable(self.tree, ".", ["ts"]))
+
+    def test_target_defaults_read_for_run_commands(self):
+        for defaults, reason in [({"nx:run-commands": {"dependsOn": ["^build"]}, "lint": {"cache": True}},
+                                  "target_defaults_key:dependsOn"),
+                                 ({"lint": {"options": {"quiet": True}}}, "target_defaults_key:options"),
+                                 ({"l*": {"command": "x"}}, "target_defaults_key:command")]:
+            write_tree(self.tree, {"nx.json": {"plugins": ["@nx/eslint/plugin"], "targetDefaults": defaults}})
+            self.refused(X.lint, reason)
+        write_tree(self.tree, {"nx.json": {"plugins": ["@nx/eslint/plugin"], "targetDefaults": {
+            "@nx/eslint:lint": {"dependsOn": ["^build"]}, "lint": {"cache": True}}}})
+        self.assertEqual(X.lint(self.tree, "libs/a")[0], inferred("libs/a"))
+
+    def test_the_command_runs_from_the_candidates_directory(self):
+        # The composed argv run as is, /work standing for the tree: the shell gives ESLint the candidate's directory.
+        write_tree(self.tree, {"node_modules/.bin/eslint": "#!/bin/sh\npwd -P\nprintf '%s\\n' \"$@\"\n"})
+        os.chmod(os.path.join(self.tree, "node_modules/.bin/eslint"), 0o755)
+        # A directory name the shell would read as an option, a word break, a command or a substitution is only an
+        # argument: the path is the script's $0, never its text.
+        hostile = "-a b;touch x$(touch y)"
+        write_tree(self.tree, {hostile + "/project.json": {"name": "h"}, hostile + "/src/x.ts": ""})
+        for path in ("libs/a", hostile):
+            cmd = [self.tree + e[len("/work"):] if e.startswith("/work/") else e for e in X.lint(self.tree, path)[0]]
+            out = subprocess.run(cmd, cwd=self.tree, capture_output=True, text=True, check=True).stdout.splitlines()
+            self.assertEqual(out, [os.path.realpath(os.path.join(self.tree, path)), ".", "--format", "json"])
+            self.assertEqual([f for f in ("x", "y") if os.path.exists(os.path.join(self.tree, f))], [])
+
+
 class Fit(Base):
     def test_an_nx_recipe_is_judged_like_any_other(self):
         recipe = F.compose(self.tree, "libs/a", IMAGES)
@@ -233,6 +357,19 @@ class Fit(Base):
         self.assertEqual(row["recipe"]["lint_cmd"], ["npm", "--prefix", "libs/a"] + list(F.LINT_CMD))
         self.assertEqual(row["reasons"], U.check_recipe(row["recipe"], None, self.tree))
         self.assertIn("script_missing:lint_cmd:lint", row["reasons"])
+
+    def test_an_inferred_lint_recipe_is_judged_like_any_other(self):
+        write_tree(self.tree, {"nx.json": {"plugins": ["@nx/eslint/plugin"]}, "libs/a/src/x.ts": ""})
+        self.project(test=JEST)
+        row = {r["path"]: r for r in F.fit(self.tree, None, None, IMAGES)["rows"]}["libs/a"]
+        self.assertEqual((row["reasons"], row["sources"], row["recipe"]["lint_cmd"], row["recipe"]["inputs"]),
+                         ([], {"lint": "nx_target", "test": "nx_target"}, inferred("libs/a"),
+                          [".nvmrc", "eslint.config.mjs", "libs/a", "package-lock.json"]))
+        write_tree(self.tree, {"package-lock.json": lock(**{
+            "node_modules/eslint": entry("eslint", "9.39.4"),
+            "node_modules/jest": entry("jest", "30.5.2", bin={"jest": "bin/jest.js"})})})
+        row = {r["path"]: r for r in F.fit(self.tree, None, None, IMAGES)["rows"]}["libs/a"]
+        self.assertEqual(row["reasons"], ["cmd_not_installed:lint_cmd:/work/node_modules/.bin/eslint"])
 
 
 if __name__ == "__main__":
