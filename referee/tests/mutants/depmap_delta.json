@@ -228,8 +228,8 @@
   {
    "id": "dl_read_no_check",
    "file": "status/depmap.py",
-   "old": "        m = json.loads(fh.read().decode(\"utf-8\"))\n        check_map(m)\n",
-   "new": "        m = json.loads(fh.read().decode(\"utf-8\"))\n",
+   "old": "        m = cli.loads(fh.read().decode(\"utf-8\"))\n        check_map(m)\n",
+   "new": "        m = cli.loads(fh.read().decode(\"utf-8\"))\n",
    "tests": [
     "test_depmap.CommandLine"
    ]
