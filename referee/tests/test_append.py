@@ -141,9 +141,11 @@ class Request(unittest.TestCase):
         hashes, state, _ = cycle(BASE, BASE, req({"row_id": "n"}, {"row_id": "m"}, {"part": "events"}))
         self.assertEqual(len(hashes), 3)
 
-    def test_a_row_the_scanner_cannot_read_is_unusable_not_clean(self):
+    def test_a_row_too_deep_to_read_is_unusable_not_clean(self):
         deep = '{"rows": [{"row_id": "n", "p": ' + "[" * 900 + "]" * 900 + "}]}"
-        chain.parse_row(deep)  # parses; the scanner's recursion gives out first
+        json.loads(deep)  # the parser alone takes it; the scanner's recursion would give out (before cli rule 8's
+        with self.assertRaises(chain.ChainError):  # bound, it did); now the parse refuses it (cli.DEPTH)
+            chain.parse_row(deep)
         self.assertUnusable(deep.encode())
 
     def test_what_the_canonical_form_cannot_hold(self):
