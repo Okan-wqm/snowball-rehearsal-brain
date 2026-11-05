@@ -106,6 +106,13 @@ class Rules(unittest.TestCase):
             with self.subTest(spec=spec):
                 self.assertNotEqual(self.check([spec]), [])
 
+    def test_supersedes_is_64_lowercase_hex(self):
+        # A shape problem of its own, beside the meaning rule it also breaks (it names no earlier row).
+        for target in ("B" * 64, "b" * 63, "x"):
+            with self.subTest(target=target):
+                self.assertIn("line 2 (f1).supersedes: not 64 lowercase hex",
+                              self.check([{"kind": "learning"}, {"supersedes": target}]))
+
     def test_a_broken_chain_is_reported_alone(self):
         data = build([{}, {"kind": "learning"}])[0].replace(b"row 0", b"row X")
         found = problems(data, KINDS)
@@ -142,7 +149,8 @@ class KindsAreTheSpecs(unittest.TestCase):
         start = text.index(marker)
         listed = text[start:text.index("}", start) + 1]
         for page in (text.replace(marker, "**founder:**"), text + "\n" + listed + "\n",
-                     text.replace(listed, marker + " `kind` ∈ {}")):
+                     text.replace(listed, marker + " `kind` ∈ {}"),
+                     text.replace(listed, marker + " `kind` ∈ {`cost`, `decision`, `cost`}")):
             with self.assertRaises(AssertionError):
                 spec_kinds(self._page(page))
 
@@ -334,6 +342,16 @@ class Append(Cli):
         self.add(path)
         self.add(path, kind="learning")
         self.assertEqual(os.listdir(os.path.dirname(path)), ["founder-ledger.jsonl"])
+
+    def test_a_failed_write_leaves_no_temporary_file_and_the_old_bytes(self):
+        from unittest import mock
+        data = build([{}])[0]
+        path = self.ledger(data)
+        with mock.patch.object(founder.os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                founder.append(path, founder.next_row(data, "decision", "x", [], self.SHA, "2026-10-31T23:00:00Z"),
+                               KINDS)
+        self.assertEqual((os.listdir(os.path.dirname(path)), self.read(path)), (["founder-ledger.jsonl"], data))
 
     def test_the_command_runs_from_referee(self):
         import subprocess
