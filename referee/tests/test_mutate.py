@@ -12,6 +12,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -46,11 +47,11 @@ class Runner(unittest.TestCase):
         write_tree(self.brain, {"referee/mod.py": MOD, "referee/tests/test_mod.py": TEST,
                                 "referee/tests/test_red.py": RED, "referee/tests/test_slow.py": SLOW})
 
-    def outcomes(self, mutants: list[dict], timeout: float = 120.0, emit=None) -> dict[str, str]:
+    def outcomes(self, mutants: list[dict], timeout: float = 120.0, emit=None, **limits) -> dict[str, str]:
         path = os.path.join(self.brain, "m.json")
         with open(path, "w") as fh:
             json.dump({"mutants": mutants}, fh)
-        return {r["id"]: r["outcome"] for r in mutate.run(self.brain, [path], 4, timeout, emit=emit)}
+        return {r["id"]: r["outcome"] for r in mutate.run(self.brain, [path], 4, timeout, emit=emit, **limits)}
 
     def test_an_id_runs_only_the_tests_it_names_as_discover_would(self):
         write_tree(self.brain, {"referee/tests/test_ids.py": IDS, "referee/tests/helper.py": "VALUE = 5\n",
@@ -118,6 +119,51 @@ class Runner(unittest.TestCase):
         write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + slow)})
         got = self.outcomes([mutant("hang", "return a + b", "return a - b", ["test_hang.py"])], timeout=5.0)
         self.assertEqual(got, {"hang": "timeout"})
+
+    def test_a_mutant_limit_is_derived_from_its_baseline(self):
+        # The baseline of test_hang.py takes well under a second, so with --floor 3 and --factor 5 a mutant may run
+        # about 3 s: one sleeping 1 s is judged (killed), one sleeping 30 s ends as a timeout long before the
+        # 120 s ceiling, and the same 30 s mutant under a floor above 30 s is judged too.
+        slow = "import mod, time\nif mod.add(2, 3) == -1:\n    time.sleep(1)\nif mod.add(2, 3) == 6:\n    time.sleep(30)\n"
+        write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + slow)})
+        quick = mutant("slow_1s", "return a + b", "return a - b", ["test_hang.py"])
+        loops = mutant("slow_30s", "return a + b", "return a * b + 0", ["test_hang.py"])
+        start = time.monotonic()
+        self.assertEqual(self.outcomes([quick, loops], factor=5.0, floor=3.0), {"slow_1s": "killed",
+                                                                                "slow_30s": "timeout"})
+        self.assertLess(time.monotonic() - start, 30)
+        self.assertEqual(self.outcomes([loops], timeout=60.0, factor=5.0, floor=40.0), {"slow_30s": "killed"})
+
+    def test_each_entry_is_timed_on_its_own(self):
+        write_tree(self.brain, {"referee/tests/test_pause.py": SLOW.replace("time.sleep(30)", "time.sleep(1.5)")})
+        verdict, seconds = mutate.baseline(self.brain, ["test_pause.py", "test_mod.py"], 120.0)
+        self.assertEqual((verdict, len(seconds)), ("green", 2))
+        self.assertGreaterEqual(seconds[0], 1.5)
+        self.assertLess(seconds[1], 1.5)
+
+    def test_the_command_line_passes_its_limits(self):
+        slow = "import mod, time\nif mod.add(2, 3) == 6:\n    time.sleep(30)\n"
+        write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + slow)})
+        path = os.path.join(self.brain, "m.json")
+        with open(path, "w") as fh:
+            json.dump({"mutants": [mutant("slow_30s", "return a + b", "return a * b + 0", ["test_hang.py"])]}, fh)
+        out, start = io.StringIO(), time.monotonic()
+        with contextlib.redirect_stdout(out):
+            mutate.main(["--brain", self.brain, "--timeout", "120", "--factor", "5", "--floor", "3", path])
+        self.assertEqual(json.loads(out.getvalue())["outcome"], "timeout")
+        self.assertLess(time.monotonic() - start, 30)
+
+    def test_limits(self):
+        self.assertEqual(mutate.limits([0.1, 4.0, 50.0], 120.0, 5.0, 2.0), [2.0, 20.0, 120.0])
+        self.assertEqual(mutate.limits([1.0], 120.0, 3.0, 0.0), [3.0])
+        self.assertEqual(mutate.limits([], 120.0, 5.0, 60.0), [])
+
+    def test_bad_limits_are_refused(self):
+        for flag in (["--factor", "0"], ["--timeout", "-1"], ["--floor", "-1"]):
+            with self.subTest(flag=flag), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    mutate.main(["--brain", self.brain, *flag])
+                self.assertEqual(raised.exception.code, 2)
 
     def test_malformed_files(self):
         good = mutant("k", "return a + b", "return a - b")
