@@ -590,12 +590,14 @@ class D7(StateBase):
 
 # D8: the live drill fixtures, yaz's DRILL_FIXTURES secret (tohum/26f). Each patch turns pkg/a.js red for the
 # sentinel (SENTINEL_RED); RD_LINT also adds a ``var`` line, so the lint after rises over the plant cycle's ratchet
-# base; RD_BUILD is the set's build break, the same red, which stage 0's D7 can only call a test regression (26f asks
-# every cause once: the chains below plant RD_TEST and RD_LINT).
+# base; RD_BUILD's line does not parse (PARSE_ERROR: test_kos's lint reports a fatal message), so the watching cycle
+# has no base run and D7 reverts it as a build break (``loop.watch.base_build``). 26f asks every cause once.
 DRILL_PATCHES = {RD_TEST: RED_AT_HEAD,
                  RD_LINT: diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // SENTINEL_RED", "var z = 2;"]),
-                 RD_BUILD: diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // SENTINEL_RED BUILD"])}
+                 RD_BUILD: diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // SENTINEL_RED PARSE_ERROR"])}
 DRILL_CAUSES = {RD_TEST: "test_regression", RD_LINT: "lint_regression", RD_BUILD: "build_break"}
+# A catalog that names RD_TEST's and RD_BUILD's causes the other way round: what the loop gives is not the key's.
+SWAPPED_CAUSES = dict(DRILL_CAUSES, **{RD_TEST: "build_break", RD_BUILD: "test_regression"})
 
 
 def drill_catalog(causes: dict[str, str], patches: dict[str, bytes] | None = None) -> dict:
@@ -725,7 +727,7 @@ class D8(StateBase):
         return out, key
 
     def test_each_planted_cause_is_reverted_with_the_keys_cause_and_judged_pass(self):
-        for instance_id in (RD_LINT, RD_TEST):
+        for instance_id in (RD_LINT, RD_TEST, RD_BUILD):
             with self.subTest(instance_id):
                 self.setUp()
                 out, key = self.chain(instance_id, DRILL_CAUSES)
@@ -744,9 +746,9 @@ class D8(StateBase):
                 self.assertEqual(json.loads(printed.getvalue()), {"verdict": "PASS", "reasons": []})
 
     def test_a_catalog_cause_the_loop_does_not_give_is_judged_fail(self):
-        """The fixtures say RD_BUILD's planted merge is a build break; the loop reverts it as a test regression
-        (stage 0's D7): the judge's cause_mismatch makes the job red after its writes."""
-        out, key = self.chain(RD_BUILD, DRILL_CAUSES)
+        """The fixtures say RD_TEST's planted merge (a red test, code that parses) is a build break; the loop
+        reverts it as a test regression: the judge's cause_mismatch makes the job red after its writes."""
+        out, key = self.chain(RD_TEST, SWAPPED_CAUSES)
         self.assertEqual((out["ok"], out["reason"], out["drill"]["judged"]["verdict"],
                           out["drill"]["judged"]["reasons"]), (False, "drill_fail", "FAIL", ["cause_mismatch"]))
         self.assertIn("written", out)
@@ -754,14 +756,16 @@ class D8(StateBase):
     def test_the_pass_row_judge_reads_the_drills_the_loop_wrote(self):
         """``harness.pass_row`` on the state these cycles wrote: one root and one status row per cycle, the drill
         judged as the loop judged it; the causes not planted here are unshown."""
-        for planted, geri in ((RD_TEST, ["toy:cause_unshown:build_break", "toy:cause_unshown:lint_regression"]),
-                              (RD_BUILD, ["toy:drill_fail:%s:cause_mismatch" % RD_BUILD,
-                                          "toy:cause_unshown:test_regression", "toy:cause_unshown:build_break",
-                                          "toy:cause_unshown:lint_regression"])):
-            with self.subTest(planted=planted):
+        for planted, causes, geri in (
+                (RD_TEST, DRILL_CAUSES, ["toy:cause_unshown:build_break", "toy:cause_unshown:lint_regression"]),
+                (RD_BUILD, DRILL_CAUSES, ["toy:cause_unshown:test_regression", "toy:cause_unshown:lint_regression"]),
+                (RD_TEST, SWAPPED_CAUSES, ["toy:drill_fail:%s:cause_mismatch" % RD_TEST,
+                                           "toy:cause_unshown:test_regression", "toy:cause_unshown:build_break",
+                                           "toy:cause_unshown:lint_regression"])):
+            with self.subTest(planted=planted, causes=causes):
                 self.setUp()
-                self.chain(planted, DRILL_CAUSES)
-                doc = drill_catalog(DRILL_CAUSES)
+                self.chain(planted, causes)
+                doc = drill_catalog(causes)
                 state = {"ledger": self.state_file(B.STATE_LEDGER), "roots": self.state_file(B.STATE_ROOTS)}
                 counter = YW.transfer()
                 got = PR.judge(state, state, {}, {}, {"seed": seed_for(doc, planted, "9"), "catalog": doc},

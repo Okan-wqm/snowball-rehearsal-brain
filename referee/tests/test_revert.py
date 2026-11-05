@@ -9,8 +9,9 @@
   first parent's tree, on a branch, with a pull request carrying the cause; after the gate's check and merge,
   ``brain/integration`` has the first parent's tree again; green, flaky and too few runs send nothing; the red
   tests are the sentinel's, not the caller's; unusable facts and a merge that is not the head write nothing;
-- ``assess``: the same verdict and cause with nothing sent; ``lint`` null (the totals unreadable) is ``unknown``
-  unless the build broke, the other facts still checked; the command line refuses a null ``lint``;
+- ``assess``: the same verdict and cause with nothing sent; ``build_ok`` null (the build unread) is ``unknown``
+  whatever the lint, with the other fields' shapes still checked; ``lint`` null (the totals unreadable) is ``unknown``
+  unless the build broke, the other facts still checked; the command line refuses a null ``lint`` or ``build_ok``;
 - the command line's outputs and exits 0/2.
 """
 
@@ -227,6 +228,19 @@ class Assess(unittest.TestCase):
         self.assertEqual(R.assess([RED_A] * 4, dict(FACTS, lint=None))["cause"], "unknown")
         self.assertEqual(R.assess([RED_A] * 4, dict(FACTS, lint=None, build_ok=False))["cause"], "build_break")
 
+    def test_an_unknown_build_is_unknown_whatever_the_lint(self):
+        rising = {"eslint": {"before": 0, "after": 9}}
+        for lint in (FACTS["lint"], rising, None):
+            with self.subTest(lint=lint):
+                self.assertEqual(R.assess([RED_A] * 4, dict(FACTS, build_ok=None, lint=lint))["cause"], "unknown")
+        self.assertEqual(R.assess([GREEN_RUN], dict(FACTS, build_ok=None))["cause"], None)  # not red: no cause
+
+    def test_an_unknown_build_keeps_the_other_shapes(self):
+        for facts in (dict(FACTS, build_ok=None, impact=[""]), dict(FACTS, build_ok=None, lint={"x": {}}),
+                      {"impact": ["a"], "build_ok": None}, {"impact": ["a"], "build_ok": None, "lint": None, "x": 1}):
+            with self.subTest(facts=facts), self.assertRaises(R.Unusable):
+                R.assess([RED_A] * 4, facts)
+
     def test_unreadable_lint_keeps_the_other_shapes(self):
         for facts in (dict(FACTS, lint=None, build_ok="no"), dict(FACTS, lint=None, impact=[""]),
                       {"impact": ["a"], "lint": None}):
@@ -235,6 +249,8 @@ class Assess(unittest.TestCase):
 
     def test_the_command_line_takes_no_null_lint(self):
         code, out, _ = cli(json.dumps(dict(req(red=["a"], impact=["a"]), lint=None)).encode(), "cause")
+        self.assertEqual((code, out), (2, {"cause": None}))
+        code, out, _ = cli(json.dumps(dict(req(red=["a"], impact=["a"]), build_ok=None)).encode(), "cause")
         self.assertEqual((code, out), (2, {"cause": None}))
 
 

@@ -12,7 +12,8 @@ read by the gate (MF8) as they are written; with the fake runner (``fake_docker.
   each run contained with the red control; green after one run, red and flaky after four; ``sentinel.json`` holds
   every run used and ``gate.sentinel decide`` (MF12's own command) gives the same verdict on them; no verdict and
   no file for a base that did not stage, a run that tells nothing (a green red control, a time limit; the runs stop
-  there) or runs of the wrong shape; a base lint that fails does not stop it;
+  there) or runs of the wrong shape; a base lint that fails does not stop it; what the base's lint says of the head's
+  build, read by ``loop.watch.base_build`` (a parse error ESLint reports is no build);
 - the TAP reader on ``node --test``'s real output (the toy's captured run) and on its edge cases;
 - the command line: exit 0 / 1 / 2, never a traceback.
 """
@@ -34,6 +35,7 @@ sys.path.insert(0, REFEREE)
 from runner import contained as C  # noqa: E402
 from runner import kos as K  # noqa: E402
 from runner import lint_record as R  # noqa: E402
+from loop import watch as WT  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 
@@ -41,7 +43,8 @@ IMAGE = "node:20.11.1-bookworm-slim@sha256:" + "ab" * 32
 
 # ESLint's --format json for two files: no-var (fixable) on every line starting "var ", no-eval (no fix) on every
 # line holding "eval(". A file holding NOISE adds one violation of a random rule id per run (a non-deterministic tool
-# whose count does not change).
+# whose count does not change). A file with a line holding PARSE_ERROR is one ESLint cannot parse: its one message is
+# fatal, without a rule id (ESLint's parse error), and the run exits 1.
 LINT = r'''import json, os, sys
 out = []
 for name in ("pkg/a.js", "pkg/b.js"):
@@ -56,6 +59,10 @@ for name in ("pkg/a.js", "pkg/b.js"):
         off += len(line) + 1
     if "NOISE" in src:
         msgs.append({"ruleId": "noise-" + os.urandom(8).hex(), "severity": 2, "line": 1, "column": 1})
+    if "PARSE_ERROR" in src:
+        line = src[:src.index("PARSE_ERROR")].count("\n") + 1
+        msgs = [{"ruleId": None, "fatal": True, "severity": 2, "message": "Parsing error: Unexpected token",
+                 "line": line, "column": 1}]
     out.append({"filePath": "/work/" + name, "messages": msgs, "suppressedMessages": []})
 if "LINTCRASH" in open("pkg/a.js").read():
     sys.exit(2)
@@ -425,6 +432,30 @@ class Sentinel(Base):
         index = self.watch("LINTCRASH\n")
         self.assertEqual(index["base"]["verdict"], "refused")
         self.assertEqual(index["sentinel"]["verdict"], "green")
+
+    def test_the_heads_lint_tells_whether_it_built(self):
+        """``loop.watch.base_build`` on what this module writes: a head ESLint cannot parse is refused with
+        ``lint_output:fatal:<path>`` and is no build; a head that lints is one; a crashing lint tells nothing; a lint
+        whose red control passed tells nothing even with the fatal reason."""
+        index = self.watch("var a = 1; // BROKEN PARSE_ERROR\n")
+        self.assertEqual(index["base"], {"verdict": "refused", "reasons": ["lint_output:fatal:pkg/a.js"]})
+        self.assertEqual((index["sentinel"]["verdict"], self.file()["red"]), ("red", ["a is not broken"]))
+        self.assertIs(WT.base_build(self.out), False)
+        for a_js, want in (("var a = 1; // BROKEN\n", True), ("var a = 1; // BROKEN LINTCRASH\n", None)):
+            with self.subTest(a_js=a_js):
+                shutil.rmtree(self.out)
+                self.watch(a_js)
+                self.assertIs(WT.base_build(self.out), want)
+        shutil.rmtree(self.out)
+        docker = FakeDocker()
+
+        def runner(argv, env, timeout):  # the lint runs' red controls pass
+            if len(docker.calls) < 6 and "pkg/red.py" in argv:
+                argv = argv[:-1] + ["pkg/green.py"]
+            return docker(argv, env, timeout)
+        index = self.watch("var a = 1; // PARSE_ERROR\n", runner=runner)
+        self.assertEqual(index["base"]["reasons"], ["red_control_green", "lint_output:fatal:pkg/a.js"])
+        self.assertIsNone(WT.base_build(self.out))
 
     def test_a_green_red_control_judges_no_test(self):
         # calls 1-6: the base's lint runs and their red controls; call 7 is the sentinel's red control

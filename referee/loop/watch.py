@@ -5,7 +5,7 @@ Rules: asama-0/01 D7 (the sentinel runs in the next cycle's ``koş`` and ``yaz``
 ``cause``), tohum/07 (on red, the 3/3 rule, then ``gate.revert``; a revert is written with a ``cause``), tohum/01b
 (the gate reads results by artifact and hash), tohum/29j (``cause``'s request: the verified red tests, the impact
 set declared at the merge, "in stage 0 the unit's service-free tests", ``build_ok``, and each tool's lint total at
-the merge's first parent and at the head; the seed names no producer of ``build_ok`` and of the lint totals).
+the merge's first parent and at the head; their producers are the Founder's code, the seed's answer to seed-044).
 
 **The verdict** (``read(results, watch)``). ``watch`` is the merge whose sentinel ``kos`` ran, chosen from the state
 by the rule ``kos`` uses (``loop.job._watched``: the one unfinished merge, at ``brain/integration``'s head), or
@@ -29,15 +29,34 @@ counts}`` or ``None`` when there is no such file, its hash or records do not hol
 It is the lint at ``brain/integration``'s head: D6 records it as the ``ratchet_base`` of a cycle that merges (the
 merge's lint before) and D7 reads it as a red's lint after.
 
-**The facts of a red** (``facts(sentinel, ledger, after)``), each rule exact and stated, since no page names them:
+**The head's build** (``base_build(results)``). ``build_ok`` is whether the code at the red head built and loaded
+(tohum/29j); the seed leaves its producer to this code (its answer to seed-044). A stage 0 unit has no build command
+(an npm unit runs its sources as they are), so the one compile step it has is its lint tool parsing every file it
+lints with the unit's own parser configuration (ESLint, ``runner.lint_record``): a file the tool cannot parse is
+reported as a fatal message, which ``runner.lint_record`` refuses as ``fatal:<path>`` and ``kos`` lists as the base's
+``lint_output:fatal:<path>``. ``kos`` lints the head (``brain/integration``'s, the watched merge) in the cycle that
+runs its sentinel. From ``index.json``'s ``base`` (``{verdict, reasons}``):
+
+- ``false``: some reason is ``lint_output:fatal:<path>`` and none is ``red_control_green`` (a sandbox a known bad
+  command passed judges nothing), and the base run is not verified;
+- ``true``: the base's ``reasons`` are ``[]`` and ``base_lint`` verifies its base run: each of the three lint runs
+  parsed every file it read;
+- ``None`` otherwise: the lint told nothing about parsing (a run over a limit, a failing or crashing tool, output that
+  does not convert for another reason, a base that did not stage, an index without ``base``).
+
+What it does not judge, stated: a file the lint tool does not read (outside its configuration or ignored), a module
+that parses but does not load (a missing import, a throw at load time: that shows as failing tests of the run, so
+``test_regression``), and whether the merge's first parent parsed: at a merge of the gate it did (its cycle merged
+only with a base run, which exists only when every file parsed), at a planted merge (D8) it is not checked.
+
+**The facts of a red** (``facts(sentinel, ledger, after, build_ok)``), each rule exact and stated, since no page names
+them:
 
 - ``impact``: every test id the sentinel's runs report, sorted. Stage 0's impact set is the unit's whole
   service-free test set (asama-0/08 item 6), which is what ``affected_test_cmd`` runs; so a red test is always in
   it and ``impact_miss`` is not reachable from the live path at stage 0;
-- ``build_ok``: ``true``. A stage 0 recipe has no build command: the head's build is ``kos``'s staging (the inputs,
-  the dependencies, the install scripts), and ``kos`` gives a sentinel verdict only when the head staged. A module
-  that does not load shows as a failing test of the run (its TAP line), so it is judged ``test_regression``, not
-  ``build_break``: ``build_break`` is not reachable from the live path at stage 0;
+- ``build_ok``: ``base_build``'s answer (above), given by the caller; ``None`` makes ``gate.revert.assess``'s cause
+  ``unknown`` (no rule after ``build_break`` can be stated when the build is not known);
 - ``lint``: per tool in either, ``{before, after}`` (a tool absent from one side counts 0, ``gate.check``'s rule):
   ``before`` the ratchet base of the merge's cycle (``ledger.serial.lint_before`` of ``brain/state``'s ledger),
   ``after`` ``base_lint``'s counts; ``None`` when either is missing (``gate.revert.assess``'s rule then).
@@ -59,6 +78,7 @@ from ledger import serial
 from runner import kos
 
 DOC_KEYS = {"merge_sha", "runs", "verdict", "red", "flaky"}
+FATAL = "lint_output:fatal:"  # kos's prefix of runner.lint_record's fatal:<path>
 
 
 class Refused(Exception):
@@ -133,7 +153,21 @@ def base_lint(results: str) -> dict | None:
     return None if got["reasons"] else {"base_run_sha256": sha, "counts": got["counts"]}
 
 
-def facts(sentinel: dict, ledger: bytes, after: dict | None) -> dict[str, Any]:
+def base_build(results: str) -> bool | None:
+    """Whether the head's code built (``build_ok``), from the results' base lint; see the module docstring."""
+    base = _index(results).get("base")
+    reasons = base.get("reasons") if isinstance(base, dict) else None
+    if not (isinstance(reasons, list) and all(isinstance(r, str) for r in reasons)):
+        return None
+    verified = base_lint(results) is not None
+    if any(r.startswith(FATAL) for r in reasons) and "red_control_green" not in reasons and not verified:
+        return False
+    if not reasons and verified:
+        return True
+    return None
+
+
+def facts(sentinel: dict, ledger: bytes, after: dict | None, build_ok: bool | None) -> dict[str, Any]:
     """``{impact, build_ok, lint}`` of a red ``sentinel`` (``read``'s answer); see the module docstring.
     ``ledger.serial.Unusable`` for a ledger it cannot read."""
     impact = sorted({r["id"] for run in sentinel["runs"] for r in run["results"]})
@@ -142,4 +176,4 @@ def facts(sentinel: dict, ledger: bytes, after: dict | None) -> dict[str, Any]:
     if before is not None and after is not None:
         lint = {tool: {"before": before.get(tool, 0), "after": after["counts"].get(tool, 0)}
                 for tool in sorted(set(before) | set(after["counts"]))}
-    return {"impact": impact, "build_ok": True, "lint": lint}
+    return {"impact": impact, "build_ok": build_ok, "lint": lint}

@@ -17,14 +17,14 @@ exit request unseen (f581).
 
 **The document** (``render``): the register (``render_register``: each 10a row, each tag and its place) and one
 section per rehearsal case (``render_case``: the run (B) stops at in ``tests/test_rehearsal.py``'s in-process world,
-why it stops, the toy's gate reasons per judged condition at that run, whether the copy was served, and the open
-reports the stop waits for, with their state read from ``reports/``, or none: a stop that is the case's own input, an
-operator's secret not given or a set the seed's producer refuses). ``tests/test_exit_b.py`` checks the register
+why it stops, the toy's gate reasons per judged condition at that run, or the run it ends at, the one whose ``yaz``
+judged the toy's PASS row ``PASS``, with that judgement's reasons per condition; whether the copy was served, and the
+open reports the stop waits for, with their state read from ``reports/``, or none: an end, a stop that is the case's
+own input, an operator's secret not given or a set the seed's producer refuses). ``tests/test_exit_b.py`` checks the register
 section current and the audit empty; ``tests/test_rehearsal.py`` checks each case's section against the records it
 asserts; ``python tests/test_rehearsal.py --doc`` writes the file. Out of scope, stated: the rehearsal is a fake
 world (no real runner, git, GitHub, Rekor or model; see that test's docstring), so "no reason" in a case's table means
-the toy's state in that world gave the gate no reason, not that the live loop meets the condition; the copy's half
-is judged only by ``harness.pass_row.judge``, which no case reaches.
+the toy's state in that world gave the gate no reason, not that the live loop meets the condition.
 
 Command line, from ``referee/``: ``python -m status.exit_b check`` prints ``{"ok", "problems"}`` (exit 0 when the
 audit holds, 1 otherwise); ``python -m status.exit_b register`` prints the register section.
@@ -118,23 +118,30 @@ def _report_state(report_id: str, reports: dict[str, dict]) -> str:
 def render_case(name: str, title: str, records: list[dict], waits: list[str], reports: dict[str, dict],
                 toy: str = "t1", copy: str = "c1") -> str:
     """One rehearsal case's section from its records (``tests/test_rehearsal.py``'s ``step`` of each run, the last
-    being the stall)."""
+    being the stall, or the end: the run whose ``yaz`` judged the toy's PASS row ``PASS``)."""
     last, n = records[-1], len(records)
     stop = last.get("stopped")
-    why = ("`%s` stopped on `%s` (target `%s`)" % (stop["job"], stop["reason"], stop["target"]) if stop
-           else "run %d repeats run %d" % (n, n - 1))
-    gate = (last.get(toy) or {}).get("gate")
-    conds = gate["conditions"] if gate else {}
     copy_state = "waiting (never served)" if copy in last.get("waiting", []) else "served"
-    lines = [CASE_MARK % name, "### %s" % title, "",
-             "(B) stops at run %d: %s. The toy's gate: %s. The copy: %s." % (
-                 n, why, gate["verdict"] if gate else "not judged in that run", copy_state), "",
-             "| judged condition | the toy's gate reasons at the stop |", "|---|---|"]
+    judged = (last.get(toy) or {}).get("pass")
+    ended = not stop and bool(judged) and judged.get("verdict") == "PASS"
+    if ended:
+        conds = judged["conditions"]
+        head = "(B) ends at run %d: `yaz` on `%s` judged its PASS row `PASS`. The copy: %s." % (n, toy, copy_state)
+        column = "the PASS judgement's reasons at the end"
+    else:
+        why = ("`%s` stopped on `%s` (target `%s`)" % (stop["job"], stop["reason"], stop["target"]) if stop
+               else "run %d repeats run %d" % (n, n - 1))
+        gate = (last.get(toy) or {}).get("gate")
+        conds = gate["conditions"] if gate else {}
+        head = "(B) stops at run %d: %s. The toy's gate: %s. The copy: %s." % (
+            n, why, gate["verdict"] if gate else "not judged in that run", copy_state)
+        column = "the toy's gate reasons at the stop"
+    lines = [CASE_MARK % name, "### %s" % title, "", head, "", "| judged condition | %s |" % column, "|---|---|"]
     for key in PR.CONDITIONS:
         reasons = conds.get(key, [])
         lines.append("| `%s` | %s |" % (key, ", ".join("`%s`" % r for r in reasons) or "no reason"))
-    lines += ["", "Waits for: " + (", ".join("`%s` (%s)" % (r, _report_state(r, reports)) for r in waits)
-                                   or "no report (the stop is the case's own input)"), ""]
+    alone = "nothing (the case ends)" if ended else "no report (the stop is the case's own input)"
+    lines += ["", "Waits for: " + (", ".join("`%s` (%s)" % (r, _report_state(r, reports)) for r in waits) or alone), ""]
     return "\n".join(lines) + "\n"
 
 

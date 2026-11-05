@@ -8,9 +8,14 @@ facts of a red (asama-0/01 D7, tohum/07, tohum/29j).
   verified file's hash;
 - ``base_lint``: the base run's counts when its hash is the index's and its three records one; ``None`` for a
   missing file, another hash, three records that differ, a record ``gate.check`` refuses, no hash in the index;
-- ``facts``: the impact set is every id the runs report; ``build_ok`` is true; lint per tool in either side, an
-  absent tool counting 0; ``None`` lint when the merge's cycle has no ratchet base or the base lint is unreadable;
-  ``gate.revert.assess`` then gives ``test_regression``, ``lint_regression`` or ``unknown``.
+- ``base_build``: ``false`` for a base refused with a ``lint_output:fatal:`` reason (ESLint could not parse a file),
+  unless a red control passed or the base run is verified anyway; ``true`` for no reason and a verified base run;
+  ``None`` for any other reason, a missing or malformed ``base``, no reason without a verified run (bound to what
+  ``runner.kos`` really writes in ``test_kos.Sentinel``);
+- ``facts``: the impact set is every id the runs report; ``build_ok`` is the one given; lint per tool in either side,
+  an absent tool counting 0; ``None`` lint when the merge's cycle has no ratchet base or the base lint is unreadable;
+  ``gate.revert.assess`` then gives ``build_break``, ``test_regression``, ``lint_regression`` or ``unknown``
+  (``unknown`` whenever ``build_ok`` is ``None``).
 """
 
 from __future__ import annotations
@@ -58,10 +63,13 @@ class Results(unittest.TestCase):
         with open(os.path.join(self.dir, name), "wb") as fh:
             fh.write(data)
 
-    def results(self, runs=None, entry=None, doc=None, base=None, base_sha=None) -> str:
-        """An index, and a sentinel file for ``runs`` (its verdict MF12's) unless ``doc`` is given."""
+    def results(self, runs=None, entry=None, doc=None, base=None, base_sha=None, verdict=None) -> str:
+        """An index, and a sentinel file for ``runs`` (its verdict MF12's) unless ``doc`` is given; ``verdict`` the
+        index's ``base``."""
         index = {"base_run_sha256": base_sha if base_sha is not None else (sha(base) if base else None),
                  "candidates": {}, "sentinel": None}
+        if verdict is not None:
+            index["base"] = verdict
         if runs is not None or doc is not None:
             if doc is None:
                 got = S.decide(runs)
@@ -164,6 +172,45 @@ class BaseLint(Results):
         self.assertIsNone(WT.base_lint(self.dir))
 
 
+FATAL_A = "lint_output:fatal:pkg/a.js"
+
+
+class BaseBuild(Results):
+    BASE = (record("eslint", 2) + b"\n") * 3
+
+    def build(self, reasons, base=None) -> bool | None:
+        verdict = {"verdict": "refused" if reasons else "verified", "reasons": reasons}
+        return WT.base_build(self.results(base=base, verdict=verdict))
+
+    def test_a_file_the_lint_could_not_parse_is_a_build_break(self):
+        self.assertIs(self.build([FATAL_A]), False)
+        self.assertIs(self.build(["lint_output:fatal:pkg/b.js", FATAL_A, "lint_output:message_unusable:pkg/c.js"]),
+                      False)
+
+    def test_a_verified_base_run_is_a_build(self):
+        self.assertIs(self.build([], self.BASE), True)
+
+    def test_none_when_the_lint_told_nothing_about_parsing(self):
+        for reasons, base in (([], None),  # no reason, but no verified base run
+                              (["lint_failed:1"], None), (["limit_hit:kos_wall_s"], None),
+                              (["lint_output:not_eslint_json"], None), (["services_not_empty"], None),
+                              (["red_control_green", FATAL_A], None),  # a sandbox a bad command passed
+                              ([FATAL_A], self.BASE),  # the index contradicts its own base run
+                              (["red_control_green"], self.BASE)):
+            with self.subTest(reasons=reasons, base=base is not None):
+                shutil.rmtree(self.dir)
+                os.makedirs(self.dir)
+                self.assertIsNone(self.build(reasons, base))
+
+    def test_none_without_a_readable_base(self):
+        for verdict in ({}, {"verdict": "refused"}, {"reasons": FATAL_A}, {"reasons": [FATAL_A, 1]}, [FATAL_A]):
+            with self.subTest(verdict=verdict):
+                self.assertIsNone(WT.base_build(self.results(verdict=verdict)))
+        self.assertIsNone(WT.base_build(self.results()))  # no base in the index
+        self.put(K.INDEX, b"not json")
+        self.assertIsNone(WT.base_build(self.dir))
+
+
 def cycle(sha_: str, counts: dict | None) -> list[dict]:
     rows = [row("s", "events", "cycle_start", {"cycle_id": "8"})]
     if counts is not None:
@@ -177,7 +224,7 @@ class Facts(unittest.TestCase):
 
     def test_impact_build_and_lint(self):
         got = WT.facts(self.red([FAIL, EXTRA, FAIL, FAIL]), ledger_with(cycle(M, {"eslint": 3, "old": 1})),
-                       {"base_run_sha256": "e" * 64, "counts": {"eslint": 3, "new": 2}})
+                       {"base_run_sha256": "e" * 64, "counts": {"eslint": 3, "new": 2}}, True)
         self.assertEqual(got, {"impact": ["a", "b", "c"], "build_ok": True,
                                "lint": {"eslint": {"before": 3, "after": 3}, "new": {"before": 0, "after": 2},
                                         "old": {"before": 1, "after": 0}}})
@@ -185,13 +232,24 @@ class Facts(unittest.TestCase):
         same = dict(got, lint={"eslint": {"before": 3, "after": 3}})
         self.assertEqual(R.assess([FAIL] * 4, same)["cause"], "test_regression")
 
+    def test_build_ok_is_the_one_given(self):
+        ledger = ledger_with(cycle(M, {"eslint": 3}))
+        after = {"base_run_sha256": "e" * 64, "counts": {"eslint": 3}}
+        for build_ok, cause in ((False, "build_break"), (True, "test_regression"), (None, "unknown")):
+            with self.subTest(build_ok=build_ok):
+                got = WT.facts(self.red(), ledger, after, build_ok)
+                self.assertIs(got["build_ok"], build_ok)
+                self.assertEqual(R.assess([FAIL] * 4, got)["cause"], cause)
+        # a head that does not parse has no base run (kos writes none), so no lint after: still a build break
+        self.assertEqual(R.assess([FAIL] * 4, WT.facts(self.red(), ledger, None, False))["cause"], "build_break")
+
     def test_lint_none_without_before_or_after(self):
         after = {"base_run_sha256": "e" * 64, "counts": {"eslint": 3}}
         for ledger, after_ in ((ledger_with(cycle(M, None)), after), (ledger_with(cycle(M, {"eslint": 3})), None),
                                (ledger_with([row("s", "events", "cycle_start", {"cycle_id": "8"}),
                                              plant("p", "i1", M)]), after)):
             with self.subTest(after=after_):
-                got = WT.facts(self.red(), ledger, after_)
+                got = WT.facts(self.red(), ledger, after_, True)
                 self.assertIsNone(got["lint"])
                 self.assertEqual(R.assess([FAIL] * 4, got)["cause"], "unknown")
 

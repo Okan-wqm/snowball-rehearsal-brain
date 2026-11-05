@@ -181,6 +181,107 @@
    "tests": [
     "test_loop_write.py"
    ]
+  },
+  {
+   "id": "base_build_fatal_ignored",
+   "file": "loop/watch.py",
+   "old": "    if any(r.startswith(FATAL) for r in reasons) and",
+   "new": "    if False and",
+   "tests": [
+    "test_watch.py",
+    "test_kos.Sentinel.test_the_heads_lint_tells_whether_it_built"
+   ]
+  },
+  {
+   "id": "base_build_red_control_ignored",
+   "file": "loop/watch.py",
+   "old": " and \"red_control_green\" not in reasons and not verified:",
+   "new": " and not verified:",
+   "tests": [
+    "test_watch.py",
+    "test_kos.Sentinel.test_the_heads_lint_tells_whether_it_built"
+   ]
+  },
+  {
+   "id": "base_build_fatal_beside_a_verified_run",
+   "file": "loop/watch.py",
+   "old": " and \"red_control_green\" not in reasons and not verified:",
+   "new": " and \"red_control_green\" not in reasons:",
+   "tests": [
+    "test_watch.py"
+   ]
+  },
+  {
+   "id": "base_build_true_without_a_verified_run",
+   "file": "loop/watch.py",
+   "old": "    if not reasons and verified:",
+   "new": "    if not reasons:",
+   "tests": [
+    "test_watch.py"
+   ]
+  },
+  {
+   "id": "base_build_true_on_a_verified_run_alone",
+   "file": "loop/watch.py",
+   "old": "    if not reasons and verified:",
+   "new": "    if verified:",
+   "tests": [
+    "test_watch.py"
+   ]
+  },
+  {
+   "id": "base_build_unknown_is_a_build",
+   "file": "loop/watch.py",
+   "old": "            return None\n    verified = base_lint(results) is not None",
+   "new": "            return True\n    verified = base_lint(results) is not None",
+   "tests": [
+    "test_watch.py"
+   ]
+  },
+  {
+   "id": "facts_build_ok_constant",
+   "file": "loop/watch.py",
+   "old": "\"build_ok\": build_ok, \"lint\": lint}",
+   "new": "\"build_ok\": True, \"lint\": lint}",
+   "tests": [
+    "test_watch.py"
+   ]
+  },
+  {
+   "id": "job_build_not_read",
+   "file": "loop/job.py",
+   "old": "lint, WT.base_build(results))",
+   "new": "lint, True)",
+   "tests": [
+    "test_loop_write.D8.test_each_planted_cause_is_reverted_with_the_keys_cause_and_judged_pass"
+   ]
+  },
+  {
+   "id": "assess_unknown_build_not_unknown",
+   "file": "gate/revert.py",
+   "old": "    if \"build_ok\" in facts and facts[\"build_ok\"] is None:",
+   "new": "    if False:",
+   "tests": [
+    "test_revert.py"
+   ]
+  },
+  {
+   "id": "assess_unknown_build_shape_unchecked",
+   "file": "gate/revert.py",
+   "old": "            checked[\"lint\"] = {}\n        cause(checked)\n",
+   "new": "            checked[\"lint\"] = {}\n",
+   "tests": [
+    "test_revert.py"
+   ]
+  },
+  {
+   "id": "assess_unknown_build_lint_judged",
+   "file": "gate/revert.py",
+   "old": "        cause(checked)\n        return dict(out, cause=\"unknown\")",
+   "new": "        return dict(out, cause=cause(dict(checked, build_ok=True)))",
+   "tests": [
+    "test_revert.py"
+   ]
   }
  ]
 }

@@ -41,6 +41,27 @@
    "old": "    \"#prompt\": \"a prompt refused",
    "new": "    \"#prompt-x\": \"a prompt refused",
    "tests": ["test_exit_b.py"]
+  },
+  {
+   "id": "case_any_judgement_ends",
+   "file": "status/exit_b.py",
+   "old": "ended = not stop and bool(judged) and judged.get(\"verdict\") == \"PASS\"",
+   "new": "ended = bool(judged)",
+   "tests": ["test_exit_b.py"]
+  },
+  {
+   "id": "case_a_stopped_job_ends",
+   "file": "status/exit_b.py",
+   "old": "ended = not stop and bool(judged)",
+   "new": "ended = bool(judged)",
+   "tests": ["test_exit_b.py"]
+  },
+  {
+   "id": "case_end_waits_for_a_report",
+   "file": "status/exit_b.py",
+   "old": "alone = \"nothing (the case ends)\" if ended else",
+   "new": "alone =",
+   "tests": ["test_exit_b.py"]
   }
  ]
 }

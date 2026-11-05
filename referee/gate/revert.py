@@ -29,7 +29,10 @@ could disagree. ``facts`` is ``{impact, build_ok, lint}``, checked as the reques
 be ``null``: the totals could not be read (the loop's base lint gave no file, or the merge's cycle recorded no
 ratchet base). Then rule 1 still holds when ``build_ok`` is false, and otherwise the cause is ``unknown``: rule 2
 comes before rule 3, so without the totals neither ``lint_regression`` nor a later rule can be stated
-mechanically. The command line's ``cause`` takes no ``null`` (29j's request has the totals).
+mechanically. ``build_ok`` may be ``null`` too: whether the head built could not be read (``loop.watch.base_build``).
+Then no rule can be stated (rule 1 is the question, and every later rule holds only when it does not), so the
+cause is ``unknown``, whatever ``lint`` is. The command line's ``cause`` takes no ``null`` (29j's request has the
+facts).
 
 **The revert** (``revert_red``). ``assess`` first. Not red (``green``, ``flaky``, ``rerun``): nothing is sent and
 ``reverted`` is false. Red: the cause is computed first (an unusable request sends nothing), then ``target.write``'s
@@ -40,8 +43,8 @@ mechanically. The command line's ``cause`` takes no ``null`` (29j's request has 
 Out of scope here, stated: merging that pull request (it passes the gate like any candidate: the gate's
 check, then ``Writer.merge``; ``brain/integration`` takes no direct push, tohum/01b; the loop's is
 ``target.land.revert``), the ledger row that records the revert and its cause (``ledger.events.revert``, written
-by ``loop.write_cycle``), and who produces ``build_ok`` and the lint totals (the spec does not name them yet,
-tohum/29j; the loop's producer, with its stated rules, is ``loop.watch.facts``).
+by ``loop.write_cycle``), and who produces ``build_ok`` and the lint totals (the Founder's code, tohum/29j; the
+loop's producers, with their stated rules, are ``loop.watch.base_build`` and ``loop.watch.facts``).
 
 Command line (tohum/29j), run from ``referee/``, one JSON line on stdout, the cause of an error on stderr::
 
@@ -119,6 +122,12 @@ def assess(runs: Any, facts: Any) -> dict:
     if not isinstance(facts, dict) or "red_tests" in facts:
         raise Unusable("facts must be {impact, build_ok, lint}; red_tests is the sentinel's red")
     request = dict(facts, red_tests=verdict["red"])
+    if "build_ok" in facts and facts["build_ok"] is None:
+        checked = dict(request, build_ok=True)  # the shape checked as the request's; no rule can be judged
+        if "lint" in checked and checked["lint"] is None:
+            checked["lint"] = {}
+        cause(checked)
+        return dict(out, cause="unknown")
     if "lint" in facts and facts["lint"] is None:
         found = cause(dict(request, lint={}))  # the shape checked as the request's; the lint rule cannot be judged
         return dict(out, cause="build_break" if found == "build_break" else "unknown")

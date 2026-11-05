@@ -17,8 +17,8 @@
   {
    "id": "stage_0_build_never_ok",
    "file": "loop/watch.py",
-   "old": "return {\"impact\": impact, \"build_ok\": True, \"lint\": lint}",
-   "new": "return {\"impact\": impact, \"build_ok\": False, \"lint\": lint}",
+   "old": "\"build_ok\": build_ok, \"lint\": lint}",
+   "new": "\"build_ok\": False, \"lint\": lint}",
    "tests": ["test_rehearsal.py"]
   },
   {
@@ -26,6 +26,13 @@
    "file": "tests/fake_github.py",
    "old": "sha = git_store.commit({}, rec[\"tree\"], rec[\"message\"].encode(\"utf-8\"), tuple(rec[\"parents\"]))",
    "new": "sha = sha_of(rec)",
+   "tests": ["test_rehearsal.py"]
+  },
+  {
+   "id": "stage_0_build_always_ok",
+   "file": "loop/watch.py",
+   "old": "\"build_ok\": build_ok, \"lint\": lint}",
+   "new": "\"build_ok\": True, \"lint\": lint}",
    "tests": ["test_rehearsal.py"]
   }
  ]

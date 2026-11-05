@@ -130,6 +130,23 @@ class Case(unittest.TestCase):
                       "in that run. The copy: served.", got)
         self.assertIn("Waits for: `r-b` (confirmed), `r-a` (open)", got)
 
+    def test_the_end_is_the_pass_judgement(self):
+        judged = {"verdict": "PASS", "conditions": {}}
+        last = {"waiting": [], "t1": {"gate": None, "pass": judged}}
+        got = EB.render_case("c", "T", [record(), last], [], REPORTS)
+        self.assertIn("(B) ends at run 2: `yaz` on `t1` judged its PASS row `PASS`. The copy: served.", got)
+        self.assertIn("| judged condition | the PASS judgement's reasons at the end |", got)
+        self.assertEqual(got.count("| no reason |"), len(PR.CONDITIONS))
+        self.assertIn("Waits for: nothing (the case ends)", got)
+        for not_the_end in ({"verdict": "FAIL", "conditions": {"#kok": ["toy:x"]}}, {"waiting": "copy_genesis"}):
+            with self.subTest(judged=not_the_end):
+                last = {"waiting": [], "t1": {"gate": None, "pass": not_the_end}}
+                got = EB.render_case("c", "T", [record(), last], [], REPORTS)
+                self.assertIn("(B) stops at run 2: run 2 repeats run 1.", got)
+        stop = {"job": "yaz", "target": "t1", "reason": "drill_fail", "reasons": []}
+        got = EB.render_case("c", "T", [dict(record(None, stop), t1={"gate": None, "pass": judged})], [], REPORTS)
+        self.assertIn("(B) stops at run 1: `yaz` stopped on `drill_fail`", got)  # a stopped job is no end
+
     def test_a_report_not_in_reports_is_unusable(self):
         with self.assertRaises(EB.Unusable):
             EB.render_case("c", "T", [record()], ["r-z"], REPORTS)

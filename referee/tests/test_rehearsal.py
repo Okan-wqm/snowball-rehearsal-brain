@@ -19,15 +19,19 @@ the run there. The run's record (``Flow.record``) keeps per target what decides 
 and each candidate's reasons, the sentinel's verdict, the drill's action, the gate; and the copy's waiting.
 
 **The stall** is the first run whose record equals the one before it (the flow repeats itself: nothing the next run
-reads has moved but the cycle's own rows), or a job that is not ``ok``; no stall within ``MAX_RUNS`` runs fails the
-test (a drill that keeps passing never repeats a record: its phases alternate). ``Rehearsal`` asserts every run's
-record up to it, so a change that moves (B) one step, or breaks an earlier one, changes this test in the same push.
-Today (B) stalls, without the fixtures, with the gate closed on ``#geri-alma`` alone; with them, at the build-break
-drill (seed-044); with patches on the file a merged candidate changed (a set 26f's producer refuses), on every cause. Each run after the genesis also checks that D1 verified the state the run before wrote.
+reads has moved but the cycle's own rows), or a job that is not ``ok``; **the end** is a run with no job stopped whose
+``yaz`` judged a target's PASS row ``PASS`` (``ended``; that run writes the row). Neither within ``MAX_RUNS`` runs
+fails the test (a drill that keeps passing never repeats a record: its phases alternate). ``Rehearsal`` asserts every
+run's record up to it, so a change that moves (B) one step, or breaks an earlier one, changes this test in the same
+push. Today (B) stalls without the fixtures, with the gate closed on ``#geri-alma`` alone, and with patches on the
+file a merged candidate changed (a set 26f's producer refuses), on every cause; with the fixtures of the three causes
+it ends: the toy's gate opens, the copy's genesis runs and the toy's PASS row is written. Each run after the genesis
+also checks that D1 verified the state the run before wrote. The checkout holds (A)'s result where the counter's
+import names it (``setup/results/<result_sha256>.json``, tohum/26c, 29s), which the PASS judgement reads.
 
 Out of scope, stated: the real runner, git, GitHub, Rekor, Sigstore and model (the jobs' own tests and 10a's live
 run); the toy fixture of ``tests/fixtures/toy-repo`` (node; the fake runner runs Python only, so the world's tree is
-``test_loop_kos.TREE``); the copy's cycles and the PASS row's write, which the stall here comes before.
+``test_loop_kos.TREE``); the copy's cycles beyond its genesis and first sentinel, which the end comes after.
 """
 
 from __future__ import annotations
@@ -64,6 +68,7 @@ from test_loop_kos import FINDING, TREE, RedAs  # noqa: E402
 from test_loop_write import DRILL_PATCHES as D8_PATCHES, SENTINEL_PY, SENTINEL_UNITS, drill_catalog, fixtures_value  # noqa: E402,E501
 from test_pass_row import RD_BUILD, RD_LINT, RD_TEST  # noqa: E402
 from test_rekor import entry_for  # noqa: E402
+from harness import pass_row as PR  # noqa: E402
 from harness import revert_drill as RD  # noqa: E402
 from loop import drill as DR  # noqa: E402
 from status import exit_b as EB  # noqa: E402
@@ -75,10 +80,10 @@ CANDIDATES = {"t1": {"good": (GOOD, MERGE), "breaks": (BREAKS_TEST, {"decision":
               "c1": {"good": (GOOD, MERGE)}}
 # The drill's patches (``test_loop_write.D8``'s, moved to line 2): each turns the sentinel red, RD_LINT also adds a
 # ``var`` line. They change ``const b``, a line ``good`` leaves as it was, so they apply after its merge.
-# RD_BUILD is the set's build break: the same red, which stage 0's D7 can only call a test regression.
+# RD_BUILD is the set's build break: the same red on a line that does not parse (PARSE_ERROR, a fatal lint message).
 DRILL_PATCHES = {RD_TEST: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED"], start=2),
                  RD_LINT: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED", "var z = 2;"], start=2),
-                 RD_BUILD: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED BUILD"], start=2)}
+                 RD_BUILD: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED PARSE_ERROR"], start=2)}
 DRILL_CAUSES = {RD_TEST: "test_regression", RD_LINT: "lint_regression", RD_BUILD: "build_break"}
 SHA40 = re.compile(r"\b[0-9a-f]{40}\b")
 LISTED = {"brain/state": B.STATE, "brain/integration": B.INTEGRATION, "main": "main"}
@@ -161,8 +166,11 @@ class Flow:
         summary = {"seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
                                     "bootstrap_sha256": "4" * 64}], "targets": targets}
         tree = T.digest([(p, "file", d) for p, d in self.brain.items()])
+        result = YW.transfer()["result"]  # (A)'s result, which the import names and copies (tohum/26c, 29s)
+        imported = dict(TA.import_row(tree, self.brain_sha), result_sha256=hashlib.sha256(result).hexdigest())
         write_tree(self.work, {"setup/summary.json": json.dumps(summary),
-                               "setup/imports.jsonl": TA.chained([TA.import_row(tree, self.brain_sha)]).decode(),
+                               "setup/imports.jsonl": TA.chained([imported]).decode(),
+                               PR.result_path(TA.chained([imported])): result.decode(),
                                J.SECURITY_LEDGER: YW.chained([{"row_id": "s1", "part": "security", "kind": "note",
                                                                "payload": {}}]).decode()})
         with open(os.path.join(self.work, "policy.json"), "wb") as fh:
@@ -248,7 +256,7 @@ class Flow:
                 "genesis": t.get("written", {}).get("genesis", False), "merge": t.get("merge"),
                 "decisions": {cid: d["reasons"] for cid, d in t.get("decisions", {}).items()},
                 "sentinel": None if sentinel is None else sentinel["verdict"], "drill": t.get("drill"),
-                "gate": t.get("gate"), "done": t.get("done")}
+                "gate": t.get("gate"), "pass": t.get("pass"), "done": t.get("done")}
         return out
 
 
@@ -278,12 +286,13 @@ def step(record: dict) -> dict:
     return out
 
 
-def toy(merge=None, decisions=None, sentinel=None, drill=None, gate=None, done=("D5", "D6"), genesis=False) -> dict:
+def toy(merge=None, decisions=None, sentinel=None, drill=None, gate=None, done=("D5", "D6"), genesis=False,
+        judged=None) -> dict:
     """The toy's part of an expected record; ``decisions`` default: both candidates' diffs no longer apply (``good``
     merged at the genesis)."""
     stale = ["artefact_hash_mismatch", "kos:patch_does_not_apply"]
     return {"genesis": genesis, "merge": merge, "decisions": decisions or {"breaks": stale, "good": stale},
-            "sentinel": sentinel, "drill": drill, "gate": gate, "done": list(done)}
+            "sentinel": sentinel, "drill": drill, "gate": gate, "pass": judged, "done": list(done)}
 
 
 GENESIS = toy(merge="good", decisions={"breaks": ["tests_red"], "good": []}, drill={"action": "off", "why": "genesis"},
@@ -295,7 +304,7 @@ def closed(**conditions) -> dict:
     return {"verdict": "closed", "conditions": {names[k]: ["toy:" + r for r in v] for k, v in conditions.items()}}
 
 
-MAX_RUNS = 14
+MAX_RUNS = 20
 
 
 def rehearse(flow: Flow) -> list[dict]:
@@ -312,9 +321,15 @@ def rehearse(flow: Flow) -> list[dict]:
             got = (line["state"]["head"], line["state"]["previous"])
             if got != (flow.state_heads[-2], previous) or line["root"]["rekor_uuid"] not in flow.rekor.entries:
                 raise AssertionError("run %d: D1 did not verify the state the run before wrote: %s" % (flow.runs, got))
-        if "stopped" in records[-1] or records[-1:] == records[-2:-1]:
+        if "stopped" in records[-1] or records[-1:] == records[-2:-1] or ended(records[-1]):
             return records
-    raise AssertionError("no stall in %d runs: %s" % (MAX_RUNS, records))
+    raise AssertionError("no stall and no end in %d runs: %s" % (MAX_RUNS, records))
+
+
+def ended(record: dict) -> bool:
+    """Whether ``record`` is (B)'s end: no job stopped and a target's ``yaz`` judged its PASS row ``PASS``."""
+    return "stopped" not in record and any(((record.get(t) or {}).get("pass") or {}).get("verdict") == "PASS"
+                                           for t, _, _ in TARGETS)
 
 
 def without_fixtures(base: str) -> Flow:
@@ -332,11 +347,10 @@ def stale_patches(base: str) -> Flow:
 
 # ``docs/exit-b.md``'s cases (``status.exit_b.render_case``), in its order: name, title, the world, the open reports
 # the stop waits for (a seed epoch answering one of them closes it, and this test's expected stall then moves).
-SEED_044 = "seed-044-revert-facts-producers"
 CASES = (
     ("without-fixtures", "No drill fixtures secret (the operator writes it at the activation, tohum/26f)",
      without_fixtures, []),
-    ("with-fixtures", "Drill fixtures of the three causes", with_fixtures, [SEED_044]),
+    ("with-fixtures", "Drill fixtures of the three causes", with_fixtures, []),
     ("stale-patches", "Drill patches on the file the toy's merge changed (a set 26f's producer refuses)",
      stale_patches, []),
 )
@@ -395,21 +409,25 @@ class Rehearsal(unittest.TestCase):
         hub = flow.hubs["o/copy"]
         self.assertEqual(sorted(hub.refs), ["main"])  # the copy was never written
 
-    def test_with_the_drills_fixtures_b_stalls_at_build_break(self):
+    def test_with_the_drills_fixtures_b_reaches_its_pass_row(self):
         """Fixtures of the three causes 10a #geri-alma asks for, with a seed that plants RD_TEST, RD_LINT and
         RD_BUILD in turn: each drill is committed, planted as the cycle's one merge, watched red and reverted by
-        D7, then revealed and judged. RD_TEST and RD_LINT pass and leave the gate closed on ``build_break`` alone;
-        RD_BUILD is reverted as a test regression (stage 0's ``build_ok`` is always true, ``loop.watch.facts``;
-        seed-044), so its judgement is ``FAIL`` and ``yaz`` stops red: (B) cannot open the copy's genesis."""
+        D7, then revealed and judged ``PASS``. RD_BUILD's head does not parse (``PARSE_ERROR``: the toy's lint
+        reports a fatal message), so ``kos`` has no base run in that cycle (the candidates are ``base_unavailable``)
+        and D7 reverts it as ``build_break`` (``loop.watch.base_build``, seed-044's answer). Then the toy's gate
+        opens, the next run serves the copy and runs its genesis, the copy's sentinel ends green while the toy's
+        next drill is reverted, and the run after that judges the toy's PASS row ``PASS`` and writes it."""
         flow = with_fixtures(self.base)
         unshown = ["cause_unshown:%s" % c for c in ("test_regression", "build_break", "lint_regression")]
         wait = {"action": "wait", "why": "drill_unfinished"}
         commit = {"action": "commit"}
         d8 = ("D5", "D6", "D8")
         d78 = ("D5", "D6", "D7", "D8")
+        no_base = ["artefact_hash_mismatch", "kos:base_unavailable"]
+        stale = ["artefact_hash_mismatch", "kos:patch_does_not_apply"]
         records = self.rehearse(flow)
         self.assert_documented("with-fixtures", records)
-        self.assertEqual(records[:-1], [
+        self.assertEqual(records, [
             {"waiting": ["c1"], "t1": GENESIS},
             {"waiting": ["c1"], "t1": toy(sentinel="green", drill=commit, done=d78,
                                           gate=closed(nobetci=["sentinel_unfinished:<sha>"], geri_alma=unshown))},
@@ -427,12 +445,26 @@ class Rehearsal(unittest.TestCase):
                                           gate=closed(geri_alma=unshown[1:2]))},
             {"waiting": ["c1"], "t1": toy(drill={"action": "plant", "instance_id": RD_BUILD}, done=d8,
                                           gate=closed(geri_alma=unshown[1:2]))},
-            {"waiting": ["c1"], "t1": toy(sentinel="red", drill=wait, done=d78,
-                                          gate=closed(geri_alma=["drill_fail:%s:not_reverted" % RD_BUILD] + unshown[1:2]))}])
-        self.assertEqual(records[-1]["stopped"], {"job": "yaz", "target": "t1", "reason": "drill_fail", "reasons": []})
-        self.assertEqual(records[-1]["t1"]["drill"]["judged"], [RD_BUILD, "FAIL", ["cause_mismatch"]])
-        self.assertEqual(sorted(flow.hubs["o/copy"].refs), ["main"])
-
+            {"waiting": ["c1"], "t1": toy(sentinel="red", drill=wait, done=d78, decisions={"breaks": no_base,
+                                                                                          "good": no_base},
+                                          gate=closed(geri_alma=["drill_fail:%s:not_reverted" % RD_BUILD] + unshown[1:2]))},
+            {"waiting": ["c1"], "t1": toy(drill=dict(commit, judged=[RD_BUILD, "PASS", []]), done=d8,
+                                          gate={"verdict": "open", "conditions": {}})},
+            {"waiting": [], "t1": toy(drill={"action": "plant", "instance_id": RD_LINT}, done=d8,
+                                      judged={"waiting": "copy_genesis"}),
+             "c1": {"genesis": True, "merge": "good", "decisions": {"good": []}, "sentinel": None,
+                    "drill": {"action": "off", "why": "genesis"}, "gate": None, "pass": None, "done": ["D5", "D6"]}},
+            {"waiting": [], "t1": toy(sentinel="red", drill=wait, done=d78, judged={
+                "verdict": "FAIL", "conditions": {"#geri-alma": ["toy:drill_fail:%s:not_reverted" % RD_LINT],
+                                                  "#nobetci #hayatta": ["copy:sentinel_unfinished:<sha>"]}}),
+             "c1": {"genesis": False, "merge": None, "decisions": {"good": stale}, "sentinel": "green",
+                    "drill": {"action": "off"}, "gate": None, "pass": None, "done": ["D5", "D6", "D7"]}},
+            {"waiting": [], "t1": toy(drill=dict(commit, judged=[RD_LINT, "PASS", []]), done=d8,
+                                      judged={"verdict": "PASS", "conditions": {}}),
+             "c1": {"genesis": False, "merge": None, "decisions": {"good": stale}, "sentinel": None,
+                    "drill": {"action": "off"}, "gate": None, "pass": None, "done": ["D5", "D6"]}}])
+        self.assertTrue(PR.passed(flow.hubs["o/toy"].read_file(B.STATE, B.STATE_LEDGER)))  # the PASS row is written
+        self.assertIn(B.STATE, flow.hubs["o/copy"].refs)
 
     def test_drill_patches_on_a_line_the_toys_merge_changed_never_apply(self):
         """``test_loop_write.D8``'s patches change ``var a = 1;``, the line ``good`` changes at the genesis: on

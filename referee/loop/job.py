@@ -705,7 +705,7 @@ def yaz_d7(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any],
     if seen["verdict"] != "red":
         return {"sentinel": line}, seen, lint
     try:
-        facts = WT.facts(seen, art.state[B.STATE_LEDGER], lint)
+        facts = WT.facts(seen, art.state[B.STATE_LEDGER], lint, WT.base_build(results))
     except SE.Unusable as exc:
         return {"reason": "state_refused", "reasons": exc.reasons}, None, None
     return {"sentinel": dict(line, facts=facts)}, dict(seen, facts=facts), lint
