@@ -39,7 +39,6 @@ head" is D3's application to the pulled tree (``kos:patch_does_not_apply``); whi
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
@@ -65,7 +64,7 @@ def _bytes_or_none(path: str) -> bytes | None:
 def _index(results: str) -> dict:
     raw = _bytes_or_none(os.path.join(results, "index.json"))
     try:
-        doc = json.loads(raw) if raw is not None else {}
+        doc = cli.loads(raw) if raw is not None else {}
     except ValueError:
         doc = {}
     cands = doc.get("candidates") if isinstance(doc, dict) else None
@@ -89,8 +88,8 @@ def _gate(files: dict[str, bytes], results: str, cid: str, control: Any, unfinis
     if raw_hashes is None:
         return ["artefact_hash_mismatch"]
     try:
-        hashes = C.hashes_file(json.loads(raw_hashes))
-        found = C.finding(json.loads(files["finding.json"]))
+        hashes = C.hashes_file(cli.loads(raw_hashes))
+        found = C.finding(cli.loads(files["finding.json"]))
         got = C.decide(found, files["diff.patch"].decode("utf-8", "surrogateescape"),
                        {"base.jsonl": _bytes_or_none(os.path.join(results, "base.jsonl")),
                         "cand.jsonl": _bytes_or_none(os.path.join(run_dir, "cand.jsonl")),

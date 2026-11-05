@@ -126,8 +126,11 @@ session maps the target with the base brain from a worktree of the base commit a
   sorted order (nodes by dir, edges by ``(from, to)``, coverage by path); ``same`` is true when all are empty.
 - A map file is usable when it is UTF-8 JSON: an object holding ``projects`` (a list of objects with a string
   ``dir``, a string ``name`` and a list of strings ``kinds``, no dir twice), ``edges`` (a list of objects with string
-  ``from`` and ``to`` and a list of strings ``kinds``, no pair twice) and ``coverage`` (an object). Other keys are
-  not read. Not compared, stated: anything the map does not hold (a file's specifiers, a file's reader view: f769).
+  ``from`` and ``to`` and a list of strings ``kinds``, no pair twice) and ``coverage`` (an object), and nests at
+  most ``MAP_DEPTH`` (64) objects and lists deep, the map itself the first (``map`` wrote 5 on the target of
+  2026-11-05: map, coverage, ``sys_path``, ``unresolved_files``, ``examples``); so the delta's walks and its output stay far inside the interpreter's
+  recursion limit, and a deeper file is unusable, never a fault. Other keys are not read but are counted in the
+  depth. Not compared, stated: anything the map does not hold (a file's specifiers, a file's reader view: f769).
 
 Command line, run from ``referee/``::
 
@@ -387,7 +390,7 @@ def read_register(root: str) -> Any:
         return {}
     try:
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
+            return cli.load(f)
     except (UnicodeDecodeError, ValueError, RecursionError):
         return None
 
@@ -653,7 +656,7 @@ def target_map(root: str) -> dict[str, Any]:
 
     def load_json(rel: str) -> dict | None:
         try:
-            value = json.loads(_read(root, rel) or "")
+            value = cli.loads(_read(root, rel) or "")
         except ValueError:
             coverage["unparsed_manifests"].append(rel)
             return None
@@ -1048,6 +1051,20 @@ def render_target(m: dict[str, Any], source: str) -> str:
 MAP_PARTS = {"projects": (("dir", "name"), ("dir",)), "edges": (("from", "to"), ("from", "to"))}
 
 
+MAP_DEPTH = 64  # the deepest usable map file (module docstring)
+
+
+def _depth(value: Any) -> int:
+    """How many objects and lists deep ``value`` nests (a scalar 0); by a stack, so any depth is measured."""
+    deepest, stack = 0, [(value, 1)]
+    while stack:
+        item, level = stack.pop()
+        if isinstance(item, (dict, list)):
+            deepest = max(deepest, level)
+            stack.extend((child, level + 1) for child in (item.values() if isinstance(item, dict) else item))
+    return deepest
+
+
 class MapUnusable(ValueError):
     """A map file ``delta`` cannot read; the text is built here and names the field."""
 
@@ -1064,6 +1081,8 @@ def check_map(m: Any) -> None:
     """Raise ``MapUnusable`` unless ``m`` has the shape the module docstring's delta rules read."""
     if not isinstance(m, dict):
         raise MapUnusable("map is not an object")
+    if _depth(m) > MAP_DEPTH:
+        raise MapUnusable("map nests deeper than %d" % MAP_DEPTH)
     for key, (names, ident) in MAP_PARTS.items():
         items = m.get(key)
         if not isinstance(items, list):
@@ -1122,7 +1141,7 @@ def map_delta(base: dict[str, Any], head: dict[str, Any]) -> dict[str, Any]:
 def read_map(path: str) -> dict[str, Any]:
     try:
         with open(path, "rb") as fh:
-            m = json.loads(fh.read().decode("utf-8"))
+            m = cli.loads(fh.read().decode("utf-8"))
         check_map(m)
     except (OSError, ValueError) as exc:  # MapUnusable is a ValueError
         raise MapUnusable("%s: %s" % (path, cli.cause(exc))) from None

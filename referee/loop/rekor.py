@@ -50,6 +50,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable, Sequence
 
+import cli
 from loop import accepted as A
 
 REKOR = "https://rekor.sigstore.dev/api/v1/log/entries/"
@@ -108,7 +109,7 @@ class RekorHttp:
         if len(data) > MAX_ANSWER:
             raise RekorError("rekor answer too large")
         try:
-            answer = json.loads(data)
+            answer = cli.loads(data)
         except (ValueError, RecursionError):
             raise RekorError("rekor answer is not JSON") from None
         return checked_answer(uuid, answer)
@@ -117,7 +118,7 @@ class RekorHttp:
 def body_of(entry: dict) -> dict | None:
     """The entry's body as a ``hashedrekord`` ``0.0.1`` object with a ``sha256`` digest, else ``None``."""
     try:
-        body = json.loads(base64.b64decode(entry["body"], validate=True))
+        body = cli.loads(base64.b64decode(entry["body"], validate=True))
     except (binascii.Error, ValueError, RecursionError, KeyError, TypeError):
         return None
     if not isinstance(body, dict):

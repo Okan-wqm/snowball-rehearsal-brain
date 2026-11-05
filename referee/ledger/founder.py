@@ -202,7 +202,7 @@ def read_reports(directory: str = REPORTS) -> list[dict]:
             continue
         try:
             with open(os.path.join(directory, name), encoding="utf-8") as fh:
-                report = json.load(fh)
+                report = cli.load(fh)
         except (OSError, ValueError) as exc:
             raise Unusable("report %s: %s" % (name, cli.cause(exc))) from None
         if not isinstance(report, dict) or report.get("id") != name[:-len(".json")] \

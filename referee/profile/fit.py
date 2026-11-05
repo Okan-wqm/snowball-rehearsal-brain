@@ -312,7 +312,7 @@ def fit(tree: str, target: Any = None, policy: Any = None, images: dict | None =
 def _load(path: str) -> Any:
     try:
         with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
+            return cli.load(fh)
     except RecursionError:
         raise ValueError("%s: JSON nested too deeply" % path) from None
 

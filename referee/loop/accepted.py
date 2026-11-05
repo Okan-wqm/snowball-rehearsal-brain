@@ -64,6 +64,7 @@ import urllib.request
 import zipfile
 from typing import Any, Callable, Sequence
 
+import cli
 from ledger import chain as C
 from loop import treehash as T
 from loop.pulled import PulledError
@@ -189,7 +190,7 @@ def open_state(result: bytes, bundle: bytes, repo: str, sigstore: Sequence[str],
         if verifier(verify_argv(sigstore, repo, tmp)) != 0:
             raise StateError("state_unverified")
     try:
-        doc = json.loads(result.decode("utf-8"))
+        doc = cli.loads(result.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         doc = None
     state = doc.get("state") if isinstance(doc, dict) else None
@@ -234,7 +235,7 @@ class ActionsHttp:
     def json(self, path: str) -> Any:
         try:
             with self.opener.open(self._req(path), timeout=self.timeout) as resp:
-                return json.loads(resp.read(MAX_FILE))
+                return cli.loads(resp.read(MAX_FILE))
         except (urllib.error.URLError, OSError, ValueError):
             raise StateError("actions_unreadable") from None
 

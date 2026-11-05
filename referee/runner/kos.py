@@ -368,7 +368,7 @@ def main(argv: list[str]) -> int:
     try:
         if len(argv) != 2 or argv[0] != "run":
             raise KosError(USAGE)
-        req = json.loads(_read(argv[1]).decode("utf-8"))
+        req = cli.loads(_read(argv[1]).decode("utf-8"))
         if not (isinstance(req, dict) and isinstance(req.get("tree"), str) and isinstance(req.get("out"), str)
                 and isinstance(req.get("candidates"), dict)
                 and all(isinstance(v, str) for v in req["candidates"].values())):

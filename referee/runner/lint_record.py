@@ -142,7 +142,7 @@ def _relative(file_path: Any, root: str) -> str | None:
 
 def _results(output: bytes) -> list[dict]:
     try:
-        doc = json.loads(output.decode("utf-8"))
+        doc = cli.loads(output.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise RecordError(["not_eslint_json"]) from exc
     ok = isinstance(doc, list) and all(

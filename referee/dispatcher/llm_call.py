@@ -338,7 +338,7 @@ def _json_int(text: str) -> int | JsonNumber:
 
 
 def _strict_json(text: str) -> Any:
-    return json.loads(text, parse_float=JsonNumber, parse_int=_json_int, object_pairs_hook=chain._no_duplicates,
+    return cli.loads(text, parse_float=JsonNumber, parse_int=_json_int, object_pairs_hook=chain._no_duplicates,
                       parse_constant=chain._no_constant)
 
 

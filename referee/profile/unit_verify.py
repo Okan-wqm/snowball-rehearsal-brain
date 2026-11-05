@@ -439,7 +439,7 @@ def _tree_reasons(recipe: dict, path: str, lock: str, version: str, tree: str, d
         reasons.append("lockfile_missing")
     else:
         try:
-            parsed = json.loads(data.decode("utf-8"))
+            parsed = cli.loads(data.decode("utf-8"))
         except (UnicodeDecodeError, ValueError, RecursionError):
             parsed = None
         report = N.check(parsed, N.DEFAULT_REGISTRIES, recipe["install_scripts_required"])
@@ -697,7 +697,7 @@ def link_bins(staging: str, lock_dir: str, rows: list[dict]) -> list[str]:
         pkg = posixpath.join(lock_dir, row["key"]) if lock_dir != "." else row["key"]
         pkg_json = D._read_regular(staging, pkg + "/package.json")
         try:
-            manifest = json.loads(pkg_json.decode("utf-8")) if pkg_json is not None else None
+            manifest = cli.loads(pkg_json.decode("utf-8")) if pkg_json is not None else None
         except (UnicodeDecodeError, ValueError, RecursionError):
             manifest = None
         parent = pkg[: pkg.rindex("node_modules/") + len("node_modules")]
@@ -734,7 +734,7 @@ def link_workspace(staging: str, lock_dir: str, key: str, folder: str) -> bool:
 
 def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, budget: int) -> tuple[list[str], dict]:
     """Take the artifact by its hash and unpack it; ``(reasons, {address, rows, links, bytes, skipped})``."""
-    lock_obj = json.loads(tree_lock.decode("utf-8"))
+    lock_obj = cli.loads(tree_lock.decode("utf-8"))
     has_packages = any(k for k in lock_obj.get("packages", {}))
     if deps is None:
         if has_packages:
@@ -744,7 +744,7 @@ def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, bu
     if not report["ok"]:
         return ["deps:%s" % r for r in report["reasons"]], {}
     with open(os.path.join(deps, "manifest.json"), "rb") as fh:
-        manifest = json.loads(fh.read().decode("ascii"))
+        manifest = cli.loads(fh.read().decode("ascii"))
     if manifest["lock_sha256"] != hashlib.sha256(tree_lock).hexdigest():
         return ["deps_lock_mismatch"], {}
     lock_dir = posixpath.dirname(lock) or "."
@@ -952,7 +952,7 @@ def _emit(obj: dict) -> None:
 def _load(path: str) -> Any:
     try:
         with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
+            return cli.load(fh)
     except RecursionError:
         raise VerifyError("%s: JSON nested too deeply" % path) from None
 

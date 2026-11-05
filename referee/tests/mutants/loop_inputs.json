@@ -12,8 +12,8 @@
   {
    "id": "bootstrap_duplicate_key",
    "file": "loop/inputs.py",
-   "old": "        doc = json.loads(data.decode(\"utf-8\"), object_pairs_hook=chain._no_duplicates,\n",
-   "new": "        doc = json.loads(data.decode(\"utf-8\"),\n",
+   "old": "        doc = cli.loads(data.decode(\"utf-8\"), object_pairs_hook=chain._no_duplicates,\n",
+   "new": "        doc = cli.loads(data.decode(\"utf-8\"),\n",
    "tests": [
     "test_loop_cek.py"
    ]

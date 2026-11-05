@@ -128,7 +128,7 @@ def _no_constant(name: str) -> Any:
 def parse_row(text: str) -> dict:
     """One ledger line as a JSON object; ChainError for anything else."""
     try:
-        row = json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constant)
+        row = cli.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constant)
     except ChainError:
         raise
     except RecursionError:

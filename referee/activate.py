@@ -150,7 +150,7 @@ def _sha(data: bytes) -> str:
 def _json(data: bytes, name: str) -> Any:
     """JSON with no duplicate key and no NaN or Infinity (``ledger.chain``'s reading)."""
     try:
-        return json.loads(data.decode("utf-8"), object_pairs_hook=chain._no_duplicates,
+        return cli.loads(data.decode("utf-8"), object_pairs_hook=chain._no_duplicates,
                           parse_constant=chain._no_constant)
     except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise Unusable("%s is not JSON: %s" % (name, cli.cause(exc))) from None

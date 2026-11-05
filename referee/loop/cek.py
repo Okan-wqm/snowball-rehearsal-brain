@@ -56,10 +56,10 @@ Which commit is read is the caller's choice; ``pulled`` does not record it. The 
 
 from __future__ import annotations
 
-import json
 import shutil
 from typing import Any
 
+import cli
 from loop import gitobj as G
 from loop import pulled as P
 from runner import kos as K
@@ -71,7 +71,7 @@ KINDS = ("toy", "copy")  # 26c: targets[].kind
 def _entries(summary: bytes) -> list | None:
     """``setup/summary.json``'s ``targets`` list, or ``None`` when ``summary`` is not a JSON object holding one."""
     try:
-        doc = json.loads(summary.decode("utf-8"))
+        doc = cli.loads(summary.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         doc = None
     if not (isinstance(doc, dict) and isinstance(doc.get("targets"), list)):

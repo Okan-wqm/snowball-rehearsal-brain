@@ -766,12 +766,12 @@ def main(argv: list[str]) -> int:
         return _main_argv()
     try:
         if argv == ["check"]:
-            report = check_argv(json.loads(sys.stdin.read()))
+            report = check_argv(cli.loads(sys.stdin.read()))
             _emit(report)
             return 0 if report["ok"] else 1
         if len(argv) == 2 and argv[0] == "run":
             with open(argv[1], encoding="utf-8") as fh:
-                req = json.load(fh)
+                req = cli.load(fh)
             report = run_with_red_control(req["job"], req.get("red_control"), req["operating"], base=req.get("base"))
             _emit(report)
             return 0 if report["valid"] else 1
@@ -788,7 +788,7 @@ def main(argv: list[str]) -> int:
 def _main_argv() -> int:
     """tohum/29f group ``contained``: stdin one run request, stdout the projection of the built argv."""
     try:
-        argv = request_argv(json.loads(sys.stdin.read()))
+        argv = request_argv(cli.loads(sys.stdin.read()))
         _emit(project_argv(argv))
         return 0
     except ContainmentError as exc:

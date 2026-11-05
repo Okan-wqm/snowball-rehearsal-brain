@@ -510,7 +510,7 @@ def _json(tree: str, rel: str) -> tuple[bool, Any]:
     if data is None:
         return False, None
     try:
-        return True, json.loads(data.decode("utf-8"))
+        return True, cli.loads(data.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         return True, None
 
@@ -819,7 +819,7 @@ def _emit(obj: dict) -> None:
 def _load(path: str) -> Any:
     try:
         with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
+            return cli.load(fh)
     except RecursionError:
         raise DeriveError("%s: JSON nested too deeply" % path) from None
 

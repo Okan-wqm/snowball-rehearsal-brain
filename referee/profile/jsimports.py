@@ -37,11 +37,12 @@ JS/TS file, a tsconfig's ``extends``, the root tsconfig's path aliases and the p
 
 from __future__ import annotations
 
-import json
 import os
 import posixpath
 import re
 from typing import Any
+
+import cli
 
 SKIP_DIRS = {".git", "node_modules", "dist", "coverage", ".nx", ".next", ".turbo", ".cache", "target"}
 SOURCE_EXTENSIONS = {".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}
@@ -186,7 +187,7 @@ def jsonc_loads(text: str) -> Any:
         else:
             out.append(c)
             i += 1
-    return json.loads(re.sub(r",(\s*[}\]])", r"\1", "".join(out)))
+    return cli.loads(re.sub(r",(\s*[}\]])", r"\1", "".join(out)))
 
 
 def jest_preset(text: str) -> str | None:

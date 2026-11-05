@@ -678,7 +678,7 @@ def match_lines(data: bytes, kind: str) -> list[int]:
     decoded = []
     for number, row in enumerate(rows, 1):
         try:
-            value = json.loads(row, object_pairs_hook=_Pairs)
+            value = cli.loads(row, object_pairs_hook=_Pairs)
         except (ValueError, RecursionError):
             raise ScanError("row %d is not JSON" % number) from None
         if not isinstance(value, _Pairs):
