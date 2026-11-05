@@ -7,8 +7,9 @@
   ``a<<EOF``, a word starting with a digit, another instruction);
 - ``copies``: flags removed, ``--from`` makes every source ``stage``, the JSON form and the fallback to blanks,
   each kind in its order, ``ADD`` read as ``COPY``, malformed counted;
-- ``compose_builds``: the one-line form, the block form (its keys at the block's first indentation only, the block
-  ending at the first line not indented more), quoted and commented values, defaults ``None``;
+- ``compose_builds`` over a file ``profile.yamlblock`` read: each service's ``build`` (a value, a mapping, a flow
+  mapping, a value not a string kept as read, ``null`` none), defaults ``None``, a ``build`` merged from an
+  ``x-`` extension, a ``build`` outside ``services`` and a document with no ``services`` mapping none;
 - the names: ``is_dockerfile`` and ``is_compose`` by name only, case as written.
 """
 
@@ -22,6 +23,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from profile import docker  # noqa: E402
+from profile import yamlblock  # noqa: E402
 
 
 class Instructions(unittest.TestCase):
@@ -112,41 +114,28 @@ class Copies(unittest.TestCase):
 
 
 class ComposeBuilds(unittest.TestCase):
-    def test_one_line(self) -> None:
-        text = "services:\n  a:\n    build: ./a  # here\n  b:\n    build: '../b'\n  c:\n    build: # none\n"
-        self.assertEqual(docker.compose_builds(text), [(3, "./a", None), (5, "../b", None), (7, None, None)])
+    def builds(self, text: str):
+        return docker.compose_builds(yamlblock.load(text))
 
-    def test_block(self) -> None:
-        text = ("services:\n"
-                "  a:\n"
-                "    build:\n"
-                "      # c\n"
-                "\n"
-                "      context: \"..\"\n"
-                "      args:\n"
-                "        context: no\n"
-                "        dockerfile: no\n"
-                "      dockerfile: infra/Dockerfile.a # c\n"
-                "    image: x\n"
-                "    dockerfile: no\n"
-                "  b:\n"
-                "    build:\n"
-                "      dockerfile: Dockerfile.b\n"
-                "  c:\n"
-                "    build:\n"
-                "  context: no\n")
-        self.assertEqual(docker.compose_builds(text),
-                         [(3, "..", "infra/Dockerfile.a"), (14, None, "Dockerfile.b"), (17, None, None)])
+    def test_one_value_and_mapping(self) -> None:
+        text = ("services:\n  a:\n    build: ./a  # here\n  b:\n    build: '../b'\n  c:\n    build: # none\n"
+                "  d:\n    build:\n      context: \"..\"\n      args:\n        context: no\n"
+                "      dockerfile: infra/Dockerfile.d # c\n    image: x\n    dockerfile: no\n"
+                "  e:\n    build:\n      dockerfile: Dockerfile.e\n  f:\n    build: {context: f, dockerfile: F}\n"
+                "  g:\n    image: only\n  h:\n    build: 7\n")
+        self.assertEqual(self.builds(text), [("a", "./a", None), ("b", "../b", None), ("d", "..", "infra/Dockerfile.d"),
+                                             ("e", None, "Dockerfile.e"), ("f", "f", "F"), ("h", 7, None)])
 
-    def test_block_ends_at_its_own_indentation(self) -> None:
-        text = "s:\n  a:\n    build:\n      context: a\n    other:\n      dockerfile: z\n"
-        self.assertEqual(docker.compose_builds(text), [(3, "a", None)])
+    def test_merged_from_an_extension(self) -> None:
+        text = ("x-base: &base\n  build:\n    context: shared\n    dockerfile: D\nbuild: top\n"
+                "services:\n  a:\n    <<: *base\n  b:\n    <<: *base\n    build: own\n")
+        self.assertEqual(self.builds(text), [("a", "shared", "D"), ("b", "own", None)])
 
-    def test_first_value_kept(self) -> None:
-        self.assertEqual(docker.compose_builds("build:\n  context: a\n  context: b\n"), [(1, "a", None)])
-
-    def test_no_build(self) -> None:
-        self.assertEqual(docker.compose_builds("x:\n  rebuild: a\n  build_x: b\n  context: c\n"), [])
+    def test_no_services(self) -> None:
+        for text in ("build: a\n", "services: x\n", "services:\n  a: x\n  b:\n", "- a\n",
+                     "x:\n  rebuild: a\n  build_x: b\n"):
+            with self.subTest(text=text):
+                self.assertEqual(self.builds(text), [])
 
 
 class Names(unittest.TestCase):

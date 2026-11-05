@@ -81,8 +81,9 @@ the session that reads the target, not by a test).
   (a ``.py`` file of A imports by an absolute name whose first part ``t`` reaches, by ``sys_path_target``, a
   package ``D/t/``, a module ``D/t.py`` or a directory ``D/t`` for a directory ``D`` the same file puts on
   ``sys.path``, and B holds that path; tried before the ``python`` rule, so that import draws no ``python``
-  arrow), ``docker`` (a Dockerfile of A that a compose file builds copies a path B holds, or a directory holding
-  B, from its build context: ``docker_edges`` and ``profile.docker``);
+  arrow), ``docker`` (a Dockerfile of A that a compose file or a GitHub Actions step builds copies a path B
+  holds, or a directory holding B, from its build context: ``docker_edges``, ``profile.docker`` and
+  ``profile.ghactions``);
 - an import specifier is one ``jsimports.specifiers`` reads (as written: a commented-out import counts, an
   import whose specifier is not a string literal does not);
 - not read, stated: a ``sys.path`` insertion reaching other files (a ``conftest.py``'s reaching its tests, a
@@ -92,10 +93,11 @@ the session that reads the target, not by a test).
   module); nested npm workspaces (a ``package.json`` workspace below the root), Rust ``use`` lines (the
   manifest is Cargo's own list), a Cargo target file outside its package's directory (``[[test]] path =
   "../x.rs"``: the file belongs to the project holding it), a Python package that is a single module file, Go's and every other
-  language's references (imports, Terraform module sources, SQL table names, a Dockerfile no compose file builds;
+  language's references (imports, Terraform module sources, SQL table names, a Dockerfile no build names;
   counted by extension or name in ``coverage.unread_code_files``), a Dockerfile's build context named anywhere but
-  a compose file (a workflow, a Makefile, a script) and what ``profile.docker`` states it does not read, whether a
-  resolved path exists,
+  a compose file or a ``docker/build-push-action`` step (a ``docker build`` line, a Makefile, a script), what
+  ``profile.docker``, ``profile.ghactions`` and ``profile.yamlblock`` state they do not read, whether a resolved
+  path exists,
   project references in ``tsconfig``;
 - ``coverage`` says how much of the checkout this map holds: files, JS/TS and Python files read, each also in no
   project, specifiers by outcome (an import in a file of no project, or into no project, is ``outside_projects``),
@@ -167,8 +169,10 @@ from typing import Any
 
 import cli
 from profile import docker
+from profile import ghactions
 from profile import jsimports as J
 from profile import pypath
+from profile import yamlblock
 
 USAGE = ("usage: python -m status.depmap brain ROOT | check ROOT | target ROOT --source LABEL | coverage ROOT"
          " | map ROOT | delta BASE HEAD")
@@ -660,43 +664,71 @@ def _context_matches(context: str, source: str, files: set[str], dirs: set[str])
 
 def docker_edges(root: str, files: list[str], dockerfiles: list[str], dirs: set[str], projects: _Projects,
                  coverage: dict, edge) -> set[str]:
-    """The ``docker`` arrows and ``coverage["docker"]``; returns the Dockerfiles read (those a compose file builds).
+    """The ``docker`` arrows and ``coverage["docker"]``; returns the Dockerfiles read (those a build names).
 
-    A build is a ``profile.docker.compose_builds`` entry of a compose file (``profile.docker.COMPOSE_NAMES``): its
-    context, ``.`` when not given, relative to the compose file's directory, and its Dockerfile, ``Dockerfile``
-    when not given, relative to the context. A build is ``unresolved`` when a value holds ``$`` (Compose
-    substitutes variables) or ``://`` (a remote context), starts with ``/`` or leaves the root, and ``missing``
-    when the context is not a directory of the checkout or the Dockerfile not a file of it. Each Dockerfile with a
-    build is read once; for each distinct context it is built with, each ``context`` source
-    (``_context_matches``) reaches the project holding each path it names and, for a directory, every project
-    inside it; an arrow goes from the project holding the Dockerfile to each project reached (none from a
-    Dockerfile in no project, the root's)."""
-    cov = {"dockerfiles": len(dockerfiles), "compose_files": 0, "builds": 0, "builds_unresolved": 0,
+    A build is a context and a Dockerfile, from two sources, each file read by ``profile.yamlblock`` (one not read
+    counts in ``compose_unreadable`` or ``workflows.unreadable``): a ``profile.docker.compose_builds`` entry of a
+    compose file (``profile.docker.COMPOSE_NAMES``), its context, ``.`` when not given, relative to the compose file's
+    directory, and its Dockerfile, ``Dockerfile`` when not given, relative to the context; and a pair of a
+    ``profile.ghactions.builds`` step of a GitHub Actions file (``profile.ghactions.is_actions_file``), both paths
+    from the root (a step not resolved counts by its reason). A build is ``unresolved`` when a value is not a
+    string or holds ``$`` (Compose substitutes variables; an expression left in a workflow's value) or ``://`` (a remote context), starts with ``/`` or
+    leaves the root, and ``missing`` when the context is not a directory of the checkout or the Dockerfile not a
+    file of it. Each Dockerfile with a build is read once; for each distinct context it is built with, each
+    ``context`` source (``_context_matches``) reaches the project holding each path it names and, for a
+    directory, every project inside it; an arrow goes from the project holding the Dockerfile to each project
+    reached (none from a Dockerfile in no project, the root's)."""
+    cov = {"dockerfiles": len(dockerfiles), "compose_files": 0, "compose_unreadable": {}, "builds": 0,
+           "builds_unresolved": 0,
            "builds_missing": 0, "dockerfiles_built": 0, "dockerfiles_not_built": {},
            "sources": {k: 0 for k in docker.COPY_KINDS}, "malformed": 0,
-           "context_sources": {"matched": 0, "no_match": 0, "leaves_context": 0}}
+           "context_sources": {"matched": 0, "no_match": 0, "leaves_context": 0},
+           "workflows": {"files": 0, "unreadable": {}, "steps": 0, "steps_unresolved": {k: 0 for k in
+                                                                                         ghactions.REASONS},
+                         "builds": 0, "builds_unresolved": 0, "builds_missing": 0}}
     coverage["docker"] = cov
+    wf = cov["workflows"]
     file_set = set(files)
     contexts: dict[str, set[str]] = {}
+
+    def place(base: str, context: str, dockerfile: str, in_context: bool, counts: dict) -> None:
+        counts["builds"] += 1
+        if any(not isinstance(v, str) or "$" in v or "://" in v for v in (context, dockerfile)):
+            counts["builds_unresolved"] += 1
+            return
+        ctx = _norm(posixpath.join(base, context))
+        path = None if ctx is None else _norm(posixpath.join(ctx if in_context else "", dockerfile))
+        if ctx is None or path is None:
+            counts["builds_unresolved"] += 1
+        elif ctx not in dirs or path not in file_set:
+            counts["builds_missing"] += 1
+        else:
+            contexts.setdefault(path, set()).add(ctx)
+
+    unreadable: dict[str, list[str]] = {"compose": [], "actions": []}
     for rel in files:
-        if not docker.is_compose(posixpath.basename(rel)):
+        compose = docker.is_compose(posixpath.basename(rel))
+        if not compose and not ghactions.is_actions_file(rel):
             continue
-        cov["compose_files"] += 1
-        for _line, context, dockerfile in docker.compose_builds(_read(root, rel) or ""):
-            cov["builds"] += 1
-            context = "." if context is None else context
-            dockerfile = "Dockerfile" if dockerfile is None else dockerfile
-            if any("$" in v or "://" in v or v.startswith("/") for v in (context, dockerfile)):
-                cov["builds_unresolved"] += 1
-                continue
-            ctx = _norm(posixpath.join(posixpath.dirname(rel), context))
-            path = None if ctx is None else _norm(posixpath.join(ctx, dockerfile))
-            if path is None:
-                cov["builds_unresolved"] += 1
-            elif ctx not in dirs or path not in file_set:
-                cov["builds_missing"] += 1
-            else:
-                contexts.setdefault(path, set()).add(ctx)
+        (cov if compose else wf)["compose_files" if compose else "files"] += 1
+        try:
+            doc = yamlblock.load(_read(root, rel) or "")
+        except yamlblock.Unreadable:
+            unreadable["compose" if compose else "actions"].append(rel)
+            continue
+        if compose:
+            for _service, context, dockerfile in docker.compose_builds(doc):
+                place(posixpath.dirname(rel), "." if context is None else context,
+                      "Dockerfile" if dockerfile is None else dockerfile, True, cov)
+            continue
+        for build in ghactions.builds(doc):
+            wf["steps"] += 1
+            if build.reason is not None:
+                wf["steps_unresolved"][build.reason] += 1
+            for context, dockerfile in build.pairs:
+                place("", context, dockerfile, False, wf)
+    cov["compose_unreadable"] = _examples({"": unreadable["compose"]})[""]
+    wf["unreadable"] = _examples({"": unreadable["actions"]})[""]
     cov["dockerfiles_built"] = len(contexts)
     cov["dockerfiles_not_built"] = _examples({"": [r for r in dockerfiles if r not in contexts]})[""]
     project_dirs = sorted(projects.by_dir)
@@ -1076,6 +1108,7 @@ def render_target(m: dict[str, Any], source: str) -> str:
     sp = cov["specifiers"]
     sp_ins = cov["sys_path"]
     dk = cov["docker"]
+    wf = dk["workflows"]
     groups: dict[str, list[dict]] = {}
     for p in m["projects"]:
         groups.setdefault(p["dir"].split("/")[0], []).append(p)
@@ -1088,9 +1121,10 @@ def render_target(m: dict[str, Any], source: str) -> str:
              "`npm` or `cargo` (A's manifest names B, for Cargo also through its workspace or a `[patch]`), "
              "`import` (a JS/TS file of A imports into B), `python` (a Python file of A imports a package of B), "
              "`sys.path` (a Python file of A imports a name found in a directory the same file puts on `sys.path`, "
-             "and B holds it), `docker` (a Dockerfile of A, built with a context a compose file names, copies a path "
-             "B holds or a directory holding B). Rules and what is not read: `referee/status/depmap.py`, "
-             "`referee/profile/pypath.py` and `referee/profile/docker.py`.", "",
+             "and B holds it), `docker` (a Dockerfile of A, built with a context a compose file or a GitHub Actions step "
+             "names, copies a path B holds or a directory holding B). Rules and what is not read: "
+             "`referee/status/depmap.py`, `referee/profile/pypath.py`, `referee/profile/docker.py`, "
+             "`referee/profile/ghactions.py` and `referee/profile/yamlblock.py`.", "",
              "Projects %d (npm %d, nx %d, cargo %d, python %d, tsconfig %d, path %d, docker %d), arrows %d. Files %d; JS/TS files read %d (%d outside "
              "any project), Python files read %d (%d outside any project, %d not parsed). Imports: %d across "
              "projects, %d inside one, %d "
@@ -1111,18 +1145,26 @@ def render_target(m: dict[str, Any], source: str) -> str:
                  sp_ins["unresolved_files"]["count"],
                  _some(sp_ins["unresolved_files"]) or "none",
                  sp_ins["imports"]), "",
-             "Dockerfiles %d: %d built by %d `build:` entries of %d compose files (%d not resolved, %d naming no "
-             "context or Dockerfile of the checkout), %d not built by any (%s); their `COPY`/`ADD` sources: %d from "
-             "the context (%d matched, %d matching nothing, %d leaving it), %d from a stage or image, %d heredocs, "
-             "%d remote, %d holding a variable (not resolved); %d instructions malformed." % (
+             "Dockerfiles %d: %d built (by %d `build:` entries of %d compose files, %d not resolved, %d naming no "
+             "context or Dockerfile of the checkout; compose files not read: %s; by %d builds of %d `docker/build-push-action` steps in %d "
+             "GitHub Actions files, %d not resolved, %d naming no context or Dockerfile of the checkout; steps not "
+             "resolved: %s; Actions files not read: %s), %d not built by any (%s); their `COPY`/`ADD` sources: %d "
+             "from the context (%d matched, %d matching nothing, %d leaving it), %d from a stage or image, "
+             "%d heredocs, %d remote, %d holding a variable (not resolved); %d instructions malformed." % (
                  dk["dockerfiles"], dk["dockerfiles_built"], dk["builds"], dk["compose_files"],
-                 dk["builds_unresolved"], dk["builds_missing"], dk["dockerfiles_not_built"]["count"],
+                 dk["builds_unresolved"], dk["builds_missing"],
+                 "%d (%s)" % (dk["compose_unreadable"]["count"], _some(dk["compose_unreadable"]))
+                 if dk["compose_unreadable"]["count"] else "none", wf["builds"], wf["steps"], wf["files"],
+                 wf["builds_unresolved"], wf["builds_missing"],
+                 ", ".join("%s %d" % (k, n) for k, n in wf["steps_unresolved"].items() if n) or "none",
+                 "%d (%s)" % (wf["unreadable"]["count"], _some(wf["unreadable"])) if wf["unreadable"]["count"]
+                 else "none", dk["dockerfiles_not_built"]["count"],
                  _some(dk["dockerfiles_not_built"]) or "none", dk["sources"]["context"],
                  dk["context_sources"]["matched"], dk["context_sources"]["no_match"],
                  dk["context_sources"]["leaves_context"], dk["sources"]["stage"], dk["sources"]["heredoc"],
                  dk["sources"]["remote"], dk["sources"]["variable"], dk["malformed"]), "",
              "Code files whose references are not read (`OTHER_CODE_EXTENSIONS` by extension, `CODE_FILE_NAMES` "
-             "by name: other languages, shell, Terraform, Dockerfiles no compose file builds, Makefiles, SQL, GraphQL, "
+             "by name: other languages, shell, Terraform, Dockerfiles no build names, Makefiles, SQL, GraphQL, "
              "protobuf, jq): %s." % (
                  ", ".join("%s %d (%d in no project)" % (ext, n, cov["unread_code_files_outside_projects"].get(ext, 0))
                            for ext, n in cov["unread_code_files"].items()) or "none"), "",
