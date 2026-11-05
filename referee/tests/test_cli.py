@@ -557,7 +557,7 @@ class Walks(unittest.TestCase):
     here) runs over a value ``cli.loads`` returned at ``DEPTH`` with ``HEADROOM`` frames already on the stack, and
     returns without ``RecursionError``."""
 
-    HEADROOM = 150  # frames a command may hold above a walk (measured deepest here: well under 100)
+    HEADROOM = 150  # frames held above the walk: a margin for a command's own call depth, not a measurement of it
 
     @staticmethod
     def deep_object(key: str = "a", leaf: str = '"v"') -> dict:

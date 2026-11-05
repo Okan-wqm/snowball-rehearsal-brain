@@ -63,8 +63,8 @@ Rules ``run`` keeps (each bound by a test in ``tests/test_cli.py``):
    target's 1190 JSON files 10. Depth is counted on the text after a successful parse: each ``[`` or ``{`` outside
    a string opens a level, so a hook (``object_pairs_hook`` and the others) does not change it. Bound by a register
    over every source file, by ``LoadsDepth`` and ``Walks`` (every function in a referee source that calls itself
-   by name, run over a value ``DEPTH`` deep) in ``tests/test_cli.py``, and by ``profile.fit``'s case in
-   ``tests/test_profile_fit.py``.
+   by name, run over a value ``DEPTH`` deep) in ``tests/test_cli.py``, and by ``Deep`` (``profile.fit``) in
+   ``tests/test_profile_nx.py``.
    Out of scope, stated: values not parsed here (built in memory, read by another parser such as ``tomllib``);
    recursion through two or more functions (``Walks`` finds a function calling itself by its own name only).
 
