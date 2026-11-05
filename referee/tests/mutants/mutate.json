@@ -11,8 +11,8 @@
   },
   {
    "id": "baseline_ignored",
-   "old": "(\"baseline_red\" if base[tuple(m[\"tests\"])] != \"green\"",
-   "new": "(\"baseline_red\" if False",
+   "old": "outcome = (\"baseline_red\" if verdict != \"green\"",
+   "new": "outcome = (\"baseline_red\" if False",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -214,6 +214,78 @@
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
+   ]
+  },
+  {
+   "id": "limit_is_the_ceiling",
+   "file": "tests/mutate.py",
+   "old": "else run_one(brain, m, limits(seconds, timeout, factor, floor)))",
+   "new": "else run_one(brain, m, [timeout] * len(m[\"tests\"])))",
+   "tests": [
+    "test_mutate.Runner"
+   ]
+  },
+  {
+   "id": "limit_floor_ignored",
+   "file": "tests/mutate.py",
+   "old": "return [min(timeout, max(floor, factor * s)) for s in seconds]",
+   "new": "return [min(timeout, factor * s) for s in seconds]",
+   "tests": [
+    "test_mutate.Runner"
+   ]
+  },
+  {
+   "id": "limit_factor_ignored",
+   "file": "tests/mutate.py",
+   "old": "return [min(timeout, max(floor, factor * s)) for s in seconds]",
+   "new": "return [min(timeout, max(floor, s)) for s in seconds]",
+   "tests": [
+    "test_mutate.Runner"
+   ]
+  },
+  {
+   "id": "limit_ceiling_ignored",
+   "file": "tests/mutate.py",
+   "old": "return [min(timeout, max(floor, factor * s)) for s in seconds]",
+   "new": "return [max(floor, factor * s) for s in seconds]",
+   "tests": [
+    "test_mutate.Runner"
+   ]
+  },
+  {
+   "id": "limit_min_max_swapped",
+   "file": "tests/mutate.py",
+   "old": "return [min(timeout, max(floor, factor * s)) for s in seconds]",
+   "new": "return [max(timeout, min(floor, factor * s)) for s in seconds]",
+   "tests": [
+    "test_mutate.Runner"
+   ]
+  },
+  {
+   "id": "seconds_from_the_start_of_the_list",
+   "file": "tests/mutate.py",
+   "old": "        start = time.monotonic()\n        try:",
+   "new": "        start = start if seconds else time.monotonic()\n        try:",
+   "tests": [
+    "test_mutate.Runner"
+   ]
+  },
+  {
+   "id": "bad_limits_accepted",
+   "file": "tests/mutate.py",
+   "old": "if not (args.timeout > 0 and args.factor > 0 and args.floor >= 0):",
+   "new": "if False:",
+   "tests": [
+    "test_mutate.Runner"
+   ]
+  },
+  {
+   "id": "floor_flag_not_passed",
+   "file": "tests/mutate.py",
+   "old": "args.factor, args.floor)",
+   "new": "args.factor)",
+   "tests": [
+    "test_mutate.Runner"
    ]
   }
  ]

@@ -13,9 +13,16 @@ identifiers, ``<module>`` the file ``referee/tests/<module>.py``); any other ent
   ``referee/tests`` first on ``sys.path`` (what discover puts there), so an id runs in the same directory and
   imports the same modules as its file's discover run, only fewer tests. ``killed`` when one exits non-zero (a
   run of no test is non-zero: Python 3.12's exit 5), ``survived`` when all exit 0, ``timeout`` when one runs
-  longer than the limit (reported, neither killed nor survived);
-- each distinct ``tests`` list is first run once on an unchanged copy: if it is not green there, its mutants are
-  ``baseline_red`` and not run (a red test kills every mutant and proves nothing).
+  longer than its limit (reported, neither killed nor survived; the entries after it are not run);
+- each distinct ``tests`` list is first run once on an unchanged copy, each entry under ``--timeout``: if it is not
+  green there (an entry over ``--timeout`` included), its mutants are ``baseline_red`` and not run (a red test
+  kills every mutant and proves nothing).
+
+Limits. A mutant's entry may run ``min(--timeout, max(--floor, --factor * s))`` seconds, ``s`` the seconds that
+same entry took in its list's baseline (wall clock, measured in this run, under the same ``--jobs``): a mutant
+that loops ends near ``--factor`` times the baseline instead of at the ceiling, and ``--floor`` keeps a quick
+entry from timing out on load. The limit says nothing about why a mutant was slow: a ``timeout`` may be a mutant
+that loops or one that is only slower than the limit (a person reads which).
 
 Each row ``{file, id, outcome}`` is printed and flushed as its mutant finishes, so the rows come in the order
 the mutants finish, and a run that is cut keeps the rows it printed (the baselines run first and print nothing).
@@ -59,6 +66,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from fnmatch import fnmatch
 from typing import Any, Callable
 
@@ -119,31 +127,41 @@ def _copy(brain: str) -> str:
     return copy
 
 
-def _run_tests(copy: str, tests: list[str], timeout: float) -> str:
-    """``green``, ``red`` or ``timeout`` for the entries run in order in the copy's ``referee/``."""
-    for entry in tests:
+def _run_tests(copy: str, tests: list[str], limits: list[float]) -> tuple[str, list[float]]:
+    """``(verdict, seconds)`` for the entries run in order in the copy's ``referee/``, entry ``i`` under
+    ``limits[i]`` seconds: ``green``, ``red`` or ``timeout``, and the wall-clock seconds of each entry run."""
+    seconds: list[float] = []
+    for entry, limit in zip(tests, limits, strict=True):
         argv = ([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", entry] if entry.endswith(".py")
                 else [sys.executable, "-c", RUN_ID, entry])
+        start = time.monotonic()
         try:
             done = subprocess.run(argv,
                                   cwd=os.path.join(copy, "referee"), stdout=subprocess.DEVNULL,
-                                  stderr=subprocess.DEVNULL, timeout=timeout)
+                                  stderr=subprocess.DEVNULL, timeout=limit)
         except subprocess.TimeoutExpired:
-            return "timeout"
+            return "timeout", seconds + [time.monotonic() - start]
+        seconds.append(time.monotonic() - start)
         if done.returncode != 0:
-            return "red"
-    return "green"
+            return "red", seconds
+    return "green", seconds
 
 
-def baseline(brain: str, tests: list[str], timeout: float) -> str:
+def limits(seconds: list[float], timeout: float, factor: float, floor: float) -> list[float]:
+    """A mutant's limit for each entry from the seconds the entry took in the baseline (module docstring)."""
+    return [min(timeout, max(floor, factor * s)) for s in seconds]
+
+
+def baseline(brain: str, tests: list[str], timeout: float) -> tuple[str, list[float]]:
+    """``(verdict, seconds)`` of ``tests`` on an unchanged copy, each entry under ``timeout``."""
     copy = _copy(brain)
     try:
-        return _run_tests(copy, tests, timeout)
+        return _run_tests(copy, tests, [timeout] * len(tests))
     finally:
         shutil.rmtree(os.path.dirname(copy), ignore_errors=True)
 
 
-def run_one(brain: str, mutant: dict[str, Any], timeout: float) -> str:
+def run_one(brain: str, mutant: dict[str, Any], limit: list[float]) -> str:
     """``killed``, ``survived``, ``timeout``, ``stale`` or ``ambiguous``."""
     reason = applicable(brain, mutant)
     if reason:
@@ -155,7 +173,7 @@ def run_one(brain: str, mutant: dict[str, Any], timeout: float) -> str:
             text = fh.read()
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text.replace(mutant["old"], mutant["new"]))
-        verdict = _run_tests(copy, mutant["tests"], timeout)
+        verdict, _ = _run_tests(copy, mutant["tests"], limit)
     finally:
         shutil.rmtree(os.path.dirname(copy), ignore_errors=True)
     return {"red": "killed", "green": "survived"}.get(verdict, verdict)
@@ -220,9 +238,11 @@ def select(brain: str, items: list[tuple[str, dict[str, Any]]], changed: set[str
 
 
 def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[str] | None = None,
-        emit: Callable[[dict[str, str]], None] | None = None) -> list[dict[str, str]]:
+        emit: Callable[[dict[str, str]], None] | None = None, factor: float = 5.0,
+        floor: float = 60.0) -> list[dict[str, str]]:
     """One row per mutant, in file and mutant order: ``{file, id, outcome}``; with ``changed``, only the mutants
-    ``select`` keeps; ``emit`` is called with each row as its mutant finishes (one thread at a time)."""
+    ``select`` keeps; ``emit`` is called with each row as its mutant finishes (one thread at a time);
+    ``timeout``, ``factor`` and ``floor`` are the limits' (module docstring)."""
     mutants = [(path, m) for path in files for m in load(path)]
     if changed is not None:
         mutants = select(brain, mutants, changed)
@@ -234,8 +254,11 @@ def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[st
 
         def one(item: tuple[str, dict[str, Any]]) -> dict[str, str]:
             path, m = item
-            outcome = applicable(brain, m) or ("baseline_red" if base[tuple(m["tests"])] != "green"
-                                               else run_one(brain, m, timeout))
+            outcome = applicable(brain, m)
+            if not outcome:
+                verdict, seconds = base[tuple(m["tests"])]
+                outcome = ("baseline_red" if verdict != "green"
+                           else run_one(brain, m, limits(seconds, timeout, factor, floor)))
             row = {"file": os.path.relpath(path, brain), "id": m["id"], "outcome": outcome}
             if emit:
                 with lock:
@@ -250,14 +273,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("files", nargs="*", help="mutant files (default: every referee/tests/mutants/*.json)")
     parser.add_argument("--brain", default=BRAIN)
     parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
-    parser.add_argument("--timeout", type=float, default=900.0, help="seconds per tests entry")
+    parser.add_argument("--timeout", type=float, default=900.0,
+                        help="seconds per tests entry: the baseline's limit and every mutant's ceiling")
+    parser.add_argument("--factor", type=float, default=5.0, help="a mutant's limit in baseline durations")
+    parser.add_argument("--floor", type=float, default=60.0, help="a mutant's least limit in seconds")
     parser.add_argument("--touched", metavar="REV", help="only the mutants a change since REV can concern")
     args = parser.parse_args(argv)
+    if not (args.timeout > 0 and args.factor > 0 and args.floor >= 0):
+        parser.error("--timeout and --factor must be positive, --floor not negative")
     brain = os.path.abspath(args.brain)
     files = args.files or sorted(glob.glob(os.path.join(brain, "referee", "tests", "mutants", "*.json")))
     changed = touched(brain, args.touched) if args.touched else None
     rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,
-               lambda row: print(json.dumps(row, sort_keys=True), flush=True))
+               lambda row: print(json.dumps(row, sort_keys=True), flush=True), args.factor, args.floor)
     if changed is not None:
         print("--touched %s: %d changed paths, %d mutants selected" % (args.touched, len(changed), len(rows)),
               file=sys.stderr)
