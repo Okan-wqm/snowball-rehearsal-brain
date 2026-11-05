@@ -174,8 +174,8 @@
   {
    "id": "dm_context_from_root",
    "file": "status/depmap.py",
-   "old": "            ctx = _norm(posixpath.join(posixpath.dirname(rel), context))\n",
-   "new": "            ctx = _norm(context)\n",
+   "old": "                place(posixpath.dirname(rel), \".\" if context is None else context,",
+   "new": "                place(\"\", \".\" if context is None else context,",
    "tests": [
     "test_depmap.py"
    ]
@@ -183,8 +183,8 @@
   {
    "id": "dm_dockerfile_default",
    "file": "status/depmap.py",
-   "old": "            dockerfile = \"Dockerfile\" if dockerfile is None else dockerfile\n",
-   "new": "            dockerfile = \"Containerfile\" if dockerfile is None else dockerfile\n",
+   "old": "\"Dockerfile\" if dockerfile is None else dockerfile, True, cov)",
+   "new": "\"Containerfile\" if dockerfile is None else dockerfile, True, cov)",
    "tests": [
     "test_depmap.py"
    ]
@@ -192,8 +192,8 @@
   {
    "id": "dm_variable_resolved",
    "file": "status/depmap.py",
-   "old": "            if any(\"$\" in v or \"://\" in v or v.startswith(\"/\") for v in (context, dockerfile)):",
-   "new": "            if any(\"://\" in v or v.startswith(\"/\") for v in (context, dockerfile)):",
+   "old": "        if any(\"$\" in v or \"://\" in v for v in (context, dockerfile)):",
+   "new": "        if any(\"://\" in v for v in (context, dockerfile)):",
    "tests": [
     "test_depmap.py"
    ]
@@ -201,8 +201,8 @@
   {
    "id": "dm_context_dir_unchecked",
    "file": "status/depmap.py",
-   "old": "            elif ctx not in dirs or path not in file_set:\n",
-   "new": "            elif path not in file_set:\n",
+   "old": "        elif ctx not in dirs or path not in file_set:\n",
+   "new": "        elif path not in file_set:\n",
    "tests": [
     "test_depmap.py"
    ]
@@ -210,8 +210,8 @@
   {
    "id": "dm_compose_any_yaml",
    "file": "status/depmap.py",
-   "old": "        if not docker.is_compose(posixpath.basename(rel)):\n",
-   "new": "        if not rel.endswith((\".yml\", \".yaml\")):\n",
+   "old": "        if docker.is_compose(posixpath.basename(rel)):\n",
+   "new": "        if rel.endswith((\".yml\", \".yaml\")):\n",
    "tests": [
     "test_depmap.py"
    ]

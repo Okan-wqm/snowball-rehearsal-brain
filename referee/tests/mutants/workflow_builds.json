@@ -1,0 +1,49 @@
+{
+ "mutants": [
+  {
+   "id": "dm_wf_off",
+   "file": "status/depmap.py",
+   "old": "        elif ghactions.is_actions_file(rel):",
+   "new": "        elif False:",
+   "tests": [
+    "test_depmap.WorkflowBuilds"
+   ]
+  },
+  {
+   "id": "dm_wf_file_in_context",
+   "file": "status/depmap.py",
+   "old": "                    place(\"\", context, dockerfile, False, wf)",
+   "new": "                    place(\"\", context, dockerfile, True, wf)",
+   "tests": [
+    "test_depmap.WorkflowBuilds"
+   ]
+  },
+  {
+   "id": "dm_compose_file_from_root",
+   "file": "status/depmap.py",
+   "old": "                      \"Dockerfile\" if dockerfile is None else dockerfile, True, cov)",
+   "new": "                      \"Dockerfile\" if dockerfile is None else dockerfile, False, cov)",
+   "tests": [
+    "test_depmap.Docker"
+   ]
+  },
+  {
+   "id": "dm_wf_reason_uncounted",
+   "file": "status/depmap.py",
+   "old": "                    wf[\"steps_unresolved\"][build.reason] += 1",
+   "new": "                    pass",
+   "tests": [
+    "test_depmap.WorkflowBuilds"
+   ]
+  },
+  {
+   "id": "dm_wf_unreadable_uncounted",
+   "file": "status/depmap.py",
+   "old": "                unreadable.append(rel)\n",
+   "new": "",
+   "tests": [
+    "test_depmap.WorkflowBuilds"
+   ]
+  }
+ ]
+}

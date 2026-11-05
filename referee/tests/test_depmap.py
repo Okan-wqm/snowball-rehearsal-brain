@@ -32,7 +32,8 @@ the brain's committed drawing is the one its code gives today.
   every project inside a directory (a glob segment by segment, ``.``, no arrow to itself, none from the root's),
   sources of a stage, a heredoc, a remote, a variable, leaving the context or matching nothing draw nothing, a
   Dockerfile built with two contexts resolved in each; the coverage (a Dockerfile not built stays in
-  ``unread_code_files``) and the drawing's lines;
+  ``unread_code_files``) and the drawing's lines; ``WorkflowBuilds``: the same over GitHub Actions files (the files
+  read, the file from the root, the matrix, the reasons, a file not read, a Dockerfile built with two contexts);
 - the kinds of a file (``FileKinds``): ``file_kind``'s order (read, code by ``CODE_FILE_NAMES`` then by
   ``OTHER_CODE_EXTENSIONS``, ``NOT_CODE_EXTENSIONS``, unclassified, no extension), case as written, near names and
   a leading dot; the lists disjoint; ``unclassified_files`` and ``files_without_extension`` counted with three
@@ -656,7 +657,11 @@ class Docker(unittest.TestCase):
             "dockerfiles_built": 5,
             "dockerfiles_not_built": {"count": 2, "examples": ["infra/docker/Dockerfile.unbuilt", "ts/Dockerfile"]},
             "sources": {"context": 9, "stage": 1, "heredoc": 1, "remote": 1, "variable": 1}, "malformed": 1,
-            "context_sources": {"matched": 6, "no_match": 1, "leaves_context": 2}})
+            "context_sources": {"matched": 6, "no_match": 1, "leaves_context": 2},
+            "workflows": {"files": 0, "unreadable": {"count": 0, "examples": []}, "steps": 0,
+                          "steps_unresolved": {"matrix_dynamic": 0, "context": 0, "function": 0, "operator": 0,
+                                               "syntax": 0},
+                          "builds": 0, "builds_unresolved": 0, "builds_missing": 0}})
         self.assertEqual(cov["projects_by_kind"]["docker"], 2)
         self.assertEqual(cov["unread_code_files"], {"Dockerfile": 1, "Dockerfile.*": 1})   # the two not built
         self.assertEqual(cov["unread_code_files_outside_projects"], {})
@@ -675,13 +680,99 @@ class Docker(unittest.TestCase):
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
         self.assertIn("Projects 9 (npm 3, nx 3, cargo 0, python 0, tsconfig 1, path 0, docker 2), arrows 6.", text)
-        self.assertIn("Dockerfiles 7: 5 built by 13 `build:` entries of 2 compose files (4 not resolved, 3 naming "
-                      "no context or Dockerfile of the checkout), 2 not built by any (infra/docker/Dockerfile.unbuilt, "
-                      "ts/Dockerfile); their `COPY`/`ADD` sources: 9 from the context (6 matched, 1 matching nothing, "
+        self.assertIn("Dockerfiles 7: 5 built (by 13 `build:` entries of 2 compose files, 4 not resolved, 3 naming "
+                      "no context or Dockerfile of the checkout; by 0 builds of 0 `docker/build-push-action` steps "
+                      "in 0 GitHub Actions files, 0 not resolved, 0 naming no context or Dockerfile of the checkout; "
+                      "steps not resolved: none; Actions files not read: none), 2 not built by any "
+                      "(infra/docker/Dockerfile.unbuilt, ts/Dockerfile); their `COPY`/`ADD` sources: 9 from the context (6 matched, 1 matching nothing, "
                       "2 leaving it), 1 from a stage or image, 1 heredocs, 1 remote, 1 holding a variable (not "
                       "resolved); 1 instructions malformed.", text)
         self.assertIn("or of kind `docker`: a directory holding a Dockerfile that no other box holds", text)
         self.assertIn("| infra/docker | infra/docker | docker | @t/web (docker), infra-lib (docker) |", text)
+
+
+class WorkflowBuilds(unittest.TestCase):
+    """``docker_edges`` over GitHub Actions files: which files are read (the root's ``.github/workflows`` directly,
+    ``action.yml`` anywhere), each step's pairs placed from the root (``file`` not relative to the context), the
+    matrix expanded, a step not resolved counted by its reason, a file not read counted, ``unresolved`` and
+    ``missing`` builds, a Dockerfile built with two contexts, the coverage and the drawing's line (the readers' own
+    rules: test_profile_ghactions, test_profile_yamlblock)."""
+
+    WORKFLOW = ("name: x\non: [push]\njobs:\n"
+                "  one:\n    runs-on: ubuntu-latest\n    steps:\n"
+                "      - uses: actions/checkout@v4\n"
+                "      - uses: Docker/Build-Push-Action@v6\n        with:\n          context: .\n"
+                "          file: img/Dockerfile\n"
+                "  two:\n    strategy:\n      matrix:\n        include:\n          - f: img/Dockerfile.b\n"
+                "          - f: ./img2/Dockerfile\n    steps:\n"
+                "      - uses: docker/build-push-action@0123abc # v6\n        with:\n"
+                "          file: ${{ matrix.f }}\n"
+                "  three:\n    strategy:\n      matrix: ${{ fromJson(needs.x.outputs.m) }}\n    steps:\n"
+                "      - uses: docker/build-push-action@v6\n        with: {file: img/Dockerfile}\n"
+                "  four:\n    steps:\n"
+                "      - uses: docker/build-push-action@v6\n        with:\n          context: ${{ inputs.ctx }}\n"
+                "      - uses: docker/build-push-action@v6\n        with:\n          context: img\n"
+                "          file: Dockerfile\n"
+                "      - uses: docker/build-push-action@v6\n        with:\n          context: img\n"
+                "      - uses: docker/build-push-action@v6\n        with:\n          file: /abs/Dockerfile\n"
+                "      - uses: docker/build-push-action@v6\n        with:\n          context: b\n"
+                "          file: img/Dockerfile.w\n"
+                "      - uses: docker/setup-buildx-action@v3\n")
+
+    def checkout(self) -> str:
+        root = tempfile.mkdtemp()
+        write(root, {
+            "a/project.json": "{}", "b/project.json": "{}", "c/project.json": "{}",
+            "img/Dockerfile": "COPY a /a\n",
+            "img/Dockerfile.b": "COPY b /b\n",
+            "img/Dockerfile.c": "COPY c /c\n",
+            "img/Dockerfile.n": "COPY a /a\n",                     # named only by a workflow not read
+            "img/Dockerfile.w": "COPY sub /s\n",                   # built with the context b
+            "b/sub/project.json": "{}",
+            "img2/Dockerfile": "COPY c /c\n",
+            ".github/workflows/b.yml": self.WORKFLOW,
+            ".github/workflows/bad.yml": "jobs:\n\tx: 1\n",
+            ".github/workflows/nested/w.yml": "jobs:\n  n:\n    steps:\n"
+                                              "      - uses: docker/build-push-action@v6\n"
+                                              "        with:\n          file: img/Dockerfile.n\n",
+            ".github/actions/build/action.yml": "runs:\n  using: composite\n  steps:\n"
+                                                "    - uses: docker/build-push-action@v5\n"
+                                                "      with:\n        file: img/Dockerfile.c\n",
+        })
+        return root
+
+    def test_arrows(self):
+        m = D.target_map(self.checkout())
+        self.assertEqual([(p["dir"], p["kinds"]) for p in m["projects"]], [
+            ("a", ["nx"]), ("b", ["nx"]), ("b/sub", ["nx"]), ("c", ["nx"]), ("img", ["docker"]),
+            ("img2", ["docker"])])
+        self.assertEqual([(e["from"], e["to"], e["kinds"]) for e in m["edges"]], [
+            ("img", "a", ["docker"]),       # a literal step, the file from the root
+            ("img", "b", ["docker"]),       # a matrix combination
+            ("img", "b/sub", ["docker"]),   # the file from the root, its sources from the context
+            ("img", "c", ["docker"]),       # a composite action's step
+            ("img2", "c", ["docker"]),      # the other combination, "./" removed
+        ])
+
+    def test_coverage(self):
+        dk = D.target_map(self.checkout())["coverage"]["docker"]
+        self.assertEqual(dk["workflows"], {
+            "files": 3, "unreadable": {"count": 1, "examples": [".github/workflows/bad.yml"]}, "steps": 9,
+            "steps_unresolved": {"matrix_dynamic": 1, "context": 1, "function": 0, "operator": 0, "syntax": 0},
+            "builds": 8, "builds_unresolved": 1, "builds_missing": 1})
+        self.assertEqual((dk["dockerfiles"], dk["dockerfiles_built"], dk["dockerfiles_not_built"]),
+                         (6, 5, {"count": 1, "examples": ["img/Dockerfile.n"]}))
+        # img/Dockerfile is built with "" and with "img": its one source read once, resolved in each
+        self.assertEqual(dk["sources"]["context"], 5)
+        self.assertEqual(dk["context_sources"], {"matched": 5, "no_match": 1, "leaves_context": 0})
+
+    def test_render(self):
+        text = D.render_target(D.target_map(self.checkout()), "x")
+        self.assertIn("Dockerfiles 6: 5 built (by 0 `build:` entries of 0 compose files, 0 not resolved, 0 naming "
+                      "no context or Dockerfile of the checkout; by 8 builds of 9 `docker/build-push-action` steps "
+                      "in 3 GitHub Actions files, 1 not resolved, 1 naming no context or Dockerfile of the checkout; "
+                      "steps not resolved: matrix_dynamic 1, context 1; Actions files not read: 1 "
+                      "(.github/workflows/bad.yml)), 1 not built by any (img/Dockerfile.n);", text)
 
 
 class FileKinds(unittest.TestCase):
