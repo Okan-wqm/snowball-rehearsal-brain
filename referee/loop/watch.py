@@ -47,7 +47,9 @@ runs its sentinel. From ``index.json``'s ``base`` (``{verdict, reasons}``):
 What it does not judge, stated: a file the lint tool does not read (outside its configuration or ignored), a module
 that parses but does not load (a missing import, a throw at load time: that shows as failing tests of the run, so
 ``test_regression``), and whether the merge's first parent parsed: at a merge of the gate it did (its cycle merged
-only with a base run, which exists only when every file parsed), at a planted merge (D8) it is not checked.
+only with a base run, which exists only when every file parsed), at a planted merge (D8) it is not checked. What it takes on trust, stated: the unit's lint parser configuration
+parses what the unit's runtime loads; a file that configuration cannot parse but the runtime would load (a syntax
+the runtime has and the configured parser lacks) is judged ``false``, a build break the runtime would not show.
 
 **The facts of a red** (``facts(sentinel, ledger, after, build_ok)``), each rule exact and stated, since no page names
 them:
