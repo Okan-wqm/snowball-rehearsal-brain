@@ -35,9 +35,11 @@ import importlib
 import io
 import json
 import os
+import random
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -549,6 +551,61 @@ class LoadsDepth(unittest.TestCase):
             raise Mine()
         with self.assertRaises(Mine):
             cli.loads("{}", object_pairs_hook=hook)
+
+    @staticmethod
+    def nesting(value) -> int:
+        """The depth of a parsed value, by an explicit stack (the reference ``cli.depth`` is checked against)."""
+        deepest, stack = 0, [(value, 0)]
+        while stack:
+            item, level = stack.pop()
+            if isinstance(item, (list, dict)):
+                deepest = max(deepest, level + 1)
+                stack.extend((child, level + 1) for child in (item.values() if isinstance(item, dict) else item))
+        return deepest
+
+    def test_depth_equals_the_parsed_values_depth_for_generated_json(self):
+        # strings drawn from the characters that end, escape or look like structure, so every escape shape occurs:
+        # runs of backslashes of each parity, an escaped quote after them, brackets and quotes in keys and values
+        rng = random.Random(8)
+        alphabet = ['"', "\\", "[", "]", "{", "}", "u", "x", "\n", "\u00e9", "/", ":", ","]
+
+        def string():
+            return "".join(rng.choice(alphabet) for _ in range(rng.randrange(0, 12)))
+
+        def value(level):
+            pick = rng.randrange(6 if level < 12 else 3)
+            if pick == 0:
+                return string()
+            if pick == 1:
+                return rng.choice([0, -1.5, True, None])
+            if pick == 2:
+                return "\\" * rng.randrange(1, 6) + rng.choice(['"', "[", "", "\\"])
+            if pick == 3:
+                return [value(level + 1) for _ in range(rng.randrange(0, 4))]
+            return {string(): value(level + 1) for _ in range(rng.randrange(0, 4))}
+
+        for case in range(3000):
+            item = value(0)
+            for text in (json.dumps(item), json.dumps(item, ensure_ascii=False, indent=case % 3 or None)):
+                self.assertEqual(cli.depth(text), self.nesting(json.loads(text)), text)
+
+    def test_depth_costs_a_few_parses_on_string_heavy_text(self):
+        # f873: the former regular expression took 16 to 100 times json.loads on these shapes; the bound is 8 times
+        # (best of five each, so both sides see the same machine load)
+        def best(run):
+            times = []
+            for _ in range(5):
+                start = time.perf_counter()
+                run()
+                times.append(time.perf_counter() - start)
+            return min(times)
+
+        shapes = {"one long string": json.dumps(["x" * 2_000_000]),
+                  "escaped quotes": json.dumps(['"' * 1_000_000]),
+                  "backslashes": json.dumps(["\\" * 1_000_001 + '"'])}
+        for name, text in shapes.items():
+            ratio = best(lambda: cli.depth(text)) / best(lambda: json.loads(text))
+            self.assertLess(ratio, 8, name)
 
 
 class Walks(unittest.TestCase):

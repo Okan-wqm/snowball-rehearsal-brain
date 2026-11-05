@@ -98,15 +98,27 @@ class TooDeep(ValueError, RecursionError):
 
 
 DEPTH = 128  # the deepest JSON loads returns, in arrays and objects (rule 8)
-_STRING = re.compile(r'"(?:[^"\\]|\\.)*"', re.S)  # a JSON string, escapes included (valid JSON only)
 _LEVEL = re.compile(r"[\[\]{}]")
+
+
+def outside_strings(text: str) -> str:
+    """The valid JSON ``text`` without its strings (their quotes included).
+
+    In valid JSON a backslash occurs only in a string, where it starts a two-character escape (``\\uXXXX`` is ``\\u``
+    and four plain characters). So each run of backslashes pairs from its left end, as ``str.replace`` pairs it; after
+    the pairs go, a backslash left over escapes the character after it, and removing every ``\\"`` leaves only the
+    quotes that open and close strings, which alternate: the even pieces between them are the text outside strings.
+    Only ``str`` methods, no regular expression: on string-heavy text (one long string, long runs of escaped quotes or
+    of backslashes) measured at most 2.5 times ``json.loads`` and bound below 8 times by ``LoadsDepth``, where the
+    former pattern ``"(?:[^"\\]|\\.)*"`` took 16 to 100 times. Text that is not valid JSON is out of scope."""
+    return "".join(text.replace("\\\\", "").replace('\\"', "").split('"')[::2])
 
 
 def depth(text: str) -> int:
     """How many arrays and objects deep the valid JSON ``text`` nests (a scalar is 0); brackets in strings do not
     count."""
     level = deepest = 0
-    for bracket in _LEVEL.findall(_STRING.sub("", text)):
+    for bracket in _LEVEL.findall(outside_strings(text)):
         if bracket in "[{":
             level += 1
             deepest = max(deepest, level)
