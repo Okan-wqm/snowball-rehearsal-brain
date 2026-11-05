@@ -20,8 +20,8 @@
   },
   {
    "id": "mutates_the_brain_itself",
-   "old": "path = os.path.join(copy, \"referee\", mutant[\"file\"])",
-   "new": "path = os.path.join(brain, \"referee\", mutant[\"file\"])",
+   "old": "path = os.path.join(copy, mutant[\"root\"], mutant[\"file\"])",
+   "new": "path = os.path.join(brain, mutant[\"root\"], mutant[\"file\"])",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -128,7 +128,7 @@
   },
   {
    "id": "mutated_file_not_a_root",
-   "old": "roots = [\"referee/\" + m[\"file\"]] + [",
+   "old": "roots = [os.path.normpath(os.path.join(m[\"root\"], m[\"file\"]))] + [",
    "new": "roots = [] + [",
    "file": "tests/mutate.py",
    "tests": [
@@ -137,8 +137,8 @@
   },
   {
    "id": "tests_names_second",
-   "old": "spaces = (\"referee/tests/\", \"referee/\")",
-   "new": "spaces = (\"referee/\", \"referee/tests/\")",
+   "old": "ROOTS = {\"referee\": (\"referee/tests/\", \"referee/\"),",
+   "new": "ROOTS = {\"referee\": (\"referee/\", \"referee/tests/\"),",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -286,6 +286,78 @@
    "new": "args.factor)",
    "tests": [
     "test_mutate.Runner"
+   ]
+  },
+  {
+   "id": "root_field_ignored",
+   "old": "root = data.get(\"root\", \"referee\")",
+   "new": "root = \"referee\"",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "any_root_accepted",
+   "old": "if not (isinstance(root, str) and root in ROOTS) or set(data) - {\"root\", \"mutants\"}:",
+   "new": "if not isinstance(root, str):",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "applicable_reads_referee",
+   "old": "path = os.path.join(brain, mutant[\"root\"], mutant[\"file\"])",
+   "new": "path = os.path.join(brain, \"referee\", mutant[\"file\"])",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "tests_run_in_referee",
+   "old": "cwd=os.path.join(copy, root), stdout",
+   "new": "cwd=os.path.join(copy, \"referee\"), stdout",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "baseline_shared_across_roots",
+   "old": "verdict, seconds = base[(m[\"root\"], tuple(m[\"tests\"]))]",
+   "new": "verdict, seconds = next(v for k, v in base.items() if k[1] == tuple(m[\"tests\"]))",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "root_tests_not_first",
+   "old": "\".\": (\"tests/\", \"referee/tests/\", \"referee/\")}",
+   "new": "\".\": (\"referee/tests/\", \"referee/\", \"tests/\")}",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "root_tests_space_dropped",
+   "old": "\".\": (\"tests/\", \"referee/tests/\", \"referee/\")}",
+   "new": "\".\": (\"referee/tests/\", \"referee/\")}",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "one_closure_for_every_root",
+   "old": "return bool(closures[m[\"root\"]](roots) & changed)",
+   "new": "return bool(closure_of(brain, changed, ROOTS[\"referee\"])(roots) & changed)",
+   "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
    ]
   }
  ]

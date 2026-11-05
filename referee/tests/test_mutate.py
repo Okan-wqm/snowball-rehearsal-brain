@@ -47,11 +47,37 @@ class Runner(unittest.TestCase):
         write_tree(self.brain, {"referee/mod.py": MOD, "referee/tests/test_mod.py": TEST,
                                 "referee/tests/test_red.py": RED, "referee/tests/test_slow.py": SLOW})
 
-    def outcomes(self, mutants: list[dict], timeout: float = 120.0, emit=None, **limits) -> dict[str, str]:
-        path = os.path.join(self.brain, "m.json")
-        with open(path, "w") as fh:
-            json.dump({"mutants": mutants}, fh)
-        return {r["id"]: r["outcome"] for r in mutate.run(self.brain, [path], 4, timeout, emit=emit, **limits)}
+    def outcomes(self, mutants: list[dict], timeout: float = 120.0, emit=None, roots: dict | None = None,
+                 **limits) -> dict[str, str]:
+        """Outcomes of ``mutants`` written to one file, and of each ``roots`` file (``{root: mutants}``) beside it."""
+        paths = []
+        for i, (root, ms) in enumerate([(None, mutants)] + sorted((roots or {}).items())):
+            paths.append(os.path.join(self.brain, "m%d.json" % i if i else "m.json"))
+            with open(paths[-1], "w") as fh:
+                json.dump({"mutants": ms} | ({"root": root} if root else {}), fh)
+        return {r["id"]: r["outcome"] for r in mutate.run(self.brain, paths, 4, timeout, emit=emit, **limits)}
+
+    def test_a_root_mutant_runs_on_its_roots_file_with_its_roots_tests_from_its_root(self):
+        # The brain's root has its own mod.py (twice differs from referee's) and tests/: test_root checks twice
+        # and that it runs from the root (referee/ is below it), and the root's test_mod.py is red, so a referee
+        # mutant and a root mutant with the same tests list have different baselines.
+        root_test = ("import os, sys, unittest\nsys.path.insert(0, os.path.dirname(os.path.dirname("
+                     "os.path.abspath(__file__))))\nimport mod\n\n\nclass T(unittest.TestCase):\n"
+                     "    def test_twice(self):\n        self.assertEqual(mod.twice(3), 6)\n"
+                     "        self.assertTrue(os.path.isdir('referee'))\n")
+        write_tree(self.brain, {"mod.py": MOD.replace("return a + a", "return a * 2"), "tests/test_root.py": root_test,
+                                "tests/test_mod.py": RED})
+        got = self.outcomes([mutant("referee_side", "return a + b", "return a - b")], roots={".": [
+            mutant("root_file", "return a * 2", "return a * 3", ["test_root.py"]),
+            mutant("root_id", "return a * 2", "return a * 4", ["test_root.T.test_twice"]),
+            mutant("root_untested", "return a + b", "return a - b", ["test_root.py"]),
+            mutant("root_red_baseline", "return a + b", "return a - b", ["test_mod.py"]),
+            mutant("not_in_root", "return a + a", "return 2 * a", ["test_root.py"])]})
+        self.assertEqual(got, {"referee_side": "killed", "root_file": "killed", "root_id": "killed",
+                               "root_untested": "survived", "root_red_baseline": "baseline_red",
+                               "not_in_root": "stale"})
+        with open(os.path.join(self.brain, "mod.py")) as fh:
+            self.assertEqual(fh.read(), MOD.replace("return a + a", "return a * 2"))
 
     def test_an_id_runs_only_the_tests_it_names_as_discover_would(self):
         write_tree(self.brain, {"referee/tests/test_ids.py": IDS, "referee/tests/helper.py": "VALUE = 5\n",
@@ -136,7 +162,7 @@ class Runner(unittest.TestCase):
 
     def test_each_entry_is_timed_on_its_own(self):
         write_tree(self.brain, {"referee/tests/test_pause.py": SLOW.replace("time.sleep(30)", "time.sleep(1.5)")})
-        verdict, seconds = mutate.baseline(self.brain, ["test_pause.py", "test_mod.py"], 120.0)
+        verdict, seconds = mutate.baseline(self.brain, "referee", ["test_pause.py", "test_mod.py"], 120.0)
         self.assertEqual((verdict, len(seconds)), ("green", 2))
         self.assertGreaterEqual(seconds[0], 1.5)
         self.assertLess(seconds[1], 1.5)
@@ -175,7 +201,11 @@ class Runner(unittest.TestCase):
                             ("an id not dotted names", {"mutants": [good | {"tests": ["test_mod.T-1"]}]}),
                             ("an id with a path", {"mutants": [good | {"tests": ["../test_mod.T"]}]}),
                             ("an empty entry", {"mutants": [good | {"tests": [""]}]}),
-                            ("duplicate id", {"mutants": [good, good]})):
+                            ("duplicate id", {"mutants": [good, good]}),
+                            ("a root not in ROOTS", {"root": "referee/tests", "mutants": [good]}),
+                            ("a root not a string", {"root": ["."], "mutants": [good]}),
+                            ("an empty root", {"root": "", "mutants": [good]}),
+                            ("an unknown file field", {"mutants": [good], "roots": "."})):
             with self.subTest(label=label):
                 path = os.path.join(self.brain, "bad.json")
                 with open(path, "w") as fh:
@@ -189,6 +219,14 @@ class Runner(unittest.TestCase):
         with open(path, "w") as fh:
             json.dump({"mutants": [mutant("k", "return a + b", "return a - b", tests)]}, fh)
         self.assertEqual(mutate.load(path)[0]["tests"], tests)
+
+    def test_a_files_root_is_given_to_each_of_its_mutants(self):
+        path = os.path.join(self.brain, "good.json")
+        for data, root in (({}, "referee"), ({"root": "referee"}, "referee"), ({"root": "."}, ".")):
+            with self.subTest(data=data):
+                with open(path, "w") as fh:
+                    json.dump(data | {"mutants": [mutant("k", "a", "b"), mutant("l", "a", "c")]}, fh)
+                self.assertEqual([m["root"] for m in mutate.load(path)], [root, root])
 
 
 class Select(unittest.TestCase):
@@ -211,8 +249,16 @@ class Select(unittest.TestCase):
             mutant("not_imported", "return a - b", "return a", ["test_mod.py"], "other.py")]},  # e.g. a subprocess
         "referee/tests/mutants/b.json": {"mutants": [mutant("b_on_other", "return a - b", "return b",
                                                             ["test_other.py"], "other.py")]},
+        # The brain's root tests: tests/helper.py shadows referee/tests/helper.py for them (discover's start
+        # directory first); pkg is referee's, which the root tests put on sys.path.
+        "tests/tool.py": "def go():\n    return 1\n",
+        "tests/helper.py": "VALUE = 7\n",
+        "tests/test_tool.py": "import helper\nimport tool\nfrom pkg import util\n",
+        "referee/tests/mutants/c.json": {"root": ".", "mutants": [mutant("on_tool", "return 1", "return 2",
+                                                                        ["test_tool.py"], "tests/tool.py")]},
     }
     BY_TEST = ["on_mod", "not_imported"]
+    ROOT = ["on_tool"]
     ON_OTHER = ["on_other", "on_other_by_glob", "not_imported", "b_on_other"]
 
     def setUp(self):
@@ -232,13 +278,18 @@ class Select(unittest.TestCase):
         for rel, ids in (("referee/mod.py", self.BY_TEST),                 # its file, imported by its test
                          ("referee/other.py", self.ON_OTHER),
                          ("referee/tests/test_mod.py", self.BY_TEST),       # its test file
-                         ("referee/tests/helper.py", self.BY_TEST),         # imported by its test
-                         ("referee/pkg/util.py", self.BY_TEST),             # imported by an imported file
-                         ("referee/pkg/__init__.py", self.BY_TEST),         # the package run first
+                         ("referee/tests/helper.py", self.BY_TEST),         # imported by its test; for the root
+                                                                            # tests shadowed by tests/helper.py
+                         ("referee/pkg/util.py", self.BY_TEST + self.ROOT),  # imported by an imported file
+                         ("referee/pkg/__init__.py", self.BY_TEST + self.ROOT),  # the package run first
                          ("referee/tests/mutants/b.json", ["b_on_other"]),  # its mutant file
+                         ("referee/tests/mutants/c.json", self.ROOT),
                          ("referee/helper.py", []),                         # shadowed by tests/helper.py
                          ("referee/data.json", []),                         # not Python: stated out of scope
-                         ("tests/test_mod.py", [])):                        # the brain's root tests: not referee's
+                         ("tests/test_mod.py", []),                         # no root test has that name
+                         ("tests/tool.py", self.ROOT),                      # a root mutant's file
+                         ("tests/test_tool.py", self.ROOT),                 # its test file
+                         ("tests/helper.py", self.ROOT)):                   # imported by its test, from tests/
             with self.subTest(rel=rel):
                 self.assertEqual(self.selected({rel}), ids)
 
@@ -248,13 +299,13 @@ class Select(unittest.TestCase):
             with self.subTest(removed=old):
                 write_tree(self.brain, self.TREE)
                 os.rename(os.path.join(self.brain, old), os.path.join(self.brain, new))
-                self.assertEqual(self.selected({old}), self.BY_TEST)
+                self.assertEqual(self.selected({old}), self.BY_TEST + (self.ROOT if "pkg" in old else []))
                 self.assertEqual(self.selected({new}), [])
                 os.remove(os.path.join(self.brain, new))
 
     def test_an_id_is_concerned_by_its_modules_file(self):
-        items = [("x.json", mutant("by_id", "return a - b", "return a", ["test_mod.T"], "other.py")),
-                 ("x.json", mutant("by_other_id", "return a - b", "return b", ["test_other.T"], "other.py"))]
+        items = [("x.json", mutant(id_, "return a - b", new, [test], "other.py") | {"root": "referee"})
+                 for id_, new, test in (("by_id", "return a", "test_mod.T"), ("by_other_id", "return b", "test_other.T"))]
         for rel, ids in (("referee/tests/helper.py", ["by_id"]), ("referee/tests/test_mod.py", ["by_id"]),
                          ("referee/pkg/util.py", ["by_id"]), ("referee/other.py", ["by_id", "by_other_id"])):
             with self.subTest(rel=rel):
@@ -331,7 +382,7 @@ class Kept(unittest.TestCase):
                 with self.subTest(file=os.path.basename(path), id=m["id"]):
                     self.assertIsNone(mutate.applicable(mutate.BRAIN, m))
                     for entry in m["tests"]:
-                        found = glob.glob(os.path.join(mutate.BRAIN, "referee", "tests", mutate.test_file(entry)))
+                        found = glob.glob(os.path.join(mutate.BRAIN, m["root"], "tests", mutate.test_file(entry)))
                         self.assertTrue(found, entry)
                         if not entry.endswith(".py"):  # the id's class (and method) are defined in its module
                             self.assertTrue(defines(found[0], entry.split(".")[1:]), entry)
