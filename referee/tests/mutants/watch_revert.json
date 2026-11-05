@@ -232,8 +232,8 @@
   {
    "id": "base_build_unknown_is_a_build",
    "file": "loop/watch.py",
-   "old": "            return None\n    verified = base_lint(results) is not None",
-   "new": "            return True\n    verified = base_lint(results) is not None",
+   "old": "        return None\n    verified = base_lint(results) is not None",
+   "new": "        return True\n    verified = base_lint(results) is not None",
    "tests": [
     "test_watch.py"
    ]
