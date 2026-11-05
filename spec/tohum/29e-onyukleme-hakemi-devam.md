@@ -1,8 +1,8 @@
-# Önyükleme Hakemi, Devam: Kurucu Kayıtları, Sır Desenli Metin, Sınav Hatası
+# Önyükleme Hakemi, Devam: Kurucu Kayıtları, Sır Desenli Metin, Sınav Hatası, Bütçe Durması
 
 Tarih: 2026-11-01 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
-Okunma: Aşama 0 boyunca; Kurucu kaydı itilirken, bir `secret_in_*` reddi okunurken ve bir ret sınav hatası sayılınca
-Çapa: `seed/bootstrap/snowball_bootstrap/` (`classify.py` `is_founder_record`, `rival.py` `secret_paths`, `config.py` `load_exam_faults`, `decide.py`)
+Okunma: Aşama 0 boyunca; Kurucu kaydı itilirken, bir `secret_in_*` reddi okunurken, bir ret sınav hatası sayılınca ve bir baş rakip frenine takılınca
+Çapa: `seed/bootstrap/snowball_bootstrap/` (`classify.py` `is_founder_record`, `rival.py` `secret_paths`, `config.py` `load_exam_faults`, `decide.py`, `cli.py` `rival_allowance` ve `brake_raised`)
 
 ---
 
@@ -23,7 +23,7 @@ dizge taşıyan dosyaların yollarını diff sırasıyla verir (en çok 20); ilk
 `secret_in_prompt` Kurucu'nun düzeltebildiği rettir, ret hafızasında sayılır. Rakibin kararının denemelerindeki bir metin
 (iddia, kanıt yolu, yeniden üretici) sır desenli dizge taşırsa karar kullanılmaz ve hiçbir parçası yayımlanmaz: neden
 `rival_unresolved`, `ref` `secret_in_verdict:<kural>[,<kural>…]`, `detail` yoktur. Bu rakibin hatasıdır, serilere
-dokunmaz. Rakip tarafı hatada (bütçe ve `request_rejected` dışında) commit değerlendirilmemiş kalır ve sonraki koşu onu
+dokunmaz. Rakip tarafı hatada (`request_rejected` dışında) commit değerlendirilmemiş kalır ve sonraki koşu onu
 yeniden inceler (uyarı `rival_side_retry:<n>`); üst üste üçüncü rakip tarafı hatada commit değerlendirilir ve operatör
 uyarılır (`rival_side_streak:<n>`). Rakibin protokolü ona sır desenli dizgeyi kararına yazmamasını, yeniden üreticide
 çalışma anında parçalardan kurmasını söyler.
@@ -38,3 +38,16 @@ girdisi geri alınır, imza `repeated`, `not_learning` ve `repeat_events`'e girm
 kabul gibidir; öbür imzalar her zamanki gibi sayılır. Ret kalır: sınav düzeltilene kadar o imza reddetmeye devam eder.
 Geçerli imzalar sonucun `exam_faults`'undadır. Biçimsiz liste ya da beyinde olmayan baş koşuyu durdurur (operatörün
 dosyasıdır, ret değildir). Daha önce sayılmış `repeat_events` geri alınmaz.
+
+**Bütçe durması** (E34, E550; `asama-0/12`). Rakibin bir koşuda harcayabileceği pay, ayın tavanından
+(`monthly_cap_usd`) ve açık aşamanın freninden (`stage_budgets.asama_<k>.rival_usd`, `26e`) kalanla koşu başı tavanın
+(`bootstrap.json` `rival.per_run_cap_usd_micros`, CLI'nin `--max-budget-usd`'si) en küçüğüdür; onu veren fren
+`month`, `stage` ya da `per_run`'dır (eşitlikte bu sırayla). Rakip isteyen başın payı sıfır ya da altındaysa ve başka
+ret nedeni yoksa test ve rakip koşmaz, neden `budget`'tır; rakip çağrısı frene takılırsa neden `rival_unresolved`,
+`ref` `budget`'tır ve harcadığı yazılır. Koşu Kurucu'nun bir ret nedenini de bulduysa (hâlâ üreyen kusur, çıkış
+koşulu) baş o nedenle yargılanır, fren yalnız uyarıdadır; yoksa ikisinde de baş yargılanmamıştır: sonuç kesintideki
+gibi `rejected` der, ama `last_evaluated_sha`, seriler, rakip hata serisi ve kesinti sayacı değişmez; sonuç
+`budget_stop {brake, allowed_usd_micros}`'u (fren ve duran koşunun payı) ve `rival_budget:<fren>` uyarısını taşır.
+Sonraki yoklamalar, elle tetiklenen koşu da, aynı başı payı `allowed_usd_micros`'tan (en az sıfırdan) büyük olana dek
+uyarıyla geçer: ay freni ay dönünce, her fren operatör onu yükseltince aynı baş kendiliğinden yargılanır; yeni baş her
+zamanki gibi okunur. Bu kuraldan önce yargılanmış sayılan baş (`last_evaluated_sha`) yeniden açılmaz.

@@ -56,9 +56,9 @@ Performans değerleri `18b`'dedir ve `18`'deki prosedürle değişir. Adlar `26b
 | `stage_params.repeat_reject_limit` | Aynı imzalı 3 ardışık ret → `not_learning` | `24`, `29b` |
 | `stage_budgets` | Aşama sayfalarının bütçe tabloları; toplamdır, aylık tavan ayrıca bağlar. Değerler kaçak frenidir, kısıt değil (`06`). Güvenlik avcısının kendi satırı `<aşama>.security_hunter_usd`'dir; yazılmamışsa avcı koşmaz | aşama bütçe sayfaları, P1'den Gözcü, önyükleme hakemi (`29b`), güvenlik avcısı (`30f`) |
 | `stage_budgets.asama_0.founder_usd` | Başlangıç fren değeri 220 USD; ölçüm ~22 oturumdur, kapı değil | başlatıcı (`24`), `asama-0/12` |
-| `stage_budgets.asama_0.rival_usd` | Başlangıç fren değeri 25 USD | önyükleme hakemi (`29b`), `asama-0/12` |
+| `stage_budgets.asama_0.rival_usd` | Başlangıç fren değeri 25 USD; 2026-11-05'ten 1000 USD (sahibin kararı: rakip `claude` CLI aboneliğiyle koşar, USD freni yalnız kaçak frenidir) | önyükleme hakemi (`29b`), `asama-0/12` |
 | `stage_budgets.asama_0.canary_usd` | Başlangıç fren değeri 1 USD; çağrı başına ayrıca `--max-budget-usd` | `llm.call`, `asama-0/12` |
-| `stage_budgets.asama_1.rival_usd` | Başlangıç fren değeri 15 USD; harcama kilidin açılışından sayılır, kilit onsuz açılmaz (`26e`) | önyükleme hakemi (`29b`), `stage-open`, `asama-1/10` |
+| `stage_budgets.asama_1.rival_usd` | Başlangıç fren değeri 1000 USD (sahibin 2026-11-05 kararı: Aşama 0'dakiyle aynı, yalnız kaçak freni); harcama kilidin açılışından sayılır, kilit onsuz açılmaz (`26e`) | önyükleme hakemi (`29b`), `stage-open`, `asama-1/10` |
 
 ## İşletim sınırları (`operating`)
 

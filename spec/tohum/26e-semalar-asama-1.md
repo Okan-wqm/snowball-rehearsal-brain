@@ -44,7 +44,7 @@ yargılamaz (`batch`'siz istek `exit_request_wrong_stage`'dir). Tablosu o yargı
 aktarılınca açık tablo boştur, `done_mf` `[]`'dir.
 
 **Önyükleme hakemi Aşama 1'de.** Rakip freni açık aşamanın `stage_budgets.asama_<k>.rival_usd`'sidir: `k` kilidin
-`stage`'idir, kilit yokken 0; Aşama 1'inki `asama-1/10`'un 15 USD'si (`18a`). Aşamanın harcaması kilidin açılışından
+`stage`'idir, kilit yokken 0; Aşama 1'inki `asama-1/10`'un tablosundadır (`18a`). Aşamanın harcaması kilidin açılışından
 sayılır: kilitten sonra yargılanan ilk push onu sıfırdan başlatır, imzalı durum aşamayı `spend_stage` olarak tutar (Aşama 0'ın
 durumunda alan yoktur). Kilit açıkken anahtar `policy.json`'da yoksa koşu durur (`26c`: operatör dosyası kapalıya düşer);
 `stage-open` anahtarsız politikayla kilidi açmaz. Kod isteğinde rakip, tohum sayfalarının yanında açık tablonun
