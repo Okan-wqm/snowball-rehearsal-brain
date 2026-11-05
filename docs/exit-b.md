@@ -61,9 +61,9 @@ Waits for: no report (the stop is the case's own input)
 <!-- case:with-fixtures -->
 ### Drill fixtures of the three causes
 
-(B) stops at run 11: `yaz` stopped on `drill_fail` (target `t1`). The toy's gate: closed. The copy: waiting (never served).
+(B) ends at run 14: `yaz` on `t1` judged its PASS row `PASS`. The copy: served.
 
-| judged condition | the toy's gate reasons at the stop |
+| judged condition | the PASS judgement's reasons at the end |
 |---|---|
 | `#genesis` | no reason |
 | `#taban` | no reason |
@@ -71,12 +71,12 @@ Waits for: no report (the stop is the case's own input)
 | `#ret` | no reason |
 | `#kapsama-kaydi` | no reason |
 | `#nobetci #hayatta` | no reason |
-| `#geri-alma` | `toy:drill_fail:b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0:cause_mismatch`, `toy:cause_unshown:build_break` |
+| `#geri-alma` | no reason |
 | `#kok` | no reason |
 | `#durum` | no reason |
 | `#model #belirtec` | no reason |
 
-Waits for: `seed-044-revert-facts-producers` (open)
+Waits for: nothing (the case ends)
 
 <!-- case:stale-patches -->
 ### Drill patches on the file the toy's merge changed (a set 26f's producer refuses)
