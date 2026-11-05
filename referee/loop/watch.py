@@ -49,10 +49,10 @@ Out of scope, stated: the drill's merges (D8).
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 from typing import Any
 
+import cli
 from gate import check
 from gate import sentinel as S
 from ledger import serial
@@ -78,7 +78,7 @@ def _bytes(path: str) -> bytes | None:
 def _index(results: str) -> dict:
     raw = _bytes(os.path.join(results, kos.INDEX))
     try:
-        doc = json.loads(raw) if raw is not None else None
+        doc = cli.loads(raw) if raw is not None else None
     except ValueError:
         doc = None
     return doc if isinstance(doc, dict) else {}
@@ -99,7 +99,7 @@ def read(results: str, watch: str | None) -> dict | None:
     if raw is None or hashlib.sha256(raw).hexdigest() != entry.get("sha256"):
         raise Refused(["sentinel_hash_mismatch"])
     try:
-        doc = json.loads(raw)
+        doc = cli.loads(raw)
         if not (isinstance(doc, dict) and set(doc) == DOC_KEYS and doc["merge_sha"] == watch):
             raise Refused(["sentinel_unreadable"])
         judged = S.decide(doc["runs"])

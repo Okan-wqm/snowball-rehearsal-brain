@@ -46,6 +46,18 @@ Rules ``run`` keeps (each bound by a test in ``tests/test_cli.py``):
    from argv, a value of the request; rule 7 makes such a site the only author, it does not review what it
    quotes); a child process's own stderr.
 
+8. Outside this module, no source parses JSON with ``json.load`` or ``json.loads``: it calls ``loads`` or ``load``
+   here, which take the same arguments and turn the parser's ``RecursionError`` (an array or object nested deeper
+   than the interpreter's recursion limit allows) into ``TooDeep``, a ``ValueError`` and a ``RecursionError`` at once.
+   Why: a handler written for unusable JSON names ``ValueError``; the decoder's depth failure is not one, so it
+   escaped such handlers as a fault (exit 2 with the fault line instead of the command's own unusable line; measured
+   before this rule: 22 of 51 parse sites in 19 modules had no handler naming it in their function, among them
+   ``status.depmap delta`` on a file of 200000 ``[``). Being both, ``TooDeep`` is caught by every handler that caught
+   the parser's failure before (one naming ``RecursionError`` keeps its own text), and by every ``ValueError``
+   handler. Bound by a register over every source file and by ``LoadsDepth`` in ``tests/test_cli.py``.
+   Out of scope, stated: a ``RecursionError`` of a module's own recursive walk over a value that parsed (each walk
+   handles its own depth, as ``ledger.chain.canonical`` does).
+
 Out of scope, stated: a fault while the module is imported (``python -m`` runs the module's top level before this
 boundary exists; ``tests/test_cli.py`` imports every command module, so a broken import is red before a push); signals and
 ``KeyboardInterrupt`` (they end the process with their own codes, never 1); the interpreter being killed;
@@ -68,6 +80,23 @@ GENERIC_LINE = {"error": "internal error"}
 
 class Fault(Exception):
     """``main`` broke the boundary's contract (rule 2, 3 or 4)."""
+
+
+class TooDeep(ValueError, RecursionError):
+    """JSON nested deeper than the parser can go (rule 8)."""
+
+
+def loads(text: str | bytes, **options: Any) -> Any:
+    """``json.loads(text, **options)``; the parser's ``RecursionError`` raises ``TooDeep`` (rule 8)."""
+    try:
+        return json.loads(text, **options)
+    except RecursionError:
+        raise TooDeep("JSON nested too deeply") from None
+
+
+def load(stream: Any, **options: Any) -> Any:
+    """``json.load(stream, **options)`` by ``loads`` (rule 8)."""
+    return loads(stream.read(), **options)
 
 
 def internal_error(exc: BaseException) -> str:

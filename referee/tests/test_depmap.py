@@ -680,6 +680,12 @@ class UnreadManifests(unittest.TestCase):
         self.assertEqual(cov["unparsed_manifests"], ["apps/a/package.json"])
         self.assertEqual(cov["unread_manifests"], {"package.json": {"count": 1, "examples": ["apps/a/package.json"]}})
 
+    def test_a_manifest_nested_deeper_than_the_parser_goes_is_unparsed_not_a_fault(self):
+        m = self.tree({"package.json": json.dumps({"workspaces": ["apps/*"]}),
+                       "apps/a/package.json": "[" * 200000, "apps/b/package.json": json.dumps({"name": "b"})})
+        self.assertEqual(m["coverage"]["unparsed_manifests"], ["apps/a/package.json"])
+        self.assertEqual([p["dir"] for p in m["projects"]], ["apps/b"])
+
     def test_render_names_each_with_its_examples_and_none(self):
         m = self.tree({"a/go.mod": "", "b/go.mod": "", "c/go.mod": "", "d/go.mod": "", "e/pom.xml": ""})
         text = D.render_target(m, "x")
@@ -860,6 +866,14 @@ def arrow(a: str, b: str, kinds: tuple[str, ...] = ("import",)) -> dict[str, Any
     return {"from": a, "to": b, "kinds": list(kinds)}
 
 
+def nest(depth: int) -> dict[str, Any]:
+    """An object ``depth`` objects deep (``{"k": {"k": ... 1}}``), built without recursion."""
+    value: Any = 1
+    for _ in range(depth):
+        value = {"k": value}
+    return value
+
+
 class Delta(unittest.TestCase):
     BASE = {"projects": [node("a"), node("b"), node("c")],
             "edges": [arrow("a", "b"), arrow("b", "c"), arrow("c", "a")],
@@ -867,6 +881,25 @@ class Delta(unittest.TestCase):
 
     def delta(self, **head: Any) -> dict[str, Any]:
         return D.map_delta(self.BASE, dict(self.BASE, **head))
+
+    def test_depth_bound(self):
+        # the map is the first level and coverage the outermost of nest's objects: nest(63) is a map 64 deep
+        for depth, usable in ((63, True), (64, False), (5000, False)):
+            m = dict(self.BASE, coverage=nest(depth))
+            self.assertEqual(D._depth(m), depth + 1)
+            if usable:
+                D.check_map(m)
+                self.assertEqual(D.map_delta(m, dict(m, coverage=nest(depth - 1)))["coverage"][0]["path"],
+                                 ["k"] * (depth - 1))
+            else:
+                with self.assertRaisesRegex(D.MapUnusable, "^map nests deeper than 64$"):
+                    D.check_map(m)
+        # every list and object counts, under any key, not only coverage's objects
+        self.assertEqual(D._depth({"x": [[[]]], "y": 1}), 4)
+        self.assertEqual(D._depth([]), 1)
+        self.assertEqual(D._depth("s"), 0)
+        with self.assertRaisesRegex(D.MapUnusable, "deeper"):
+            D.check_map(dict(self.BASE, other=nest(70)))
 
     def test_same(self):
         d = self.delta()
@@ -999,7 +1032,8 @@ class CommandLine(unittest.TestCase):
     def test_delta_unusable(self):
         root = tempfile.mkdtemp()
         good = os.path.join(root, "good.json")
-        files = {"good.json": json.dumps(Delta.BASE), "bad.json": "{", "list.json": "[]",
+        files = {"good.json": json.dumps(Delta.BASE), "bad.json": "{", "list.json": "[]", "deep.json": "[" * 200000,
+                 "nested.json": json.dumps(dict(Delta.BASE, coverage=nest(5000))),
                  "shape.json": json.dumps(dict(Delta.BASE, coverage=None))}
         write(root, files)
         extra = self.run_cli("delta", good, good, good)
@@ -1010,7 +1044,8 @@ class CommandLine(unittest.TestCase):
         for name, error in (("bad.json", "JSONDecodeError at line 1 column 2"), ("list.json", "map is not an object"),
                             ("shape.json", "coverage is not an object"),
                             ("latin.json", "UnicodeDecodeError at position 14 (utf-8)"),
-                            ("none.json", "No such file or directory")):
+                            ("none.json", "No such file or directory"),
+                            ("deep.json", "JSON nested too deeply"), ("nested.json", "map nests deeper than 64")):
             path = os.path.join(root, name)
             for argv in (("delta", good, path), ("delta", path, good)):
                 r = self.run_cli(*argv)

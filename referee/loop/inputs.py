@@ -36,11 +36,11 @@ exactly and ``tests/test_install_steps_spec.py`` binds the copies to 29s); the o
 
 from __future__ import annotations
 
-import json
 import os
 import stat
 from typing import Any
 
+import cli
 from ledger import chain
 from loop import accepted as A
 
@@ -93,7 +93,7 @@ def _bootstrap(workspace: str) -> dict[str, Any]:
             data = fh.read(MAX_BOOTSTRAP + 1)
         if len(data) > MAX_BOOTSTRAP:
             raise InputError("bootstrap_unreadable")
-        doc = json.loads(data.decode("utf-8"), object_pairs_hook=chain._no_duplicates,
+        doc = cli.loads(data.decode("utf-8"), object_pairs_hook=chain._no_duplicates,
                          parse_constant=chain._no_constant)
     except (OSError, UnicodeDecodeError, ValueError, RecursionError):
         raise InputError("bootstrap_unreadable") from None

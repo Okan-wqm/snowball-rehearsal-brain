@@ -665,7 +665,7 @@ def yaz_d5(environ: dict[str, str], tid: str) -> tuple[dict[str, Any], Any, str 
     artifact and the extracted tree D6 writes from (``None`` with a reason)."""
     try:
         with open(_dir(environ, "control", "control.json"), encoding="utf-8") as fh:
-            control = json.load(fh)
+            control = cli.load(fh)
     except (OSError, ValueError) as exc:
         raise Unusable("yaz: control.json unreadable: %s" % cli.cause(exc)) from None
     art, unit, refused = _pulled_unit(environ, tid)
@@ -747,7 +747,7 @@ def _judge_inputs(environ: dict[str, str]) -> tuple[dict | None, bytes]:
 
 def _expectations(art: Any) -> dict:
     """``{cid: expect.json}`` of ``pulled``'s candidates, as JSON (``harness.pass_row.expectations`` checks them)."""
-    return {cid: json.loads(files["expect.json"].decode("utf-8")) for cid, files in art.candidates.items()}
+    return {cid: cli.loads(files["expect.json"].decode("utf-8")) for cid, files in art.candidates.items()}
 
 
 def _state(art: Any) -> dict:

@@ -74,6 +74,7 @@ import re
 import tarfile
 from typing import Any, NamedTuple
 
+import cli
 from profile import derive as D
 from runner import kos as K
 from target import branches as B
@@ -180,7 +181,7 @@ def served(root: str) -> list[str]:
     every reason."""
     raw = D._read_regular(root, SERVED) if os.path.isdir(root) and not os.path.islink(root) else None
     try:
-        doc = json.loads(raw.decode("utf-8")) if raw is not None else None
+        doc = cli.loads(raw.decode("utf-8")) if raw is not None else None
     except (UnicodeDecodeError, ValueError, RecursionError):
         doc = None
     if not (isinstance(doc, dict) and set(doc) == {"schema", "targets"} and doc["schema"] == SERVED_SCHEMA
@@ -234,7 +235,7 @@ def read(root: str) -> Pulled:
     """Check the artifact in ``root`` against its manifest; ``PulledError`` with every reason, else the content."""
     raw = D._read_regular(root, MANIFEST) if os.path.isdir(root) else None
     try:
-        manifest = json.loads(raw.decode("utf-8")) if raw is not None else None
+        manifest = cli.loads(raw.decode("utf-8")) if raw is not None else None
     except (UnicodeDecodeError, ValueError, RecursionError):
         manifest = None
     if not (isinstance(manifest, dict) and set(manifest) == {"schema", "target", "files"}):
@@ -273,7 +274,7 @@ def read(root: str) -> Pulled:
     for path in (UNITS, POLICY, HEADS):
         if path in contents:
             try:
-                parsed[path] = json.loads(contents[path].decode("utf-8"))
+                parsed[path] = cli.loads(contents[path].decode("utf-8"))
             except (UnicodeDecodeError, ValueError, RecursionError):
                 reasons.append("json_unreadable:%s" % path)
     state = {p: contents.get("%s/%s" % (STATE_DIR, p), b"") for p in B.STATE_CHAINS}

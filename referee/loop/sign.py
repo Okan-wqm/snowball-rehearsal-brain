@@ -37,11 +37,11 @@ the pin's source (``loop.accepted.workflow_identity`` of the referee repository'
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import tempfile
 from typing import Callable, Sequence
 
+import cli
 from ledger.anchor import Unsignable
 from loop import accepted as A
 from loop import rekor as R
@@ -64,7 +64,7 @@ def _bundle_body(path: str, digest: str) -> str:
     if len(data) > R.MAX_ANSWER:
         raise Unsignable("bundle too large")
     try:
-        made = json.loads(data)
+        made = cli.loads(data)
         entries = made["verificationMaterial"]["tlogEntries"]
         body = entries[0]["canonicalizedBody"] if isinstance(entries, list) and len(entries) == 1 else None
     except (ValueError, RecursionError, KeyError, TypeError, IndexError):

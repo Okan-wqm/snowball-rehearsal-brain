@@ -178,6 +178,22 @@ def caught_uses(source: str) -> list[str]:
     return faults
 
 
+def json_parses(source: str) -> list[str]:
+    """cli's rule 8 over one module: no call ``json.load(...)`` or ``json.loads(...)``, no ``from json import``
+    of either, no ``json`` imported under another name. Returns ``line: reason``. Out of scope, stated: a parser
+    reached by a name built at run time (``getattr(json, name)``)."""
+    faults = []
+    for node in ast.walk(ast.parse(source)):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("load", "loads")
+                and isinstance(node.func.value, ast.Name) and node.func.value.id == "json"):
+            faults.append("%d: json.%s, not cli.%s" % (node.lineno, node.func.attr, node.func.attr))
+        elif isinstance(node, ast.ImportFrom) and node.module == "json":
+            faults.append("%d: from json import" % node.lineno)
+        elif isinstance(node, ast.Import) and any(a.name == "json" and a.asname for a in node.names):
+            faults.append("%d: json imported under another name" % node.lineno)
+    return faults
+
+
 def start(module: str, argv: list[str], stdout: str) -> subprocess.CompletedProcess:
     """Run ``python -m module argv`` from referee/ with stdin empty and stdout 'closed', 'broken' (a pipe whose
     reader is gone) or 'pipe' (read normally)."""
@@ -389,6 +405,24 @@ class Register(unittest.TestCase):
         for why, handler in good.items():
             self.assertEqual(caught_uses(head.replace("import traceback as tb\n", "") + handler), [], why)
 
+    def test_no_module_parses_json_but_through_cli(self):
+        found = sources()
+        self.assertGreaterEqual(len(found), 37, sorted(found))
+        self.assertEqual({p: f for p, f in ((p, json_parses(src)) for p, src in found.items()) if f}, {})
+        users = sorted(p for p, src in found.items() if "cli.loads(" in src or "cli.load(" in src)
+        self.assertGreaterEqual(len(users), 27, users)
+
+    def test_the_parse_register_sees_each_way_to_reach_the_parser(self):
+        bad = {"loads": "import json\nx = json.loads(t)\n", "load": "import json\nx = json.load(f)\n",
+               "from import": "from json import loads\n", "from import of another": "from json import decoder\n",
+               "an alias": "import json as j\n"}
+        for why, src in bad.items():
+            self.assertNotEqual(json_parses(src), [], why)
+        good = {"cli": "import cli\nx = cli.loads(t)\ny = cli.load(f)\n", "dumps": "import json\nx = json.dumps(v)\n",
+                "another module's loads": "import pickle\nx = pickle.loads(b)\n"}
+        for why, src in good.items():
+            self.assertEqual(json_parses(src), [], why)
+
     def test_every_fault_line_is_a_json_object_for_any_argv(self):
         for module in commands():
             line = importlib.import_module(module).FAULT_LINE
@@ -397,6 +431,58 @@ class Register(unittest.TestCase):
                 got = line(argv) if callable(line) else line
                 self.assertIsInstance(got, dict, (module, argv))
                 self.assertEqual(json.loads(json.dumps(got)), got, (module, argv))
+
+
+class LoadsDepth(unittest.TestCase):
+    """Rule 8: ``cli.loads`` and ``cli.load`` are ``json``'s, but the parser's depth failure is ``TooDeep``."""
+
+    DEEP = "[" * 200000  # deeper than the decoder goes (it raises RecursionError, measured on python 3.12)
+
+    def test_the_parser_alone_raises_a_recursion_error_no_value_error_names(self):
+        # the defect rule 8 closes: a handler naming ValueError does not see it
+        with self.assertRaises(RecursionError) as caught:
+            json.loads(self.DEEP)
+        self.assertNotIsInstance(caught.exception, ValueError)
+
+    def test_too_deep_is_a_value_error_and_a_recursion_error(self):
+        for parse in (lambda: cli.loads(self.DEEP), lambda: cli.loads(self.DEEP.encode()),
+                      lambda: cli.load(io.StringIO(self.DEEP))):
+            with self.assertRaises(cli.TooDeep) as caught:
+                parse()
+            self.assertIsInstance(caught.exception, ValueError)
+            self.assertIsInstance(caught.exception, RecursionError)
+            self.assertTrue(caught.exception.__suppress_context__)  # raised from None: no chained parser frames
+            self.assertEqual(cli.cause(caught.exception), "JSON nested too deeply")
+
+    def test_a_handler_written_either_way_catches_it(self):
+        for kind in (ValueError, RecursionError):
+            try:
+                cli.loads(self.DEEP)
+            except kind:
+                pass
+
+    def test_same_value_and_options_as_json(self):
+        text = '{"a": [1, 2.5, "x", null, true], "b": {"c": NaN}}'
+        self.assertEqual(json.dumps(cli.loads(text)), json.dumps(json.loads(text)))
+        self.assertEqual(cli.load(io.StringIO(text), parse_float=str)["a"][1], "2.5")
+        pairs = cli.loads('{"k": 1, "k": 2}', object_pairs_hook=list)
+        self.assertEqual(pairs, [("k", 1), ("k", 2)])
+        deep_but_parsed = "[" * 500 + "]" * 500
+        self.assertEqual(cli.loads(deep_but_parsed), json.loads(deep_but_parsed))
+
+    def test_other_failures_are_unchanged(self):
+        with self.assertRaises(json.JSONDecodeError):
+            cli.loads("{")
+        with self.assertRaises(UnicodeDecodeError):
+            cli.loads(b"\xff")
+
+        class Mine(Exception):
+            pass
+
+        def hook(pairs):
+            raise Mine()
+        with self.assertRaises(Mine):
+            cli.loads("{}", object_pairs_hook=hook)
 
 
 class CauseOf(unittest.TestCase):

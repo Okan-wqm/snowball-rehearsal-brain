@@ -194,7 +194,7 @@ def run_file(raw: bytes, name: str) -> tuple[dict, bool]:
     if len(lines) != RUN_LINES:
         raise Unusable("%s must hold exactly %d lines" % (name, RUN_LINES))
     try:
-        rec = json.loads(lines[0].decode("utf-8"))
+        rec = cli.loads(lines[0].decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
         raise Unusable("%s line 1 is not JSON: %s" % (name, cli.cause(exc))) from exc
     if not isinstance(rec, dict) or not isinstance(rec.get("violations"), list):
@@ -220,7 +220,7 @@ def base_counts(base_run: bytes, base_run_sha256: str) -> dict:
 
 def checks_file(raw: bytes) -> dict:
     try:
-        doc = json.loads(raw.decode("utf-8"))
+        doc = cli.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
         raise Unusable("checks.json is not JSON: %s" % cli.cause(exc)) from exc
     if not isinstance(doc, dict) or not isinstance(doc.get("tests"), list) or doc.get("red_control") not in STATUSES:
@@ -319,7 +319,7 @@ def _text(path: str) -> str:
 
 def _json(path: str) -> Any:
     with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+        return cli.load(fh)
 
 
 def _bytes_or_none(path: str) -> bytes | None:
@@ -335,7 +335,7 @@ USAGE = "usage: python -m gate.check map DIFF PATH LINE | decide CAND_DIR BASE_J
 
 def _decide_cli(cand_dir: str, base_jsonl: str, cand_run_dir: str, hashes_path: str) -> dict:
     try:
-        stdin = json.loads(sys.stdin.read())
+        stdin = cli.loads(sys.stdin.read())
     except ValueError as exc:
         raise Unusable("stdin is not JSON: %s" % cli.cause(exc)) from exc
     files = {"base.jsonl": _bytes_or_none(base_jsonl),

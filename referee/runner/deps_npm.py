@@ -439,7 +439,7 @@ def inspect_tarball(data: bytes) -> tuple[str | None, dict]:
     if len(found) > 1:
         return "tarball_ambiguous_package_json", {}
     try:
-        manifest = json.loads(found[0].decode("utf-8"))
+        manifest = cli.loads(found[0].decode("utf-8"))
     except (ValueError, RecursionError):
         return "tarball_package_json_unreadable", {}
     if not isinstance(manifest, dict):
@@ -692,7 +692,7 @@ def verify(directory: str, address: str | None = None) -> dict:
     if hashlib.sha256(data).hexdigest() != address:
         return {"ok": False, "reasons": ["address_mismatch"], "address": address}
     try:
-        manifest = json.loads(data.decode("ascii"))
+        manifest = cli.loads(data.decode("ascii"))
         lock_name, packages = manifest["lock"], manifest["packages"]
         expected = {"manifest.json", lock_name, "tarballs"}
         if lock_name not in LOCK_NAMES or manifest.get("schema") != SCHEMA:
@@ -889,7 +889,7 @@ def _read(path: str) -> bytes:
 
 def _parse(data: bytes, path: str) -> Any:
     try:
-        return json.loads(data.decode("utf-8"))
+        return cli.loads(data.decode("utf-8"))
     except RecursionError:
         raise DepsError("%s: JSON nested too deeply" % path) from None
     except (UnicodeDecodeError, ValueError) as exc:

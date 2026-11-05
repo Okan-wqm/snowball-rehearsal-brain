@@ -512,7 +512,7 @@ class HttpTransport:
         except urllib.error.HTTPError as exc:
             raise ApiError(exc.code, "%s %s" % (method, path)) from None
         try:
-            return status, (json.loads(raw) if raw else None)
+            return status, (cli.loads(raw) if raw else None)
         except ValueError:
             raise ApiError(status, "response is not JSON") from None
 
@@ -612,8 +612,8 @@ def main(argv: list[str]) -> int:
         if len(argv) != 2 or argv[0] != "replay":
             raise Unusable(USAGE)
         with open(argv[1], encoding="utf-8") as fh:
-            transport = Replay(json.load(fh))
-        req = json.loads(sys.stdin.read())
+            transport = Replay(cli.load(fh))
+        req = cli.loads(sys.stdin.read())
         wr = writer_for(req, transport)
         run_request(req, wr)
         _emit(dict(outcome(wr), ok=True))

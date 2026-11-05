@@ -51,6 +51,7 @@ import json
 import os
 from typing import Any
 
+import cli
 from dispatcher import llm_call as L
 from loop import pulled as P
 from profile import derive as D
@@ -108,7 +109,7 @@ def read_response(root: str, art: P.Pulled) -> list[dict]:
     if raw is None:
         raise ResponseError(reasons + ["response_missing"])
     try:
-        doc = json.loads(raw.decode("utf-8"))
+        doc = cli.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         doc = None
     if not (isinstance(doc, dict) and sorted(doc) == sorted(KEYS)):

@@ -451,7 +451,7 @@ def _emit(obj: dict) -> None:
 
 def _load(path: str) -> Any:
     with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+        return cli.load(fh)
 
 
 USAGE = "usage: python -m gate.diffguard check DIFF PROFILE RECIPE"
