@@ -25,6 +25,14 @@ the brain's committed drawing is the one its code gives today.
 - ``TsConfig``: a directory holding a file ``jsimports.TSCONFIG`` names (``tsconfig.json``, ``tsconfig.<x>.json``;
   near names not) that no manifest's project holds is a ``tsconfig`` box (nested ones both, one inside a ``path``
   box too; one inside a manifest's project, the root and ``SKIP_DIRS`` none), alias and relative imports into it draw arrows, and the drawing's line;
+- ``Docker``: a compose file's builds (a context relative to the compose file, ``.`` and ``Dockerfile`` by default,
+  a pair named twice read once, unresolved: ``$``, ``/``, ``://``, leaving the root; missing: no such directory or
+  file; a YAML file of another name not read), a directory holding a Dockerfile that no box holds is a ``docker``
+  box (not the root, not inside a ``tsconfig`` box), each context source reaching the project holding its path and
+  every project inside a directory (a glob segment by segment, ``.``, no arrow to itself, none from the root's),
+  sources of a stage, a heredoc, a remote, a variable, leaving the context or matching nothing draw nothing, a
+  Dockerfile built with two contexts resolved in each; the coverage (a Dockerfile not built stays in
+  ``unread_code_files``) and the drawing's lines;
 - the kinds of a file (``FileKinds``): ``file_kind``'s order (read, code by ``CODE_FILE_NAMES`` then by
   ``OTHER_CODE_EXTENSIONS``, ``NOT_CODE_EXTENSIONS``, unclassified, no extension), case as written, near names and
   a leading dot; the lists disjoint; ``unclassified_files`` and ``files_without_extension`` counted with three
@@ -322,7 +330,8 @@ class Target(unittest.TestCase):
 
     def test_coverage(self):
         cov = D.target_map(self.checkout())["coverage"]
-        self.assertEqual(cov["projects_by_kind"], {"npm": 3, "nx": 4, "cargo": 4, "python": 1, "tsconfig": 0, "path": 0})
+        self.assertEqual(cov["projects_by_kind"], {"npm": 3, "nx": 4, "cargo": 4, "python": 1, "tsconfig": 0,
+                                                   "path": 0, "docker": 0})
         self.assertEqual(cov["source_files"], 5)       # main, local, libs/ui, i.js, scripts/s.ts; not dist, node_modules
         self.assertEqual(cov["source_files_outside_projects"], 1)
         self.assertEqual(cov["python_files"], 4)
@@ -426,7 +435,7 @@ class SysPath(unittest.TestCase):
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Projects 3 (npm 0, nx 0, cargo 0, python 1, tsconfig 0, path 2), arrows 3.", text)
+        self.assertIn("Projects 3 (npm 0, nx 0, cargo 0, python 1, tsconfig 0, path 2, docker 0), arrows 3.", text)
         self.assertIn("`sys.path` insertions in Python files: 8 calls; 6 directories resolved (1 not in the "
                       "checkout), 1 leaving the root, 1 calls or values not resolved (1 files: scripts/s.py); "
                       "5 imports resolved through them.", text)
@@ -488,7 +497,7 @@ class RootPackages(unittest.TestCase):
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Projects 6 (npm 0, nx 0, cargo 0, python 2, tsconfig 0, path 4), arrows 4.", text)
+        self.assertIn("Projects 6 (npm 0, nx 0, cargo 0, python 2, tsconfig 0, path 4, docker 0), arrows 4.", text)
         self.assertIn("| app | app | python | both (sys.path), lib (sys.path), ns (sys.path), tools (sys.path) |", text)
 
     def test_finder_order(self):
@@ -556,7 +565,7 @@ class TsConfig(unittest.TestCase):
     def test_coverage(self):
         cov = D.target_map(self.checkout())["coverage"]
         self.assertEqual(cov["projects_by_kind"], {"npm": 1, "nx": 0, "cargo": 0, "python": 1, "tsconfig": 4,
-                                                   "path": 1})
+                                                   "path": 1, "docker": 0})
         self.assertEqual(cov["source_files_outside_projects"], 1)              # tools/t.ts
         self.assertEqual(cov["specifiers"]["outside_projects"], 1)             # its import
         self.assertEqual(cov["specifiers"]["cross_project"], 5)
@@ -564,7 +573,7 @@ class TsConfig(unittest.TestCase):
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Projects 7 (npm 1, nx 0, cargo 0, python 1, tsconfig 4, path 1), arrows 5.", text)
+        self.assertIn("Projects 7 (npm 1, nx 0, cargo 0, python 1, tsconfig 4, path 1, docker 0), arrows 5.", text)
         self.assertIn("of kind `tsconfig`: a directory holding a TypeScript configuration that no such project holds",
                       text)
         self.assertIn("| libs/cqrs | libs/cqrs | tsconfig |  |", text)
@@ -575,6 +584,104 @@ class TsConfig(unittest.TestCase):
             self.assertIsNotNone(J.TSCONFIG.fullmatch(name), name)
         for name in ("tsconfig-old.json", "tsconfig.json.bak", "xtsconfig.json", "tsconfig.jsonc", "jsconfig.json"):
             self.assertIsNone(J.TSCONFIG.fullmatch(name), name)
+
+
+class Docker(unittest.TestCase):
+    """``docker_edges``: a compose file's builds, each Dockerfile's context sources, the ``docker`` boxes and arrows,
+    the coverage and the drawing's line (the reader's own rules: test_profile_docker)."""
+
+    COMPOSE = ("services:\n"
+               "  api:\n    build:\n      context: .\n      dockerfile: apps/api/Dockerfile\n"
+               "  web:\n    build:\n      context: .\n      dockerfile: infra/docker/Dockerfile.web\n"
+               "  web2:\n    build:\n      context: .\n      dockerfile: infra/docker/Dockerfile.web\n"
+               "  tool:\n    build:\n      dockerfile: Dockerfile.tool\n"
+               "  img:\n    build: ./tools/img\n"
+               "  var:\n    build:\n      context: ${CTX}\n"
+               "  abs:\n    build: /srv/x\n"
+               "  remote:\n    build: https://example.invalid/a/b.git\n"
+               "  up:\n    build: ../elsewhere\n"
+               "  gone:\n    build: ./nothing\n"
+               "  nofile:\n    build:\n      context: apps/web\n"
+               "  ghost:\n    build:\n      context: nothing\n      dockerfile: ../Dockerfile.tool\n")
+
+    def checkout(self) -> str:
+        root = tempfile.mkdtemp()
+        write(root, {
+            "package.json": json.dumps({"workspaces": ["apps/*", "libs/*"]}),
+            "apps/api/package.json": json.dumps({"name": "@t/api"}),
+            "apps/api/Dockerfile": "FROM x\nCOPY /libs/core ./x\nCOPY apps/web/package.json /w\n",  # from its project
+            "apps/web/package.json": json.dumps({"name": "@t/web"}),
+            "libs/core/package.json": json.dumps({"name": "@t/core"}),
+            "libs/core/deep/project.json": json.dumps({"name": "core-deep"}),
+            "infra/docker/Dockerfile.web": ("FROM x AS b\n"
+                                            "COPY apps/w*b ../outside missing/ $X/y https://e.invalid/x /dest/\n"
+                                            "COPY --from=b libs/core /y\n"
+                                            "COPY <<EOF /z\nCOPY apps/api /no\nEOF\n"
+                                            "COPY onlyone\n"),
+            "infra/docker/Dockerfile.unbuilt": "COPY apps/api /a\n",       # no build: not read
+            "infra/docker/Dockerfile.rel": "COPY lib ../libs/core /l\n",  # the context is infra/
+            "infra/docker/nginx.conf": "",
+            "infra/compose/compose.yaml": "services:\n  r:\n    build:\n      context: ..\n"
+                                          "      dockerfile: docker/Dockerfile.rel\n",
+            "infra/lib/project.json": json.dumps({"name": "infra-lib"}),
+            "Dockerfile.tool": "COPY libs/core /t\n",                       # the root's: no box, no arrow
+            "tools/img/Dockerfile": "COPY . /app\n",
+            "tools/img/sub/project.json": json.dumps({"name": "img-sub"}),
+            "ts/tsconfig.json": "{}",                                      # a tsconfig box holds it: no docker box
+            "ts/Dockerfile": "COPY libs/core /x\n",
+            "ci/pipeline.yml": "build:\n  context: .\n  dockerfile: infra/docker/Dockerfile.unbuilt\n",
+            "docker-compose.yml": self.COMPOSE,
+        })
+        return root
+
+    def test_boxes_and_arrows(self):
+        m = D.target_map(self.checkout())
+        self.assertEqual([(p["dir"], p["kinds"]) for p in m["projects"]], [
+            ("apps/api", ["npm"]), ("apps/web", ["npm"]), ("infra/docker", ["docker"]), ("infra/lib", ["nx"]),
+            ("libs/core", ["npm"]), ("libs/core/deep", ["nx"]), ("tools/img", ["docker"]),
+            ("tools/img/sub", ["nx"]), ("ts", ["tsconfig"])])
+        self.assertEqual([(e["from"], e["to"], e["kinds"]) for e in m["edges"]], [
+            ("apps/api", "apps/web", ["docker"]),           # a file: the project holding it
+            ("apps/api", "libs/core", ["docker"]),          # a directory: its own project
+            ("apps/api", "libs/core/deep", ["docker"]),     # and every project inside it
+            ("infra/docker", "apps/web", ["docker"]),       # a glob, segment by segment
+            ("infra/docker", "infra/lib", ["docker"]),      # a context relative to its compose file
+            ("tools/img", "tools/img/sub", ["docker"]),     # "." is the whole context; no arrow to itself
+        ])
+
+    def test_coverage(self):
+        cov = D.target_map(self.checkout())["coverage"]
+        self.assertEqual(cov["docker"], {
+            "dockerfiles": 7, "compose_files": 2, "builds": 13, "builds_unresolved": 4, "builds_missing": 3,
+            "dockerfiles_built": 5,
+            "dockerfiles_not_built": {"count": 2, "examples": ["infra/docker/Dockerfile.unbuilt", "ts/Dockerfile"]},
+            "sources": {"context": 9, "stage": 1, "heredoc": 1, "remote": 1, "variable": 1}, "malformed": 1,
+            "context_sources": {"matched": 6, "no_match": 1, "leaves_context": 2}})
+        self.assertEqual(cov["projects_by_kind"]["docker"], 2)
+        self.assertEqual(cov["unread_code_files"], {"Dockerfile": 1, "Dockerfile.*": 1})   # the two not built
+        self.assertEqual(cov["unread_code_files_outside_projects"], {})
+
+    def test_two_contexts(self):
+        root = tempfile.mkdtemp()
+        write(root, {"a/project.json": "{}", "b/x/project.json": "{}", "b/a/project.json": "{}",
+                     "img/Dockerfile": "COPY a /a\n",
+                     "compose.yml": "s:\n  p:\n    build:\n      context: .\n      dockerfile: img/Dockerfile\n"
+                                    "  q:\n    build:\n      context: b\n      dockerfile: ../img/Dockerfile\n"})
+        m = D.target_map(root)
+        self.assertEqual([(e["from"], e["to"]) for e in m["edges"]], [("img", "a"), ("img", "b/a")])
+        self.assertEqual(m["coverage"]["docker"]["sources"]["context"], 1)      # read once
+        self.assertEqual(m["coverage"]["docker"]["context_sources"]["matched"], 2)  # resolved per context
+
+    def test_render(self):
+        text = D.render_target(D.target_map(self.checkout()), "x")
+        self.assertIn("Projects 9 (npm 3, nx 3, cargo 0, python 0, tsconfig 1, path 0, docker 2), arrows 6.", text)
+        self.assertIn("Dockerfiles 7: 5 built by 13 `build:` entries of 2 compose files (4 not resolved, 3 naming "
+                      "no context or Dockerfile of the checkout), 2 not built by any (infra/docker/Dockerfile.unbuilt, "
+                      "ts/Dockerfile); their `COPY`/`ADD` sources: 9 from the context (6 matched, 1 matching nothing, "
+                      "2 leaving it), 1 from a stage or image, 1 heredocs, 1 remote, 1 holding a variable (not "
+                      "resolved); 1 instructions malformed.", text)
+        self.assertIn("or of kind `docker`: a directory holding a Dockerfile that no other box holds", text)
+        self.assertIn("| infra/docker | infra/docker | docker | @t/web (docker), infra-lib (docker) |", text)
 
 
 class FileKinds(unittest.TestCase):
