@@ -1,6 +1,8 @@
 """``profile.yamlblock`` (run with test 47): each rule of its docstring on a text made for it, and each reason.
 
-- lines: CRLF, comments and blanks, a leading ``---`` after a directive, ``...`` ending the document;
+- lines: CRLF, comments and blanks; documents (``load_all``): markers at column 0 only, directives between
+  documents, empty explicit and implicit documents, anchors per document, a quote not crossing a marker, the
+  line of a second document for ``load``;
 - block mappings (a value below, a sequence at the key's column, nothing below ``None``, quoted keys, a ``:`` not
   followed by a blank, keys kept as strings) and block sequences (``- key:`` opening a mapping at its column,
   ``- -``, ``-`` with the value below);
@@ -34,7 +36,61 @@ class Structure(unittest.TestCase):
         self.assertEqual(Y.load("a:\n- x\n- y\nb: 1\n"), {"a": ["x", "y"], "b": 1})
 
     def test_root_sequence_and_document_end(self):
-        self.assertEqual(Y.load("%YAML 1.2\n---\n- a\n- b\n...\nnot: read\n"), ["a", "b"])
+        self.assertEqual(Y.load("%YAML 1.2\n---\n- a\n- b\n...\n# after\n"), ["a", "b"])
+        # text after ``...`` is a document of its own, not dropped (load reads one)
+        with self.assertRaises(Y.Unreadable) as cm:
+            Y.load("- a\n...\nnot: dropped\n")
+        self.assertEqual((cm.exception.line, cm.exception.reason), (3, "documents"))
+
+
+class Documents(unittest.TestCase):
+    def test_several(self):
+        text = ("# lead\n%YAML 1.2\n---\nkind: A\nspec:\n  x: |\n    body\n---\n- 1\n...\n%TAG ! x\n---\n"
+                "c: 'q'\n...\nbare: 2\n")
+        self.assertEqual(Y.load_all(text), [{"kind": "A", "spec": {"x": "body\n"}}, [1], {"c": "q"}, {"bare": 2}])
+
+    def test_empty_and_implicit(self):
+        self.assertEqual(Y.load_all(""), [])
+        self.assertEqual(Y.load_all("# only a comment\n"), [])
+        self.assertEqual(Y.load_all("a: 1\n"), [{"a": 1}])
+        # an explicit document counts even when empty; an implicit one only with content
+        self.assertEqual(Y.load_all("---\n---\na: 1\n---\n"), [None, {"a": 1}, None])
+        self.assertEqual(Y.load_all("a: 1\n...\n# tail\n"), [{"a": 1}])
+        self.assertEqual(Y.load_all("...\na: 1\n...\n...\n"), [{"a": 1}])
+        self.assertIsNone(Y.load(""))
+        self.assertIsNone(Y.load("---\n"))
+
+    def test_marker_needs_column_zero_and_a_break(self):
+        self.assertEqual(Y.load_all("a: |\n  ---\n  x\nb: ---x\n---x: 1\n...y: 2\n--- # c\nc: 3\n"),
+                         [{"a": "---\nx\n", "b": "---x", "---x": 1, "...y": 2}, {"c": 3}])
+        self.assertEqual(Y.load_all("a: 1\n---\t\nb: 2\n"), [{"a": 1}, {"b": 2}])
+        self.assertEqual(Y.load_all("---\t\na: 1\n"), [{"a": 1}])
+        # an indented ``---`` is a value, not a marker
+        self.assertEqual(Y.load_all("a:\n  ---\nb:\n- ---\n"), [{"a": "---", "b": ["---"]}])
+
+    def test_second_document_line(self):
+        for text, line in (("a: 1\n\n---\nb: 2\n", 3), ("a: 1\n...\n\nb: 2\n", 4), ("---\n---\n", 2)):
+            with self.subTest(text=text):
+                with self.assertRaises(Y.Unreadable) as cm:
+                    Y.load(text)
+                self.assertEqual((cm.exception.line, cm.exception.reason), (line, "documents"))
+
+    def test_anchors_are_the_documents_own(self):
+        self.assertEqual(Y.load_all("a: &x 1\nb: *x\n---\nc: &x 2\nd: *x\n"), [{"a": 1, "b": 1}, {"c": 2, "d": 2}])
+        with self.assertRaises(Y.Unreadable) as cm:
+            Y.load_all("a: &x 1\n---\nb: *x\n")
+        self.assertEqual((cm.exception.line, cm.exception.reason), (3, "alias"))
+
+    def test_a_quote_does_not_cross_a_marker(self):
+        with self.assertRaises(Y.Unreadable) as cm:
+            Y.load_all("a: 'open\n---\nb: x'\n")
+        self.assertEqual((cm.exception.line, cm.exception.reason), (1, "unterminated_quote"))
+        self.assertEqual(Y.load_all("a: 'one\n  ---\n  two'\n"), [{"a": "one --- two"}])
+
+    def test_an_error_in_a_later_document(self):
+        with self.assertRaises(Y.Unreadable) as cm:
+            Y.load_all("a: 1\n---\nb: 1\nb: 2\n")
+        self.assertEqual((cm.exception.line, cm.exception.reason), (4, "duplicate_key"))
 
     def test_crlf_comments_blanks(self):
         self.assertEqual(Y.load("a: 1\r\n\r\n  # c\r\nb: two # c\r\n"), {"a": 1, "b": "two"})
@@ -125,6 +181,7 @@ class Reasons(unittest.TestCase):
         "a: @x\n": (1, "indicator"),
         "a: x\n  b: y\n": (2, "mapping_in_scalar"),
         "a: 1\n---\nb: 2\n": (2, "documents"),
+        "--- |\n  x\n": (1, "marker_content"),
         "just text\n": (1, "scalar_document"),
         "a: |x\n  y\n": (1, "block_header"),
     }

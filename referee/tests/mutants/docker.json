@@ -255,8 +255,8 @@
   {
    "id": "dm_render_no_docker_count",
    "file": "status/depmap.py",
-   "old": "cov[\"projects_by_kind\"][\"docker\"],\n",
-   "new": "0,\n",
+   "old": "\", \".join(\"%s %d\" % (k, cov[\"projects_by_kind\"][k]) for k in PROJECT_KINDS)",
+   "new": "\", \".join(\"%s %d\" % (k, 0 if k == \"docker\" else cov[\"projects_by_kind\"][k]) for k in PROJECT_KINDS)",
    "tests": [
     "test_depmap.py"
    ]

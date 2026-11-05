@@ -57,8 +57,8 @@
   {
    "id": "ts_render_count",
    "file": "status/depmap.py",
-   "old": "cov[\"projects_by_kind\"][\"tsconfig\"],\n",
-   "new": "cov[\"projects_by_kind\"][\"path\"],\n",
+   "old": "\", \".join(\"%s %d\" % (k, cov[\"projects_by_kind\"][k]) for k in PROJECT_KINDS)",
+   "new": "\", \".join(\"%s %d\" % (k, cov[\"projects_by_kind\"][k]) for k in PROJECT_KINDS[:-2] + PROJECT_KINDS[-1:])",
    "tests": [
     "test_depmap.py"
    ]

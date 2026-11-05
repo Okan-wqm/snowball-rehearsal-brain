@@ -300,8 +300,8 @@
   {
    "id": "yb_documents",
    "file": "profile/yamlblock.py",
-   "old": "                if _uncomment(content) == \"...\":\n                    break",
-   "new": "                if True:\n                    break",
+   "old": "    if len(docs) > 1:\n        raise Unreadable(docs[1][0], \"documents\")",
+   "new": "    if False:\n        raise Unreadable(docs[1][0], \"documents\")",
    "tests": [
     "test_profile_yamlblock.py"
    ]
