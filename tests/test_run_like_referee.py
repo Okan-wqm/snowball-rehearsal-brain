@@ -103,6 +103,8 @@ class Manifest(Base):
 
 class Tree(Base):
     def test_a_checkouts_modes_and_links_as_links(self):
+        # A umask that masks mkdir's 0o755 to 0o700: the modes are set, not left to the umask.
+        self.addCleanup(os.umask, os.umask(0o077))
         names = [self.put("d/e/f.txt", mode=0o600), self.put("run.sh", mode=0o700)]
         os.symlink("d/e/f.txt", os.path.join(self.root, "ln"))
         dst = os.path.join(self.tmp, "copy")
@@ -186,6 +188,21 @@ class Environment(Base):
         out, _ = self.run_cmds("python -c pass && python3 -c pass", "command -v ls", "git --version")
         self.assertEqual([r["ok"] for r in out], [True, False, False])
 
+    def test_stdin_is_dev_null_not_the_runners(self):
+        # The runner's fd 0 becomes a pipe holding bytes: an inherited stdin would read them.
+        r, w = os.pipe()
+        os.write(w, b"leak")
+        os.close(w)
+        saved = os.dup(0)
+        self.addCleanup(os.close, saved)
+        os.dup2(r, 0)
+        os.close(r)
+        self.addCleanup(os.dup2, saved, 0)
+        null = os.stat(os.devnull).st_rdev
+        out, _ = self.run_cmds("python -c \"import os,sys; sys.exit(sys.stdin.read() != '' or "
+                               "os.fstat(0).st_rdev != %d)\"" % null)
+        self.assertTrue(out[0]["ok"], out)
+
     def test_the_command_runs_from_the_root_under_sh(self):
         names = [self.put("sub/m.txt")]
         out, _ = self.run_cmds("cd sub && python -c \"open('m.txt').read()\"", names=names)
@@ -207,6 +224,12 @@ class Results(Base):
         out, summary = self.run_cmds("python -c \"import time; time.sleep(30)\"", timeout=0.5)
         self.assertEqual((out[0]["exit"], out[0]["timed_out"], out[0]["ok"]), (None, True, False))
         self.assertLess(out[0]["duration_ms"], 10000)
+
+    def test_a_commands_copy_is_removed_when_it_ends(self):
+        path = R.bindir(os.path.join(self.tmp, "bin"))
+        r = R.run_one({"id": "T0", "cmd": "python -c \"import os; os.chmod('.', 0o555)\""}, self.root,
+                      [self.put("a.txt")], path, self.work, 60.0)
+        self.assertEqual((r["exit"], os.listdir(self.work)), (0, []))
 
     def test_nothing_is_left_behind(self):
         cmd = ("python -c \"import os; d=os.path.join(os.environ['TMPDIR'],'ro'); os.mkdir(d); "
