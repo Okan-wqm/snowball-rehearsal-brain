@@ -3,7 +3,8 @@
 A mutant is data (``tests/mutants/<topic>.json``): ``{"root"?, "mutants": [{"id", "file", "old", "new",
 "tests"}]}``. ``root`` is the brain directory the file's mutants live in, one of ``ROOTS``: ``referee`` (the
 default, when the field is absent) or ``.`` (the brain's root, whose ``tests/`` holds the session tools
-``run_like_referee`` and ``vec_compare``); any other value is malformed. ``file`` is relative to ``<root>/``,
+``run_like_referee`` and ``vec_compare`` and test 14's ``test_founder_ledger``, which tests ``referee/ledger/founder.py``:
+a file is named from the root, so a root mutant may change a file under ``referee/``); any other value is malformed. ``file`` is relative to ``<root>/``,
 ``tests`` a list whose entries are each either a ``<root>/tests`` file pattern (an entry ending in ``.py``) or a
 unittest id (``<module>.<Class>`` or ``<module>.<Class>.<method>``, dotted identifiers, ``<module>`` the file
 ``<root>/tests/<module>.py``); any other entry is malformed. For each mutant:

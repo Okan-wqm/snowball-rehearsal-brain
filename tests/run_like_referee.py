@@ -12,8 +12,9 @@ What it does, each rule bound by ``tests/test_run_like_referee.py``:
   tree is not copied), so an ignored file (``__pycache__``, a local fixture) is not there, as in the referee's
   checkout. A symbolic link is copied as a link. This is the one step that needs git: it reads this clone.
 - **Each command gets its own copy, with a checkout's modes** (``0644``, ``0755`` for a file with an execute
-  bit, ``0755`` for a directory), like the referee's checkout, so what a test copies out of the tree is writable,
-  as there.
+  bit, ``0755`` for a directory, the copy's root included, whatever the umask), like the referee's checkout, so
+  what a test copies out of the tree is writable, as there. A command's copy is removed when the command ends, so a
+  run holds at most ``-j`` copies.
 - **A write to the tree is a failure, found after the fact** (tohum/29b ``koş``: ``--read-only``, where it fails
   at once). Without root this runner cannot make the tree read-only and keep a checkout's modes (the referee's
   files belong to another user; here they are this user's), so it compares the copy after the command with the
@@ -23,7 +24,7 @@ What it does, each rule bound by ``tests/test_run_like_referee.py``:
   skips that write without an error (any python the command starts, whatever its environment).
 - **PATH holds only python**: a directory holding ``python`` and ``python3``, links to this interpreter. The
   command runs under ``/bin/sh -c`` (the shell is found by its path, not by PATH), from the copy's root (tohum/26c:
-  ``cmd`` runs from the repository root), stdin ``/dev/null``.
+  ``cmd`` runs from the repository root), stdin ``/dev/null`` (not the runner's own stdin).
 - **The environment is only** ``PATH``, ``HOME=/nonexistent`` (no home to read or write), ``TMPDIR`` (a new
   directory per command) and ``LANG=C.UTF-8``; nothing of this session's environment passes.
 - **A time limit per command** (``--timeout``, default 1800 s, the referee's bound for a whole push): a command
@@ -109,9 +110,9 @@ def stage(root: str, names: list[str], dst: str) -> None:
         else:
             shutil.copyfile(src, out)
             os.chmod(out, 0o755 if os.stat(src).st_mode & 0o111 else 0o644)
-    for top, dirs, _ in os.walk(dst):
-        for name in dirs:
-            os.chmod(os.path.join(top, name), 0o755)
+    # mkdir's mode is masked by the umask; every directory, ``dst`` included, is set after the fact.
+    for top, _, _ in os.walk(dst):
+        os.chmod(top, 0o755)
 
 
 def snapshot(tree: str) -> dict[str, tuple]:
@@ -165,7 +166,7 @@ def env(path: str, tmp: str) -> dict[str, str]:
 
 
 def run_one(test: dict, root: str, names: list[str], path: str, work: str, timeout: float) -> dict:
-    """Run one command on its own copy of ``names``."""
+    """Run one command on its own copy of ``names``; the copy and its ``TMPDIR`` are removed when it ends."""
     own = tempfile.mkdtemp(prefix="%s-" % test["id"], dir=work)
     try:
         tree, tmp = os.path.join(own, "brain"), os.path.join(own, "tmp")
