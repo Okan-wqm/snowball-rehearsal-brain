@@ -25,8 +25,63 @@
   {
    "id": "wd_strings_counted",
    "file": "cli.py",
-   "old": "_LEVEL.findall(_STRING.sub(\"\", text))",
+   "old": "_LEVEL.findall(outside_strings(text))",
    "new": "_LEVEL.findall(text)",
+   "tests": [
+    "test_cli.LoadsDepth",
+    "test_cli.Walks",
+    "test_profile_nx.Deep"
+   ]
+  },
+  {
+   "id": "wd_former_pattern",
+   "file": "cli.py",
+   "old": "\"\".join(text.replace(\"\\\\\\\\\", \"\").replace('\\\\\"', \"\").split('\"')[::2])",
+   "new": "re.compile(r'\"(?:[^\"\\\\]|\\\\.)*\"', re.S).sub(\"\", text)",
+   "tests": [
+    "test_cli.LoadsDepth",
+    "test_cli.Walks",
+    "test_profile_nx.Deep"
+   ]
+  },
+  {
+   "id": "wd_quote_before_pairs",
+   "file": "cli.py",
+   "old": "\"\".join(text.replace(\"\\\\\\\\\", \"\").replace('\\\\\"', \"\").split('\"')[::2])",
+   "new": "\"\".join(text.replace('\\\\\"', \"\").replace(\"\\\\\\\\\", \"\").split('\"')[::2])",
+   "tests": [
+    "test_cli.LoadsDepth",
+    "test_cli.Walks",
+    "test_profile_nx.Deep"
+   ]
+  },
+  {
+   "id": "wd_escaped_quote_kept",
+   "file": "cli.py",
+   "old": "\"\".join(text.replace(\"\\\\\\\\\", \"\").replace('\\\\\"', \"\").split('\"')[::2])",
+   "new": "\"\".join(text.replace(\"\\\\\\\\\", \"\").split('\"')[::2])",
+   "tests": [
+    "test_cli.LoadsDepth",
+    "test_cli.Walks",
+    "test_profile_nx.Deep"
+   ]
+  },
+  {
+   "id": "wd_pairs_kept",
+   "file": "cli.py",
+   "old": "\"\".join(text.replace(\"\\\\\\\\\", \"\").replace('\\\\\"', \"\").split('\"')[::2])",
+   "new": "\"\".join(text.replace('\\\\\"', \"\").split('\"')[::2])",
+   "tests": [
+    "test_cli.LoadsDepth",
+    "test_cli.Walks",
+    "test_profile_nx.Deep"
+   ]
+  },
+  {
+   "id": "wd_odd_pieces",
+   "file": "cli.py",
+   "old": "\"\".join(text.replace(\"\\\\\\\\\", \"\").replace('\\\\\"', \"\").split('\"')[::2])",
+   "new": "\"\".join(text.replace(\"\\\\\\\\\", \"\").replace('\\\\\"', \"\").split('\"')[1::2])",
    "tests": [
     "test_cli.LoadsDepth",
     "test_cli.Walks",
