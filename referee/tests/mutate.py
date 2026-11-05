@@ -29,8 +29,11 @@ that loops or one that is only slower than the limit (a person reads which).
 
 Each row ``{file, id, outcome}`` is printed and flushed as its mutant finishes, so the rows come in the order
 the mutants finish, and a run that is cut keeps the rows it printed (the baselines run first and print nothing).
-Exit 0 only when every mutant is ``killed`` (no mutant run is exit 1: nothing was shown). The brain itself is
-only read.
+After the last row, one summary line ``{ok, files, mutants, outcomes}`` (``summary``): ``files`` the mutant files
+read, ``mutants`` the rows printed, ``outcomes`` each outcome's count; it is printed only when every mutant has its
+row, so a run cut before its end (a session's tool limit, a kill) lacks it, and output without it is not a whole
+run. Exit 0 only when every mutant is ``killed`` (no mutant run is exit 1: nothing was shown), ``ok`` the same.
+The brain itself is only read.
 
 ``--touched REV`` runs only the mutants a change since ``REV`` can concern. The changed paths are git's: every path
 ``git diff --name-only --no-renames REV`` names (``REV`` against the working tree, staged or not, committed or not;
@@ -280,6 +283,15 @@ def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[st
         return list(pool.map(one, mutants))
 
 
+def summary(files: list[str], rows: list[dict[str, str]]) -> dict[str, Any]:
+    """The run's last line (module docstring): ``ok`` when there are rows and every one is ``killed``."""
+    outcomes: dict[str, int] = {}
+    for r in rows:
+        outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
+    return {"ok": bool(rows) and set(outcomes) == {"killed"}, "files": len(files), "mutants": len(rows),
+            "outcomes": outcomes}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("files", nargs="*", help="mutant files (default: every referee/tests/mutants/*.json)")
@@ -301,7 +313,9 @@ def main(argv: list[str] | None = None) -> int:
     if changed is not None:
         print("--touched %s: %d changed paths, %d mutants selected" % (args.touched, len(changed), len(rows)),
               file=sys.stderr)
-    return 0 if rows and all(r["outcome"] == "killed" for r in rows) else 1
+    total = summary(files, rows)
+    print(json.dumps(total, sort_keys=True), flush=True)
+    return 0 if total["ok"] else 1
 
 
 if __name__ == "__main__":

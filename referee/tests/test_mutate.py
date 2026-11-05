@@ -137,8 +137,59 @@ class Runner(unittest.TestCase):
                 out = io.StringIO()
                 with contextlib.redirect_stdout(out):
                     self.assertEqual(mutate.main(["--brain", self.brain, "-j", "2", path]), code)
-                rows = [json.loads(line) for line in out.getvalue().splitlines()]
+                *rows, total = [json.loads(line) for line in out.getvalue().splitlines()]
                 self.assertEqual(sorted((r["file"], r["id"]) for r in rows), sorted(("m.json", m["id"]) for m in mutants))
+                self.assertEqual(total, mutate.summary([path], rows))
+                self.assertEqual(total["ok"], code == 0)
+
+    def test_the_summary_line_counts_the_run_and_comes_last(self):
+        path = os.path.join(self.brain, "m.json")
+        other = os.path.join(self.brain, "m1.json")
+        with open(path, "w") as fh:
+            json.dump({"mutants": [mutant("k", "return a + b", "return a - b"),
+                                   mutant("s", "return a + a", "return 2 * a")]}, fh)
+        with open(other, "w") as fh:
+            json.dump({"mutants": [mutant("st", "return a * b", "return a")]}, fh)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(mutate.main(["--brain", self.brain, "-j", "2", path, other]), 1)
+        lines = [json.loads(line) for line in out.getvalue().splitlines()]
+        self.assertEqual(len(lines), 4)
+        self.assertTrue(all("id" in r for r in lines[:3]))
+        self.assertEqual(lines[-1], {"ok": False, "files": 2, "mutants": 3,
+                                     "outcomes": {"killed": 1, "survived": 1, "stale": 1}})
+
+    def test_summary(self):
+        row = lambda outcome: {"file": "m.json", "id": outcome, "outcome": outcome}  # noqa: E731
+        for rows, ok in (([], False), ([row("killed")], True), ([row("killed"), row("killed")], True),
+                         ([row("killed"), row("timeout")], False), ([row("stale")], False),
+                         ([row("baseline_red")], False)):
+            with self.subTest(rows=[r["outcome"] for r in rows]):
+                got = mutate.summary(["a.json", "b.json"], rows)
+                self.assertEqual(got["ok"], ok)
+                self.assertEqual((got["files"], got["mutants"]), (2, len(rows)))
+                self.assertEqual(sum(got["outcomes"].values()), len(rows))
+        self.assertEqual(mutate.summary([], [row("killed"), row("timeout"), row("killed")])["outcomes"],
+                         {"killed": 2, "timeout": 1})
+
+    def test_a_cut_run_prints_no_summary(self):
+        path = os.path.join(self.brain, "m.json")
+        with open(path, "w") as fh:
+            json.dump({"mutants": [mutant("k", "return a + b", "return a - b"),
+                                   mutant("s", "return a + a", "return 2 * a")]}, fh)
+        real = mutate.run_one
+
+        def cut(brain, m, limit):  # the run is cut while its second mutant runs
+            if m["id"] == "s":
+                raise KeyboardInterrupt
+            return real(brain, m, limit)
+
+        out = io.StringIO()
+        with mock.patch.object(mutate, "run_one", cut), contextlib.redirect_stdout(out):
+            with self.assertRaises(KeyboardInterrupt):
+                mutate.main(["--brain", self.brain, "-j", "1", path])
+        lines = [json.loads(line) for line in out.getvalue().splitlines()]
+        self.assertEqual(lines, [{"file": "m.json", "id": "k", "outcome": "killed"}])
 
     def test_a_mutant_over_the_limit_is_a_timeout(self):
         slow = "import mod, time\nif mod.add(2, 3) != 5:\n    time.sleep(30)\n"
@@ -176,7 +227,7 @@ class Runner(unittest.TestCase):
         out, start = io.StringIO(), time.monotonic()
         with contextlib.redirect_stdout(out):
             mutate.main(["--brain", self.brain, "--timeout", "120", "--factor", "5", "--floor", "3", path])
-        self.assertEqual(json.loads(out.getvalue())["outcome"], "timeout")
+        self.assertEqual(json.loads(out.getvalue().splitlines()[0])["outcome"], "timeout")
         self.assertLess(time.monotonic() - start, 30)
 
     def test_limits(self):
@@ -356,9 +407,10 @@ class Touched(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = mutate.main(["--brain", self.brain, "-j", "2", "--touched", "REV"])
-        rows = [json.loads(line) for line in out.getvalue().splitlines()]
+        *rows, total = [json.loads(line) for line in out.getvalue().splitlines()]
         self.assertEqual(sorted((r["id"], r["outcome"]) for r in rows),
                          [("not_imported", "survived"), ("on_mod", "killed")])
+        self.assertEqual((total["mutants"], total["ok"]), (2, False))
         self.assertEqual(code, 1)
         self.assertIn("1 changed paths, 2 mutants selected", err.getvalue())
 

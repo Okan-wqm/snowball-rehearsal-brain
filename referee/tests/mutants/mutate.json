@@ -38,8 +38,8 @@
   },
   {
    "id": "any_killed_exits_zero",
-   "old": "all(r[\"outcome\"] == \"killed\" for r in rows)",
-   "new": "any(r[\"outcome\"] == \"killed\" for r in rows)",
+   "old": "bool(rows) and set(outcomes) == {\"killed\"}",
+   "new": "\"killed\" in outcomes",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -356,6 +356,60 @@
    "old": "return bool(closures[m[\"root\"]](roots) & changed)",
    "new": "return bool(closure_of(brain, changed, ROOTS[\"referee\"])(roots) & changed)",
    "file": "tests/mutate.py",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "summary_not_printed",
+   "file": "tests/mutate.py",
+   "old": "    print(json.dumps(total, sort_keys=True), flush=True)\n",
+   "new": "",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "summary_files_are_rows",
+   "file": "tests/mutate.py",
+   "old": "\"files\": len(files)",
+   "new": "\"files\": len(rows)",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "summary_empty_run_ok",
+   "file": "tests/mutate.py",
+   "old": "bool(rows) and set(outcomes) == {\"killed\"}",
+   "new": "set(outcomes) <= {\"killed\"}",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "summary_counts_once",
+   "file": "tests/mutate.py",
+   "old": "outcomes.get(r[\"outcome\"], 0) + 1",
+   "new": "1",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "exit_ignores_summary",
+   "file": "tests/mutate.py",
+   "old": "return 0 if total[\"ok\"] else 1",
+   "new": "return 0",
+   "tests": [
+    "test_mutate.py"
+   ]
+  },
+  {
+   "id": "summary_printed_on_a_cut",
+   "file": "tests/mutate.py",
+   "old": "    rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,\n               lambda row: print(json.dumps(row, sort_keys=True), flush=True), args.factor, args.floor)\n",
+   "new": "    try:\n        rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,\n                   lambda row: print(json.dumps(row, sort_keys=True), flush=True), args.factor, args.floor)\n    except BaseException:\n        print(json.dumps(summary(files, []), sort_keys=True), flush=True)\n        raise\n",
    "tests": [
     "test_mutate.py"
    ]
