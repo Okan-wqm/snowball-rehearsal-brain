@@ -65,7 +65,9 @@ the session that reads the target, not by a test).
   then, so this is the top-level package ``t`` of ``import t`` after ``sys.path.insert(0, <the root>)``; a
   module file ``t.py`` at the root reached so makes no box. Last, a directory below the root holding a Dockerfile
   (``profile.docker.DOCKERFILE_NAMES``) that no box of any kind above holds is a project of kind ``docker``, named
-  by its directory: an image built from it (several Dockerfiles in one directory are one box);
+  by its directory: an image built from it (several Dockerfiles in one directory are one box). After it, a directory
+  below the root holding a kustomization file (``profile.kustomize.KUSTOMIZATION_NAMES``) that no box holds is a
+  project of kind ``kustomize``, named by its directory;
 - a file belongs to the project with the deepest directory holding it;
 - an arrow A -> B, labelled with how it was found: ``npm`` (a key of ``dependencies``, ``devDependencies``,
   ``peerDependencies`` or ``optionalDependencies`` of A's ``package.json`` is B's npm name), ``cargo`` (a dependency
@@ -83,7 +85,8 @@ the session that reads the target, not by a test).
   ``sys.path``, and B holds that path; tried before the ``python`` rule, so that import draws no ``python``
   arrow), ``docker`` (a Dockerfile of A that a compose file or a GitHub Actions step builds copies a path B
   holds, or a directory holding B, from its build context: ``docker_edges``, ``profile.docker`` and
-  ``profile.ghactions``);
+  ``profile.ghactions``), ``kustomize`` (a kustomization file of A names a path, resolved from its directory, that B
+  holds: ``kustomize_edges`` and ``profile.kustomize``);
 - an import specifier is one ``jsimports.specifiers`` reads (as written: a commented-out import counts, an
   import whose specifier is not a string literal does not);
 - not read, stated: a ``sys.path`` insertion reaching other files (a ``conftest.py``'s reaching its tests, a
@@ -96,7 +99,9 @@ the session that reads the target, not by a test).
   language's references (imports, Terraform module sources, SQL table names, a Dockerfile no build names;
   counted by extension or name in ``coverage.unread_code_files``), a Dockerfile's build context named anywhere but
   a compose file or a ``docker/build-push-action`` step (a ``docker build`` line, a Makefile, a script), what
-  ``profile.docker``, ``profile.ghactions`` and ``profile.yamlblock`` state they do not read, whether a resolved
+  ``profile.docker``, ``profile.ghactions``, ``profile.kustomize`` and ``profile.yamlblock`` state they do not
+  read, Helm charts, a Kubernetes manifest's references (images, config maps, services) and a manifest no
+  kustomization names, whether a resolved
   path exists,
   project references in ``tsconfig``;
 - ``coverage`` says how much of the checkout this map holds: files, JS/TS and Python files read, each also in no
@@ -112,7 +117,8 @@ the session that reads the target, not by a test).
   three paths each, and ``sys_path``: insertion calls, directories resolved (``missing``: not in the checkout,
   no box and no import through them), values leaving the root, calls or values not resolved and the files holding
   them (count and first three in path order), imports resolved through an inserted directory; ``docker``: the
-  counts of ``docker_edges``. ``unread_manifests``
+  counts of ``docker_edges``; ``kustomize``: those of ``kustomize_edges`` (references by outcome, the manifests
+  they deploy by document ``kind``, YAML files no kustomization names). ``unread_manifests``
   names a missing ecosystem adapter; a manifest kind outside that list (and a build file
   under another name) is not counted, and a counted file is not opened.
 
@@ -135,8 +141,9 @@ session maps the target with the base brain from a worktree of the base commit a
 - A map file is usable when it is UTF-8 JSON: an object holding ``projects`` (a list of objects with a string
   ``dir``, a string ``name`` and a list of strings ``kinds``, no dir twice), ``edges`` (a list of objects with string
   ``from`` and ``to`` and a list of strings ``kinds``, no pair twice) and ``coverage`` (an object), and nests at
-  most ``MAP_DEPTH`` (64) objects and lists deep, the map itself the first (``map`` wrote 5 on the target of
-  2026-11-05: map, coverage, ``sys_path``, ``unresolved_files``, ``examples``); so the delta's walks and its output stay far inside the interpreter's
+  most ``MAP_DEPTH`` (64) objects and lists deep, the map itself the first (``map`` wrote 6 on the target of
+  2026-11-05: map, coverage, ``docker``, ``workflows``, ``unreadable``, ``examples``; and map, coverage,
+  ``kustomize``, ``manifests``, ``unreadable``, ``examples``); so the delta's walks and its output stay far inside the interpreter's
   recursion limit, and a deeper file is unusable, never a fault. Other keys are not read but are counted in the
   depth. Not compared, stated: anything the map does not hold (a file's specifiers, a file's reader view: f769).
 
@@ -171,6 +178,7 @@ import cli
 from profile import docker
 from profile import ghactions
 from profile import jsimports as J
+from profile import kustomize
 from profile import pypath
 from profile import yamlblock
 
@@ -234,7 +242,7 @@ MANIFESTS_NOT_READ = (
     "build.zig", "dune-project", "Project.toml",                            # Zig, OCaml, Julia
 )
 UNREAD_EXAMPLES = 3
-PROJECT_KINDS = ("npm", "nx", "cargo", "python", "tsconfig", "path", "docker")
+PROJECT_KINDS = ("npm", "nx", "cargo", "python", "tsconfig", "path", "docker", "kustomize")
 # target_map reads its Python and JS/TS files READERS at a time, at most READ_AHEAD files ahead of the one it
 # parses: a checkout on a network or virtual file system answers each open slowly, and threads wait in parallel
 READERS = 16
@@ -647,6 +655,18 @@ def unread_manifests(files: list[str], npm_dirs: set[str]) -> dict[str, dict[str
     return _examples(found)
 
 
+def _yaml(root: str, rel: str) -> list[Any] | None:
+    """The documents of the YAML file ``rel`` (``profile.yamlblock.load_all``), or ``None`` when it is not UTF-8
+    or not read (counted as unreadable by each caller; an undecodable file is not an empty one)."""
+    text = _read(root, rel)
+    if text is None:
+        return None
+    try:
+        return yamlblock.load_all(text)
+    except yamlblock.Unreadable:
+        return None
+
+
 def _context_matches(context: str, source: str, files: set[str], dirs: set[str]) -> list[str] | None:
     """The paths a ``context`` source names, relative to the root: the path itself when it is a file or a
     directory, or for a source holding ``*``, ``?`` or ``[`` every file and directory under the context whose path
@@ -711,11 +731,11 @@ def docker_edges(root: str, files: list[str], dockerfiles: list[str], dirs: set[
         if not compose and not ghactions.is_actions_file(rel):
             continue
         (cov if compose else wf)["compose_files" if compose else "files"] += 1
-        try:
-            doc = yamlblock.load(_read(root, rel) or "")
-        except yamlblock.Unreadable:
+        docs = _yaml(root, rel)
+        if docs is None or len(docs) > 1:
             unreadable["compose" if compose else "actions"].append(rel)
             continue
+        doc = docs[0] if docs else None
         if compose:
             for _service, context, dockerfile in docker.compose_builds(doc):
                 place(posixpath.dirname(rel), "." if context is None else context,
@@ -753,6 +773,101 @@ def docker_edges(root: str, files: list[str], dockerfiles: list[str], dirs: set[
                             if _under(d, p):
                                 edge(here, d, "docker")
     return set(contexts)
+
+
+def kustomize_edges(root: str, files: list[str], dirs: set[str], projects: _Projects, coverage: dict,
+                    edge) -> None:
+    """The ``kustomize`` arrows and ``coverage["kustomize"]``.
+
+    Each kustomization file (``profile.kustomize.is_kustomization``) is read as one YAML document (a file not
+    UTF-8, not read by ``profile.yamlblock`` or holding several documents counts in ``unreadable``); each of its
+    ``profile.kustomize.references`` is counted by kind, and a ``path`` one, joined to the file's directory, is
+    ``leaves_root`` (it starts with ``/`` or leaves the root), ``remote`` (no file or directory of the checkout
+    and ``profile.kustomize.host_like``: Kustomize fetches it), ``missing`` (no file or directory of the checkout
+    otherwise: ``kustomize build`` stops there), ``no_kustomization`` (a directory holding no kustomization file, which
+    Kustomize requires of a directory) or ``resolved``; a resolved one draws an arrow from the project holding the
+    kustomization file to the project holding the path (none from a file in no project). ``missing_files`` and
+    ``no_kustomization_files`` are the kustomization files with such a reference. ``manifests``: each resolved
+    file of ``resources``, ``bases`` or ``crds`` is read once with every document (``profile.yamlblock``;
+    ``unreadable`` as above), its documents counted, empty ones apart, and the non-empty ones by their ``kind``
+    (``no_kind`` when it is not a string). ``unreferenced``: the ``.yaml`` and ``.yml`` files in a directory holding
+    a kustomization file (that directory only, not below it), other than kustomization files, that no resolved
+    reference of any kustomization file names and that hold a Kubernetes object (``_k8s_object``; a file not read
+    holds none): not built by Kustomize, whether applied another way is not read."""
+    cov: dict[str, Any] = {"files": 0, "unreadable": {}, "references": {k: 0 for k in kustomize.KINDS},
+                           "paths": {"resolved": 0, "missing": 0, "remote": 0, "no_kustomization": 0, "leaves_root": 0},
+                           "missing_files": {}, "no_kustomization_files": {},
+                           "manifests": {"files": 0, "unreadable": {}, "documents": 0, "empty_documents": 0,
+                                         "kinds": {}}, "unreferenced": {}}
+    coverage["kustomize"] = cov
+    file_set = set(files)
+    roots = {posixpath.dirname(rel) for rel in files if kustomize.is_kustomization(posixpath.basename(rel))}
+    found: dict[str, list[str]] = {"unreadable": [], "missing_files": [], "no_kustomization_files": []}
+    named: set[str] = set()
+    manifests: set[str] = set()
+    for rel in files:
+        if not kustomize.is_kustomization(posixpath.basename(rel)):
+            continue
+        cov["files"] += 1
+        docs = _yaml(root, rel)
+        if docs is None or len(docs) > 1:
+            found["unreadable"].append(rel)
+            continue
+        here = projects.owner(rel)
+        flags = set()
+        for field, value, kind in kustomize.references(docs[0] if docs else None):
+            cov["references"][kind] += 1
+            if kind != "path":
+                continue
+            path = _norm(posixpath.join(posixpath.dirname(rel), value))
+            if path is None:
+                outcome = "leaves_root"
+            elif path not in file_set and path not in dirs:
+                outcome = "remote" if kustomize.host_like(value) else "missing"
+            elif path in dirs and path not in roots:
+                outcome = "no_kustomization"
+            else:
+                outcome = "resolved"
+            cov["paths"][outcome] += 1
+            if outcome in ("missing", "no_kustomization"):
+                flags.add(outcome + "_files")
+            if outcome != "resolved":
+                continue
+            named.add(path)
+            if here is not None:
+                edge(here, projects.owner(path), "kustomize")
+            if path in file_set and field in ("resources", "bases", "crds"):
+                manifests.add(path)
+        for flag in sorted(flags):
+            found[flag].append(rel)
+    man = cov["manifests"]
+    for rel in sorted(manifests):
+        man["files"] += 1
+        docs = _yaml(root, rel)
+        if docs is None:
+            man["unreadable"].setdefault("", []).append(rel)
+            continue
+        for doc in docs:
+            if doc is None:
+                man["empty_documents"] += 1
+                continue
+            man["documents"] += 1
+            key = doc.get("kind") if isinstance(doc, dict) and isinstance(doc.get("kind"), str) else "no_kind"
+            man["kinds"][key] = man["kinds"].get(key, 0) + 1
+    man["unreadable"] = _examples({"": man["unreadable"].get("", [])})[""]
+    man["kinds"] = dict(sorted(man["kinds"].items()))
+    for key, rels in found.items():
+        cov[key] = _examples({"": rels})[""]
+    cov["unreferenced"] = _examples({"": [rel for rel in files if posixpath.dirname(rel) in roots
+                                          and posixpath.splitext(rel)[1] in (".yaml", ".yml")
+                                          and not kustomize.is_kustomization(posixpath.basename(rel))
+                                          and rel not in named and _k8s_object(_yaml(root, rel))]})[""]
+
+
+def _k8s_object(docs: list[Any] | None) -> bool:
+    """Whether some document is a Kubernetes object's shape: a mapping with a string ``apiVersion`` and ``kind``."""
+    return any(isinstance(d, dict) and isinstance(d.get("apiVersion"), str) and isinstance(d.get("kind"), str)
+               for d in docs or ())
 
 
 def target_map(root: str) -> dict[str, Any]:
@@ -890,6 +1005,10 @@ def target_map(root: str) -> dict[str, Any]:
     for d in sorted({posixpath.dirname(rel) for rel in dockerfiles if posixpath.dirname(rel)
                      and projects.owner(rel) is None}):
         projects.add(d, "docker", d)
+    # kustomization roots no project holds: their directory is a box, decided after the Dockerfiles' boxes
+    for d in sorted({posixpath.dirname(rel) for rel in files if posixpath.dirname(rel)
+                     and kustomize.is_kustomization(posixpath.basename(rel)) and projects.owner(rel) is None}):
+        projects.add(d, "kustomize", d)
 
     edges: dict[tuple[str, str], set[str]] = {}
 
@@ -911,6 +1030,7 @@ def target_map(root: str) -> dict[str, Any]:
                 edge(d, path, "cargo")
 
     built = docker_edges(root, files, dockerfiles, dir_set, projects, coverage, edge)
+    kustomize_edges(root, files, dir_set, projects, coverage, edge)
 
     aliases = _tsconfig_aliases(root, file_set, coverage)
     counts = coverage["specifiers"]
@@ -1109,6 +1229,7 @@ def render_target(m: dict[str, Any], source: str) -> str:
     sp_ins = cov["sys_path"]
     dk = cov["docker"]
     wf = dk["workflows"]
+    kz = cov["kustomize"]
     groups: dict[str, list[dict]] = {}
     for p in m["projects"]:
         groups.setdefault(p["dir"].split("/")[0], []).append(p)
@@ -1117,22 +1238,22 @@ def render_target(m: dict[str, Any], source: str) -> str:
              "package's `Cargo.toml` or a `pyproject.toml`; of kind `tsconfig`: a directory holding a TypeScript "
              "configuration that no such project holds; or of kind `path`: a directory a Python file puts on "
              "`sys.path` that no such project holds, or a package directory a Python file imports through one it puts there, "
-             "found only at the root; or of kind `docker`: a directory holding a Dockerfile that no other box holds); an arrow A --> B is labelled with how it was found: "
+             "found only at the root; or of kind `docker`: a directory holding a Dockerfile that no other box holds; or of kind "
+             "`kustomize`: a directory holding a kustomization file that no other box holds); an arrow A --> B is labelled with how it was found: "
              "`npm` or `cargo` (A's manifest names B, for Cargo also through its workspace or a `[patch]`), "
              "`import` (a JS/TS file of A imports into B), `python` (a Python file of A imports a package of B), "
              "`sys.path` (a Python file of A imports a name found in a directory the same file puts on `sys.path`, "
              "and B holds it), `docker` (a Dockerfile of A, built with a context a compose file or a GitHub Actions step "
-             "names, copies a path B holds or a directory holding B). Rules and what is not read: "
+             "names, copies a path B holds or a directory holding B), `kustomize` (a kustomization file of A names a "
+             "path B holds). Rules and what is not read: "
              "`referee/status/depmap.py`, `referee/profile/pypath.py`, `referee/profile/docker.py`, "
-             "`referee/profile/ghactions.py` and `referee/profile/yamlblock.py`.", "",
-             "Projects %d (npm %d, nx %d, cargo %d, python %d, tsconfig %d, path %d, docker %d), arrows %d. Files %d; JS/TS files read %d (%d outside "
+             "`referee/profile/ghactions.py`, `referee/profile/kustomize.py` and `referee/profile/yamlblock.py`.", "",
+             "Projects %d (%s), arrows %d. Files %d; JS/TS files read %d (%d outside "
              "any project), Python files read %d (%d outside any project, %d not parsed). Imports: %d across "
              "projects, %d inside one, %d "
              "of external JS packages, %d of Python modules no project holds, %d relative Python (not drawn), %d "
              "from or into no project, %d leaving the root." % (
-                 cov["projects"], cov["projects_by_kind"]["npm"], cov["projects_by_kind"]["nx"],
-                 cov["projects_by_kind"]["cargo"], cov["projects_by_kind"]["python"], cov["projects_by_kind"]["tsconfig"],
-                 cov["projects_by_kind"]["path"], cov["projects_by_kind"]["docker"],
+                 cov["projects"], ", ".join("%s %d" % (k, cov["projects_by_kind"][k]) for k in PROJECT_KINDS),
                  len(m["edges"]), cov["files"],
                  cov["source_files"], cov["source_files_outside_projects"], cov["python_files"],
                  cov["python_files_outside_projects"], cov["python_files_unparsed"], sp["cross_project"],
@@ -1163,6 +1284,24 @@ def render_target(m: dict[str, Any], source: str) -> str:
                  dk["context_sources"]["matched"], dk["context_sources"]["no_match"],
                  dk["context_sources"]["leaves_context"], dk["sources"]["stage"], dk["sources"]["heredoc"],
                  dk["sources"]["remote"], dk["sources"]["variable"], dk["malformed"]), "",
+             "Kustomization files %d (not read: %s): path references %d (%d resolved, %d naming nothing of the "
+             "checkout (files: %s), %d naming a directory with no kustomization file (files: %s), %d leaving the root, "
+             "%d a repository's path), %d "
+             "remote, %d inline, %d not a path; manifests they deploy (`resources`, `bases`, `crds`): %d files "
+             "(not read: %s), %d documents (%s), %d empty; Kubernetes manifests beside a kustomization file "
+             "that none names: %s." % (
+                 kz["files"], "%d (%s)" % (kz["unreadable"]["count"], _some(kz["unreadable"]))
+                 if kz["unreadable"]["count"] else "none", kz["references"]["path"], kz["paths"]["resolved"],
+                 kz["paths"]["missing"], _some(kz["missing_files"]) or "none", kz["paths"]["no_kustomization"],
+                 _some(kz["no_kustomization_files"]) or "none", kz["paths"]["leaves_root"], kz["paths"]["remote"],
+                 kz["references"]["remote"], kz["references"]["inline"], kz["references"]["not_a_path"],
+                 kz["manifests"]["files"], "%d (%s)" % (kz["manifests"]["unreadable"]["count"],
+                                                        _some(kz["manifests"]["unreadable"]))
+                 if kz["manifests"]["unreadable"]["count"] else "none", kz["manifests"]["documents"],
+                 ", ".join("%s %d" % kv for kv in kz["manifests"]["kinds"].items()) or "none",
+                 kz["manifests"]["empty_documents"],
+                 "%d (%s)" % (kz["unreferenced"]["count"], _some(kz["unreferenced"]))
+                 if kz["unreferenced"]["count"] else "none"), "",
              "Code files whose references are not read (`OTHER_CODE_EXTENSIONS` by extension, `CODE_FILE_NAMES` "
              "by name: other languages, shell, Terraform, Dockerfiles no build names, Makefiles, SQL, GraphQL, "
              "protobuf, jq): %s." % (

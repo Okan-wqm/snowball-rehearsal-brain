@@ -3,13 +3,20 @@ workflows and actions, compose files), read statically, no YAML library (the san
 not a judge: ``tests/workflow_yaml.py`` is the seed's strict subset for the referee's own ``loop.yml`` (tohum/29r),
 which refuses forms that this module reads.
 
-``load(text)`` gives the document's value: ``dict`` (keys ``str``, in file order), ``list``, ``str``, ``int``,
-``float``, ``bool`` or ``None``; a text it does not read raises ``Unreadable`` (a ``ValueError``) with ``line``
-(1-based, 0 for the whole text) and ``reason`` (one of ``REASONS``). Exactly these forms are read:
+``load_all(text)`` gives the value of every document of the text, in order; a value is a ``dict`` (keys ``str``,
+in file order), ``list``, ``str``, ``int``, ``float``, ``bool`` or ``None``. ``load(text)`` gives the one document's
+value, ``None`` for a text with no document; a second document is ``documents`` at its line. A text either does
+not read raises ``Unreadable`` (a ``ValueError``) with ``line`` (1-based, 0 for the whole text) and ``reason`` (one
+of ``REASONS``); nothing is returned for the documents before it. Exactly these forms are read:
 
 - lines: LF or CRLF; blank lines and lines whose first non-blank character is ``#`` are skipped outside block and
-  quoted scalars; one leading ``---`` (after ``%`` directive lines) and a ``...`` that ends the document; a second
-  ``---`` is ``documents``; indentation is spaces, a tab before content is ``tab``;
+  quoted scalars; indentation is spaces, a tab before content is ``tab``;
+- documents: a marker is ``---`` or ``...`` at column 0 followed by the end of the line, a blank or a comment
+  (other text after it, ``--- !x`` or ``--- |``, is ``marker_content``); ``---`` starts a document, ``...`` ends
+  one; lines starting with ``%`` (directives) are skipped between documents; a document without ``---`` starts at
+  the first other line (at the start of the text or after a ``...``), so it holds content; a document after ``---``
+  may be empty (its value is ``None``); a quoted scalar is not continued across a
+  marker (``unterminated_quote``); anchors are the document's own (an alias to an earlier document's is ``alias``);
 - the root is a block mapping or a block sequence (a root scalar is ``scalar_document``);
 - block mapping: ``key: value`` or ``key:`` (value the block below, indented more, or a block sequence at the key's
   own column; nothing below is ``None``); a key is plain (up to the first ``:`` followed by a blank or the end of
@@ -36,7 +43,7 @@ which refuses forms that this module reads.
 - more than ``MAX_DEPTH`` block collections open at once, or more than ``MAX_DEPTH`` flow collections open at once
   in one flow value, is ``too_deep`` (no function here calls itself).
 
-Not read, stated: tags (``!x`` is ``tag``), several documents, a mapping or sequence as a key, the YAML 1.1 types
+Not read, stated: tags (``!x`` is ``tag``), content on a marker's line, a mapping or sequence as a key, the YAML 1.1 types
 (``yes``/``on`` stay strings, octal and sexagesimal numbers). A line break inside a plain or quoted scalar is
 folded by the rules above; a block scalar's indentation is taken from its first non-blank line unless given.
 """
@@ -49,7 +56,7 @@ from typing import Any
 MAX_DEPTH = 64
 REASONS = ("tab", "indentation", "not_a_key", "not_an_entry", "duplicate_key", "complex_key", "too_deep", "tag",
            "alias", "unterminated_quote", "text_after_quote", "escape", "flow", "indicator", "mapping_in_scalar",
-           "documents", "scalar_document", "block_header")
+           "documents", "scalar_document", "block_header", "marker_content")
 
 _NULL = ("", "~", "null", "Null", "NULL")
 _BOOL = {"true": True, "True": True, "TRUE": True, "false": False, "False": False, "FALSE": False}
@@ -89,6 +96,16 @@ def _uncomment(text: str) -> str:
         return ""
     m = re.search(r"[ \t]#", text)
     return (text[:m.start()] if m else text).strip()
+
+
+def _marker(line: str, i: int) -> str | None:
+    """``---`` or ``...`` when line ``i`` (0-based) is a document marker: the three characters at column 0, then
+    the end, a blank or a comment; a marker followed by other text is ``marker_content``."""
+    if line[:3] not in ("---", "...") or line[3:4] not in ("", " ", "\t", "\r"):
+        return None
+    if _uncomment(line[3:]) != "":
+        raise Unreadable(i + 1, "marker_content")
+    return line[:3]
 
 
 def _quoted_end(text: str, start: int) -> int | None:
@@ -318,7 +335,7 @@ class _Reader:
             k = i
             while _quoted_end("\n".join(pieces), 0) is None:
                 k += 1
-                if k >= len(lines):
+                if k >= len(lines) or _marker(lines[k], k) is not None:
                     raise Unreadable(i + 1, "unterminated_quote")
                 pieces.append(lines[k])
             joined = "\n".join(pieces)
@@ -417,13 +434,35 @@ class _Reader:
             return core, k
         return core + "\n" + ("\n" * trailing if chomp == "+" else ""), k
 
-    def read(self) -> Any:
+    def documents(self) -> list[tuple[int, Any]]:
+        """Every document, ``(line, value)``: ``line`` (1-based) is its ``---`` marker's, else its first line's.
+        Each pass consumes a line: ``document`` reads at least one or stops at a marker, which is consumed here."""
         lines = self.lines
+        docs: list[tuple[int, Any]] = []
         i = 0
-        while i < len(lines) and (self._blank(i) or lines[i].startswith("%")):
-            i += 1
-        if i < len(lines) and _uncomment(lines[i]) == "---":
-            i += 1
+        while True:
+            while i < len(lines) and (self._blank(i) or lines[i].startswith("%")):
+                i += 1
+            if i >= len(lines):
+                return docs
+            end = _marker(lines[i], i)
+            if end == "...":
+                i += 1
+                continue
+            while True:
+                start = i + 1
+                if end == "---":
+                    i += 1
+                self.anchors = {}
+                root, i, end = self.document(i)
+                docs.append((start, root))
+                if end != "---":
+                    break
+
+    def document(self, i: int) -> tuple[Any, int, str | None]:
+        """The document starting at line ``i`` (0-based), the line where it ends and the marker there (``None`` at
+        the end of the text)."""
+        lines = self.lines
         root: Any = None
         frames: list[list[Any]] = []        # [indent, container, explicit keys or None]
         pending: list[Any] | None = None     # [container, key, indent, from_key, anchor]
@@ -436,10 +475,10 @@ class _Reader:
             if content.startswith("\t"):
                 raise Unreadable(i + 1, "tab")
             indent = len(raw) - len(content)
-            if indent == 0 and _uncomment(content) in ("---", "..."):
-                if _uncomment(content) == "...":
-                    break
-                raise Unreadable(i + 1, "documents")
+            if indent == 0 and _marker(content, i) is not None:
+                if pending is not None and pending[4] is not None:
+                    self.anchors[pending[4]] = None
+                return root, i, _marker(content, i)
             entry = content == "-" or content.startswith("- ")
             if pending is not None:
                 if indent > pending[2] and not entry and _key(content) is None and not content.startswith("? "):
@@ -534,8 +573,17 @@ class _Reader:
                 break
         if pending is not None and pending[4] is not None:
             self.anchors[pending[4]] = None
-        return root
+        return root, i, None
 
 
 def load(text: str) -> Any:
-    return _Reader(text).read()
+    """The text's one document (``None`` when it holds none); a second one is ``documents`` at its line."""
+    docs = _Reader(text).documents()
+    if len(docs) > 1:
+        raise Unreadable(docs[1][0], "documents")
+    return docs[0][1] if docs else None
+
+
+def load_all(text: str) -> list[Any]:
+    """Every document of the text, in order (``load_all`` in the module docstring)."""
+    return [value for _line, value in _Reader(text).documents()]

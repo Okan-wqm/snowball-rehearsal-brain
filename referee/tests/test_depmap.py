@@ -332,7 +332,7 @@ class Target(unittest.TestCase):
     def test_coverage(self):
         cov = D.target_map(self.checkout())["coverage"]
         self.assertEqual(cov["projects_by_kind"], {"npm": 3, "nx": 4, "cargo": 4, "python": 1, "tsconfig": 0,
-                                                   "path": 0, "docker": 0})
+                                                   "path": 0, "docker": 0, "kustomize": 0})
         self.assertEqual(cov["source_files"], 5)       # main, local, libs/ui, i.js, scripts/s.ts; not dist, node_modules
         self.assertEqual(cov["source_files_outside_projects"], 1)
         self.assertEqual(cov["python_files"], 4)
@@ -436,7 +436,7 @@ class SysPath(unittest.TestCase):
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Projects 3 (npm 0, nx 0, cargo 0, python 1, tsconfig 0, path 2, docker 0), arrows 3.", text)
+        self.assertIn("Projects 3 (npm 0, nx 0, cargo 0, python 1, tsconfig 0, path 2, docker 0, kustomize 0), arrows 3.", text)
         self.assertIn("`sys.path` insertions in Python files: 8 calls; 6 directories resolved (1 not in the "
                       "checkout), 1 leaving the root, 1 calls or values not resolved (1 files: scripts/s.py); "
                       "5 imports resolved through them.", text)
@@ -498,7 +498,7 @@ class RootPackages(unittest.TestCase):
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Projects 6 (npm 0, nx 0, cargo 0, python 2, tsconfig 0, path 4, docker 0), arrows 4.", text)
+        self.assertIn("Projects 6 (npm 0, nx 0, cargo 0, python 2, tsconfig 0, path 4, docker 0, kustomize 0), arrows 4.", text)
         self.assertIn("| app | app | python | both (sys.path), lib (sys.path), ns (sys.path), tools (sys.path) |", text)
 
     def test_finder_order(self):
@@ -566,7 +566,7 @@ class TsConfig(unittest.TestCase):
     def test_coverage(self):
         cov = D.target_map(self.checkout())["coverage"]
         self.assertEqual(cov["projects_by_kind"], {"npm": 1, "nx": 0, "cargo": 0, "python": 1, "tsconfig": 4,
-                                                   "path": 1, "docker": 0})
+                                                   "path": 1, "docker": 0, "kustomize": 0})
         self.assertEqual(cov["source_files_outside_projects"], 1)              # tools/t.ts
         self.assertEqual(cov["specifiers"]["outside_projects"], 1)             # its import
         self.assertEqual(cov["specifiers"]["cross_project"], 5)
@@ -574,7 +574,7 @@ class TsConfig(unittest.TestCase):
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Projects 7 (npm 1, nx 0, cargo 0, python 1, tsconfig 4, path 1, docker 0), arrows 5.", text)
+        self.assertIn("Projects 7 (npm 1, nx 0, cargo 0, python 1, tsconfig 4, path 1, docker 0, kustomize 0), arrows 5.", text)
         self.assertIn("of kind `tsconfig`: a directory holding a TypeScript configuration that no such project holds",
                       text)
         self.assertIn("| libs/cqrs | libs/cqrs | tsconfig |  |", text)
@@ -680,7 +680,7 @@ class Docker(unittest.TestCase):
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Projects 9 (npm 3, nx 3, cargo 0, python 0, tsconfig 1, path 0, docker 2), arrows 6.", text)
+        self.assertIn("Projects 9 (npm 3, nx 3, cargo 0, python 0, tsconfig 1, path 0, docker 2, kustomize 0), arrows 6.", text)
         self.assertIn("Dockerfiles 7: 5 built (by 14 `build:` entries of 2 compose files, 5 not resolved, 3 naming "
                       "no context or Dockerfile of the checkout; compose files not read: none; by 0 builds of 0 "
                       "`docker/build-push-action` steps "
@@ -777,6 +777,85 @@ class WorkflowBuilds(unittest.TestCase):
                       "in 3 GitHub Actions files, 1 not resolved, 1 naming no context or Dockerfile of the checkout; "
                       "steps not resolved: matrix_dynamic 1, context 1; Actions files not read: 1 "
                       "(.github/workflows/bad.yml)), 1 not built by any (img/Dockerfile.n);", text)
+
+
+class Kustomize(unittest.TestCase):
+    """``kustomize_edges``: the ``kustomize`` boxes and arrows, each reference outcome, the manifests read with
+    every document, the unreferenced YAML files, an unreadable file (not UTF-8, two documents) and the drawing's
+    line (the reader's own rules: test_profile_kustomize, test_profile_yamlblock)."""
+
+    def checkout(self) -> str:
+        root = tempfile.mkdtemp()
+        write(root, {
+            "package.json": json.dumps({"workspaces": ["apps/*"]}),
+            "apps/api/package.json": json.dumps({"name": "@t/api"}),
+            "apps/api/k8s/kustomization.yaml": "resources:\n- ../../../deploy/base\n",  # in a project: no box
+            "deploy/base/kustomization.yaml": ("resources:\n- ns.yaml\n- dep.yaml\n- missing.yaml\n- gone/\n"
+                                               "configMapGenerator:\n- name: c\n  files: [k=cfg/app.conf]\n"),
+            "deploy/base/ns.yaml": "kind: Namespace\n---\nkind: 3\n---\n",
+            "deploy/base/dep.yaml": "---\nkind: Deployment\n",
+            "deploy/base/cfg/app.conf": "x\n",
+            "deploy/base/stale.yaml": "apiVersion: v1\nkind: Service\n",       # no kustomization names it
+            "deploy/base/values.yaml": "kind: Values\n",                      # named by none, no Kubernetes object
+            "deploy/base/two.yml": "a: 1\n---\napiVersion: v1\nkind: Secret\n",  # its second document is one
+            "deploy/base/notes.txt": "",
+            "deploy/prod/kustomization.yml": ("resources:\n- ../base\n- hpa.yaml\n- ../../../outside\n- /abs\n"
+                                              "- https://example.invalid/k\n- 7\n- example.invalid/o/r\ncomponents: [../comp]\n"
+                                              "patches:\n- path: p.yaml\n- patch: |-\n    kind: X\n"),
+            "deploy/prod/hpa.yaml": "a:\n\tb: 1\n",                           # a tab: not read
+            "deploy/prod/p.yaml": "kind: Deployment\n",                       # a patch: named, not a manifest
+            "deploy/comp/x.yaml": "kind: Component\n",                        # no kustomization file here
+            "kustomization.yaml": "resources:\n- deploy/prod\n",              # the root's: no box, no arrow
+            "bad/kustomization.yaml": "a: 1\n---\nb: 2\n",
+            "two/compose.yaml": "services: {}\n---\nservices: {}\n",           # two documents: not read
+        })
+        os.makedirs(os.path.join(root, "bad2"))
+        with open(os.path.join(root, "bad2", "Kustomization"), "wb") as f:
+            f.write(b"\xff\xferesources: []\n")
+        with open(os.path.join(root, "compose.yaml"), "wb") as f:  # beside the root's kustomization, not read
+            f.write(b"services:\n  a:\n    build: \xff\n")
+        return root
+
+    def test_boxes_and_arrows(self):
+        m = D.target_map(self.checkout())
+        self.assertEqual([(p["dir"], p["kinds"]) for p in m["projects"]],
+                         [("apps/api", ["npm"]), ("bad", ["kustomize"]), ("bad2", ["kustomize"]),
+                          ("deploy/base", ["kustomize"]), ("deploy/prod", ["kustomize"])])
+        self.assertEqual(m["edges"], [{"from": "apps/api", "to": "deploy/base", "kinds": ["kustomize"]},
+                                      {"from": "deploy/prod", "to": "deploy/base", "kinds": ["kustomize"]}])
+
+    def test_coverage(self):
+        cov = D.target_map(self.checkout())["coverage"]
+        kz = cov["kustomize"]
+        self.assertEqual(kz["files"], 6)
+        self.assertEqual(kz["unreadable"], {"count": 2, "examples": ["bad/kustomization.yaml", "bad2/Kustomization"]})
+        self.assertEqual(kz["references"], {"path": 14, "remote": 1, "inline": 0, "not_a_path": 1})
+        self.assertEqual(kz["paths"], {"resolved": 8, "missing": 2, "remote": 1, "no_kustomization": 1,
+                                       "leaves_root": 2})
+        self.assertEqual(kz["missing_files"], {"count": 1, "examples": ["deploy/base/kustomization.yaml"]})
+        self.assertEqual(kz["no_kustomization_files"], {"count": 1, "examples": ["deploy/prod/kustomization.yml"]})
+        self.assertEqual(kz["manifests"], {"files": 3, "unreadable": {"count": 1, "examples": ["deploy/prod/hpa.yaml"]},
+                                           "documents": 3, "empty_documents": 1,
+                                           "kinds": {"Deployment": 1, "Namespace": 1, "no_kind": 1}})
+        self.assertEqual(kz["unreferenced"], {"count": 2, "examples": ["deploy/base/stale.yaml", "deploy/base/two.yml"]})
+        self.assertEqual(cov["projects_by_kind"]["kustomize"], 4)
+        # a compose file that is not UTF-8 is not read, not an empty one
+        self.assertEqual(cov["docker"]["compose_unreadable"], {"count": 2, "examples": ["compose.yaml",
+                                                                                     "two/compose.yaml"]})
+
+    def test_drawing(self):
+        root = self.checkout()
+        text = D.render_target(D.target_map(root), "x")
+        self.assertIn("kustomize 4), arrows 2.", text)
+        self.assertIn("Kustomization files 6 (not read: 2 (bad/kustomization.yaml, bad2/Kustomization)): path "
+                      "references 14 (8 resolved, 2 naming nothing of the checkout (files: "
+                      "deploy/base/kustomization.yaml), 1 naming a directory with no kustomization file (files: "
+                      "deploy/prod/kustomization.yml), 2 leaving the root, 1 a "
+                      "repository's path), 1 remote, 0 inline, 1 not a path; "
+                      "manifests they deploy (`resources`, `bases`, `crds`): 3 files (not read: 1 "
+                      "(deploy/prod/hpa.yaml)), 3 documents (Deployment 1, Namespace 1, no_kind 1), 1 empty; "
+                      "Kubernetes manifests beside a kustomization file that none names: 2 (deploy/base/stale.yaml, "
+                      "deploy/base/two.yml).", text)
 
 
 class FileKinds(unittest.TestCase):
