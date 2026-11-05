@@ -102,8 +102,8 @@
   {
    "id": "render_no_ellipsis",
    "file": "status/depmap.py",
-   "old": "        \", ...\" if v[\"count\"] > len(v[\"examples\"]) else \"\")) for k, v in counted.items()",
-   "new": "        \"\" if v[\"count\"] > len(v[\"examples\"]) else \"\")) for k, v in counted.items()",
+   "old": "    return \", \".join(counted[\"examples\"]) + (\", ...\" if counted[\"count\"] > len(counted[\"examples\"]) else \"\")",
+   "new": "    return \", \".join(counted[\"examples\"]) + (\"\" if counted[\"count\"] > len(counted[\"examples\"]) else \"\")",
    "tests": [
     "test_depmap.py"
    ]

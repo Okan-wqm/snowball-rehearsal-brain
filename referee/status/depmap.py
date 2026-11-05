@@ -63,7 +63,9 @@ the session that reads the target, not by a test).
   namespace package, not a module file) that no project holds is a project of kind ``path`` too, named by its
   directory: only the root's can be, as every other inserted directory present is a box or inside a project by
   then, so this is the top-level package ``t`` of ``import t`` after ``sys.path.insert(0, <the root>)``; a
-  module file ``t.py`` at the root reached so makes no box;
+  module file ``t.py`` at the root reached so makes no box. Last, a directory below the root holding a Dockerfile
+  (``profile.docker.DOCKERFILE_NAMES``) that no box of any kind above holds is a project of kind ``docker``, named
+  by its directory: an image built from it (several Dockerfiles in one directory are one box);
 - a file belongs to the project with the deepest directory holding it;
 - an arrow A -> B, labelled with how it was found: ``npm`` (a key of ``dependencies``, ``devDependencies``,
   ``peerDependencies`` or ``optionalDependencies`` of A's ``package.json`` is B's npm name), ``cargo`` (a dependency
@@ -79,7 +81,8 @@ the session that reads the target, not by a test).
   (a ``.py`` file of A imports by an absolute name whose first part ``t`` reaches, by ``sys_path_target``, a
   package ``D/t/``, a module ``D/t.py`` or a directory ``D/t`` for a directory ``D`` the same file puts on
   ``sys.path``, and B holds that path; tried before the ``python`` rule, so that import draws no ``python``
-  arrow);
+  arrow), ``docker`` (a Dockerfile of A that a compose file builds copies a path B holds, or a directory holding
+  B, from its build context: ``docker_edges`` and ``profile.docker``);
 - an import specifier is one ``jsimports.specifiers`` reads (as written: a commented-out import counts, an
   import whose specifier is not a string literal does not);
 - not read, stated: a ``sys.path`` insertion reaching other files (a ``conftest.py``'s reaching its tests, a
@@ -89,8 +92,10 @@ the session that reads the target, not by a test).
   module); nested npm workspaces (a ``package.json`` workspace below the root), Rust ``use`` lines (the
   manifest is Cargo's own list), a Cargo target file outside its package's directory (``[[test]] path =
   "../x.rs"``: the file belongs to the project holding it), a Python package that is a single module file, Go's and every other
-  language's references (imports, Terraform module sources, SQL table names, a Dockerfile's ``COPY``; counted by
-  extension or name in ``coverage.unread_code_files``), whether a resolved path exists,
+  language's references (imports, Terraform module sources, SQL table names, a Dockerfile no compose file builds;
+  counted by extension or name in ``coverage.unread_code_files``), a Dockerfile's build context named anywhere but
+  a compose file (a workflow, a Makefile, a script) and what ``profile.docker`` states it does not read, whether a
+  resolved path exists,
   project references in ``tsconfig``;
 - ``coverage`` says how much of the checkout this map holds: files, JS/TS and Python files read, each also in no
   project, specifiers by outcome (an import in a file of no project, or into no project, is ``outside_projects``),
@@ -104,7 +109,8 @@ the session that reads the target, not by a test).
   the root outside the npm workspace projects (an Nx project's own ``package.json`` too); a count and the first
   three paths each, and ``sys_path``: insertion calls, directories resolved (``missing``: not in the checkout,
   no box and no import through them), values leaving the root, calls or values not resolved and the files holding
-  them (count and first three in path order), imports resolved through an inserted directory. ``unread_manifests``
+  them (count and first three in path order), imports resolved through an inserted directory; ``docker``: the
+  counts of ``docker_edges``. ``unread_manifests``
   names a missing ecosystem adapter; a manifest kind outside that list (and a build file
   under another name) is not counted, and a counted file is not opened.
 
@@ -160,6 +166,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import cli
+from profile import docker
 from profile import jsimports as J
 from profile import pypath
 
@@ -186,7 +193,7 @@ OTHER_CODE_EXTENSIONS = {".rs", ".go", ".java", ".kt", ".rb", ".php", ".cs", ".c
                          ".sh", ".bash", ".ps1",
                          ".tf", ".hcl",
                          ".sql", ".graphql", ".gql", ".proto", ".jq"}
-CODE_FILE_NAMES = ("Dockerfile", "Dockerfile.*", "*.Dockerfile", "*.dockerfile", "Containerfile",
+CODE_FILE_NAMES = docker.DOCKERFILE_NAMES + (
                    "Makefile", "GNUmakefile", "makefile", "Jenkinsfile", "Justfile", "justfile", "Vagrantfile",
                    "Rakefile", "Tiltfile")
 # Not code: what no map draws an arrow from, by group: documents and markup; data and configuration; styles;
@@ -223,7 +230,7 @@ MANIFESTS_NOT_READ = (
     "build.zig", "dune-project", "Project.toml",                            # Zig, OCaml, Julia
 )
 UNREAD_EXAMPLES = 3
-PROJECT_KINDS = ("npm", "nx", "cargo", "python", "tsconfig", "path")
+PROJECT_KINDS = ("npm", "nx", "cargo", "python", "tsconfig", "path", "docker")
 # target_map reads its Python and JS/TS files READERS at a time, at most READ_AHEAD files ahead of the one it
 # parses: a checkout on a network or virtual file system answers each open slowly, and threads wait in parallel
 READERS = 16
@@ -636,6 +643,86 @@ def unread_manifests(files: list[str], npm_dirs: set[str]) -> dict[str, dict[str
     return _examples(found)
 
 
+def _context_matches(context: str, source: str, files: set[str], dirs: set[str]) -> list[str] | None:
+    """The paths a ``context`` source names, relative to the root: the path itself when it is a file or a
+    directory, or for a source holding ``*``, ``?`` or ``[`` every file and directory under the context whose path
+    matches it segment by segment (``fnmatchcase``, ``*`` inside one segment, as Docker's ``filepath.Match``);
+    ``None`` when the source leaves the context."""
+    path = _norm(posixpath.join(context, source.lstrip("/")))
+    if path is None or not _under(path, context):
+        return None
+    if not any(c in source for c in "*?["):
+        return [path] if path in files or path in dirs else []
+    want = path.split("/")
+    return sorted(p for p in itertools.chain(files, dirs) if p and len(p.split("/")) == len(want)
+                  and all(fnmatch.fnmatchcase(a, b) for a, b in zip(p.split("/"), want)))
+
+
+def docker_edges(root: str, files: list[str], dockerfiles: list[str], dirs: set[str], projects: _Projects,
+                 coverage: dict, edge) -> set[str]:
+    """The ``docker`` arrows and ``coverage["docker"]``; returns the Dockerfiles read (those a compose file builds).
+
+    A build is a ``profile.docker.compose_builds`` entry of a compose file (``profile.docker.COMPOSE_NAMES``): its
+    context, ``.`` when not given, relative to the compose file's directory, and its Dockerfile, ``Dockerfile``
+    when not given, relative to the context. A build is ``unresolved`` when a value holds ``$`` (Compose
+    substitutes variables) or ``://`` (a remote context), starts with ``/`` or leaves the root, and ``missing``
+    when the context is not a directory of the checkout or the Dockerfile not a file of it. Each Dockerfile with a
+    build is read once; for each distinct context it is built with, each ``context`` source
+    (``_context_matches``) reaches the project holding each path it names and, for a directory, every project
+    inside it; an arrow goes from the project holding the Dockerfile to each project reached (none from a
+    Dockerfile in no project, the root's)."""
+    cov = {"dockerfiles": len(dockerfiles), "compose_files": 0, "builds": 0, "builds_unresolved": 0,
+           "builds_missing": 0, "dockerfiles_built": 0, "dockerfiles_not_built": {},
+           "sources": {k: 0 for k in docker.COPY_KINDS}, "malformed": 0,
+           "context_sources": {"matched": 0, "no_match": 0, "leaves_context": 0}}
+    coverage["docker"] = cov
+    file_set = set(files)
+    contexts: dict[str, set[str]] = {}
+    for rel in files:
+        if not docker.is_compose(posixpath.basename(rel)):
+            continue
+        cov["compose_files"] += 1
+        for _line, context, dockerfile in docker.compose_builds(_read(root, rel) or ""):
+            cov["builds"] += 1
+            context = "." if context is None else context
+            dockerfile = "Dockerfile" if dockerfile is None else dockerfile
+            if any("$" in v or "://" in v or v.startswith("/") for v in (context, dockerfile)):
+                cov["builds_unresolved"] += 1
+                continue
+            ctx = _norm(posixpath.join(posixpath.dirname(rel), context))
+            path = None if ctx is None else _norm(posixpath.join(ctx, dockerfile))
+            if path is None:
+                cov["builds_unresolved"] += 1
+            elif ctx not in dirs or path not in file_set:
+                cov["builds_missing"] += 1
+            else:
+                contexts.setdefault(path, set()).add(ctx)
+    cov["dockerfiles_built"] = len(contexts)
+    cov["dockerfiles_not_built"] = _examples({"": [r for r in dockerfiles if r not in contexts]})[""]
+    project_dirs = sorted(projects.by_dir)
+    for rel in sorted(contexts):
+        sources, malformed = docker.copies(_read(root, rel) or "")
+        cov["malformed"] += malformed
+        here = projects.owner(rel)
+        for _line, _keyword, source, kind in sources:
+            cov["sources"][kind] += 1
+            if kind != "context":
+                continue
+            for ctx in sorted(contexts[rel]):
+                matched = _context_matches(ctx, source, file_set, dirs)
+                if matched is None:
+                    cov["context_sources"]["leaves_context"] += 1
+                    continue
+                cov["context_sources"]["matched" if matched else "no_match"] += 1
+                for p in matched:
+                    edge(here, projects.owner(p), "docker")
+                    if p in dirs:
+                        for d in project_dirs:
+                            if _under(d, p):
+                                edge(here, d, "docker")
+    return set(contexts)
+
+
 def target_map(root: str) -> dict[str, Any]:
     import tomllib
 
@@ -766,6 +853,11 @@ def target_map(root: str) -> dict[str, Any]:
         projects.add(d, "path", d)
     for d in ts_boxes:
         projects.add(d, "tsconfig", d)
+    # Dockerfiles no project holds: their directory is a box, decided last (against every other box)
+    dockerfiles = [rel for rel in files if docker.is_dockerfile(posixpath.basename(rel))]
+    for d in sorted({posixpath.dirname(rel) for rel in dockerfiles if posixpath.dirname(rel)
+                     and projects.owner(rel) is None}):
+        projects.add(d, "docker", d)
 
     edges: dict[tuple[str, str], set[str]] = {}
 
@@ -785,6 +877,8 @@ def target_map(root: str) -> dict[str, Any]:
         for path in cargo_dep_paths(d, manifest, top_dir, top_manifest):
             if path in projects.by_dir:
                 edge(d, path, "cargo")
+
+    built = docker_edges(root, files, dockerfiles, dir_set, projects, coverage, edge)
 
     aliases = _tsconfig_aliases(root, file_set, coverage)
     counts = coverage["specifiers"]
@@ -832,7 +926,7 @@ def target_map(root: str) -> dict[str, Any]:
             continue
         if ext not in J.SOURCE_EXTENSIONS:
             kind, key = file_kind(rel)
-            if kind == "code":
+            if kind == "code" and rel not in built:
                 coverage["unread_code_files"][key] = coverage["unread_code_files"].get(key, 0) + 1
                 if projects.owner(rel) is None:
                     outside = coverage["unread_code_files_outside_projects"]
@@ -964,11 +1058,15 @@ def render_brain(m: dict[str, Any], source: str = "`referee/`") -> str:
     return "\n".join(lines) + "\n"
 
 
+def _some(counted: dict[str, Any]) -> str:
+    """``example, example, example, ...`` for one ``{"count", "examples"}``, ``...`` when there are more."""
+    return ", ".join(counted["examples"]) + (", ..." if counted["count"] > len(counted["examples"]) else "")
+
+
 def _listed(counted: dict[str, dict[str, Any]]) -> str:
     """``key count (example, example, example, ...)`` per entry of ``_examples``'s form, ``; ``-joined; an entry of
     count 0 left out."""
-    return "; ".join("%s %d (%s)" % (k, v["count"], ", ".join(v["examples"]) + (
-        ", ..." if v["count"] > len(v["examples"]) else "")) for k, v in counted.items() if v["count"])
+    return "; ".join("%s %d (%s)" % (k, v["count"], _some(v)) for k, v in counted.items() if v["count"])
 
 
 def render_target(m: dict[str, Any], source: str) -> str:
@@ -977,6 +1075,7 @@ def render_target(m: dict[str, Any], source: str) -> str:
     cov = m["coverage"]
     sp = cov["specifiers"]
     sp_ins = cov["sys_path"]
+    dk = cov["docker"]
     groups: dict[str, list[dict]] = {}
     for p in m["projects"]:
         groups.setdefault(p["dir"].split("/")[0], []).append(p)
@@ -985,20 +1084,21 @@ def render_target(m: dict[str, Any], source: str) -> str:
              "package's `Cargo.toml` or a `pyproject.toml`; of kind `tsconfig`: a directory holding a TypeScript "
              "configuration that no such project holds; or of kind `path`: a directory a Python file puts on "
              "`sys.path` that no such project holds, or a package directory a Python file imports through one it puts there, "
-             "found only at the root); an arrow A --> B is labelled with how it was found: "
+             "found only at the root; or of kind `docker`: a directory holding a Dockerfile that no other box holds); an arrow A --> B is labelled with how it was found: "
              "`npm` or `cargo` (A's manifest names B, for Cargo also through its workspace or a `[patch]`), "
              "`import` (a JS/TS file of A imports into B), `python` (a Python file of A imports a package of B), "
              "`sys.path` (a Python file of A imports a name found in a directory the same file puts on `sys.path`, "
-             "and B holds it). Rules and what is not read: `referee/status/depmap.py` and "
-             "`referee/profile/pypath.py`.", "",
-             "Projects %d (npm %d, nx %d, cargo %d, python %d, tsconfig %d, path %d), arrows %d. Files %d; JS/TS files read %d (%d outside "
+             "and B holds it), `docker` (a Dockerfile of A, built with a context a compose file names, copies a path "
+             "B holds or a directory holding B). Rules and what is not read: `referee/status/depmap.py`, "
+             "`referee/profile/pypath.py` and `referee/profile/docker.py`.", "",
+             "Projects %d (npm %d, nx %d, cargo %d, python %d, tsconfig %d, path %d, docker %d), arrows %d. Files %d; JS/TS files read %d (%d outside "
              "any project), Python files read %d (%d outside any project, %d not parsed). Imports: %d across "
              "projects, %d inside one, %d "
              "of external JS packages, %d of Python modules no project holds, %d relative Python (not drawn), %d "
              "from or into no project, %d leaving the root." % (
                  cov["projects"], cov["projects_by_kind"]["npm"], cov["projects_by_kind"]["nx"],
                  cov["projects_by_kind"]["cargo"], cov["projects_by_kind"]["python"], cov["projects_by_kind"]["tsconfig"],
-                 cov["projects_by_kind"]["path"],
+                 cov["projects_by_kind"]["path"], cov["projects_by_kind"]["docker"],
                  len(m["edges"]), cov["files"],
                  cov["source_files"], cov["source_files_outside_projects"], cov["python_files"],
                  cov["python_files_outside_projects"], cov["python_files_unparsed"], sp["cross_project"],
@@ -1009,12 +1109,21 @@ def render_target(m: dict[str, Any], source: str) -> str:
              "them." % (
                  sp_ins["calls"], sp_ins["dirs"], sp_ins["missing"], sp_ins["leaves_root"], sp_ins["unresolved"],
                  sp_ins["unresolved_files"]["count"],
-                 ", ".join(sp_ins["unresolved_files"]["examples"]) + (
-                     ", ..." if sp_ins["unresolved_files"]["count"] > len(sp_ins["unresolved_files"]["examples"])
-                     else "") or "none",
+                 _some(sp_ins["unresolved_files"]) or "none",
                  sp_ins["imports"]), "",
+             "Dockerfiles %d: %d built by %d `build:` entries of %d compose files (%d not resolved, %d naming no "
+             "context or Dockerfile of the checkout), %d not built by any (%s); their `COPY`/`ADD` sources: %d from "
+             "the context (%d matched, %d matching nothing, %d leaving it), %d from a stage or image, %d heredocs, "
+             "%d remote, %d holding a variable (not resolved); %d instructions malformed." % (
+                 dk["dockerfiles"], dk["dockerfiles_built"], dk["builds"], dk["compose_files"],
+                 dk["builds_unresolved"], dk["builds_missing"], dk["dockerfiles_not_built"]["count"],
+                 _some(dk["dockerfiles_not_built"]) or "none", dk["sources"]["context"],
+                 dk["context_sources"]["matched"], dk["context_sources"]["no_match"],
+                 dk["context_sources"]["leaves_context"], dk["sources"]["stage"], dk["sources"]["heredoc"],
+                 dk["sources"]["remote"], dk["sources"]["variable"], dk["malformed"]), "",
              "Code files whose references are not read (`OTHER_CODE_EXTENSIONS` by extension, `CODE_FILE_NAMES` "
-             "by name: other languages, shell, Terraform, Dockerfiles, Makefiles, SQL, GraphQL, protobuf, jq): %s." % (
+             "by name: other languages, shell, Terraform, Dockerfiles no compose file builds, Makefiles, SQL, GraphQL, "
+             "protobuf, jq): %s." % (
                  ", ".join("%s %d (%d in no project)" % (ext, n, cov["unread_code_files_outside_projects"].get(ext, 0))
                            for ext, n in cov["unread_code_files"].items()) or "none"), "",
              "Dependency manifests found and not read (`MANIFESTS_NOT_READ`; `package.json` outside the npm "
