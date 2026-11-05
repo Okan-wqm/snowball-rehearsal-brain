@@ -83,10 +83,10 @@ class Scalars(unittest.TestCase):
 
     def test_flow(self):
         text = ("a: [x, 'y, z', \"w\", 1, [n, {k: v, e: }], {}, []]\nb: {p: q, r: [1,2], s}\n"
-                "c: [\n  one,  # c\n  two\n  ]\nd: {u: http://x/y}\n")
+                "c: [\n  one,  # c [\n  two\n  ]\nd: {u: http://x/y}\ne: ['a]',\n  b]\n")
         self.assertEqual(Y.load(text), {"a": ["x", "y, z", "w", 1, ["n", {"k": "v", "e": None}], {}, []],
                                         "b": {"p": "q", "r": [1, 2], "s": None}, "c": ["one", "two"],
-                                        "d": {"u": "http://x/y"}})
+                                        "d": {"u": "http://x/y"}, "e": ["a]", "b"]})
 
 
 class Anchors(unittest.TestCase):

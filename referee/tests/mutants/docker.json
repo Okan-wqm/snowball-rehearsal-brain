@@ -118,42 +118,6 @@
    ]
   },
   {
-   "id": "dk_block_deeper_keys",
-   "file": "profile/docker.py",
-   "old": "            if depth == block and k is not None",
-   "new": "            if depth >= block and k is not None",
-   "tests": [
-    "test_profile_docker.py"
-   ]
-  },
-  {
-   "id": "dk_block_end_strict",
-   "file": "profile/docker.py",
-   "old": "            if depth <= indent:\n",
-   "new": "            if depth < indent:\n",
-   "tests": [
-    "test_profile_docker.py"
-   ]
-  },
-  {
-   "id": "dk_comment_as_context",
-   "file": "profile/docker.py",
-   "old": "        if value and not value.startswith(\"#\"):\n",
-   "new": "        if value:\n",
-   "tests": [
-    "test_profile_docker.py"
-   ]
-  },
-  {
-   "id": "dk_quotes_kept",
-   "file": "profile/docker.py",
-   "old": "    if len(value) >= 2 and value[0] == value[-1] and value[0] in \"'\\\"\":\n",
-   "new": "    if False:\n",
-   "tests": [
-    "test_profile_docker.py"
-   ]
-  },
-  {
    "id": "dm_box_any_dockerfile",
    "file": "status/depmap.py",
    "old": "    for d in sorted({posixpath.dirname(rel) for rel in dockerfiles if posixpath.dirname(rel)\n                     and projects.owner(rel) is None}):",
@@ -192,8 +156,8 @@
   {
    "id": "dm_variable_resolved",
    "file": "status/depmap.py",
-   "old": "        if any(\"$\" in v or \"://\" in v for v in (context, dockerfile)):",
-   "new": "        if any(\"://\" in v for v in (context, dockerfile)):",
+   "old": "        if any(not isinstance(v, str) or \"$\" in v or \"://\" in v for v in (context, dockerfile)):",
+   "new": "        if any(not isinstance(v, str) or \"://\" in v for v in (context, dockerfile)):",
    "tests": [
     "test_depmap.py"
    ]
@@ -210,8 +174,8 @@
   {
    "id": "dm_compose_any_yaml",
    "file": "status/depmap.py",
-   "old": "        if docker.is_compose(posixpath.basename(rel)):\n",
-   "new": "        if rel.endswith((\".yml\", \".yaml\")):\n",
+   "old": "        compose = docker.is_compose(posixpath.basename(rel))\n",
+   "new": "        compose = rel.endswith((\".yml\", \".yaml\"))\n",
    "tests": [
     "test_depmap.py"
    ]
@@ -295,6 +259,42 @@
    "new": "0,\n",
    "tests": [
     "test_depmap.py"
+   ]
+  },
+  {
+   "id": "dk_compose_any_key",
+   "file": "profile/docker.py",
+   "old": "    services = doc.get(\"services\") if isinstance(doc, dict) else None\n",
+   "new": "    services = doc\n",
+   "tests": [
+    "test_profile_docker.py"
+   ]
+  },
+  {
+   "id": "dk_compose_mapping_as_value",
+   "file": "profile/docker.py",
+   "old": "        if isinstance(build, dict):\n            builds.append",
+   "new": "        if False:\n            builds.append",
+   "tests": [
+    "test_profile_docker.py"
+   ]
+  },
+  {
+   "id": "dk_compose_null_built",
+   "file": "profile/docker.py",
+   "old": "        elif build is not None:\n",
+   "new": "        else:\n",
+   "tests": [
+    "test_profile_docker.py"
+   ]
+  },
+  {
+   "id": "dk_compose_dockerfile_dropped",
+   "file": "profile/docker.py",
+   "old": "build.get(\"context\"), build.get(\"dockerfile\")))",
+   "new": "build.get(\"context\"), None))",
+   "tests": [
+    "test_profile_docker.py"
    ]
   }
  ]

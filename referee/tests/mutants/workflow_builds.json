@@ -3,8 +3,8 @@
   {
    "id": "dm_wf_off",
    "file": "status/depmap.py",
-   "old": "        elif ghactions.is_actions_file(rel):",
-   "new": "        elif False:",
+   "old": "        if not compose and not ghactions.is_actions_file(rel):",
+   "new": "        if not compose:",
    "tests": [
     "test_depmap.WorkflowBuilds"
    ]
@@ -12,8 +12,8 @@
   {
    "id": "dm_wf_file_in_context",
    "file": "status/depmap.py",
-   "old": "                    place(\"\", context, dockerfile, False, wf)",
-   "new": "                    place(\"\", context, dockerfile, True, wf)",
+   "old": "                place(\"\", context, dockerfile, False, wf)",
+   "new": "                place(\"\", context, dockerfile, True, wf)",
    "tests": [
     "test_depmap.WorkflowBuilds"
    ]
@@ -30,8 +30,8 @@
   {
    "id": "dm_wf_reason_uncounted",
    "file": "status/depmap.py",
-   "old": "                    wf[\"steps_unresolved\"][build.reason] += 1",
-   "new": "                    pass",
+   "old": "                wf[\"steps_unresolved\"][build.reason] += 1",
+   "new": "                pass",
    "tests": [
     "test_depmap.WorkflowBuilds"
    ]
@@ -39,10 +39,28 @@
   {
    "id": "dm_wf_unreadable_uncounted",
    "file": "status/depmap.py",
-   "old": "                unreadable.append(rel)\n",
-   "new": "",
+   "old": "            unreadable[\"compose\" if compose else \"actions\"].append(rel)",
+   "new": "            unreadable[\"compose\"].append(rel)",
    "tests": [
     "test_depmap.WorkflowBuilds"
+   ]
+  },
+  {
+   "id": "dm_compose_unreadable_uncounted",
+   "file": "status/depmap.py",
+   "old": "            unreadable[\"compose\" if compose else \"actions\"].append(rel)",
+   "new": "            unreadable[\"actions\"].append(rel)",
+   "tests": [
+    "test_depmap.WorkflowBuilds"
+   ]
+  },
+  {
+   "id": "dm_not_a_string_resolved",
+   "file": "status/depmap.py",
+   "old": "if any(not isinstance(v, str) or \"$\" in v",
+   "new": "if any(not isinstance(v, str) and False or \"$\" in str(v)",
+   "tests": [
+    "test_depmap.Docker"
    ]
   }
  ]

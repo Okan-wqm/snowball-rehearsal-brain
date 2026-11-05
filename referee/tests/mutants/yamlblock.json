@@ -199,24 +199,6 @@
    ]
   },
   {
-   "id": "yb_flow_comment",
-   "file": "profile/yamlblock.py",
-   "old": "        elif c == \"#\" and (j == 0 or text[j - 1] in \" \\t\\n\"):",
-   "new": "        elif False:",
-   "tests": [
-    "test_profile_yamlblock.py"
-   ]
-  },
-  {
-   "id": "yb_flow_multiline",
-   "file": "profile/yamlblock.py",
-   "old": "                    k += 1\n                    pieces.append(lines[k])\n            nxt = k + 1",
-   "new": "                    raise\n            nxt = k + 1",
-   "tests": [
-    "test_profile_yamlblock.py"
-   ]
-  },
-  {
    "id": "yb_alias_unknown",
    "file": "profile/yamlblock.py",
    "old": "            if name not in self.anchors:\n                raise Unreadable(i + 1, \"alias\")",
@@ -356,6 +338,33 @@
    "file": "profile/yamlblock.py",
    "old": "for m in re.finditer(r\":(?: |$)\", content):",
    "new": "for m in re.finditer(r\":\", content):",
+   "tests": [
+    "test_profile_yamlblock.py"
+   ]
+  },
+  {
+   "id": "yb_flow_multiline",
+   "file": "profile/yamlblock.py",
+   "old": "            while not _closed(\"\\n\".join(pieces)) and k + 1 < len(lines) \\",
+   "new": "            while False and not _closed(\"\\n\".join(pieces)) and k + 1 < len(lines) \\",
+   "tests": [
+    "test_profile_yamlblock.py"
+   ]
+  },
+  {
+   "id": "yb_closed_quotes",
+   "file": "profile/yamlblock.py",
+   "old": "        if c in \"'\\\"\" and (j == 0 or text[j - 1] in \" \\t\\n[{,:\"):",
+   "new": "        if False and c in \"'\\\"\" and (j == 0 or text[j - 1] in \" \\t\\n[{,:\"):",
+   "tests": [
+    "test_profile_yamlblock.py"
+   ]
+  },
+  {
+   "id": "yb_flow_comment",
+   "file": "profile/yamlblock.py",
+   "old": "        elif c == \"#\" and (j == 0 or text[j - 1] in \" \\t\\n\"):\n            nl = text.find(\"\\n\", j)\n            j = len(text) if nl < 0 else nl\n        elif done:",
+   "new": "        elif False and c == \"#\" and (j == 0 or text[j - 1] in \" \\t\\n\"):\n            nl = text.find(\"\\n\", j)\n            j = len(text) if nl < 0 else nl\n        elif done:",
    "tests": [
     "test_profile_yamlblock.py"
    ]

@@ -666,19 +666,20 @@ def docker_edges(root: str, files: list[str], dockerfiles: list[str], dirs: set[
                  coverage: dict, edge) -> set[str]:
     """The ``docker`` arrows and ``coverage["docker"]``; returns the Dockerfiles read (those a build names).
 
-    A build is a context and a Dockerfile, from two sources: a ``profile.docker.compose_builds`` entry of a compose
-    file (``profile.docker.COMPOSE_NAMES``), its context, ``.`` when not given, relative to the compose file's
+    A build is a context and a Dockerfile, from two sources, each file read by ``profile.yamlblock`` (one not read
+    counts in ``compose_unreadable`` or ``workflows.unreadable``): a ``profile.docker.compose_builds`` entry of a
+    compose file (``profile.docker.COMPOSE_NAMES``), its context, ``.`` when not given, relative to the compose file's
     directory, and its Dockerfile, ``Dockerfile`` when not given, relative to the context; and a pair of a
-    ``profile.ghactions.builds`` step of a GitHub Actions file (``profile.ghactions.is_actions_file``, read by
-    ``profile.yamlblock``; one not read counts in ``workflows.unreadable``), both paths from the root (a step not
-    resolved counts by its reason). A build is ``unresolved`` when a value holds ``$`` (Compose substitutes
-    variables; an expression left in a workflow's value) or ``://`` (a remote context), starts with ``/`` or
+    ``profile.ghactions.builds`` step of a GitHub Actions file (``profile.ghactions.is_actions_file``), both paths
+    from the root (a step not resolved counts by its reason). A build is ``unresolved`` when a value is not a
+    string or holds ``$`` (Compose substitutes variables; an expression left in a workflow's value) or ``://`` (a remote context), starts with ``/`` or
     leaves the root, and ``missing`` when the context is not a directory of the checkout or the Dockerfile not a
     file of it. Each Dockerfile with a build is read once; for each distinct context it is built with, each
     ``context`` source (``_context_matches``) reaches the project holding each path it names and, for a
     directory, every project inside it; an arrow goes from the project holding the Dockerfile to each project
     reached (none from a Dockerfile in no project, the root's)."""
-    cov = {"dockerfiles": len(dockerfiles), "compose_files": 0, "builds": 0, "builds_unresolved": 0,
+    cov = {"dockerfiles": len(dockerfiles), "compose_files": 0, "compose_unreadable": {}, "builds": 0,
+           "builds_unresolved": 0,
            "builds_missing": 0, "dockerfiles_built": 0, "dockerfiles_not_built": {},
            "sources": {k: 0 for k in docker.COPY_KINDS}, "malformed": 0,
            "context_sources": {"matched": 0, "no_match": 0, "leaves_context": 0},
@@ -692,7 +693,7 @@ def docker_edges(root: str, files: list[str], dockerfiles: list[str], dirs: set[
 
     def place(base: str, context: str, dockerfile: str, in_context: bool, counts: dict) -> None:
         counts["builds"] += 1
-        if any("$" in v or "://" in v for v in (context, dockerfile)):
+        if any(not isinstance(v, str) or "$" in v or "://" in v for v in (context, dockerfile)):
             counts["builds_unresolved"] += 1
             return
         ctx = _norm(posixpath.join(base, context))
@@ -704,27 +705,30 @@ def docker_edges(root: str, files: list[str], dockerfiles: list[str], dirs: set[
         else:
             contexts.setdefault(path, set()).add(ctx)
 
-    unreadable: list[str] = []
+    unreadable: dict[str, list[str]] = {"compose": [], "actions": []}
     for rel in files:
-        if docker.is_compose(posixpath.basename(rel)):
-            cov["compose_files"] += 1
-            for _line, context, dockerfile in docker.compose_builds(_read(root, rel) or ""):
+        compose = docker.is_compose(posixpath.basename(rel))
+        if not compose and not ghactions.is_actions_file(rel):
+            continue
+        (cov if compose else wf)["compose_files" if compose else "files"] += 1
+        try:
+            doc = yamlblock.load(_read(root, rel) or "")
+        except yamlblock.Unreadable:
+            unreadable["compose" if compose else "actions"].append(rel)
+            continue
+        if compose:
+            for _service, context, dockerfile in docker.compose_builds(doc):
                 place(posixpath.dirname(rel), "." if context is None else context,
                       "Dockerfile" if dockerfile is None else dockerfile, True, cov)
-        elif ghactions.is_actions_file(rel):
-            wf["files"] += 1
-            try:
-                doc = yamlblock.load(_read(root, rel) or "")
-            except yamlblock.Unreadable:
-                unreadable.append(rel)
-                continue
-            for build in ghactions.builds(doc):
-                wf["steps"] += 1
-                if build.reason is not None:
-                    wf["steps_unresolved"][build.reason] += 1
-                for context, dockerfile in build.pairs:
-                    place("", context, dockerfile, False, wf)
-    wf["unreadable"] = _examples({"": unreadable})[""]
+            continue
+        for build in ghactions.builds(doc):
+            wf["steps"] += 1
+            if build.reason is not None:
+                wf["steps_unresolved"][build.reason] += 1
+            for context, dockerfile in build.pairs:
+                place("", context, dockerfile, False, wf)
+    cov["compose_unreadable"] = _examples({"": unreadable["compose"]})[""]
+    wf["unreadable"] = _examples({"": unreadable["actions"]})[""]
     cov["dockerfiles_built"] = len(contexts)
     cov["dockerfiles_not_built"] = _examples({"": [r for r in dockerfiles if r not in contexts]})[""]
     project_dirs = sorted(projects.by_dir)
@@ -1142,13 +1146,15 @@ def render_target(m: dict[str, Any], source: str) -> str:
                  _some(sp_ins["unresolved_files"]) or "none",
                  sp_ins["imports"]), "",
              "Dockerfiles %d: %d built (by %d `build:` entries of %d compose files, %d not resolved, %d naming no "
-             "context or Dockerfile of the checkout; by %d builds of %d `docker/build-push-action` steps in %d "
+             "context or Dockerfile of the checkout; compose files not read: %s; by %d builds of %d `docker/build-push-action` steps in %d "
              "GitHub Actions files, %d not resolved, %d naming no context or Dockerfile of the checkout; steps not "
              "resolved: %s; Actions files not read: %s), %d not built by any (%s); their `COPY`/`ADD` sources: %d "
              "from the context (%d matched, %d matching nothing, %d leaving it), %d from a stage or image, "
              "%d heredocs, %d remote, %d holding a variable (not resolved); %d instructions malformed." % (
                  dk["dockerfiles"], dk["dockerfiles_built"], dk["builds"], dk["compose_files"],
-                 dk["builds_unresolved"], dk["builds_missing"], wf["builds"], wf["steps"], wf["files"],
+                 dk["builds_unresolved"], dk["builds_missing"],
+                 "%d (%s)" % (dk["compose_unreadable"]["count"], _some(dk["compose_unreadable"]))
+                 if dk["compose_unreadable"]["count"] else "none", wf["builds"], wf["steps"], wf["files"],
                  wf["builds_unresolved"], wf["builds_missing"],
                  ", ".join("%s %d" % (k, n) for k, n in wf["steps_unresolved"].items() if n) or "none",
                  "%d (%s)" % (wf["unreadable"]["count"], _some(wf["unreadable"])) if wf["unreadable"]["count"]

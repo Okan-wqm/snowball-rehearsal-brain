@@ -29,30 +29,25 @@ holding ``://`` or starting with ``git@``), ``variable`` (a source holding ``$``
 ``ENV`` values, not resolved here) and ``context`` (a path in the build context; a leading ``/`` is the context's
 root, as Docker reads it). ``malformed`` counts ``COPY``/``ADD`` instructions with fewer than two arguments.
 
-**Compose files.** A file is a compose file when its name matches one of ``COMPOSE_NAMES``. ``compose_builds(text)``
-gives ``[(line, context, dockerfile)]`` for each ``build:`` key of the file, read line by line (no YAML library;
-the subset is exactly this):
+**Compose files.** A file is a compose file when its name matches one of ``COMPOSE_NAMES``.
+``compose_builds(doc)`` takes the file read by ``profile.yamlblock.load`` (so anchors, merge keys and flow
+mappings are followed) and gives ``[(service, context, dockerfile)]`` for each service of its ``services`` mapping
+whose ``build`` is not ``null``, in file order: a mapping gives its ``context`` and ``dockerfile`` (``None`` when
+missing: Compose's defaults, ``.`` and ``Dockerfile``), any other value is the context with ``dockerfile``
+``None``; the values are as read (a value that is not a string is the caller's to refuse).
 
-- ``build: VALUE`` on one line: ``context`` is ``VALUE``, ``dockerfile`` is ``None`` (Compose's default,
-  ``Dockerfile`` in the context);
-- ``build:`` with nothing after it but a comment: the lines below it indented more than it, up to the first line
-  that is not (blank and ``#`` lines skipped), are its block; in the block, the lines at the block's first
-  indentation that are ``context: VALUE`` and ``dockerfile: VALUE`` give them; a key missing is ``None``
-  (``context``'s default is ``.``, the compose file's directory);
-- ``VALUE`` is plain (a trailing `` #`` comment removed, blanks stripped) or wholly in ``'...'`` or ``"..."``
-  (quotes removed, no escapes read); ``line`` is the ``build:`` line, 1-based.
-
-Not read, stated: a ``build:`` key outside a service (Compose has none, a ``x-`` extension could), anchors,
-aliases and merge keys (``<<: *x``; a ``build`` reached only through one is not seen), flow mappings
-(``build: {context: .}`` is a context of that text), ``dockerfile_inline``, a ``.dockerignore`` (a source may copy
-less than its path holds), ``ARG``/``ENV`` substitution, and build contexts named elsewhere (a workflow's
-``docker build``, ``docker/build-push-action``, a Makefile, a script).
+Not read, stated: a ``build`` key outside ``services`` (an ``x-`` extension's is read only where a service
+merges it), ``dockerfile_inline``, ``additional_contexts``, ``include`` and ``extends`` (another file's
+services), a ``.dockerignore`` (a source may copy less than its path holds), ``ARG``/``ENV`` substitution, and
+build contexts named elsewhere (``profile.ghactions`` reads ``docker/build-push-action`` steps; a ``docker build``
+line, a Makefile, a script are not read).
 """
 
 from __future__ import annotations
 
 import fnmatch
 import re
+from typing import Any
 
 import cli
 
@@ -65,7 +60,6 @@ _DIRECTIVE = re.compile(r"#\s*([A-Za-z_]+)\s*=\s*(.*?)\s*")
 _HEREDOC = re.compile(r"\d*<<(-?)([\"']?)([A-Za-z_][A-Za-z0-9_]*)\2")
 HEREDOC_KEYWORDS = ("RUN", "COPY", "ADD")
 _FLAG = re.compile(r"--[A-Za-z-]+(?:=\S*)?")
-_COMPOSE_KEY = re.compile(r"( *)(build|context|dockerfile):(?:\s+(.*))?$")
 
 
 def is_dockerfile(name: str) -> bool:
@@ -159,36 +153,13 @@ def copies(text: str) -> tuple[list[tuple[int, str, str, str]], int]:
     return sources, malformed
 
 
-def _scalar(value: str) -> str:
-    value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-        return value[1:-1]
-    return value.split(" #", 1)[0].strip()
-
-
-def compose_builds(text: str) -> list[tuple[int, str | None, str | None]]:
-    lines = text.split("\n")
-    out: list[tuple[int, str | None, str | None]] = []
-    for number, raw in enumerate(lines):
-        m = _COMPOSE_KEY.fullmatch(raw.rstrip())
-        if m is None or m.group(2) != "build":
-            continue
-        value = _scalar(m.group(3) or "")
-        if value and not value.startswith("#"):
-            out.append((number + 1, value, None))
-            continue
-        indent = len(m.group(1))
-        block: int | None = None
-        found: dict[str, str] = {}
-        for below in lines[number + 1:]:
-            if not below.strip() or below.strip().startswith("#"):
-                continue
-            depth = len(below) - len(below.lstrip(" "))
-            if depth <= indent:
-                break
-            block = depth if block is None else block
-            k = _COMPOSE_KEY.fullmatch(below.rstrip())
-            if depth == block and k is not None and k.group(2) != "build" and k.group(3):
-                found.setdefault(k.group(2), _scalar(k.group(3)))
-        out.append((number + 1, found.get("context"), found.get("dockerfile")))
-    return out
+def compose_builds(doc: Any) -> list[tuple[str, Any, Any]]:
+    builds: list[tuple[str, Any, Any]] = []
+    services = doc.get("services") if isinstance(doc, dict) else None
+    for name, service in (services.items() if isinstance(services, dict) else ()):
+        build = service.get("build") if isinstance(service, dict) else None
+        if isinstance(build, dict):
+            builds.append((name, build.get("context"), build.get("dockerfile")))
+        elif build is not None:
+            builds.append((name, build, None))
+    return builds

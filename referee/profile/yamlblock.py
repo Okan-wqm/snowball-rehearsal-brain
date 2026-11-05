@@ -171,6 +171,26 @@ def _unquote(text: str, line: int) -> str:
     return "".join(out)
 
 
+def _closed(text: str) -> bool:
+    """Whether the brackets ``text`` opens outside quotes are all closed again (or more closed); a bracket in a
+    comment counts (lines are gathered only while indented more, and ``_flow`` skips the comment)."""
+    depth = 0
+    j = 0
+    while j < len(text):
+        c = text[j]
+        if c in "'\"" and (j == 0 or text[j - 1] in " \t\n[{,:"):
+            end = _quoted_end(text, j)
+            if end is None:
+                return False
+            j = end
+        elif c in "[{":
+            depth += 1
+        elif c in "]}":
+            depth -= 1
+        j += 1
+    return depth <= 0
+
+
 def _flow(text: str, line: int, anchors: dict[str, Any]) -> Any:
     """A whole flow collection ``text`` (comments already allowed after blanks)."""
     stack: list[list[Any]] = []        # [container, key, have_key]
@@ -313,16 +333,11 @@ class _Reader:
         elif text[:1] in "[{":
             pieces = [text]
             k = i
-            while True:
-                try:
-                    value = _flow("\n".join(pieces), i + 1, self.anchors)
-                    break
-                except Unreadable as e:
-                    if e.reason not in ("flow", "unterminated_quote") or k + 1 >= len(lines) \
-                            or self._indent(k + 1) <= limit and not self._blank(k + 1):
-                        raise
-                    k += 1
-                    pieces.append(lines[k])
+            while not _closed("\n".join(pieces)) and k + 1 < len(lines) \
+                    and (self._indent(k + 1) > limit or self._blank(k + 1)):
+                k += 1
+                pieces.append(lines[k])
+            value = _flow("\n".join(pieces), i + 1, self.anchors)
             nxt = k + 1
         else:
             plain = _uncomment(text)

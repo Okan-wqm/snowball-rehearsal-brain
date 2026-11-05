@@ -46,6 +46,8 @@ import itertools
 import re
 from typing import Any, NamedTuple
 
+import cli
+
 ACTION = "docker/build-push-action"
 REASONS = ("matrix_dynamic", "context", "function", "operator", "syntax")
 MAX_COMBINATIONS = 256
@@ -321,7 +323,7 @@ def builds(doc: Any) -> list[Build]:
                     file = interpolate(given.get("file"), combo)
                     pairs.add((context, _norm(file) if file else _norm(context + "/Dockerfile")))
             except Unresolved as e:
-                out.append(Build(where, [], e.reason))
+                out.append(Build(where, [], cli.cause(e)))
                 continue
             out.append(Build(where, sorted(pairs), None))
     return out

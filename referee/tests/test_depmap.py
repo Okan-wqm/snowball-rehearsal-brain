@@ -26,7 +26,7 @@ the brain's committed drawing is the one its code gives today.
   near names not) that no manifest's project holds is a ``tsconfig`` box (nested ones both, one inside a ``path``
   box too; one inside a manifest's project, the root and ``SKIP_DIRS`` none), alias and relative imports into it draw arrows, and the drawing's line;
 - ``Docker``: a compose file's builds (a context relative to the compose file, ``.`` and ``Dockerfile`` by default,
-  a pair named twice read once, unresolved: ``$``, ``/``, ``://``, leaving the root; missing: no such directory or
+  a pair named twice read once, unresolved: ``$``, ``/``, ``://``, leaving the root, a value not a string; missing: no such directory or
   file; a YAML file of another name not read), a directory holding a Dockerfile that no box holds is a ``docker``
   box (not the root, not inside a ``tsconfig`` box), each context source reaching the project holding its path and
   every project inside a directory (a glob segment by segment, ``.``, no arrow to itself, none from the root's),
@@ -599,6 +599,7 @@ class Docker(unittest.TestCase):
                "  img:\n    build: ./tools/img\n"
                "  var:\n    build:\n      context: ${CTX}\n"
                "  abs:\n    build: /srv/x\n"
+               "  num:\n    build: 7\n"
                "  remote:\n    build: https://example.invalid/a/b.git\n"
                "  up:\n    build: ../elsewhere\n"
                "  gone:\n    build: ./nothing\n"
@@ -653,7 +654,7 @@ class Docker(unittest.TestCase):
     def test_coverage(self):
         cov = D.target_map(self.checkout())["coverage"]
         self.assertEqual(cov["docker"], {
-            "dockerfiles": 7, "compose_files": 2, "builds": 13, "builds_unresolved": 4, "builds_missing": 3,
+            "dockerfiles": 7, "compose_files": 2, "compose_unreadable": {"count": 0, "examples": []}, "builds": 14, "builds_unresolved": 5, "builds_missing": 3,
             "dockerfiles_built": 5,
             "dockerfiles_not_built": {"count": 2, "examples": ["infra/docker/Dockerfile.unbuilt", "ts/Dockerfile"]},
             "sources": {"context": 9, "stage": 1, "heredoc": 1, "remote": 1, "variable": 1}, "malformed": 1,
@@ -670,7 +671,7 @@ class Docker(unittest.TestCase):
         root = tempfile.mkdtemp()
         write(root, {"a/project.json": "{}", "b/x/project.json": "{}", "b/a/project.json": "{}",
                      "img/Dockerfile": "COPY a /a\n",
-                     "compose.yml": "s:\n  p:\n    build:\n      context: .\n      dockerfile: img/Dockerfile\n"
+                     "compose.yml": "services:\n  p:\n    build:\n      context: .\n      dockerfile: img/Dockerfile\n"
                                     "  q:\n    build:\n      context: b\n      dockerfile: ../img/Dockerfile\n"})
         m = D.target_map(root)
         self.assertEqual([(e["from"], e["to"]) for e in m["edges"]], [("img", "a"), ("img", "b/a")])
@@ -680,8 +681,9 @@ class Docker(unittest.TestCase):
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
         self.assertIn("Projects 9 (npm 3, nx 3, cargo 0, python 0, tsconfig 1, path 0, docker 2), arrows 6.", text)
-        self.assertIn("Dockerfiles 7: 5 built (by 13 `build:` entries of 2 compose files, 4 not resolved, 3 naming "
-                      "no context or Dockerfile of the checkout; by 0 builds of 0 `docker/build-push-action` steps "
+        self.assertIn("Dockerfiles 7: 5 built (by 14 `build:` entries of 2 compose files, 5 not resolved, 3 naming "
+                      "no context or Dockerfile of the checkout; compose files not read: none; by 0 builds of 0 "
+                      "`docker/build-push-action` steps "
                       "in 0 GitHub Actions files, 0 not resolved, 0 naming no context or Dockerfile of the checkout; "
                       "steps not resolved: none; Actions files not read: none), 2 not built by any "
                       "(infra/docker/Dockerfile.unbuilt, ts/Dockerfile); their `COPY`/`ADD` sources: 9 from the context (6 matched, 1 matching nothing, "
@@ -694,7 +696,7 @@ class Docker(unittest.TestCase):
 class WorkflowBuilds(unittest.TestCase):
     """``docker_edges`` over GitHub Actions files: which files are read (the root's ``.github/workflows`` directly,
     ``action.yml`` anywhere), each step's pairs placed from the root (``file`` not relative to the context), the
-    matrix expanded, a step not resolved counted by its reason, a file not read counted, ``unresolved`` and
+    matrix expanded, a step not resolved counted by its reason, a file not read counted (a compose file too), ``unresolved`` and
     ``missing`` builds, a Dockerfile built with two contexts, the coverage and the drawing's line (the readers' own
     rules: test_profile_ghactions, test_profile_yamlblock)."""
 
@@ -732,6 +734,7 @@ class WorkflowBuilds(unittest.TestCase):
             "img2/Dockerfile": "COPY c /c\n",
             ".github/workflows/b.yml": self.WORKFLOW,
             ".github/workflows/bad.yml": "jobs:\n\tx: 1\n",
+            "docker-compose.yml": "services:\n\tx: 1\n",
             ".github/workflows/nested/w.yml": "jobs:\n  n:\n    steps:\n"
                                               "      - uses: docker/build-push-action@v6\n"
                                               "        with:\n          file: img/Dockerfile.n\n",
@@ -768,8 +771,9 @@ class WorkflowBuilds(unittest.TestCase):
 
     def test_render(self):
         text = D.render_target(D.target_map(self.checkout()), "x")
-        self.assertIn("Dockerfiles 6: 5 built (by 0 `build:` entries of 0 compose files, 0 not resolved, 0 naming "
-                      "no context or Dockerfile of the checkout; by 8 builds of 9 `docker/build-push-action` steps "
+        self.assertIn("Dockerfiles 6: 5 built (by 0 `build:` entries of 1 compose files, 0 not resolved, 0 naming "
+                      "no context or Dockerfile of the checkout; compose files not read: 1 (docker-compose.yml); "
+                      "by 8 builds of 9 `docker/build-push-action` steps "
                       "in 3 GitHub Actions files, 1 not resolved, 1 naming no context or Dockerfile of the checkout; "
                       "steps not resolved: matrix_dynamic 1, context 1; Actions files not read: 1 "
                       "(.github/workflows/bad.yml)), 1 not built by any (img/Dockerfile.n);", text)
