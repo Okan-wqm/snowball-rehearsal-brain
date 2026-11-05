@@ -194,6 +194,31 @@ def json_parses(source: str) -> list[str]:
     return faults
 
 
+def recursive_functions(source: str) -> list[str]:
+    """Every function in ``source`` that calls itself by its own name (``name(...)``, or ``self.name(...)`` and
+    ``cls.name(...)`` in a method): ``<function>`` at module level, ``<outer>.<function>`` nested."""
+    found = []
+
+    def visit(node: ast.AST, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                name = prefix + child.name
+                for call in ast.walk(child):
+                    if isinstance(call, ast.Call) and (
+                            (isinstance(call.func, ast.Name) and call.func.id == child.name)
+                            or (isinstance(call.func, ast.Attribute) and call.func.attr == child.name
+                                and isinstance(call.func.value, ast.Name) and call.func.value.id in ("self", "cls"))):
+                        found.append(name)
+                        break
+                visit(child, name + ".")
+            elif isinstance(child, ast.ClassDef):
+                visit(child, prefix + child.name + ".")
+            else:
+                visit(child, prefix)
+    visit(ast.parse(source), "")
+    return found
+
+
 def start(module: str, argv: list[str], stdout: str) -> subprocess.CompletedProcess:
     """Run ``python -m module argv`` from referee/ with stdin empty and stdout 'closed', 'broken' (a pipe whose
     reader is gone) or 'pipe' (read normally)."""
@@ -467,8 +492,49 @@ class LoadsDepth(unittest.TestCase):
         self.assertEqual(cli.load(io.StringIO(text), parse_float=str)["a"][1], "2.5")
         pairs = cli.loads('{"k": 1, "k": 2}', object_pairs_hook=list)
         self.assertEqual(pairs, [("k", 1), ("k", 2)])
-        deep_but_parsed = "[" * 500 + "]" * 500
-        self.assertEqual(cli.loads(deep_but_parsed), json.loads(deep_but_parsed))
+        at_bound = "[" * cli.DEPTH + "]" * cli.DEPTH
+        self.assertEqual(cli.loads(at_bound), json.loads(at_bound))
+
+    def test_parsed_but_deeper_than_the_bound_is_too_deep(self):
+        n = cli.DEPTH
+        shapes = [lambda k: "[" * k + "]" * k,
+                  lambda k: '{"a":' * k + "1" + "}" * k,
+                  lambda k: "[" * (k // 2) + '{"a":' * (k - k // 2) + "null" + "}" * (k - k // 2) + "]" * (k // 2)]
+        for shape in shapes:
+            self.assertEqual(cli.loads(shape(n)), json.loads(shape(n)))
+            for text in (shape(n + 1), shape(3000)):  # 3000: the parser alone returns it (python 3.12)
+                json.loads(text)
+                for parse in (lambda: cli.loads(text), lambda: cli.loads(text.encode()),
+                              lambda: cli.load(io.StringIO(text)), lambda: cli.loads(text, object_pairs_hook=list)):
+                    with self.assertRaises(cli.TooDeep) as caught:
+                        parse()
+                    self.assertIsInstance(caught.exception, ValueError)
+                    self.assertIsInstance(caught.exception, RecursionError)
+                    self.assertEqual(cli.cause(caught.exception), "JSON nested too deeply")
+
+    def test_depth_counts_brackets_outside_strings_only(self):
+        for text, want in [("1", 0), ('"x"', 0), ("[]", 1), ("{}", 1), ("[[], [[]]]", 3), ('{"a": [1, {"b": 2}]}', 3),
+                           ('"[[[{{{"', 0), ('["\\"[", "]"]', 1), ('{"[": "{", "k": ["\\\\", "["]}', 2),
+                           ('["\\u005b"]', 1)]:
+            self.assertEqual(cli.depth(text), want, text)
+        string = json.dumps("[{" * 200 + '\\"')  # brackets, a backslash and a quote inside one string
+        at = "[" * (cli.DEPTH - 1) + string + "]" * (cli.DEPTH - 1)
+        self.assertEqual(cli.loads(at), json.loads(at))
+
+    def test_bytes_are_counted_as_the_parser_decoded_them(self):
+        n = cli.DEPTH
+        for encoding in ("utf-8", "utf-16-le", "utf-16-be", "utf-32-le"):
+            ok = ("[" * n + '"\u00e9"' + "]" * n).encode(encoding)
+            self.assertEqual(cli.loads(ok), json.loads(ok), encoding)
+            with self.assertRaises(cli.TooDeep):
+                cli.loads(("[" * (n + 1) + "]" * (n + 1)).encode(encoding))
+
+    def test_a_hook_does_not_change_the_count(self):
+        n = cli.DEPTH
+        text = '{"a":' * n + "1" + "}" * n
+        self.assertEqual(cli.loads(text, object_pairs_hook=list), json.loads(text, object_pairs_hook=list))
+        with self.assertRaises(cli.TooDeep):
+            cli.loads('{"a":' * (n + 1) + "1" + "}" * (n + 1), object_pairs_hook=lambda pairs: 0)
 
     def test_other_failures_are_unchanged(self):
         with self.assertRaises(json.JSONDecodeError):
@@ -483,6 +549,91 @@ class LoadsDepth(unittest.TestCase):
             raise Mine()
         with self.assertRaises(Mine):
             cli.loads("{}", object_pairs_hook=hook)
+
+
+class Walks(unittest.TestCase):
+    """Rule 8's bound against the walks it is for: every function in a referee source that calls itself by name
+    (``recursive_functions``; the register is checked equal to ``WALKS``, so a new one is red until it is run
+    here) runs over a value ``cli.loads`` returned at ``DEPTH`` with ``HEADROOM`` frames already on the stack, and
+    returns without ``RecursionError``."""
+
+    HEADROOM = 150  # frames a command may hold above a walk (measured deepest here: well under 100)
+
+    @staticmethod
+    def deep_object(key: str = "a", leaf: str = '"v"') -> dict:
+        return cli.loads(('{"%s":' % key) * cli.DEPTH + leaf + "}" * cli.DEPTH)
+
+    def walk_canon(self):
+        from ledger import chain
+        chain.canonical(self.deep_object())
+
+    def walk_no_float(self):
+        from ledger import schema
+        self.assertEqual(schema.no_float(cli.loads("[" * cli.DEPTH + "1" + "]" * cli.DEPTH), "v"), [])
+
+    def walk_leaves(self):
+        from status import depmap
+        out: list = []
+        depmap._leaves(self.deep_object(leaf='"b"'), self.deep_object(leaf='"h"'), [], out)
+        self.assertEqual(len(out[0]["path"]), cli.DEPTH)
+
+    def walk_emit(self):
+        from loop import job
+        out: list = []
+        job._emit(self.deep_object(), 0, out)
+        self.assertEqual(len(out), cli.DEPTH)
+
+    def walk_secrets(self):
+        from gate import secrets
+        token = "gh" + "p_" + "A1b2C3d4" * 4 + "E5f6"  # a token's format, built here (no such string in a diff)
+        row = '{"a":' * (cli.DEPTH - 1) + json.dumps([token]) + "}" * (cli.DEPTH - 1) + "\n"
+        self.assertEqual(secrets.match_lines(row.encode(), "row"), [1])  # _strings reached the deepest string
+        clean = '{"a":' * (cli.DEPTH - 1) + "[1]" + "}" * (cli.DEPTH - 1) + "\n"
+        self.assertEqual(secrets.match_lines(clean.encode(), "row"), [])  # _secret_members walked it all
+
+    def walk_resolved(self):
+        from profile import nx
+        from test_profile_nx import LINT, Base as NxBase
+        from profile_tree import write_tree
+        case = NxBase()
+        case.setUp()
+        try:
+            patterns = "[" * (cli.DEPTH - 4) + '"x"' + "]" * (cli.DEPTH - 4)  # 4: project.json's own levels
+            write_tree(case.tree, {"libs/a/project.json": '{"targets": {"lint": {"executor": "%s", "options": '
+                                   '{"lintFilePatterns": %s}}}}' % (LINT["executor"], patterns)})
+            with self.assertRaises(nx.NotComposed) as caught:
+                nx.lint(case.tree, "libs/a")
+            self.assertEqual(caught.exception.reasons, ["option:lintFilePatterns"])
+        finally:
+            case.doCleanups()
+
+    WALKS = {"ledger/chain.py": {"_canon": walk_canon},
+             "ledger/schema.py": {"no_float": walk_no_float},
+             "status/depmap.py": {"_leaves": walk_leaves},
+             "loop/job.py": {"_emit": walk_emit},
+             "gate/secrets.py": {"_strings": walk_secrets, "_secret_members": walk_secrets},
+             "profile/nx.py": {"target.resolved": walk_resolved}}
+
+    def test_the_register_is_every_self_calling_function(self):
+        found = {p: set(f) for p, f in ((p, recursive_functions(src)) for p, src in sources().items()) if f}
+        self.assertEqual(found, {p: set(w) for p, w in self.WALKS.items()})
+
+    def test_the_register_finds_a_self_call(self):
+        src = ("def f(x):\n    return [f(y) for y in x]\n\ndef g(x):\n    def h(y):\n        return h(y)\n"
+               "    return x\n\nclass C:\n    def m(self, x):\n        return self.m(x)\n"
+               "    def n(self, x):\n        return other.n(x)\n")
+        self.assertEqual(recursive_functions(src), ["f", "g.h", "C.m"])
+
+    def test_every_walk_takes_a_value_at_the_bound(self):
+        for path, walks in self.WALKS.items():
+            for name, walk in walks.items():
+                with self.subTest(walk="%s:%s" % (path, name)):
+                    self.under_headroom(lambda: walk(self), self.HEADROOM)
+
+    def under_headroom(self, fn, frames: int):
+        if frames:
+            return self.under_headroom(fn, frames - 1)
+        return fn()
 
 
 class CauseOf(unittest.TestCase):

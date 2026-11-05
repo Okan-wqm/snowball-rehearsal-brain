@@ -30,8 +30,8 @@
   {
    "id": "jd_options_dropped",
    "file": "cli.py",
-   "old": "        return json.loads(text, **options)",
-   "new": "        return json.loads(text)",
+   "old": "        value = json.loads(text, **options)",
+   "new": "        value = json.loads(text)",
    "tests": [
     "test_cli.LoadsDepth"
    ]

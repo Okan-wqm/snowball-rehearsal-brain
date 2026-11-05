@@ -47,16 +47,26 @@ Rules ``run`` keeps (each bound by a test in ``tests/test_cli.py``):
    quotes); a child process's own stderr.
 
 8. Outside this module, no source parses JSON with ``json.load`` or ``json.loads``: it calls ``loads`` or ``load``
-   here, which take the same arguments and turn the parser's ``RecursionError`` (an array or object nested deeper
-   than the interpreter's recursion limit allows) into ``TooDeep``, a ``ValueError`` and a ``RecursionError`` at once.
+   here, which take the same arguments and raise ``TooDeep``, a ``ValueError`` and a ``RecursionError`` at once, for
+   JSON nested deeper than ``DEPTH`` (128) arrays and objects, and for the parser's own ``RecursionError``; any
+   other result or exception of the parser is unchanged.
    Why: a handler written for unusable JSON names ``ValueError``; the decoder's depth failure is not one, so it
    escaped such handlers as a fault (exit 2 with the fault line instead of the command's own unusable line; measured
    before this rule: 22 of 51 parse sites in 19 modules had no handler naming it in their function, among them
    ``status.depmap delta`` on a file of 200000 ``[``). Being both, ``TooDeep`` is caught by every handler that caught
    the parser's failure before (one naming ``RecursionError`` keeps its own text), and by every ``ValueError``
-   handler. Bound by a register over every source file and by ``LoadsDepth`` in ``tests/test_cli.py``.
-   Out of scope, stated: a ``RecursionError`` of a module's own recursive walk over a value that parsed (each walk
-   handles its own depth, as ``ledger.chain.canonical`` does).
+   handler. And on python 3.12 the C decoder parses about 10000 levels, while a recursive walk in Python stops at
+   the interpreter's recursion limit (1000 frames): measured before the bound, ``profile.fit`` on a tree whose
+   ``project.json`` nests a lint option 3000 lists deep faulted (``profile.nx``'s ``resolved``), where the same tree
+   with that file unparsable gives the command's own answer. The bound makes every parsed value shallow enough for
+   any walk of up to 7 frames a level; the deepest JSON measured in the vector inputs is 6 levels, in the first
+   target's 1190 JSON files 10. Depth is counted on the text after a successful parse: each ``[`` or ``{`` outside
+   a string opens a level, so a hook (``object_pairs_hook`` and the others) does not change it. Bound by a register
+   over every source file, by ``LoadsDepth`` and ``Walks`` (every function in a referee source that calls itself
+   by name, run over a value ``DEPTH`` deep) in ``tests/test_cli.py``, and by ``profile.fit``'s case in
+   ``tests/test_profile_fit.py``.
+   Out of scope, stated: values not parsed here (built in memory, read by another parser such as ``tomllib``);
+   recursion through two or more functions (``Walks`` finds a function calling itself by its own name only).
 
 Out of scope, stated: a fault while the module is imported (``python -m`` runs the module's top level before this
 boundary exists; ``tests/test_cli.py`` imports every command module, so a broken import is red before a push); signals and
@@ -70,6 +80,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import sys
 from typing import Any, Callable
 
@@ -83,15 +94,39 @@ class Fault(Exception):
 
 
 class TooDeep(ValueError, RecursionError):
-    """JSON nested deeper than the parser can go (rule 8)."""
+    """JSON nested deeper than ``DEPTH`` or than the parser can go (rule 8)."""
+
+
+DEPTH = 128  # the deepest JSON loads returns, in arrays and objects (rule 8)
+_STRING = re.compile(r'"(?:[^"\\]|\\.)*"', re.S)  # a JSON string, escapes included (valid JSON only)
+_LEVEL = re.compile(r"[\[\]{}]")
+
+
+def depth(text: str) -> int:
+    """How many arrays and objects deep the valid JSON ``text`` nests (a scalar is 0); brackets in strings do not
+    count."""
+    level = deepest = 0
+    for bracket in _LEVEL.findall(_STRING.sub("", text)):
+        if bracket in "[{":
+            level += 1
+            deepest = max(deepest, level)
+        else:
+            level -= 1
+    return deepest
 
 
 def loads(text: str | bytes, **options: Any) -> Any:
-    """``json.loads(text, **options)``; the parser's ``RecursionError`` raises ``TooDeep`` (rule 8)."""
+    """``json.loads(text, **options)``; ``TooDeep`` for JSON deeper than ``DEPTH`` or for the parser's
+    ``RecursionError`` (rule 8)."""
     try:
-        return json.loads(text, **options)
+        value = json.loads(text, **options)
     except RecursionError:
         raise TooDeep("JSON nested too deeply") from None
+    if isinstance(text, (bytes, bytearray)):
+        text = text.decode(json.detect_encoding(text), "surrogatepass")  # as json.loads decoded it
+    if depth(text) > DEPTH:
+        raise TooDeep("JSON nested too deeply")
+    return value
 
 
 def load(stream: Any, **options: Any) -> Any:

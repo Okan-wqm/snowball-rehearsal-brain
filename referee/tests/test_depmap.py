@@ -1033,7 +1033,8 @@ class CommandLine(unittest.TestCase):
         root = tempfile.mkdtemp()
         good = os.path.join(root, "good.json")
         files = {"good.json": json.dumps(Delta.BASE), "bad.json": "{", "list.json": "[]", "deep.json": "[" * 200000,
-                 "nested.json": json.dumps(dict(Delta.BASE, coverage=nest(5000))),
+                 "nested.json": json.dumps(dict(Delta.BASE, coverage=nest(100))),  # past MAP_DEPTH, within cli.DEPTH
+                 "nested_far.json": json.dumps(dict(Delta.BASE, coverage=nest(5000))),  # past cli.DEPTH: the parse
                  "shape.json": json.dumps(dict(Delta.BASE, coverage=None))}
         write(root, files)
         extra = self.run_cli("delta", good, good, good)
@@ -1045,7 +1046,8 @@ class CommandLine(unittest.TestCase):
                             ("shape.json", "coverage is not an object"),
                             ("latin.json", "UnicodeDecodeError at position 14 (utf-8)"),
                             ("none.json", "No such file or directory"),
-                            ("deep.json", "JSON nested too deeply"), ("nested.json", "map nests deeper than 64")):
+                            ("deep.json", "JSON nested too deeply"), ("nested.json", "map nests deeper than 64"),
+                            ("nested_far.json", "JSON nested too deeply")):
             path = os.path.join(root, name)
             for argv in (("delta", good, path), ("delta", path, good)):
                 r = self.run_cli(*argv)

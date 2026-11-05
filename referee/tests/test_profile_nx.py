@@ -25,6 +25,7 @@ import unittest
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
+import cli  # noqa: E402
 from profile import fit as F  # noqa: E402
 from profile import nx as X  # noqa: E402
 from profile import unit_verify as U  # noqa: E402
@@ -370,6 +371,27 @@ class Fit(Base):
             "node_modules/jest": entry("jest", "30.5.2", bin={"jest": "bin/jest.js"})})})
         row = {r["path"]: r for r in F.fit(self.tree, None, None, IMAGES)["rows"]}["libs/a"]
         self.assertEqual(row["reasons"], ["cmd_not_installed:lint_cmd:/work/node_modules/.bin/eslint"])
+
+
+class Deep(Base):
+    """cli rule 8 at a command: a ``project.json`` nested deeper than ``cli.DEPTH`` is unusable JSON, so
+    ``profile.fit`` answers for it as for a ``project.json`` that does not parse (measured before the bound: 3000
+    lists deep in a lint option, ``resolved`` faulted and the command exited 2 with ``internal error``)."""
+
+    def fit(self) -> tuple[int, bytes, bytes]:
+        r = subprocess.run([sys.executable, "-m", "profile.fit", self.tree], cwd=REFEREE, capture_output=True,
+                           stdin=subprocess.DEVNULL, timeout=120)
+        return r.returncode, r.stdout, r.stderr
+
+    def test_deeper_than_the_bound_answers_as_unparsable(self):
+        write_tree(self.tree, {"libs/a/project.json": "{"})
+        unparsable = self.fit()
+        self.assertIn(unparsable[0], (0, 1))
+        for lists in (cli.DEPTH, 3000):
+            deep = "[" * lists + '"x"' + "]" * lists
+            write_tree(self.tree, {"libs/a/project.json": '{"name": "a", "targets": {"lint": {"executor": "%s", '
+                                   '"options": {"lintFilePatterns": %s}}}}' % (LINT["executor"], deep)})
+            self.assertEqual(self.fit(), unparsable, lists)
 
 
 if __name__ == "__main__":
