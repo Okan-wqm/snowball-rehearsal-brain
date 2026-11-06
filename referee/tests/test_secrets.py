@@ -154,7 +154,9 @@ SENDER = ("import sys; data = sys.stdin.read(); "
           "sys.stdout.write('SENDER-RAN bytes=%d\\n' % len(data.encode('utf-8')))")
 
 
-class Detection(unittest.TestCase):
+class Asserts:
+    """The scan assertions the test classes share: caught by rule and fingerprint, or clean."""
+
     def assert_caught(self, kind: str, text: str, rule: str, value: str, line: int | None = None):
         code, result, raw = scan(kind, text)
         self.assertEqual(code, 1, raw)
@@ -184,6 +186,13 @@ class Detection(unittest.TestCase):
                     self.assertIn(sha(value), found)
                     self.assertNotIn(value.encode(), raw)
 
+    def assert_clean(self, kind: str, text: str):
+        code, result, raw = scan(kind, text)
+        self.assertEqual(code, 0, raw)
+        self.assertEqual(result, {"clean": True, "kind": kind, "run_valid": True, "matches": []})
+
+
+class Detection(Asserts, unittest.TestCase):
     def test_every_rule_in_diff_row_and_prompt(self):
         for rule, token in FAKES.items():
             with self.subTest(rule=rule, kind="diff"):
@@ -518,12 +527,7 @@ class Detection(unittest.TestCase):
         self.assertEqual((code, result["matches"]), (0, []), raw)
 
 
-class Clean(unittest.TestCase):
-    def assert_clean(self, kind: str, text: str):
-        code, result, raw = scan(kind, text)
-        self.assertEqual(code, 0, raw)
-        self.assertEqual(result, {"clean": True, "kind": kind, "run_valid": True, "matches": []})
-
+class Clean(Asserts, unittest.TestCase):
     def test_one_changed_byte_is_no_longer_a_token(self):
         """The changed input of each fake (one character cut, or prefix broken) gives no match."""
         changed = {
@@ -680,6 +684,94 @@ class Clean(unittest.TestCase):
                     self.assert_clean("prompt", fh.read())
 
 
+class StatedRules(Asserts, unittest.TestCase):
+    """Rules the module states that no case above pinned, each found by a kept mutant that survived
+    (tests/mutants/secrets.json): a token prefix of each provider shape, an operator, a scheme word, a
+    value reading, a key split, a clean boundary, a hidden spelling and the shape of a match."""
+
+    def test_every_prefix_of_a_token_shape(self):
+        """Each alternative a rule names is a token of its own (the GitHub prefixes gh[pousr]_, the AWS key
+        id prefixes, Stripe's rk_ and test keys, a PGP private key block, the Slack webhook, a URL scheme
+        holding + . - and the AWS secret key in any case)."""
+        cases = [("github-token", j("gh", p, "_", body("gh" + p, 36))) for p in "ousr"]
+        cases += [("aws-access-key-id", j(prefix, body("aws" + prefix, 16, UPPER32)))
+                  for prefix in ("AS" + "IA", "AB" + "IA", "AC" + "CA", "A3" + "TX")]
+        cases += [("stripe-key", j("rk", "_live_", body("rk", 24))), ("stripe-key", j("sk", "_test_", body("skt", 24))),
+                  ("private-key", j("-----BEGIN PGP ", "PRIVATE KEY", " BLOCK-----")),
+                  ("slack-webhook", j("hooks.slack", ".com/services/T", body("st", 9), "/B", body("sb", 9),
+                                      "/", body("sw", 24))),
+                  ("aws-secret-key", j("AWS_SECRET", "_ACCESS_KEY=", AWS_SECRET_VALUE)),
+                  ("aws-secret-key", j("AwsSecret", "Key: ", AWS_SECRET_VALUE))]
+        for scheme in ("git+ssh", "svn+ssh", "x-y.z"):
+            cases.append(("url-credentials", j(scheme, "://user:", URL_PASSWORD, "@host.internal/repo")))
+        for rule, text in cases:
+            with self.subTest(rule=rule, text=text[:12]):
+                code, result, raw = scan("prompt", prompt_with("see %s here" % text))
+                self.assertEqual(code, 1, raw)
+                self.assertIn(rule, {m["rule"] for m in result["matches"]}, raw)
+                if rule not in ("aws-secret-key", "url-credentials"):
+                    self.assertIn(sha(text), {m["sha256"] for m in result["matches"] if m["rule"] == rule})
+
+    def test_operators_scheme_words_and_value_readings(self):
+        """The fat arrow, the Bot scheme word, one trailing , ; . : only, a two-letter string prefix, only
+        the first quoted part glued after an unquoted one, and a backslash escaping a single quote."""
+        pw, sec, auth = j("pass", "word"), j("sec", "ret"), j("Auth", "orization")
+
+        def value(n: int) -> str:
+            return body("stated%d" % n, 12)
+
+        cases = [
+            ("'%s' => '%s'" % (pw, value(1)), value(1)),
+            ("%s: Bot %s" % (auth, value(2)), value(2)),
+            ("%s=%s;;" % (pw, value(3)), value(3) + ";"),
+            ("%s = rb'%s'" % (sec, value(4)), value(4)),
+            ('%s=abc"%s"hij"klmn"' % (pw, value(5)), j("abc", value(5), "hij")),
+            ("%s = '\\' %s'" % (sec, value(6)), "\\' " + value(6)),
+        ]
+        self.assert_all_caught(cases)
+
+    def test_stated_boundaries_are_clean(self):
+        """A value of templates only is skipped however many it holds; ENV is the Dockerfile's only in
+        upper case; camelCase and acronym humps split a key into words, so author in authorName or
+        HTTPAuthorName is an ordinary word, not auth."""
+        pw = j("pass", "word")
+        value = body("boundary", 12)
+        lines = [
+            "%s=${DB_USER}${DB_%s}" % (pw, pw.upper()),
+            "env %s %s" % (j("DB_", "PASS"), value),
+            "%s = %s" % (j("author", "Name"), value),
+            "%s: %s" % (j("HTTPAuthor", "Name"), value),
+        ]
+        self.assert_clean("diff", diff_with("\n+".join(lines)))
+        self.assert_clean("prompt", prompt_with("\n".join(lines)))
+
+    def test_escaped_folded_and_url_safe_base64_spellings(self):
+        """A zero-width space written as a \\\\u escape (unescaped, then folded), a URL-safe base64 run that
+        holds - or _, and base64 of a full-width token (decoded, then folded)."""
+        token = FAKES["github-token"]
+        self.assert_caught("prompt", prompt_with(token[:10] + "\\u200b" + token[10:]), "github-token", token)
+        urlsafe = next(e for e in (base64.urlsafe_b64encode((pad + token).encode()).decode()
+                                   for pad in ("", "t=", ">", "?>", "~", "~~", "~~~")) if "-" in e or "_" in e)
+        self.assert_caught("prompt", prompt_with("blob " + urlsafe), "github-token", token)
+        wide = "".join(chr(ord(c) + 0xFEE0) if c.isalnum() else c for c in token)
+        self.assert_caught("prompt", prompt_with("blob " + base64.b64encode(wide.encode()).decode()),
+                           "github-token", token)
+
+    def test_match_shape_one_hit_per_line_and_joined_text(self):
+        """A match holds rule, line and sha256 (and path in a diff) and nothing else; one value twice on a
+        line is one match; a hit of two joined lines whose text one line holds whole is not the first
+        line's."""
+        token = FAKES["github-token"]
+        code, result, raw = scan("prompt", prompt_with("%s and %s" % (token, token)))
+        self.assertEqual(result["matches"], [{"rule": "github-token", "line": 4, "sha256": sha(token)}], raw)
+        code, result, raw = scan("diff", diff_with('T = "%s"' % token))
+        self.assertEqual(result["matches"], [{"rule": "github-token", "line": 7, "sha256": sha(token),
+                                              "path": "app/config.py"}], raw)
+        first = token + "Q"
+        code, result, raw = scan("prompt", "%s\n%s%s\n" % (first, first, token))
+        self.assertEqual({m["sha256"] for m in result["matches"] if m["line"] == 1}, {sha(first)}, raw)
+
+
 class Send(unittest.TestCase):
     def test_clean_prompt_is_sent(self):
         prompt = prompt_with("nothing secret here")
@@ -687,6 +779,11 @@ class Send(unittest.TestCase):
         self.assertEqual(code, 0, raw)
         self.assertEqual(result, {"clean": True, "run_valid": True, "sent": True, "sender_exit": 0, "matches": []})
         self.assertIn(b"SENDER-RAN bytes=%d" % len(prompt.encode()), raw)
+
+    def test_clean_prompt_exits_0_and_carries_the_sender_exit(self):
+        code, result, raw = run_secrets(["send", "--", sys.executable, "-c", SENDER + "; sys.exit(3)"],
+                                        stdin=prompt_with("nothing secret here").encode())
+        self.assertEqual((code, result["sent"], result["sender_exit"]), (0, True, 3), raw)
 
     def test_prompt_with_secret_is_not_sent_and_run_is_invalid(self):
         for rule in ("anthropic-key", "github-token", "private-key"):
@@ -731,6 +828,8 @@ class Library(unittest.TestCase):
             self.secrets.require_clean(row_with(FAKES["slack-token"]), "row")
         with self.assertRaises(self.secrets.ScanError):
             self.secrets.scan("x", "email")
+        with self.assertRaises(self.secrets.ScanError):
+            self.secrets.match_lines(b"x", "email")
 
 
 UPPER_DIGITS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -942,8 +1041,9 @@ class Vector(unittest.TestCase):
                    text.replace(AWS_ID, "x").encode(), 1, {"clean": False, "lines": [3]})
 
     def test_stdin_is_not_read_and_usage(self):
-        code, last, raw = run_vector("prompt", b"plain\n", stdin=FAKES["github-token"].encode())
-        self.assertEqual((code, last), (0, {"clean": True, "lines": []}), raw)
+        for data in (b"plain\n", b""):
+            code, last, raw = run_vector("prompt", data, stdin=FAKES["github-token"].encode())
+            self.assertEqual((code, last), (0, {"clean": True, "lines": []}), raw)
         for args in (["scan", "email", "/dev/null"], ["scan", "prompt"], ["scan", "prompt", "/nonexistent/x"],
                      ["scan", "prompt", "/dev/null", "extra"]):
             with self.subTest(args=args):
