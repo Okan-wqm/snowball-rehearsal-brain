@@ -152,9 +152,10 @@ def file_path(path: Any) -> bool:
 
 
 def _b64(text: Any) -> bool:
-    """``text`` is base64 in its canonical form (what ``base64.b64encode`` writes)."""
+    """``text`` is base64 in its canonical form (what ``base64.b64encode`` writes): it encodes back to itself, so a
+    character outside the alphabet, which ``b64decode`` drops, is refused by the comparison."""
     try:
-        return isinstance(text, str) and base64.b64encode(base64.b64decode(text, validate=True)).decode() == text
+        return isinstance(text, str) and base64.b64encode(base64.b64decode(text)).decode() == text
     except (ValueError, binascii.Error):
         return False
 
@@ -197,8 +198,7 @@ class Guard:
         if not isinstance(path, str) or not path.startswith(self.prefix):
             return None
         rest = path[len(self.prefix):]
-        if (re.search(r"[?#%\\\s]", rest) or ".." in rest or not rest or rest.endswith("/")
-                or "//" in rest):
+        if re.search(r"[?#%\\\s]", rest) or ".." in rest or rest.endswith("/") or "//" in rest:
             return None
         return rest
 

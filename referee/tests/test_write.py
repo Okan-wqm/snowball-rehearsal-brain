@@ -79,7 +79,7 @@ class RefRule(unittest.TestCase):
             "colon": "brain/a:b", "tilde": "brain/a~1", "caret": "brain/a^", "space": "brain/a b",
             "backslash": "brain/a\\b", "at brace": "brain/a@{1}", "star": "brain/a*", "question": "brain/a?",
             "bracket": "brain/a[", "control": "brain/a\x01", "newline": "brain/a\n", "del": "brain/a\x7f",
-            "non ascii": "brain/ç", "percent": "brain/a%2f",
+            "non ascii": "brain/ç", "percent": "brain/a%2f", "plus": "brain/a+b",
         }
         for why, name in cases.items():
             self.assertEqual(W.ref_reasons("refs/heads/" + name), ["ref_invalid"], why)
@@ -156,17 +156,21 @@ class RouteRule(unittest.TestCase):
             self.assertEqual(check("POST", rest, body), (["route_not_allowed"], []), repr(rest))
         self.assertEqual(check("PATCH", "git/refs/heads/brain/c/../../main", {"sha": A}), (["route_not_allowed"], []))
         self.assertEqual(check("GET", "git/ref/heads/brain/a..b"), (["route_not_allowed"], []))
-        for name in ("brain/c/1?force=true", "brain/c/1#x", "brain/c/1/", "brain//c/1", "brain/c/%31", "brain/c/1 "):
+        for name in ("brain/c/1?force=true", "brain/c/1#x", "brain/c/1/", "brain//c/1", "brain/c/%31", "brain/c/1 ",
+                     "brain/c\\1"):
             self.assertEqual(check("PATCH", "git/refs/heads/" + name, {"sha": A}), (["route_not_allowed"], []), name)
         self.assertEqual(check("GET", "git/ref/heads/brain/a~1"), (["ref_invalid"], []))
         self.assertEqual(check("GET", "git/ref/heads/main", {"x": 1}), (["body_invalid"], []))
-        self.assertEqual(check("GET", "git/commits/" + A.upper()), (["route_not_allowed"], []))
+        for sha in (A.upper(), A[:7], A + "0" * 24):
+            self.assertEqual(check("GET", "git/commits/" + sha), (["route_not_allowed"], []), sha)
 
     def test_bodies(self):
         bad = [
             ("POST", "git/refs", {"ref": "refs/heads/brain/c/1"}), ("POST", "git/refs", {"ref": "refs/heads/brain/c/1",
                                                                                          "sha": A, "force": True}),
             ("POST", "git/refs", {"ref": "refs/heads/brain/c/1", "sha": A[:39]}), ("POST", "git/refs", None),
+            ("POST", "git/refs", {"ref": "refs/heads/brain/c/1", "sha": A + "0"}),
+            ("POST", "git/refs", {"ref": "refs/heads/brain/c/1", "sha": A + "0" * 24}),
             ("POST", "git/refs", [["ref", "refs/heads/brain/c/1"]]),
             ("PATCH", "git/refs/heads/brain/state", {"sha": A.upper()}),
             ("PATCH", "git/refs/heads/brain/state", {"sha": A, "ref": "refs/heads/main"}),
@@ -174,17 +178,26 @@ class RouteRule(unittest.TestCase):
             ("POST", "git/commits", {"message": "", "tree": A, "parents": [A]}),
             ("POST", "git/commits", {"message": "m", "tree": A, "parents": [A], "author": {}}),
             ("POST", "git/commits", {"message": "m", "tree": A, "parents": A}),
+            ("POST", "git/commits", {"message": "m", "tree": A, "parents": [A.upper()]}),
+            ("POST", "git/commits", {"message": "m", "tree": A, "parents": [B, A[:39]]}),
             ("POST", "pulls", {"title": "", "head": "brain/c/1", "base": "brain/integration"}),
             ("POST", "pulls", {"title": "t", "head": "brain/c/1", "base": "brain/integration", "draft": True}),
+            ("POST", "pulls", {"title": "t", "head": "brain/c/1", "base": "brain/integration", "body": None}),
             ("POST", "pulls", {"title": "t", "head": "brain/c/1", "base": "brain/integration",
                                "maintainer_can_modify": True}),
             ("POST", "check-runs", {"name": GATE, "head_sha": A, "status": "in_progress", "conclusion": "success"}),
             ("POST", "check-runs", {"name": GATE, "head_sha": A, "status": "completed", "conclusion": "neutral"}),
+            ("POST", "check-runs", {"name": "", "head_sha": A, "status": "completed", "conclusion": "success"}),
+            ("POST", "check-runs", {"name": GATE, "head_sha": A[:39], "status": "completed", "conclusion": "success"}),
+            ("POST", "check-runs", {"name": GATE, "head_sha": "main", "status": "completed", "conclusion": "success"}),
+            ("POST", "check-runs", {"name": GATE, "head_sha": A, "status": "completed", "conclusion": "success",
+                                    "output": {"title": "", "summary": ""}}),
             ("POST", "check-runs", {"name": GATE, "head_sha": A, "status": "completed", "conclusion": "success",
                                     "actions": []}),
             ("POST", "check-runs", {"name": GATE, "head_sha": A, "status": "completed", "conclusion": "success",
                                     "output": {"title": "t", "summary": "", "annotations": []}}),
             ("PUT", "pulls/3/merge", {"merge_method": "merge"}),
+            ("PUT", "pulls/3/merge", {"sha": A.upper(), "merge_method": "merge"}),
             ("PUT", "pulls/3/merge", {"sha": A, "merge_method": "merge", "commit_message": "x"}),
         ]
         for method, rest, body in bad:
@@ -219,9 +232,13 @@ class RouteRule(unittest.TestCase):
         g.observe("POST", P + "pulls", resp)  # a created pull is not a record: a merge reads it again
         g.observe("PATCH", P + "pulls/3", resp)  # only a read is
         self.assertEqual(g.pulls, {})
-        for broken in ({}, dict(resp, number="3"), dict(resp, number=True), dict(resp, head={"ref": "brain/c/1"})):
+        for broken in ({}, dict(resp, number="3"), dict(resp, number=True), dict(resp, head={"ref": "brain/c/1"}),
+                       dict(resp, head={"ref": "brain/c/1", "sha": A.upper()}),
+                       dict(resp, head={"ref": "brain/c/1", "sha": None})):
             with self.assertRaises(W.ApiError):
                 g.observe("GET", P + "pulls/3", broken)
+        with self.assertRaises(W.ApiError):  # True == 1 in Python: a bool is not a number even where it would equal one
+            g.observe("GET", P + "pulls/1", dict(resp, number=True))
         g.observe("GET", P + "pulls/3", resp)
         self.assertEqual(g.pulls[3]["base"], "brain/integration")
         g.observe("GET", P + "pulls/3", dict(resp, base={"ref": "main"}))
@@ -356,6 +373,17 @@ class WriterLoop(unittest.TestCase):
         gh.overrides[("GET", P + "git/ref/heads/main")] = (404, {"message": "Not Found"})
         with self.assertRaises(W.ApiError):
             wr.head("main")
+        for sha in ("x", A.upper(), None):
+            gh.overrides[("GET", P + "git/ref/heads/brain/state")] = (
+                200, {"ref": "refs/heads/brain/state", "object": {"sha": sha}})
+            with self.assertRaises(W.ApiError):
+                wr.head("brain/state")
+        for status in (199, 300, 302, 304, "200", None):  # only a 2xx answer is a success
+            gh.overrides[("GET", P + "git/ref/heads/brain/integration")] = (
+                status, {"ref": "refs/heads/brain/integration", "object": {"sha": root}})
+            with self.assertRaises(W.ApiError) as ctx:
+                wr.head("brain/integration")
+            self.assertEqual(ctx.exception.status, status)
         gh.overrides[("POST", P + "git/commits")] = (201, {"sha": "x"})
         with self.assertRaises(W.ApiError):
             wr.commit("m", gh.commits[root]["tree"], [root])
@@ -375,6 +403,13 @@ class WriterLoop(unittest.TestCase):
             return (status, dict(data, merged=False)) if method == "PUT" else (status, data)
         with self.assertRaises(W.ApiError):
             W.Writer(REPO, unmerged).merge(n, sha)
+
+    def test_a_pull_number_is_an_int_not_a_bool(self):
+        gh, wr, root = world()
+        gh.refs["brain/c/1"] = root
+        for number, want in ((5, 5), (True, None), ("5", None), (None, None)):
+            gh.overrides[("POST", P + "pulls")] = (201, {"number": number})
+            self.assertIs(wr.open_pull("brain/c/1", "brain/integration", "t"), want, number)
 
     def test_a_pull_created_elsewhere(self):
         gh, wr, root = world()
@@ -407,7 +442,7 @@ class StateCommit(unittest.TestCase):
         bad_entries += [dict(entry, type=t) for t in ("tree", "commit")]
         bad_entries += [dict(entry, path=x) for x in (
             "", "/abs", "a//b", "a/", "./a", "a/./b", "../a", "a/../b", ".git/config", "x/.GIT/hooks/a", ".Git",
-            "a b", "a\\b", "a\nb", "ü", 7)]
+            "a b", "a\\b", "a\nb", "ü", "a+b", 7)]
         bad_entries += [dict(entry, sha=A.upper()), dict(entry, content="x"), {k: v for k, v in entry.items() if k != "sha"}]
         for e in bad_entries:
             self.assertEqual(check("POST", "git/trees", {"base_tree": A, "tree": [e]}), (["body_invalid"], []), e)
@@ -584,6 +619,9 @@ class Revert(unittest.TestCase):
         self.assertEqual(W.revert_commit(commits, "d" * 40, "d" * 40), (["revert_not_merge"], None))
         self.assertEqual(W.revert_commit(commits, "e" * 40, "e" * 40), (["commit_unknown"], None))
         self.assertEqual(W.revert_commit({B: commits[B]}, B, B), (["commit_unknown"], None))
+        for tree in (None, "x", "1" * 39):
+            self.assertEqual(W.revert_commit({B: commits[B], A: {"tree": tree, "parents": []}}, B, B),
+                             (["commit_unknown"], None), tree)
         three = {B: {"tree": "2" * 40, "parents": [A, A, A]}, A: commits[A]}
         self.assertEqual(W.revert_commit(three, B, B), (["revert_not_merge"], None))
 
@@ -823,6 +861,13 @@ class CommandLine(unittest.TestCase):
                    ("POST", P + "git/refs", {"ref": "refs/heads/brain/y", "sha": A, "force": True})]
         self.assertFalse(W.outcome(wr)["forced"])
 
+    def test_commit_is_the_last_commit_sent(self):
+        wr = W.Writer(REPO, W.Replay({}))
+        wr.sent = [("POST", P + "git/commits", {"message": "a", "tree": A, "parents": []}),
+                   ("GET", P + "git/commits/" + A, None),
+                   ("POST", P + "git/commits", {"message": "b", "tree": B, "parents": [A]})]
+        self.assertEqual(W.outcome(wr)["commit"], {"tree": B, "parents": [A]})
+
     def test_merge(self):
         self.assertEqual(cli("replay", api=MERGE_API, request={"op": "merge", "repo": REPO, "pr": 7}),
                          (0, {"ok": True, "refs": ["refs/heads/brain/integration"],
@@ -865,7 +910,7 @@ class CommandLine(unittest.TestCase):
         code, out = cli("replay", api={}, request={"op": "branch", "repo": REPO, "ref": "refs/heads/brain/c/1",
                                                    "sha": A})
         self.assertEqual((code, out["ok"], out["refs"], out["writes"]), (2, False, [], ["POST %sgit/refs" % P]))
-        self.assertIn("404", out["error"])
+        self.assertTrue(out["error"].startswith("api: 404"), out["error"])
         no_ref = {k: v for k, v in REVERT_API.items() if k != "POST %sgit/refs" % P}
         code, out = cli("replay", api=no_ref,
                         request={"op": "revert", "repo": REPO, "merge_sha": M, "onto": "refs/heads/brain/integration",
@@ -905,6 +950,8 @@ class CommandLine(unittest.TestCase):
                                (("replay",), {}, dict(good, ref=7)),
                                (("replay",), {}, {"op": "merge", "repo": REPO, "pr": True}),
                                (("replay",), {}, {"op": "merge", "repo": REPO, "pr": "7"}),
+                               (("replay",), {}, {"op": "merge", "repo": REPO, "pr": 0}),
+                               (("replay",), {}, {"op": "merge", "repo": REPO, "pr": 10 ** 10}),
                                (("replay",), {}, {"op": "check", "repo": REPO, "sha": A, "name": "n",
                                                   "conclusion": "neutral"}),
                                (("replay",), {}, {"op": "pr", "repo": REPO, "head": "brain/c/1",
