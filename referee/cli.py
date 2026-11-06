@@ -68,6 +68,25 @@ Rules ``run`` keeps (each bound by a test in ``tests/test_cli.py``):
    Out of scope, stated: values not parsed here (built in memory, read by another parser such as ``tomllib``);
    recursion through two or more functions (``Walks`` finds a function calling itself by its own name only).
 
+9. Outside this module, a handler that turns unreadable archive bytes (a tar, a gzip stream, a zip) into the
+   command's own answer names ``ARCHIVE_ERRORS``: ``tarfile.TarError``, ``gzip.BadGzipFile``, ``zlib.error``,
+   ``EOFError`` and ``zipfile.BadZipFile``, what those libraries raise for malformed bytes, each seen in
+   ``tests/test_archives.py``'s corpus (every byte of a small archive flipped, every third truncation,
+   300 seeded scrambles) or one of its fixtures. A handler may add the errors of its own context after them (a file
+   it opens: ``OSError``). zipfile also raises ``RuntimeError`` (an encrypted member; its ``NotImplementedError``,
+   an unknown method or version, is one) and ``ValueError`` (an offset before the archive) for malformed bytes; being
+   types any code raises, they are not in the tuple: the one zip reader (``loop.accepted.unpack``) names them for a
+   ``try`` that holds only zipfile calls. Why: each reader had written its own list, and three missed one (measured
+   before this rule over that corpus: ``loop.accepted.unpack`` let ``zlib.error`` and ``RuntimeError`` through,
+   ``loop.treehash``'s command ``EOFError`` and ``zlib.error``, ``profile.derive.read_tree`` and
+   ``profile.unit_verify``'s unpack ``gzip.BadGzipFile``, a CRC failure); each escape was a fault (rule 3) where
+   the command had its own refusal. Bound by ``tests/test_archives.py``: every reader that names the tuple runs
+   over the corpus, and each variant is read, or refused by the reader's own answer, or (a reader whose handler is
+   its caller's: ``loop.treehash.of_tar``, ``profile.unit_verify.unpack``) raises only what that handler catches;
+   and a register over every source file: outside this module, no handler names one of those library errors itself.
+   Out of scope, stated: the readers' own checks of what a readable archive holds; errors of writing what an
+   archive holds (``profile.unit_verify`` writes files: an ``OSError`` there is a fault, not a refusal).
+
 Out of scope, stated: a fault while the module is imported (``python -m`` runs the module's top level before this
 boundary exists; ``tests/test_cli.py`` imports every command module, so a broken import is red before a push); signals and
 ``KeyboardInterrupt`` (they end the process with their own codes, never 1); the interpreter being killed;
@@ -77,11 +96,15 @@ gives its sender stderr, the others capture or discard the child's stdout).
 
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import os
 import re
 import sys
+import tarfile
+import zipfile
+import zlib
 from typing import Any, Callable
 
 FAULT_EXIT = 2
@@ -98,6 +121,7 @@ class TooDeep(ValueError, RecursionError):
 
 
 DEPTH = 128  # the deepest JSON loads returns, in arrays and objects (rule 8)
+ARCHIVE_ERRORS = (tarfile.TarError, gzip.BadGzipFile, zlib.error, EOFError, zipfile.BadZipFile)  # rule 9
 _LEVEL = re.compile(r"[\[\]{}]")
 
 

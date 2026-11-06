@@ -203,7 +203,6 @@ import sys
 import tarfile
 import tempfile
 import time
-import zlib
 from typing import Any
 
 from profile import derive as D
@@ -762,7 +761,7 @@ def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, bu
             return ["deps_unpack_unsafe:%s" % row["key"]], {}
         except _TooBig:
             return ["limit_hit:worktree_bytes"], {}
-        except (tarfile.TarError, EOFError, zlib.error):
+        except cli.ARCHIVE_ERRORS:
             return ["deps_unpack_unsafe:%s" % row["key"]], {}
         total += n
         skipped += s

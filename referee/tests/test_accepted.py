@@ -13,14 +13,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
 import stat
 import sys
 import tempfile
+import tracemalloc
 import unittest
+import urllib.response
 import zipfile
+from email.message import Message
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
@@ -34,6 +38,7 @@ from test_write import _FakeHttps  # noqa: E402
 
 REPO = "snowball-org/referee"
 SHA = "a" * 40
+MIB = 1024 * 1024
 
 
 def artifact(id_, created, name="bootstrap-state", expired=False, branch="main", repo_id=7, head_repo_id=7) -> dict:
@@ -85,6 +90,8 @@ class Choose(unittest.TestCase):
         tie = [artifact(9, "2026-11-01T01:00:00Z"), artifact(4, "2026-11-01T01:00:00Z")]
         self.assertEqual(A.choose(tie)["id"], 9)
         self.assertEqual(A.choose(list(reversed(tie)))["id"], 9)
+        # the id only breaks a tie: a larger id created earlier is older
+        self.assertEqual(A.choose([artifact(9, "2026-11-01T01:00:00Z"), artifact(4, "2026-11-01T02:00:00Z")])["id"], 4)
 
     def test_others_are_passed_over(self):
         newer = "2026-11-02T00:00:00Z"
@@ -110,14 +117,22 @@ class Choose(unittest.TestCase):
                            ("created_at", "2026-11-01T00:00:00.123Z"), ("name", None), ("workflow_run", None)):
             bad.append(dict(good, **{key: value}))
         bad.append(dict(good, workflow_run={"head_branch": "main", "repository_id": 7}))
+        bad.append(dict(good, workflow_run={"head_branch": "main", "head_repository_id": 7}))
+        for key, value in (("created_at", 1), ("created_at", "2026-11-01T00:00:00"),
+                           ("created_at", "2026-11-01T00:00:00Zx"), ("workflow_run", [])):
+            bad.append(dict(good, **{key: value}))
+        bad.append(dict(good, workflow_run=dict(good["workflow_run"], head_branch=5)))
         bad.append("x")
         for entry in bad:
             with self.subTest(entry=entry):
                 with self.assertRaises(A.StateError) as ctx:
                     A.choose([good, entry])
                 self.assertEqual(ctx.exception.reasons, ["actions_unreadable"])
-        with self.assertRaises(A.StateError):
-            A.choose({"artifacts": []})
+        for listing in ({"artifacts": []}, {}, "", None):
+            with self.subTest(listing=listing):
+                with self.assertRaises(A.StateError) as ctx:
+                    A.choose(listing)
+                self.assertEqual(ctx.exception.reasons, ["actions_unreadable"])
 
 
 class Unpack(unittest.TestCase):
@@ -147,6 +162,49 @@ class Unpack(unittest.TestCase):
         finally:
             A.MAX_FILE = saved
 
+    def test_the_limit_is_16_mib(self):
+        self.assertEqual(len(A.unpack(zip_of(dict(GOOD_ZIP, **{"result.json": b"x" * (16 * MIB)})))[0]), 16 * MIB)
+        self.refused(zip_of(dict(GOOD_ZIP, **{"result.json": b"x" * (16 * MIB + 1)})))
+
+    def test_a_large_file_is_not_read_whole(self):
+        # 64 MiB of zeros deflate to 64 KB; at most 16 MiB + 1 of it is read, so memory stays under 48 MiB
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            with zf.open("result.json", "w") as fh:
+                for _ in range(64):
+                    fh.write(bytes(MIB))
+            zf.writestr("result.json.sigstore.json", b"{}")
+        data = buf.getvalue()
+        tracemalloc.start()
+        try:
+            self.refused(data)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, 48 * MIB)
+
+    def test_a_name_twice(self):
+        # written as a third name of the same length, then renamed in both headers
+        data = zip_of(dict(GOOD_ZIP, **{"result.jsoX": result()})).replace(b"result.jsoX", b"result.json")
+        self.assertEqual([i.filename for i in zipfile.ZipFile(io.BytesIO(data)).infolist()].count("result.json"), 2)
+        self.refused(data)
+
+    def test_a_zip_python_cannot_read(self):
+        # zipfile's own errors for malformed bytes beside cli.ARCHIVE_ERRORS (cli rule 9), one fixture each
+        good = zip_of(GOOD_ZIP)
+        local, central = b"PK\x03\x04\x14\x00\x00\x00\x00\x00", b"PK\x01\x02\x14\x03\x14\x00\x00\x00\x00\x00"
+        method = good.replace(local, local[:8] + b"\x63\x00").replace(central, central[:10] + b"\x63\x00")
+        cd = good.index(b"PK\x01\x02")
+        encrypted = good[:cd + 8] + bytes([good[cd + 8] | 1]) + good[cd + 9:]
+        for name, kind, data in (("method 99", NotImplementedError, method), ("encrypted", RuntimeError, encrypted),
+                                 ("offset before the archive", ValueError, good[:30] + good[60:])):
+            with self.subTest(name=name):
+                with self.assertRaises(kind):
+                    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                        for info in zf.infolist():
+                            zf.read(info)
+                self.refused(data)
+
 
 class Verify(unittest.TestCase):
     def test_the_command(self):
@@ -167,6 +225,19 @@ class Verify(unittest.TestCase):
                 with self.assertRaises(A.StateError):
                     A.repo_url(repo)
         self.assertEqual(A.repo_url("o/brain.x"), "https://github.com/o/brain.x")
+        # the owner 1 to 39 characters, the name 1 to 100, neither "." nor ".."
+        for repo, ok in (("a" * 39 + "/b", True), ("a" * 40 + "/b", False), ("a/" + "b" * 100, True),
+                         ("a/" + "b" * 101, False), ("a/.", False), ("a/..", False), ("a/.b", True)):
+            with self.subTest(repo=repo):
+                if ok:
+                    self.assertEqual(A.repo_name(repo), repo)
+                else:
+                    with self.assertRaises(A.StateError):
+                        A.repo_name(repo)
+
+    def test_the_loop_identity(self):
+        self.assertEqual(A.workflow_identity(REPO, A.LOOP_WORKFLOW),
+                         "https://github.com/snowball-org/referee/.github/workflows/loop.yml@refs/heads/main")
 
     def test_the_verifier_sees_both_files_first(self):
         seen = []
@@ -181,7 +252,7 @@ class Verify(unittest.TestCase):
 
         out = A.open_state(GOOD_ZIP["result.json"], b"B", REPO, ("sg",), verifier)
         self.assertEqual(out["last_accepted_sha"], SHA)
-        self.assertEqual(len(out["result_sha256"]), 64)
+        self.assertEqual(out["result_sha256"], hashlib.sha256(GOOD_ZIP["result.json"]).hexdigest())
         argv, files = seen[0]
         self.assertEqual(argv[:3], ["sg", "verify", "identity"])
         self.assertEqual(files, {"result.json": GOOD_ZIP["result.json"], "result.json.sigstore.json": b"B"})
@@ -195,7 +266,9 @@ class Verify(unittest.TestCase):
 
     def test_an_invalid_result(self):
         for body in (b"not json", b"\xff", b"[]", b'{"state": 1}', b'{"state": {}}', result(sha=SHA.upper()),
-                     result(sha="a" * 39), result(sha=None), json.dumps({"last_accepted_sha": SHA}).encode()):
+                     result(sha="a" * 39), result(sha="a" * 41), result(sha=SHA + "\n"), result(sha=None),
+                     result(sha=int("1" * 40)), json.dumps({"last_accepted_sha": SHA}).encode(),
+                     result().replace(b'"accepted"', b'"acc\xffepted"')):
             with self.subTest(body=body):
                 with self.assertRaises(A.StateError) as ctx:
                     A.open_state(body, b"B", REPO, ("sigstore",), verifier=lambda argv: 0)
@@ -214,6 +287,22 @@ class Verify(unittest.TestCase):
             with self.assertRaises(A.StateError) as ctx:
                 A.open_state(result(), b"B", REPO, (os.path.join(tmp, "absent"),))
             self.assertEqual(ctx.exception.reasons, ["state_unverified"])
+
+    def test_the_verifier_reads_no_input(self):
+        # the caller's stdin holds bytes; the program gets none (its exit code is how many it read)
+        prog = [sys.executable, "-c", "import sys; sys.exit(len(sys.stdin.buffer.read()))"]
+        read, write = os.pipe()
+        os.write(write, b"xyz")
+        os.close(write)
+        saved = os.dup(0)
+        os.dup2(read, 0)
+        try:
+            code = A.run_verifier(prog)
+        finally:
+            os.dup2(saved, 0)
+            os.close(saved)
+            os.close(read)
+        self.assertEqual(code, 0)
 
 
 class FakeApi:
@@ -235,7 +324,7 @@ class FakeApi:
         return "https://blob.example/zip"
 
     def blob(self, url, limit):
-        self.calls.append(("blob", url))
+        self.calls.append(("blob", url, limit))
         return self.zip
 
 
@@ -250,6 +339,7 @@ class ReadState(unittest.TestCase):
         self.assertTrue(api.calls[0][1].startswith(
             "/repos/snowball-org/referee/actions/artifacts?name=bootstrap-state&per_page=100&page=1"))
         self.assertEqual(api.calls[3][1], "/repos/snowball-org/referee/actions/artifacts/5/zip")
+        self.assertEqual(api.calls[4][2], 64 * MIB)
 
     def test_a_short_listing_or_a_bad_page(self):
         for api in (FakeApi([artifact(1, "2026-11-01T00:00:00Z")], b"", total=3),):
@@ -263,6 +353,32 @@ class ReadState(unittest.TestCase):
         with self.assertRaises(A.StateError) as ctx:
             A.read_state(Bad([], b""), REPO, ("sigstore",), verifier=lambda argv: 0)
         self.assertEqual(ctx.exception.reasons, ["actions_unreadable"])
+
+    def test_the_listing_pages(self):
+        def listing(pages):  # one artifact a page
+            return FakeApi([artifact(i, "2026-11-01T00:00:00Z") for i in range(1, pages + 1)], b"", per_page=1)
+        self.assertEqual(len(A.list_artifacts(listing(100), REPO)), 100)
+        with self.assertRaises(A.StateError):
+            A.list_artifacts(listing(101), REPO)
+        # the count is the first page's; an empty page ends the read
+        api = listing(2)
+        pages = iter([{"total_count": 2, "artifacts": api.artifacts[:1]},
+                      {"total_count": 5, "artifacts": api.artifacts[1:]}])
+        api.json = lambda path: next(pages)
+        self.assertEqual(len(A.list_artifacts(api, REPO)), 2)
+        api = FakeApi([artifact(1, "2026-11-01T00:00:00Z")], b"", per_page=1, total=5)
+        with self.assertRaises(A.StateError):
+            A.list_artifacts(api, REPO)
+        self.assertEqual(len(api.calls), 2)
+        one = [artifact(1, "2026-11-01T00:00:00Z")]
+        for page in ({"total_count": True, "artifacts": one}, {"total_count": 1, "artifacts": "x"},
+                     {"total_count": 1, "artifacts": {"x": 1}}):
+            with self.subTest(page=page):
+                api = FakeApi([], b"")
+                api.json = lambda path, page=page: page
+                with self.assertRaises(A.StateError) as ctx:
+                    A.list_artifacts(api, REPO)
+                self.assertEqual(ctx.exception.reasons, ["actions_unreadable"])
 
     def test_too_many_pages(self):
         class Endless(FakeApi):
@@ -310,6 +426,52 @@ class Http(unittest.TestCase):
             A.ActionsHttp("tok", handlers=(fake,)).blob("http://blob.example/z", 10)
         self.assertEqual(fake.seen, [])
 
+    def test_only_a_302_names_the_zip(self):
+        for code in (301, 303, 307, 308):
+            fake = _FakeHttps([(code, b"", {"Location": "https://blob.example/z"})])
+            with self.assertRaises(A.StateError) as ctx:
+                A.ActionsHttp("tok", handlers=(fake,)).redirect("/zip")
+            self.assertEqual(ctx.exception.reasons, ["actions_unreadable"])
+
+    def test_an_answer_that_is_no_json_or_too_long(self):
+        long = b'{"a": "' + b"x" * (16 * MIB) + b'"}'
+        for body in (b"<html>", long):
+            fake = _FakeHttps([(200, body, {})])
+            with self.assertRaises(A.StateError) as ctx:
+                A.ActionsHttp("tok", handlers=(fake,)).json("/x")
+            self.assertEqual(ctx.exception.reasons, ["actions_unreadable"])
+        fake = _FakeHttps([(200, b'{"a": "' + b"x" * (16 * MIB - 9) + b'"}', {})])
+        self.assertEqual(len(A.ActionsHttp("tok", handlers=(fake,)).json("/x")["a"]), 16 * MIB - 9)
+
+    def test_a_blob_is_read_up_to_its_limit(self):
+        class Zeros(io.RawIOBase):  # 32 MiB made as they are read (a BytesIO would hand over its whole buffer)
+            left = 32 * MIB
+
+            def readable(self):
+                return True
+
+            def readinto(self, buf):
+                n = min(len(buf), self.left)
+                buf[:n] = bytes(n)
+                self.left -= n
+                return n
+
+        class Lazy(_FakeHttps):
+            def https_open(self, req):
+                self.seen.append(req)
+                resp = urllib.response.addinfourl(io.BufferedReader(Zeros()), Message(), req.full_url, 200)
+                resp.msg = "x"
+                return resp
+        fake = Lazy([])
+        tracemalloc.start()
+        try:
+            with self.assertRaises(A.StateError):
+                A.ActionsHttp("tok", handlers=(fake,)).blob("https://b.example/z", 10)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, MIB)
+
     def test_a_blob_over_the_limit(self):
         fake = _FakeHttps([(200, b"x" * 11, {})])
         with self.assertRaises(A.StateError) as ctx:
@@ -317,7 +479,7 @@ class Http(unittest.TestCase):
         self.assertEqual(ctx.exception.reasons, ["state_unreadable"])
 
     def test_a_token_that_is_not_one_line(self):
-        for token in ("", "a\nb", None):
+        for token in ("", "a\nb", "a\rb", None):
             with self.assertRaises(A.StateError):
                 A.ActionsHttp(token)
 
@@ -350,6 +512,8 @@ class Imports(unittest.TestCase):
         self.refused(b"", "imports_no_transfer")
         self.refused(chained([{"ts": "x"}]), "imports_no_transfer")
         self.refused(chained([import_row("A" * 64)]), "imports_invalid")
+        self.refused(chained([import_row("1" * 40)]), "imports_invalid")
+        self.refused(chained([import_row("1" * 65)]), "imports_invalid")
         self.refused(chained([import_row("1" * 64), import_row(None)]), "imports_invalid")
 
 
@@ -365,6 +529,9 @@ class CheckTree(unittest.TestCase):
         with self.assertRaises(A.StateError) as ctx:
             A.check_tree(self.objects.__getitem__, self.commit, import_row("0" * 64))
         self.assertEqual(ctx.exception.reasons, ["referee_tree_mismatch"])
+        last = self.hash[:-1] + ("0" if self.hash[-1] != "0" else "1")
+        with self.assertRaises(A.StateError):
+            A.check_tree(self.objects.__getitem__, self.commit, import_row(last))
 
     def test_refused(self):
         objects, commit = S.store({"referee/a.py": b"x", "referee/setup": b"y"})

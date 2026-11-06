@@ -147,7 +147,6 @@ import re
 import stat
 import sys
 import tarfile
-import zlib
 from typing import Any
 
 import cli
@@ -760,7 +759,7 @@ def read_tree(path: str) -> list[str]:
                 if name.startswith("/") or any(p in ("", ".", "..") for p in parts):
                     raise DeriveError("tree member %r is not a relative POSIX path" % member.name)
                 names.add(name)
-    except (tarfile.TarError, EOFError, zlib.error) as exc:
+    except cli.ARCHIVE_ERRORS as exc:
         raise DeriveError("tree is not a readable gzip tar: %s" % cli.cause(exc)) from None
     return sorted(names)
 

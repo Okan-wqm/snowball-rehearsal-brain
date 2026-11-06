@@ -161,7 +161,7 @@ def main(argv: list[str]) -> int:
         out = {"ok": True, "referee_tree_sha256": of_tar(data)}
     except TreeHashError as exc:
         out = {"ok": False, "reasons": exc.reasons}
-    except (OSError, tarfile.TarError) as exc:
+    except (OSError, *cli.ARCHIVE_ERRORS) as exc:
         sys.stderr.write("unusable input: %s\n" % cli.cause(exc))
         sys.stdout.write(json.dumps({"ok": False, "reasons": None}) + "\n")
         return 2
