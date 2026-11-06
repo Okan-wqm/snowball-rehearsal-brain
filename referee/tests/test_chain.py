@@ -20,6 +20,10 @@ import unittest
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BRAIN = os.path.dirname(REFEREE)
+sys.path.insert(0, REFEREE)
+
+import cli  # noqa: E402
+from ledger import chain  # noqa: E402
 Z = "0" * 64
 
 V1 = {"row_id": "r1", "ts": "2026-10-28T00:00:00Z", "part": "events", "kind": "genesis", "payload": {},
@@ -99,6 +103,7 @@ class HashCommand(unittest.TestCase):
         code, out, err = run_chain(["hash"], stdin=text)
         self.assertEqual(code, 2, out)
         self.assertIn("error", out)
+        self.assertNotEqual(out, cli.GENERIC_LINE, "an exception the module did not expect, not a refusal")
         self.assertNotIn(b"Traceback", err)
 
     def test_v1_v2(self):
@@ -138,16 +143,20 @@ class HashCommand(unittest.TestCase):
         canon = '{"a":[true,false,null,-7,9007199254740991,0],"prev_hash":"%s"}' % Z
         expected = hashlib.sha256(canon.encode() + Z.encode()).hexdigest()
         self.assertEqual(self.hash_of(json.dumps(row).encode()), expected)
+        row = {"prev_hash": Z, "a": -9007199254740991}
+        canon = '{"a":-9007199254740991,"prev_hash":"%s"}' % Z
+        self.assertEqual(self.hash_of(json.dumps(row).encode()), hashlib.sha256(canon.encode() + Z.encode()).hexdigest())
 
     def test_refuses_what_has_no_canonical_form(self):
         base = json.dumps(V1)[:-1]
         for extra in (', "x": 1.5', ', "x": 1.0', ', "x": 1e2', ', "x": NaN', ', "x": Infinity',
-                      ', "x": 9007199254740992', ', "x": "\\ud800"', ', "row_id": "dup"'):
+                      ', "x": 9007199254740992', ', "x": -9007199254740992', ', "x": "\\ud800"',
+                      ', "x": "\\udc00"', ', "\\ud800": 1', ', "\\udfff": 1', ', "row_id": "dup"'):
             with self.subTest(extra=extra):
                 self.refused((base + extra + "}").encode())
 
     def test_refuses_bad_prev_hash_and_bad_input(self):
-        for prev in (Z.upper().replace("0", "A"), Z[:-1], 5, None):
+        for prev in (Z.upper().replace("0", "A"), Z[:-1], Z + "0", Z + "\n", "\n" + Z, 5, None):
             with self.subTest(prev=prev):
                 self.refused(json.dumps(dict(V1, prev_hash=prev)).encode())
         no_prev = {k: v for k, v in V1.items() if k != "prev_hash"}
@@ -220,6 +229,7 @@ class VerifyCommand(unittest.TestCase):
             jsonl(rows[:1]) + b"[" * 100000 + b"]" * 100000 + b"\n": "line:2",
             good.replace(b'"n":2', b'"n":2.0'): "r2",
             good.replace(b'"n":2', b'"n":2,"n":2'): "line:2",
+            good + b"\n": "line:3",
         }
         for data, name in cases.items():
             with self.subTest(name=name, data=data[-40:]):
@@ -252,13 +262,36 @@ class VerifyCommand(unittest.TestCase):
         self.assert_broken(self.verify(spaced, jsonl(rows)), "r1")
 
     def test_unreadable_file(self):
-        code, out, _ = run_chain(["verify", "/nonexistent/ledger.jsonl"])
-        self.assertEqual(code, 2)
-        self.assertIn("error", out)
+        for args in (["/nonexistent/ledger.jsonl"], [jsonl(build_chain([{"n": 1}])), "--previous", "/nonexistent/old.jsonl"]):
+            with self.subTest(args=args[-1]):
+                code, out, _ = run_chain(["verify", *args])
+                self.assertEqual(code, 2)
+                self.assertEqual(list(out), ["error"])
+                self.assertTrue(out["error"].startswith("cannot read: "), out)
 
     def test_founder_ledger_is_a_valid_chain(self):
         with open(os.path.join(BRAIN, "founder-ledger.jsonl"), "rb") as fh:
             self.assertTrue(self.verify(fh.read())["valid"])
+
+
+class Library(unittest.TestCase):
+    """``canonical`` and ``row_hash`` called from Python (``activate``, ``status.block``, ``ledger.append``):
+    a value a JSON line cannot carry is refused with ``ChainError`` too, never another exception."""
+
+    def test_canonical_refuses_values_json_has_no_form_for(self):
+        deep: list = []
+        for _ in range(100000):
+            deep = [deep]
+        for value in ({1: "a"}, {None: 1}, {"\ud800": 1}, {"\udc00": 1}, (1, 2), b"x", {"a": {1.5}}, deep):
+            with self.subTest(value=type(value).__name__):
+                with self.assertRaises(chain.ChainError):
+                    chain.canonical(value)
+
+    def test_row_id_that_is_not_a_string_names_the_line(self):
+        row = build_chain([{"n": 1}])[0]
+        row["row_id"] = 7
+        out = chain.verify_bytes(jsonl([row]))
+        self.assertEqual((out["valid"], out["broken_row"], out["line"]), (False, "line:1", 1))
 
 
 class Usage(unittest.TestCase):
