@@ -2,18 +2,20 @@
 facts of a red (asama-0/01 D7, tohum/07, tohum/29j).
 
 - ``read``: nothing watched and no entry is ``None``; an entry while nothing is watched, an entry for another merge
-  or none, a file that is missing, changed or not the index's hash, a document of another shape or merge, and a
+  or none (an index that is not a JSON object, a results path that is not a directory), a file that is missing, a
+  directory, changed or not the index's hash, a document that does not parse or is of another shape or merge, and a
   verdict MF12's ``decide`` does not give on its runs (or the index does not) are each refused with their reason;
   an entry without a verdict is passed on with its reasons; a verified red, green and flaky are read with the
   verified file's hash;
 - ``base_lint``: the base run's counts when its hash is the index's and its three records one; ``None`` for a
-  missing file, another hash, three records that differ, a record ``gate.check`` refuses, no hash in the index;
+  missing file (``base_run`` too, with the index's hash), another hash, three records that differ, a record
+  ``gate.check`` refuses, no hash in the index;
 - ``base_build``: ``false`` for a base refused with a ``lint_output:fatal:`` reason (ESLint could not parse a file),
   unless a red control passed or the base run is verified anyway; ``true`` for no reason and a verified base run;
-  ``None`` for any other reason, a missing or malformed ``base``, no reason without a verified run (bound to what
+  ``None`` for any other reason (``lint_output:fatal:`` not at its start included), a missing or malformed ``base``, no reason without a verified run (bound to what
   ``runner.kos`` really writes in ``test_kos.Sentinel``);
 - ``facts``: the impact set is every id the runs report; ``build_ok`` is the one given; lint per tool in either side,
-  an absent tool counting 0; ``None`` lint when the merge's cycle has no ratchet base or the base lint is unreadable;
+  an absent tool counting 0 (an empty ratchet base too), tools in sorted order; ``None`` lint when the merge's cycle has no ratchet base or the base lint is unreadable;
   ``gate.revert.assess`` then gives ``build_break``, ``test_regression``, ``lint_regression`` or ``unknown``
   (``unknown`` whenever ``build_ok`` is ``None``).
 """
@@ -115,6 +117,13 @@ class Read(Results):
         self.assertEqual(self.refused(self.results([PASS]), "2" * 40), ["sentinel_missing"])
         self.put(K.INDEX, b"not json")
         self.assertEqual(self.refused(self.dir), ["sentinel_missing"])
+        self.put(K.INDEX, b"[]")  # JSON, but not an object
+        self.assertEqual(self.refused(self.dir), ["sentinel_missing"])
+        as_file = os.path.join(self.dir, "results-a-file")  # the results path is not a directory
+        self.put("results-a-file", b"")
+        self.assertEqual(self.refused(as_file), ["sentinel_missing"])
+        self.assertIsNone(WT.base_lint(as_file))
+        self.assertIsNone(WT.base_build(as_file))
 
     def test_the_file_by_its_hash(self):
         results = self.results([FAIL] * 4)
@@ -122,6 +131,8 @@ class Read(Results):
             fh.write(b" ")
         self.assertEqual(self.refused(results), ["sentinel_hash_mismatch"])
         os.remove(os.path.join(results, K.SENTINEL))
+        self.assertEqual(self.refused(results), ["sentinel_hash_mismatch"])
+        os.mkdir(os.path.join(results, K.SENTINEL))  # a directory where the file should be
         self.assertEqual(self.refused(results), ["sentinel_hash_mismatch"])
 
     def test_the_document_shape_and_merge(self):
@@ -136,6 +147,10 @@ class Read(Results):
                 else:
                     results = self.results(doc=doc)
                 self.assertEqual(self.refused(results), ["sentinel_unreadable"])
+        data = b"not json"  # bytes of the index's hash that do not parse
+        self.put(K.SENTINEL, data)
+        results = self.results(entry={"merge_sha": M, "verdict": "green", "reasons": [], "sha256": sha(data)})
+        self.assertEqual(self.refused(results), ["sentinel_unreadable"])
 
     def test_the_verdict_is_mf12s_on_the_runs(self):
         base = {"merge_sha": M, "runs": [FAIL] * 4, "verdict": "red", "red": ["a"], "flaky": []}
@@ -170,6 +185,12 @@ class BaseLint(Results):
         self.put(K.BASE, same)
         self.put(K.INDEX, b"{}")  # no base_run_sha256
         self.assertIsNone(WT.base_lint(self.dir))
+        os.remove(os.path.join(self.dir, K.BASE))  # the index's hash, no file
+        self.put(K.INDEX, json.dumps({"base_run_sha256": sha(same)}).encode())
+        self.assertIsNone(WT.base_run(self.dir))
+        self.assertIsNone(WT.base_lint(self.dir))
+        self.put(K.BASE, same)
+        self.assertEqual(WT.base_run(self.dir), (same, sha(same)))
 
 
 FATAL_A = "lint_output:fatal:pkg/a.js"
@@ -196,7 +217,8 @@ class BaseBuild(Results):
                               (["lint_output:not_eslint_json"], None), (["services_not_empty"], None),
                               (["red_control_green", FATAL_A], None),  # a sandbox a bad command passed
                               ([FATAL_A], self.BASE),  # the index contradicts its own base run
-                              (["red_control_green"], self.BASE)):
+                              (["red_control_green"], self.BASE),
+                              (["lint_failed:" + FATAL_A], None)):  # the prefix only: no reason of another kind
             with self.subTest(reasons=reasons, base=base is not None):
                 shutil.rmtree(self.dir)
                 os.makedirs(self.dir)
@@ -228,6 +250,7 @@ class Facts(unittest.TestCase):
         self.assertEqual(got, {"impact": ["a", "b", "c"], "build_ok": True,
                                "lint": {"eslint": {"before": 3, "after": 3}, "new": {"before": 0, "after": 2},
                                         "old": {"before": 1, "after": 0}}})
+        self.assertEqual(list(got["lint"]), ["eslint", "new", "old"])  # tools in sorted order
         self.assertEqual(R.assess([FAIL] * 4, got)["cause"], "lint_regression")  # "new" rose
         same = dict(got, lint={"eslint": {"before": 3, "after": 3}})
         self.assertEqual(R.assess([FAIL] * 4, same)["cause"], "test_regression")
@@ -242,6 +265,12 @@ class Facts(unittest.TestCase):
                 self.assertEqual(R.assess([FAIL] * 4, got)["cause"], cause)
         # a head that does not parse has no base run (kos writes none), so no lint after: still a build break
         self.assertEqual(R.assess([FAIL] * 4, WT.facts(self.red(), ledger, None, False))["cause"], "build_break")
+
+    def test_an_empty_ratchet_base_counts_every_tool_from_zero(self):
+        got = WT.facts(self.red(), ledger_with(cycle(M, {})), {"base_run_sha256": "e" * 64, "counts": {"eslint": 3}},
+                       True)
+        self.assertEqual(got["lint"], {"eslint": {"before": 0, "after": 3}})
+        self.assertEqual(R.assess([FAIL] * 4, got)["cause"], "lint_regression")
 
     def test_lint_none_without_before_or_after(self):
         after = {"base_run_sha256": "e" * 64, "counts": {"eslint": 3}}

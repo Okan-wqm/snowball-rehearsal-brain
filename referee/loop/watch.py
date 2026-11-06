@@ -59,7 +59,7 @@ them:
   it and ``impact_miss`` is not reachable from the live path at stage 0;
 - ``build_ok``: ``base_build``'s answer (above), given by the caller; ``None`` makes ``gate.revert.assess``'s cause
   ``unknown`` (no rule after ``build_break`` can be stated when the build is not known);
-- ``lint``: per tool in either, ``{before, after}`` (a tool absent from one side counts 0, ``gate.check``'s rule):
+- ``lint``: per tool in either, in sorted order, ``{before, after}`` (a tool absent from one side counts 0, ``gate.check``'s rule):
   ``before`` the ratchet base of the merge's cycle (``ledger.serial.lint_before`` of ``brain/state``'s ledger),
   ``after`` ``base_lint``'s counts; ``None`` when either is missing (``gate.revert.assess``'s rule then).
 
@@ -125,7 +125,7 @@ def read(results: str, watch: str | None) -> dict | None:
         if not (isinstance(doc, dict) and set(doc) == DOC_KEYS and doc["merge_sha"] == watch):
             raise Refused(["sentinel_unreadable"])
         judged = S.decide(doc["runs"])
-    except (ValueError, S.Unusable):
+    except ValueError:  # S.Unusable is one
         raise Refused(["sentinel_unreadable"]) from None
     if (judged["verdict"], judged["red"], judged["flaky"]) != (doc["verdict"], doc["red"], doc["flaky"]) \
             or doc["verdict"] != entry["verdict"]:
