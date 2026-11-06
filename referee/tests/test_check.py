@@ -3,16 +3,25 @@
 - the mapped line (asama-0/08) on two real git diffs of one change (``-U0`` and ``-U2``), each line checked
   against the post-image file built by an applier written here, not only against expected numbers; the
   29h cases (shift, inside a hunk, insertion point, deleted line, after pure hunks); renames, deletions,
-  untouched paths; the parser refuses a hunk whose ``+`` start is not the one git writes;
+  untouched paths, a copy (its source does not move), two blocks of one path (unusable); the parser refuses a
+  hunk whose ``+`` start is not the one git writes;
 - criteria 3-8 over the seed's run records (``base.jsonl``, ``cand.jsonl``, ``checks.json``, ``hashes.json``,
   stdin), each reason from its own case and alone where it can be alone: target not found, not
   distinguished (inside a hunk, behind an insertion), nondeterministic base and candidate, scope (removed
   line, inserted line at ``e+1`` and past it, ``b = 0`` hunks, other path, rename, mode, ``fix`` null,
   context ignored), ratchet per tool, zero tests, red tests, red control green, ``merge_paused`` for every
   value but ``false``, a pending sentinel, a secret in the diff, every hash, a forged run and forged checks
-  are not read; the good candidate merges;
+  are not read; a deleted target line is distinguished; the target's rule, path and mapped range each bound
+  ``not_distinguished``; each reason once; each shape rule of the inputs refused on its own case; the good
+  candidate merges;
 - the command line: one JSON line, exit 0 / 1 / 2, ``{"decision": "reject"}`` on unusable input, never a
-  traceback.
+  traceback; a diff's bytes that are not UTF-8 are decided on; each exit 2 is the module's own refusal
+  (``refusal.assert_refused`` with the stderr cause, since decide's refusal line is its fault line by design), and
+  a crash in ``decide`` still prints a reject.
+
+Kept mutants: ``tests/mutants/check.json``. Shown equivalent, so not kept: ``_plain``'s ``startswith("/")`` and
+``not path`` (a leading ``/`` and the empty path both give an empty part), ``scope_violation``'s ``old != path``
+(``gate.diffguard`` gives ``old != new`` only with rename or copy headers, which the headers rule refuses).
 """
 
 from __future__ import annotations
@@ -25,12 +34,18 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from gate import check as C  # noqa: E402
 from gate import diffguard as G  # noqa: E402
+import cli  # noqa: E402
+import refusal  # noqa: E402
+
+CAUSE = r"(?m)^unusable input: "  # gate.check's own refusal on stderr; its decide line equals its fault line
 
 # One change made with git 2.x and printed by ``git diff -U0`` and ``git diff -U2``: line 3 modified, two
 # lines inserted after line 6, lines 12-13 deleted, the last line modified and left without a newline.
@@ -121,13 +136,18 @@ def apply_block(block, source):
     return "".join(t + ("\n" if eol else "") for t, eol in out)
 
 
-def run_cli(*args, stdin=""):
+def run_cli_err(*args, stdin=""):
+    """``(exit, the one JSON line, stderr)``."""
     proc = subprocess.run([sys.executable, "-m", "gate.check", *args], cwd=REFEREE, capture_output=True,
                           text=True, input=stdin, timeout=60)
     lines = proc.stdout.split("\n")
     assert "Traceback" not in proc.stderr, proc.stderr
     assert proc.stdout.count("\n") == 1, proc.stdout
-    return proc.returncode, json.loads(lines[0])
+    return proc.returncode, json.loads(lines[0]), proc.stderr
+
+
+def run_cli(*args, stdin=""):
+    return run_cli_err(*args, stdin=stdin)[:2]
 
 
 def file_diff(path, old, new, n=0, a=None, b=None):
@@ -210,6 +230,19 @@ class MappedLine(unittest.TestCase):
             with self.assertRaises(G.DiffError):
                 mapped(diff, path, line)
 
+    def test_copies_and_two_blocks_of_one_path(self):
+        # a copy leaves its source as it is: the copy's hunks move lines of the new path only
+        copy = ("diff --git a/x.js b/y.js\nsimilarity index 90%\ncopy from x.js\ncopy to y.js\nindex 1..2 100644\n"
+                "--- a/x.js\n+++ b/y.js\n@@ -1,0 +2,2 @@\n+p\n+q\n")
+        self.assertEqual(G.parse(copy)[0]["kind"], "copy")
+        self.assertEqual(mapped(copy, "x.js", 5), [5, 5])
+        # the parser takes two blocks of one path; which hunks move the line is then not known
+        one = "diff --git a/z.js b/z.js\nindex 1..2 100644\n--- a/z.js\n+++ b/z.js\n@@ -1 +1 @@\n-a\n+b\n"
+        self.assertEqual(len(G.parse(one + one)), 2)
+        with self.assertRaises(G.DiffError):
+            mapped(one + one, "z.js", 3)
+        self.assertEqual(mapped(one + one, "w.js", 3), [3, 3])
+
     def test_hunk_starts_are_checked(self):
         for bad in (DIFF_U0.replace("@@ -6,0 +7,2 @@", "@@ -6,0 +500,2 @@"),
                     DIFF_U0.replace("@@ -12,2 +13,0 @@", "@@ -12,2 +14,0 @@"),
@@ -228,12 +261,16 @@ class MappedLine(unittest.TestCase):
                 fh.write(DIFF_U0)
             self.assertEqual(run_cli("map", p, "m.js", "12"), (0, {"mapped": []}))
             for line in ("0", "-1", "x", "01"):
-                self.assertEqual(run_cli("map", p, "m.js", line)[0], 2)
+                argv = ["map", p, "m.js", line]
+                refusal.assert_refused(self, C, argv, *run_cli_err(*argv), cause=CAUSE)
             with open(p, "w") as fh:
                 fh.write(DIFF_U2.replace("+12,4", "+13,4"))
-            code, out = run_cli("map", p, "m.js", "16")
-            self.assertEqual(code, 2)
+            argv = ["map", p, "m.js", "16"]
+            code, out, err = run_cli_err(*argv)
+            refusal.assert_refused(self, C, argv, code, out, err, cause=CAUSE)
             self.assertIn("unusable", out["error"])
+            argv = ["map", os.path.join(d, "none.patch"), "m.js", "1"]  # OSError is the module's refusal
+            refusal.assert_refused(self, C, argv, *run_cli_err(*argv), cause=CAUSE)
 
 
 # ---------------------------------------------------------------- the decision
@@ -289,8 +326,8 @@ class Case:
         out = {"cand": cand, "runs": runs, "base": os.path.join(runs, "base.jsonl"),
                "hashes": os.path.join(d, "hashes.json")}
         with open(os.path.join(cand, "finding.json"), "w") as fh:
-            json.dump(self.finding, fh)
-        with open(os.path.join(cand, "diff.patch"), "w") as fh:
+            fh.write(self.finding if isinstance(self.finding, str) else json.dumps(self.finding))
+        with open(os.path.join(cand, "diff.patch"), "w", encoding="utf-8", errors="surrogateescape") as fh:
             fh.write(self.diff)
         for name, raw in self.files.items():
             if name not in self.missing:
@@ -335,6 +372,21 @@ class Decision(unittest.TestCase):
         c.files["cand.jsonl"] = three(run([v(2), v(4)]))
         self.assertReasons(c, ["not_distinguished"])
         c.files["cand.jsonl"] = three(run([v(2, "other"), v(4)]))  # another rule there does not count
+        self.assertReasons(c, [])
+
+    def test_not_distinguished_needs_rule_path_and_range(self):
+        # a violation of the target's rule on another path, or before the mapped range, does not count
+        for other in (v(2, path="src/b.js"), v(1)):
+            c = Case()
+            c.files["cand.jsonl"] = three(run([other, v(4)]))
+            self.assertReasons(c, [])
+
+    def test_deleting_the_target_line_distinguishes_it(self):
+        # the target line is deleted: it maps to nothing, so no candidate violation is on it
+        c = Case()
+        c.diff = file_diff(PATH, SRC, SRC.replace("var y = 2;\n", ""))
+        self.assertIn("@@ -2 +1,0 @@", c.diff)
+        c.files["cand.jsonl"] = three(run([v(3)]))
         self.assertReasons(c, [])
 
     def test_not_distinguished_inside_the_hunk(self):
@@ -382,6 +434,10 @@ class Decision(unittest.TestCase):
         self.assertReasons(c, ["scope_violation"])
         c.files["base.jsonl"] = three(run([v(2, fix=[2, 3]), v(4)]))
         self.assertReasons(c, [])
+        c = Case()
+        c.diff = file_diff(PATH, SRC, GOOD.replace("const x = 1;\n", ""))  # line s-1 removed
+        self.assertIn("@@ -1,2 +1 @@", c.diff)
+        self.assertReasons(c, ["scope_violation"])
 
     def test_scope_inserted_line(self):
         # p is the base line that comes next: after the fix's last line (e+1) is inside, past it is not
@@ -501,6 +557,9 @@ class Decision(unittest.TestCase):
             self.assertReasons(c, ["artefact_hash_mismatch"])
             c.hashes = dict(c.hash_doc(), **{name: hashlib.sha256(b"").hexdigest()})
             self.assertReasons(c, ["artefact_hash_mismatch"])  # missing is not empty
+        c = Case()
+        c.missing.update(C.RUN_FILES)
+        self.assertReasons(c, ["artefact_hash_mismatch"])  # each reason once, however many files fail
 
     def test_a_file_failing_its_hash_is_not_read(self):
         # forged_candidate_run: the half fix's real run is hashed, a clean run is put in its place
@@ -536,12 +595,27 @@ class Decision(unittest.TestCase):
             ("base.jsonl", three(run([v(2, fix=[3, 2])]))),
             ("base.jsonl", three(run([v(2, fix=[0, 2])]))),
             ("base.jsonl", three(run([v(2, fix=[2])]))),
+            ("base.jsonl", three(run([v(2, fix=[2, 2, 3])]))),
+            ("base.jsonl", three(run([v(2, fix=[True, 2])]))),
+            ("base.jsonl", three(run(["src/a.js:2"]))),
+            ("base.jsonl", three(run([dict(v(2), rule_id=5)]))),
+            ("base.jsonl", three(run([dict(v(2), rule_id="")]))),
             ("base.jsonl", three(run([dict(v(2), path="../a.js")]))),
+            ("base.jsonl", three(run([dict(v(2), path="src\\a.js")]))),
+            ("base.jsonl", three(run([dict(v(2), path="src/./a.js")]))),
+            ("base.jsonl", three(run([dict(v(2), path="src//a.js")]))),
+            ("base.jsonl", three(run([dict(v(2), path="src/")]))),
+            ("base.jsonl", three(run([dict(v(2), path="")]))),
+            ("base.jsonl", three(run([dict(v(2), path=7)]))),
             ("base.jsonl", three(json.dumps({"violations": []}).encode())),
             ("cand.jsonl", three(b'{"tool": "eslint"}')),
             ("checks.json", b'{"tests": []}'),
             ("checks.json", b'{"tests": [{"id": "a", "status": "ok"}], "red_control": "fail"}'),
             ("checks.json", b"[1, 2]"),
+            ("checks.json", b'{"tests": {}, "red_control": "fail"}'),
+            ("checks.json", b'{"tests": ["a"], "red_control": "fail"}'),
+            ("checks.json", b'{"tests": [{"id": 1, "status": "pass"}], "red_control": "fail"}'),
+            ("checks.json", b'{"tests": [{"status": "pass"}], "red_control": "fail"}'),
         ]
         for i, (name, raw) in enumerate(breaks):
             c = Case()
@@ -550,6 +624,12 @@ class Decision(unittest.TestCase):
                 c.decide()
         for i, change in enumerate((lambda c: c.finding.update(path="/etc/x"), lambda c: c.finding.update(line="2"),
                                     lambda c: c.finding.pop("rule_id"),
+                                    lambda c: setattr(c, "finding", [c.finding]),
+                                    lambda c: c.finding.update(rule_id=["no-var"]),
+                                    lambda c: setattr(c, "stdin", [c.stdin]),
+                                    lambda c: setattr(c, "hashes", [c.hash_doc()]),
+                                    lambda c: setattr(c, "hashes", dict(c.hash_doc(), **{"checks.json": c.hash_doc()["checks.json"] + "\n"})),
+                                    lambda c: setattr(c, "hashes", dict(c.hash_doc(), **{"checks.json": c.hash_doc()["checks.json"] + "0"})),
                                     lambda c: setattr(c, "stdin", {"control": {"merge_paused": False}}),
                                     lambda c: setattr(c, "stdin", {"control": False, "unfinished_sentinels": []}),
                                     lambda c: c.stdin.update(unfinished_sentinels=[1]),
@@ -580,16 +660,46 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(self.cli(c), (1, {"decision": "reject", "reasons": ["artefact_hash_mismatch"]}))
         c.hashes = dict(c.hash_doc(), **{"cand.jsonl": hashlib.sha256(b"").hexdigest()})
         self.assertEqual(self.cli(c), (1, {"decision": "reject", "reasons": ["artefact_hash_mismatch"]}))
-        self.assertEqual(self.cli(Case(), stdin="{"), (2, {"decision": "reject"}))
+        self.assertRefused(Case(), stdin="{")
         c = Case()
         c.files["checks.json"] = b"{}"
-        self.assertEqual(self.cli(c), (2, {"decision": "reject"}))
+        self.assertRefused(c)
         c = Case()
         c.diff = "not a diff\n"
-        self.assertEqual(self.cli(c), (2, {"decision": "reject"}))
-        self.assertEqual(run_cli("decide", "/nonexistent", "x", "y", "z", stdin="{}"), (2, {"decision": "reject"}))
-        self.assertEqual(run_cli("decide", "x")[0], 2)
-        self.assertEqual(run_cli("push")[0], 2)
+        self.assertRefused(c)
+        c = Case()
+        c.finding = "{"  # finding.json is not JSON: cli.load's ValueError
+        self.assertRefused(c)
+        for argv in (["decide", "/nonexistent", "x", "y", "z"], ["decide", "x"], ["push"]):
+            code, out, err = run_cli_err(*argv, stdin="{}")
+            refusal.assert_refused(self, C, argv, code, out, err, cause=CAUSE)
+            self.assertEqual(out, {"decision": "reject"} if argv[0] == "decide" else out)
+
+    def test_diff_bytes_that_are_not_utf8(self):
+        # a base file in Latin-1: the diff carries its bytes as they are, and the gate still decides
+        src = SRC.replace("const x = 1;", "const x = 1; // caf\udce9")
+        c = Case()
+        c.diff = file_diff(PATH, src, src.replace("var y", "let y"), n=1)
+        self.assertIn("caf\udce9", c.diff)
+        self.assertEqual(self.cli(c), (0, {"decision": "merge", "reasons": []}))
+
+    def test_a_crash_in_decide_still_rejects(self):
+        # an exception the module did not expect reaches cli.run, whose line for decide is a reject
+        for argv, line in ((["decide", "a", "b", "c", "d"], {"decision": "reject"}), (["map"], cli.GENERIC_LINE)):
+            out, err = StringIO(), StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                code = cli.run(lambda _argv: 1 // 0, argv, C.FAULT_LINE)
+            self.assertEqual((code, json.loads(out.getvalue())), (2, line))
+            with self.assertRaises(AssertionError):  # and the refusal check tells it from a refusal
+                refusal.assert_refused(self, C, argv, code, json.loads(out.getvalue()), err.getvalue(), cause=CAUSE)
+
+    def assertRefused(self, case, stdin=None):
+        with tempfile.TemporaryDirectory() as d:
+            p = case.write(d)
+            argv = ["decide", p["cand"], p["base"], p["runs"], p["hashes"]]
+            code, out, err = run_cli_err(*argv, stdin=json.dumps(case.stdin) if stdin is None else stdin)
+        refusal.assert_refused(self, C, argv, code, out, err, cause=CAUSE)
+        self.assertEqual(out, {"decision": "reject"})
 
 
 if __name__ == "__main__":
