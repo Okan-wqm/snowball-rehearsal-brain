@@ -30,6 +30,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from runner import contained  # noqa: E402
+import refusal  # noqa: E402
 from fake_docker import FakeDocker, FixedRunner  # noqa: E402
 
 PROBE = os.path.join(REFEREE, "tests", "fixtures", "probe.py")
@@ -267,14 +268,13 @@ class ArgvTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, os.path.dirname(run_file), True)
         with open(run_file, "w") as fh:
             fh.write(deep)
-        cases = ((["check"], deep, 2), (["argv"], deep, 2), (["run", run_file], "", 2), (["check"], "not json", 2),
-                 (["run", run_file + ".missing"], "", 2), (["argv"], "[1]", 2))
-        for args, stdin, code in cases:
+        cases = ((["check"], deep), (["argv"], deep), (["run", run_file], ""), (["check"], "not json"),
+                 (["run", run_file + ".missing"], ""), (["argv"], "[1]"))
+        for args, stdin in cases:
             p = subprocess.run([sys.executable, "-m", "runner.contained", *args], cwd=REFEREE, input=stdin,
                                capture_output=True, text=True, timeout=60)
-            self.assertNotIn("Traceback", p.stderr, args)
-            self.assertEqual(p.returncode, code, (args, p.stdout))
             line = json.loads(p.stdout.splitlines()[-1])
+            refusal.assert_refused(self, contained, args, p.returncode, line, p.stderr)
             if args == ["argv"]:  # tohum/29f: {"ok": false} with a free reason
                 self.assertIs(line["ok"], False, args)
                 self.assertIsInstance(line["reason"], str, args)

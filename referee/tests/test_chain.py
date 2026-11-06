@@ -22,8 +22,8 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BRAIN = os.path.dirname(REFEREE)
 sys.path.insert(0, REFEREE)
 
-import cli  # noqa: E402
 from ledger import chain  # noqa: E402
+import refusal  # noqa: E402
 Z = "0" * 64
 
 V1 = {"row_id": "r1", "ts": "2026-10-28T00:00:00Z", "part": "events", "kind": "genesis", "payload": {},
@@ -101,10 +101,8 @@ class HashCommand(unittest.TestCase):
 
     def refused(self, text: bytes) -> None:
         code, out, err = run_chain(["hash"], stdin=text)
-        self.assertEqual(code, 2, out)
+        refusal.assert_refused(self, chain, ["hash"], code, out, err)
         self.assertIn("error", out)
-        self.assertNotEqual(out, cli.GENERIC_LINE, "an exception the module did not expect, not a refusal")
-        self.assertNotIn(b"Traceback", err)
 
     def test_v1_v2(self):
         self.assertEqual(self.hash_of(json.dumps(V1).encode() + b"\n"), V1_HASH)

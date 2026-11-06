@@ -1,4 +1,4 @@
-"""Test 23 (asama-0/09) and group ``diffguard`` (tohum/29g): ``gate.diffguard``.
+"""Test 23 (asama-0/09) and group ``diffguard`` (tohum/29k): ``gate.diffguard``.
 
 - every reason of asama-0/08 criterion 1, each with its clean counterpart: symlink and submodule by git
   mode (never by content), ``..`` and absolute paths, the profile's security and excluded paths, agent
@@ -6,7 +6,11 @@
   paths outside the unit's ``inputs``; every reason of a path is written, not only the first;
 - which paths a block changes: B, A on deletion, both on rename, B on copy;
 - the parser fails closed on anything ``git apply`` could read as a change the guard did not see;
-- the command line: one JSON line, exit 0 / 1 / 2, stdin not read, never a traceback.
+- the command line: one JSON line, exit 0 / 1 / 2, stdin not read, never a traceback; an exit 2 is the
+  module's own refusal, not ``cli.run``'s fault line (``refusal.assert_refused``).
+
+The name lists are written here as tohum/29k and the measured rows state them, not read from the module: a
+test that iterates the module's own table cannot see an entry dropped from it.
 
 Diff texts below are ``git diff --cached --binary -M`` output (git 2.x) or edited copies of it.
 """
@@ -24,10 +28,18 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from gate import diffguard as G  # noqa: E402
+import refusal  # noqa: E402
 from profile import unit_verify as U  # noqa: E402
 
 PROFILE = {"security_paths": ["pkg/ledger"], "excluded_dirs": ["pkg/vendored/"]}
 RECIPE = {"unit_id": "pkg", "path": "pkg", "inputs": ["pkg/", "lib/shared.js"]}
+
+# tohum/29k's lists, as written there.
+SEED_CONFIG = (".eslintrc", ".eslintrc.json", ".eslintrc.js", ".eslintrc.cjs", ".eslintrc.yml", ".eslintrc.yaml",
+               "eslint.config.js", "eslint.config.mjs", "eslint.config.cjs", "tsconfig.json", "jest.config.js",
+               "jest.config.ts", "vitest.config.js", "vitest.config.ts", ".prettierrc", ".prettierrc.json",
+               "biome.json")
+SEED_LOCKS = ("package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml")
 
 REAL_GIT = r'''diff --git a/pkg/a.js b/pkg/a.js
 index de98044..7be73ce 100644
@@ -94,6 +106,9 @@ def new_file(path: str, mode: str, body: str) -> str:
             "@@ -0,0 +1 @@\n+{b}\n\\ No newline at end of file\n").format(p=path, m=mode, b=body)
 
 
+RENAME = "diff --git a/pkg/a b/pkg/b\nsimilarity index 100%\nrename from {a}\nrename to {b}\n"
+
+
 def reasons(diff: str, profile=None, recipe=None) -> list[str]:
     return G.check(diff, PROFILE if profile is None else profile, RECIPE if recipe is None else recipe)
 
@@ -146,17 +161,19 @@ class Reasons(unittest.TestCase):
         self.assertEqual(reasons(edit("pkg/vendoredx.js")), [])
 
     def test_config_manifest_lock_gitattributes(self):
-        for name in sorted(G.CONFIG_NAMES) + ["tsconfig.build.json", "tsconfig..json"]:
+        for name in SEED_CONFIG + ("tsconfig.build.json", "tsconfig..json", "tsconfig.Build.json"):
             self.assertEqual(reasons(edit("pkg/sub/" + name)), ["config:pkg/sub/" + name], name)
         self.assertEqual(reasons(edit(".github/workflows/ci.yml")),
                          ["config:.github/workflows/ci.yml", "outside_inputs:.github/workflows/ci.yml"])
         self.assertEqual(reasons(edit("pkg/.github/notes.md")), [])  # only the root .github/
+        self.assertEqual(reasons(edit(".githubx/a.md")), ["outside_inputs:.githubx/a.md"])  # the directory, not a prefix
         self.assertEqual(reasons(edit("pkg/package.json")), ["manifest:pkg/package.json"])
-        for name in sorted(G.LOCK_NAMES):
+        for name in SEED_LOCKS:
             self.assertEqual(reasons(edit("pkg/" + name)), ["lockfile:pkg/" + name], name)
         self.assertEqual(reasons(edit("pkg/deep/.gitattributes")), ["gitattributes:pkg/deep/.gitattributes"])
         for path in ("pkg/tsconfig.js", "pkg/my-package.json", "pkg/package.json5", "pkg/yarn.lock.md",
-                     "pkg/eslint.config.ts.md", "pkg/Package.json"):
+                     "pkg/eslint.config.ts.md", "pkg/Package.json",
+                     "pkg/TSCONFIG.build.json", "pkg/Biome.json"):
             self.assertEqual(reasons(edit(path)), [], path)
 
     def test_measured_tool_config_manifest_lock(self):
@@ -168,7 +185,10 @@ class Reasons(unittest.TestCase):
                      "vite.config.ts", "vite.canvas.config.ts", "vitest.workspace.ts", "vitest.config.mts",
                      "playwright.config.ts", "playwright.messaging.config.ts", "babel.config.js", ".babelrc",
                      ".swcrc", ".mocharc.yml", ".eslintrc.mjs", "eslint.config.ts", ".prettierrc.yaml",
-                     "prettier.config.cjs", "cypress.config.ts", "karma.config.js"):
+                     "prettier.config.cjs", "cypress.config.ts", "karma.config.js", "rust-toolchain",
+                     "clippy.toml", ".clippy.toml", ".rustfmt.toml", "stylelint.config.mjs", ".stylelintrc.json",
+                     "jest.config.json5", "vitest.config.jsonc", ".prettierrc.toml", "biome.config.cts",
+                     "jest.e2e-ci.config.ts", "mocha.workspace.yaml"):
             self.assertEqual(reasons(edit("pkg/" + name)), ["config:pkg/" + name], name)
         for name in ("Cargo.toml", "pyproject.toml"):
             self.assertEqual(reasons(edit("pkg/" + name)), ["manifest:pkg/" + name], name)
@@ -179,7 +199,8 @@ class Reasons(unittest.TestCase):
         for name in ("app.config.ts", "eslint.project-overrides.mjs", "jest.setup.ts", "vite-env.d.ts",
                      "postcss.config.js", "tailwind.config.js", "webpack.config.js", "jest.config.ts.snap",
                      "myjest.config.ts", "vitest-test-policy.js", "tailwind.config.d.ts", "Jest.config.ts",
-                     "cargo.toml", "project.json.bak"):
+                     "cargo.toml", "project.json.bak", "babelrc", "mocharc.yml", "x.eslintrc", ".eslintrc.md",
+                     "jest.config.py"):
             self.assertEqual(reasons(edit("pkg/" + name)), [], name)
 
     def test_outside_inputs(self):
@@ -228,6 +249,35 @@ class ChangedPaths(unittest.TestCase):
                   "old mode 100644\nnew mode 100755\n")
         self.assertEqual(reasons(quoted), ["agent_config:pkg/ü/.CLAUDE/x"])
 
+    def test_every_quote_escape_git_writes(self):
+        name = r'pkg/\a\b\t\n\v\f\r\"\\\101\303\274'
+        diff = 'diff --git "a/%s" "b/%s"\nold mode 100644\nnew mode 100755\n' % (name, name)
+        self.assertEqual(G.parse(diff)[0]["changed"], ['pkg/\a\b\t\n\v\f\r"\\Aü'])
+
+    def test_one_side_quoted_rename(self):
+        """git quotes each name on its own: a rename to a quoted name leaves the first name bare."""
+        diff = ('diff --git a/pkg/x "b/pkg/\\303\\274"\nsimilarity index 100%\nrename from pkg/x\n'
+                'rename to "pkg/\\303\\274"\n')
+        self.assertEqual(G.parse(diff)[0]["changed"], ["pkg/x", "pkg/ü"])
+
+    def test_empty_line_is_context(self):
+        """An empty line inside a hunk is a context line whose leading space was stripped."""
+        diff = edit("pkg/a.js").replace("@@ -1 +1 @@\n-old\n+new\n", "@@ -1,3 +1,3 @@\n a\n\n-b\n+c\n")
+        self.assertEqual(G.parse(diff)[0]["hunks"][0]["lines"], [[" ", "a", True], [" ", "", True],
+                                                                  ["-", "b", True], ["+", "c", True]])
+
+    def test_block_fields_by_kind(self):
+        fields = ("kind", "old", "new", "modes")
+        gone = "diff --git a/pkg/a b/pkg/a\ndeleted file mode 100644\nindex 1111111..0000000\n"
+        cases = ((edit("pkg/a"), ("modify", "pkg/a", "pkg/a", ["100644"])),
+                 (new_file("pkg/a", "100755", "x"), ("create", None, "pkg/a", ["100755"])),
+                 (gone, ("delete", "pkg/a", None, [])),
+                 (RENAME.format(a="pkg/a", b="pkg/b"), ("rename", "pkg/a", "pkg/b", [])),
+                 (RENAME.format(a="pkg/a", b="pkg/b").replace("rename", "copy"), ("copy", "pkg/a", "pkg/b", [])))
+        for diff, want in cases:
+            block = G.parse(diff)[0]
+            self.assertEqual(tuple(block[f] for f in fields), want, diff)
+
     def test_names_with_spaces(self):
         self.assertEqual(G.parse(REAL_GIT)[5]["changed"], ["pkg/sp ace.js", "pkg/sp ace2.js"])
         spaced = ("diff --git a/pkg/a b/c b/pkg/a b/c\nindex 1111111..2222222 100644\n--- a/pkg/a b/c\t\n"
@@ -263,6 +313,46 @@ class FailsClosed(unittest.TestCase):
         "bad_binary_line": REAL_GIT.replace("KcmZQzVg>*J3IGNG", "Kcm ZQz"),
         "deletion_with_new_mode": ("diff --git a/pkg/a b/pkg/a\ndeleted file mode 100644\nnew mode 120000\n"),
         "unterminated_quote": 'diff --git "a/pkg/a b/pkg/a\nold mode 100644\nnew mode 100755\n',
+        # Names. Each case below is refused by its own rule only: the rest of the block is what git writes.
+        "unterminated_quote_in_rename": RENAME.format(a='"pkg/a', b="pkg/b"),
+        "text_after_quoted_name": RENAME.format(a='"pkg/a"x', b="pkg/b"),
+        "bad_escape": 'diff --git "a/pkg/\\q" "b/pkg/\\q"\nold mode 100644\nnew mode 100755\n',
+        "octal_escape_above_377": 'diff --git "a/pkg/\\477" "b/pkg/\\477"\nold mode 100644\nnew mode 100755\n',
+        "no_space_after_quoted_name": 'diff --git "a/pkg/a"Xb/pkg/a\nold mode 100644\nnew mode 100755\n',
+        "names_split_without_space": "diff --git a/xyb/x\nold mode 100644\nnew mode 100755\n",
+        "empty_names": "diff --git a/ b/\nold mode 100644\nnew mode 100755\n",
+        "tab_after_name_without_space": edit("pkg/a.js").replace("--- a/pkg/a.js", "--- a/pkg/a.js\t"),
+        "rename_empty_name": "diff --git a/ b/pkg/b\nrename from \nrename to pkg/b\n",
+        "rename_and_copy": ("diff --git a/pkg/a b/pkg/b\nrename from pkg/a\nrename to pkg/b\ncopy from pkg/a\n"
+                            "copy to pkg/b\n"),
+        # Extended headers.
+        "bad_index_line": edit("pkg/a.js").replace("index 1111111..2222222", "index zz..yy"),
+        "upper_case_index": edit("pkg/a.js").replace("index 1111111..2222222", "index ABCDEF0..2222222"),
+        "score_without_percent": RENAME.format(a="pkg/a", b="pkg/b").replace("100%", "100"),
+        # '---'/'+++' and hunks.
+        "minus_without_plus": edit("pkg/a.js").replace("+++ b/pkg/a.js", "XXXXb/pkg/a.js"),
+        "sides_without_hunk": "diff --git a/pkg/a b/pkg/a\nindex 1111111..2222222 100644\n--- a/pkg/a\n+++ b/pkg/a\n",
+        "combined_hunk_header": edit("pkg/a.js").replace("@@ -1 +1 @@", "@@@ -1 +1 @@"),
+        "bad_hunk_header": edit("pkg/a.js").replace("@@ -1 +1 @@", "@@ -x +1 @@"),
+        "hunk_header_inside_short_hunk": edit("pkg/a.js").replace(
+            "@@ -1 +1 @@\n-old\n+new\n", "@@ -1,2 +1,2 @@\n-old\n+new\n@@ -5 +5 @@\n-c\n+d\n"),
+        "context_beyond_new_count": edit("pkg/a.js").replace("@@ -1 +1 @@\n-old\n+new\n",
+                                                             "@@ -1,2 +1 @@\n-old\n+new\n same\n"),
+        "two_no_newline_markers": edit("pkg/a.js").replace(
+            "+new\n", "+new\n\\ No newline at end of file\n\\ No newline at end of file\n"),
+        # git apply joins a side's line after its '\ No newline' marker onto the marked line: 'x' and 'y' are
+        # applied as one line 'xy' (git 2.x, measured), so the guard would read lines git does not write.
+        "added_line_after_no_newline": ("diff --git a/pkg/z b/pkg/z\nnew file mode 100644\nindex 0000000..1111111\n"
+                                        "--- /dev/null\n+++ b/pkg/z\n@@ -0,0 +1,2 @@\n+x\n"
+                                        "\\ No newline at end of file\n+y\n"),
+        "removed_line_after_no_newline": edit("pkg/a.js").replace(
+            "@@ -1 +1 @@\n-old\n+new\n", "@@ -1,2 +1 @@\n-a\n\\ No newline at end of file\n-b\n+x\n"),
+        "line_after_context_without_newline": edit("pkg/a.js").replace(
+            "@@ -1 +1 @@\n-old\n+new\n", "@@ -1,2 +1,2 @@\n a\n\\ No newline at end of file\n-b\n+c\n"),
+        "empty_hunk": edit("pkg/a.js").replace("@@ -1 +1 @@\n-old\n+new\n", "@@ -1,0 +1,0 @@\n"),
+        "hunk_at_line_zero": edit("pkg/a.js").replace("@@ -1 +1 @@", "@@ -0,1 +0,1 @@"),
+        "hunk_inside_an_insertion_point": edit("pkg/a.js").replace(
+            "@@ -1 +1 @@\n-old\n+new\n", "@@ -2,0 +3 @@\n+x\n@@ -2 +3 @@\n-b\n+B\n"),
     }
 
     def test_each_case_is_unusable(self):
@@ -273,7 +363,9 @@ class FailsClosed(unittest.TestCase):
 
     def test_unusable_profile_or_recipe(self):
         for profile, recipe in (({"security_paths": []}, RECIPE), ({"excluded_dirs": [], "security_paths": "x"}, RECIPE),
-                                (PROFILE, {"inputs": "pkg/"}), (PROFILE, {"path": "pkg"}), ([], RECIPE)):
+                                (PROFILE, {"inputs": "pkg/"}), (PROFILE, {"path": "pkg"}), ([], RECIPE),
+                                ({"security_paths": [1], "excluded_dirs": []}, RECIPE),
+                                (PROFILE, {"inputs": ["pkg/", None]})):
             with self.assertRaises(G.DiffError):
                 G.check(edit("pkg/a.js"), profile, recipe)
 
@@ -306,20 +398,31 @@ class CommandLine(unittest.TestCase):
         lines = proc.stdout.splitlines()
         self.assertEqual(len(lines), 1, proc.stdout + proc.stderr)
         self.assertNotIn("Traceback", proc.stderr)
+        self.stderr = proc.stderr
         return proc.returncode, json.loads(lines[0])
+
+    def refused(self, diff, profile=PROFILE, recipe=RECIPE, args=None) -> str:
+        """The module's own exit-2 refusal (not cli.run's fault line); its error text."""
+        code, out = self.run_cli(diff, profile, recipe, args)
+        refusal.assert_refused(self, G, args or ["check"], code, out, self.stderr)
+        self.assertEqual(sorted(out), ["error", "ok"])
+        self.assertIs(out["ok"], False)
+        self.assertTrue(out["error"].startswith("unusable input: "), out)
+        return out["error"]
 
     def test_exit_codes_and_output(self):
         self.assertEqual(self.run_cli(edit("pkg/a.js")), (0, {"ok": True, "reasons": []}))
         self.assertEqual(self.run_cli(REAL_GIT), (1, {"ok": False, "reasons": ["submodule:pkg/sub",
                                                                               "symlink:pkg/link"]}))
-        code, out = self.run_cli("not a diff\n")
-        self.assertEqual((code, out["ok"]), (2, False))
-        code, out = self.run_cli(edit("pkg/a.js"), profile="{")
-        self.assertEqual((code, out["ok"]), (2, False))
-        code, out = self.run_cli(edit("pkg/a.js"), args=["check", "/nonexistent/d.patch", "p", "r"])
-        self.assertEqual((code, out["ok"]), (2, False))
-        code, out = self.run_cli(edit("pkg/a.js"), args=["scan"])
-        self.assertEqual((code, out["ok"]), (2, False))
+
+    def test_unusable_inputs_are_refused(self):
+        self.refused("not a diff\n")  # DiffError
+        self.refused(edit("pkg/a.js"), profile="{")  # ValueError: JSON
+        self.refused(edit("pkg/a.js"), args=["check", "/nonexistent/d.patch", "p", "r"])  # OSError
+        deep = {"security_paths": [], "excluded_dirs": [], "x": json.loads("[" * 200 + "]" * 200)}
+        self.assertIn("nested too deeply", self.refused(edit("pkg/a.js"), profile=deep))  # cli.load's depth
+        for args in (["scan"], ["check"], ["check", "d", "p", "r", "extra"], ["scan", "d", "p", "r"]):
+            self.assertIn("usage:", self.refused(edit("pkg/a.js"), args=args), args)
 
     def test_non_utf8_hunk_content_is_usable(self):
         diff = edit("pkg/a.js").encode("utf-8").replace(b"+new", b"+n\xff\xfe")
