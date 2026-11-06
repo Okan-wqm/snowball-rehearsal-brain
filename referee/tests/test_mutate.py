@@ -280,6 +280,205 @@ class Runner(unittest.TestCase):
                 self.assertEqual([m["root"] for m in mutate.load(path)], [root, root])
 
 
+# Discovery's world: each test file kills a mutant of add (or not) in one way the collector tells apart.
+SLOW_KILL = ("import time\n" + TEST.replace("    def test_add(self):\n",
+                                           "    def test_add(self):\n        time.sleep(1.5)\n"))
+SUBTESTS = TEST.replace("        self.assertEqual(mod.add(2, 3), 5)\n",
+                        "        for b in (3, 4):\n            with self.subTest(b=b):\n"
+                        "                self.assertEqual(mod.add(2, b), 2 + b)\n")
+EXPECTED = TEST.replace("    def test_add(self):\n",
+                        "    @unittest.expectedFailure\n    def test_add(self):\n"
+                        "        assert mod.add(2, 4) == 7\n\n"
+                        "    def test_sum(self):\n")
+FIXTURE = TEST.replace("class T(unittest.TestCase):\n",
+                       "class T(unittest.TestCase):\n    @classmethod\n    def setUpClass(cls):\n"
+                       "        assert mod.add(2, 3) == 5\n\n").replace("mod.add(2, 3), 5", "1, 1")
+TEARDOWN = FIXTURE.replace("setUpClass", "tearDownClass")  # its test runs and passes, then the fixture fails
+
+
+class Discover(unittest.TestCase):
+    """``--discover``: which tests kill each candidate, and the kept file written from them."""
+
+    def setUp(self):
+        self.brain = tempfile.mkdtemp(prefix="t-mutate-")
+        self.addCleanup(shutil.rmtree, self.brain, ignore_errors=True)
+        write_tree(self.brain, {"referee/mod.py": MOD, "referee/tests/test_mod.py": TEST,
+                                "referee/tests/test_ids.py": IDS, "referee/tests/helper.py": "VALUE = 5\n",
+                                "referee/tests/test_slowkill.py": SLOW_KILL, "referee/tests/test_red.py": RED,
+                                "referee/tests/test_sub.py": SUBTESTS, "referee/tests/test_expected.py": EXPECTED,
+                                "referee/tests/test_fixture.py": FIXTURE,
+                                "referee/tests/test_teardown.py": TEARDOWN, "referee/tests/deep/__init__.py": "",
+                                "referee/tests/deep/test_deep.py": TEST})
+        self.out = os.path.join(self.brain, "kept.json")
+
+    def discover(self, mutants: list[dict], root: str | None = None, **kw) -> dict[str, dict]:
+        path = os.path.join(self.brain, "c.json")
+        with open(path, "w") as fh:
+            json.dump({"mutants": mutants} | ({"root": root} if root else {}), fh)
+        rows = mutate.discover(self.brain, path, self.out, 4, kw.pop("timeout", 120.0), **kw)
+        self.assertEqual([r["id"] for r in rows], [m["id"] for m in mutants])  # candidate order
+        return {r["id"]: r for r in rows}
+
+    def kept(self) -> dict:
+        with open(self.out) as fh:
+            return json.load(fh)
+
+    def test_the_killers_are_the_failed_tests_of_every_entry_and_the_fastest_is_kept(self):
+        tests = ["test_slowkill.py", "test_ids.py", "test_mod.T", "test_mod.py"]  # a test found twice is one killer
+        got = self.discover([mutant("k", "return a + b", "return a - b", tests)])["k"]
+        self.assertEqual((got["outcome"], got["killers"], got["timeouts"]),
+                         ("killed", ["test_slowkill.T.test_add", "test_ids.T.test_add", "test_mod.T.test_add"], []))
+        self.assertIn(got["tests"], (["test_ids.T.test_add"], ["test_mod.T.test_add"]))  # not the slow one
+        self.assertEqual(self.kept(), {"mutants": [mutant("k", "return a + b", "return a - b", got["tests"])]})
+
+    def test_keep_takes_that_many_by_baseline_seconds(self):
+        got = self.discover([mutant("k", "return a + b", "return a - b", ["test_slowkill.py", "test_mod.py"])],
+                            keep=2)["k"]
+        self.assertEqual(got["tests"], ["test_mod.T.test_add", "test_slowkill.T.test_add"])
+        self.assertEqual(self.kept()["mutants"][0]["tests"], got["tests"])
+
+    def test_choose(self):
+        seconds = {"b": 1.0, "a": 1.0, "c": 0.5}
+        self.assertEqual(mutate.choose(["x", "b", "a", "c"], seconds, 3), ["c", "a", "b"])
+        self.assertEqual(mutate.choose(["x", "b"], seconds, 2), ["b", "x"])  # no baseline time: last
+        self.assertEqual(mutate.choose(["x", "b", "a"], seconds, 1), ["a"])
+
+    def test_a_failure_not_a_tests_own_makes_the_entry_its_own_killer(self):
+        broken = "return a +"  # mod no longer imports
+        write_tree(self.brain, {  # the tests pass; the process then exits 3, or it exits 0 before the record
+            "referee/tests/test_atexit.py": TEST.replace("import mod\n", "import mod, atexit\natexit.register("
+                                                         "lambda: mod.add(1, 2) != 3 and os._exit(3))\n"),
+            "referee/tests/test_exit0.py": TEST.replace("        self.assertEqual(mod.add(2, 3), 5)\n",
+                                                        "        if mod.add(2, 3) != 5:\n            os._exit(0)\n")})
+        got = self.discover([
+            mutant("import_by_pattern", "return a + b", broken, ["test_mod.py"]),
+            mutant("import_by_id", "return a + b", broken, ["test_ids.T.test_add"]),
+            mutant("class_fixture", "return a + b", "return a - b", ["test_fixture.py"]),
+            mutant("class_fixture_after_its_tests", "return a + b", "return a - b", ["test_teardown.py"]),
+            mutant("id_not_an_entry", "return a + b", "return a - b", ["test_deep.py"]),
+            mutant("no_test_run", "return a + b", "return a - b", ["test_ids.U", "test_none*.py"]),
+            mutant("exit_after_record", "return a + b", "return a + b if a > 1 else 0", ["test_atexit.py"]),
+            mutant("exit_zero_without_record", "return a + b", "return a * b", ["test_exit0.py"]),
+        ])
+        self.assertEqual({k: (r["outcome"], r["killers"]) for k, r in got.items()},
+                         {"import_by_pattern": ("killed", ["test_mod.py"]),
+                          "import_by_id": ("killed", ["test_ids.T.test_add"]),
+                          "class_fixture": ("killed", ["test_fixture.py"]),
+                          "class_fixture_after_its_tests": ("killed", ["test_teardown.py"]),
+                          "id_not_an_entry": ("killed", ["test_deep.py"]),
+                          "no_test_run": ("baseline_red", []),
+                          "exit_after_record": ("killed", ["test_atexit.py"]),
+                          "exit_zero_without_record": ("killed", ["test_exit0.py"])})
+
+    def test_a_subtest_failure_is_its_tests_and_an_unexpected_success_is_a_failure(self):
+        got = self.discover([mutant("sub", "return a + b", "return a + b if b == 3 else 0", ["test_sub.py"]),
+                             mutant("unexpected", "return a + b", "return a + b + (b == 4)", ["test_expected.py"])])
+        self.assertEqual((got["sub"]["killers"], got["unexpected"]["killers"]),
+                         (["test_sub.T.test_add"], ["test_expected.T.test_add"]))
+
+    def test_survivors_and_unrun_candidates_are_reported_not_kept(self):
+        got = self.discover([
+            mutant("survived", "return a + a", "return 2 * a", ["test_mod.py", "test_ids.py"]),
+            mutant("stale", "return a * b", "return a"),
+            mutant("ambiguous", "return a + ", "return 1 + "),
+            mutant("baseline_red", "return a + b", "return a - b", ["test_mod.py", "test_red.py"]),
+            mutant("killed", "return a + b", "return a - b"),
+        ])
+        self.assertEqual({k: (r["outcome"], r["killers"], r["tests"]) for k, r in got.items()},
+                         {"survived": ("survived", [], []), "stale": ("stale", [], []),
+                          "ambiguous": ("ambiguous", [], []), "baseline_red": ("baseline_red", [], []),
+                          "killed": ("killed", ["test_mod.T.test_add"], ["test_mod.T.test_add"])})
+        self.assertEqual([m["id"] for m in self.kept()["mutants"]], ["killed"])
+
+    def test_a_baseline_over_the_limit_is_baseline_red(self):
+        write_tree(self.brain, {"referee/tests/test_slow.py": SLOW})
+        got = self.discover([mutant("slow", "return a + b", "return a - b", ["test_mod.py", "test_slow.py"])],
+                            timeout=2.0)
+        self.assertEqual(got["slow"]["outcome"], "baseline_red")
+
+    def test_an_existing_kept_file_is_not_overwritten(self):
+        with open(self.out, "w") as fh:
+            fh.write("keep me")
+        with self.assertRaises(FileExistsError):
+            self.discover([mutant("k", "return a + b", "return a - b")])
+        with open(self.out) as fh:
+            self.assertEqual(fh.read(), "keep me")
+
+    def test_nothing_killed_writes_nothing(self):
+        self.discover([mutant("survived", "return a + a", "return 2 * a")])
+        self.assertFalse(os.path.exists(self.out))
+
+    def test_an_entry_over_its_limit_is_a_timeout_and_the_others_still_run(self):
+        hang = "import mod, time\nif mod.add(2, 3) != 5:\n    time.sleep(30)\n"
+        write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + hang)})
+        got = self.discover([mutant("hang_then_kill", "return a + b", "return a - b",
+                                    ["test_hang.py", "test_mod.py"]),
+                             mutant("hang_only", "return a + b", "return a * b", ["test_hang.py"])],
+                            timeout=60.0, floor=3.0)
+        self.assertEqual({k: (r["outcome"], r["killers"], r["timeouts"]) for k, r in got.items()},
+                         {"hang_then_kill": ("killed", ["test_mod.T.test_add"], ["test_hang.py"]),
+                          "hang_only": ("timeout", [], ["test_hang.py"])})
+
+    def test_the_kept_file_keeps_its_root_and_is_killed_in_the_normal_mode(self):
+        write_tree(self.brain, {"tests/test_root.py": TEST.replace("import mod\n",
+                                                                   "sys.path.insert(0, 'referee')\nimport mod\n")})
+        m = mutant("k", "return a + b", "return a - b", ["test_root.py"], file="referee/mod.py")
+        got = self.discover([m], root=".")["k"]
+        self.assertEqual(self.kept(), {"root": ".", "mutants": [m | {"tests": ["test_root.T.test_add"]}]})
+        self.assertEqual([r["outcome"] for r in mutate.run(self.brain, [self.out], 2, 120.0)], ["killed"])
+        self.assertEqual(got["tests"], ["test_root.T.test_add"])
+        with open(os.path.join(self.brain, "referee", "mod.py")) as fh:
+            self.assertEqual(fh.read(), MOD)  # the brain is only read
+
+    def test_the_command_line(self):
+        path = os.path.join(self.brain, "c.json")
+        with open(path, "w") as fh:
+            json.dump({"mutants": [mutant("k", "return a + b", "return a - b"),
+                                   mutant("s", "return a + a", "return 2 * a")]}, fh)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = mutate.main(["--brain", self.brain, "-j", "2", "--discover", "--out", self.out, path])
+        *rows, total = [json.loads(line) for line in out.getvalue().splitlines()]
+        self.assertEqual((code, total), (1, {"ok": False, "files": 1, "mutants": 2,
+                                             "outcomes": {"killed": 1, "survived": 1}}))
+        self.assertEqual(sorted(r["id"] for r in rows), ["k", "s"])
+        self.assertEqual([m["id"] for m in self.kept()["mutants"]], ["k"])
+        os.unlink(self.out)
+        with open(path, "w") as fh:
+            json.dump({"mutants": [mutant("k", "return a + b", "return a - b")]}, fh)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(mutate.main(["--brain", self.brain, "--discover", "--out", self.out, path]), 0)
+
+    def test_the_command_line_refuses(self):
+        path = os.path.join(self.brain, "c.json")
+        with open(path, "w") as fh:
+            json.dump({"mutants": [mutant("k", "return a + b", "return a - b")]}, fh)
+        with open(os.path.join(self.brain, "there.json"), "w") as fh:
+            fh.write("keep me")
+        there = os.path.join(self.brain, "there.json")
+        for label, argv in (("no --out", ["--discover", path]), ("--out alone", ["--out", self.out, path]),
+                            ("two files", ["--discover", "--out", self.out, path, path]),
+                            ("no file", ["--discover", "--out", self.out]),
+                            ("with --touched", ["--discover", "--out", self.out, "--touched", "HEAD", path]),
+                            ("keep 0", ["--discover", "--out", self.out, "--keep", "0", path]),
+                            ("out exists", ["--discover", "--out", there, path])):
+            with self.subTest(label=label), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    mutate.main(["--brain", self.brain, *argv])
+                self.assertEqual(raised.exception.code, 2)
+        self.assertFalse(os.path.exists(self.out))
+        with open(there) as fh:
+            self.assertEqual(fh.read(), "keep me")
+
+    def test_each_row_is_emitted_as_its_candidate_finishes(self):
+        emitted = []
+        self.discover([mutant("k", "return a + b", "return a - b", ["test_slowkill.py"]),
+                       mutant("s", "return a + a", "return 2 * a")], emit=emitted.append)
+        self.assertEqual([r["id"] for r in emitted], ["s", "k"])
+        self.assertEqual(emitted[0], {"file": "c.json", "id": "s", "outcome": "survived", "killers": [],
+                                      "timeouts": [], "tests": []})
+
+
 class Select(unittest.TestCase):
     """``--touched``'s rule: which mutants a set of changed paths selects, on a small brain made here."""
 
