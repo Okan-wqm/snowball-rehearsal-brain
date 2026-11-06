@@ -221,10 +221,13 @@ def _fingerprint(text: str) -> str:
 
 
 def _close_quote(text: str, start: int) -> int:
-    """Index of the quote closing the one at ``start`` (a backslash escapes it), or -1."""
+    """Index of the quote closing the one at ``start``, or -1. A backslash escapes the character after it
+    in every quote kind, single quotes included (Python, JavaScript, PHP and Ruby read \\' so). A shell's
+    'abc\\' closes at that quote instead; read here, its quote closes at a later quote or never (then the
+    value is read as an open quote, up to that same quote), so the value read starts with the shell's."""
     q, i = text[start], start + 1
     while i < len(text):
-        if text[i] == "\\" and q != "'":
+        if text[i] == "\\":
             i += 2
             continue
         if text[i] == q:
