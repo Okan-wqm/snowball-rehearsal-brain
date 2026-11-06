@@ -57,6 +57,24 @@ a test reaches without an import statement (opened by path, run as a subprocess,
 imports of a file that does not parse (it is selected by its own path, it reaches nothing further). Before a push
 that changes such a file, run the full set.
 
+``--discover --out KEPT`` (one candidates file, not with ``--touched``) finds which tests kill each candidate,
+so a mutant job writes only candidates. A candidates file is a mutant file (same fields and rules); each
+candidate's ``tests`` is the search space. Each entry runs (as above, in the same directory and with the same
+imports) under a collector that records every test that fails or errs (a subtest's failure is its test's; an
+unexpected success is a failure) and each test's seconds. An entry kills as a whole when its run fails other than
+by a test of its own (a module that does not import, a class or module fixture, no test run, a non-zero exit with
+no record, a test id that is not a ``tests`` entry), and is then its own killer. Every entry runs, so the killers
+are all the search space has; an entry over its limit is listed in ``timeouts`` and gives no killer. A candidate
+is ``killed`` when it has a killer, else ``timeout`` when an entry timed out, else ``survived``; ``stale``,
+``ambiguous`` and ``baseline_red`` as above, the baseline being the same collector on an unchanged copy (green:
+no test failed, no other failure, a test ran). Each row is ``{file, id, outcome, killers, timeouts, tests}``;
+``tests`` the ``--keep`` (default 1) killers that took the fewest seconds in the baseline (an entry killer its
+entry's seconds), ties by name. KEPT, refused when it exists, is written once every row is in: the candidates
+file's ``root`` and its killed candidates with ``tests`` replaced by their chosen killers, in candidate order; it is
+not written when none is killed. Then the summary line and exit as above. A survivor is not in KEPT: a person says
+whether it is equivalent or writes the test that kills it. The killers are one run's evidence; run KEPT in the
+normal mode to keep it.
+
 Out of scope, stated: tests outside the ``tests/`` of a root in ``ROOTS``, mutants that are not one
 textual replacement, and equivalent mutants (a ``survived`` mutant may be one: the runner says it survived,
 a person says why).
@@ -135,11 +153,29 @@ def applicable(brain: str, mutant: dict[str, Any]) -> str | None:
     return None if count == 1 else ("stale" if count == 0 else "ambiguous")
 
 
-def _copy(brain: str) -> str:
+def _copy(brain: str, mutant: dict[str, Any] | None = None) -> str:
+    """A copy of the brain in a new temporary directory, with ``mutant`` applied when given."""
     work = tempfile.mkdtemp(prefix="mutate-")
     copy = os.path.join(work, "brain")
     shutil.copytree(brain, copy, symlinks=True, ignore=shutil.ignore_patterns("__pycache__"))
+    if mutant:
+        path = os.path.join(copy, mutant["root"], mutant["file"])
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text.replace(mutant["old"], mutant["new"]))
     return copy
+
+
+def _emitter(emit: Callable[[Any], None] | None) -> Callable[[Any], None]:
+    """``emit`` called one thread at a time; nothing when ``emit`` is ``None``."""
+    lock = threading.Lock()
+
+    def send(row: Any) -> None:
+        if emit:
+            with lock:
+                emit(row)
+    return send
 
 
 def _run_tests(copy: str, root: str, tests: list[str], limits: list[float]) -> tuple[str, list[float]]:
@@ -181,13 +217,8 @@ def run_one(brain: str, mutant: dict[str, Any], limit: list[float]) -> str:
     reason = applicable(brain, mutant)
     if reason:
         return reason
-    copy = _copy(brain)
+    copy = _copy(brain, mutant)
     try:
-        path = os.path.join(copy, mutant["root"], mutant["file"])
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(text.replace(mutant["old"], mutant["new"]))
         verdict, _ = _run_tests(copy, mutant["root"], mutant["tests"], limit)
     finally:
         shutil.rmtree(os.path.dirname(copy), ignore_errors=True)
@@ -265,8 +296,7 @@ def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[st
     suites = sorted({(m["root"], tuple(m["tests"])) for _, m in mutants if not applicable(brain, m)})
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
         base = dict(zip(suites, pool.map(lambda s: baseline(brain, s[0], list(s[1]), timeout), suites)))
-
-        lock = threading.Lock()
+        send = _emitter(emit)
 
         def one(item: tuple[str, dict[str, Any]]) -> dict[str, str]:
             path, m = item
@@ -276,12 +306,143 @@ def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[st
                 outcome = ("baseline_red" if verdict != "green"
                            else run_one(brain, m, limits(seconds, timeout, factor, floor)))
             row = {"file": os.path.relpath(path, brain), "id": m["id"], "outcome": outcome}
-            if emit:
-                with lock:
-                    emit(row)
+            send(row)
             return row
 
         return list(pool.map(one, mutants))
+
+
+# Discovery's run of one entry (module docstring): argv entry, record path. The record: the ids of the tests that
+# failed or erred, whether a failure was not a test's own, the tests run, each test's seconds.
+COLLECT = r"""
+import io, json, os, sys, time, unittest
+entry, record = sys.argv[1], sys.argv[2]
+loader = unittest.TestLoader()
+if entry.endswith(".py"):
+    suite = loader.discover("tests", pattern=entry)
+else:
+    sys.path.insert(0, os.path.join(os.getcwd(), "tests"))
+    suite = loader.loadTestsFromName(entry)
+
+
+class Result(unittest.TextTestResult):
+    seconds = {}
+
+    def startTest(self, test):
+        self.started = time.monotonic()
+        super().startTest(test)
+
+    def stopTest(self, test):
+        super().stopTest(test)
+        self.seconds[test.id()] = time.monotonic() - self.started
+
+
+result = unittest.TextTestRunner(stream=io.StringIO(), resultclass=Result).run(suite)
+failed, other = set(), False
+for test in [t for t, _ in result.failures + result.errors] + list(result.unexpectedSuccesses):
+    test = test.test_case if isinstance(test, unittest.case._SubTest) else test
+    if isinstance(test, unittest.TestCase) and type(test).__module__ != "unittest.loader":
+        failed.add(test.id())
+    else:
+        other = True
+with open(record, "w") as fh:
+    json.dump({"failed": sorted(failed), "other": other, "ran": result.testsRun, "seconds": result.seconds}, fh)
+"""
+
+
+def _collect(copy: str, root: str, entry: str, limit: float) -> tuple[dict[str, Any] | None, float]:
+    """``(record, seconds)`` of one entry run under ``COLLECT`` in the copy's ``<root>/``: the record ``None`` when
+    the entry timed out, ``{killers, seconds}`` otherwise; ``killers`` the entry itself when it failed other than
+    by a test of its own (module docstring), else the ids of its failed tests."""
+    fd, path = tempfile.mkstemp(prefix="mutate-record-", suffix=".json")
+    os.close(fd)
+    start = time.monotonic()
+    try:
+        try:
+            done = subprocess.run([sys.executable, "-c", COLLECT, entry, path], cwd=os.path.join(copy, root),
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=limit)
+        except subprocess.TimeoutExpired:
+            return None, time.monotonic() - start
+        took = time.monotonic() - start
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    finally:
+        os.unlink(path)
+    rec = json.loads(text) if text else None
+    if (done.returncode != 0 or rec is None or rec["other"] or not rec["ran"]
+            or not all(_entry(t) and not t.endswith(".py") for t in rec["failed"])):
+        return {"killers": [entry], "seconds": rec["seconds"] if rec else {}}, took
+    return {"killers": rec["failed"], "seconds": rec["seconds"]}, took
+
+
+def _search(brain: str, root: str, tests: list[str], limit: list[float],
+            mutant: dict[str, Any] | None = None) -> tuple[list[str], list[str], dict[str, float]]:
+    """``(killers, timeouts, seconds)`` of every entry run in a copy of the brain, with ``mutant`` applied when
+    given; ``seconds`` each test's and each entry's (by its name)."""
+    copy = _copy(brain, mutant)
+    killers: list[str] = []
+    timeouts: list[str] = []
+    seconds: dict[str, float] = {}
+    try:
+        for entry, cap in zip(tests, limit, strict=True):
+            rec, took = _collect(copy, root, entry, cap)
+            seconds[entry] = took
+            if rec is None:
+                timeouts.append(entry)
+                continue
+            seconds.update(rec["seconds"])
+            killers += [k for k in rec["killers"] if k not in killers]
+    finally:
+        shutil.rmtree(os.path.dirname(copy), ignore_errors=True)
+    return killers, timeouts, seconds
+
+
+def choose(killers: list[str], seconds: dict[str, float], keep: int) -> list[str]:
+    """The ``keep`` killers that took the fewest baseline seconds, ties by name (a killer with no baseline time
+    last)."""
+    return sorted(killers, key=lambda k: (seconds.get(k, float("inf")), k))[:keep]
+
+
+def discover(brain: str, path: str, out: str, jobs: int, timeout: float, keep: int = 1,
+             emit: Callable[[dict[str, Any]], None] | None = None, factor: float = 5.0,
+             floor: float = 60.0) -> list[dict[str, Any]]:
+    """One row per candidate of the file at ``path``, in candidate order (module docstring, ``--discover``);
+    writes ``out`` when a candidate is killed; ``emit`` as ``run``'s."""
+    candidates = load(path)
+    suites = sorted({(m["root"], tuple(m["tests"])) for m in candidates if not applicable(brain, m)})
+
+    def base_of(suite: tuple[str, tuple[str, ...]]) -> tuple[bool, list[float], dict[str, float]]:
+        killers, timeouts, seconds = _search(brain, suite[0], list(suite[1]), [timeout] * len(suite[1]))
+        return not (killers or timeouts), [seconds[e] for e in suite[1]], seconds
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+        base = dict(zip(suites, pool.map(base_of, suites)))
+        send = _emitter(emit)
+
+        def one(m: dict[str, Any]) -> dict[str, Any]:
+            row: dict[str, Any] = {"file": os.path.relpath(path, brain), "id": m["id"], "outcome": applicable(brain, m),
+                                   "killers": [], "timeouts": [], "tests": []}
+            if not row["outcome"]:
+                green, entry_seconds, seconds = base[(m["root"], tuple(m["tests"]))]
+                if not green:
+                    row["outcome"] = "baseline_red"
+                else:
+                    killers, timeouts, _ = _search(brain, m["root"], m["tests"],
+                                                   limits(entry_seconds, timeout, factor, floor), m)
+                    row.update(killers=killers, timeouts=timeouts, tests=choose(killers, seconds, keep),
+                               outcome="killed" if killers else "timeout" if timeouts else "survived")
+            send(row)
+            return row
+
+        rows = list(pool.map(one, candidates))
+    kept = [{k: m[k] for k in FIELDS} | {"tests": r["tests"]} for m, r in zip(candidates, rows)
+            if r["outcome"] == "killed"]
+    if kept:
+        with open(out, "x", encoding="utf-8") as fh:
+            json.dump(({"root": candidates[0]["root"]} if candidates[0]["root"] != "referee" else {})
+                      | {"mutants": kept}, fh, indent=1, ensure_ascii=False)
+            fh.write("\n")
+    return rows
 
 
 def summary(files: list[str], rows: list[dict[str, str]]) -> dict[str, Any]:
@@ -303,10 +464,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--factor", type=float, default=5.0, help="a mutant's limit in baseline durations")
     parser.add_argument("--floor", type=float, default=60.0, help="a mutant's least limit in seconds")
     parser.add_argument("--touched", metavar="REV", help="only the mutants a change since REV can concern")
+    parser.add_argument("--discover", action="store_true", help="find each candidate's killing tests, write --out")
+    parser.add_argument("--out", help="with --discover: the kept mutant file to write (refused when it exists)")
+    parser.add_argument("--keep", type=int, default=1, help="with --discover: killers kept per mutant")
     args = parser.parse_args(argv)
     if not (args.timeout > 0 and args.factor > 0 and args.floor >= 0):
         parser.error("--timeout and --factor must be positive, --floor not negative")
     brain = os.path.abspath(args.brain)
+    if args.discover or args.out:
+        if not (args.discover and args.out and len(args.files) == 1 and not args.touched and args.keep >= 1):
+            parser.error("--discover takes one candidates file and --out, --keep at least 1, and no --touched")
+        if os.path.lexists(args.out):
+            parser.error("--out %s exists" % args.out)
+        found = discover(brain, os.path.abspath(args.files[0]), args.out, args.jobs, args.timeout, args.keep,
+                         lambda row: print(json.dumps(row, sort_keys=True), flush=True), args.factor,
+                         args.floor)
+        done = summary(args.files, found)
+        print(json.dumps(done, sort_keys=True), flush=True)
+        return 0 if done["ok"] else 1
     files = args.files or sorted(glob.glob(os.path.join(brain, "referee", "tests", "mutants", "*.json")))
     changed = touched(brain, args.touched) if args.touched else None
     rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,

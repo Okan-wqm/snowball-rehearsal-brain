@@ -209,8 +209,8 @@
   },
   {
    "id": "rows_held_to_the_end",
-   "old": "            if emit:\n                with lock:\n                    emit(row)\n",
-   "new": "",
+   "old": "        if emit:\n            with lock:\n                emit(row)\n",
+   "new": "        pass\n",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
