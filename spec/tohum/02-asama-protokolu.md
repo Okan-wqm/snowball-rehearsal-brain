@@ -48,17 +48,17 @@ Okunma: her aşama başında ve sonunda
    partinin mikro özellikleri bitince parti çıkış isteği (A), operatör aktarımı, (B)'de partinin ilk
    okuyucusunun canlı koşusu. Her aktarım bir insan dokunuşudur; aşama kilidi değişmez.
 
-**Sahip istisnası.** Bir çıkış koşulunun ölçümü aşama başlamadan yapılacak bir işe dayanır ve o iş yapılmadıysa, koşul o aşamada ne
-ölçülür ne geçer; aşama hiç kapanmasın diye sahip onu adıyla istisna edebilir. Bugün yalnız #durustluk böyledir (ekim Kurucu
-başlamadan, `asama-0/10`, `25` 10c). İstisna `setup/summary.json`'daki `honesty_exception`'dır (`26c`): bir koşul, bir aşama, bir
-taşıma hedefi. Yanındaki `honesty_commitment` taşıma hedefinin taahhüdüdür: ekimin ya da, ekim üretilemiyorsa, aşama başlamadan
-kaydedilmiş değişmez bir ölçüm planının hash'i (`25` 10c); o yoksa istisna koşulu kaldırmaz, çıkış `not_checked` kalır, Kurucu'ya
-sayılmaz (taşıma hedefi de ölçemezdi). Önyükleme hakemi (A) sonucuna `owner_exception {anchor, stage, carry_to, reason,
-carry_commitment, measured: false}` yazar; koşul geçmiş ya da `UNMEASURABLE` sayılmaz, öbür koşulların hepsi geçerse çıkış "sahip
-istisnasıyla PASS"tır. PASS satırı ve çıkış raporu istisnayı adıyla taşır; istisna insan dokunuşudur (`27`). Koşul bir sonraki
-aşamanın (A) çıkışına taşınır: o çıkış onu ölçülmüş ister, ikinci istisna yoktur; o aşamanın spec'i bunu yazmasa da tohum geçerlidir
-(madde 1). Önyükleme hakemi bugün yalnız Aşama 0 çıkışını yargılar (başka aşamanın isteği `exit_request_wrong_stage`); taşınan
-koşulun denetimi Aşama 1 çıkışını yargılayan koduyla gelir.
+**Sahip istisnası.** Bir çıkış koşulu aşamasında ne ölçülebiliyor ne geçebiliyorsa, aşama hiç kapanmasın diye sahip onu adıyla
+istisna edebilir. Bugün iki koşul böyledir: #durustluk (ekim Kurucu başlamadan, `asama-0/10`, `25` 10c) ve #spec (mekanik maddelerin
+makine tanımı yok, E286, E561). İstisna `setup/summary.json`'da `honesty_exception` ya da `spec_exception`'dır (`26c`): bir koşul,
+bir aşama, bir taşıma hedefi. Yanındaki taahhüt taşıma hedefinin ölçeceğidir (`honesty_commitment`: ekim ya da ölçüm planı, `25` 10c;
+`spec_commitment`: tohumun taşıma kaydı, `26c`); o yoksa ya da tutmazsa istisna koşulu kaldırmaz, çıkış `not_checked` kalır,
+Kurucu'ya sayılmaz; bir istisna öbür koşulu kaldırmaz. Önyükleme hakemi (A) sonucuna `owner_exception`'ı `anchor`'a göre sıralı dizi
+olarak yazar, her eleman `{anchor, stage, carry_to, reason, carry_commitment, measured: false}`; koşul geçmiş ya da `UNMEASURABLE`
+sayılmaz, öbür koşulların hepsi geçerse çıkış "sahip istisnasıyla PASS"tır. PASS satırı ve çıkış raporu istisnayı adıyla taşır;
+istisna insan dokunuşudur (`27`). Koşul bir sonraki aşamanın (A) çıkışına taşınır: o çıkış onu ölçülmüş ister, ikinci istisna yoktur;
+o aşamanın spec'i bunu yazmasa da tohum geçerlidir (madde 1). Önyükleme hakemi bugün yalnız Aşama 0 çıkışını yargılar (başka aşamanın
+isteği `exit_request_wrong_stage`); taşınan koşulun denetimi Aşama 1 çıkışını yargılayan koduyla gelir (E565).
 
 **Dikey dilim kuralı.** Hiçbir aşama döngünün tek bir fazını "tamamen" kurmaz. Her aşama
 döngünün tamamını daha dar bir kapsamda canlı çalıştırır, sonra kapsam genişler.

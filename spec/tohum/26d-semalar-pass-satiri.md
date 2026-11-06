@@ -42,9 +42,9 @@ kanıtın üçü). Genesis, merge ve PASS satırları hakemin kendi satırlarıd
   - `copy_genesis_row_hash`: 64 küçük onaltılık; kopya defterinin son genesis satırının `row_hash`'i.
   - `copy_merge_row_hashes`: dizgi dizisi, en az bir eleman, her biri bir kez; her eleman kopya defterinde son
     genesis'ten sonra gelen bir merge satırının `row_hash`'i.
-  - `owner_exception`: (A) sonucunun `exit.owner_exception` nesnesi aynen, `{anchor, stage, carry_to, reason,
-    carry_commitment, measured}` (`02` "Sahip istisnası"; `anchor` `#`'siz yazılır: `durustluk`). (A) sonucunda yoksa
-    PASS satırında da yoktur. (A) sonucu son aktarım satırının `setup/results/<result_sha256>.json`'udur (`26c`).
+  - `owner_exception`: (A) sonucunun `exit.owner_exception`'ı aynen: dizi, `anchor`'a göre sıralı, her eleman `{anchor,
+    stage, carry_to, reason, carry_commitment, measured}` (`02` "Sahip istisnası"; `anchor` `#`'siz: `durustluk`, `spec`;
+    E563). (A) sonucunda yoksa PASS satırında da yoktur. (A) sonucu son aktarım satırının `setup/results/<result_sha256>.json`'udur (`26c`).
 
 **Kök.** Kök satırının Rekor kaydı (`13`, `29j`) bir Rekor v1 `hashedrekord`'dur: gövdesi `apiVersion` `0.0.1`,
 `spec.data.hash`'i `{algorithm: sha256, value: <kök>}`; verinin hash'i kökün kendisidir, zincirin verdiği sha256 (uçların
@@ -70,7 +70,7 @@ kök zincirinin her satırını tohumun koduyla doğrular ve şunları denetler;
    Yeniden aktarımdan sonra kilidi, iki hedefin yeni genesis satırlarından sonra yazılan PASS satırı açar.
 6. `copy_genesis_row_hash` verilen kopya klonunun son genesis'inin, `copy_merge_row_hashes` o defterde ondan sonraki
    merge satırlarınındır.
-7. `owner_exception` (A) sonucununkiyle RFC 8785 baytlarıyla aynıdır ya da ikisinde de yoktur.
+7. `owner_exception` (A) sonucununkiyle RFC 8785 baytlarıyla aynıdır (her eleman, sıra, sayı) ya da ikisinde de yoktur.
 8. Her hedefte son kök satırının `root`'u defterin uçlarının köküdür ve aynı commit'teki paket `--identity` ile
    `sha256:<kök>` özetini doğrular; paketin tek saydamlık kaydının (gövdesi katı base64) yaprak hash'i satırın
    `rekor_uuid`'idir (önünde 16 karakterlik ağaç kimliği olabilir, ardında hiçbir şey olamaz) ve gövdesi yukarıdaki v1
