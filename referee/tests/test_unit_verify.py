@@ -27,6 +27,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from profile import unit_verify as U  # noqa: E402
+import refusal  # noqa: E402
 from runner import contained as C  # noqa: E402
 from runner import deps_npm as N  # noqa: E402
 from runner import lint_record as R  # noqa: E402
@@ -931,8 +932,8 @@ class Cli(Base):
                                                       "red_control": RED}), "extra"],
                      ["check"], ["frobnicate", "x"]):
             with self.subTest(args=args):
-                code, out, _ = self.cli(*args)
-                self.assertEqual(code, 2)
+                code, out, err = self.cli(*args)
+                refusal.assert_refused(self, U, list(args), code, out, err)
                 self.assertIn("error", out)
                 self.assertIs(out["ok"], False)
 

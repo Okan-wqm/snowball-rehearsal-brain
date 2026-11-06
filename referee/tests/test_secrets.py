@@ -1056,6 +1056,10 @@ class Vector(unittest.TestCase):
 
 class Usage(unittest.TestCase):
     def test_unusable_input_is_exit_2_never_clean(self):
+        sys.path.insert(0, REFEREE)  # as Library: the module and tests/refusal.py, imported here only
+        self.addCleanup(sys.path.remove, REFEREE)
+        from gate import secrets as S
+        import refusal
         cases = [
             ["scan"],
             ["scan", "--kind", "email"],
@@ -1067,7 +1071,7 @@ class Usage(unittest.TestCase):
         for args in cases:
             with self.subTest(args=args):
                 code, result, raw = run_secrets(args, stdin=b"hello\n")
-                self.assertEqual(code, 2, raw)
+                refusal.assert_refused(self, S, args, code, result, raw)
                 self.assertIn("error", result)
                 self.assertNotIn("clean", result)
 

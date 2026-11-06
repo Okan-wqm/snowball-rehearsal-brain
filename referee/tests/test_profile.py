@@ -30,6 +30,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from profile import derive as D  # noqa: E402
+import refusal  # noqa: E402
 import tarfile  # noqa: E402
 
 from profile_tree import LOCK_OK, writable_base, write_tar, write_tree  # noqa: E402
@@ -312,6 +313,7 @@ class VectorTest(unittest.TestCase):
         self.assertNotIn("Traceback", proc.stderr, args)
         lines = proc.stdout.splitlines()
         self.assertEqual(len(lines), 1, proc.stdout + proc.stderr)
+        self.stderr = proc.stderr
         return proc.returncode, json.loads(lines[-1])
 
     def derive(self, files, operator, dirs=()):
@@ -448,7 +450,7 @@ class VectorTest(unittest.TestCase):
 
     def assert_unusable(self, *args):
         code, out = self.cli(*args)
-        self.assertEqual(code, 2, (args, out))
+        refusal.assert_refused(self, D, list(args), code, out, self.stderr)
         self.assertIn("error", out)
         if args and args[0] == "check":
             self.assertIs(out["accepted"], False)
