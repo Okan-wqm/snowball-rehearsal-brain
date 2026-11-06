@@ -145,6 +145,7 @@ class TestIntegrity(Base):
             raw = fh.read()
         self.assertEqual(hashlib.sha256(raw).hexdigest(), report["address"])
         manifest = json.loads(raw)
+        self.assertEqual(raw, json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("ascii"))
         self.assertEqual([r["key"] for r in manifest["packages"]],
                          ["node_modules/@scope/util", "node_modules/left-pad",
                           "node_modules/left-pad/node_modules/inner"])
@@ -185,6 +186,9 @@ class TestIntegrity(Base):
             "sha512" + good[6:].replace("-", ""): "integrity_malformed",
             good.replace("sha512-", "sha512-!"): "integrity_malformed",
             "SHA512-" + good[7:]: "integrity_malformed",
+            "sha512-" + base64.b64encode(hashlib.sha256(data).digest()).decode(): "integrity_malformed",
+            "sha1-!!!!": "integrity_malformed",                 # a weak token is ignored only when well formed
+            "sha1-AAAA=== " + good: "integrity_malformed",
         }
         for value, reason in cases.items():
             lock = copy.deepcopy(self.fx.lock)
@@ -241,11 +245,27 @@ class TestSource(Base):
             good.replace("/left-pad/-/", "/left%2dpad/-/"),
             good.replace("1.3.0.tgz", "1.3.1.tgz"),                         # another version
             good.replace(".tgz", ".tar.gz"),
+            good.replace("registry.npmjs.org", "registry.npmjs.org.\u212a"),  # Kelvin sign lowercases to k
             "", None,
         ):
             reason = "resolved_missing" if not resolved else "resolved_not_allowed"
             self.refused("node_modules/left-pad", {"version": "1.3.0", "resolved": resolved,
                                                     "integrity": sri(data)}, reason)
+
+    def test_host_is_checked_as_written(self):
+        """A host is ``[A-Za-z0-9.-]`` before it is lowercased: a Kelvin sign is refused where ``k`` passes."""
+        reg = "https://pkg.example.com/"
+        for host, ok in (("pkg.example.com", True), ("PKG.example.com", True), ("p\u212ag.example.com", False)):
+            lock = copy.deepcopy(self.fx.lock)
+            for row in lock["packages"].values():
+                if "resolved" in row:
+                    row["resolved"] = row["resolved"].replace(REG, "https://%s/" % host)
+            self.assertEqual(N.check(lock, [reg])["ok"], ok, host)
+
+    def test_build_metadata_is_not_in_a_tarball_path(self):
+        data = self.fx.blobs[url("left-pad", "1.3.0")]
+        self.refused("node_modules/left-pad", {"version": "1.3.0+build", "resolved": url("left-pad", "1.3.0+build"),
+                                                "integrity": sri(data)}, "resolved_not_allowed")
 
     def test_host_is_casefolded_and_registries_replace_default(self):
         self.fx.lock["packages"]["node_modules/left-pad"]["resolved"] = url("left-pad", "1.3.0").replace(
@@ -259,10 +279,11 @@ class TestSource(Base):
                 row["resolved"] = row["resolved"].replace(REG, "https://npm.example.com/r/").replace(
                     "Registry.NPMJS.org/", "npm.example.com/r/")
         self.assertTrue(N.check(lock, ["https://npm.example.com/r"])["ok"])
+        self.assertTrue(N.check(lock, ["https://NPM.Example.com/r/"])["ok"])  # the registry's host is lowercased
         for bad in ("http://npm.example.com/", "https://u@npm.example.com/", "https://npm.example.com:8/",
-                    "https://npm.example.com/?q", "https://npm.example.com/a/../b/", "npm.example.com",
-                    "https://npm.ex\u017fample.com/"):
-            with self.assertRaises((N.DepsError, ValueError)):
+                    "https://npm.example.com/?q", "https://npm.example.com/#f", "https://npm.example.com/a/../b/",
+                    "https://npm.example.com/%2e%2e/", "npm.example.com", "https://npm.ex\u017fample.com/", 5):
+            with self.assertRaises(N.DepsError, msg=bad):
                 N.check(lock, [bad])
 
     def test_git_and_file_dependencies(self):
@@ -272,6 +293,11 @@ class TestSource(Base):
             ("node_modules/g2", {"version": "1.0.0", "resolved": "GIT+https://github.com/a/b.git"}, "git_dependency"),
             ("node_modules/g3", {"version": "github:a/b", "resolved": "github:a/b#abc"}, "git_dependency"),
             ("node_modules/g4", {"version": "1.0.0", "resolved": "git@github.com:a/b.git"}, "git_dependency"),
+            ("node_modules/g5", {"version": "1.0.0", "resolved": "gitlab:a/b"}, "git_dependency"),
+            ("node_modules/g6", {"version": "1.0.0", "resolved": "bitbucket:a/b"}, "git_dependency"),
+            ("node_modules/g7", {"version": "1.0.0", "resolved": "gist:abc"}, "git_dependency"),
+            ("node_modules/g8", {"version": "github:a/b"}, "git_dependency"),      # the version field is read too
+            ("node_modules/f8", {"version": "file:../x"}, "file_dependency"),
             ("node_modules/f1", {"version": "file:../x", "resolved": "file:../x"}, "file_dependency"),
             ("node_modules/f2", {"version": "1.0.0", "resolved": "../x/f2-1.0.0.tgz",
                                  "integrity": sri(b"x")}, "file_dependency"),
@@ -289,6 +315,10 @@ class TestSource(Base):
             ("node_modules/a/b", {"version": "1.0.0", "resolved": url("a", "1.0.0"),
                                   "integrity": sri(b"x")}, "key_not_allowed"),
             ("node_modules/ok", "not an object", "key_not_allowed"),
+            ("node_modules/n1", {"name": "../evil", "version": "1.0.0", "resolved": REG + "../evil/-/evil-1.0.0.tgz",
+                                 "integrity": sri(b"x")}, "key_not_allowed"),
+            ("node_modules/v2", {"version": "1.0.0-a!b", "resolved": url("v2", "1.0.0-a!b"), "integrity": sri(b"x")},
+             "version_invalid"),
             ("node_modules/v1", {"version": "latest", "resolved": url("v1", "latest"), "integrity": sri(b"x")},
              "version_invalid"),
         ):
@@ -309,7 +339,10 @@ class TestSource(Base):
                                                        "lock_version_unsupported"),
                              ({"lockfileVersion": True, "packages": {}}, "lock_version_unsupported"),
                              ({"lockfileVersion": 3, "packages": []}, "lock_version_unsupported"),
-                             ({"lockfileVersion": "3", "packages": {}}, "lock_version_unsupported")):
+                             ({"lockfileVersion": "3", "packages": {}}, "lock_version_unsupported"),
+                             ({"lockfileVersion": 1, "packages": {}}, "lock_version_unsupported"),
+                             ({"lockfileVersion": 3.0, "packages": {}}, "lock_version_unsupported"),
+                             ({"lockfileVersion": 2.0, "packages": {}}, "lock_version_unsupported")):
             self.assertEqual(N.check(lock)["reasons"], [reason])
         self.assertTrue(N.check({"lockfileVersion": 2, "packages": {"": {}}})["ok"])
 
@@ -418,6 +451,18 @@ class TestInstallScripts(Base):
             self.assertEqual((report["reasons"], calls), (["install_script_not_marked:node_modules/left-pad"], []),
                              marks)
 
+    def test_a_marked_lock_flag_is_recorded_and_only_true_is_the_flag(self):
+        self.fx.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
+        report = self.fx.fetch(marks=["left-pad@1.3.0"])[0]
+        self.assertTrue(report["ok"], report)
+        with open(os.path.join(self.fx.out, report["address"], "manifest.json"), encoding="ascii") as fh:
+            flags = {r["key"]: r["install_script"] for r in json.load(fh)["packages"]}
+        self.assertEqual(flags, {"node_modules/@scope/util": False, "node_modules/left-pad": True,
+                                 "node_modules/left-pad/node_modules/inner": False})
+        for value in ("true", 1, False, None):  # the tarball's scripts are still read in store (test above)
+            self.fx.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = value
+            self.assertEqual(N.check(self.fx.lock)["reasons"], [], value)
+
     def test_an_element_that_is_not_a_mark_makes_the_request_unusable(self):
         self.fx.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
         lock = copy.deepcopy(self.fx.lock)
@@ -492,6 +537,24 @@ class TestTarball(Base):
             self.fx.lock["packages"]["node_modules/left-pad"]["integrity"] = sri(data)
             self.assertEqual(self.fx.fetch()[0]["reasons"], ["tarball_unreadable:node_modules/left-pad"])
 
+    def test_dot_component_members_are_read(self):
+        data = tgz({"package.json": {"name": "left-pad", "version": "1.3.0", "license": "MIT"},
+                    "binding.gyp": b"{}"}, "./package")
+        self.fx.put(url("left-pad", "1.3.0"), data)
+        self.fx.lock["packages"]["node_modules/left-pad"]["integrity"] = sri(data)
+        self.assertEqual(self.fx.fetch()[0]["reasons"], ["install_script_not_marked:node_modules/left-pad"])
+        self.assertTrue(self.fx.fetch(marks=["left-pad@1.3.0"])[0]["ok"])
+
+    def test_package_json_is_at_most_one_mebibyte(self):
+        body = json.dumps({"name": "left-pad", "version": "1.3.0", "license": "MIT"}).encode()
+        for size, reason in ((1 << 20, None), ((1 << 20) + 1, "tarball_package_json_unreadable")):
+            self.setUp()
+            data = tgz({"package.json": body + b" " * (size - len(body))})
+            self.fx.put(url("left-pad", "1.3.0"), data)
+            self.fx.lock["packages"]["node_modules/left-pad"]["integrity"] = sri(data)
+            report = self.fx.fetch()[0]
+            self.assertEqual(report["reasons"], ["%s:node_modules/left-pad" % reason] if reason else [], size)
+
     def test_top_directory_name_is_free(self):
         data = tgz({"package.json": {"name": "left-pad", "version": "1.3.0", "license": "MIT"}}, "left-pad")
         self.fx.put(url("left-pad", "1.3.0"), data)
@@ -538,6 +601,12 @@ class TestLicense(Base):
             ({"licenses": [{"name": "MIT"}]}, "license_not_allowed"),
             ({}, "license_not_found"),
             ({"licenses": []}, "license_not_found"),
+            ({"license": "(MIT GPL-3.0-only"}, "license_not_allowed"),      # an unclosed group ends nothing
+            ({"license": " AND ".join(["MIT"] * 256)}, None),                # 511 words
+            ({"license": " AND ".join(["MIT"] * 257)}, "license_not_allowed"),  # 513 words
+            ({"license": "(" * 64 + "MIT" + ")" * 64}, None),
+            ({"license": "(" * 65 + "MIT" + ")" * 65}, "license_not_allowed"),
+            ({"license": "Licen\u00e7a"}, "license_not_allowed"),
         ]
         for value, reason in cases:
             self.setUp()
@@ -565,6 +634,36 @@ class TestLicense(Base):
         policy["constitutional"]["license_exceptions"] = {"left-pad==1.3.1": {"expression": "MIT", "evidence": "x"}}
         self.assertEqual(self.lic({}, product=True, policy=policy)["reasons"],
                          ["license_not_found:node_modules/left-pad"])
+        # an identifier is [A-Za-z0-9.+-] even when the allowlist lists another; WITH is never one
+        for listed, value, ok in ((["MIT", "ISC", "Custom,License"], "Custom,License", False),
+                                  (["MIT", "ISC", "GPL-2.0+"], "GPL-2.0+", True),
+                                  (["MIT", "ISC", "WITH"], "WITH", False),
+                                  (["MIT", "ISC", "Apache-2.0", "LLVM-exception", "WITH"],
+                                   "Apache-2.0 WITH LLVM-exception", False)):
+            self.setUp()
+            report = self.lic({"license": value}, product=True,
+                              policy={"constitutional": {"license_allowlist": listed}})
+            self.assertEqual(report["ok"], ok, (listed, value, report))
+
+    def test_non_ascii_license_is_reported_in_an_ascii_manifest(self):
+        report = self.lic({"license": "Licen\u00e7a"})
+        self.assertTrue(report["ok"], report)
+        art = os.path.join(self.fx.out, report["address"])
+        with open(os.path.join(art, "manifest.json"), "rb") as fh:
+            raw = fh.read()
+        raw.decode("ascii")
+        self.assertIn(["Licen\u00e7a"], [r["license"] for r in json.loads(raw)["packages"]])
+        self.assertTrue(N.verify(art)["ok"])
+
+    def test_policy_shape(self):
+        for policy in ([], {"constitutional": []}, {"operating": "x"},
+                       {"constitutional": {"license_allowlist": ["MIT", 5]}},
+                       {"constitutional": {"license_exceptions": {"a==1": {"evidence": "x"}}}},
+                       {"operating": {"deps_bytes": {"value": -1}}}, {"operating": {"deps_bytes": {"value": True}}},
+                       {"operating": {"deps_bytes": 5}}):
+            with self.subTest(policy=policy), self.assertRaises(N.DepsError):
+                self.fx.fetch(policy=policy)
+        self.assertEqual(self.fx.artifacts(), [])
 
 
 class TestLimitAndVerify(Base):
@@ -574,6 +673,19 @@ class TestLimitAndVerify(Base):
         self.assertTrue(self.fx.fetch(policy=ok)[0]["ok"])
         over = {"operating": {"deps_bytes": {"value": total - 1, "band": [0, total]}}}
         self.assertEqual(self.fx.fetch(policy=over)[0], {"ok": False, "reasons": ["limit_hit:deps_bytes"]})
+
+    def test_a_shared_tarball_is_fetched_and_counted_once(self):
+        row = dict(self.fx.lock["packages"]["node_modules/left-pad"])
+        self.fx.lock["packages"]["node_modules/@scope/util/node_modules/left-pad"] = row
+        total = sum(len(b) for b in self.fx.blobs.values())
+        report, calls = self.fx.fetch(cap=total)
+        self.assertTrue(report["ok"], report)
+        self.assertEqual((report["packages"], len(calls), report["bytes"]), (4, 3, total))
+
+    def test_mirror_host_is_lowercased(self):
+        entry = self.fx.lock["packages"]["node_modules/left-pad"]
+        entry["resolved"] = entry["resolved"].replace("registry.npmjs.org", "Registry.NPMJS.org")
+        self.assertTrue(self.fx.fetch()[0]["ok"])
 
     def test_cap_only_tightens(self):
         total = sum(len(b) for b in self.fx.blobs.values())
@@ -618,6 +730,10 @@ class TestLimitAndVerify(Base):
                                                                      "-", "left-pad-1.3.0.tgz")):
             with self.subTest(root=root), self.assertRaises(N.DepsError):
                 N.artifact_in(root)
+        shutil.rmtree(self.fx.out)
+        os.makedirs(self.fx.out)
+        self.fx.fetch()
+        self.assertEqual(len(self.fx.artifacts()), 1)  # a root that is fine but for the link
         os.symlink(self.fx.out, os.path.join(self.base, "root-link"))
         with self.assertRaises(N.DepsError):
             N.artifact_in(os.path.join(self.base, "root-link"))
@@ -667,6 +783,49 @@ class TestLimitAndVerify(Base):
         self.assertIn("unexpected_file:tarballs/%s.real" % tball, reasons)
         self.assertEqual(mutated(lambda d: os.remove(os.path.join(d, "manifest.json")))["reasons"],
                          ["manifest_missing"])
+
+        def link_tarballs(d):
+            moved = os.path.join(self.base, "tarballs-elsewhere")
+            shutil.rmtree(moved, True)
+            os.rename(os.path.join(d, "tarballs"), moved)
+            os.symlink(moved, os.path.join(d, "tarballs"))
+        self.assertEqual(mutated(link_tarballs)["reasons"], ["unexpected_file:tarballs"])
+
+    def test_verify_reads_a_readdressed_manifest_by_its_rules(self):
+        """A manifest rewritten and stored under its new address passes the address check; its rules still hold."""
+        report = self.fx.fetch()[0]
+        art = os.path.join(self.fx.out, report["address"])
+        with open(os.path.join(art, "manifest.json"), "rb") as fh:
+            manifest = json.loads(fh.read())
+
+        def readdressed(change, rename=None):
+            m = copy.deepcopy(manifest)
+            change(m)
+            raw = N.canonical(m)
+            address = hashlib.sha256(raw).hexdigest()
+            d = os.path.join(self.base, address)
+            shutil.rmtree(d, True)
+            shutil.copytree(art, d)
+            with open(os.path.join(d, "manifest.json"), "wb") as fh:
+                fh.write(raw)
+            if rename:
+                os.rename(os.path.join(d, "package-lock.json"), os.path.join(d, rename))
+            return N.verify(d)
+
+        self.assertTrue(readdressed(lambda m: None)["ok"])
+        self.assertEqual(readdressed(lambda m: m.update(lock="lock.json"), "lock.json")["reasons"],
+                         ["manifest_unreadable"])
+        self.assertEqual(readdressed(lambda m: m.update(schema="snowball-deps-npm/2"))["reasons"],
+                         ["manifest_unreadable"])
+        weak = "sha1-" + base64.b64encode(hashlib.sha1(b"x").digest()).decode()
+        key = manifest["packages"][0]["key"]
+        reasons = readdressed(lambda m: m["packages"][0].update(integrity=weak))["reasons"]
+        self.assertEqual(reasons, ["integrity_mismatch:%s" % key])
+        reasons = readdressed(lambda m: m["packages"][0].update(integrity=sri(b"other")))["reasons"]
+        self.assertEqual(reasons, ["integrity_mismatch:%s" % key])
+        upper = manifest["packages"][0]["sha512"].upper()
+        reasons = readdressed(lambda m: m["packages"][0].update(sha512=upper))["reasons"]
+        self.assertEqual(reasons[0], "manifest_unreadable")
 
 
 class TestCli(Base):
@@ -738,6 +897,8 @@ class TestCli(Base):
             ("check", shrink, "--registry", "http://registry.npmjs.org/"),
             ("check", shrink, "--registry", "https://registry.npmjs.org:99999/"),
             ("check", shrink, "--registry"),
+            ("check", shrink, "--recipe"),
+            ("check", shrink, "--recipe", self.write("r4.json", {"install_scripts_required": [1]})),
             ("check", shrink, "--policy", self.write("p0.json", {})),
             ("store", wrong_name, self.fx.out, "--mirror", self.fx.mirror),
             ("store", shrink, self.fx.out, "--mirror", empty_mirror),
@@ -752,6 +913,8 @@ class TestCli(Base):
             ("store", shrink, self.fx.out, "--mirror", self.fx.mirror, "--mirror", self.fx.mirror),
             ("fetch", shrink, self.fx.out, "--mirror", self.fx.mirror),
             ("verify", self.fx.out, "--registry", REG),
+            ("verify", self.fx.out, "--recipe", self.write("r5.json", {})),
+            ("store", shrink, self.fx.out, "--mirror", self.fx.mirror, "--address", "0" * 64),
             ("nonsense",),
             (),
         ]
@@ -760,6 +923,7 @@ class TestCli(Base):
             self.assertEqual(code, 2, (args, out))
             self.assertEqual(out, {"ok": False, "error": out["error"]}, args)
             self.assertFalse(out["error"].startswith("internal error"), (args, out))
+        self.assertIn("JSON nested too deeply", self.run_cli("check", deep)[1]["error"])
         self.assertEqual(self.run_cli("check", lock)[0], 0)
         bare = self.write("r3.json", {"install_scripts_required": ["left-pad"]})
         self.assertEqual(self.run_cli("check", lock, "--recipe", bare), (1, {"ok": False,
@@ -775,14 +939,20 @@ class TestCli(Base):
         self.assertEqual(got, (2, '{"error": "internal error", "ok": false}\n', "internal error: KeyError\n"))
 
 
-def vtgz(files: dict, gz_mtime: int = 0) -> bytes:
-    """A gzip tar with a fixed gzip header (``mtime``), members under ``package/``."""
+def vtgz(files, gz_mtime: int = 0, top: str = "package/") -> bytes:
+    """A gzip tar with a fixed gzip header (``mtime``), members under ``top`` (``files`` a dict, or a list of
+    pairs for repeated names); a ``("symlink", target)`` content is a symbolic link."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as tar:
-        for name, content in files.items():
+        for name, content in (files.items() if isinstance(files, dict) else files):
+            info = tarfile.TarInfo(top + name)
+            info.mtime = 0
+            if isinstance(content, tuple):
+                info.type, info.linkname = tarfile.SYMTYPE, content[1]
+                tar.addfile(info)
+                continue
             data = json.dumps(content).encode() if isinstance(content, dict) else content
-            info = tarfile.TarInfo("package/" + name)
-            info.mtime, info.size = 0, len(data)
+            info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
     return gzip.compress(buf.getvalue(), mtime=gz_mtime)
 
@@ -967,6 +1137,42 @@ class TestNpmlock(unittest.TestCase):
                          ("MIT", "AGPL-3.0-only", None))
         self.assertEqual([r["path"] for r in out["licenses"]], sorted(r["path"] for r in out["licenses"]))
 
+    def test_tarball_members_and_mirror_entries(self):
+        body = json.dumps({"name": "edge", "version": "1.0.0"}).encode()
+        self.add("node_modules/edge", "edge", "1.0.0", {}, data=vtgz({"package.json": body + b" " * ((1 << 20) - len(body))}))
+        self.add("node_modules/dotted", "dotted", "1.0.0", {}, data=vtgz(
+            {"package.json": {"name": "dotted", "version": "1.0.0"}, "binding.gyp": b"{}"}, top="./package/"))
+        self.add("node_modules/named", "named", "1.0.0", {}, data=vtgz({"package.json": {"name": 5, "version": 7}}))
+        self.packages["node_modules/loose"] = {"version": "1.0.0", "resolved": "../loose", "link": "true"}
+        os.makedirs(os.path.join(self.mirror, "registry.npmjs.org", "dir", "-", "dir-1.0.0.tgz"))
+        self.packages["node_modules/dir"] = {"version": "1.0.0", "resolved": url("dir", "1.0.0"),
+                                             "integrity": sri(b"x")}
+        code, out = self.run_fetch()
+        self.assertEqual((code, out["rejected"]), (1, ["install_script_unmarked:node_modules/dotted",
+                                                       "registry_not_allowed:node_modules/loose",
+                                                       "tarball_missing:node_modules/dir"]))
+        del self.packages["node_modules/loose"], self.packages["node_modules/dir"]
+        code, out = self.run_fetch(stdin=dict(self.stdin, install_scripts_required=["gyp-thing@1.2.0",
+                                                                                    "dotted@1.0.0"]))
+        self.assertEqual(code, 0, out)
+        lic = {r["path"]: (r["name"], r["version"]) for r in out["licenses"]}
+        self.assertEqual((lic["node_modules/named"], lic["node_modules/edge"]), ((None, None), ("edge", "1.0.0")))
+
+    def test_mirror_file_is_taken_literally(self):
+        m = self.mirror
+        self.assertEqual(N._mirror_file(m, "https://h.example/a/-/a-1.0.0.tgz"),
+                         os.path.join(m, "h.example", "a", "-", "a-1.0.0.tgz"))
+        for resolved in ("http://h.example/a.tgz", "h.example/a.tgz", "https://h.example//a.tgz",
+                         "https://h.example/./a.tgz", "https://h.example/../a.tgz", "https://h.example/a/",
+                         "https://h.example/a\\..\\b.tgz", "https://h.example/a\0.tgz"):
+            self.assertIsNone(N._mirror_file(m, resolved), resolved)
+
+    def test_address_is_utf8_not_escaped(self):
+        self.add("node_modules/\u00fcber", "\u00fcber", "1.0.0", {})
+        code, out = self.run_fetch()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["artefact"], expected_address(self.good_rows()))
+
     def test_same_lock_same_address(self):
         code, out = self.run_fetch(self.write(self.lock_text(indent=2)))
         self.assertEqual(code, 0, out)
@@ -1137,12 +1343,16 @@ class TestNpmlock(unittest.TestCase):
             dict(mirror=not_dir),
             dict(raw_stdin=""),
             dict(raw_stdin="{"),
+            dict(raw_stdin="[]"),
+            dict(stdin={"registry_egress": ["https://registry.npmjs.org/r"], "install_scripts_required": []}),
             dict(stdin={"registry_egress": [REG]}),
             dict(stdin={"registry_egress": ["https://registry.npmjs.org"], "install_scripts_required": []}),
             dict(stdin={"registry_egress": ["http://registry.npmjs.org/"], "install_scripts_required": []}),
             dict(stdin={"registry_egress": [REG], "install_scripts_required": [1]}),
             dict(args=["fetch", self.write(good, "l7.json")]),
             dict(args=["fetch", self.write(good, "l8.json"), self.base, "--mirror", self.mirror]),
+            dict(args=["fetch", self.write(good, "l9.json"), self.mirror, "extra"]),
+            dict(args=["fetch", "--mirror", self.mirror]),
         ]
         for case in cases:
             code, out = self.run_fetch(**case)
@@ -1150,8 +1360,13 @@ class TestNpmlock(unittest.TestCase):
             self.assertEqual(out, {"ok": False, "error": out["error"]}, case)
             self.assertFalse(out["error"].startswith("internal error"), (case, out))
         # a tarball that matches its integrity but cannot be read: no verdict, not a pass
+        body = json.dumps({"name": "big", "version": "1.0.0"}).encode()
         for name, data in (("raw", b"not gzip"), ("nopkg", vtgz({"index.js": b"x"})),
-                           ("badjson", vtgz({"package.json": b"{"}))):
+                           ("badjson", vtgz({"package.json": b"{"})), ("array", vtgz({"package.json": b"[1]"})),
+                           ("big", vtgz({"package.json": body + b" " * ((1 << 20) + 1 - len(body))})),
+                           ("link", vtgz({"package.json": ("symlink", "/etc/passwd")})),
+                           ("two", vtgz([("package.json", {"name": "two", "version": "1.0.0"}),
+                                         ("package.json", {"name": "two", "version": "1.0.0"})]))):
             packages = {"": {}}
             self.packages = packages
             self.add("node_modules/" + name, name, "1.0.0", {}, data=data)

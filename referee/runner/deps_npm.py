@@ -10,7 +10,8 @@ module never installs or runs anything), tohum/18a (``operating.deps_bytes``, ``
 
 The lock (``check``, before anything is fetched; every reason listed as ``<reason>:<key>``):
 
-- It must be a JSON object with ``lockfileVersion`` 2 or 3 and a ``packages`` object
+- It must be a JSON object with ``lockfileVersion`` the integer 2 or 3 (not ``3.0``, not ``true``) and a
+  ``packages`` object
   (``lock_unparsable``, ``lock_version_unsupported``). The ``dependencies`` section of a version 2 lock is
   not read; an installer that reads it (npm 6) is out of scope.
 - The root entry ``""`` is skipped: the target's own package and its scripts are the target's code, run
@@ -28,9 +29,10 @@ The lock (``check``, before anything is fetched; every reason listed as ``<reaso
   entry (``inBundle: true``) is refused (``bundled_dependency``): its bytes come inside another tarball
   and are not judged on their own here.
 - Otherwise ``resolved`` must be exactly ``https://<host><prefix><name>/-/<bare>-<version>.tgz`` for an
-  allowed registry (scheme ``https``, an ASCII host ``[A-Za-z0-9.-]`` equal after lowercasing, so no user,
-  port, query or fragment; path
-  characters ``[A-Za-z0-9._~@/-]`` only, so no ``%``-escapes and no ``..``); ``<name>`` is the entry's
+  allowed registry (scheme ``https``; a host of ``[A-Za-z0-9.-]`` as written, so no user, port or a character
+  that only lowercases into ASCII such as the Kelvin sign, equal to the registry's after lowercasing; no query
+  or fragment; path characters ``[A-Za-z0-9._~@/-]`` only, so no ``%``-escapes and no version ``+build``);
+  ``<name>`` is the entry's
   ``name`` (an alias) or the last name of its key, ``<bare>`` its part after ``/``, ``<version>`` the
   entry's semver ``version``. A missing one is ``resolved_missing``, any other ``resolved_not_allowed``,
   a bad version ``version_invalid``. Allowed registries: ``--registry`` (repeatable; the profile's
@@ -65,8 +67,10 @@ target's dependencies do not enter the product). With ``--product`` a package wi
 ``license_not_found`` and one with a value that is not allowed is ``license_not_allowed``. A value is
 allowed when it is an SPDX expression of identifiers joined by ``AND``/``OR`` with parentheses and every
 identifier is ASCII ``[A-Za-z0-9.+-]`` and in ``license_allowlist`` after lowercasing (operators are
-case-sensitive; ``--policy`` replaces the 18a list): ``OR`` does not
-let a listed identifier carry an unlisted one, ``WITH`` and ``+`` are not allowed unless listed as written.
+case-sensitive; ``--policy`` replaces the 18a list), in at most 512 words and 64 ``(``: ``OR`` does not
+let a listed identifier carry an unlisted one, ``+`` is allowed only as part of a listed identifier
+(``GPL-2.0+``), and ``WITH`` never is (not as an operator, not as a listed word), so ``X WITH Y`` is not
+allowed even through ``license_exceptions``, whose expression is judged by the same rule.
 
 The artifact, written by ``store`` only when nothing is refused: ``OUT/<address>/`` holding the lock under
 its own name (``package-lock.json`` or ``npm-shrinkwrap.json``), ``tarballs/<sha512 hex>.tgz`` and
@@ -194,9 +198,8 @@ def _registries(urls) -> list[tuple[str, str]]:
         if not isinstance(url, str):
             raise DepsError("registry is not a string")
         parts = urllib.parse.urlsplit(url)
-        if (parts.scheme != "https" or not HOST_RE.fullmatch(parts.netloc) or parts.port is not None
-                or parts.query or parts.fragment or "@" in parts.netloc or not PATH_CHARS.fullmatch(parts.path)
-                or ".." in parts.path.split("/")):
+        if (parts.scheme != "https" or not HOST_RE.fullmatch(parts.netloc) or parts.query or parts.fragment
+                or not PATH_CHARS.fullmatch(parts.path) or ".." in parts.path.split("/")):
             raise DepsError("registry not usable: %r" % url)
         prefix = parts.path if parts.path.endswith("/") else parts.path + "/"
         out.append((parts.netloc.lower(), prefix))
@@ -210,7 +213,7 @@ def parse_integrity(value: Any) -> tuple[str | None, list[tuple[str, bytes]]]:
     strong = []
     for word in value.split():
         alg, sep, b64 = word.partition("-")
-        if not sep or not B64_RE.fullmatch(b64):
+        if not B64_RE.fullmatch(b64):
             return "integrity_malformed", []
         if alg == "sha1":
             continue
@@ -341,7 +344,7 @@ def entries(lock: Any) -> tuple[list[str], list[dict]]:
     """Lock structure: ``(reasons, [{key, name, version, resolved, integrity, strong, entry}])``."""
     if not isinstance(lock, dict):
         return ["lock_unparsable"], []
-    if lock.get("lockfileVersion") not in (2, 3) or isinstance(lock.get("lockfileVersion"), bool):
+    if type(lock.get("lockfileVersion")) is not int or lock["lockfileVersion"] not in (2, 3):
         return ["lock_version_unsupported"], []
     packages = lock.get("packages")
     if not isinstance(packages, dict):
@@ -440,7 +443,7 @@ def inspect_tarball(data: bytes) -> tuple[str | None, dict]:
         return "tarball_ambiguous_package_json", {}
     try:
         manifest = cli.loads(found[0].decode("utf-8"))
-    except (ValueError, RecursionError):
+    except ValueError:  # cli.TooDeep included
         return "tarball_package_json_unreadable", {}
     if not isinstance(manifest, dict):
         return "tarball_package_json_unreadable", {}
