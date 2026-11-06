@@ -3,16 +3,25 @@
 - the mapped line (asama-0/08) on two real git diffs of one change (``-U0`` and ``-U2``), each line checked
   against the post-image file built by an applier written here, not only against expected numbers; the
   29h cases (shift, inside a hunk, insertion point, deleted line, after pure hunks); renames, deletions,
-  untouched paths; the parser refuses a hunk whose ``+`` start is not the one git writes;
+  untouched paths, a copy (its source does not move), two blocks of one path (unusable); the parser refuses a
+  hunk whose ``+`` start is not the one git writes;
 - criteria 3-8 over the seed's run records (``base.jsonl``, ``cand.jsonl``, ``checks.json``, ``hashes.json``,
   stdin), each reason from its own case and alone where it can be alone: target not found, not
   distinguished (inside a hunk, behind an insertion), nondeterministic base and candidate, scope (removed
   line, inserted line at ``e+1`` and past it, ``b = 0`` hunks, other path, rename, mode, ``fix`` null,
   context ignored), ratchet per tool, zero tests, red tests, red control green, ``merge_paused`` for every
   value but ``false``, a pending sentinel, a secret in the diff, every hash, a forged run and forged checks
-  are not read; the good candidate merges;
+  are not read; a deleted target line is distinguished; the target's rule, path and mapped range each bound
+  ``not_distinguished``; each reason once; each shape rule of the inputs refused on its own case; the good
+  candidate merges;
 - the command line: one JSON line, exit 0 / 1 / 2, ``{"decision": "reject"}`` on unusable input, never a
-  traceback.
+  traceback; a diff's bytes that are not UTF-8 are decided on; each exit 2 is the module's own refusal
+  (``refusal.assert_refused`` with the stderr cause, since decide's refusal line is its fault line by design), and
+  a crash in ``decide`` still prints a reject.
+
+Kept mutants: ``tests/mutants/check.json``. Shown equivalent, so not kept: ``_plain``'s ``startswith("/")`` and
+``not path`` (a leading ``/`` and the empty path both give an empty part), ``scope_violation``'s ``old != path``
+(``gate.diffguard`` gives ``old != new`` only with rename or copy headers, which the headers rule refuses).
 """
 
 from __future__ import annotations
