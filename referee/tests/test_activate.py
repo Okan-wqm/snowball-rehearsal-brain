@@ -565,6 +565,11 @@ class Apply(unittest.TestCase):
             diffguard.apply(self.block("diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -2 +2 @@\n-b\n+c\n"), b"a\nb")
         with self.assertRaises(diffguard.DiffError):  # beyond the end of the file
             diffguard.apply(self.block("diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -5 +5 @@\n-b\n+c\n"), old)
+        with self.assertRaises(diffguard.DiffError):  # an insertion after a line the file does not have
+            diffguard.apply(self.block("diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -5,0 +6 @@\n+x\n"), old)
+        with self.assertRaises(diffguard.DiffError):  # a line without a newline that would not be the last
+            diffguard.apply(self.block("diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+a\n"
+                                       "\\ No newline at end of file\n"), old)
 
     def test_only_an_in_place_text_change(self):
         for d in ("diff --git a/f b/g\nsimilarity index 90%\nrename from f\nrename to g\n",

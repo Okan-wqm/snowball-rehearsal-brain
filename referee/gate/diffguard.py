@@ -3,7 +3,7 @@ the paths the gate never lets an agent change (stage 0, MF7).
 
 Rules: asama-0/08 criterion 1, asama-0/09 test 23, tohum/01b (the refusal list), tohum/04a item 9,
 tohum/14 (agent configuration and the operator's excluded paths), tohum/29f (agent configuration and
-coverage, the shared rules of ``profile.derive``, MF4) and tohum/29g (group ``diffguard``).
+coverage, the shared rules of ``profile.derive``, MF4) and tohum/29k (group ``diffguard``).
 
 ``check`` returns every reason of every changed path, ``<reason>:<path>``, sorted by code point and
 unique; the path is the one the diff names, unquoted from git's C-style quoting and otherwise as written
@@ -17,10 +17,10 @@ copy B. The reasons, each checked on its own:
 - ``security_path``, ``excluded_path``: some ``security_paths`` / ``excluded_dirs`` entry of the profile
   covers the path (29f coverage: case-sensitive, as written).
 - ``agent_config``: 29f agent configuration, case-insensitive.
-- ``config``: the base name is in 29g's list or matches ``tsconfig.*.json``, or the path is under the root
+- ``config``: the base name is in 29k's list or matches ``tsconfig.*.json``, or the path is under the root
   ``.github/``; ``manifest``: base name ``package.json``; ``lockfile``: ``package-lock.json``,
   ``npm-shrinkwrap.json``, ``yarn.lock``, ``pnpm-lock.yaml``; ``gitattributes``: base name
-  ``.gitattributes``. Beyond 29g, measured on the target: ``config`` also takes a base name of a
+  ``.gitattributes``. Beyond 29k, measured on the target: ``config`` also takes a base name of a
   ``CONFIG_TOOLS`` tool in one of the ``MEASURED_CONFIG_SHAPES`` (``<tool>[.-<word>]*.config.<ext>``,
   ``<tool>.preset|workspace.<ext>``, ``.<tool>rc[.<ext>]``) or in ``MEASURED_CONFIG_NAMES`` (Nx targets,
   npm registry and Node version files, Rust toolchain and lint files); ``manifest`` also ``Cargo.toml``
@@ -30,7 +30,7 @@ copy B. The reasons, each checked on its own:
   (``jest.setup.ts``), build-only tools, and ecosystems this table does not list.
 - ``outside_inputs``: no ``inputs`` entry of the recipe covers the path (29f coverage).
 
-Not judged here, by 29g's interface: banned constructs, banned phrases and gross deletion (tohum/04a 9)
+Not judged here, by 29k's interface: banned constructs, banned phrases and gross deletion (tohum/04a 9)
 need the profile's ``banned_constructs`` and ``policy.json``, which this command does not take; documentation
 paths by class (tohum/03) need the candidate's class.
 
@@ -58,7 +58,7 @@ from typing import Any
 from profile import derive as D
 import cli
 
-# The name rules, one table per reason. ``SEED`` rows are tohum/29g's lists; ``MEASURED`` rows are names the
+# The name rules, one table per reason. ``SEED`` rows are tohum/29k's lists; ``MEASURED`` rows are names the
 # target's own tree uses for the same things (missing_capability f111): tool configuration of the lint, type
 # and test tools by shape, Nx targets, the npm registry and Node version files, and the Rust and Python
 # manifests and locks. Everything here compares base names case-sensitively.
@@ -219,6 +219,8 @@ def _hunk(lines: list[str], i: int) -> tuple[dict, int]:
             if not body or not body[-1][2]:
                 raise DiffError("misplaced %r" % line)
             body[-1][2] = False
+            for s in (("-", "+") if body[-1][0] == " " else (body[-1][0],)):
+                closed[s] = True  # at the marker: git joins the side's next line onto this one
             i += 1
             continue
         else:
@@ -228,9 +230,6 @@ def _hunk(lines: list[str], i: int) -> tuple[dict, int]:
         sides = ("-", "+") if tag in (" ", "") else (tag,)
         if any(closed[s] for s in sides):
             raise DiffError("line %r after the end of file" % line)
-        if body and not body[-1][2]:
-            for s in (("-", "+") if body[-1][0] == " " else (body[-1][0],)):
-                closed[s] = True
         body.append([tag or " ", line[1:], True])
         i += 1
     return hunk, i
@@ -430,7 +429,7 @@ def _strings(obj: Any, key: str, what: str) -> list[str]:
 
 
 def check(diff_text: str, profile: Any, recipe: Any) -> list[str]:
-    """Group ``diffguard``'s check (tohum/29g): the sorted, unique reasons; empty when the diff passes.
+    """Group ``diffguard``'s check (tohum/29k): the sorted, unique reasons; empty when the diff passes.
 
     Raises ``DiffError`` when the diff is unusable or ``profile.security_paths``, ``profile.excluded_dirs``
     or ``recipe.inputs`` is not a list of strings."""
