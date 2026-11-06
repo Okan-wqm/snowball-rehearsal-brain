@@ -18,7 +18,9 @@ compared as text), a tie broken by the larger ``id``. None: ``state_absent``. An
 could be the newest. The listing's order is not relied on.
 
 **Opening it** (``unpack``): the artifact's zip holds exactly the two files, by those names, each at most
-``MAX_FILE`` bytes, nothing else (no directory, no third file): otherwise ``state_unreadable``.
+``MAX_FILE`` (16 MiB) bytes, nothing else (no directory, no third file): otherwise ``state_unreadable``. At most
+``MAX_FILE + 1`` bytes of a file are read, whatever its header declares; the zip itself is downloaded only up to
+``4 * MAX_FILE`` bytes (``state_unreadable`` beyond).
 
 **Verifying it** (``verify_argv``, ``open_state``): both files are written to a fresh directory and ``sigstore verify
 identity --bundle <dir>/result.json.sigstore.json --cert-identity
@@ -140,9 +142,7 @@ def unpack(data: bytes) -> tuple[bytes, bytes]:
             if sorted(i.filename for i in infos) != sorted([RESULT, BUNDLE]):
                 raise StateError("state_unreadable")
             files = {}
-            for info in infos:
-                if info.is_dir() or info.file_size > MAX_FILE:
-                    raise StateError("state_unreadable")
+            for info in infos:  # the names admit no directory; the read, not the declared size, is the bound
                 with zf.open(info) as fh:
                     body = fh.read(MAX_FILE + 1)
                 if len(body) > MAX_FILE:
@@ -181,8 +181,8 @@ def run_verifier(argv: list[str]) -> int:
 
 def open_state(result: bytes, bundle: bytes, repo: str, sigstore: Sequence[str],
                verifier: Callable[[list[str]], int] = run_verifier) -> dict:
-    """The verified result: ``{last_accepted_sha, result_sha256}``, by the rules above."""
-    repo_name(repo)
+    """The verified result: ``{last_accepted_sha, result_sha256}``, by the rules above (``repo_unsafe`` from
+    ``verify_argv``, before the verifier runs)."""
     with tempfile.TemporaryDirectory(prefix="bootstrap-state-") as tmp:
         for name, body in ((RESULT, result), (BUNDLE, bundle)):
             with open(os.path.join(tmp, name), "wb") as fh:
@@ -265,8 +265,8 @@ class ActionsHttp:
 
 def list_artifacts(http: Any, repo: str) -> list[Any]:
     """Every page of the repository's artifacts named ``bootstrap-state`` (``total_count`` read from the first
-    page; more than ``MAX_PAGES`` pages, a page that is not ``{total_count, artifacts}``, or a short page before the
-    count is reached is ``actions_unreadable``)."""
+    page; more than ``MAX_PAGES`` (100) pages, a page that is not ``{total_count, artifacts}``, or a short page before
+    the count is reached is ``actions_unreadable``; an empty page ends the read without asking for another)."""
     query = urllib.parse.urlencode({"name": ARTIFACT, "per_page": PER_PAGE})
     out: list[Any] = []
     total = None
