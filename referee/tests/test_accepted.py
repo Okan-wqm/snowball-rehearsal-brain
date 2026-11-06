@@ -188,21 +188,20 @@ class Unpack(unittest.TestCase):
         self.refused(data)
 
     def test_a_zip_python_cannot_read(self):
+        # zipfile's own errors for malformed bytes beside cli.ARCHIVE_ERRORS (cli rule 9), one fixture each
         good = zip_of(GOOD_ZIP)
-        # a compression method zipfile does not implement (NotImplementedError), in both headers
-        method = good.replace(b"PK\x03\x04\x14\x00\x00\x00\x00\x00", b"PK\x03\x04\x14\x00\x00\x00\x63\x00")
-        method = method.replace(b"PK\x01\x02\x14\x03\x14\x00\x00\x00\x00\x00",
-                                b"PK\x01\x02\x14\x03\x14\x00\x00\x00\x63\x00")
-        self.assertNotEqual(method, good)
-        self.refused(method)
-        # deflated data cut short (EOFError), the directory intact
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("result.json", os.urandom(4096))
-            zf.writestr("result.json.sigstore.json", b"{}")
-        data = buf.getvalue()
-        start = data.index(b"result.json") + len(b"result.json")
-        self.refused(data[:start + 100] + data[start + 4096:])
+        local, central = b"PK\x03\x04\x14\x00\x00\x00\x00\x00", b"PK\x01\x02\x14\x03\x14\x00\x00\x00\x00\x00"
+        method = good.replace(local, local[:8] + b"\x63\x00").replace(central, central[:10] + b"\x63\x00")
+        cd = good.index(b"PK\x01\x02")
+        encrypted = good[:cd + 8] + bytes([good[cd + 8] | 1]) + good[cd + 9:]
+        for name, kind, data in (("method 99", NotImplementedError, method), ("encrypted", RuntimeError, encrypted),
+                                 ("offset before the archive", ValueError, good[:30] + good[60:])):
+            with self.subTest(name=name):
+                with self.assertRaises(kind):
+                    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                        for info in zf.infolist():
+                            zf.read(info)
+                self.refused(data)
 
 
 class Verify(unittest.TestCase):

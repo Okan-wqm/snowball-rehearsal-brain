@@ -156,7 +156,6 @@ import tarfile
 import tempfile
 import urllib.parse
 import urllib.request
-import zlib
 from typing import Any, Callable
 
 import cli
@@ -435,7 +434,7 @@ def inspect_tarball(data: bytes) -> tuple[str | None, dict]:
                         return "tarball_package_json_unreadable", {}
                     fh = tar.extractfile(member)
                     found.append(fh.read(PACKAGE_JSON_MAX + 1) if fh else b"")
-    except (tarfile.TarError, EOFError, zlib.error, OSError):
+    except (*cli.ARCHIVE_ERRORS, OSError):
         return "tarball_unreadable", {}
     if not found:
         return "tarball_no_package_json", {}
@@ -809,7 +808,7 @@ def _vector_tarball(data: bytes, where: str) -> dict:
                         raise DepsError("%s: package/package.json not a readable file" % where)
                     fh = tar.extractfile(member)
                     found.append(fh.read() if fh else b"")
-    except (tarfile.TarError, EOFError, zlib.error, OSError) as exc:
+    except (*cli.ARCHIVE_ERRORS, OSError) as exc:
         raise DepsError("%s: tarball unreadable: %s" % (where, cli.cause(exc))) from None
     if len(found) != 1:
         raise DepsError("%s: %d package/package.json members" % (where, len(found)))

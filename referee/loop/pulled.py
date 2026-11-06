@@ -296,5 +296,5 @@ def extract_tree(tar_path: str, dest: str) -> None:
             tar.extractall(dest, filter="data")
     except tarfile.FilterError:
         raise PulledError(["tree_unsafe"]) from None
-    except (tarfile.TarError, EOFError, OSError):
+    except (*cli.ARCHIVE_ERRORS, OSError):
         raise PulledError(["tree_unreadable"]) from None
