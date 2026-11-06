@@ -45,11 +45,11 @@ FILES = (("package/package.json", b'{"name": "x", "version": "1.0.0"}'),
          ("package/lib/a.js", random.Random(1).randbytes(300)))
 
 
-def tar_bytes() -> bytes:
+def tar_bytes(files=FILES) -> bytes:
     """The members and the two zero blocks that end an archive, without tarfile's padding to a 10240-byte record."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w", format=tarfile.PAX_FORMAT) as tar:
-        for name, data in FILES:
+        for name, data in files:
             info = tarfile.TarInfo(name)
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
@@ -66,7 +66,9 @@ def zip_bytes() -> bytes:
 
 
 TAR = tar_bytes()
-TGZ = gzip.compress(TAR, mtime=0)
+# a longer repeated text and 300 random bytes: the deflate stream then has the blocks whose corruption zlib itself
+# refuses (measured over this corpus: 186 zlib.error among 2197 variants; with FILES' 30 lines, none)
+TGZ = gzip.compress(tar_bytes((FILES[0], ("package/index.js", b"module.exports = 1;\n" * 300), FILES[2])), mtime=0)
 ZIP = zip_bytes()
 
 
@@ -149,12 +151,17 @@ class Corpus(unittest.TestCase):
         # the corpus through of_tar, which raises to the command's handler: only what that handler catches
         for data in (TAR, TGZ):
             self.each(data, T.of_tar, (T.TreeHashError, *cli.ARCHIVE_ERRORS))
-        # and the command over one variant of each library error: its own unusable line, exit 2
-        crc = bytearray(TGZ)
-        crc[-8] ^= 1
-        block = bytearray(TGZ)
-        block[10] = 0xFF
-        for data in (b"x" * 1024, TGZ[:200], bytes(block), TAR[:600]):
+        # and the command over the first variant of each library error of_tar raises: its own line, exit 2
+        first = {}
+        for variant in variants(TGZ):
+            try:
+                T.of_tar(variant)
+            except cli.ARCHIVE_ERRORS as exc:
+                first.setdefault(type(exc), variant)
+            except T.TreeHashError:
+                pass
+        self.assertEqual(set(first), {tarfile.ReadError, gzip.BadGzipFile, zlib.error, EOFError})
+        for data in (b"x" * 1024, TAR[:600], *first.values()):
             out = io.StringIO()
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
                 code = T.main(["tar", self.path(data)])
@@ -173,6 +180,9 @@ class Corpus(unittest.TestCase):
             shutil.rmtree(dest, ignore_errors=True)
             P.extract_tree(self.path(data), dest)
         self.each(TAR, extract, P.PulledError)
+        with self.assertRaises(P.PulledError) as ctx:  # its own context: a file it cannot open
+            P.extract_tree(os.path.join(self.tmp, "absent.tar"), os.path.join(self.tmp, "tree2"))
+        self.assertEqual(ctx.exception.reasons, ["tree_unreadable"])
 
     def test_unit_verify_unpack(self):
         def unpack(data):

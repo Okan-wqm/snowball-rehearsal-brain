@@ -148,7 +148,7 @@ def unpack(data: bytes) -> tuple[bytes, bytes]:
                 if len(body) > MAX_FILE:
                     raise StateError("state_unreadable")
                 files[info.filename] = body
-    except (*cli.ARCHIVE_ERRORS, NotImplementedError, RuntimeError, ValueError):  # cli rule 9
+    except (*cli.ARCHIVE_ERRORS, RuntimeError, ValueError):  # cli rule 9
         raise StateError("state_unreadable") from None
     return files[RESULT], files[BUNDLE]
 

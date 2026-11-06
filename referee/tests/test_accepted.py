@@ -22,7 +22,9 @@ import sys
 import tempfile
 import tracemalloc
 import unittest
+import urllib.response
 import zipfile
+from email.message import Message
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
@@ -266,7 +268,7 @@ class Verify(unittest.TestCase):
         for body in (b"not json", b"\xff", b"[]", b'{"state": 1}', b'{"state": {}}', result(sha=SHA.upper()),
                      result(sha="a" * 39), result(sha="a" * 41), result(sha=SHA + "\n"), result(sha=None),
                      result(sha=int("1" * 40)), json.dumps({"last_accepted_sha": SHA}).encode(),
-                     result().replace(b"accepted", b"acc\xffepted")):
+                     result().replace(b'"accepted"', b'"acc\xffepted"')):
             with self.subTest(body=body):
                 with self.assertRaises(A.StateError) as ctx:
                     A.open_state(body, b"B", REPO, ("sigstore",), verifier=lambda argv: 0)
@@ -368,7 +370,8 @@ class ReadState(unittest.TestCase):
         with self.assertRaises(A.StateError):
             A.list_artifacts(api, REPO)
         self.assertEqual(len(api.calls), 2)
-        for page in ({"total_count": True, "artifacts": []}, {"total_count": 1, "artifacts": "x"},
+        one = [artifact(1, "2026-11-01T00:00:00Z")]
+        for page in ({"total_count": True, "artifacts": one}, {"total_count": 1, "artifacts": "x"},
                      {"total_count": 1, "artifacts": {"x": 1}}):
             with self.subTest(page=page):
                 api = FakeApi([], b"")
@@ -441,7 +444,25 @@ class Http(unittest.TestCase):
         self.assertEqual(len(A.ActionsHttp("tok", handlers=(fake,)).json("/x")["a"]), 16 * MIB - 9)
 
     def test_a_blob_is_read_up_to_its_limit(self):
-        fake = _FakeHttps([(200, bytes(32 * MIB), {})])
+        class Zeros(io.RawIOBase):  # 32 MiB made as they are read (a BytesIO would hand over its whole buffer)
+            left = 32 * MIB
+
+            def readable(self):
+                return True
+
+            def readinto(self, buf):
+                n = min(len(buf), self.left)
+                buf[:n] = bytes(n)
+                self.left -= n
+                return n
+
+        class Lazy(_FakeHttps):
+            def https_open(self, req):
+                self.seen.append(req)
+                resp = urllib.response.addinfourl(io.BufferedReader(Zeros()), Message(), req.full_url, 200)
+                resp.msg = "x"
+                return resp
+        fake = Lazy([])
         tracemalloc.start()
         try:
             with self.assertRaises(A.StateError):

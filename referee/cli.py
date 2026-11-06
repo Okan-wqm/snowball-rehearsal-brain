@@ -73,8 +73,8 @@ Rules ``run`` keeps (each bound by a test in ``tests/test_cli.py``):
    ``EOFError`` and ``zipfile.BadZipFile``, what those libraries raise for malformed bytes, each seen in
    ``tests/test_archives.py``'s corpus (every byte of a small archive flipped, every third truncation,
    300 seeded scrambles) or one of its fixtures. A handler may add the errors of its own context after them (a file
-   it opens: ``OSError``). zipfile also raises ``NotImplementedError`` (an unknown method or version),
-   ``RuntimeError`` (an encrypted member) and ``ValueError`` (an offset before the archive) for malformed bytes; being
+   it opens: ``OSError``). zipfile also raises ``RuntimeError`` (an encrypted member; its ``NotImplementedError``,
+   an unknown method or version, is one) and ``ValueError`` (an offset before the archive) for malformed bytes; being
    types any code raises, they are not in the tuple: the one zip reader (``loop.accepted.unpack``) names them for a
    ``try`` that holds only zipfile calls. Why: each reader had written its own list, and three missed one (measured
    before this rule over that corpus: ``loop.accepted.unpack`` let ``zlib.error`` and ``RuntimeError`` through,
