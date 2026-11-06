@@ -341,7 +341,7 @@ result = unittest.TextTestRunner(stream=io.StringIO(), resultclass=Result).run(s
 failed, other = set(), False
 for test in [t for t, _ in result.failures + result.errors] + list(result.unexpectedSuccesses):
     test = test.test_case if isinstance(test, unittest.case._SubTest) else test
-    if isinstance(test, unittest.TestCase) and type(test).__module__ != "unittest.loader":
+    if isinstance(test, unittest.TestCase):
         failed.add(test.id())
     else:
         other = True
@@ -353,7 +353,9 @@ with open(record, "w") as fh:
 def _collect(copy: str, root: str, entry: str, limit: float) -> tuple[dict[str, Any] | None, float]:
     """``(record, seconds)`` of one entry run under ``COLLECT`` in the copy's ``<root>/``: the record ``None`` when
     the entry timed out, ``{killers, seconds}`` otherwise; ``killers`` the entry itself when it failed other than
-    by a test of its own (module docstring), else the ids of its failed tests."""
+    by a test of its own (module docstring), else the ids of its failed tests. A module that does not import fails
+    as a test ``unittest.loader._FailedTest.<name>``, an id of four names, so its entry is its killer; an id
+    that ``TEST_ID`` matches never ends in ``.py`` (a test method's name starts with ``test``)."""
     fd, path = tempfile.mkstemp(prefix="mutate-record-", suffix=".json")
     os.close(fd)
     start = time.monotonic()
@@ -370,7 +372,7 @@ def _collect(copy: str, root: str, entry: str, limit: float) -> tuple[dict[str, 
         os.unlink(path)
     rec = json.loads(text) if text else None
     if (done.returncode != 0 or rec is None or rec["other"] or not rec["ran"]
-            or not all(_entry(t) and not t.endswith(".py") for t in rec["failed"])):
+            or not all(TEST_ID.fullmatch(t) for t in rec["failed"])):
         return {"killers": [entry], "seconds": rec["seconds"] if rec else {}}, took
     return {"killers": rec["failed"], "seconds": rec["seconds"]}, took
 

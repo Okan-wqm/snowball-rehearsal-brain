@@ -293,6 +293,7 @@ EXPECTED = TEST.replace("    def test_add(self):\n",
 FIXTURE = TEST.replace("class T(unittest.TestCase):\n",
                        "class T(unittest.TestCase):\n    @classmethod\n    def setUpClass(cls):\n"
                        "        assert mod.add(2, 3) == 5\n\n").replace("mod.add(2, 3), 5", "1, 1")
+TEARDOWN = FIXTURE.replace("setUpClass", "tearDownClass")  # its test runs and passes, then the fixture fails
 
 
 class Discover(unittest.TestCase):
@@ -305,7 +306,8 @@ class Discover(unittest.TestCase):
                                 "referee/tests/test_ids.py": IDS, "referee/tests/helper.py": "VALUE = 5\n",
                                 "referee/tests/test_slowkill.py": SLOW_KILL, "referee/tests/test_red.py": RED,
                                 "referee/tests/test_sub.py": SUBTESTS, "referee/tests/test_expected.py": EXPECTED,
-                                "referee/tests/test_fixture.py": FIXTURE, "referee/tests/deep/__init__.py": "",
+                                "referee/tests/test_fixture.py": FIXTURE,
+                                "referee/tests/test_teardown.py": TEARDOWN, "referee/tests/deep/__init__.py": "",
                                 "referee/tests/deep/test_deep.py": TEST})
         self.out = os.path.join(self.brain, "kept.json")
 
@@ -322,7 +324,7 @@ class Discover(unittest.TestCase):
             return json.load(fh)
 
     def test_the_killers_are_the_failed_tests_of_every_entry_and_the_fastest_is_kept(self):
-        tests = ["test_slowkill.py", "test_ids.py", "test_mod.T"]
+        tests = ["test_slowkill.py", "test_ids.py", "test_mod.T", "test_mod.py"]  # a test found twice is one killer
         got = self.discover([mutant("k", "return a + b", "return a - b", tests)])["k"]
         self.assertEqual((got["outcome"], got["killers"], got["timeouts"]),
                          ("killed", ["test_slowkill.T.test_add", "test_ids.T.test_add", "test_mod.T.test_add"], []))
@@ -352,6 +354,7 @@ class Discover(unittest.TestCase):
             mutant("import_by_pattern", "return a + b", broken, ["test_mod.py"]),
             mutant("import_by_id", "return a + b", broken, ["test_ids.T.test_add"]),
             mutant("class_fixture", "return a + b", "return a - b", ["test_fixture.py"]),
+            mutant("class_fixture_after_its_tests", "return a + b", "return a - b", ["test_teardown.py"]),
             mutant("id_not_an_entry", "return a + b", "return a - b", ["test_deep.py"]),
             mutant("no_test_run", "return a + b", "return a - b", ["test_ids.U", "test_none*.py"]),
             mutant("exit_after_record", "return a + b", "return a + b if a > 1 else 0", ["test_atexit.py"]),
@@ -361,6 +364,7 @@ class Discover(unittest.TestCase):
                          {"import_by_pattern": ("killed", ["test_mod.py"]),
                           "import_by_id": ("killed", ["test_ids.T.test_add"]),
                           "class_fixture": ("killed", ["test_fixture.py"]),
+                          "class_fixture_after_its_tests": ("killed", ["test_teardown.py"]),
                           "id_not_an_entry": ("killed", ["test_deep.py"]),
                           "no_test_run": ("baseline_red", []),
                           "exit_after_record": ("killed", ["test_atexit.py"]),
