@@ -19,6 +19,9 @@ tarballs served by a mirror directory (the sandbox has no network; the HTTPS pat
 - the ``npmlock`` vector interface (tohum/29g), ``fetch LOCK MIRROR`` with stdin, is ``TestNpmlock``: the
   named cases, the order of reasons per package, the address recomputed here, exit 2; the artifact is
   written by ``store`` and prints the same ``artefact``.
+
+Kept mutants of the module's guard rules are in ``tests/mutants/deps_npm.json``, each named with the test here that
+kills it; the HTTPS fetcher (no network here) and the artifact's write-then-rename have none.
 """
 
 from __future__ import annotations
@@ -923,7 +926,7 @@ class TestCli(Base):
             self.assertEqual(code, 2, (args, out))
             self.assertEqual(out, {"ok": False, "error": out["error"]}, args)
             self.assertFalse(out["error"].startswith("internal error"), (args, out))
-        self.assertIn("JSON nested too deeply", self.run_cli("check", deep)[1]["error"])
+        self.assertEqual(self.run_cli("check", deep)[1]["error"], "unusable input: %s: JSON nested too deeply" % deep)
         self.assertEqual(self.run_cli("check", lock)[0], 0)
         bare = self.write("r3.json", {"install_scripts_required": ["left-pad"]})
         self.assertEqual(self.run_cli("check", lock, "--recipe", bare), (1, {"ok": False,
@@ -1157,6 +1160,20 @@ class TestNpmlock(unittest.TestCase):
         self.assertEqual(code, 0, out)
         lic = {r["path"]: (r["name"], r["version"]) for r in out["licenses"]}
         self.assertEqual((lic["node_modules/named"], lic["node_modules/edge"]), ((None, None), ("edge", "1.0.0")))
+
+    def test_fetch_takes_no_option_even_when_it_names_a_path(self):
+        """``fetch`` refuses an argument that starts with ``--`` even where a file of that name exists."""
+        shutil.copy(self.write(self.lock_text()), os.path.join(self.base, "--lock"))
+        shutil.copytree(self.mirror, os.path.join(self.base, "--mirror"))
+        cwd = os.getcwd()
+        os.chdir(self.base)
+        self.addCleanup(os.chdir, cwd)
+        for argv, code in ((["fetch", "package-lock.json", "--mirror"], 2), (["fetch", "--lock", "mirror"], 2),
+                           (["fetch", "package-lock.json", "mirror"], 0)):
+            out = io.StringIO()
+            stdin = io.TextIOWrapper(io.BytesIO(json.dumps(self.stdin).encode()))
+            with mock.patch.object(sys, "stdin", stdin), mock.patch.object(sys, "stdout", out):
+                self.assertEqual(N.main(argv), code, (argv, out.getvalue()))
 
     def test_mirror_file_is_taken_literally(self):
         m = self.mirror
