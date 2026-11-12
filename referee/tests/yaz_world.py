@@ -35,6 +35,15 @@ def chained(rows: list[dict]) -> bytes:
     return out
 
 
+# (A)'s ``exit.owner_exception`` as tohum/02 "Sahip istisnası" and 26d:45-47 give it: the owner's two exceptions
+# of stage 0, a list in the order of ``anchor`` (the values other than ``anchor`` and ``measured`` are the tests')
+OWNER_EXCEPTIONS = [
+    {"anchor": "durustluk", "stage": 0, "carry_to": 1, "reason": "no plant before the stage",
+     "carry_commitment": "c" * 64, "measured": False},
+    {"anchor": "spec", "stage": 0, "carry_to": 1, "reason": "no machine definition of the mechanical items",
+     "carry_commitment": "d" * 64, "measured": False}]
+
+
 def transfer(exit_: dict | None = None, tree: str = "2" * 64) -> dict:
     """A counter whose last row is an import naming an (A) result (``harness.pass_row.imported``'s inputs):
     ``{imports, result, line_sha256}``; ``exit_`` is the result's ``exit`` object."""

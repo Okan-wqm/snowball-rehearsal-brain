@@ -30,7 +30,8 @@ values, ``ledger.events.UNMEASURED``; each entry's ``path`` the row's) is
 written after the candidate's ``decision`` merge row (``{decision: merge, candidate}``) by ``activate`` and D6
 (``ledger.events.decided``); ``pass`` (the PASS row of asama-0/10a, tohum/26d: its ``kind`` free, here ``pass``;
 ``payload`` 26d's ``stage`` (the integer 0), ``verdict`` ``PASS``, ``import_line_sha256``,
-``copy_genesis_row_hash``, ``copy_merge_row_hashes`` (at least one, each once) and optional ``owner_exception``, and
+``copy_genesis_row_hash``, ``copy_merge_row_hashes`` (at least one, each once) and optional ``owner_exception``
+(``OWNER_EXCEPTION``: (A)'s list of the owner's exceptions), and
 this brain's ``conditions`` and ``not_checked``, which 26d allows) is ``harness.pass_row``'s, as is ``copy_gate``
 (``{conditions}``, the conditions of the copy's genesis gate judged open on the toy, D6's; this brain's shape,
 seed-048); and ``cycle_start``,
@@ -138,6 +139,16 @@ def list_of(inner: Check, non_empty: bool = False, unique_sorted: bool = False, 
     return check
 
 
+def ordered_by(key: str, inner: Check) -> Check:
+    """A list of ``inner`` objects whose ``key`` values do not decrease, compared by code point; ``inner`` is a
+    shape that makes ``key`` a string (the order is read only when every element conforms)."""
+    def check(value: Any, where: str) -> list[str]:
+        out = list_of(inner)(value, where)
+        keys = [] if out else [v[key] for v in value]
+        return out or (_bad(where, "not in the order of %s" % key) if keys != sorted(keys) else [])
+    return check
+
+
 def exactly(allowed: Any) -> Check:
     """``allowed`` of its own type (``0`` is not ``False``)."""
     def check(value: Any, where: str) -> list[str]:
@@ -230,11 +241,14 @@ def _anchor(value: Any, where: str) -> list[str]:
     return text(value, where) or (_bad(where, "starts with #") if value.startswith("#") else [])
 
 
-# (A)'s ``exit.owner_exception`` (tohum/02 "Sahip istisnası", 26d): its six keys; ``anchor`` without ``#``,
-# ``measured`` false; the other values are the (A) result's as written (no seed page gives their types)
-OWNER_EXCEPTION = shape({"anchor": _anchor,
-                         "stage": any_value, "carry_to": any_value, "reason": any_value, "carry_commitment": any_value,
-                         "measured": exactly(False)})
+# (A)'s ``exit.owner_exception`` (tohum/02 "Sahip istisnası", 26d:45-47): a list in the order of ``anchor``, each
+# element the six keys, ``anchor`` without ``#``, ``measured`` false. What no seed page states is not judged: the
+# other values' types (the (A) result's as written), which anchors there are, how many elements (an empty list
+# conforms), and whether an anchor comes once (equal anchors side by side are in order). The single object of the
+# seed before E563 is not a list and does not conform.
+OWNER_EXCEPTION = ordered_by("anchor", shape({
+    "anchor": _anchor, "stage": any_value, "carry_to": any_value, "reason": any_value, "carry_commitment": any_value,
+    "measured": exactly(False)}))
 
 DECISION = tagged("decision", {
     "merge": shape({"decision": one_of("merge"), "candidate": text}),

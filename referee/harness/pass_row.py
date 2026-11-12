@@ -28,7 +28,9 @@ expect.json}`` (``expectations``: ``{decision: merge}`` or ``{decision: reject, 
 bytes of the signed (A) result that import names. ``imported`` reads them; each is ``Unusable`` when: the imports
 are not a valid chain or hold no import (``loop.accepted``'s reasons); sha256 of ``result`` is not the import's
 ``result_sha256``; ``result`` is not a JSON object with an ``exit`` object; its ``exit.owner_exception``, when
-present, is not ``ledger.schema.OWNER_EXCEPTION``.
+present, is not ``ledger.schema.OWNER_EXCEPTION`` (tohum/02 "Sahip istisnası", 26d:45-47: a list in the order of
+``anchor``, each element ``{anchor, stage, carry_to, reason, carry_commitment, measured: false}``, ``anchor``
+without ``#``; an empty list is one).
 
 **The run** of a target is its ledger from the last ``events``/``genesis`` row on (the whole ledger when the first
 row is not a genesis: ``#genesis`` fails then). ``#taban``, ``#merge``, ``#ret``, the merges of ``#nobetci
@@ -80,7 +82,8 @@ place that holds their evidence and do not enter the verdict. ``payload`` (``PAS
 fields and two of this brain's: ``{stage: 0, verdict: "PASS", import_line_sha256, copy_genesis_row_hash,
 copy_merge_row_hashes, owner_exception?, conditions, not_checked}``: the import's line hash; the ``row_hash`` of the
 copy's last genesis; the copy's run's ``events``/``merge`` rows (the ones 26d's stage-open counts) in file order;
-the (A) result's ``exit.owner_exception`` as read, absent when the result has none.
+the (A) result's ``exit.owner_exception`` as read (the list itself, every element, in its order, an empty list
+too: stage-open's check 7 compares it with the result's by RFC 8785 bytes), absent when the result has none.
 
 **Held rows** (``gate_opened``, ``passed``): the referee's own row of the kind (no ``proposed_by``; tohum/26d: a
 proposal counts for nothing) after the ledger's last genesis (a row before a later genesis is another run's); a
@@ -352,8 +355,8 @@ def imported(imports: bytes, result: bytes) -> dict:
         raise Unusable("result: no exit object")
     if "owner_exception" in exit_:
         if schema.OWNER_EXCEPTION(exit_["owner_exception"], "owner_exception"):
-            raise Unusable("result: exit.owner_exception is not {anchor, stage, carry_to, reason, carry_commitment, "
-                           "measured: false}")
+            raise Unusable("result: exit.owner_exception is not a list of {anchor, stage, carry_to, reason, "
+                           "carry_commitment, measured: false} in the order of anchor")
         out["owner_exception"] = exit_["owner_exception"]
     return out
 

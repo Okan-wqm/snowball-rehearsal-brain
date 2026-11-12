@@ -56,6 +56,7 @@ import test_accepted as TA  # noqa: E402
 import test_loop_cagir  # noqa: E402
 import yaz_world as YW  # noqa: E402
 from fake_github import FakeGitHub  # noqa: E402
+from ledger import chain as CH  # noqa: E402
 from loop import accepted as A  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import treehash as T  # noqa: E402
@@ -166,7 +167,10 @@ class Flow:
         summary = {"seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
                                     "bootstrap_sha256": "4" * 64}], "targets": targets}
         tree = T.digest([(p, "file", d) for p, d in self.brain.items()])
-        result = YW.transfer()["result"]  # (A)'s result, which the import names and copies (tohum/26c, 29s)
+        # (A)'s result, which the import names and copies (tohum/26c, 29s), with the owner's two exceptions of
+        # stage 0 (tohum/02 "Sahip istisnası": the form (A) writes them in, 26d:45-47)
+        self.result = result = YW.transfer({"requested": True, "transferable": True,
+                                            "owner_exception": YW.OWNER_EXCEPTIONS})["result"]
         imported = dict(TA.import_row(tree, self.brain_sha), result_sha256=hashlib.sha256(result).hexdigest())
         write_tree(self.work, {"setup/summary.json": json.dumps(summary),
                                "setup/imports.jsonl": TA.chained([imported]).decode(),
@@ -463,7 +467,13 @@ class Rehearsal(unittest.TestCase):
                                       judged={"verdict": "PASS", "conditions": {}}),
              "c1": {"genesis": False, "merge": None, "decisions": {"good": stale}, "sentinel": None,
                     "drill": {"action": "off"}, "gate": None, "pass": None, "done": ["D5", "D6"]}}])
-        self.assertTrue(PR.passed(flow.hubs["o/toy"].read_file(B.STATE, B.STATE_LEDGER)))  # the PASS row is written
+        ledger = flow.hubs["o/toy"].read_file(B.STATE, B.STATE_LEDGER)
+        self.assertTrue(PR.passed(ledger))  # the PASS row is written
+        # and carries (A)'s owner exceptions with the result's RFC 8785 bytes (tohum/26d, stage-open's check 7)
+        [row] = [r for r in map(json.loads, ledger.splitlines()) if r["kind"] == "pass"]
+        self.assertEqual(CH.canonical(row["payload"]["owner_exception"]),
+                         CH.canonical(json.loads(flow.result)["exit"]["owner_exception"]))
+        self.assertEqual([e["anchor"] for e in row["payload"]["owner_exception"]], ["durustluk", "spec"])
         self.assertIn(B.STATE, flow.hubs["o/copy"].refs)
 
     def test_drill_patches_on_a_line_the_toys_merge_changed_never_apply(self):

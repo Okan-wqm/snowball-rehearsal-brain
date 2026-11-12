@@ -68,8 +68,8 @@ import yaz_world as YW  # noqa: E402
 TS = "2026-11-02T10:00:00Z"
 COUNTER = YW.transfer()  # the counter's last import and the (A) result it names
 IMPORTS, RESULT = COUNTER["imports"], COUNTER["result"]
-OWNER_EXCEPTION = {"anchor": "durustluk", "stage": 0, "carry_to": 1, "reason": "no plant before the stage",
-                   "carry_commitment": "c" * 64, "measured": False}
+OWNER_EXCEPTIONS = YW.OWNER_EXCEPTIONS  # (A)'s list of the owner's exceptions: durustluk, then spec
+DURUSTLUK, SPEC = OWNER_EXCEPTIONS
 # tohum/26f: a drill instance's id is 32 lowercase hex that does not tell its cause; these three are the tests'
 # (test_loop_write and test_rehearsal use them too), in the code point order of the causes' names.
 RD_BUILD, RD_LINT, RD_TEST = "b0" * 16, "c0" * 16, "d0" * 16
@@ -222,16 +222,38 @@ class Passes(unittest.TestCase):
         self.assertEqual(SC.payload_reasons("events", "pass", got["payload"]), [])
         self.assertFalse(set(PR.CONDITIONS) & set(PR.NOT_CHECKED))
 
-    def test_the_owner_exception_of_the_a_result_is_carried_as_written(self):
-        counter = YW.transfer({"requested": True, "transferable": True, "owner_exception": OWNER_EXCEPTION})
-        toy, copy = State("toy"), State("copy")
-        toy_world(toy, genesis=genesis_payload("toy", counter))
-        copy_world(copy, genesis=genesis_payload("copy", counter))
-        got = judge(toy, copy, counter=counter)
-        self.assertEqual(got["verdict"], "PASS", got["conditions"])
-        self.assertEqual(got["payload"]["owner_exception"], OWNER_EXCEPTION)
-        self.assertEqual(got["payload"]["import_line_sha256"], counter["line_sha256"])
-        self.assertEqual(SC.payload_reasons("events", "pass", got["payload"]), [])
+    def test_the_owner_exceptions_of_the_a_result_are_carried_as_written(self):
+        """tohum/26d:45-47 and stage-open's check 7: the PASS payload's ``owner_exception`` is the (A) result's
+        list with the same RFC 8785 bytes, for the owner's two exceptions and for an empty list (present in the
+        result, so present in the row)."""
+        for exceptions in (OWNER_EXCEPTIONS, []):
+            with self.subTest(exceptions=len(exceptions)):
+                counter = YW.transfer({"requested": True, "transferable": True, "owner_exception": exceptions})
+                toy, copy = State("toy"), State("copy")
+                toy_world(toy, genesis=genesis_payload("toy", counter))
+                copy_world(copy, genesis=genesis_payload("copy", counter))
+                got = judge(toy, copy, counter=counter)
+                self.assertEqual(got["verdict"], "PASS", got["conditions"])
+                self.assertIn("owner_exception", got["payload"])
+                self.assertEqual(CH.canonical(got["payload"]["owner_exception"]),
+                                 CH.canonical(json.loads(counter["result"])["exit"]["owner_exception"]))
+                self.assertEqual(CH.canonical(got["payload"]["owner_exception"]), CH.canonical(exceptions))
+                self.assertEqual(got["payload"]["import_line_sha256"], counter["line_sha256"])
+                self.assertEqual(SC.payload_reasons("events", "pass", got["payload"]), [])
+
+    def test_the_forms_of_owner_exception_that_are_read(self):
+        """``imported`` on a result named by its own import: a list in the order of ``anchor`` is read as written
+        whatever no seed page states (one exception, either anchor; an anchor twice; another anchor; values of any
+        type), and a result without the key gives none."""
+        again = dict(DURUSTLUK, reason="a second reason")
+        free = {"anchor": "kok", "stage": "0", "carry_to": None, "reason": ["r"], "carry_commitment": 7,
+                "measured": False}
+        for exceptions in ([DURUSTLUK], [SPEC], [DURUSTLUK, again], [DURUSTLUK, free, SPEC], [free]):
+            with self.subTest(exceptions=exceptions):
+                counter = YW.transfer({"requested": True, "owner_exception": exceptions})
+                got = PR.imported(counter["imports"], counter["result"])
+                self.assertEqual(CH.canonical(got["owner_exception"]), CH.canonical(exceptions))
+        self.assertNotIn("owner_exception", PR.imported(IMPORTS, RESULT))
 
     def test_a_merged_candidate_offered_again_is_judged_by_its_first_decision(self):
         toy = toy_world()
@@ -579,15 +601,19 @@ class Unusable(unittest.TestCase):
 
     def test_the_import_and_the_a_result(self):
         """``imported``: the counter must hold an import, the result must be the one it names and carry an
-        ``exit`` object, and an owner exception must be of tohum/02's form."""
+        ``exit`` object, and ``exit.owner_exception`` must be of tohum/02's form (26d:45-47): a list (not the one
+        object of the seed before E563, not a string, not null), each element the six keys with ``anchor`` without
+        ``#`` and ``measured`` false, in the order of ``anchor``."""
         toy, copy = toy_world().files(), copy_world().files()
         no_transfer = YW.chained(YW.IMPORTS_ROWS)
         cases = [(no_transfer, RESULT, "imports_no_transfer"), (IMPORTS[:-5], RESULT, "imports_broken"),
                  (IMPORTS, RESULT + b" ", "not the (A) result")]
         docs = [({"exit": "closed"}, "no exit object"), ([], "not a JSON object")]
         docs += [({"exit": {"owner_exception": bad}}, "owner_exception")
-                 for bad in ("durustluk", dict(OWNER_EXCEPTION, anchor="#durustluk"), dict(OWNER_EXCEPTION, measured=0),
-                             {k: v for k, v in OWNER_EXCEPTION.items() if k != "stage"}, dict(OWNER_EXCEPTION, extra=1))]
+                 for bad in ("durustluk", None, DURUSTLUK, ["durustluk"], [SPEC, DURUSTLUK],
+                             [DURUSTLUK, dict(SPEC, anchor="#spec")], [dict(DURUSTLUK, measured=0)],
+                             [DURUSTLUK, {k: v for k, v in SPEC.items() if k != "stage"}],
+                             [dict(DURUSTLUK, extra=1)], [dict(DURUSTLUK, anchor="")], [dict(DURUSTLUK, anchor=3)])]
         for doc, fragment in docs:  # each result named by its own import, so only its form is wrong
             result = json.dumps(doc).encode()
             imports = YW.chained(YW.IMPORTS_ROWS + [{"stage": 0, "referee_tree_sha256": "2" * 64,

@@ -184,16 +184,22 @@ class Artifacts(unittest.TestCase):
 
     def test_pass_row_rules(self):
         """The PASS row (tohum/26d, ``harness.pass_row``): its payload conforms, without a cause, with or without
-        (A)'s owner exception; a missing or extra key, a stage that is not the integer 0 (``False`` included), a
-        verdict other than PASS, a hash that is not one, an empty or repeating merge list, an unsorted condition
-        list and an owner exception not of tohum/02's form do not."""
+        (A)'s owner exceptions (tohum/26d:45-47: a list in the order of ``anchor``, read by code point; empty, one,
+        two, an anchor twice, an upper case anchor before a lower case one); a missing or extra key, a stage that is not the integer 0 (``False`` included), a verdict other than
+        PASS, a hash that is not one, an empty or repeating merge list, an unsorted condition list and owner
+        exceptions not of tohum/02's form (the one object of the seed before E563, an element with ``#`` in its
+        anchor, a ``measured`` that is not ``false``, a missing or extra key, a list out of the anchors' order, a
+        lower case anchor before an upper case one) do not."""
         cyc = {"cycle_id": "46", "ts": AW.TS, "snapshot_id": AW.SNAP}
         owner = {"anchor": "durustluk", "stage": 0, "carry_to": 1, "reason": "r", "carry_commitment": "c" * 64,
                  "measured": False}
         payload = {"stage": 0, "verdict": "PASS", "import_line_sha256": "c" * 64, "copy_genesis_row_hash": "a" * 64,
                    "copy_merge_row_hashes": ["b" * 64, "a" * 64], "conditions": ["#genesis", "#kok"],
                    "not_checked": ["#aktarim"]}
-        for good in (payload, dict(payload, owner_exception=owner)):
+        spec, upper = dict(owner, anchor="spec"), dict(owner, anchor="Spec")
+        for good in (payload, dict(payload, owner_exception=[owner, spec]), dict(payload, owner_exception=[]),
+                     dict(payload, owner_exception=[spec]), dict(payload, owner_exception=[owner, owner, spec]),
+                     dict(payload, owner_exception=[upper, owner])):
             row = events.row(cyc, "pass", "pass", good)
             self.assertEqual(schema.row_reasons(stored(row)), [])
         for bad, fragment in (({k: v for k, v in payload.items() if k != "stage"}, "payload.stage: missing"),
@@ -208,12 +214,21 @@ class Artifacts(unittest.TestCase):
                               (dict(payload, copy_merge_row_hashes=["b" * 64] * 2),
                                "payload.copy_merge_row_hashes: an element repeated"),
                               (dict(payload, conditions=["#kok", "#genesis"]), "payload.conditions"),
-                              (dict(payload, owner_exception=dict(owner, anchor="#durustluk")),
-                               "payload.owner_exception.anchor"),
-                              (dict(payload, owner_exception=dict(owner, measured=0)),
-                               "payload.owner_exception.measured"),
-                              (dict(payload, owner_exception={k: v for k, v in owner.items() if k != "reason"}),
-                               "payload.owner_exception.reason: missing")):
+                              (dict(payload, owner_exception=owner), "payload.owner_exception: not a list"),
+                              (dict(payload, owner_exception=[owner, dict(spec, anchor="#spec")]),
+                               "payload.owner_exception[1].anchor"),
+                              (dict(payload, owner_exception=[dict(owner, measured=0)]),
+                               "payload.owner_exception[0].measured"),
+                              (dict(payload, owner_exception=[{k: v for k, v in owner.items() if k != "reason"}]),
+                               "payload.owner_exception[0].reason: missing"),
+                              (dict(payload, owner_exception=[dict(owner, extra=1)]),
+                               "payload.owner_exception[0].extra: not a field"),
+                              (dict(payload, owner_exception=[spec, owner]),
+                               "payload.owner_exception: not in the order of anchor"),
+                              (dict(payload, owner_exception=[owner, spec, owner]),
+                               "payload.owner_exception: not in the order of anchor"),
+                              (dict(payload, owner_exception=[owner, upper]),
+                               "payload.owner_exception: not in the order of anchor")):
             with self.subTest(fragment=fragment):
                 self.assert_reason(dict(row, payload=bad), fragment)
 

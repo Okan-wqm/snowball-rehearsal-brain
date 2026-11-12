@@ -1033,14 +1033,22 @@ class Pass(StateBase):
         super().setUp()
         import test_pass_row as TP
         self.TP = TP
-        toy = TP.toy_world()  # every condition holds on it and on the copy world (test_pass_row.Passes)
+        self.counted(TP.COUNTER)
+
+    def counted(self, counter: dict) -> None:
+        """The toy and the copy of ``counter``'s import (their genesis rows name it), the checkout holding that
+        counter and the (A) result it names, and the drill's fixtures bound to its line."""
+        TP = self.TP
+        toy, copy = TP.State("toy"), TP.State("copy")
+        # every condition holds on the toy and on the copy world (test_pass_row.Passes)
+        TP.toy_world(toy, genesis=TP.genesis_payload("toy", counter))
         toy.cycle(TP.gate_row, TP.cost)  # the gate opened in an earlier cycle of the run
-        self.toy, self.copy = toy, TP.copy_world()
-        for path, data in (("imports.jsonl", TP.IMPORTS),
-                           ("results/%s.json" % hashlib.sha256(TP.RESULT).hexdigest(), TP.RESULT)):
+        self.toy, self.copy = toy, TP.copy_world(copy, genesis=TP.genesis_payload("copy", counter))
+        for path, data in (("imports.jsonl", counter["imports"]),
+                           ("results/%s.json" % hashlib.sha256(counter["result"]).hexdigest(), counter["result"])):
             write_tree(os.path.join(self.workspace, "setup"), {path: data})
         doc = drill_catalog(DRILL_CAUSES)
-        self.seed = {DR.SEED_ENV: TP.SEED["seed"], DR.FIXTURES_ENV: fixtures_value(doc, TP.IMPORTS)}
+        self.seed = {DR.SEED_ENV: TP.SEED["seed"], DR.FIXTURES_ENV: fixtures_value(doc, counter["imports"])}
 
     def states(self) -> dict:
         return {tid: {B.STATE_LEDGER: w.ledger, B.STATE_ROOTS: w.roots, B.STATE_STATUS: w.status}
@@ -1125,6 +1133,24 @@ class Pass(StateBase):
         self.assertEqual(out["ok"], True, out)
         self.assertNotIn("pass", out["targets"][0])
         self.assertEqual([r["kind"] for r in rows_of(ghs["t1"].read_file(B.STATE, B.STATE_LEDGER))].count("pass"), 1)
+
+    def test_the_row_written_carries_the_owner_exceptions_of_the_a_result(self):
+        """(A)'s result with the owner's two exceptions (tohum/02 "Sahip istisnası", 26d:45-47): ``yaz`` judges
+        ``PASS`` and the row on the toy's ``brain/state`` carries the result's ``exit.owner_exception`` with the
+        same RFC 8785 bytes, which is stage-open's check 7; the ledger written conforms to ``ledger.schema``."""
+        counter = YW.transfer({"requested": True, "transferable": True, "owner_exception": YW.OWNER_EXCEPTIONS})
+        self.counted(counter)
+        ghs = self.served()
+        out = self.run_both(ghs, **self.seed)
+        self.assertEqual(out["ok"], True, out)
+        self.assertEqual(out["targets"][0]["pass"], {"verdict": "PASS", "conditions": {}})
+        new = ghs["t1"].read_file(B.STATE, B.STATE_LEDGER)
+        self.assertEqual(SC.ledger_reasons(new), [])
+        [row] = [r for r in rows_of(new) if r["kind"] == "pass"]
+        in_result = json.loads(counter["result"])["exit"]["owner_exception"]
+        self.assertEqual([e["anchor"] for e in in_result], ["durustluk", "spec"])
+        self.assertEqual(CH.canonical(row["payload"]["owner_exception"]), CH.canonical(in_result))
+        self.assertEqual(row["payload"]["import_line_sha256"], counter["line_sha256"])
 
     def test_a_fail_writes_no_row_and_names_its_reasons(self):
         ghs = self.served()
