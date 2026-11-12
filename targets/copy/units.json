@@ -1,0 +1,72 @@
+{
+  "units": [
+    {
+      "affected_test_cmd": [
+        "npm",
+        "--prefix",
+        "mcp/farm-management",
+        "run",
+        "--silent",
+        "test"
+      ],
+      "env_image": "node:20.11.0-bookworm-slim@sha256:ecc9a2581f8588014a49a523a9ed146d27963f6d988d11bd16bbdcb3598f5f98",
+      "inputs": [
+        ".nvmrc",
+        "eslint.config.mjs",
+        "eslint.project-overrides.mjs",
+        "jest.preset.js",
+        "libs/aquaculture-engines",
+        "libs/shared-contracts",
+        "libs/testing",
+        "mcp/farm-management",
+        "package-lock.json",
+        "tools/eslint-rules",
+        "tools/toolchain/toolchain-runtime.mjs",
+        "tsconfig.base.json"
+      ],
+      "install_scripts_required": [
+        "node_modules/@apollo/protobufjs",
+        "node_modules/@firebase/util",
+        "node_modules/@parcel/watcher",
+        "node_modules/@scarf/scarf",
+        "node_modules/@serialport/bindings-cpp",
+        "node_modules/@swc/core",
+        "node_modules/bcrypt",
+        "node_modules/cpu-features",
+        "node_modules/esbuild",
+        "node_modules/fsevents",
+        "node_modules/nx",
+        "node_modules/playwright/node_modules/fsevents",
+        "node_modules/protobufjs",
+        "node_modules/ssh2",
+        "node_modules/unrs-resolver"
+      ],
+      "limits": {},
+      "lint_cmd": [
+        "node_modules/.bin/eslint",
+        "--config",
+        "eslint.config.mjs",
+        "--no-error-on-unmatched-pattern",
+        "--format",
+        "json",
+        "mcp/farm-management/src/**/*.ts",
+        "mcp/farm-management/vitest.config.ts"
+      ],
+      "lockfiles": [
+        "package-lock.json"
+      ],
+      "path": "mcp/farm-management",
+      "services": [],
+      "test_cmd": [
+        "npm",
+        "--prefix",
+        "mcp/farm-management",
+        "run",
+        "--silent",
+        "test"
+      ],
+      "toolchain": "node@20.11.0",
+      "unit_id": "mcp-farm-management"
+    }
+  ]
+}
