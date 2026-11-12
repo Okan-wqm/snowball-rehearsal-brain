@@ -1,7 +1,7 @@
 """Test 46 (asama-0/09), MF17, D1: ``loop.fetch``, one commit fetched by id into a new bare git directory.
 
 Over the fake ``git`` of ``git_store`` on PATH (the referee's sandbox has no git), which records each process's
-argv and environment and answers ``cat-file --batch`` with real git's records of ``fixtures/git-objects.batch``:
+argv and environment and answers ``cat-file --batch`` with real git's records (``test_gitobj.real_objects``):
 
 - the two commands and the read-back, exactly, with the environment of ``loop.gitobj.git_env`` plus
   ``GIT_TERMINAL_PROMPT=0`` (no inherited ``GIT_*`` or ``SSH_ASKPASS``), stdin and stdout ``/dev/null``;
@@ -41,7 +41,7 @@ from profile_tree import writable_base  # noqa: E402
 import git_store as S  # noqa: E402
 from test_gitobj import REAL_COMMIT, real_objects  # noqa: E402
 
-URL = "https://github.com/Okan-wqm/aquaculture_platform"
+URL = "https://github.com/Acme-org/some_repo"
 CAPTURE = os.path.join(REFEREE, "tests", "fixtures", "git-fetch.json")
 CONFIG = ["-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "gc.auto=0",
           "-c", "maintenance.auto=false"]

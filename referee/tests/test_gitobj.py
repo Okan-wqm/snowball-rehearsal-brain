@@ -1,7 +1,8 @@
 """Test 46 (asama-0/09), MF17, D1: ``loop.gitobj``, a commit's tree read from its git objects by content id.
 
-- real git: ``fixtures/git-objects.batch`` is ``git cat-file --batch-all-objects --batch`` of a repository made
-  with git 2.47.3 (recipe in ``REAL``): a nested file, an empty-free nested directory, a symlink, an executable,
+- real git: ``fixtures/git-objects.batch.b64`` is ``git cat-file --batch-all-objects --batch | base64`` of a
+  repository made with git 2.47.3 (recipe in ``REAL``; base64 because every file under ``referee/`` is text,
+  asama-0/10 #genellik; the decoded stream is git's, ``REAL_BATCH_SHA256``): a nested file, an empty-free nested directory, a symlink, an executable,
   a CRLF file, ``hidden.txt`` marked ``export-ignore`` and ``subst.txt`` marked ``export-subst``. ``git archive``
   of that commit leaves ``hidden.txt`` out; ``tree_tar`` keeps it and keeps ``subst.txt`` unexpanded, the CRLF
   bytes, the link and the modes (asama-0/06: ``.gitattributes`` has no effect). The same files built by
@@ -21,6 +22,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import io
 import json
 import os
@@ -38,7 +41,7 @@ from loop import pulled as P  # noqa: E402
 from profile_tree import writable_base  # noqa: E402
 import git_store as S  # noqa: E402
 
-FIXTURE = os.path.join(REFEREE, "tests", "fixtures", "git-objects.batch")
+FIXTURE = os.path.join(REFEREE, "tests", "fixtures", "git-objects.batch.b64")
 MODES = os.path.join(REFEREE, "tests", "fixtures", "git-modes.json")
 PARENTS = os.path.join(REFEREE, "tests", "fixtures", "git-parents.json")
 PRINTED = {("file", 0o644): "100644", ("file", 0o755): "100755", ("link", 0o777): "120000",
@@ -56,11 +59,17 @@ REAL = {
 }
 REAL_COMMIT = "265111f095bfacdaa9ab28c23b217d432eb3d60f"
 REAL_TREE = "8eaf6ffd50d03ba51d2b619e8af7f244e86901cd"
+REAL_BATCH_SHA256 = "e005a2c2412d5e2bef5d7b3dc7fab377e0dacc4d87e1833112d7372f5e378c70"  # of the stream git wrote
+
+
+def real_batch() -> bytes:
+    """git's stream: the fixture's lines (``base64``'s, 76 columns) joined and decoded, nothing else accepted."""
+    with open(FIXTURE, "rb") as fh:
+        return base64.b64decode(b"".join(fh.read().split(b"\n")), validate=True)
 
 
 def real_objects() -> dict:
-    with open(FIXTURE, "rb") as fh:
-        return S.parse_batch(fh.read())
+    return S.parse_batch(real_batch())
 
 
 def members(tar_bytes: bytes) -> list[tuple]:
@@ -70,6 +79,9 @@ def members(tar_bytes: bytes) -> list[tuple]:
 
 
 class RealGit(unittest.TestCase):
+    def test_the_fixture_decodes_to_the_stream_git_wrote(self):
+        self.assertEqual(hashlib.sha256(real_batch()).hexdigest(), REAL_BATCH_SHA256)
+
     def test_the_tree_of_a_real_commit(self):
         out = G.tree_tar(real_objects().__getitem__, REAL_COMMIT)
         self.assertEqual(members(out), [
