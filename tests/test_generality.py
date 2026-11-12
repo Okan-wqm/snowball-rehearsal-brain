@@ -5,6 +5,7 @@ is not text. The trees are built in a scratch directory with made-up names. Run 
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -55,25 +56,77 @@ class ThisTree(unittest.TestCase):
         self.assertGreater(answer["files"], 100)  # the walk found referee/
 
 
+def shown(rel: str) -> str:
+    return "sha256:" + hashlib.sha256(rel.encode()).hexdigest()[:16]
+
+
+class Fold(unittest.TestCase):
+    def test_each_step(self):
+        for value, folded in (
+                ("Blue_Heron", "blue_heron"), ("heron-app", "heron-app"), ("a/B c\n", "a/b c\n"),
+                ("Ünïted", "united"), ("U\u0308ni\u0308ted", "united"),  # composed and decomposed: marks dropped
+                ("ＢＬＵＥ", "blue"), ("o\ufb03ce", "office"), ("x\u00b2", "x2"),  # NFKD: fullwidth, ligature, superscript
+                ("STRASSE", "strasse"), ("Straße", "strasse"),  # casefold, not lower
+                ("Balık", "balik"), ("BALIK", "balik"), ("İstasyon", "istasyon"), ("ISTASYON", "istasyon"),
+                ("\u03d2", "\u03c5"),  # NFKD before casefold: the other order leaves a capital upsilon
+                ("\u0301\u0308", ""), ("", "")):
+            with self.subTest(value=value):
+                self.assertEqual(G.fold(value), folded)
+                self.assertEqual(G.fold(folded), folded)
+
+
 class Names(Base):
-    def test_a_name_in_a_files_text_or_path(self):
+    def test_a_name_in_a_files_text(self):
         self.put("referee/tests/a.py", 'URL = "https://example.org/o/Blue_Heron"\n')
-        self.put("referee/tests/fixtures/b.json", '{"pkg": "@x/HERON-APP", "other": "blue_heron"}\n')  # casefolded
-        self.put("referee/gate/heron-app/c.txt", "nothing here\n")  # the path alone
-        self.put("referee/d.md", "the ünïted one\n")  # the second target's name
-        self.put("referee/e.py", "blue heron, heron_app, Blue-Heron\n")  # no name as written
+        self.put("referee/tests/fixtures/b.json", '{"pkg": "@x/HERON-APP", "other": "blue_heron"}\n')
+        self.put("referee/d.md", "the united one\n")  # the second target's name, its marks dropped in the text
+        self.put("referee/e.py", "blue heron, heron_app, Blue-Heron, unit ed\n")  # no name as written
         self.put("docs/f.md", "Blue_Heron\n")  # outside referee/
         answer = G.check(self.root)
         self.assertEqual(answer, {
-            "ok": False, "files": 6,
-            "reasons": ["target_name_in_referee:referee/d.md", "target_name_in_referee:referee/gate/heron-app/c.txt",
-                        "target_name_in_referee:referee/tests/a.py",
+            "ok": False, "files": 5,
+            "reasons": ["target_name_in_referee:referee/d.md", "target_name_in_referee:referee/tests/a.py",
                         "target_name_in_referee:referee/tests/fixtures/b.json"],
             "why": {"referee/d.md": ["targets[1].names[0]"],
-                    "referee/gate/heron-app/c.txt": ["targets[0].names[1]"],
                     "referee/tests/a.py": ["targets[0].names[0]"],
                     "referee/tests/fixtures/b.json": ["targets[0].names[0]", "targets[0].names[1]"]},
         })
+
+    def test_the_name_and_the_text_are_folded_alike(self):
+        self.put("targets/names.json", json.dumps({"targets": [{"repo": "r", "commit": "c", "names": [
+            {"name": "Balık_Ağı", "from": "repository"}, {"name": "ＨＥＲＯＮ２", "from": "package.json"}]}]}))
+        self.put("referee/a.md", "see balik_agi\n")
+        self.put("referee/b.md", "see BALIK_AĞI and Heron2\n")
+        self.put("referee/c.md", "see balik-agi and heron 2\n")
+        self.assertEqual(G.check(self.root)["why"], {"referee/a.md": ["targets[0].names[0]"],
+                                                     "referee/b.md": ["targets[0].names[0]", "targets[0].names[1]"]})
+
+    def test_a_name_in_a_path_is_searched_after_referee_and_first_and_not_shown(self):
+        self.put("targets/names.json", json.dumps({"targets": [{"repo": "r", "commit": "c", "names": [
+            {"name": "referee", "from": "repository"}, {"name": "ee/gate", "from": "package.json"},
+            {"name": "Ünïted", "from": "Cargo.toml"}]}]}))
+        self.put("referee/gate/a.py", "x = 1\n")  # neither name is in gate/a.py
+        in_dir = self.put("referee/gate/UNITED/c.txt", "nothing here\n")  # the path alone, folded
+        in_file = self.put("referee/tests/referee_x.py", "the united one\n")  # a name in the text too: not read
+        not_text = self.put("referee/tests/fixtures/ünited.batch", b"\xff\x00")  # not text: not read either
+        self.assertEqual(G.check(self.root), {
+            "ok": False, "files": 5,
+            "reasons": sorted("target_name_in_referee:" + shown(rel) for rel in (in_dir, in_file, not_text)),
+            "why": {shown(in_dir): ["targets[0].names[2]"], shown(in_file): ["targets[0].names[0]"],
+                    shown(not_text): ["targets[0].names[2]"]},
+        })
+        self.assertEqual(shown(in_dir), "sha256:" + hashlib.sha256(b"referee/gate/UNITED/c.txt").hexdigest()[:16])
+        self.assertEqual(len(shown(in_dir)), len("sha256:") + 16)
+
+    def test_a_path_that_is_not_utf8_is_hashed_by_its_bytes(self):
+        raw = b"referee/tests/blue_heron\xff.bin"
+        os.makedirs(os.path.join(self.root, "referee", "tests"))
+        with open(os.path.join(os.fsencode(self.root), raw), "wb") as fh:
+            fh.write(b"x\n")
+        key = "sha256:" + hashlib.sha256(raw).hexdigest()[:16]
+        self.assertEqual(self.main("check", "--root", self.root),
+                         (1, {"ok": False, "files": 2, "reasons": ["target_name_in_referee:" + key],
+                              "why": {key: ["targets[0].names[0]"]}}))
 
     def test_a_clean_tree_and_an_empty_list(self):
         self.assertEqual(G.check(self.root), {"ok": True, "files": 1, "reasons": [], "why": {}})
@@ -92,28 +145,26 @@ class Names(Base):
 
 class Text(Base):
     def test_what_is_text(self):
-        for data in (b"", b"a\tb\r\nc\n", "ğ ü ∑ 𝄞\n".encode(), b"{\"a\": \"\\u0000\"}\n"):
+        for data in (b"", b"a\tb\r\nc\n", "ğ ü ∑ 𝄞\n".encode(), b"{\"a\": \"\\u0000\"}\n", b"\xef\xbb\xbfa\n",
+                     b"a\x1b[0mb", b"a\x0cb", b"a\x7fb", b"a\x01b", "a\u0085b\u200b".encode()):
             with self.subTest(data=data):
                 self.assertEqual(G.text(data), data.decode())
-        for data in (b"\xff", b"caf\xe9\n", b"a\x00b", b"a\x1bb", b"a\x0cb", b"a\x7fb", b"\xc0\x80", b"\xed\xa0\x80",
-                     "a".encode("utf-16")):
+        for data in (b"\xff", b"caf\xe9\n", b"a\x00b", b"\x00", b"\xc0\x80", b"\xed\xa0\x80", b"\xf4\x90\x80\x80",
+                     b"a\xc3", "a".encode("utf-16")):
             with self.subTest(data=data):
                 self.assertIsNone(G.text(data))
 
-    def test_a_file_that_is_not_text_is_named_and_only_its_path_is_searched(self):
+    def test_a_file_that_is_not_text_is_named_and_not_searched(self):
         self.put("referee/a.py", "heron-app\n")
         self.put("referee/tests/fixtures/objects.batch", b"tree 3\x00\x9f\xa1Blue_Heron\n")
         self.put("referee/tests/nul.txt", b"Blue_Heron\x00\n")
-        self.put("referee/tests/fixtures/blue_heron.batch", b"\xff")
+        self.put("referee/tests/esc.txt", b"\x1b[1mBlue_Heron\x1b[0m\x0c\n")  # control characters: text, searched
         self.assertEqual(G.check(self.root), {
             "ok": False, "files": 5,
-            "reasons": ["referee_file_not_text:referee/tests/fixtures/blue_heron.batch",
-                        "referee_file_not_text:referee/tests/fixtures/objects.batch",
+            "reasons": ["referee_file_not_text:referee/tests/fixtures/objects.batch",
                         "referee_file_not_text:referee/tests/nul.txt",
-                        "target_name_in_referee:referee/a.py",
-                        "target_name_in_referee:referee/tests/fixtures/blue_heron.batch"],
-            "why": {"referee/a.py": ["targets[0].names[1]"],
-                    "referee/tests/fixtures/blue_heron.batch": ["targets[0].names[0]"]},
+                        "target_name_in_referee:referee/a.py", "target_name_in_referee:referee/tests/esc.txt"],
+            "why": {"referee/a.py": ["targets[0].names[1]"], "referee/tests/esc.txt": ["targets[0].names[0]"]},
         })
 
 
@@ -136,8 +187,11 @@ class NamesFile(Base):
                 ({"targets": [dict(entry, names=[{"name": "a", "from": "b"}, {"name": "", "from": "b"}])]},
                  "names_invalid: targets[0].names[1]"),
                 ({"targets": [dict(entry, names=[{"name": "a", "from": None}])]}, "names_invalid: targets[0].names[0]"),
+                ({"targets": [dict(entry, names=[{"name": "a", "from": ""}])]}, "names_invalid: targets[0].names[0]"),
                 ({"targets": [dict(entry, names=[{"name": "a", "from": "b", "c": "d"}])]},
-                 "names_invalid: targets[0].names[0]")):
+                 "names_invalid: targets[0].names[0]"),
+                ({"targets": [dict(entry, names=[{"name": "a\u0301", "from": "b"}, {"name": "\u0301", "from": "b"}])]},
+                 "names_invalid: targets[0].names[1]")):  # a name of combining marks alone: nothing left to search
             with self.subTest(reason=reason, doc=str(doc)[:40]):
                 self.put("targets/names.json", doc if isinstance(doc, (str, bytes)) else json.dumps(doc))
                 with self.assertRaises(G.Unreadable) as ctx:

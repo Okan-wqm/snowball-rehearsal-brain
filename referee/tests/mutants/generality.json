@@ -29,27 +29,207 @@
    ]
   },
   {
-   "id": "control_is_text",
-   "old": "(ch < \" \" and ch not in TEXT_CONTROLS) or ch == \"\\x7f\"",
-   "new": "ch == \"\\x00\"",
+   "id": "nfkd_dropped",
+   "old": "value = unicodedata.normalize(\"NFKD\", value).casefold()",
+   "new": "value = value.casefold()",
    "file": "tests/generality.py",
    "tests": [
     "test_generality.py"
    ]
   },
   {
-   "id": "del_is_text",
-   "old": " or ch == \"\\x7f\" for ch in decoded",
-   "new": " for ch in decoded",
+   "id": "nfd_for_nfkd",
+   "old": "value = unicodedata.normalize(\"NFKD\", value).casefold()",
+   "new": "value = unicodedata.normalize(\"NFD\", value).casefold()",
    "file": "tests/generality.py",
    "tests": [
     "test_generality.py"
    ]
   },
   {
-   "id": "tab_not_text",
-   "old": "TEXT_CONTROLS = \"\\t\\n\\r\"",
-   "new": "TEXT_CONTROLS = \"\\n\\r\"",
+   "id": "nfkc_for_nfkd",
+   "old": "value = unicodedata.normalize(\"NFKD\", value).casefold()",
+   "new": "value = unicodedata.normalize(\"NFKC\", value).casefold()",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "lower_for_casefold",
+   "old": "value = unicodedata.normalize(\"NFKD\", value).casefold()",
+   "new": "value = unicodedata.normalize(\"NFKD\", value).lower()",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "casefold_before_nfkd",
+   "old": "value = unicodedata.normalize(\"NFKD\", value).casefold()",
+   "new": "value = unicodedata.normalize(\"NFKD\", value.casefold())",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "marks_kept",
+   "old": "for ch in value if not unicodedata.combining(ch))",
+   "new": "for ch in value)",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "dotless_i_kept",
+   "old": ".replace(\"\\u0131\", \"i\")",
+   "new": "",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "nul_is_text",
+   "old": "return None if \"\\x00\" in decoded else decoded",
+   "new": "return decoded",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "control_not_text",
+   "old": "return None if \"\\x00\" in decoded else decoded",
+   "new": "return None if any(ch < \" \" and ch not in \"\\t\\n\\r\" for ch in decoded) else decoded",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "shown_not_by_bytes",
+   "old": "rel.encode(\"utf-8\", \"surrogateescape\")",
+   "new": "rel.encode(\"utf-8\", \"replace\")",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "shown_shorter",
+   "old": "SHOWN_HEX = 16",
+   "new": "SHOWN_HEX = 12",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "shown_without_referee",
+   "old": "hashlib.sha256(rel.encode(",
+   "new": "hashlib.sha256(rel[len(REFEREE) + 1:].encode(",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "name_not_folded",
+   "old": "names = [(label, fold(name))",
+   "new": "names = [(label, name)",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "path_searched_with_referee",
+   "old": "place, key = fold(rel[len(REFEREE) + 1:]), shown(rel)",
+   "new": "place, key = fold(rel), shown(rel)",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "path_not_folded",
+   "old": "place, key = fold(rel[len(REFEREE) + 1:]), shown(rel)",
+   "new": "place, key = rel[len(REFEREE) + 1:], shown(rel)",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "path_not_searched",
+   "old": "place, key = fold(rel[len(REFEREE) + 1:]), shown(rel)",
+   "new": "place, key = \"\", shown(rel)",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "path_shown_plain",
+   "old": "place, key = fold(rel[len(REFEREE) + 1:]), shown(rel)",
+   "new": "place, key = fold(rel[len(REFEREE) + 1:]), rel",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "text_read_after_a_path_hit",
+   "old": "if not any(name in place for _, name in names):",
+   "new": "if True:",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "not_text_passes_silently",
+   "old": "                reasons.append(\"referee_file_not_text:%s\" % rel)\n                continue",
+   "new": "                continue",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "text_not_folded",
+   "old": "place, key = fold(body), rel",
+   "new": "place, key = body, rel",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "text_not_searched",
+   "old": "place, key = fold(body), rel",
+   "new": "place, key = \"\", rel",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "first_hit_only",
+   "old": "            why[key] = hits",
+   "new": "            why[key] = hits[:1]",
+   "file": "tests/generality.py",
+   "tests": [
+    "test_generality.py"
+   ]
+  },
+  {
+   "id": "name_of_marks_alone_ok",
+   "old": "            if not fold(item[\"name\"]):\n                raise Unreadable(\"names_invalid: %s\" % label)\n",
+   "new": "",
    "file": "tests/generality.py",
    "tests": [
     "test_generality.py"
@@ -59,60 +239,6 @@
    "id": "not_utf8_is_text",
    "old": "    except UnicodeDecodeError:\n        return None",
    "new": "    except UnicodeDecodeError:\n        return data.decode(\"latin-1\")",
-   "file": "tests/generality.py",
-   "tests": [
-    "test_generality.py"
-   ]
-  },
-  {
-   "id": "not_text_path_not_searched",
-   "old": "            reasons.append(\"referee_file_not_text:%s\" % rel)\n",
-   "new": "            reasons.append(\"referee_file_not_text:%s\" % rel)\n            continue\n",
-   "file": "tests/generality.py",
-   "tests": [
-    "test_generality.py"
-   ]
-  },
-  {
-   "id": "case_kept",
-   "old": "folded = (\"\" if body is None else body.casefold(), rel.casefold())",
-   "new": "folded = (\"\" if body is None else body, rel)",
-   "file": "tests/generality.py",
-   "tests": [
-    "test_generality.py"
-   ]
-  },
-  {
-   "id": "name_case_kept",
-   "old": "if any(name.casefold() in part for part in folded)",
-   "new": "if any(name in part for part in folded)",
-   "file": "tests/generality.py",
-   "tests": [
-    "test_generality.py"
-   ]
-  },
-  {
-   "id": "path_not_searched",
-   "old": "folded = (\"\" if body is None else body.casefold(), rel.casefold())",
-   "new": "folded = (\"\" if body is None else body.casefold(),)",
-   "file": "tests/generality.py",
-   "tests": [
-    "test_generality.py"
-   ]
-  },
-  {
-   "id": "text_not_searched",
-   "old": "folded = (\"\" if body is None else body.casefold(), rel.casefold())",
-   "new": "folded = (rel.casefold(),)",
-   "file": "tests/generality.py",
-   "tests": [
-    "test_generality.py"
-   ]
-  },
-  {
-   "id": "first_hit_only",
-   "old": "            why[rel] = hits",
-   "new": "            why[rel] = hits[:1]",
    "file": "tests/generality.py",
    "tests": [
     "test_generality.py"
@@ -191,7 +317,7 @@
    ]
   },
   {
-   "id": "empty_name_ok",
+   "id": "empty_value_ok",
    "old": "not all(_string(v) for v in item.values())",
    "new": "not all(isinstance(v, str) for v in item.values())",
    "file": "tests/generality.py",
