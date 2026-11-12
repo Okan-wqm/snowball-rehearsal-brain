@@ -11,7 +11,7 @@ Okunma: her oturumda, görev seçilirken
 | Her oturum | `00`, `00a` |
 | Kurulum, aktarım ve etkinleştirme | `25`, `25a`, `24`, `01a`, `01b`, `29b` |
 | Yeni repoya bağlanma | `01`, `14`, `21`, `21a` |
-| Aşama açma ve kapama | `02`, `03`, `19`, `26c`, `26d`, `26e`, ilgili `asama-N/00-ozet.md` |
+| Aşama açma ve kapama | `02`, `03`, `19`, `26c`, `26d`, `26e`, `29e`, ilgili `asama-N/00-ozet.md` |
 | Hakem bileşeni yazma (Aşama 0 ve partiler) | `01a`, `01b`, `08`, `26a`, `26c`, `26d`, `26e`, `26f`, `29`, `29a`, `29b`, `29e`, `29p`, `29r`, `29s`, `asama-0/14`, `asama-1/13` |
 | Koda ya da dokümana dokunma | `04`, `04a`, `05`, `07`, `07a`, `08`, `23` |
 | Mimari seçim: doğruluk kaynağı, tekrar, sınırlar, değişim, evrim, belge (danışma) | `31`, `31a`, `31b`, `31c`, `31d`, `31e`, `31f`, `31g`, `31h` |

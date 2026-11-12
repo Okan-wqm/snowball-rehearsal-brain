@@ -29,7 +29,8 @@ bir Windows kullanıcısında koşar; Kurucu'nun yapılandırması repo dışın
 3. `claude -p`: pinli sürüm, Opus model kimliği, `--max-budget-usd <session_cap_usd>`, ayar kaynağı yok
    ya da operatörün yönettiği dosya, `--strict-mcp-config`, taze `CLAUDE_CONFIG_DIR`,
    `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; çalışma dizini beyin klonu, hedefin salt okunur klonu dışarıda;
-   açılış "`00` ve `00a`'yı oku" ve tipli durum.
+   açılış "`00` ve `00a`'yı oku" ve tipli durum; hedeflerin `targets[]` sırasıyla `[{id, kind}]`'ı oturumun
+   klasöründe `/work/logs/targets.json`'dadır, adları orada yoktur (`29e` "Genellik okuması").
 4. Bitince CLI'nin bildirdiği maliyeti `kind: cost` satırı olarak `founder-ledger.jsonl`'a `26`'nın zincir
    kuralıyla ekler; oturum sayısı ve USD `status-stage0.md`'ye girer.
 

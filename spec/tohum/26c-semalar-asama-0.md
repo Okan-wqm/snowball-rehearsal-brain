@@ -29,7 +29,7 @@ takılan kalem) eksikse fren; `loop_schedule` eksikse `false` (zamanlanmış dev
 
 **setup/summary.json** (`25`'in alanlarına ek): `seed_epochs[]` `{commit, spec_tohum_sha256, seed_sha256,
 bootstrap_sha256}`; `targets[]` `{id, repo, kind: toy|copy, base_sha, identifiers[], excluded_paths[], unit_candidates[],
-safety_paths[]?}` (`identifiers` genellik denetiminin ad listesidir; `excluded_paths` operatör verisidir, hakem kodu değildir;
+safety_paths[]?}` (`identifiers` genellik denetiminin ad listesidir, kuralı `29e` "Genellik okuması"; `excluded_paths` operatör verisidir, hakem kodu değildir;
 `unit_candidates` kopyanın aday birim yolları, sırayla; `safety_paths` sahibin isteğe bağlı fiziksel güvenlik yolları, `05`
 "Fiziksel güvenlik"); `honesty_commitment` (`sha256(canonical(anahtar))`); ekim kaçırıldıysa sahibin `honesty_exception`
 `{stage: 0, carry_to: 1, reason}`'ı (`02` "Sahip istisnası"; yanındaki taahhüt taşıma hedefinin ekimidir, o olmadan istisna

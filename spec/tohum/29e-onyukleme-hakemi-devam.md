@@ -1,8 +1,8 @@
-# Önyükleme Hakemi, Devam: Kurucu Kayıtları, Sır Desenli Metin, Sınav Hatası, Bütçe Durması
+# Önyükleme Hakemi, Devam: Kurucu Kayıtları, Sır Desenli Metin, Sınav Hatası, Bütçe Durması, Genellik Okuması
 
 Tarih: 2026-11-01 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
-Okunma: Aşama 0 boyunca; Kurucu kaydı itilirken, bir `secret_in_*` reddi okunurken, bir ret sınav hatası sayılınca ve bir baş rakip frenine takılınca
-Çapa: `seed/bootstrap/snowball_bootstrap/` (`classify.py` `is_founder_record`, `rival.py` `secret_paths`, `config.py` `load_exam_faults`, `decide.py`, `cli.py` `rival_allowance` ve `brake_raised`)
+Okunma: Aşama 0 boyunca; Kurucu kaydı itilirken, bir `secret_in_*` reddi okunurken, bir ret sınav hatası sayılınca, bir baş rakip frenine takılınca ve bir #genellik nedeni okunurken
+Çapa: `seed/bootstrap/snowball_bootstrap/` (`classify.py` `is_founder_record`, `rival.py` `secret_paths`, `config.py` `load_exam_faults`, `decide.py`, `cli.py` `rival_allowance` ve `brake_raised`, `exitchecks.py` `generality`)
 
 ---
 
@@ -51,3 +51,15 @@ gibi `rejected` der, ama `last_evaluated_sha`, seriler, rakip hata serisi ve kes
 Sonraki yoklamalar, elle tetiklenen koşu da, aynı başı payı `allowed_usd_micros`'tan (en az sıfırdan) büyük olana dek
 uyarıyla geçer: ay freni ay dönünce, her fren operatör onu yükseltince aynı baş kendiliğinden yargılanır; yeni baş her
 zamanki gibi okunur. Bu kuraldan önce yargılanmış sayılan baş (`last_evaluated_sha`) yeniden açılmaz.
+
+**Genellik okuması** (`asama-0/10` #genellik; E284, E290, E291). Denetim yalnız çıkış isteğinde, beyin arşivinin
+`referee/` altındaki her dosyada koşar; kod push'unda hiçbir hedef adıyla karşılaştırma yoktur. Adlar
+`setup/summary.json` `targets[].identifiers`'tır: operatörün verisi, kopya hedefi ayıran adlar; liste de sayısı da
+oturuma verilmez. Ad da aranan yer de aynı biçimde karşılaştırılır (NFKD, casefold, birleşen işaretler atılır, `ı` `i`
+okunur) ve ad alt dizge olarak aranır. Önce dosyanın yolu (`referee/`'den sonrası) aranır, yolunda ad olan dosyanın
+metni okunmaz; sonra metni. Metin, katı UTF-8 olarak çözülen ve NUL (U+0000) taşımayan dosyadır; öbür denetim
+karakterleri metindir. Metin olmayan dosya okunmadan geçmez: `referee_file_not_text:<yol>`; yolunda ya da metninde ad
+olan dosya `target_name_in_referee:<yol>`. Ad taşıyan yol sonuçta `sha256:` ve sha256'sının ilk 16 onaltılık
+karakteridir; `why` hedefi ve adı yalnız sırasıyla söyler (`targets[<i>].identifiers[<j>]`). Kopya hedef ya da onun
+adları yoksa karar yoktur, çıkış `not_checked:genellik` ile kapalı kalır. Denetimden geçmek genelliğin kanıtı değildir:
+ölçüsü `21`'in ilkesidir.
