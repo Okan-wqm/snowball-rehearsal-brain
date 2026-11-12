@@ -1,0 +1,18 @@
+{
+ "targets": [
+  {
+   "repo": "https://github.com/Okan-wqm/aquaculture_platform",
+   "commit": "4f479013a42f4b750e0784cc2500bd17d932af1a",
+   "names": [
+    {
+     "name": "aquaculture_platform",
+     "from": "repository"
+    },
+    {
+     "name": "aquaculture-platform",
+     "from": "package.json"
+    }
+   ]
+  }
+ ]
+}

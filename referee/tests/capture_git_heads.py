@@ -5,9 +5,9 @@ Each case runs ``loop.fetch.heads_argv``'s two commands with ``loop.fetch``'s en
 of ``PATH`` and ``HOME`` plus ``SSH_ASKPASS``, then ``GIT_TERMINAL_PROMPT=0``) and records the exit codes, the
 answer's bytes and whether the ``SSH_ASKPASS`` script (it writes a marker file and answers ``x``) ran:
 
-- ``public``: a public repository (``TARGET``), asking for its ``main`` and a ``brain/state`` it does not have;
+- ``public``: a public repository (``PUBLIC``), asking for its ``main`` and a ``brain/state`` it does not have;
 - ``redirect``: the same commands with the working directory inside a repository whose configuration says
-  ``url.<BRAIN>.insteadOf <TARGET>``; and ``redirect_without_git_dir``, the listing without ``--git-dir`` in the
+  ``url.<BRAIN>.insteadOf <PUBLIC>``; and ``redirect_without_git_dir``, the listing without ``--git-dir`` in the
   same place: which repository answered (why ``heads`` passes ``--git-dir``);
 - ``no_repository``: a repository that does not exist.
 
@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from loop import fetch as F  # noqa: E402
 from loop import gitobj as G  # noqa: E402
 
-TARGET = "https://github.com/Okan-wqm/aquaculture_platform"
+PUBLIC = "https://github.com/sigstore/gh-action-sigstore-python"  # a repository that is no target of this brain
 BRAIN = "https://github.com/Okan-wqm/snowball-rehearsal-brain"
 MISSING = "https://github.com/Okan-wqm/no-such-repository-snowball"
 REFS = ["refs/heads/main", "refs/heads/brain/state"]
@@ -60,16 +60,16 @@ def main() -> int:
         local = os.path.join(tmp, "around")
         env = G.git_env({"PATH": "/usr/bin:/bin", "HOME": tmp})
         subprocess.run(["git", "init", "-q", local], check=True, env=env)
-        subprocess.run(["git", "-C", local, "config", "url.%s.insteadOf" % BRAIN, TARGET], check=True, env=env)
+        subprocess.run(["git", "-C", local, "config", "url.%s.insteadOf" % BRAIN, PUBLIC], check=True, env=env)
         doc = {
             "git": subprocess.run(["git", "--version"], capture_output=True, text=True).stdout.strip(),
             "argv": F.heads_argv("git", "<git_dir>", "<url>", ["<ref>"]),
             "refs": REFS,
             "brain_main": case(tmp, "brain", BRAIN)["stdout"],
             "cases": {
-                "public": case(tmp, "public", TARGET),
-                "redirect": case(tmp, "redirect", TARGET, cwd=local),
-                "redirect_without_git_dir": case(tmp, "redirect_bare", TARGET, cwd=local, git_dir=False),
+                "public": case(tmp, "public", PUBLIC),
+                "redirect": case(tmp, "redirect", PUBLIC, cwd=local),
+                "redirect_without_git_dir": case(tmp, "redirect_bare", PUBLIC, cwd=local, git_dir=False),
                 "no_repository": case(tmp, "no_repository", MISSING),
             },
         }
