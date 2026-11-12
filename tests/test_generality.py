@@ -1,6 +1,6 @@
 """``tests/generality.py``'s rules, each bound by a test below (the rules are listed in its docstring, the one
 source), and the check itself on this tree: ``referee/`` holds no name of ``targets/names.json`` and no file that
-is not text. The trees are built in a temporary directory with made-up names. Run from the brain's root."""
+is not text. The trees are built in a scratch directory with made-up names. Run from the brain's root."""
 
 from __future__ import annotations
 
