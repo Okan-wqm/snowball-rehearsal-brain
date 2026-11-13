@@ -101,8 +101,8 @@
   },
   {
    "id": "mutant_file_change_ignored",
-   "old": "if os.path.relpath(path, brain) in changed:",
-   "new": "if False:",
+   "old": "if path in changed or starts[0] in changed:",
+   "new": "if starts[0] in changed:",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -128,8 +128,8 @@
   },
   {
    "id": "mutated_file_not_a_root",
-   "old": "roots = [os.path.normpath(os.path.join(m[\"root\"], m[\"file\"]))] + [",
-   "new": "roots = [] + [",
+   "old": "starts = [os.path.normpath(os.path.join(m[\"root\"], m[\"file\"]))] + [",
+   "new": "starts = [\"\"] + [",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -146,8 +146,8 @@
   },
   {
    "id": "selection_not_applied",
-   "old": "mutants = select(brain, mutants, changed)",
-   "new": "pass",
+   "old": "    if changed is None:\n        mutants = [(path, m, 2) for path, m in loaded]",
+   "new": "    if True:\n        mutants = [(path, m, 2) for path, m in loaded]",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -282,8 +282,8 @@
   {
    "id": "floor_flag_not_passed",
    "file": "tests/mutate.py",
-   "old": "args.factor, args.floor)",
-   "new": "args.factor)",
+   "old": "args.factor, args.floor,",
+   "new": "args.factor, 60.0,",
    "tests": [
     "test_mutate.Runner"
    ]
@@ -326,8 +326,8 @@
   },
   {
    "id": "baseline_shared_across_roots",
-   "old": "verdict, seconds = base[(m[\"root\"], tuple(m[\"tests\"]))]",
-   "new": "verdict, seconds = next(v for k, v in base.items() if k[1] == tuple(m[\"tests\"]))",
+   "old": "verdict, seconds = base_of((m[\"root\"], tuple(m[\"tests\"])))",
+   "new": "verdict, seconds = base_of(next(k for k in sorted(locks) if k[1] == tuple(m[\"tests\"])))",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -353,8 +353,8 @@
   },
   {
    "id": "one_closure_for_every_root",
-   "old": "return bool(closures[m[\"root\"]](roots) & changed)",
-   "new": "return bool(closure_of(brain, changed, ROOTS[\"referee\"])(roots) & changed)",
+   "old": "closures = {root: closure_of(brain, changed, ROOTS[root]) for root in roots}",
+   "new": "closures = {root: closure_of(brain, changed, ROOTS[\"referee\"]) for root in roots}",
    "file": "tests/mutate.py",
    "tests": [
     "test_mutate.py"
@@ -408,10 +408,271 @@
   {
    "id": "summary_printed_on_a_cut",
    "file": "tests/mutate.py",
-   "old": "    rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,\n               lambda row: print(json.dumps(row, sort_keys=True), flush=True), args.factor, args.floor)\n",
-   "new": "    try:\n        rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,\n                   lambda row: print(json.dumps(row, sort_keys=True), flush=True), args.factor, args.floor)\n    except BaseException:\n        print(json.dumps(summary(files, []), sort_keys=True), flush=True)\n        raise\n",
+   "old": "    rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,\n               lambda row: print(json.dumps(row, sort_keys=True), flush=True), args.factor, args.floor,\n               os.path.abspath(args.record) if args.record else None, args.plan)\n",
+   "new": "    try:\n        rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,\n                   lambda row: print(json.dumps(row, sort_keys=True), flush=True), args.factor, args.floor,\n                   os.path.abspath(args.record) if args.record else None, args.plan)\n    except BaseException:\n        print(json.dumps(summary(files, []), sort_keys=True), flush=True)\n        raise\n",
    "tests": [
     "test_mutate.py"
+   ]
+  },
+  {
+   "id": "order_not_by_tier",
+   "file": "tests/mutate.py",
+   "old": "todo.sort(key=lambda item: item[3])",
+   "new": "todo.sort(key=lambda item: 0)",
+   "tests": [
+    "test_mutate.Order"
+   ]
+  },
+  {
+   "id": "tier_named_test_not_nearer",
+   "file": "tests/mutate.py",
+   "old": "    if set(starts[1:]) & changed:\n        return 1",
+   "new": "    if False:\n        return 1",
+   "tests": [
+    "test_mutate.Order"
+   ]
+  },
+  {
+   "id": "tier_mutated_file_not_nearest",
+   "file": "tests/mutate.py",
+   "old": "if path in changed or starts[0] in changed:",
+   "new": "if path in changed:",
+   "tests": [
+    "test_mutate.Order"
+   ]
+  },
+  {
+   "id": "baselines_all_before_the_first_mutant",
+   "file": "tests/mutate.py",
+   "old": "    locks = {suite: threading.Lock() for suite in suites}\n",
+   "new": "    locks = {suite: threading.Lock() for suite in suites}\n    base.update({suite: baseline(brain, suite[0], list(suite[1]), timeout) for suite in sorted(suites)})\n",
+   "tests": [
+    "test_mutate.Order"
+   ]
+  },
+  {
+   "id": "baseline_without_its_lock",
+   "file": "tests/mutate.py",
+   "old": "        with locks[suite]:  # the list's first",
+   "new": "        if True:  # the list's first",
+   "tests": [
+    "test_mutate.Order"
+   ]
+  },
+  {
+   "id": "baseline_run_for_every_mutant",
+   "file": "tests/mutate.py",
+   "old": "            if suite not in base:\n                base[suite] = baseline(",
+   "new": "            if True:\n                base[suite] = baseline(",
+   "tests": [
+    "test_mutate.Order"
+   ]
+  },
+  {
+   "id": "plan_not_emitted",
+   "file": "tests/mutate.py",
+   "old": "    send({\"plan\": plan})\n    for n in sorted(rows):",
+   "new": "    for n in sorted(rows):",
+   "tests": [
+    "test_mutate.Order"
+   ]
+  },
+  {
+   "id": "plan_only_goes_on_to_run",
+   "file": "tests/mutate.py",
+   "old": "        send({\"plan\": plan | {\"by_file\": by_file}})\n        return []",
+   "new": "        send({\"plan\": plan | {\"by_file\": by_file}})",
+   "tests": [
+    "test_mutate.Order"
+   ]
+  },
+  {
+   "id": "plan_tiers_count_the_reused",
+   "file": "tests/mutate.py",
+   "old": "\"tiers\": [sum(1 for item in todo if item[3] == t) for t in (0, 1, 2)]",
+   "new": "\"tiers\": [sum(1 for item in mutants if item[2] == t) for t in (0, 1, 2)]",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "plan_lists_count_the_reused",
+   "file": "tests/mutate.py",
+   "old": "suites = {(m[\"root\"], tuple(m[\"tests\"])) for _, _, m, _ in todo if not applicable(brain, m)}\n    plan",
+   "new": "suites = {(m[\"root\"], tuple(m[\"tests\"])) for _, m, _ in mutants if not applicable(brain, m)}\n    plan",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "fp_without_the_reached_bytes",
+   "file": "tests/mutate.py",
+   "old": "files.append([rel, hashlib.sha256(fh.read()).hexdigest()])",
+   "new": "files.append([rel, \"\"])",
+   "tests": [
+    "test_mutate.Fingerprint"
+   ]
+  },
+  {
+   "id": "fp_without_the_new_text",
+   "file": "tests/mutate.py",
+   "old": "for k in (\"root\", *FIELDS) if k != \"id\"}",
+   "new": "for k in (\"root\", *FIELDS) if k not in (\"id\", \"new\")}",
+   "tests": [
+    "test_mutate.Fingerprint"
+   ]
+  },
+  {
+   "id": "fp_without_the_tests",
+   "file": "tests/mutate.py",
+   "old": "for k in (\"root\", *FIELDS) if k != \"id\"}",
+   "new": "for k in (\"root\", *FIELDS) if k not in (\"id\", \"tests\")}",
+   "tests": [
+    "test_mutate.Fingerprint"
+   ]
+  },
+  {
+   "id": "fp_without_the_root",
+   "file": "tests/mutate.py",
+   "old": "for k in (\"root\", *FIELDS) if k != \"id\"}",
+   "new": "for k in FIELDS if k != \"id\"}",
+   "tests": [
+    "test_mutate.Fingerprint"
+   ]
+  },
+  {
+   "id": "fp_with_the_id",
+   "file": "tests/mutate.py",
+   "old": "for k in (\"root\", *FIELDS) if k != \"id\"}",
+   "new": "for k in (\"root\", *FIELDS)}",
+   "tests": [
+    "test_mutate.Fingerprint"
+   ]
+  },
+  {
+   "id": "record_reuses_any_single_outcome",
+   "file": "tests/mutate.py",
+   "old": "if len(outcomes) == 1 and outcomes <= set(REUSED)}",
+   "new": "if len(outcomes) == 1}",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_reuses_rows_that_disagree",
+   "file": "tests/mutate.py",
+   "old": "if len(outcomes) == 1 and outcomes <= set(REUSED)}",
+   "new": "if outcomes <= set(REUSED)}",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_keeps_every_outcome",
+   "file": "tests/mutate.py",
+   "old": "if record and outcome in REUSED:",
+   "new": "if record:",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_keeps_nothing_as_it_runs",
+   "file": "tests/mutate.py",
+   "old": "if record and outcome in REUSED:",
+   "new": "if False:",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_rewrite_drops_unread_files",
+   "file": "tests/mutate.py",
+   "old": "    out += [r for r in rows if r[\"file\"] not in files]\n",
+   "new": "",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_not_rewritten_after_a_whole_run",
+   "file": "tests/mutate.py",
+   "old": "    if record:\n        _write_record(",
+   "new": "    if False:\n        _write_record(",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_rewrite_keeps_unread_rows_first",
+   "file": "tests/mutate.py",
+   "old": "    out += [r for r in rows if r[\"file\"] not in files]\n",
+   "new": "    out = [r for r in rows if r[\"file\"] not in files] + out\n",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_flag_not_passed",
+   "file": "tests/mutate.py",
+   "old": "os.path.abspath(args.record) if args.record else None, args.plan)",
+   "new": "None, args.plan)",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "plan_flag_returns_after_a_run",
+   "file": "tests/mutate.py",
+   "old": "               os.path.abspath(args.record) if args.record else None, args.plan)\n    if args.plan:",
+   "new": "               os.path.abspath(args.record) if args.record else None, False)\n    if args.plan:",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "reused_row_not_marked",
+   "file": "tests/mutate.py",
+   "old": "\"reused\": True}",
+   "new": "\"reused\": False}",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "row_without_its_fp",
+   "file": "tests/mutate.py",
+   "old": "\"fp\": fps[(rel[path], m[\"id\"])] or \"\"}",
+   "new": "\"fp\": \"\"}",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_row_with_a_missing_field",
+   "file": "tests/mutate.py",
+   "old": "if isinstance(row, dict) and all(isinstance(row.get(k), str) for k in (\"file\", \"id\", \"outcome\", \"fp\")):",
+   "new": "if isinstance(row, dict) and all(isinstance(row.get(k, \"\"), str) for k in (\"file\", \"id\", \"outcome\", \"fp\")):",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_row_keeps_unknown_fields",
+   "file": "tests/mutate.py",
+   "old": "rows.append({k: row[k] for k in (\"file\", \"id\", \"outcome\", \"fp\")})",
+   "new": "rows.append(row)",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "stale_mutant_reused_by_an_empty_fp",
+   "file": "tests/mutate.py",
+   "old": "if fp is not None and (rel[path], m[\"id\"], fp) in kept:",
+   "new": "if (rel[path], m[\"id\"], fp or \"\") in kept:",
+   "tests": [
+    "test_mutate.Record"
    ]
   }
  ]

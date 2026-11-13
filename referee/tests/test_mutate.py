@@ -40,6 +40,17 @@ def mutant(id_: str, old: str, new: str, tests: list[str] | None = None, file: s
     return {"id": id_, "file": file, "old": old, "new": new, "tests": tests or ["test_mod.py"]}
 
 
+def fp_of(brain: str, m: dict) -> str:
+    """Today's fingerprint of the mutant ``m`` (``root`` ``referee`` when it has none) in ``brain``."""
+    m = {"root": "referee"} | m
+    return mutate.fingerprint(brain, m, mutate.reach(brain, {m["root"]}, set())(m)[1])
+
+
+def plan(selected: int, tiers: list[int], lists: int, changed: int | None = None, reused: int = 0) -> dict:
+    return {"plan": {"changed": changed, "selected": selected, "reused": reused, "to_run": selected - reused,
+                     "tiers": tiers, "lists": lists}}
+
+
 class Runner(unittest.TestCase):
     def setUp(self):
         self.brain = tempfile.mkdtemp(prefix="t-mutate-")
@@ -100,10 +111,13 @@ class Runner(unittest.TestCase):
         hang = "import mod, time\nif mod.add(2, 3) != 5:\n    time.sleep(6)\n"
         write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + hang)})
         emitted = []
-        self.outcomes([mutant("slow_first", "return a + b", "return a - b", ["test_hang.py"]),
-                       mutant("quick_second", "return a + a", "return 2 * a")], emit=emitted.append)
-        self.assertEqual([r["id"] for r in emitted], ["quick_second", "slow_first"])
-        self.assertEqual(emitted[0], {"file": "m.json", "id": "quick_second", "outcome": "survived"})
+        quick = mutant("quick_second", "return a + a", "return 2 * a")
+        self.outcomes([mutant("slow_first", "return a + b", "return a - b", ["test_hang.py"]), quick],
+                      emit=emitted.append)
+        self.assertEqual(emitted[0], plan(2, [0, 0, 2], 2))  # the plan comes before every row
+        self.assertEqual([r["id"] for r in emitted[1:]], ["quick_second", "slow_first"])
+        self.assertEqual(emitted[1], {"file": "m.json", "id": "quick_second", "outcome": "survived",
+                                      "fp": fp_of(self.brain, quick)})
 
     def test_each_outcome(self):
         got = self.outcomes([
@@ -137,7 +151,8 @@ class Runner(unittest.TestCase):
                 out = io.StringIO()
                 with contextlib.redirect_stdout(out):
                     self.assertEqual(mutate.main(["--brain", self.brain, "-j", "2", path]), code)
-                *rows, total = [json.loads(line) for line in out.getvalue().splitlines()]
+                first, *rows, total = [json.loads(line) for line in out.getvalue().splitlines()]
+                self.assertEqual(first, plan(len(mutants), [0, 0, len(mutants)], 1))
                 self.assertEqual(sorted((r["file"], r["id"]) for r in rows), sorted(("m.json", m["id"]) for m in mutants))
                 self.assertEqual(total, mutate.summary([path], rows))
                 self.assertEqual(total["ok"], code == 0)
@@ -154,10 +169,12 @@ class Runner(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             self.assertEqual(mutate.main(["--brain", self.brain, "-j", "2", path, other]), 1)
         lines = [json.loads(line) for line in out.getvalue().splitlines()]
-        self.assertEqual(len(lines), 4)
-        self.assertTrue(all("id" in r for r in lines[:3]))
-        self.assertEqual(lines[-1], {"ok": False, "files": 2, "mutants": 3,
+        self.assertEqual(len(lines), 5)
+        self.assertEqual(lines[0], plan(3, [0, 0, 3], 1))  # the stale mutant's list is not one to run
+        self.assertTrue(all("id" in r for r in lines[1:4]))
+        self.assertEqual(lines[-1], {"ok": False, "files": 2, "mutants": 3, "reused": 0,
                                      "outcomes": {"killed": 1, "survived": 1, "stale": 1}})
+        self.assertEqual({r["id"]: r["fp"] for r in lines[1:4]}["st"], "")  # no fingerprint: it cannot be applied
 
     def test_summary(self):
         row = lambda outcome: {"file": "m.json", "id": outcome, "outcome": outcome}  # noqa: E731
@@ -171,6 +188,7 @@ class Runner(unittest.TestCase):
                 self.assertEqual(sum(got["outcomes"].values()), len(rows))
         self.assertEqual(mutate.summary([], [row("killed"), row("timeout"), row("killed")])["outcomes"],
                          {"killed": 2, "timeout": 1})
+        self.assertEqual(mutate.summary([], [row("killed") | {"reused": True}, row("killed")])["reused"], 1)
 
     def test_a_cut_run_prints_no_summary(self):
         path = os.path.join(self.brain, "m.json")
@@ -189,7 +207,9 @@ class Runner(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 mutate.main(["--brain", self.brain, "-j", "1", path])
         lines = [json.loads(line) for line in out.getvalue().splitlines()]
-        self.assertEqual(lines, [{"file": "m.json", "id": "k", "outcome": "killed"}])
+        self.assertEqual(lines, [plan(2, [0, 0, 2], 1), {"file": "m.json", "id": "k", "outcome": "killed",
+                                                         "fp": fp_of(self.brain, mutant("k", "return a + b",
+                                                                                        "return a - b"))}])
 
     def test_a_mutant_over_the_limit_is_a_timeout(self):
         slow = "import mod, time\nif mod.add(2, 3) != 5:\n    time.sleep(30)\n"
@@ -227,7 +247,7 @@ class Runner(unittest.TestCase):
         out, start = io.StringIO(), time.monotonic()
         with contextlib.redirect_stdout(out):
             mutate.main(["--brain", self.brain, "--timeout", "120", "--factor", "5", "--floor", "3", path])
-        self.assertEqual(json.loads(out.getvalue().splitlines()[0])["outcome"], "timeout")
+        self.assertEqual(json.loads(out.getvalue().splitlines()[1])["outcome"], "timeout")
         self.assertLess(time.monotonic() - start, 30)
 
     def test_limits(self):
@@ -439,7 +459,7 @@ class Discover(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             code = mutate.main(["--brain", self.brain, "-j", "2", "--discover", "--out", self.out, path])
         *rows, total = [json.loads(line) for line in out.getvalue().splitlines()]
-        self.assertEqual((code, total), (1, {"ok": False, "files": 1, "mutants": 2,
+        self.assertEqual((code, total), (1, {"ok": False, "files": 1, "mutants": 2, "reused": 0,
                                              "outcomes": {"killed": 1, "survived": 1}}))
         self.assertEqual(sorted(r["id"] for r in rows), ["k", "s"])
         self.assertEqual([m["id"] for m in self.kept()["mutants"]], ["k"])
@@ -460,6 +480,8 @@ class Discover(unittest.TestCase):
                             ("two files", ["--discover", "--out", self.out, path, path]),
                             ("no file", ["--discover", "--out", self.out]),
                             ("with --touched", ["--discover", "--out", self.out, "--touched", "HEAD", path]),
+                            ("with --record", ["--discover", "--out", self.out, "--record", there, path]),
+                            ("with --plan", ["--discover", "--out", self.out, "--plan", path]),
                             ("keep 0", ["--discover", "--out", self.out, "--keep", "0", path]),
                             ("out exists", ["--discover", "--out", there, path])):
             with self.subTest(label=label), contextlib.redirect_stderr(io.StringIO()):
@@ -567,6 +589,281 @@ class Select(unittest.TestCase):
         self.assertEqual(self.selected({"referee/tests/helper.py"}), self.BY_TEST)
 
 
+class Order(unittest.TestCase):
+    """The plan, the tiers and the order the mutants start in, on ``Select``'s brain; nothing is really run
+    (``baseline`` and ``run_one`` are stood in for), so only the order and the counts are shown here."""
+
+    CHANGED = {"referee/pkg/util.py", "referee/tests/test_other.py", "referee/tests/mutants/c.json"}
+    # c.json is on_tool's own file (0); test_other.py is named by the three (1); util.py is only reached (2).
+    ORDER = ["on_tool", "on_other", "on_other_by_glob", "b_on_other", "on_mod", "not_imported"]
+
+    def setUp(self):
+        self.brain = tempfile.mkdtemp(prefix="t-order-")
+        self.addCleanup(shutil.rmtree, self.brain, ignore_errors=True)
+        write_tree(self.brain, Select.TREE)
+        self.files = sorted(glob.glob(os.path.join(self.brain, "referee", "tests", "mutants", "*.json")))
+        self.events: list[tuple[str, str]] = []
+        for name, fake in (("baseline", lambda brain, root, tests, timeout: (
+                               self.events.append(("base", root + ":" + ",".join(tests))) or ("green", [0.1]))),
+                           ("run_one", lambda brain, m, limit: self.events.append(("run", m["id"])) or "killed")):
+            patcher = mock.patch.object(mutate, name, fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def run_(self, changed: set[str] | None, jobs: int = 1, **kw) -> list[dict]:
+        return mutate.run(self.brain, self.files, jobs, 120.0, changed,
+                          lambda row: self.events.append(("plan", "") if "plan" in row else ("row", row["id"])), **kw)
+
+    def test_the_nearest_tier_starts_first_and_the_rows_return_in_file_order(self):
+        rows = self.run_(self.CHANGED)
+        self.assertEqual([i for kind, i in self.events if kind == "run"], self.ORDER)
+        self.assertEqual([r["id"] for r in rows], ["on_mod", "on_other", "on_other_by_glob", "not_imported",
+                                                   "b_on_other", "on_tool"])
+
+    def test_tier(self):
+        items = {m["id"]: (os.path.relpath(path, self.brain), m) for path in self.files for m in mutate.load(path)}
+        for changed, tiers in (
+                ({"referee/other.py"}, {"on_other": 0, "on_other_by_glob": 0, "not_imported": 0, "b_on_other": 0}),
+                ({"referee/tests/mutants/b.json"}, {"b_on_other": 0}),
+                ({"referee/tests/test_mod.py"}, {"on_mod": 1, "not_imported": 1}),
+                ({"referee/tests/helper.py"}, {"on_mod": 2, "not_imported": 2}),
+                ({"referee/tests/helper.py", "referee/mod.py"}, {"on_mod": 0, "not_imported": 2}),  # the nearest
+                ({"referee/tests/test_mod.py", "referee/mod.py"}, {"on_mod": 0, "not_imported": 1}),
+                ({"referee/data.json"}, {})):
+            with self.subTest(changed=sorted(changed)):
+                of = mutate.reach(self.brain, {"referee", "."}, changed)
+                got = {i: mutate.tier(rel, *of(m), changed) for i, (rel, m) in items.items()}
+                self.assertEqual({i: t for i, t in got.items() if t is not None}, tiers)
+
+    def test_the_plan_is_emitted_before_anything_runs(self):
+        self.run_(self.CHANGED)
+        self.assertEqual(self.events[0], ("plan", ""))
+        emitted = []
+        mutate.run(self.brain, self.files, 1, 120.0, self.CHANGED, emitted.append)
+        self.assertEqual(emitted[0], plan(6, [1, 3, 2], 4, changed=3))
+
+    def test_a_lists_baseline_runs_when_its_first_mutant_is_reached(self):
+        self.run_(None)
+        self.assertEqual(self.events, [
+            ("plan", ""), ("base", "referee:test_mod.py"), ("run", "on_mod"), ("row", "on_mod"),
+            ("base", "referee:test_other.py"), ("run", "on_other"), ("row", "on_other"),
+            ("base", "referee:test_o*.py"), ("run", "on_other_by_glob"), ("row", "on_other_by_glob"),
+            ("run", "not_imported"), ("row", "not_imported"), ("run", "b_on_other"), ("row", "b_on_other"),
+            ("base", ".:test_tool.py"), ("run", "on_tool"), ("row", "on_tool")])
+
+    def test_a_list_reached_by_two_threads_at_once_has_one_baseline(self):
+        def slow(brain, root, tests, timeout):
+            self.events.append(("base", root + ":" + ",".join(tests)))
+            time.sleep(0.3)
+            return "green", [0.1]
+
+        with mock.patch.object(mutate, "baseline", slow):
+            self.run_({"referee/other.py"}, jobs=4)  # on_other and b_on_other have the one list test_other.py
+        self.assertEqual(sorted(i for kind, i in self.events if kind == "base"),
+                         ["referee:test_mod.py", "referee:test_o*.py", "referee:test_other.py"])
+
+    def test_plan_only_counts_each_file_and_runs_nothing(self):
+        emitted = []
+        rows = mutate.run(self.brain, self.files, 1, 120.0, self.CHANGED, emitted.append, plan_only=True)
+        want = plan(6, [1, 3, 2], 4, changed=3)
+        want["plan"]["by_file"] = {"referee/tests/mutants/a.json": [4, 4], "referee/tests/mutants/b.json": [1, 1],
+                                   "referee/tests/mutants/c.json": [1, 1]}
+        self.assertEqual((rows, emitted, self.events), ([], [want], []))
+
+
+class Fingerprint(unittest.TestCase):
+    """``fp``: what a mutant's fingerprint follows and what it does not, on ``Select``'s brain."""
+
+    ON_MOD = mutant("on_mod", "return a + b", "return a - b")
+
+    def setUp(self):
+        self.brain = tempfile.mkdtemp(prefix="t-fp-")
+        self.addCleanup(shutil.rmtree, self.brain, ignore_errors=True)
+        write_tree(self.brain, Select.TREE)
+
+    def touch(self, rel: str) -> None:
+        with open(os.path.join(self.brain, rel), "a") as fh:
+            fh.write("\n")
+
+    def test_it_is_the_same_for_the_same_tree_and_mutant(self):
+        self.assertEqual(fp_of(self.brain, self.ON_MOD), fp_of(self.brain, dict(self.ON_MOD)))
+        self.assertRegex(fp_of(self.brain, self.ON_MOD), r"\A[0-9a-f]{64}\Z")
+
+    def test_it_follows_the_bytes_of_each_file_the_mutant_reaches(self):
+        for rel in ("referee/mod.py", "referee/tests/test_mod.py", "referee/tests/helper.py", "referee/pkg/util.py",
+                    "referee/pkg/__init__.py"):
+            with self.subTest(rel=rel):
+                before = fp_of(self.brain, self.ON_MOD)
+                self.touch(rel)
+                self.assertNotEqual(fp_of(self.brain, self.ON_MOD), before)
+
+    def test_it_does_not_follow_a_file_the_mutant_does_not_reach(self):
+        before = fp_of(self.brain, self.ON_MOD)
+        for rel in ("referee/other.py", "referee/helper.py", "referee/data.json", "referee/tests/test_other.py",
+                    "tests/helper.py", "referee/tests/mutants/a.json"):
+            self.touch(rel)
+        self.assertEqual(fp_of(self.brain, self.ON_MOD), before)
+
+    def test_its_own_file_is_followed_when_it_is_not_python(self):
+        on_data = mutant("on_data", "{}", "[]", file="data.json")
+        before = fp_of(self.brain, on_data)
+        self.touch("referee/data.json")
+        self.assertNotEqual(fp_of(self.brain, on_data), before)
+
+    def test_it_follows_each_field_but_the_id(self):
+        before = fp_of(self.brain, self.ON_MOD)
+        for field, value in (("old", "return a"), ("new", "return a * b"), ("tests", ["test_mod.T"]),
+                             ("tests", ["test_mod.py", "test_mod.py"])):
+            with self.subTest(field=field, value=value):
+                self.assertNotEqual(fp_of(self.brain, self.ON_MOD | {field: value}), before)
+        self.assertEqual(fp_of(self.brain, self.ON_MOD | {"id": "renamed"}), before)  # a row's key carries the id
+        # The same words on another file or under another root are another mutant.
+        write_tree(self.brain, {"tests/mod.py": Select.TREE["referee/mod.py"], "tests/test_mod.py": "import mod\n",
+                                "referee/mod2.py": Select.TREE["referee/mod.py"]})
+        self.assertNotEqual(fp_of(self.brain, self.ON_MOD | {"file": "mod2.py"}), before)
+        on_root = self.ON_MOD | {"root": ".", "file": "tests/mod.py"}
+        self.assertNotEqual(fp_of(self.brain, on_root), fp_of(self.brain, on_root | {"root": "referee",
+                                                                                     "file": "tests/../mod.py"}))
+
+
+class Record(unittest.TestCase):
+    """``--record``: which outcomes are kept, when a kept one stands for a run, and what a whole run leaves."""
+
+    K = mutant("k", "return a + b", "return a - b")
+    S = mutant("s", "return a + a", "return 2 * a")
+    MUTANTS = [K, S, mutant("st", "return a * b", "return a"),
+               mutant("r", "return a + b", "return a * b", ["test_red.py"])]
+
+    def setUp(self):
+        self.brain = tempfile.mkdtemp(prefix="t-record-")
+        self.addCleanup(shutil.rmtree, self.brain, ignore_errors=True)
+        write_tree(self.brain, {"referee/mod.py": MOD, "referee/tests/test_mod.py": TEST,
+                                "referee/tests/test_red.py": RED, "m.json": {"mutants": self.MUTANTS}})
+        self.path = os.path.join(self.brain, "m.json")
+        self.dir = tempfile.mkdtemp(prefix="t-record-rows-")
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        self.record = os.path.join(self.dir, "rows.jsonl")
+
+    def run_(self, jobs: int = 2) -> tuple[dict, list[dict]]:
+        emitted = []
+        rows = mutate.run(self.brain, [self.path], jobs, 120.0, emit=emitted.append, record=self.record)
+        self.assertEqual(emitted[1:] and sorted(emitted[1:], key=str), sorted(rows, key=str))
+        return emitted[0], rows
+
+    def row(self, m: dict, outcome: str, **more) -> dict:
+        return {"file": "m.json", "id": m["id"], "outcome": outcome, "fp": fp_of(self.brain, m)} | more
+
+    def lines(self) -> list[dict]:
+        with open(self.record) as fh:
+            return [json.loads(line) for line in fh.read().splitlines()]
+
+    def no_run(self):
+        """Nothing may be run under this: a kept outcome stands for the run."""
+        return mock.patch.object(mutate, "run_one", mock.Mock(side_effect=AssertionError("run again")))
+
+    def test_a_killed_or_survived_outcome_is_kept_and_stands_for_the_next_run(self):
+        first, rows = self.run_()
+        self.assertEqual(first, plan(4, [0, 0, 4], 2))
+        self.assertEqual([r["outcome"] for r in rows], ["killed", "survived", "stale", "baseline_red"])
+        self.assertEqual(self.lines(), [self.row(self.K, "killed"), self.row(self.S, "survived")])
+        with self.no_run():
+            second, again = self.run_()
+        self.assertEqual(second, plan(4, [0, 0, 2], 1, reused=2))  # stale and baseline_red are judged again
+        self.assertEqual(again, [self.row(self.K, "killed", reused=True), self.row(self.S, "survived", reused=True),
+                                 rows[2], rows[3]])
+        self.assertEqual(mutate.summary([self.path], again)["reused"], 2)
+        self.assertEqual(self.lines(), [self.row(self.K, "killed"), self.row(self.S, "survived")])
+
+    def test_a_change_to_a_reached_file_runs_the_mutant_again_and_its_old_row_goes(self):
+        self.run_()
+        old = self.lines()
+        with open(os.path.join(self.brain, "referee", "tests", "test_mod.py"), "a") as fh:
+            fh.write("# one more line\n")
+        first, rows = self.run_()
+        self.assertEqual(first, plan(4, [0, 0, 4], 2))
+        self.assertEqual(self.lines(), [self.row(self.K, "killed"), self.row(self.S, "survived")])
+        self.assertFalse([r for r in self.lines() if r in old])
+
+    def test_a_timeout_or_rows_that_disagree_are_not_reused(self):
+        k, s = self.row(self.K, "killed"), self.row(self.S, "survived")
+        for label, rows, reused in (("one outcome", [k, s, k], 2), ("timeout", [k | {"outcome": "timeout"}, s], 1),
+                                    ("baseline_red", [k | {"outcome": "baseline_red"}], 0),
+                                    ("stale", [k | {"outcome": "stale"}], 0),
+                                    ("disagree", [k, k | {"outcome": "survived"}, s], 1),
+                                    ("another fp", [k | {"fp": "0" * 64}], 0),
+                                    ("another file", [k | {"file": "m1.json"}], 0)):
+            with self.subTest(label=label):
+                with open(self.record, "w") as fh:
+                    fh.write("".join(json.dumps(r) + "\n" for r in rows))
+                emitted = []
+                mutate.run(self.brain, [self.path], 1, 120.0, emit=emitted.append, record=self.record,
+                           plan_only=True)
+                self.assertEqual(emitted[0]["plan"]["reused"], reused)
+
+    def test_a_line_that_is_not_a_row_is_passed_over(self):
+        k = self.row(self.K, "killed")
+        with open(self.record, "w") as fh:
+            fh.write("\n".join([json.dumps(plan(1, [0, 0, 1], 1)), json.dumps(mutate.summary([], [k])), "",
+                                json.dumps({j: k[j] for j in ("file", "id", "outcome")}),  # a row of the old shape
+                                json.dumps(k | {"outcome": 1}), json.dumps([k]), "not json",
+                                json.dumps(k | {"reused": True, "more": 1}), json.dumps(k)[:40]]))  # cut in the middle
+        self.assertEqual(mutate.record_rows(self.record), [k])
+        self.assertEqual(mutate.record_rows(os.path.join(self.dir, "none.jsonl")), [])
+
+    def test_a_cut_run_leaves_the_rows_it_finished_and_the_next_run_goes_on_from_them(self):
+        real = mutate.run_one
+
+        def cut(brain, m, limit):
+            if m["id"] == "s":
+                raise KeyboardInterrupt
+            return real(brain, m, limit)
+
+        write_tree(self.brain, {"m.json": {"mutants": [self.MUTANTS[2], self.MUTANTS[3], self.K, self.S]}})
+        with open(self.record, "w") as fh:
+            fh.write(json.dumps(self.row(self.K, "killed") | {"fp": "0" * 64}) + "\n")
+        with mock.patch.object(mutate, "run_one", cut), self.assertRaises(KeyboardInterrupt):
+            self.run_(jobs=1)
+        # Appended as it finished (the stale and the baseline_red before it are not kept); a cut run rewrites
+        # nothing, the earlier row is still there.
+        self.assertEqual(self.lines(), [self.row(self.K, "killed") | {"fp": "0" * 64}, self.row(self.K, "killed")])
+        first, _ = self.run_()
+        self.assertEqual(first, plan(4, [0, 0, 3], 2, reused=1))
+        self.assertEqual(self.lines(), [self.row(self.K, "killed"), self.row(self.S, "survived")])
+
+    def test_a_whole_run_keeps_the_rows_of_the_files_it_did_not_read(self):
+        other = [{"file": "other.json", "id": "x", "outcome": "survived", "fp": "1" * 64},
+                 {"file": "other.json", "id": "x", "outcome": "killed", "fp": "2" * 64}]
+        with open(self.record, "w") as fh:
+            fh.write("".join(json.dumps(r) + "\n" for r in [other[0], self.row(self.S, "survived"), other[1],
+                                                           self.row(self.S, "survived")]))
+        with mock.patch.object(mutate, "run_one", lambda brain, m, limit: "killed"):
+            self.run_()
+        self.assertEqual(self.lines(), [self.row(self.K, "killed"), self.row(self.S, "survived"), *other])
+
+    def test_the_command_line(self):
+        def main(*flags: str) -> tuple[int, list[dict]]:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = mutate.main(["--brain", self.brain, "-j", "2", "--record", self.record, *flags, self.path])
+            return code, [json.loads(line) for line in out.getvalue().splitlines()]
+
+        by_file = {"by_file": {"m.json": [4, 4]}}
+        with self.no_run(), mock.patch.object(mutate, "baseline", mock.Mock(side_effect=AssertionError("run"))):
+            self.assertEqual(main("--plan"), (0, [{"plan": plan(4, [0, 0, 4], 2)["plan"] | by_file}]))
+        self.assertFalse(os.path.exists(self.record))  # --plan writes nothing
+        code, lines = main()
+        self.assertEqual((code, lines[0], lines[-1]["reused"]), (1, plan(4, [0, 0, 4], 2), 0))
+        with open(self.record, "rb") as fh:
+            kept = fh.read()
+        with self.no_run():
+            code, lines = main()
+            self.assertEqual((code, lines[0], lines[-1]["reused"]), (1, plan(4, [0, 0, 2], 1, reused=2), 2))
+            self.assertEqual(sorted(r["id"] for r in lines[1:-1] if r.get("reused")), ["k", "s"])
+            self.assertEqual(main("--plan")[1][0]["plan"]["by_file"], {"m.json": [4, 2]})
+        with open(self.record, "rb") as fh:
+            self.assertEqual(fh.read(), kept)
+
+
 class Touched(unittest.TestCase):
     """``touched``, git's half of ``--touched``, against a fake ``git`` (the referee's sandbox has none): what it
     asks git and how it joins the answers. Real git's answers to the same questions are not tested here."""
@@ -606,12 +903,14 @@ class Touched(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = mutate.main(["--brain", self.brain, "-j", "2", "--touched", "REV"])
-        *rows, total = [json.loads(line) for line in out.getvalue().splitlines()]
+        first, *rows, total = [json.loads(line) for line in out.getvalue().splitlines()]
+        # The selection's size is the first line, before anything runs: on_mod's file changed (tier 0),
+        # not_imported only reaches it through its test's import (tier 2); both have one tests list.
+        self.assertEqual(first, plan(2, [1, 0, 1], 1, changed=1))
         self.assertEqual(sorted((r["id"], r["outcome"]) for r in rows),
                          [("not_imported", "survived"), ("on_mod", "killed")])
         self.assertEqual((total["mutants"], total["ok"]), (2, False))
         self.assertEqual(code, 1)
-        self.assertIn("1 changed paths, 2 mutants selected", err.getvalue())
 
 
 def defines(path: str, names: list[str]) -> bool:

@@ -228,8 +228,8 @@
   {
    "id": "disc_cli_keep_zero",
    "file": "tests/mutate.py",
-   "old": " and args.keep >= 1)",
-   "new": ")",
+   "old": "not args.touched and args.keep >= 1",
+   "new": "not args.touched",
    "tests": [
     "test_mutate.Discover.test_the_command_line_refuses"
    ]

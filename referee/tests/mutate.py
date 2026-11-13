@@ -19,9 +19,10 @@ unittest id (``<module>.<Class>`` or ``<module>.<Class>.<method>``, dotted ident
   imports the same modules as its file's discover run, only fewer tests. ``killed`` when one exits non-zero (a
   run of no test is non-zero: Python 3.12's exit 5), ``survived`` when all exit 0, ``timeout`` when one runs
   longer than its limit (reported, neither killed nor survived; the entries after it are not run);
-- each distinct ``root`` and ``tests`` list is first run once on an unchanged copy, each entry under
-  ``--timeout``: if it is not green there (an entry over ``--timeout`` included), its mutants are
-  ``baseline_red`` and not run (a red test kills every mutant and proves nothing).
+- each distinct ``root`` and ``tests`` list is run once on an unchanged copy, each entry under ``--timeout``,
+  when the first of its mutants is reached (not all lists before the first mutant: a large selection would be
+  silent for as long as every list takes): if it is not green there (an entry over ``--timeout`` included), its
+  mutants are ``baseline_red`` and not run (a red test kills every mutant and proves nothing).
 
 Limits. A mutant's entry may run ``min(--timeout, max(--floor, --factor * s))`` seconds, ``s`` the seconds that
 same entry took in its list's baseline (wall clock, measured in this run, under the same ``--jobs``): a mutant
@@ -29,13 +30,45 @@ that loops ends near ``--factor`` times the baseline instead of at the ceiling, 
 entry from timing out on load. The limit says nothing about why a mutant was slow: a ``timeout`` may be a mutant
 that loops or one that is only slower than the limit (a person reads which).
 
-Each row ``{file, id, outcome}`` is printed and flushed as its mutant finishes, so the rows come in the order
-the mutants finish, and a run that is cut keeps the rows it printed (the baselines run first and print nothing).
-After the last row, one summary line ``{ok, files, mutants, outcomes}`` (``summary``): ``files`` the mutant files
-read, ``mutants`` the rows printed, ``outcomes`` each outcome's count; it is printed only when every mutant has its
-row, so a run cut before its end (a session's tool limit, a kill) lacks it, and output without it is not a whole
-run. Exit 0 only when every mutant is ``killed`` (no mutant run is exit 1: nothing was shown), ``ok`` the same.
-The brain itself is only read.
+The first line printed is the plan, ``{"plan": {changed, selected, reused, to_run, tiers, lists}}``, before
+anything is copied or run: ``changed`` the number of changed paths (``null`` without ``--touched``), ``selected``
+the mutants of this run, ``reused`` those whose row comes from ``--record`` (below), ``to_run`` the rest,
+``tiers`` the ``to_run`` count of each tier (below), ``lists`` the distinct ``root`` and ``tests`` lists among
+``to_run``. ``--plan`` adds ``by_file`` (each mutant file's ``[selected, to_run]``), prints that one line and
+stops, exit 0: nothing is copied, run or written.
+
+Each row ``{file, id, outcome, fp}`` is printed and flushed as its mutant finishes, so the rows come in the order
+the mutants finish, and a run that is cut keeps the rows it printed. After the last row, one summary line
+``{ok, files, mutants, outcomes, reused}`` (``summary``): ``files`` the mutant files read, ``mutants`` the rows
+printed, ``outcomes`` each outcome's count, ``reused`` the rows not run in this run; it is printed only when every
+mutant has its row, so a run cut before its end (a session's tool limit, a kill) lacks it, and output without it
+is not a whole run. Exit 0 only when every mutant is ``killed`` (no mutant run is exit 1: nothing was shown),
+``ok`` the same. The brain itself is only read (``--record``'s file is the one thing written, where it is named).
+
+**Fingerprint** (``fp``, ``fingerprint``): the sha256 of the mutant's ``root``, ``file``, ``old``, ``new`` and
+``tests`` and of the path and bytes of every file in the mutant's reach, ``reach`` being the one rule
+``--touched`` selects by (below): its ``file``, the ``<root>/tests`` files its ``tests`` entries name, and the
+import closure of those, over the working tree as it is. Two runs give a mutant the same ``fp`` exactly when
+those fields and those files' bytes are the same. Not in it, the same width as ``--touched``'s: a file that is
+not Python or that a test reaches without an import statement, and the machine (its python, its programs). A
+``stale`` or ``ambiguous`` mutant has none (its row's ``fp`` is ``""``): it cannot be applied.
+
+**Order.** The mutants to run start in tier order, inside a tier in file and mutant order: tier 0, a changed path
+is the mutant's own file under ``tests/mutants/`` or its ``file``; tier 1, a changed path is a test file one of
+its ``tests`` entries names; tier 2, every other (reached through an import only; without ``--touched`` every
+mutant is tier 2). So a run that is cut has spent its time on the mutants nearest the change.
+
+**Kept outcomes** (``--record FILE``; with ``--plan`` the file is read, not written). A record row is a row this
+tool printed: a line that is one JSON object with string ``file``, ``id``, ``outcome`` and ``fp``; any other line
+(a plan, a summary, a line cut in the middle) is not a row and is passed over. A selected mutant is not run and
+its row is printed with ``"reused": true`` when the record's rows for its ``file`` and ``id`` with today's ``fp``
+all have one outcome and that outcome is ``killed`` or ``survived`` (a ``timeout`` or ``baseline_red`` row is
+never reused; rows that disagree are not reused, the mutant runs again). Each row of a mutant run in this run
+whose outcome is ``killed`` or ``survived`` is appended to FILE and flushed as it finishes, so a cut run's
+outcomes are there for the next. When a run is whole (the summary is printed) FILE is written again: for each
+mutant file read, in file and mutant order, the one row of each mutant that has a reusable row at today's ``fp``;
+the rows of mutant files this run did not read stay as they were, after them. What a record row is evidence of:
+that this tool printed it; nothing proves a row a person wrote into the file was a run.
 
 ``--touched REV`` runs only the mutants a change since ``REV`` can concern. The changed paths are git's: every path
 ``git diff --name-only --no-renames REV`` names (``REV`` against the working tree, staged or not, committed or not;
@@ -43,9 +76,9 @@ a rename names both its paths) and every untracked path ``git ls-files --others 
 mutant is selected when a changed path is
 
 - the mutant's own file under ``tests/mutants/`` (a new or edited mutant), or
-- a ``.py`` file in the import closure of its ``file`` or of a ``.py`` file under ``<root>/tests`` whose name one
-  of its ``tests`` entries names (a pattern by ``fnmatch``, discover runs these or fewer; an id by its
-  ``<module>``), its ``file`` included. The closure
+- a ``.py`` file in the mutant's reach (``reach``): the import closure of its ``file`` or of a ``.py`` file under
+  ``<root>/tests`` whose name one of its ``tests`` entries names (a pattern by ``fnmatch``, discover runs these or
+  fewer; an id by its ``<module>``), its ``file`` included. The closure
   is ``status.depmap``'s reading of import statements (one reader of imports) and every package holding a module
   reached (Python runs it first), over the working tree's modules as the test run sees them, a name taken from the
   first of the root's import spaces (``ROOTS``) that has it: for ``referee``, ``referee/tests``'s files by their
@@ -86,6 +119,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import glob
+import hashlib
 import json
 import os
 import re
@@ -268,49 +302,171 @@ def closure_of(brain: str, changed: set[str], spaces: tuple[str, ...]) -> Callab
     return closure
 
 
-def select(brain: str, items: list[tuple[str, dict[str, Any]]], changed: set[str]) -> list[tuple[str, dict]]:
-    """The ``(mutant file, mutant)`` items a change to ``changed`` (brain-relative paths) can concern."""
-    used = {m["root"] for _, m in items}
-    closures = {root: closure_of(brain, changed, ROOTS[root]) for root in used}
+def reach(brain: str, roots: set[str], changed: set[str]) -> Callable[[dict[str, Any]], tuple[list[str], set[str]]]:
+    """``mutant -> (starts, reached)`` for mutants of ``roots`` (module docstring, ``--touched``): ``starts`` the
+    mutant's ``file`` and the test files its ``tests`` entries name, ``reached`` the import closure of ``starts``;
+    brain-relative paths. ``changed`` only names the removed modules ``closure_of`` still reaches."""
+    closures = {root: closure_of(brain, changed, ROOTS[root]) for root in roots}
     # A root's first import space is its own tests/ (discover's start directory).
     tests = {root: sorted(ROOTS[root][0] + rel for rel in depmap.python_modules(os.path.join(brain, ROOTS[root][0]))
-                          .values()) for root in used}
+                          .values()) for root in roots}
 
-    def concerned(path: str, m: dict[str, Any]) -> bool:
-        if os.path.relpath(path, brain) in changed:
-            return True
-        roots = [os.path.normpath(os.path.join(m["root"], m["file"]))] + [
+    def of(m: dict[str, Any]) -> tuple[list[str], set[str]]:
+        starts = [os.path.normpath(os.path.join(m["root"], m["file"]))] + [
             t for t in tests[m["root"]] if any(fnmatch(os.path.basename(t), test_file(e)) for e in m["tests"])]
-        return bool(closures[m["root"]](roots) & changed)
-    return [(path, m) for path, m in items if concerned(path, m)]
+        return starts, closures[m["root"]](starts)
+    return of
+
+
+def tier(path: str, starts: list[str], reached: set[str], changed: set[str]) -> int | None:
+    """How near a change to ``changed`` is to the mutant of the mutant file ``path`` (brain-relative), ``starts``
+    and ``reached`` its ``reach``: 0 its own mutant file or its ``file``, 1 a test file it names, 2 a file it only
+    reaches; ``None`` when no changed path concerns it."""
+    if path in changed or starts[0] in changed:
+        return 0
+    if set(starts[1:]) & changed:
+        return 1
+    return 2 if reached & changed else None
+
+
+def select(brain: str, items: list[tuple[str, dict[str, Any]]], changed: set[str]) -> list[tuple[str, dict]]:
+    """The ``(mutant file, mutant)`` items a change to ``changed`` (brain-relative paths) can concern."""
+    of = reach(brain, {m["root"] for _, m in items}, changed)
+    return [(path, m) for path, m in items if tier(os.path.relpath(path, brain), *of(m), changed) is not None]
+
+
+def fingerprint(brain: str, mutant: dict[str, Any], reached: set[str]) -> str:
+    """The mutant's ``fp`` (module docstring): ``reached`` its reach over the tree as it is."""
+    files = []
+    for rel in sorted(reached):
+        with open(os.path.join(brain, rel), "rb") as fh:
+            files.append([rel, hashlib.sha256(fh.read()).hexdigest()])
+    data = {"mutant": {k: mutant[k] for k in ("root", *FIELDS) if k != "id"}, "files": files}
+    return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+REUSED = ("killed", "survived")  # the outcomes a record row may stand for (module docstring)
+
+
+def record_rows(path: str) -> list[dict[str, str]]:
+    """The rows of the record at ``path`` in line order (module docstring: any other line is passed over); a
+    record that does not exist has none."""
+    rows = []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except FileNotFoundError:
+        return rows
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and all(isinstance(row.get(k), str) for k in ("file", "id", "outcome", "fp")):
+            rows.append({k: row[k] for k in ("file", "id", "outcome", "fp")})
+    return rows
+
+
+def reusable(rows: list[dict[str, str]]) -> dict[tuple[str, str, str], str]:
+    """``(file, id, fp) -> outcome`` for the keys whose rows all have one outcome, that outcome in ``REUSED``."""
+    seen: dict[tuple[str, str, str], set[str]] = {}
+    for r in rows:
+        seen.setdefault((r["file"], r["id"], r["fp"]), set()).add(r["outcome"])
+    return {key: next(iter(outcomes)) for key, outcomes in seen.items()
+            if len(outcomes) == 1 and outcomes <= set(REUSED)}
+
+
+def _write_record(path: str, files: list[str], current: dict[tuple[str, str], str]) -> None:
+    """A whole run's rewrite of the record (module docstring): ``files`` the brain-relative mutant files read,
+    ``current`` each of their mutants' ``(file, id) -> fp`` in file and mutant order."""
+    rows = record_rows(path)
+    keep = reusable(rows)
+    out = [{"file": f, "id": i, "outcome": keep[(f, i, fp)], "fp": fp} for (f, i), fp in current.items()
+           if (f, i, fp) in keep]
+    out += [r for r in rows if r["file"] not in files]
+    with open(path + ".tmp", "w", encoding="utf-8") as fh:
+        for r in out:
+            fh.write(json.dumps(r, sort_keys=True) + "\n")
+    os.replace(path + ".tmp", path)
 
 
 def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[str] | None = None,
-        emit: Callable[[dict[str, str]], None] | None = None, factor: float = 5.0,
-        floor: float = 60.0) -> list[dict[str, str]]:
-    """One row per mutant, in file and mutant order: ``{file, id, outcome}``; with ``changed``, only the mutants
-    ``select`` keeps; ``emit`` is called with each row as its mutant finishes (one thread at a time);
-    ``timeout``, ``factor`` and ``floor`` are the limits' (module docstring)."""
-    mutants = [(path, m) for path in files for m in load(path)]
-    if changed is not None:
-        mutants = select(brain, mutants, changed)
-    suites = sorted({(m["root"], tuple(m["tests"])) for _, m in mutants if not applicable(brain, m)})
+        emit: Callable[[dict[str, Any]], None] | None = None, factor: float = 5.0,
+        floor: float = 60.0, record: str | None = None, plan_only: bool = False) -> list[dict[str, Any]]:
+    """One row per mutant, in file and mutant order: ``{file, id, outcome, fp}`` (and ``reused`` when it was not
+    run); with ``changed``, only the mutants ``select`` keeps; ``emit`` is called with the plan first, then with
+    each row as its mutant finishes (one thread at a time); ``timeout``, ``factor`` and ``floor`` are the limits';
+    ``record`` and ``plan_only`` are ``--record`` and ``--plan`` (module docstring; ``plan_only`` returns no
+    row)."""
+    loaded = [(path, m) for path in files for m in load(path)]
+    roots = {m["root"] for _, m in loaded}
+    as_is = reach(brain, roots, set())
+    rel = {path: os.path.relpath(path, brain) for path in files}
+    fps = {(rel[path], m["id"]): (None if applicable(brain, m) else fingerprint(brain, m, as_is(m)[1]))
+           for path, m in loaded}
+    if changed is None:
+        mutants = [(path, m, 2) for path, m in loaded]
+    else:
+        of = reach(brain, roots, changed)
+        mutants = [(path, m, t) for path, m in loaded
+                   for t in [tier(rel[path], *of(m), changed)] if t is not None]
+    kept = reusable(record_rows(record)) if record else {}
+    rows: dict[int, dict[str, Any]] = {}
+    todo: list[tuple[int, str, dict[str, Any], int]] = []
+    for n, (path, m, t) in enumerate(mutants):
+        fp = fps[(rel[path], m["id"])]
+        if fp is not None and (rel[path], m["id"], fp) in kept:
+            rows[n] = {"file": rel[path], "id": m["id"], "outcome": kept[(rel[path], m["id"], fp)], "fp": fp,
+                       "reused": True}
+        else:
+            todo.append((n, path, m, t))
+    todo.sort(key=lambda item: item[3])  # stable: file and mutant order inside a tier
+    suites = {(m["root"], tuple(m["tests"])) for _, _, m, _ in todo if not applicable(brain, m)}
+    plan: dict[str, Any] = {"changed": None if changed is None else len(changed), "selected": len(mutants),
+                            "reused": len(rows), "to_run": len(todo),
+                            "tiers": [sum(1 for item in todo if item[3] == t) for t in (0, 1, 2)],
+                            "lists": len(suites)}
+    send = _emitter(emit)
+    if plan_only:
+        by_file: dict[str, list[int]] = {}
+        for path, _, _ in mutants:
+            by_file.setdefault(rel[path], [0, 0])[0] += 1
+        for _, path, _, _ in todo:
+            by_file[rel[path]][1] += 1
+        send({"plan": plan | {"by_file": by_file}})
+        return []
+    send({"plan": plan})
+    for n in sorted(rows):
+        send(rows[n])
+    base: dict[tuple[str, tuple[str, ...]], tuple[str, list[float]]] = {}
+    locks = {suite: threading.Lock() for suite in suites}
+    keep_lock = threading.Lock()
+
+    def base_of(suite: tuple[str, tuple[str, ...]]) -> tuple[str, list[float]]:
+        with locks[suite]:  # the list's first mutant runs its baseline, the others wait for it
+            if suite not in base:
+                base[suite] = baseline(brain, suite[0], list(suite[1]), timeout)
+            return base[suite]
+
+    def one(item: tuple[int, str, dict[str, Any], int]) -> None:
+        n, path, m, _ = item
+        outcome = applicable(brain, m)
+        if not outcome:
+            verdict, seconds = base_of((m["root"], tuple(m["tests"])))
+            outcome = ("baseline_red" if verdict != "green"
+                       else run_one(brain, m, limits(seconds, timeout, factor, floor)))
+        row = {"file": rel[path], "id": m["id"], "outcome": outcome, "fp": fps[(rel[path], m["id"])] or ""}
+        if record and outcome in REUSED:
+            with keep_lock, open(record, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, sort_keys=True) + "\n")
+        rows[n] = row
+        send(row)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-        base = dict(zip(suites, pool.map(lambda s: baseline(brain, s[0], list(s[1]), timeout), suites)))
-        send = _emitter(emit)
-
-        def one(item: tuple[str, dict[str, Any]]) -> dict[str, str]:
-            path, m = item
-            outcome = applicable(brain, m)
-            if not outcome:
-                verdict, seconds = base[(m["root"], tuple(m["tests"]))]
-                outcome = ("baseline_red" if verdict != "green"
-                           else run_one(brain, m, limits(seconds, timeout, factor, floor)))
-            row = {"file": os.path.relpath(path, brain), "id": m["id"], "outcome": outcome}
-            send(row)
-            return row
-
-        return list(pool.map(one, mutants))
+        list(pool.map(one, todo))
+    if record:
+        _write_record(record, list(rel.values()), {key: fp for key, fp in fps.items() if fp is not None})
+    return [rows[n] for n in sorted(rows)]
 
 
 # Discovery's run of one entry (module docstring): argv entry, record path. The record: the ids of the tests that
@@ -448,13 +604,13 @@ def discover(brain: str, path: str, out: str, jobs: int, timeout: float, keep: i
     return rows
 
 
-def summary(files: list[str], rows: list[dict[str, str]]) -> dict[str, Any]:
+def summary(files: list[str], rows: list[dict[str, Any]]) -> dict[str, Any]:
     """The run's last line (module docstring): ``ok`` when there are rows and every one is ``killed``."""
     outcomes: dict[str, int] = {}
     for r in rows:
         outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
     return {"ok": bool(rows) and set(outcomes) == {"killed"}, "files": len(files), "mutants": len(rows),
-            "outcomes": outcomes}
+            "outcomes": outcomes, "reused": sum(1 for r in rows if r.get("reused"))}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -467,6 +623,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--factor", type=float, default=5.0, help="a mutant's limit in baseline durations")
     parser.add_argument("--floor", type=float, default=60.0, help="a mutant's least limit in seconds")
     parser.add_argument("--touched", metavar="REV", help="only the mutants a change since REV can concern")
+    parser.add_argument("--record", metavar="FILE", help="kept outcomes: rows read from FILE and reused at the same "
+                        "fp, new rows appended to it (module docstring)")
+    parser.add_argument("--plan", action="store_true", help="print the plan line with by_file and run nothing")
     parser.add_argument("--discover", action="store_true", help="find each candidate's killing tests, write --out")
     parser.add_argument("--out", help="with --discover: the kept mutant file to write (refused when it exists)")
     parser.add_argument("--keep", type=int, default=1, help="with --discover: killers kept per mutant")
@@ -475,8 +634,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--timeout and --factor must be positive, --floor not negative")
     brain = os.path.abspath(args.brain)
     if args.discover or args.out:
-        if not (args.discover and args.out and len(args.files) == 1 and not args.touched and args.keep >= 1):
-            parser.error("--discover takes one candidates file and --out, --keep at least 1, and no --touched")
+        if not (args.discover and args.out and len(args.files) == 1 and not args.touched and args.keep >= 1
+                and not args.record and not args.plan):
+            parser.error("--discover takes one candidates file and --out, --keep at least 1, and no --touched, "
+                         "--record or --plan")
         if os.path.lexists(args.out):
             parser.error("--out %s exists" % args.out)
         found = discover(brain, os.path.abspath(args.files[0]), args.out, args.jobs, args.timeout, args.keep,
@@ -488,14 +649,13 @@ def main(argv: list[str] | None = None) -> int:
     files = args.files or sorted(glob.glob(os.path.join(brain, "referee", "tests", "mutants", "*.json")))
     changed = touched(brain, args.touched) if args.touched else None
     rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,
-               lambda row: print(json.dumps(row, sort_keys=True), flush=True), args.factor, args.floor)
-    if changed is not None:
-        print("--touched %s: %d changed paths, %d mutants selected" % (args.touched, len(changed), len(rows)),
-              file=sys.stderr)
+               lambda row: print(json.dumps(row, sort_keys=True), flush=True), args.factor, args.floor,
+               os.path.abspath(args.record) if args.record else None, args.plan)
+    if args.plan:
+        return 0
     total = summary(files, rows)
     print(json.dumps(total, sort_keys=True), flush=True)
     return 0 if total["ok"] else 1
-
 
 if __name__ == "__main__":
     sys.exit(main())
