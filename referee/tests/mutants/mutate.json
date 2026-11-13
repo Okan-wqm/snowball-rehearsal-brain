@@ -674,6 +674,33 @@
    "tests": [
     "test_mutate.Record"
    ]
+  },
+  {
+   "id": "moved_tree_not_seen",
+   "file": "tests/mutate.py",
+   "old": "if now(m) != fps[(rel[path], m[\"id\"])]:",
+   "new": "if False:",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "gone_file_not_a_moved_tree",
+   "file": "tests/mutate.py",
+   "old": "        except OSError:\n            return None\n\n    fps",
+   "new": "        except ZeroDivisionError:\n            return None\n\n    fps",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "moved_tree_run_goes_on",
+   "file": "tests/mutate.py",
+   "old": "        if moved.is_set():  # the tree moved",
+   "new": "        if False:  # the tree moved",
+   "tests": [
+    "test_mutate.Record"
+   ]
   }
  ]
 }

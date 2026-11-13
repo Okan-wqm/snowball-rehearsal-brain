@@ -830,6 +830,34 @@ class Record(unittest.TestCase):
         self.assertEqual(first, plan(4, [0, 0, 3], 2, reused=1))
         self.assertEqual(self.lines(), [self.row(self.K, "killed"), self.row(self.S, "survived")])
 
+    def test_a_tree_changed_while_a_mutant_ran_ends_the_run_and_gives_that_mutant_no_row(self):
+        def write(mode: str, text: str):
+            def change(path: str) -> None:
+                with open(path, mode) as fh:
+                    fh.write(text)
+            return change
+
+        for label, change in (("changed", write("a", "# moved\n")), ("removed", os.remove),
+                              ("no longer applies", write("w", "import mod\n"))):
+            with self.subTest(label=label):
+                write_tree(self.brain, {"referee/mod.py": MOD, "referee/tests/test_mod.py": TEST})
+                if os.path.exists(self.record):
+                    os.remove(self.record)
+                target = os.path.join(self.brain, "referee", "mod.py" if label == "no longer applies"
+                                      else "tests/test_mod.py")
+
+                def moved(brain, m, limit, change=change, target=target):
+                    if m["id"] == "s":  # s's copy is made and judged, and the tree is another by then
+                        change(target)
+                    return "killed"
+
+                emitted = []
+                with mock.patch.object(mutate, "run_one", moved), self.assertRaises(RuntimeError) as raised:
+                    mutate.run(self.brain, [self.path], 1, 120.0, emit=emitted.append, record=self.record)
+                self.assertIn("m.json s:", str(raised.exception))
+                self.assertEqual([r["id"] for r in emitted[1:]], ["k"])
+                self.assertEqual([r["id"] for r in self.lines()], ["k"])  # k ran before the change: its row stands
+
     def test_a_whole_run_keeps_the_rows_of_the_files_it_did_not_read(self):
         other = [{"file": "other.json", "id": "x", "outcome": "survived", "fp": "1" * 64},
                  {"file": "other.json", "id": "x", "outcome": "killed", "fp": "2" * 64}]

@@ -50,8 +50,14 @@ is not a whole run. Exit 0 only when every mutant is ``killed`` (no mutant run i
 ``--touched`` selects by (below): its ``file``, the ``<root>/tests`` files its ``tests`` entries name, and the
 import closure of those, over the working tree as it is. Two runs give a mutant the same ``fp`` exactly when
 those fields and those files' bytes are the same. Not in it, the same width as ``--touched``'s: a file that is
-not Python or that a test reaches without an import statement, and the machine (its python, its programs). A
-``stale`` or ``ambiguous`` mutant has none (its row's ``fp`` is ``""``): it cannot be applied.
+not Python or that a test reaches without an import statement, the machine (its python, its programs), and this
+tool's own code unless the mutant reaches it (a row says what the tool that printed it judged). A ``stale`` or
+``ambiguous`` mutant has none (its row's ``fp`` is ``""``): it cannot be applied. The tree must stand still while
+a run reads it: a mutant's ``fp`` is taken at the run's start and again when the mutant has run, and when the
+two differ (a file it reaches was changed or removed meanwhile, so its copy was not of the tree its row would
+name) that mutant has no row, no later mutant starts (those running end, each under the same check) and the run
+ends with an error. What this does not see: a file changed and changed back in between, and a change to a file
+outside the reach.
 
 **Order.** The mutants to run start in tier order, inside a tier in file and mutant order: tier 0, a changed path
 is the mutant's own file under ``tests/mutants/`` or its ``file``; tier 1, a changed path is a test file one of
@@ -402,8 +408,16 @@ def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[st
     roots = {m["root"] for _, m in loaded}
     as_is = reach(brain, roots, set())
     rel = {path: os.path.relpath(path, brain) for path in files}
-    fps = {(rel[path], m["id"]): (None if applicable(brain, m) else fingerprint(brain, m, as_is(m)[1]))
-           for path, m in loaded}
+
+    def now(m: dict[str, Any]) -> str | None:
+        """The mutant's ``fp`` over the tree at this moment, the files those the run's start reached; ``None``
+        when it cannot be applied or one of them is gone."""
+        try:
+            return None if applicable(brain, m) else fingerprint(brain, m, as_is(m)[1])
+        except OSError:
+            return None
+
+    fps = {(rel[path], m["id"]): now(m) for path, m in loaded}
     if changed is None:
         mutants = [(path, m, 2) for path, m in loaded]
     else:
@@ -440,7 +454,7 @@ def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[st
         send(rows[n])
     base: dict[tuple[str, tuple[str, ...]], tuple[str, list[float]]] = {}
     locks = {suite: threading.Lock() for suite in suites}
-    keep_lock = threading.Lock()
+    keep_lock, moved = threading.Lock(), threading.Event()
 
     def base_of(suite: tuple[str, tuple[str, ...]]) -> tuple[str, list[float]]:
         with locks[suite]:  # the list's first mutant runs its baseline, the others wait for it
@@ -450,11 +464,17 @@ def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[st
 
     def one(item: tuple[int, str, dict[str, Any], int]) -> None:
         n, path, m, _ = item
+        if moved.is_set():  # the tree moved under an earlier mutant: no later one starts
+            return
         outcome = applicable(brain, m)
         if not outcome:
             verdict, seconds = base_of((m["root"], tuple(m["tests"])))
             outcome = ("baseline_red" if verdict != "green"
                        else run_one(brain, m, limits(seconds, timeout, factor, floor)))
+            if now(m) != fps[(rel[path], m["id"])]:  # the copy was not, or may not have been, of the tree named
+                moved.set()
+                raise RuntimeError("%s %s: its fp changed while it ran: the tree must stand still during a run"
+                                   % (rel[path], m["id"]))
         row = {"file": rel[path], "id": m["id"], "outcome": outcome, "fp": fps[(rel[path], m["id"])] or ""}
         if record and outcome in REUSED:
             with keep_lock, open(record, "a", encoding="utf-8") as fh:
@@ -656,6 +676,7 @@ def main(argv: list[str] | None = None) -> int:
     total = summary(files, rows)
     print(json.dumps(total, sort_keys=True), flush=True)
     return 0 if total["ok"] else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())
