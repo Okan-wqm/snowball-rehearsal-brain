@@ -33,7 +33,7 @@ Okunma: Aşama 0 inşasından önce ve her dispatch değişikliğinde
 Kurucu oturumu Actions'ta koşmaz, Actions dakikası harcamaz; onu tohumun başlatıcısı açar (`24a`). Model
 Opus. Yazabildiği tek yer beyin reposudur. Hedefi salt okunur bir klondan **veri olarak** okur; hedefin
 yönerge, ayar, hook ve MCP dosyaları ona yüklenmez; hedef kodunu kendi makinesinde koşturmaz. Maliyetini
-başlatıcı `kind: cost` satırı olarak yazar: oturum sayısı ve USD ölçümdür, kapı değildir; oturum tavanı
+başlatıcı `kind: cost` satırı olarak yazar: oturum sayısı ve USD ölçümdür, kapı değildir (Y12); oturum tavanı
 yalnız kaçak frenidir, gerçek sınır abonelik penceresidir (429 kesintidir, ret değildir). Sonuç
 `not_learning` derse oturum durur (`22a`, `29b`). Başlatıcı sözleşmesi ve repoların yerleşimi `24a`'dadır.
 
