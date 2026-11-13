@@ -4,8 +4,8 @@ judged by ``unit_verify.check_recipe``; the first candidate that passes is the b
 Rules: asama-0/08 "Birim seçimi" (the operator names the candidate units in order in ``targets[]``; MF4 and MF6
 check the bold criteria mechanically; when a candidate fails, the next one is tried), tohum/26c (the recipe; the
 brain proposes ``targets/<target>/units.json``, which ``çek`` reads: ``loop.cek``), MF4 (``profile.derive``: the
-candidates, in the operator's order when ``targets[]`` names them, else every ``package.json`` directory, sorted)
-and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this module adds no reason of its own).
+candidates, in the operator's order when ``targets[]`` names them, else every directory of a ``package.json`` or
+``project.json``, sorted) and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this module adds no reason of its own).
 
 **The composed recipe** (``compose``) for candidate ``path``:
 
@@ -113,7 +113,6 @@ TEST_CMD = ("run", "--silent", "test")
 ESLINT = "eslint"  # the program word of a lint script whose flat config is looked up (module docstring)
 UNSAFE_ID = re.compile(r"[^A-Za-z0-9._-]")
 EXTENSIONS = (".ts", ".tsx", ".d.ts", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json")
-PROJECT_MARKERS = ("package.json", "project.json")
 
 
 def unit_id(path: str) -> str:
@@ -169,7 +168,7 @@ def _unit(tree: str, path: str) -> str | None:
     is_dir = found is not None and os.path.isdir(os.path.join(tree, found))
     probe = found if is_dir else posixpath.dirname(found or path)
     while probe:
-        if any(_is_file(tree, posixpath.join(probe, m)) for m in PROJECT_MARKERS):
+        if any(_is_file(tree, posixpath.join(probe, m)) for m in D.PROJECT_MANIFESTS):
             return probe
         probe = posixpath.dirname(probe)
     return found

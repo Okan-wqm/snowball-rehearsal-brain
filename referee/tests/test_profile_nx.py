@@ -344,6 +344,22 @@ class Fit(Base):
         self.assertEqual(row["reasons"], ["cmd_not_installed:test_cmd:node_modules/.bin/jest",
                                           "cmd_not_installed:affected_test_cmd:node_modules/.bin/jest"])
 
+    def test_a_project_without_a_package_json_fits_by_its_targets(self):
+        """``project.json`` alone is an Nx project: a candidate by default, eligible, composed from its targets."""
+        with_manifest = F.compose(self.tree, "libs/a", IMAGES)
+        os.remove(os.path.join(self.tree, "libs/a/package.json"))
+        out = F.fit(self.tree, None, None, IMAGES)
+        row = {r["path"]: r for r in out["rows"]}["libs/a"]
+        self.assertEqual((row["reasons"], row["sources"]), ([], {"lint": "nx_target", "test": "nx_target"}))
+        self.assertEqual(row["recipe"], with_manifest)
+        self.assertEqual(row["reasons"], U.check_recipe(row["recipe"], None, self.tree))
+        # named by the operator too; a project.json that is no object is no candidate to compose for
+        row = F.fit(self.tree, {"id": "t", "unit_candidates": ["libs/a"]}, None, IMAGES)["rows"][0]
+        self.assertEqual((row["path"], row["reasons"]), ("libs/a", []))
+        write_tree(self.tree, {"libs/a/project.json": "[]"})
+        row = F.fit(self.tree, {"id": "t", "unit_candidates": ["libs/a"]}, None, IMAGES)["rows"][0]
+        self.assertEqual(row["reasons"][0], "profile:units[0]:unit_not_eligible:libs/a")
+
     def test_the_npm_script_wins_and_sources_say_why(self):
         write_tree(self.tree, {"libs/a/package.json": package({"lint": "eslint ."}, name="@w/a")})
         sources = F.commands(self.tree, "libs/a")["sources"]

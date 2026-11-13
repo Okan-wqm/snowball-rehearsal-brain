@@ -56,12 +56,17 @@ What ``derive`` returns, and the exact rule for each field (all paths are relati
   that names ``test`` (``INLINE_RUST_TEST``; inline tests). A test file outside these rules (say
   ``FooTest.java``, a Python doctest) is not recognised.
 - ``unit_candidates``: the operator's ``unit_candidates`` in their order; when there are none, every
-  non-excluded directory that holds a ``package.json``, in path order. Each is ``{path, eligible,
+  non-excluded directory that holds a project manifest as a regular file (``PROJECT_MANIFESTS``: ``package.json``,
+  or ``project.json``, which alone makes a directory an Nx project), in path order. Each is ``{path, eligible,
   reasons}``; eligible means none of: ``path_invalid`` (absolute, ``..``, empty), ``path_symlink``,
   ``not_a_directory``, ``excluded``, ``safety_path`` or ``security_path`` (the candidate is such a path or lies
   under one, ``guarded_by``; tohum/05: until K6 is live, which is never in this brain, unit selection leaves
   them out, stage 1's first unit included; a candidate that only holds one below it stays a candidate and the
-  gates refuse touching that path), ``no_package_json``, ``package_json_unparsable``,
+  gates refuse touching that path), ``no_package_json`` (neither manifest is there as a regular file with no
+  symlink on its way), ``package_json_unparsable`` (it is there and is not a JSON object),
+  ``project_json_unparsable`` (the same of ``project.json`` when there is no ``package.json``; with both,
+  ``package.json`` is the one judged here and ``profile.nx`` reads the other: whether the manifest gives
+  commands is MF6's question, not this one's),
   ``no_version_file`` (no non-blank regular ``.nvmrc`` or ``.node-version``, nor a ``.tool-versions``
   with a ``node``/``nodejs`` line, in the unit directory or an ancestor up to the root), ``no_lockfile``
   (no ``npm-shrinkwrap.json`` or ``package-lock.json`` there; the nearest wins, shrinkwrap first),
@@ -151,6 +156,9 @@ from typing import Any
 
 import cli
 
+# What makes a directory a project, in the order a candidate's manifest is judged: npm's, then Nx's. The one list
+# for unit candidates here, the project an input belongs to (``profile.fit``) and Nx's project bounds (``profile.nx``).
+PROJECT_MANIFESTS = ("package.json", "project.json")
 AGENT_CONFIG = (".claude", "CLAUDE.md", "AGENTS.md", ".mcp.json", ".vscode", ".envrc", ".devcontainer")
 EXCLUDED_DIR_NAMES = (
     "node_modules", "bower_components", "jspm_packages", "dist", "coverage", ".nyc_output", ".next", ".nuxt",
@@ -355,7 +363,7 @@ def derive(tree: str, target: dict | None = None, policy: dict | None = None) ->
         raise DeriveError("tree is not a directory")
     op_excluded, op_candidates, op_safety = _target(target)
     keywords = _keywords(policy)
-    agent_found, excl_dirs, security, safety, files, package_dirs = [], [], [], [], [], []
+    agent_found, excl_dirs, security, safety, files, project_dirs = [], [], [], [], [], set()
     languages: dict[str, int] = {}
 
     walker = _walk(tree)
@@ -387,8 +395,8 @@ def derive(tree: str, target: dict | None = None, policy: dict | None = None) ->
             lang = EXTENSIONS.get(posixpath.splitext(name)[1])
             if lang:
                 languages[lang] = languages.get(lang, 0) + 1
-            if name == "package.json":
-                package_dirs.append(posixpath.dirname(rel) or ".")
+            if name in PROJECT_MANIFESTS:
+                project_dirs.add(posixpath.dirname(rel) or ".")
 
     owner_patterns = _owner_patterns(tree, keywords)
     safety_patterns = _owner_patterns(tree, SAFETY_KEYWORDS) + op_safety
@@ -411,7 +419,7 @@ def derive(tree: str, target: dict | None = None, policy: dict | None = None) ->
         "security_paths": minimal(security + safety),
         "test_path_rules": _test_rules(tree, files),
     }
-    candidates = op_candidates or sorted(package_dirs)
+    candidates = op_candidates or sorted(project_dirs)
     derived["unit_candidates"] = [_candidate(tree, derived, c) for c in candidates]
     return derived
 
@@ -528,11 +536,14 @@ def _candidate(tree: str, derived: dict, raw: str) -> dict:
     if guarded:
         reasons.append(guarded)
     if not reasons:
-        present, pkg = _json(tree, posixpath.join(path, "package.json"))
-        if not present:
+        for name in PROJECT_MANIFESTS:
+            present, manifest = _json(tree, posixpath.join(path, name))
+            if present:
+                if not isinstance(manifest, dict):
+                    reasons.append(name.replace(".", "_") + "_unparsable")
+                break
+        else:
             reasons.append("no_package_json")
-        elif not isinstance(pkg, dict):
-            reasons.append("package_json_unparsable")
         if not any(_has_version_file(tree, d) for d in _ancestors(path)):
             reasons.append("no_version_file")
         reasons.extend(_lock_reasons(tree, path))
