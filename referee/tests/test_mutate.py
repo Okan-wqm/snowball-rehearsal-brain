@@ -791,6 +791,8 @@ class Record(unittest.TestCase):
                                     ("stale", [k | {"outcome": "stale"}], 0),
                                     ("disagree", [k, k | {"outcome": "survived"}, s], 1),
                                     ("another fp", [k | {"fp": "0" * 64}], 0),
+                                    # st cannot be applied: it has no fp, and no row stands for it
+                                    ("no fp", [{"file": "m.json", "id": "st", "outcome": "killed", "fp": ""}], 0),
                                     ("another file", [k | {"file": "m1.json"}], 0)):
             with self.subTest(label=label):
                 with open(self.record, "w") as fh:

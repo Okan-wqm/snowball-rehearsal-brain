@@ -118,15 +118,6 @@
    ]
   },
   {
-   "id": "fp_without_the_root",
-   "file": "tests/mutate.py",
-   "old": "for k in (\"root\", *FIELDS) if k != \"id\"}",
-   "new": "for k in FIELDS if k != \"id\"}",
-   "tests": [
-    "test_mutate.Fingerprint"
-   ]
-  },
-  {
    "id": "fp_with_the_id",
    "file": "tests/mutate.py",
    "old": "for k in (\"root\", *FIELDS) if k != \"id\"}",

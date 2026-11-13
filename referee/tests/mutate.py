@@ -52,12 +52,12 @@ import closure of those, over the working tree as it is. Two runs give a mutant 
 those fields and those files' bytes are the same. Not in it, the same width as ``--touched``'s: a file that is
 not Python or that a test reaches without an import statement, the machine (its python, its programs), and this
 tool's own code unless the mutant reaches it (a row says what the tool that printed it judged). A ``stale`` or
-``ambiguous`` mutant has none (its row's ``fp`` is ``""``): it cannot be applied. The tree must stand still while
-a run reads it: a mutant's ``fp`` is taken at the run's start and again when the mutant has run, and when the
-two differ (a file it reaches was changed or removed meanwhile, so its copy was not of the tree its row would
-name) that mutant has no row, no later mutant starts (those running end, each under the same check) and the run
-ends with an error. What this does not see: a file changed and changed back in between, and a change to a file
-outside the reach.
+``ambiguous`` mutant has none (its row's ``fp`` is ``""``): it cannot be applied, and no record row stands for
+it. The tree must stand still while a run reads it: a mutant's ``fp`` is taken at the run's start and again when
+the mutant has run, and when the two differ (a file it reaches was changed or removed meanwhile, so its copy was
+not of the tree its row would name) that mutant has no row, no later mutant starts (those running end, each
+under the same check) and the run ends with an error. What this does not see: a file changed and changed back in
+between, and a change to a file outside the reach.
 
 **Order.** The mutants to run start in tier order, inside a tier in file and mutant order: tier 0, a changed path
 is the mutant's own file under ``tests/mutants/`` or its ``file``; tier 1, a changed path is a test file one of
