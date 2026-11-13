@@ -4,7 +4,7 @@
       "affected_test_cmd": [
         "npm",
         "--prefix",
-        "mcp/farm-management",
+        "web/modules/hr-module",
         "run",
         "--silent",
         "test"
@@ -16,13 +16,16 @@
         "eslint.project-overrides.mjs",
         "jest.preset.js",
         "libs/aquaculture-engines",
+        "libs/event-contracts",
         "libs/shared-contracts",
         "libs/testing",
-        "mcp/farm-management",
         "package-lock.json",
+        "platform/libs/pagination-contracts",
         "tools/eslint-rules",
         "tools/toolchain/toolchain-runtime.mjs",
-        "tsconfig.base.json"
+        "tsconfig.base.json",
+        "web/modules/hr-module",
+        "web/shared-ui"
       ],
       "install_scripts_required": [
         "node_modules/@apollo/protobufjs",
@@ -43,30 +46,31 @@
       ],
       "limits": {},
       "lint_cmd": [
-        "node_modules/.bin/eslint",
-        "--config",
-        "eslint.config.mjs",
-        "--no-error-on-unmatched-pattern",
+        "npm",
+        "--prefix",
+        "web/modules/hr-module",
+        "run",
+        "--silent",
+        "lint",
+        "--",
         "--format",
-        "json",
-        "mcp/farm-management/src/**/*.ts",
-        "mcp/farm-management/vitest.config.ts"
+        "json"
       ],
       "lockfiles": [
         "package-lock.json"
       ],
-      "path": "mcp/farm-management",
+      "path": "web/modules/hr-module",
       "services": [],
       "test_cmd": [
         "npm",
         "--prefix",
-        "mcp/farm-management",
+        "web/modules/hr-module",
         "run",
         "--silent",
         "test"
       ],
       "toolchain": "node@20.11.0",
-      "unit_id": "mcp-farm-management"
+      "unit_id": "web-modules-hr-module"
     }
   ]
 }
