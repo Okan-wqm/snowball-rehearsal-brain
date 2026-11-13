@@ -214,7 +214,8 @@ class StaticCheck(Base):
                 self.assertEqual(self.reasons(env_image=image), [])
 
     def test_toolchain_is_exact_node_version(self):
-        for tc in ("node@20", "node@v20.11.1", "python@3.12.0", "node 20.11.1", 20):
+        for tc in ("node@20", "node@v20.11.1", "python@3.12.0", "node 20.11.1", 20,
+                   "node@20.11", "node@20.11.1.0", "node@20.11.1-rc.1", "node@20.11.1 ", "node@^20.11.1"):
             with self.subTest(tc=tc):
                 self.assertIn("invalid:toolchain", self.reasons(toolchain=tc))
 
@@ -269,7 +270,8 @@ class StaticCheck(Base):
         self.assertEqual(self.reasons(tree=True), ["toolchain_version_mismatch"])
         write_tree(self.tree, {"pkg/.nvmrc": "20.11.1"})
         self.assertEqual(self.reasons(tree=True), [], "in one directory .nvmrc comes before .node-version")
-        for text in ("lts/*", "20", "20.11", "node", "20.11.1.1"):
+        for text in ("lts/*", "20", "20.11", "node", "20.11.1.1", "^20.11.1", "~20.11.1", ">=20.11.1",
+                     "20.11.1 || 22.0.0"):
             write_tree(self.tree, {"pkg/.nvmrc": text})
             with self.subTest(text=text):
                 self.assertEqual(self.reasons(tree=True), ["version_file_not_exact"])
@@ -685,6 +687,22 @@ class Run(Base):
         self.assertEqual(report["reasons"], ["lint_failed:1", "lint_failed:2", "lint_failed:3"])
         write_tree(self.tree, {"pkg/lint.py": LINT})
         self.assertEqual(self.verify()["verdict"], "verified")
+
+    def test_lint_runs_must_agree_on_the_exit_code(self):
+        """tohum/26c "Birim tarifi": the three runs end with the same exit code; 0 and 1 are each green, a mix of
+        them over the same stdout is not."""
+        inner = FakeDocker()
+        exits = []
+
+        def flip(argv, env, timeout):
+            res = inner(argv, env, timeout)
+            if argv[-1] == "pkg/lint.py":
+                exits.append(res.exit)
+                if len(exits) == 3:
+                    return C.RunnerResult(1 - res.exit, res.stdout, res.stderr, False)
+            return res
+        self.assertEqual(self.verify(runner=flip)["reasons"], ["lint_not_deterministic"])
+        self.assertEqual(sorted(set(exits)), [1], "the fixture's lint exits 1 on its finding, so the third was 0")
 
     def test_lint_records_are_in_the_verified_report(self):
         report = self.verify()
