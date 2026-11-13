@@ -29,19 +29,20 @@ bir Windows kullanıcısında koşar; Kurucu'nun yapılandırması repo dışın
 3. `claude -p`: pinli sürüm, Opus model kimliği, `--max-budget-usd <session_cap_usd>`, ayar kaynağı yok
    ya da operatörün yönettiği dosya, `--strict-mcp-config`, taze `CLAUDE_CONFIG_DIR`,
    `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; çalışma dizini beyin klonu, hedefin salt okunur klonu dışarıda;
-   açılış "`00` ve `00a`'yı oku" ve tipli durum; hedeflerin `targets[]` sırasıyla `[{id, kind}]`'ı oturumun
-   klasöründe `/work/logs/targets.json`'dadır, adları orada yoktur (`29e` "Genellik okuması").
+   açılış "`00` ve `00a`'yı oku" ve tipli durum; hedeflerin `targets[]` sırasıyla `[{id, kind, base_sha,
+   unit_candidates}]`'ı oturumun klasöründe `/work/logs/targets.json`'dadır, adları orada yoktur (`29e` "Genellik
+   okuması"); `policy.json`'un `operating`'i o oturum için okunur, aynı klasörde `/work/logs/operating.json`'dadır:
+   `{operating: {…}}`, alan yoksa `{}`; okunamaz ya da `26c` biçiminde değilse dosya yoktur.
 4. Bitince CLI'nin bildirdiği maliyeti `kind: cost` satırı olarak `founder-ledger.jsonl`'a `26`'nın zincir
-   kuralıyla ekler; oturum sayısı ve USD `status-stage0.md`'ye girer.
+   kuralıyla ekler (model ve token toplamları dahil, yorumsuz); oturum sayısı, USD `status-stage0.md`'ye girer.
 
 **Oturumun maliyet satırı** (Y12, `asama-0/12`). `kind: cost` satırını başlatıcı yazar (rapor yoksa
-`unmeasured`). Oturum sayısı ve USD toplamları ilerlemenin ve maliyetin ölçüsüdür;
-çıkış koşulu değildir ve Kurucu'yu durdurmaz. `session_cap_usd` ve aşama toplamı yalnız kaçak frenidir:
-olağan işi durdurmayacak kadar yüksektir, döngüyü keser; takılınca başlatıcı yeni oturum açmaz ve
-operatörü uyarır, bu bir ret değildir. Gerçek sınır aboneliğin kullanım penceresidir (5 saatlik ve
-haftalık kota): takılmak (HTTP 429) operatör uyarısı ve kesintidir, Kurucu reddi değildir; oturum pencere
-açılınca kaldığı yerden sürer. Sonraki oturum öncekinin sonucu önyükleme hakeminde yeşilken başlar.
-Etkinleştirmeden sonra `cost` bölümünde inşa kalemidir.
+`unmeasured`). Oturum sayısı ve USD toplamları ilerlemenin ve maliyetin ölçüsüdür; çıkış koşulu değildir ve
+Kurucu'yu durdurmaz. `session_cap_usd` ve aşama toplamı yalnız kaçak frenidir: olağan işi durdurmayacak kadar
+yüksektir, döngüyü keser; takılınca başlatıcı yeni oturum açmaz ve operatörü uyarır, bu bir ret değildir. Gerçek
+sınır aboneliğin kullanım penceresidir (5 saatlik ve haftalık kota): takılmak (HTTP 429) operatör uyarısı ve
+kesintidir, Kurucu reddi değildir; oturum pencere açılınca kaldığı yerden sürer. Sonraki oturum öncekinin sonucu
+önyükleme hakeminde yeşilken başlar. Etkinleştirmeden sonra `cost` bölümünde inşa kalemidir.
 
 ## Yerleşim
 

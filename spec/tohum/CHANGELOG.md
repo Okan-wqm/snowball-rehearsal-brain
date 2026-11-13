@@ -4,6 +4,23 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-13, E577–E581; Kurucu raporları, iki uzmanlı iki turlu panelin kararı): `24a` 3: başlatıcının
+  `targets.json`'u `targets[]` sırasıyla `[{id, kind, base_sha, unit_candidates}]`'dır (kimlik ya da aday ad taşırsa
+  başlatıcı durur; repo, hariç yollar, güvenlik yolları ve adlar verilmez); `policy.json`'un `operating`'i her oturum
+  için okunup `/work/logs/operating.json`'a yazılır (`seed/founder/prompt.md` "Hedefler"). `26c` "Birim tarifi":
+  sürüm dosyası hedefin iş akışlarına ve `engines`'a karşı geçerlidir; işaret getirme iznidir, koşma buyruğu
+  değildir; tarifin ölçüsü yalnız `unit.verify`'dır. Yanıtlanan raporlar:
+  `seed-050-copy-target-row-unreadable-for-unit-proposal` → (a) E571, `24a:32-33`; (b), (c) `24a:32-33` (adaylar ve
+  taban `/work/logs/targets.json`'da); (d) `24a:34-35` (`operating.json`; değerler operatöründür, hakem reposunun
+  `policy.json`'unda bugün `operating` yoktur, E579); (e) `26c:67` (sürüm dosyası kazanır, o sürümde kırmızı koşu
+  ölçümdür); `seed-051-install-marks-run-platform-foreign-scripts` → (1) `26c:71` (işaret izindir, hangi betiğin
+  koşacağını hiçbir sayfa sabitlemez); (2) `29g:20-21` (platform koşulu olmadan getirilir ve denetlenir), `26c:71`
+  (açılmayan paket ret nedeni değildir); (3) `26c:71` (hiçbir betiğin başarısızlığı, isteğe bağlı paketinki dahil, ret
+  nedeni değildir; ölçü `unit.verify`). E576'nın yanıtı adlandırılmamıştı (E581):
+  `seed-052-known-b-stop-has-no-path-before-b` → `29b:73`. seed-049 kaydının `24a:53`'ü `24a:54` oldu. 80 satır
+  sınırı için `24a` "Oturumun maliyet satırı" yeniden sarıldı (içerik değişmedi) ve 2026-11-04 E499, E540–E546 kaydı
+  `CHANGELOG-5.md`'ye taşındı.
+  Sahibin kararı (E582): `cost` satırı modeli ve CLI'nin token toplamlarını da taşır (`24a:35`).
 - 2.2 (2026-11-13, E574; sahibin kararı): yeni yasa `00` Y12 "Maliyet" (metni yalnız orada); `06`, `24`, `24a`
   ona işaret eder; `24a`'daki "Kurucu kendi maliyetini ölçemez" cümlesi Y12 ile çeliştiği için kalktı; `00` 80 satır
   sınırı için yeniden sarıldı, başka içerik değişmedi.
@@ -15,7 +32,7 @@ Okunma: bir sayfanın geçmişi aranırken
   "Hedefler"). Yanıtlanan rapor: `seed-049-genellik-text-rule-and-names-unreadable` → (a) `29e:60-62` (metin kuralı ve
   iki nedenin adı), `29e:58-60` (biçim; önce yol, sonra metin); (b) `29e:57-58` (liste de sayısı da oturuma verilmez),
   `29e:64-65` (denetimden geçmek genelliğin kanıtı değildir); `26c:32` listeyi adlandırır, kimin okuduğunu söylemez; (c)
-  `24a:32-33` (hedeflerin kimliği ve türü `/work/logs/targets.json`'da), `24a:53` (`targets/<hedef>/`);
+  `24a:32-33` (hedeflerin kimliği ve türü `/work/logs/targets.json`'da), `24a:54` (`targets/<hedef>/`);
   `targets/names.json`'u okuyan ya da reddeden denetim yoktur. 80 satır sınırı için 2026-11-01 E490–E499 kaydı
   `CHANGELOG-5.md`'ye taşındı.
 - 2.2 (2026-11-06, E561–E566; sahibin kararı): `02` "Sahip istisnası": #spec de istisna edilir (E286), Aşama 1'in
@@ -41,25 +58,8 @@ Okunma: bir sayfanın geçmişi aranırken
   `seed-044-revert-facts-producers`: ret geçerli (2026-11-01 kaydındaki `declined: seed-044-revert-facts-producers`
   satırı; `29j:53-60`); `asama-0/10a:26` `#geri-alma` Aşama 0'da değişmedi. 80 satır sınırı için 2026-11-02 E506 ve
   E507 kayıtları `CHANGELOG-5.md`'ye taşındı.
-- 2.2 (2026-11-04, E499, E540–E546; Kurucu raporları, dört uzmanlı iki turlu panelin kararı): `25a` "Başarısızlık":
-  kırmızı bir (B)'den sonra operatör iki hedefin her `brain/` dalını aynı repoda `refs/tags/arsiv/<aktarım>/<dal>`
-  etiketine arşivler (`<aktarım>` başarısız aktarım satırının `row_hash`'i), satır 3'ün iki ruleset'inin uygulamasını
-  yalnız silme süresince kapatıp (bypass aktörü yok) dalları siler, aktarımı geri alıp düzeltilmiş SHA'yı aktarır; (B)
-  yeni bir defterin ilk genesis'inden koşar (`26d`, `07`). Tohum güvenlik defteri hakem reposunda
-  `setup/security-ledger.jsonl`'dur, tohum dönemi teslim eder (`25` 3, 10b; `26c`, `29o`, `29s`, `27`). Aktarım
-  doğruladığı imzalı (A) sonucunu aynı commit'te `setup/results/<result_sha256>.json` olarak yazar, `yaz` ve
-  `stage-open` oradan okur (`25a` 1, `26c`, `26d`, `29s`, `27`). `26f`: canlı prova fikstürleri ikinci prova sırrıdır
-  (biçim, aktarım satırına bağ, dosya başına kural, üretici `drill-fixtures`); kopya kapısı satırı `events`/`copy_gate`.
-  `25a` 5'in App beyanı Aşama 0'da yoktur, okuyucusuyla P1'de gelir (`29o`). Yanıtlanan raporlar:
-  `seed-045-drill-live-inputs-unnamed` (tamamlandı) → `26f:34-38` (yer: ikinci sır, yalnız `yaz`'ın adımında),
-  `26f:39-50` (biçim: `import_line_sha256`, opak `id`, `cause`, `patch`), `26f:52-58` (dosya başına kural, üretici);
-  `seed-047-regenesis-and-genesis-inputs` → (a) `25a:25-40` (arşiv, silme, yeniden aktarım), `26d:31-34` (ilk genesis),
-  `07:9-10` (ne senkron ne zorla itme); (b) `29o:15-17` ve `29s:71-74` (defter işin checkout'unda), `26c:45` (dosya);
-  `seed-048-copy-gate-record-and-a-result-bytes` → (a) `26f:60-67` (Kurucu'nun taslağı; `stage` ile `verdict: "PASS"`
-  birlikte yok), `29s:22-24` (kapı satırından okunur); (b) `26c:38` (dosya, ad, denetim), `25a:15` (aynı commit),
-  `26d:47` (`owner_exception`'ın kaynağı), `26d:57-59` (`stage-open` onu commit'ten okur), `29s:71-74`. Sahibe
-  açık: aktarımın geri alınması sayaç satırını da siler (E546). 80 satır sınırı için E470–E475 ve E411–E417
-  kayıtları `CHANGELOG-5.md`'ye taşındı.
+- 2.2 (2026-11-04, E499, E540–E546): kırmızı bir (B)'den sonra dalların arşivi ve silinmesi, tohum güvenlik
+  defteri, imzalı (A) sonucunun aktarımdaki yeri ve canlı prova fikstürleri: `CHANGELOG-5.md`.
 - 2.2 (2026-11-02, E506, E507): kapsülde defterin salt-okur dizini ve standart kütüphaneyi gizleyen modül adı:
   `CHANGELOG-5.md`.
 - 2.2 (2026-11-01, E411–E417, E470–E475, E478–E485, E490–E499): `26d`'nin olguları (son kökün paketi, zincirli

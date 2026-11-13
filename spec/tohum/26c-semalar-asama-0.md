@@ -64,11 +64,11 @@ kapı kararındaki sıralı, tekil nedenler tam olarak `[reason]` olduğunda tut
 HEAD'in 3/3 yeşil koşmasıdır (`unit.verify`). Lint için yeşil: `lint_cmd` üç koşunun her birinde 0 ya da 1 ile biter ve üç
 koşunun çıkış kodu ve stdout'u bayt bayt aynıdır (ESLint'te 1 bulunan ihlaldir; `asama-0/08` ölçüt 5 ihlal ister, ölçüt 6
 yeşil). `toolchain` `node@X.Y.Z`'dir: kesin sürüm (üç ondalık bileşen; aralık ya da `lts` gibi takma ad değil), birimin en yakın
-sürüm dosyasındaki sürüm. İmaj resmi araç zinciri imajıdır, etiketindeki sürüm de `X.Y.Z`'dir. `install_scripts_required[]`'in
+sürüm dosyasındaki sürüm; en yakın, birimin dizininden köke giden yoldakidir. Hedefin iş akışları ya da o yolda olmayan bir dosya başka sürüm söylese de, paketlerin `engines`'ı onu dışlasa da sürüm budur: o sürümde kırmızı koşu ölçümdür (`asama-0/08` "Birim seçimi"). İmaj resmi araç zinciri imajıdır, etiketindeki sürüm de `X.Y.Z`'dir. `install_scripts_required[]`'in
 her elemanı kilitteki tam paket yolu (kök `""` dışında bir `packages` anahtarı, ör. `node_modules/x`) ya da `ad@sürüm`'dür;
 `ad@sürüm` tarball'ının adı ve sürümü eşleşen paketi işaretler, kilitte eşleşeni yoksa hiçbir şeyi. Başka bir eleman, ör. çıplak
 ad (her sürümü işaretlerdi) ya da kilitte olmayan bir yol, işaret değildir ve isteği kullanılamaz yapar: `deps.fetch` onu
-reddeder (çıkış 2, `29g`). `services` Aşama 0'da boştur. Önerinin hariç yolları ya da güvenlik yollarını daraltması reddedilir.
+reddeder (çıkış 2, `29g`). İşaret betikli paketin getirilmesine izindir, koşma buyruğu değildir: betik gerektiren paket işaretlidir ve betiği koşarsa `koş`ta ağsız koşar (`08`, `asama-0/06`: yalnız yeri), ama işaretli her paketin betiğinin koşması ve 0 ile bitmesi istenmez; hangi betiğin koşacağını hiçbir sayfa sabitlemez. Tarifin ölçüsü yalnız `unit.verify`'dır (`14`): açılmayan paket, koşmayan ya da 0'dan başka biten betik, isteğe bağlı paketinki dahil, hiçbir sayfada ret nedeni değildir; lint ya da testi kırmızı yaparsa kırmızı `unit.verify`'ındır. `services` Aşama 0'da boştur. Önerinin hariç yolları ya da güvenlik yollarını daraltması reddedilir.
 
 **policy.json `operating{}`**: `{key: {value, band: [min, max]}}`; anahtarlar `unit_inputs_bytes`, `deps_bytes`,
 `worktree_bytes`, `container_mem_bytes`, `kos_wall_s`, `test_total_s`, `output_bytes`. Döngünün karşılaştırdığı her sınır
