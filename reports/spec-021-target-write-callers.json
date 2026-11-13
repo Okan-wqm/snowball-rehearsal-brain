@@ -2,6 +2,7 @@
   "id": "spec-021-target-write-callers",
   "kind": "spec_issue",
   "ref": "spec/asama-0/14-sirali-mikro-ozellikler.md:47",
-  "state": "open",
-  "evidence_test": "grep -n 'target.write' spec/tohum/26a-arac-imzalari.md  # 26a:27 names gate.check, gate.revert, ledger.append and activation as target.write's callers; asama-0/14:47 lists 9 -> 10, 13 only; gate.check (MF8) is a pure decision and imports nothing from target (grep -n import referee/gate/check.py), and 9 -> 8 would break the order rule (8 < 9); draft: calls 9 -> 10, 13, 18 and 26a's caller column 'the yaz job after gate.check'"
+  "state": "confirmed",
+  "evidence_test": "grep -n 'target.write' spec/tohum/26a-arac-imzalari.md  # 26a:27 names gate.check, gate.revert, ledger.append and activation as target.write's callers; asama-0/14:47 lists 9 -> 10, 13 only; gate.check (MF8) is a pure decision and imports nothing from target (grep -n import referee/gate/check.py), and 9 -> 8 would break the order rule (8 < 9); draft: calls 9 -> 10, 13, 18 and 26a's caller column 'the yaz job after gate.check'",
+  "update_2026_11_13_epoch_eec6436": "Read on 2026-11-13 against today's page and code. Question: tohum/26a named gate.check as a caller of target.write, which gate.check (MF8, a pure decision) cannot be without breaking the order rule (9 -> 8). Answer on the page: tohum/26a:33, column \"Çağıran\": \"yaz işi (gate.check'in merge kararıyla), gate.revert, ledger.append, exit.drill, etkinleştirme\"; that is this report's draft ('the yaz job after gate.check'). tohum/25a:17 gives the required check's name, snowball-gate. Code today: referee/gate/check.py imports gate.diffguard, gate.secrets and cli, nothing from target; target.branches.CHECK is \"snowball-gate\". Run today, green: referee/tests/test_check.py (35), test_write.py (56). Confirmed as page text and as the import list of my module; no verdict compares callers."
 }
