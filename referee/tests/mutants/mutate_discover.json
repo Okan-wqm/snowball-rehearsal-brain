@@ -285,7 +285,7 @@
    "old": "rows = list(pool.map(one, candidates))",
    "new": "rows = [f.result() for f in concurrent.futures.as_completed([pool.submit(one, m) for m in candidates])]",
    "tests": [
-    "test_mutate.Discover.test_the_command_line"
+    "test_mutate.Discover.test_each_row_is_emitted_as_its_candidate_finishes"
    ]
   },
   {
