@@ -413,6 +413,42 @@
    "tests": [
     "test_mutate.py"
    ]
+  },
+  {
+   "id": "rows_in_file_order_at_the_end",
+   "file": "tests/mutate.py",
+   "old": "        rows[n] = row\n        send(row)\n\n    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:\n        list(pool.map(one, todo))\n",
+   "new": "        rows[n] = row\n\n    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:\n        list(pool.map(one, todo))\n    for item in sorted(todo):\n        send(rows[item[0]])\n",
+   "tests": [
+    "test_mutate.Runner.test_each_row_is_emitted_as_its_mutant_finishes"
+   ]
+  },
+  {
+   "id": "entry_limit_not_enforced",
+   "file": "tests/mutate.py",
+   "old": "stdout=subprocess.DEVNULL,\n                                  stderr=subprocess.DEVNULL, timeout=limit)",
+   "new": "stdout=subprocess.DEVNULL,\n                                  stderr=subprocess.DEVNULL)",
+   "tests": [
+    "test_mutate.Runner.test_a_mutant_over_the_limit_is_a_timeout"
+   ]
+  },
+  {
+   "id": "timeout_flag_not_passed",
+   "file": "tests/mutate.py",
+   "old": "for f in files], args.jobs, args.timeout, changed,",
+   "new": "for f in files], args.jobs, 900.0, changed,",
+   "tests": [
+    "test_mutate.Runner.test_the_command_line_passes_its_limits"
+   ]
+  },
+  {
+   "id": "factor_flag_not_passed",
+   "file": "tests/mutate.py",
+   "old": "flush=True), args.factor, args.floor,",
+   "new": "flush=True), 5.0, args.floor,",
+   "tests": [
+    "test_mutate.Runner.test_the_command_line_passes_its_limits"
+   ]
   }
  ]
 }

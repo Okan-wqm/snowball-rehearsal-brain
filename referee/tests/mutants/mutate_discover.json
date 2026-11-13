@@ -138,8 +138,8 @@
   {
    "id": "disc_baseline_timeout_green",
    "file": "tests/mutate.py",
-   "old": "return not (killers or timeouts), [",
-   "new": "return not killers, [",
+   "old": "return not (killers or timeouts), took",
+   "new": "return not killers, took",
    "tests": [
     "test_mutate.Discover.test_a_baseline_over_the_limit_is_baseline_red"
    ]
@@ -304,6 +304,69 @@
    "new": "not all(TEST_ID.match(t) for t in",
    "tests": [
     "test_mutate.Discover.test_a_failure_not_a_tests_own_makes_the_entry_its_own_killer"
+   ]
+  },
+  {
+   "id": "disc_rows_in_candidate_order_at_the_end",
+   "file": "tests/mutate.py",
+   "old": "            send(row)\n            return row\n\n        rows = list(pool.map(one, candidates))\n",
+   "new": "            return row\n\n        rows = list(pool.map(one, candidates))\n        for row in rows:\n            send(row)\n",
+   "tests": [
+    "test_mutate.Discover.test_each_row_is_emitted_as_its_candidate_finishes"
+   ]
+  },
+  {
+   "id": "disc_entry_limit_not_enforced",
+   "file": "tests/mutate.py",
+   "old": "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=limit)",
+   "new": "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)",
+   "tests": [
+    "test_mutate.Discover.test_an_entry_over_its_limit_is_a_timeout_and_the_others_still_run"
+   ]
+  },
+  {
+   "id": "disc_timeout_flag_not_passed",
+   "file": "tests/mutate.py",
+   "old": "args.out, args.jobs, args.timeout, args.keep,",
+   "new": "args.out, args.jobs, 900.0, args.keep,",
+   "tests": [
+    "test_mutate.Discover.test_the_command_line_passes_its_limits_and_keep"
+   ]
+  },
+  {
+   "id": "disc_keep_flag_not_passed",
+   "file": "tests/mutate.py",
+   "old": "args.out, args.jobs, args.timeout, args.keep,",
+   "new": "args.out, args.jobs, args.timeout, 1,",
+   "tests": [
+    "test_mutate.Discover.test_the_command_line_passes_its_limits_and_keep"
+   ]
+  },
+  {
+   "id": "disc_factor_flag_not_passed",
+   "file": "tests/mutate.py",
+   "old": "flush=True), args.factor,\n                         args.floor)",
+   "new": "flush=True), 5.0,\n                         args.floor)",
+   "tests": [
+    "test_mutate.Discover.test_the_command_line_passes_its_limits_and_keep"
+   ]
+  },
+  {
+   "id": "disc_floor_flag_not_passed",
+   "file": "tests/mutate.py",
+   "old": "flush=True), args.factor,\n                         args.floor)",
+   "new": "flush=True), args.factor,\n                         60.0)",
+   "tests": [
+    "test_mutate.Discover.test_the_command_line_passes_its_limits_and_keep"
+   ]
+  },
+  {
+   "id": "disc_entry_limit_from_its_test_seconds",
+   "file": "tests/mutate.py",
+   "old": "        return not (killers or timeouts), took, dict(zip(suite[1], took, strict=True)) | seconds",
+   "new": "        seconds = dict(zip(suite[1], took, strict=True)) | seconds\n        return not (killers or timeouts), [seconds[e] for e in suite[1]], seconds",
+   "tests": [
+    "test_mutate.Discover.test_the_command_line_passes_its_limits_and_keep"
    ]
   }
  ]

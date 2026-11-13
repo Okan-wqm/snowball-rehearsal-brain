@@ -12,6 +12,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -34,6 +35,12 @@ IDS = ("import helper\n" + TEST
        + "        self.assertEqual(helper.VALUE, 5)\n        self.assertTrue(os.path.isdir('tests'))\n\n"
        "    def test_other(self):\n        pass\n\n\nclass U(unittest.TestCase):\n    def test_nothing(self):\n"
        "        pass\n")
+
+
+# How long a held mutant waits for the event that frees it before it goes on by itself. The event comes however slow
+# the machine is, so the wait ends by the clock only in a run that has one worker where the test asked for two (the
+# event cannot come), and the test then fails by its events, this many seconds late.
+HELD = 600.0
 
 
 def mutant(id_: str, old: str, new: str, tests: list[str] | None = None, file: str = "mod.py") -> dict:
@@ -59,14 +66,14 @@ class Runner(unittest.TestCase):
                                 "referee/tests/test_red.py": RED, "referee/tests/test_slow.py": SLOW})
 
     def outcomes(self, mutants: list[dict], timeout: float = 120.0, emit=None, roots: dict | None = None,
-                 **limits) -> dict[str, str]:
+                 jobs: int = 4, **limits) -> dict[str, str]:
         """Outcomes of ``mutants`` written to one file, and of each ``roots`` file (``{root: mutants}``) beside it."""
         paths = []
         for i, (root, ms) in enumerate([(None, mutants)] + sorted((roots or {}).items())):
             paths.append(os.path.join(self.brain, "m%d.json" % i if i else "m.json"))
             with open(paths[-1], "w") as fh:
                 json.dump({"mutants": ms} | ({"root": root} if root else {}), fh)
-        return {r["id"]: r["outcome"] for r in mutate.run(self.brain, paths, 4, timeout, emit=emit, **limits)}
+        return {r["id"]: r["outcome"] for r in mutate.run(self.brain, paths, jobs, timeout, emit=emit, **limits)}
 
     def test_a_root_mutant_runs_on_its_roots_file_with_its_roots_tests_from_its_root(self):
         # The brain's root has its own mod.py (twice differs from referee's) and tests/: test_root checks twice
@@ -108,16 +115,30 @@ class Runner(unittest.TestCase):
                                "id_then_red_file": "baseline_red"})
 
     def test_each_row_is_emitted_as_its_mutant_finishes(self):
-        hang = "import mod, time\nif mod.add(2, 3) != 5:\n    time.sleep(6)\n"
-        write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + hang)})
-        emitted = []
-        quick = mutant("quick_second", "return a + a", "return 2 * a")
-        self.outcomes([mutant("slow_first", "return a + b", "return a - b", ["test_hang.py"]), quick],
-                      emit=emitted.append)
-        self.assertEqual(emitted[0], plan(2, [0, 0, 2], 2))  # the plan comes before every row
-        self.assertEqual([r["id"] for r in emitted[1:]], ["quick_second", "slow_first"])
-        self.assertEqual(emitted[1], {"file": "m.json", "id": "quick_second", "outcome": "survived",
-                                      "fp": fp_of(self.brain, quick)})
+        # Two workers; the file's first mutant is held until the third starts, and the third starts only when the
+        # worker that ran the second is free again: the second's row must be out by then, and first in the output.
+        # Events hold the order, no pause does (``HELD``).
+        emitted, release, real = [], threading.Event(), mutate.run_one
+        out_at_third: list[str] = []
+
+        def held(brain, m, limit):
+            if m["id"] == "held_first":
+                release.wait(HELD)
+            elif m["id"] == "third":
+                out_at_third.extend(r["id"] for r in emitted if "id" in r)
+                release.set()
+            return real(brain, m, limit)
+
+        second = mutant("second", "return a + a", "return 2 * a")
+        with mock.patch.object(mutate, "run_one", held):
+            got = self.outcomes([mutant("held_first", "return a + b", "return a - b"), second,
+                                 mutant("third", "return a + b", "return a * b")], emit=emitted.append, jobs=2)
+        self.assertEqual(got, {"held_first": "killed", "second": "survived", "third": "killed"})
+        self.assertEqual(emitted[0], plan(3, [0, 0, 3], 1))  # the plan comes before every row
+        self.assertEqual(out_at_third, ["second"])
+        self.assertEqual(emitted[1], {"file": "m.json", "id": "second", "outcome": "survived",
+                                      "fp": fp_of(self.brain, second)})
+        self.assertEqual(sorted(r["id"] for r in emitted[2:]), ["held_first", "third"])
 
     def test_each_outcome(self):
         got = self.outcomes([
@@ -212,24 +233,33 @@ class Runner(unittest.TestCase):
                                                                                         "return a - b"))}])
 
     def test_a_mutant_over_the_limit_is_a_timeout(self):
+        # The baseline's seconds are set (0.1 s, so the limit is the 2 s floor); the mutant's entry sleeps 30 s. A
+        # slow machine only makes the entry later still.
         slow = "import mod, time\nif mod.add(2, 3) != 5:\n    time.sleep(30)\n"
         write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + slow)})
-        got = self.outcomes([mutant("hang", "return a + b", "return a - b", ["test_hang.py"])], timeout=5.0)
+        with mock.patch.object(mutate, "baseline", lambda *a: ("green", [0.1])):
+            got = self.outcomes([mutant("hang", "return a + b", "return a - b", ["test_hang.py"])], floor=2.0)
         self.assertEqual(got, {"hang": "timeout"})
 
+    def handed_on(self, seconds: list[float], call) -> list[list[float]]:
+        """The limits ``run_one`` is given in ``call()``, the baseline of every list set to ``seconds``; nothing
+        is run, so no clock is read."""
+        limits: list[list[float]] = []
+
+        def run_one(brain, m, limit):
+            limits.append(limit)
+            return "killed"
+
+        with mock.patch.object(mutate, "baseline", lambda *a: ("green", seconds)), \
+                mock.patch.object(mutate, "run_one", run_one):
+            call()
+        return limits
+
     def test_a_mutant_limit_is_derived_from_its_baseline(self):
-        # The baseline of test_hang.py takes well under a second, so with --floor 3 and --factor 5 a mutant may run
-        # about 3 s: one sleeping 1 s is judged (killed), one sleeping 30 s ends as a timeout long before the
-        # 120 s ceiling, and the same 30 s mutant under a floor above 30 s is judged too.
-        slow = "import mod, time\nif mod.add(2, 3) == -1:\n    time.sleep(1)\nif mod.add(2, 3) == 6:\n    time.sleep(30)\n"
-        write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + slow)})
-        quick = mutant("slow_1s", "return a + b", "return a - b", ["test_hang.py"])
-        loops = mutant("slow_30s", "return a + b", "return a * b + 0", ["test_hang.py"])
-        start = time.monotonic()
-        self.assertEqual(self.outcomes([quick, loops], factor=5.0, floor=3.0), {"slow_1s": "killed",
-                                                                                "slow_30s": "timeout"})
-        self.assertLess(time.monotonic() - start, 30)
-        self.assertEqual(self.outcomes([loops], timeout=60.0, factor=5.0, floor=40.0), {"slow_30s": "killed"})
+        # Three entries whose baselines took 0.1 s, 4 s and 50 s: the floor, five baselines, the ceiling.
+        m = mutant("m", "return a + b", "return a - b", ["test_mod.py", "test_mod.T", "test_mod.T.test_add"])
+        got = self.handed_on([0.1, 4.0, 50.0], lambda: self.outcomes([m], timeout=120.0, factor=5.0, floor=2.0))
+        self.assertEqual(got, [[2.0, 20.0, 120.0]])
 
     def test_each_entry_is_timed_on_its_own(self):
         # The entries really run; the clock is a list read in turn (how long a process takes to start is the
@@ -241,16 +271,20 @@ class Runner(unittest.TestCase):
         self.assertEqual(list(ticks), [])
 
     def test_the_command_line_passes_its_limits(self):
-        slow = "import mod, time\nif mod.add(2, 3) == 6:\n    time.sleep(30)\n"
-        write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + slow)})
         path = os.path.join(self.brain, "m.json")
         with open(path, "w") as fh:
-            json.dump({"mutants": [mutant("slow_30s", "return a + b", "return a * b + 0", ["test_hang.py"])]}, fh)
-        out, start = io.StringIO(), time.monotonic()
-        with contextlib.redirect_stdout(out):
-            mutate.main(["--brain", self.brain, "--timeout", "120", "--factor", "5", "--floor", "3", path])
-        self.assertEqual(json.loads(out.getvalue().splitlines()[1])["outcome"], "timeout")
-        self.assertLess(time.monotonic() - start, 30)
+            json.dump({"mutants": [mutant("m", "return a + b", "return a - b",
+                                          ["test_mod.py", "test_mod.T", "test_mod.T.test_add"])]}, fh)
+
+        def main(*flags):
+            with contextlib.redirect_stdout(io.StringIO()):
+                mutate.main(["--brain", self.brain, *flags, path])
+
+        # Baselines of 2 s, 20 s and 500 s: each flag's value shows in one entry's limit, and so does its default.
+        self.assertEqual(self.handed_on([2.0, 20.0, 500.0], main), [[60.0, 100.0, 900.0]])
+        self.assertEqual(self.handed_on([2.0, 20.0, 500.0],
+                                        lambda: main("--timeout", "120", "--factor", "4", "--floor", "3")),
+                         [[8.0, 80.0, 120.0]])
 
     def test_limits(self):
         self.assertEqual(mutate.limits([0.1, 4.0, 50.0], 120.0, 5.0, 2.0), [2.0, 20.0, 120.0])
@@ -333,11 +367,11 @@ class Discover(unittest.TestCase):
                                 "referee/tests/deep/test_deep.py": TEST})
         self.out = os.path.join(self.brain, "kept.json")
 
-    def discover(self, mutants: list[dict], root: str | None = None, **kw) -> dict[str, dict]:
+    def discover(self, mutants: list[dict], root: str | None = None, jobs: int = 4, **kw) -> dict[str, dict]:
         path = os.path.join(self.brain, "c.json")
         with open(path, "w") as fh:
             json.dump({"mutants": mutants} | ({"root": root} if root else {}), fh)
-        rows = mutate.discover(self.brain, path, self.out, 4, kw.pop("timeout", 120.0), **kw)
+        rows = mutate.discover(self.brain, path, self.out, jobs, kw.pop("timeout", 120.0), **kw)
         self.assertEqual([r["id"] for r in rows], [m["id"] for m in mutants])  # candidate order
         return {r["id"]: r for r in rows}
 
@@ -431,15 +465,28 @@ class Discover(unittest.TestCase):
         self.assertFalse(os.path.exists(self.out))
 
     def test_an_entry_over_its_limit_is_a_timeout_and_the_others_still_run(self):
+        # Every run's seconds are set: test_hang.py's 0.5 s (its limit five of them, 2.5 s, which the mutant's 30 s
+        # sleep passes on any machine), test_mod.py's 30 s (its limit 150 s, which nothing here comes near).
         hang = "import mod, time\nif mod.add(2, 3) != 5:\n    time.sleep(30)\n"
         write_tree(self.brain, {"referee/tests/test_hang.py": TEST.replace("import mod\n", "import mod\n" + hang)})
-        got = self.discover([mutant("hang_then_kill", "return a + b", "return a - b",
-                                    ["test_hang.py", "test_mod.py"]),
-                             mutant("hang_only", "return a + b", "return a * b", ["test_hang.py"])],
-                            timeout=60.0, floor=3.0)
+        took = {"test_hang.py": 0.5, "test_mod.py": 30.0}
+        caps, real = [], mutate._collect
+
+        def collect(copy, root, entry, limit):
+            caps.append((entry, limit))
+            return real(copy, root, entry, limit)[0], took[entry]
+
+        with mock.patch.object(mutate, "_collect", collect):
+            got = self.discover([mutant("hang_then_kill", "return a + b", "return a - b",
+                                        ["test_hang.py", "test_mod.py"]),
+                                 mutant("hang_only", "return a + b", "return a * b", ["test_hang.py"])],
+                                timeout=200.0, floor=2.0)
         self.assertEqual({k: (r["outcome"], r["killers"], r["timeouts"]) for k, r in got.items()},
                          {"hang_then_kill": ("killed", ["test_mod.T.test_add"], ["test_hang.py"]),
                           "hang_only": ("timeout", [], ["test_hang.py"])})
+        # two baselines under the ceiling (three entries), then each candidate's entries under their own limits
+        self.assertEqual(sorted(caps), [("test_hang.py", 2.5), ("test_hang.py", 2.5), ("test_hang.py", 200.0),
+                                        ("test_hang.py", 200.0), ("test_mod.py", 150.0), ("test_mod.py", 200.0)])
 
     def test_the_kept_file_keeps_its_root_and_is_killed_in_the_normal_mode(self):
         write_tree(self.brain, {"tests/test_root.py": TEST.replace("import mod\n",
@@ -471,6 +518,32 @@ class Discover(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(mutate.main(["--brain", self.brain, "--discover", "--out", self.out, path]), 0)
 
+    def test_the_command_line_passes_its_limits_and_keep(self):
+        tests = ["test_mod.py", "test_ids.py", "test_mod.T.test_add"]  # two killers: test_add of each file
+        path = os.path.join(self.brain, "c.json")
+        with open(path, "w") as fh:
+            json.dump({"mutants": [mutant("k", "return a + b", "return a - b", tests)]}, fh)
+        took, real = dict(zip(tests, (2.0, 20.0, 500.0), strict=True)), mutate._collect
+
+        def main(*flags):
+            caps: list[float] = []
+
+            def collect(copy, root, entry, limit):
+                caps.append(limit)
+                return real(copy, root, entry, limit)[0], took[entry]
+
+            with mock.patch.object(mutate, "_collect", collect), contextlib.redirect_stdout(io.StringIO()):
+                mutate.main(["--brain", self.brain, "--discover", "--out", self.out, *flags, path])
+            kept = len(self.kept()["mutants"][0]["tests"])
+            os.unlink(self.out)
+            return caps, kept
+
+        # The baseline's three entries under the ceiling, then the candidate's under their own limits (set baselines
+        # of 2 s, 20 s and 500 s): each flag's value shows in one number, and so does its default.
+        self.assertEqual(main(), ([900.0] * 3 + [60.0, 100.0, 900.0], 1))
+        self.assertEqual(main("--timeout", "120", "--factor", "4", "--floor", "3", "--keep", "2"),
+                         ([120.0] * 3 + [8.0, 80.0, 120.0], 2))
+
     def test_the_command_line_refuses(self):
         path = os.path.join(self.brain, "c.json")
         with open(path, "w") as fh:
@@ -495,12 +568,28 @@ class Discover(unittest.TestCase):
             self.assertEqual(fh.read(), "keep me")
 
     def test_each_row_is_emitted_as_its_candidate_finishes(self):
-        emitted = []
-        self.discover([mutant("k", "return a + b", "return a - b", ["test_slowkill.py"]),
-                       mutant("s", "return a + a", "return 2 * a")], emit=emitted.append)
-        self.assertEqual([r["id"] for r in emitted], ["s", "k"])
-        self.assertEqual(emitted[0], {"file": "c.json", "id": "s", "outcome": "survived", "killers": [],
+        # As Runner's test of the same name: two workers, the first candidate held until the third starts, which
+        # needs the worker that ran the second; the second's row is out by then. The rows returned keep the
+        # candidates' order (``discover`` above compares it).
+        emitted, release, real = [], threading.Event(), mutate._search
+        out_at_third: list[str] = []
+
+        def held(brain, root, tests, limit, m=None):
+            if m and m["id"] == "held_first":
+                release.wait(HELD)
+            elif m and m["id"] == "third":
+                out_at_third.extend(r["id"] for r in emitted)
+                release.set()
+            return real(brain, root, tests, limit, m)
+
+        with mock.patch.object(mutate, "_search", held):
+            self.discover([mutant("held_first", "return a + b", "return a - b"),
+                           mutant("second", "return a + a", "return 2 * a"),
+                           mutant("third", "return a + b", "return a * b")], emit=emitted.append, jobs=2)
+        self.assertEqual(out_at_third, ["second"])
+        self.assertEqual(emitted[0], {"file": "c.json", "id": "second", "outcome": "survived", "killers": [],
                                       "timeouts": [], "tests": []})
+        self.assertEqual(sorted(r["id"] for r in emitted[1:]), ["held_first", "third"])
 
 
 class Select(unittest.TestCase):

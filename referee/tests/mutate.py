@@ -109,7 +109,8 @@ is ``killed`` when it has a killer, else ``timeout`` when an entry timed out, el
 ``ambiguous`` and ``baseline_red`` as above, the baseline being the same collector on an unchanged copy (green:
 no test failed, no other failure, a test ran). Each row is ``{file, id, outcome, killers, timeouts, tests}``;
 ``tests`` the ``--keep`` (default 1) killers that took the fewest seconds in the baseline (an entry killer its
-entry's seconds), ties by name. KEPT, refused when it exists, is written once every row is in: the candidates
+entry's seconds), ties by name. A candidate's limits come from its entries' seconds in the baseline, also for an
+entry that is named as a test is (a test's seconds are the test's alone, an entry's its whole run's). KEPT, refused when it exists, is written once every row is in: the candidates
 file's ``root`` and its killed candidates with ``tests`` replaced by their chosen killers, in candidate order; it is
 not written when none is killed. Then the summary line and exit as above. A survivor is not in KEPT: a person says
 whether it is equivalent or writes the test that kills it. The killers are one run's evidence; run KEPT in the
@@ -555,17 +556,19 @@ def _collect(copy: str, root: str, entry: str, limit: float) -> tuple[dict[str, 
 
 
 def _search(brain: str, root: str, tests: list[str], limit: list[float],
-            mutant: dict[str, Any] | None = None) -> tuple[list[str], list[str], dict[str, float]]:
-    """``(killers, timeouts, seconds)`` of every entry run in a copy of the brain, with ``mutant`` applied when
-    given; ``seconds`` each test's and each entry's (by its name)."""
+            mutant: dict[str, Any] | None = None) -> tuple[list[str], list[str], list[float], dict[str, float]]:
+    """``(killers, timeouts, took, seconds)`` of every entry run in a copy of the brain, with ``mutant`` applied
+    when given: ``took`` each entry's seconds in the entries' order, ``seconds`` each test's by its id (an entry
+    can be named as a test is, so the two are kept apart)."""
     copy = _copy(brain, mutant)
     killers: list[str] = []
     timeouts: list[str] = []
+    took: list[float] = []
     seconds: dict[str, float] = {}
     try:
         for entry, cap in zip(tests, limit, strict=True):
-            rec, took = _collect(copy, root, entry, cap)
-            seconds[entry] = took
+            rec, entry_seconds = _collect(copy, root, entry, cap)
+            took.append(entry_seconds)
             if rec is None:
                 timeouts.append(entry)
                 continue
@@ -573,7 +576,7 @@ def _search(brain: str, root: str, tests: list[str], limit: list[float],
             killers += [k for k in rec["killers"] if k not in killers]
     finally:
         shutil.rmtree(os.path.dirname(copy), ignore_errors=True)
-    return killers, timeouts, seconds
+    return killers, timeouts, took, seconds
 
 
 def choose(killers: list[str], seconds: dict[str, float], keep: int) -> list[str]:
@@ -591,8 +594,9 @@ def discover(brain: str, path: str, out: str, jobs: int, timeout: float, keep: i
     suites = sorted({(m["root"], tuple(m["tests"])) for m in candidates if not applicable(brain, m)})
 
     def base_of(suite: tuple[str, tuple[str, ...]]) -> tuple[bool, list[float], dict[str, float]]:
-        killers, timeouts, seconds = _search(brain, suite[0], list(suite[1]), [timeout] * len(suite[1]))
-        return not (killers or timeouts), [seconds[e] for e in suite[1]], seconds
+        killers, timeouts, took, seconds = _search(brain, suite[0], list(suite[1]), [timeout] * len(suite[1]))
+        # a killer's seconds for ``choose``: a test's own; an entry's, when no test that ran has its name, the entry's
+        return not (killers or timeouts), took, dict(zip(suite[1], took, strict=True)) | seconds
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
         base = dict(zip(suites, pool.map(base_of, suites)))
@@ -606,7 +610,7 @@ def discover(brain: str, path: str, out: str, jobs: int, timeout: float, keep: i
                 if not green:
                     row["outcome"] = "baseline_red"
                 else:
-                    killers, timeouts, _ = _search(brain, m["root"], m["tests"],
+                    killers, timeouts, _, _ = _search(brain, m["root"], m["tests"],
                                                    limits(entry_seconds, timeout, factor, floor), m)
                     row.update(killers=killers, timeouts=timeouts, tests=choose(killers, seconds, keep),
                                outcome="killed" if killers else "timeout" if timeouts else "survived")
