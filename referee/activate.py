@@ -85,8 +85,9 @@ the cycle id and the time. In this order; nothing is written before step 5:
    candidate}`` and its ``merge {candidate, path, pull, head_sha, merge_sha, hunk_covered}`` row, tohum/26d; a reject's
    ``decision {decision: reject, candidate, reasons}`` with ``ledger.events.cause``), the response's cost rows as
    they are, then ``status.block.plan``'s rows (MF16; ``loop.write_cycle.status_facts``); ``ledger.cycle.plan``
-   over an empty ledger and roots file chains them, signs the root and writes its row; ``ledger.jsonl``,
-   ``chain/root.jsonl`` and ``status.md`` go in one orphan commit that opens ``brain/state``. Row ids are
+   over an empty ledger and roots file chains them, signs the root and writes its row; its files (``ledger.jsonl``,
+   ``chain/root.jsonl``, ``status.md`` and the root's Sigstore bundle, all under ``.brain/``, tohum/26d "Yer") go in
+   one orphan commit that opens ``brain/state``. Row ids are
    ``<cycle_id>:genesis``, ``:start``, ``:cut``, ``:ratchet``, ``:c:<cid>``, ``:m:<cid>``, ``:status`` and the root
    row's ``:root``; every ``events`` row's ``snapshot_id`` is the cut.
 

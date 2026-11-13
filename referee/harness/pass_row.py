@@ -116,7 +116,8 @@ Command line, from ``referee/``, one JSON line on stdout::
 
     python -m harness.pass_row judge TOY_STATE COPY_STATE TOY_CANDIDATES COPY_CANDIDATES IMPORTS RESULT [CATALOG SEED]
 
-``*_STATE`` a directory with ``brain/state``'s ``ledger.jsonl`` and ``chain/root.jsonl``; ``*_CANDIDATES`` a
+``*_STATE`` a directory holding ``brain/state``'s commit as checked out, its ``.brain/ledger.jsonl`` and
+``.brain/chain/root.jsonl`` (``target.branches``' paths; tohum/26d "Yer"); ``*_CANDIDATES`` a
 directory of ``<cid>/expect.json``; ``IMPORTS`` and ``RESULT`` the two files ``imported`` reads. Exit 0 ``PASS``,
 1 ``FAIL``, 2 unusable input (``{"verdict": "FAIL"}``).
 """

@@ -23,6 +23,7 @@ from ledger import chain  # noqa: E402
 from ledger import cycle as CY  # noqa: E402
 from ledger import schema  # noqa: E402
 from status import block as SB  # noqa: E402
+from target import branches as B  # noqa: E402
 from target import write as W  # noqa: E402
 from fake_github import FakeGitHub  # noqa: E402
 from test_revert_drill import ledger_with, row  # noqa: E402
@@ -250,6 +251,28 @@ class Commit(unittest.TestCase):
         for made in (first, second):
             self.assertEqual(json.loads(gh.read_file("brain/state", ".brain/chain/%s.sigstore.json" % made["root"])),
                              {"uuid": made["entry"]["uuid"], "identity": WORKFLOW, "fake_signed_sha256": made["root"]})
+
+
+class StatePaths(unittest.TestCase):
+    """``target.branches``: the commit paths of the state files (tohum/26d "Yer") and a file's name under them."""
+
+    def test_every_commit_path_is_under_the_one_directory(self):
+        self.assertEqual((B.STATE_LEDGER, B.STATE_ROOTS, B.STATE_STATUS),
+                         (".brain/ledger.jsonl", ".brain/chain/root.jsonl", ".brain/status.md"))
+        self.assertEqual(B.STATE_CHAINS, (".brain/ledger.jsonl", ".brain/chain/root.jsonl"))
+        self.assertEqual(B.state_bundle("ab" * 32), ".brain/chain/" + "ab" * 32 + ".sigstore.json")
+        self.assertEqual((AN.LEDGER_PATH, AN.ROOTS_PATH, SB.STATUS_PATH, AN.bundle_path("cd" * 32)),
+                         (B.STATE_LEDGER, B.STATE_ROOTS, B.STATE_STATUS, B.state_bundle("cd" * 32)))
+
+    def test_the_name_under_the_directory(self):
+        self.assertEqual([B.state_name(p) for p in (B.STATE_LEDGER, B.STATE_ROOTS, B.STATE_STATUS,
+                                                    B.state_bundle("ab" * 32))],
+                         ["ledger.jsonl", "chain/root.jsonl", "status.md", "chain/" + "ab" * 32 + ".sigstore.json"])
+        for path in ("ledger.jsonl", "chain/root.jsonl", ".brain", ".brain/", "", "x/.brain/ledger.jsonl",
+                     ".brainx/ledger.jsonl", "/.brain/ledger.jsonl"):
+            with self.subTest(path=path):
+                with self.assertRaises(ValueError):
+                    B.state_name(path)
 
 
 if __name__ == "__main__":

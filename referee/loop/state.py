@@ -5,7 +5,8 @@ Rules: asama-0/01 D1 (``çek`` reads the target's ``brain/state`` head; among it
 --previous``), tohum/01b (``brain/state``: one direct commit per cycle, written only by ``yaz``; ``chain/*`` and
 ``ledger.jsonl`` append only, the earlier lines byte for byte the same, the new lines chained), tohum/29i (the
 ledger at ``brain/state``'s head is the previous, last verified version a cycle extends), ``target.branches``
-(``STATE_CHAINS``, the files: ``ledger.jsonl`` and ``chain/root.jsonl``), ``ledger.chain`` (MF1, the one verifier).
+(``STATE_CHAINS``, the files: ``ledger.jsonl`` and ``chain/root.jsonl`` under the commit's ``.brain/``; a reason
+names the path in the commit), ``ledger.chain`` (MF1, the one verifier).
 
 **Previous** (``parent``): a cycle writes one commit on ``brain/state`` on top of the head it verified, so the
 previous version of the head's files is its parent's. A head with no parent (``activate``'s orphan genesis commit)
@@ -31,8 +32,10 @@ On success: ``{"head", "previous" (the parent or ``None``), "rows" (path -> its 
 Out of scope, stated: whether the head is the commit the last cycle wrote and not one more pushed on top of it,
 which is the root's question (MF11's ``ledger.anchor.judge`` of the ledger's root against the last row of
 ``chain/root.jsonl`` and its Rekor entry, run by the job on ``chains``' bytes after ``verify``); the other files
-of ``brain/state`` (``profile.json``; ``status.md`` is read by ``status`` as bytes, not verified: D6's
-``status.block.plan`` regenerates a block edited by hand and records it); the row payloads (``ledger.schema``'s); the reads themselves (the job's ``loop.fetch``). Both versions are held in memory.
+of ``brain/state`` (``profile.json``; the roots' Sigstore bundles under ``chain/``, which ``ledger.cycle`` writes
+and the operator's ``stage-open`` reads: D1 reads the entry from Rekor, not the bundle in the commit, so a head
+whose last root has no bundle file is not refused here; ``status.md`` is read by ``status`` as bytes, not verified:
+D6's ``status.block.plan`` regenerates a block edited by hand and records it); the row payloads (``ledger.schema``'s); the reads themselves (the job's ``loop.fetch``). Both versions are held in memory.
 """
 
 from __future__ import annotations

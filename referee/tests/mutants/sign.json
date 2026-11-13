@@ -66,8 +66,8 @@
   {
    "id": "uuid_not_leaf",
    "file": "loop/sign.py",
-   "old": "        return {\"uuid\": R._leaf(body), \"identity\": self.pin}\n",
-   "new": "        return {\"uuid\": hashlib.sha256(body.encode()).hexdigest(), \"identity\": self.pin}\n",
+   "old": "        return {\"uuid\": R._leaf(body), \"identity\": self.pin, \"bundle\": data}\n",
+   "new": "        return {\"uuid\": hashlib.sha256(body.encode()).hexdigest(), \"identity\": self.pin, \"bundle\": data}\n",
    "tests": [
     "test_sign.py"
    ]
@@ -75,8 +75,8 @@
   {
    "id": "identity_from_nowhere",
    "file": "loop/sign.py",
-   "old": "        return {\"uuid\": R._leaf(body), \"identity\": self.pin}\n",
-   "new": "        return {\"uuid\": R._leaf(body), \"identity\": self.sigstore}\n",
+   "old": "        return {\"uuid\": R._leaf(body), \"identity\": self.pin, \"bundle\": data}\n",
+   "new": "        return {\"uuid\": R._leaf(body), \"identity\": self.sigstore, \"bundle\": data}\n",
    "tests": [
     "test_sign.py"
    ]

@@ -48,8 +48,8 @@
   {
    "id": "root_of_old_ledger",
    "file": "ledger/cycle.py",
-   "old": "    root = anchor.root_of(anchor.tips(cycle.content))\n",
-   "new": "    root = anchor.root_of(anchor.tips(ledger or cycle.content))\n",
+   "old": "    tip_map = anchor.tips(cycle.content)\n",
+   "new": "    tip_map = anchor.tips(ledger or cycle.content)\n",
    "tests": [
     "test_cycle.py"
    ]
@@ -57,8 +57,8 @@
   {
    "id": "status_file_dropped",
    "file": "ledger/cycle.py",
-   "old": "             block.STATUS_PATH: planned[\"status\"]}",
-   "new": "             block.STATUS_PATH: status or b\"\"}",
+   "old": "bundle, block.STATUS_PATH: planned[\"status\"]}",
+   "new": "bundle, block.STATUS_PATH: status or b\"\"}",
    "tests": [
     "test_cycle.py"
    ]
