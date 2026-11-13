@@ -105,7 +105,6 @@ PLUGIN = "@nx/eslint/plugin"
 CD_EXEC = 'cd -- "$0" && exec "$@"'
 PLUGIN_KEYS = ("plugin", "options")
 PLUGIN_OPTIONS = ("targetName", "extensions")
-PROJECT_FILES = ("project.json", "package.json")
 SKIPPED_DIRS = ("node_modules", ".git")
 EXECUTORS = {"lint": "@nx/eslint:lint", "test": "@nx/jest:jest"}
 OPTIONS = {"lint": ("lintFilePatterns",), "test": ("jestConfig",)}
@@ -327,7 +326,7 @@ def has_lintable(tree: str, path: str, extensions: list[str]) -> bool:
     top = os.path.join(tree, path)
     for here, dirs, files in os.walk(top):
         dirs[:] = sorted(d for d in dirs if d not in SKIPPED_DIRS and not any(
-            os.path.isfile(os.path.join(here, d, f)) for f in PROJECT_FILES))
+            os.path.isfile(os.path.join(here, d, f)) for f in D.PROJECT_MANIFESTS))
         if any(f.endswith(suffixes) and os.path.isfile(os.path.join(here, f)) for f in files):
             return True
     return False
@@ -336,7 +335,7 @@ def has_lintable(tree: str, path: str, extensions: list[str]) -> bool:
 def inferred_lint(tree: str, path: str, nx: dict) -> tuple[list[str], list[str]]:
     """``(lint_cmd, extra inputs)`` of the ``lint`` target ``@nx/eslint/plugin`` infers (module docstring)."""
     extensions = _plugin_extensions(nx)
-    if not any(os.path.isfile(os.path.join(tree, _rel(path, f))) for f in PROJECT_FILES):
+    if not any(os.path.isfile(os.path.join(tree, _rel(path, f))) for f in D.PROJECT_MANIFESTS):
         raise NotComposed("no_target")
     _, manifest = D._json(tree, _rel(path, "package.json"))
     declared = manifest.get("nx") if isinstance(manifest, dict) else None

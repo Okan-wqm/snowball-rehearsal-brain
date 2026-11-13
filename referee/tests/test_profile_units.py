@@ -5,7 +5,8 @@ a proposal that narrows the list, or a recipe that reaches into it, is refused.
 - every one of the seven agent configuration names, in other cases and at any depth, file or directory,
   is listed in ``excluded_paths``, adds no language, test rule or security path, and ``excluded`` says so
   for paths not in the tree as well;
-- unit candidates: the operator's order, or ``package.json`` directories; each static reason;
+- unit candidates: the operator's order, or the directories holding a project manifest (``package.json``, or
+  an Nx ``project.json``); each static reason;
 - ``check`` on recipes: eligible path, inputs not excluded, inputs cover the unit, recipe fields only.
 """
 
@@ -146,6 +147,49 @@ class UnitsTest(unittest.TestCase):
 
     def add(self, files):
         write_tree(self.tree, files)
+
+    NX = {"libs/nx/project.json": {"name": "nx"}, "libs/nx/src/x.ts": "x",
+          "libs/both/project.json": "{ not json", "libs/both/package.json": {"name": "both"},
+          "libs/list/project.json": "[1]", "libs/cut/project.json": "{",
+          "libs/badpkg/project.json": {"name": "badpkg"}, "libs/badpkg/package.json": "{",
+          "libs/linked/project.json": ("symlink", "../nx/project.json"),
+          "libs/dir/project.json/x.json": {},
+          "vendor/nx/project.json": {"name": "v"}, ".claude/nx/project.json": {"name": "agent"},
+          "node_modules/nx/project.json": {"name": "dep"}}
+
+    def test_a_project_json_alone_marks_a_candidate(self):
+        """An Nx project is a directory with ``project.json``; it need not hold a ``package.json``. The
+        ``package.json`` is the one judged when both are there."""
+        self.add(self.NX)
+        self.target["unit_candidates"] = ["libs/nx", "libs/both", "libs/list", "libs/cut", "libs/badpkg",
+                                          "libs/linked", "libs/dir", "vendor/nx", "pkgs/nolock"]
+        got = [(c["path"], c["eligible"], c["reasons"]) for c in self.derive()["unit_candidates"]]
+        self.assertEqual(got, [
+            ("libs/nx", True, []),
+            ("libs/both", True, []),
+            ("libs/list", False, ["project_json_unparsable"]),
+            ("libs/cut", False, ["project_json_unparsable"]),
+            ("libs/badpkg", False, ["package_json_unparsable"]),
+            ("libs/linked", False, ["no_package_json"]),
+            ("libs/dir", False, ["no_package_json"]),
+            ("vendor/nx", False, ["excluded"]),
+            ("pkgs/nolock", False, ["no_package_json"]),
+        ])
+        os.remove(os.path.join(self.tree, ".nvmrc"))
+        os.remove(os.path.join(self.tree, "package-lock.json"))
+        self.target["unit_candidates"] = ["libs/nx", "libs/list"]
+        self.assertEqual([c["reasons"] for c in self.derive()["unit_candidates"]],
+                         [["no_version_file", "no_lockfile"],
+                          ["project_json_unparsable", "no_version_file", "no_lockfile"]])
+
+    def test_default_candidates_are_the_directories_of_either_manifest(self):
+        self.add(self.NX)
+        got = {c["path"]: c["reasons"] for c in self.derive()["unit_candidates"]}
+        self.assertEqual(got, {".": [], "libs/badpkg": ["package_json_unparsable"], "libs/both": [],
+                               "libs/cut": ["project_json_unparsable"], "libs/list": ["project_json_unparsable"],
+                               "libs/nx": [], "pkgs/api": ["lock_v1_unsupported"],
+                               "pkgs/old": ["package_json_unparsable"], "pkgs/web": []})
+        self.assertEqual([c["path"] for c in self.derive()["unit_candidates"]], sorted(got))
 
     def test_version_file_and_lock_rules(self):
         os.remove(os.path.join(self.tree, ".nvmrc"))

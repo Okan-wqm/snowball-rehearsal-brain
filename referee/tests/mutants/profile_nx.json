@@ -246,7 +246,7 @@
   {
    "id": "nx_inferred_nested_projects_walked",
    "file": "profile/nx.py",
-   "old": " and not any(\n            os.path.isfile(os.path.join(here, d, f)) for f in PROJECT_FILES))",
+   "old": " and not any(\n            os.path.isfile(os.path.join(here, d, f)) for f in D.PROJECT_MANIFESTS))",
    "new": ")",
    "tests": [
     "test_profile_nx.py"
@@ -318,7 +318,7 @@
   {
    "id": "nx_inferred_no_project_file_accepted",
    "file": "profile/nx.py",
-   "old": "    if not any(os.path.isfile(os.path.join(tree, _rel(path, f))) for f in PROJECT_FILES):",
+   "old": "    if not any(os.path.isfile(os.path.join(tree, _rel(path, f))) for f in D.PROJECT_MANIFESTS):",
    "new": "    if False:",
    "tests": [
     "test_profile_nx.py"

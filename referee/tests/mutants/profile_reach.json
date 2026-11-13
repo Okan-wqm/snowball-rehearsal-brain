@@ -84,7 +84,7 @@
   {
    "id": "reach_no_project_climb",
    "file": "profile/fit.py",
-   "old": "        if any(_is_file(tree, posixpath.join(probe, m)) for m in PROJECT_MARKERS):\n",
+   "old": "        if any(_is_file(tree, posixpath.join(probe, m)) for m in D.PROJECT_MANIFESTS):\n",
    "new": "        if False:\n",
    "tests": [
     "test_profile_fit.py"
