@@ -12,8 +12,8 @@
   {
    "id": "nx_flat_config_order_reversed",
    "file": "profile/nx.py",
-   "old": "        for file in FLAT_CONFIGS:",
-   "new": "        for file in reversed(FLAT_CONFIGS):",
+   "old": "        for file in names:",
+   "new": "        for file in reversed(names):",
    "tests": [
     "test_profile_nx.py"
    ]
