@@ -1078,6 +1078,67 @@ class InstallAsNpm(Base):
         self.assertEqual([names for names, _ in self.npm], [["twin"]])
         self.assertEqual(report["install_optional"], [])
 
+    def nested(self, parent: str, name: str, **entry) -> None:
+        """A lock row of ``name`` below ``node_modules/<parent>``, fetched; marked when it has a script."""
+        data = tgz({"package.json": {"name": name, "version": "2.0.0", "license": "MIT"}})
+        self.put(url(name, "2.0.0"), data)
+        key = "node_modules/%s/node_modules/%s" % (parent, name)
+        self.lock["packages"][key] = dict({"version": "2.0.0", "resolved": url(name, "2.0.0"),
+                                           "integrity": sri(data)}, **entry)
+        self.write_lock(self.lock)
+        if entry.get("hasInstallScript"):
+            self.marks = self.marks + [key]
+        self.deps = self.fetch(marks=self.marks)
+
+    def test_a_dropped_row_takes_the_rows_below_it_and_their_names_are_not_built(self):
+        # ``outer`` fails and goes with all below it: its own name again, an optional name tried before it
+        # (``inner``), an optional name not yet tried (``zeta``) and a required name (``req``)
+        self.add("outer", marks=["node_modules/outer"], optional=True, hasInstallScript=True)
+        self.nested("outer", "outer", optional=True, hasInstallScript=True)
+        self.nested("outer", "inner", optional=True, hasInstallScript=True)
+        self.nested("outer", "zeta", optional=True, hasInstallScript=True)
+        self.nested("outer", "req", hasInstallScript=True)
+        self.nested("outer", "plain", optional=True)
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"outer": 1}))
+        self.assertEqual(report["verdict"], "verified", report)
+        self.assertEqual([names for names, _ in self.npm], [["inner"], ["outer"]],
+                         "a name whose rows are all gone is neither tried nor named in the install")
+        self.assertEqual([(p["name"], p["exit"], p["dropped"]) for p in report["install_optional"]],
+                         [("inner", 0, []),
+                          ("outer", 1, ["node_modules/outer", "node_modules/outer/node_modules/inner",
+                                        "node_modules/outer/node_modules/outer",
+                                        "node_modules/outer/node_modules/plain",
+                                        "node_modules/outer/node_modules/req",
+                                        "node_modules/outer/node_modules/zeta"])])
+        self.assertIsNone(report["install"])
+        self.assertEqual(self.worktree_of_last_run(), [["left-pad"], ["left-pad"], []])
+
+    def test_a_name_with_a_row_left_after_a_drop_is_still_built(self):
+        self.add("outer", marks=["node_modules/outer"], optional=True, hasInstallScript=True)
+        self.nested("outer", "req", hasInstallScript=True)
+        self.add("req", marks=self.marks + ["node_modules/req"], hasInstallScript=True)
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"outer": 1}))
+        self.assertEqual(report["verdict"], "verified", report)
+        self.assertEqual([names for names, _ in self.npm], [["outer"], ["req"]])
+        self.assertEqual(self.worktree_of_last_run(), [["left-pad", "req"], ["left-pad", "req"], ["req"]])
+
+    def test_drop_rows_removes_what_is_there_and_names_every_row_removed(self):
+        staging = os.path.join(self.base, "drop")
+        write_tree(staging, {"pkg/node_modules/a/index.js": "", "pkg/node_modules/a/node_modules/b/index.js": "",
+                             "pkg/node_modules/ab/index.js": "", "pkg/node_modules/c/cli.js": ""})
+        os.makedirs(os.path.join(staging, "pkg", "node_modules", ".bin"))
+        for name, target in (("c", "../c/cli.js"), ("b", "../a/node_modules/b/index.js")):
+            os.symlink(target, os.path.join(staging, "pkg", "node_modules", ".bin", name))
+        installed = ["node_modules/a", "node_modules/a/node_modules/b", "node_modules/ab", "node_modules/c",
+                     "node_modules/empty"]             # ``empty``: a row whose tarball unpacked no file
+        removed, links = U.drop_rows(staging, "pkg", ["node_modules/a/node_modules/b", "node_modules/a",
+                                                      "node_modules/empty"], installed,
+                                     ["pkg/node_modules/.bin/b", "pkg/node_modules/.bin/c"])
+        self.assertEqual(removed, ["node_modules/a", "node_modules/a/node_modules/b", "node_modules/empty"])
+        self.assertEqual(links, ["pkg/node_modules/.bin/c"])
+        self.assertEqual(sorted(os.listdir(os.path.join(staging, "pkg", "node_modules"))), [".bin", "ab", "c"])
+        self.assertEqual(os.listdir(os.path.join(staging, "pkg", "node_modules", ".bin")), ["c"])
+
     def test_an_optional_try_that_is_no_valid_run_gives_no_verdict(self):
         self.add("opt-native", marks=["node_modules/opt-native"], optional=True, hasInstallScript=True)
         write_tree(self.tree, {"pkg/green.py": "raise SystemExit(0)\n"})
