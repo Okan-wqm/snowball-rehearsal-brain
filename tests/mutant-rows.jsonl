@@ -917,3 +917,9 @@
 {"file": "referee/tests/mutants/state_place.json", "fp": "cdcb952b1a568e2ae7a4914b3cee66bb0ee1651f098ccd3fd28d833370f3eb8b", "id": "artifact_keeps_commit_path", "outcome": "killed"}
 {"file": "referee/tests/mutants/state_place.json", "fp": "4c108fb5d25026b9f175bc89c17fa20725ac3708d051b48fc5f74edb51e76056", "id": "dry_signer_without_bundle", "outcome": "killed"}
 {"file": "referee/tests/mutants/watch_revert.json", "fp": "080293ff3421f2279d3129257d018f63ae3ff3b6d0110551e4cfa95d0d66b79d", "id": "write_no_ratchet_row", "outcome": "killed"}
+{"file": "referee/tests/mutants/loop_rows_26f.json", "fp": "725c36de1f6e98e6b970eda4f74d74b689f5f6e2a0548455a1c87f3e7ea26de3", "id": "write_merge_row_dropped", "outcome": "killed"}
+{"file": "referee/tests/mutants/sentinel_end.json", "fp": "966e2911940de83430f7ffb093306781aad3815103969e33306fb73b442aa7cf", "id": "write_no_end_row", "outcome": "killed"}
+{"file": "referee/tests/mutants/sentinel_end.json", "fp": "746bc48d67a16e637c6237313bf2eea7917dddfb20309fd75869cb4a1a616dfb", "id": "write_verdict_not_judged", "outcome": "killed"}
+{"file": "referee/tests/mutants/sentinel_end.json", "fp": "924d5a918baf89d1a0fc4b9634af94787c6bbcb6baf1da42c4e62903304e3a10", "id": "write_rerun_ends", "outcome": "killed"}
+{"file": "referee/tests/mutants/sentinel_end.json", "fp": "71d82a2dcbe8396673e353acd881445668d366da8b5a2b38eccb31620881c3f1", "id": "write_flaky_not_judged", "outcome": "killed"}
+{"file": "referee/tests/mutants/sentinel_end.json", "fp": "702beab9280ed3d2d9a8831a06f129f20059adb4ecf1db828e7d02a44315652d", "id": "write_end_any_merge", "outcome": "killed"}
