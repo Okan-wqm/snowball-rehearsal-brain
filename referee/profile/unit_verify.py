@@ -752,16 +752,16 @@ def container_platform(image: str, machine: str | None = None) -> dict:
     ``linux`` (the runner starts Linux containers); ``cpu`` is this machine's (``os.uname().machine`` through
     ``NODE_CPU``: the runner names no ``--platform``, so docker takes the host's variant of the image; a machine
     not in the table is unusable input, not a guess); ``libc`` is ``musl`` when a ``-`` separated part of the
-    tag's variant starts with ``alpine`` and ``glibc`` otherwise (the official image's variants are Debian's or
+    tag starts with ``alpine`` and ``glibc`` otherwise (the official image's variants are Debian's or
     Alpine's). Read from the recipe and the host, not asked of the container: a wrong reading shows as a
     binding package missing in the runs, a red run and not a silent pass."""
     machine = os.uname().machine if machine is None else machine
     if machine not in NODE_CPU:
         raise VerifyError("this machine's architecture is not one the verifier knows a node cpu for")
     m = IMAGE_SHAPE.fullmatch(image) if isinstance(image, str) else None
-    variant = (m.group("tag") or "").split("-")[1:] if m else []
+    parts = (m.group("tag") or "").split("-") if m else []
     return {"os": "linux", "cpu": NODE_CPU[machine],
-            "libc": "musl" if any(part.startswith("alpine") for part in variant) else "glibc"}
+            "libc": "musl" if any(part.startswith("alpine") for part in parts) else "glibc"}
 
 
 def drop_rows(staging: str, lock_dir: str, keys: list[str], links: list[str]) -> list[str]:

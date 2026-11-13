@@ -1925,6 +1925,267 @@
    "tests": [
     "test_deps_npm.TestSource.test_lock_shape"
    ]
+  },
+  {
+   "id": "dn_pl_str",
+   "file": "runner/deps_npm.py",
+   "old": "    if isinstance(wanted, str):\n        wanted = [wanted]",
+   "new": "    if False:\n        wanted = [wanted]",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_each_field_is_matched_as_npm_matches_it"
+   ]
+  },
+  {
+   "id": "dn_pl_shape",
+   "file": "runner/deps_npm.py",
+   "old": "    if not isinstance(wanted, list) or not all(isinstance(w, str) for w in wanted):\n        return False",
+   "new": "    if not isinstance(wanted, list) or not all(isinstance(w, str) for w in wanted):\n        return True",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_field_that_is_not_a_string_or_a_list_of_strings_excludes"
+   ]
+  },
+  {
+   "id": "dn_pl_shape_elems",
+   "file": "runner/deps_npm.py",
+   "old": "    if not isinstance(wanted, list) or not all(isinstance(w, str) for w in wanted):",
+   "new": "    if not isinstance(wanted, list):",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_field_that_is_not_a_string_or_a_list_of_strings_excludes"
+   ]
+  },
+  {
+   "id": "dn_pl_any_alone",
+   "file": "runner/deps_npm.py",
+   "old": "    if wanted == [\"any\"]:",
+   "new": "    if \"any\" in wanted:",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_each_field_is_matched_as_npm_matches_it"
+   ]
+  },
+  {
+   "id": "dn_pl_any_none",
+   "file": "runner/deps_npm.py",
+   "old": "    if wanted == [\"any\"]:\n        return True\n",
+   "new": "",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_each_field_is_matched_as_npm_matches_it"
+   ]
+  },
+  {
+   "id": "dn_pl_neg",
+   "file": "runner/deps_npm.py",
+   "old": "    if any(w.startswith(\"!\") and w[1:] == value for w in wanted):\n        return False\n",
+   "new": "",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_each_field_is_matched_as_npm_matches_it"
+   ]
+  },
+  {
+   "id": "dn_pl_allneg",
+   "file": "runner/deps_npm.py",
+   "old": " or all(w.startswith(\"!\") for w in wanted)\n",
+   "new": "\n",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_each_field_is_matched_as_npm_matches_it"
+   ]
+  },
+  {
+   "id": "dn_pl_pos",
+   "file": "runner/deps_npm.py",
+   "old": "return any(w == value for w in wanted if not w.startswith(\"!\")) or",
+   "new": "return False or",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_libc_row_needs_a_known_libc"
+   ]
+  },
+  {
+   "id": "dn_pa_unknown",
+   "file": "runner/deps_npm.py",
+   "old": "if field in entry and (platform.get(field) is None or not _platform_list(platform[field], entry[field])):",
+   "new": "if field in entry and not _platform_list(platform.get(field), entry[field]):",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_libc_row_needs_a_known_libc"
+   ]
+  },
+  {
+   "id": "dn_pa_no_libc",
+   "file": "runner/deps_npm.py",
+   "old": "PLATFORM_FIELDS = (\"os\", \"cpu\", \"libc\")",
+   "new": "PLATFORM_FIELDS = (\"os\", \"cpu\")",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_libc_row_needs_a_known_libc"
+   ]
+  },
+  {
+   "id": "dn_pa_no_cpu",
+   "file": "runner/deps_npm.py",
+   "old": "PLATFORM_FIELDS = (\"os\", \"cpu\", \"libc\")",
+   "new": "PLATFORM_FIELDS = (\"os\", \"libc\")",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pa_no_os",
+   "file": "runner/deps_npm.py",
+   "old": "PLATFORM_FIELDS = (\"os\", \"cpu\", \"libc\")",
+   "new": "PLATFORM_FIELDS = (\"cpu\", \"libc\")",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pp_nested",
+   "file": "runner/deps_npm.py",
+   "old": "        if any(key.startswith(gone + \"/\") for gone in plan[\"not_installed\"]):",
+   "new": "        if False:",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pp_nested_sibling",
+   "file": "runner/deps_npm.py",
+   "old": "key.startswith(gone + \"/\") for gone",
+   "new": "key.startswith(gone) for gone",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pp_optional_truthy",
+   "file": "runner/deps_npm.py",
+   "old": "            if entry.get(\"optional\") is True:\n                plan[\"optional\"].append(key)",
+   "new": "            if entry.get(\"optional\"):\n                plan[\"optional\"].append(key)",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pp_optional_all",
+   "file": "runner/deps_npm.py",
+   "old": "            if entry.get(\"optional\") is True:\n                plan[\"optional\"].append(key)",
+   "new": "            if True:\n                plan[\"optional\"].append(key)",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pp_skip_truthy",
+   "file": "runner/deps_npm.py",
+   "old": "        elif entry.get(\"optional\") is True:",
+   "new": "        elif entry.get(\"optional\"):",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pp_skip_devoptional",
+   "file": "runner/deps_npm.py",
+   "old": "        elif entry.get(\"optional\") is True:",
+   "new": "        elif entry.get(\"optional\") is True or entry.get(\"devOptional\") is True:",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pp_skip_all",
+   "file": "runner/deps_npm.py",
+   "old": "        elif entry.get(\"optional\") is True:",
+   "new": "        elif True:",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pp_sorted",
+   "file": "runner/deps_npm.py",
+   "old": "    for key in sorted(keys):\n        entry = packages.get(key)",
+   "new": "    for key in keys:\n        entry = packages.get(key)",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pr_ok",
+   "file": "runner/deps_npm.py",
+   "old": "\"ok\": not reasons and not plan[\"unsupported\"],",
+   "new": "\"ok\": not reasons,",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
+   ]
+  },
+  {
+   "id": "dn_pr_ok_reasons",
+   "file": "runner/deps_npm.py",
+   "old": "\"ok\": not reasons and not plan[\"unsupported\"],",
+   "new": "\"ok\": not plan[\"unsupported\"],",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
+   ]
+  },
+  {
+   "id": "dn_pr_scripted",
+   "file": "runner/deps_npm.py",
+   "old": "scripted = {i[\"key\"] for i in items if i[\"entry\"].get(\"hasInstallScript\") is True}",
+   "new": "scripted = {i[\"key\"] for i in items}",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
+   ]
+  },
+  {
+   "id": "dn_pr_required",
+   "file": "runner/deps_npm.py",
+   "old": "\"required\": [k for k in plan[\"installed\"] if k in scripted and k not in optional],",
+   "new": "\"required\": [k for k in plan[\"installed\"] if k in scripted],",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
+   ]
+  },
+  {
+   "id": "dn_pr_optional",
+   "file": "runner/deps_npm.py",
+   "old": "\"optional\": [k for k in plan[\"installed\"] if k in scripted and k in optional],",
+   "new": "\"optional\": [k for k in plan[\"installed\"] if k in optional],",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
+   ]
+  },
+  {
+   "id": "dn_pr_not_installed",
+   "file": "runner/deps_npm.py",
+   "old": "\"not_installed\": [k for k in plan[\"not_installed\"] if k in scripted]}}",
+   "new": "\"not_installed\": plan[\"not_installed\"]}}",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
+   ]
+  },
+  {
+   "id": "dn_cli_exit",
+   "file": "runner/deps_npm.py",
+   "old": "            _emit(report)\n            return 0 if report[\"ok\"] else 1\n        if {\"--os\"",
+   "new": "            _emit(report)\n            return 0\n        if {\"--os\"",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
+   ]
+  },
+  {
+   "id": "dn_cli_libc",
+   "file": "runner/deps_npm.py",
+   "old": "\"libc\": opts.get(\"--libc\")})",
+   "new": "\"libc\": None})",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
+   ]
+  },
+  {
+   "id": "dn_cli_other_cmds",
+   "file": "runner/deps_npm.py",
+   "old": "        if {\"--os\", \"--cpu\", \"--libc\"} & set(opts):\n            raise DepsError(USAGE)\n",
+   "new": "",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
+   ]
   }
  ]
 }

@@ -571,11 +571,13 @@ class TestPlatform(unittest.TestCase):
             "node_modules/needs-mac": {"version": "1.0.0", "os": ["darwin"]},
             "node_modules/dev-or-optional": {"version": "1.0.0", "devOptional": True, "cpu": ["arm64"]},
             "node_modules/optional-not-true": {"version": "1.0.0", "optional": "true", "os": ["darwin"]},
+            "node_modules/optional-not-true-kept": {"version": "1.0.0", "optional": "true"},
         }
         keys = [k for k in packages if k]
         plan = N.platform_plan(packages, keys, self.LINUX)
         self.assertEqual(plan, {
-            "installed": ["node_modules/glibc-binding", "node_modules/mac-tools", "node_modules/plain"],
+            "installed": ["node_modules/glibc-binding", "node_modules/mac-tools",
+                          "node_modules/optional-not-true-kept", "node_modules/plain"],
             "not_installed": ["node_modules/mac", "node_modules/mac/node_modules/inner",
                               "node_modules/musl-binding"],
             "unsupported": ["node_modules/dev-or-optional", "node_modules/needs-mac",
@@ -600,6 +602,10 @@ class TestPlatform(unittest.TestCase):
         fx.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
         fx.lock["packages"]["node_modules/mac"].update(optional=True, os=["darwin"], hasInstallScript=True)
         fx.lock["packages"]["node_modules/native"].update(optional=True, hasInstallScript=True)
+        for name, fields in (("plain", {}), ("mac-plain", {"optional": True, "os": ["darwin"]}),
+                             ("opt-plain", {"optional": True}), ("script-not-true", {"hasInstallScript": "true"})):
+            fx.add(name, "1.0.0")           # rows without a script are in no list of ``scripts``
+            fx.lock["packages"]["node_modules/" + name].update(fields)
         lock_path = fx.write_lock()
 
         def run(*args):
@@ -610,8 +616,8 @@ class TestPlatform(unittest.TestCase):
         code, out = run("--os", "linux", "--cpu", "x64", "--libc", "glibc")
         self.assertEqual(code, 0)
         self.assertEqual(out, {
-            "ok": True, "platform": {"os": "linux", "cpu": "x64", "libc": "glibc"}, "packages": 3, "installed": 2,
-            "not_installed": ["node_modules/mac"], "unsupported": [],
+            "ok": True, "platform": {"os": "linux", "cpu": "x64", "libc": "glibc"}, "packages": 7, "installed": 5,
+            "not_installed": ["node_modules/mac", "node_modules/mac-plain"], "unsupported": [],
             "scripts": {"required": ["node_modules/left-pad"], "optional": ["node_modules/native"],
                         "not_installed": ["node_modules/mac"]}})
         fx.lock["packages"]["node_modules/mac"]["optional"] = False
@@ -620,12 +626,22 @@ class TestPlatform(unittest.TestCase):
         self.assertEqual((code, out["ok"], out["unsupported"]), (1, False, ["node_modules/mac"]))
         code, out = run("--os", "darwin", "--cpu", "arm64")
         self.assertEqual((code, out["platform"], out["installed"]),
-                         (0, {"os": "darwin", "cpu": "arm64", "libc": None}, 3))
+                         (0, {"os": "darwin", "cpu": "arm64", "libc": None}, 7))
         for args in ((), ("--os", "linux"), ("--cpu", "x64"), ("--os", "linux", "--cpu", "x64", "--libc"),
                      ("--os", "linux", "--cpu", "x64", "--registry", "https://r.example/")):
             with self.subTest(args=args):
                 code, out = run(*args)
                 self.assertEqual((code, out["ok"]), (2, False))
+        # the platform options belong to this command alone
+        proc = subprocess.run([sys.executable, "-m", "runner.deps_npm", "check", lock_path, "--os", "linux"],
+                              cwd=REFEREE, capture_output=True, text=True, timeout=60)
+        self.assertEqual((proc.returncode, json.loads(proc.stdout)["ok"]), (2, False))
+        # a lock with a structure reason is not ok, whatever the platform admits
+        fx.lock["lockfileVersion"] = 1
+        fx.write_lock()
+        code, out = run("--os", "darwin", "--cpu", "arm64")
+        self.assertEqual((code, out["ok"], out["unsupported"]), (1, False, []))
+        self.assertTrue(out["reasons"])
 
 
 class TestTarball(Base):

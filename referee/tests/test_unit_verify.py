@@ -1013,6 +1013,8 @@ class InstallAsNpm(Base):
                 report = self.verify(runner=self.npm_runner({}))
                 self.assertEqual((report["verdict"], report["reasons"]),
                                  ("refused", ["platform_unsupported:node_modules/mac-only"]))
+                self.assertEqual(report["platform"], {"os": "linux", "cpu": U.NODE_CPU[os.uname().machine],
+                                                      "libc": "glibc"})
                 self.assertEqual((self.npm, self.inner.calls), ([], []), "nothing runs")
 
     def test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on(self):
@@ -1090,6 +1092,9 @@ class InstallAsNpm(Base):
             ("node:20.11.1" + DIGEST, "aarch64"): ("arm64", "glibc"),
             ("docker.io/library/node:20.11.1-alpine3.19" + DIGEST, "arm64"): ("arm64", "musl"),
             ("node:20.11.1-alpine" + DIGEST, "amd64"): ("x64", "musl"),
+            ("node:alpine" + DIGEST, "x86_64"): ("x64", "musl"),
+            ("node:lts-alpine3.20" + DIGEST, "x86_64"): ("x64", "musl"),
+            ("node" + DIGEST, "x86_64"): ("x64", "glibc"),
             ("node:20.11.1-bullseye" + DIGEST, "armv7l"): ("arm", "glibc"),
             ("node:20.11.1-slim" + DIGEST, "ppc64le"): ("ppc64", "glibc"),
             ("node:20.11.1-bookworm" + DIGEST, "s390x"): ("s390x", "glibc"),
