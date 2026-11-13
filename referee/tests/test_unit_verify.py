@@ -931,7 +931,7 @@ class InstallAsNpm(Base):
         self.deps = self.fetch(marks=self.marks)
 
     def npm_runner(self, exits: dict):
-        """A runner whose ``npm rebuild`` exits by ``exits[last name]`` (0 when absent) after writing ``BUILT``
+        """A runner whose ``npm rebuild`` exits by the largest ``exits[name]`` of its names (0 when absent) after writing ``BUILT``
         into every named package it finds; ``self.npm`` lists the rebuilds as ``(names, packages present)``."""
         inner = FakeDocker()
         self.npm, self.inner = [], inner
@@ -951,7 +951,7 @@ class InstallAsNpm(Base):
                 if os.path.isdir(os.path.join(modules, name)):
                     with open(os.path.join(modules, name, "BUILT"), "w") as fh:
                         fh.write("1")
-            return C.RunnerResult(exits.get(names[-1], 0), b"", b"", False)
+            return C.RunnerResult(max(exits.get(name, 0) for name in names), b"", b"", False)
         return runner
 
     def worktree_of_last_run(self) -> tuple[list, list]:

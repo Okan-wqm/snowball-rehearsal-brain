@@ -98,7 +98,12 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
    operator's ``excluded_paths``) and ``.git`` are left out even under an input such as ``.``. Their
    regular files' bytes above ``unit_inputs_bytes`` stop the run (``limit_hit:unit_inputs_bytes``).
 2. Dependencies. The ``deps`` artifact is taken by its address (MF5 ``verify``); its lock must be the
-   tree's lock byte for byte (``deps_lock_mismatch``). Each manifest row's tarball is unpacked, by the
+   tree's lock byte for byte (``deps_lock_mismatch``). The rows are sorted as npm sorts them when it
+   installs from the lock on the container's platform (``runner.deps_npm.platform_plan`` with
+   ``container_platform``: Linux, this machine's cpu, the image's libc): a row with ``optional: true`` whose
+   ``os``, ``cpu`` or ``libc`` exclude the platform is not installed, nor is a row below its directory
+   (``not_installed`` in the result); any other excluded row refuses the recipe as it fails npm's install
+   (``platform_unsupported:<key>``). Each installed row's tarball is unpacked, by the
    referee and without running anything, into ``<lock dir>/<lock key>/`` with its first path component
    dropped: directories and regular files only (files 0644, or 0755 when the member has an execute
    bit); symbolic and hard links and other member types are skipped, as npm does; a member name that is
@@ -115,11 +120,19 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
    package of the lock provides it), ``directories.bin``, man pages, npm's own install logic, and a
    bound on the number of members (only their bytes are bounded; time is bounded by the job's clock). A lock
    with no package needs no artifact; one with packages and no artifact is unusable input.
-3. Install scripts. When a row is flagged ``install_script`` (marked in the recipe, checked by MF5), one
-   contained run of ``npm --prefix /work/<lock dir> rebuild --offline --foreground-scripts <names>``
-   precedes the runs, and its worktree is the start of every run; it must exit 0
-   (``install_scripts_failed``). Whether npm and node-gyp succeed in the real image is not proven here
-   (no node in the referee's sandbox); its proof is asama-0/10a #birim.
+3. Install scripts, of installed rows only. When a row is flagged ``install_script`` (marked in the recipe,
+   checked by MF5), one contained run of ``npm --prefix /work/<lock dir> rebuild --offline
+   --foreground-scripts <names>`` precedes the runs, and its worktree is the start of every run; it must exit 0
+   (``install_scripts_failed``). ``npm rebuild`` names packages, not rows, and unlike npm's install it does
+   not forgive an optional package's failing script. So before that run each name whose flagged rows are all
+   ``optional: true`` is tried alone in a contained run of the same command from the same worktree
+   (``install_optional`` in the result: the run, ``name``, ``dropped``): when it exits nonzero the referee
+   removes that name's flagged rows from the worktree, with what is below them and their ``.bin`` links, and
+   the name leaves the install run, as npm drops an optional package that fails to build and goes on; when it
+   exits 0 the try's worktree is discarded and the name runs again with the rest. A try that is no valid run
+   (its red control, a limit) gives no verdict. Left out of npm's rule, each stated in ``platform_plan``: an
+   optional row's ``engines``, and the rest of npm's optional set. Whether npm and node-gyp succeed in the
+   real image is not proven here (no node in the referee's sandbox); its proof is asama-0/10a #birim.
 4. 3/3. Three attempts, each running ``lint_cmd`` and then ``test_cmd``, every command in its own fresh
    contained run (MF3: no network, read-only root, the image, limits) of the same worktree, working
    directory ``/work`` (the tree's root), with ``HOME`` and ``TMPDIR`` under ``/work/.snowball``,
@@ -144,7 +157,7 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
 Verdicts: ``verified`` (the recipe, its sha256 over canonical JSON, the deps address, every run's
 results, and ``lint_records``: the three runs' records, the ratchet base's run file once written by
 ``lint_record.run_file``); ``refused`` (a reason about the recipe or the unit: static reasons, ``lock:``,
-``install_scripts_failed``, ``test_red``, ``lint_failed``, ``lint_not_deterministic``, ``lint_output:``,
+``platform_unsupported:``, ``install_scripts_failed``, ``test_red``, ``lint_failed``, ``lint_not_deterministic``, ``lint_output:``,
 ``no_fixable_violation``); ``no_verdict``
 (nothing is learned about the recipe: ``limit_hit:<key>`` -- a limit is the operator's, not counted to the
 Founder, tohum/18a --, an invalid contained run such as ``red_control_green``, ``red_control_fault``,
@@ -230,6 +243,9 @@ ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 DEP_FIELDS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
 RESERVED = ".snowball"
 ATTEMPTS = 3
+# node's process.arch for the machine names a docker host reports (os.uname().machine); the official image is built for these.
+NODE_CPU = {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64", "arm64": "arm64", "armv7l": "arm",
+            "ppc64le": "ppc64", "s390x": "s390x"}
 LINT_OK_EXITS = (0, 1)
 ENV = {"HOME": "/work/.snowball/home", "TMPDIR": "/work/.snowball/tmp", "CI": "true",
        "npm_config_offline": "true"}
@@ -731,14 +747,56 @@ def link_workspace(staging: str, lock_dir: str, key: str, folder: str) -> bool:
     return True
 
 
-def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, budget: int) -> tuple[list[str], dict]:
-    """Take the artifact by its hash and unpack it; ``(reasons, {address, rows, links, bytes, skipped})``."""
+def container_platform(image: str, machine: str | None = None) -> dict:
+    """The platform npm sees in a container of ``image``, in node's words ``{os, cpu, libc}``: ``os`` is
+    ``linux`` (the runner starts Linux containers); ``cpu`` is this machine's (``os.uname().machine`` through
+    ``NODE_CPU``: the runner names no ``--platform``, so docker takes the host's variant of the image; a machine
+    not in the table is unusable input, not a guess); ``libc`` is ``musl`` when a ``-`` separated part of the
+    tag's variant starts with ``alpine`` and ``glibc`` otherwise (the official image's variants are Debian's or
+    Alpine's). Read from the recipe and the host, not asked of the container: a wrong reading shows as a
+    binding package missing in the runs, a red run and not a silent pass."""
+    machine = os.uname().machine if machine is None else machine
+    if machine not in NODE_CPU:
+        raise VerifyError("this machine's architecture is not one the verifier knows a node cpu for")
+    m = IMAGE_SHAPE.fullmatch(image) if isinstance(image, str) else None
+    variant = (m.group("tag") or "").split("-")[1:] if m else []
+    return {"os": "linux", "cpu": NODE_CPU[machine],
+            "libc": "musl" if any(part.startswith("alpine") for part in variant) else "glibc"}
+
+
+def drop_rows(staging: str, lock_dir: str, keys: list[str], links: list[str]) -> list[str]:
+    """Remove the installed packages ``keys`` (their directories under ``<lock dir>/``, with what is below them)
+    and the ``.bin`` links among ``links`` that point into one of them; the links that stay. ``keys`` are rows
+    ``install_deps`` unpacked into ``staging``, so no symlink is on their way."""
+    gone = []
+    for key in keys:
+        dest = key if lock_dir == "." else lock_dir + "/" + key
+        shutil.rmtree(os.path.join(staging, *dest.split("/")))
+        gone.append(dest + "/")
+    kept = []
+    for link in links:
+        path = os.path.join(staging, *link.split("/"))
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(link), os.readlink(path)))
+        if (target + "/").startswith(tuple(gone)):
+            os.unlink(path)
+        else:
+            kept.append(link)
+    return kept
+
+
+def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, budget: int,
+                 platform: dict | None = None) -> tuple[list[str], dict]:
+    """Take the artifact by its hash and unpack the rows npm installs on ``platform`` (``runner.deps_npm.
+    platform_plan``; every row when ``platform`` is None); ``(reasons, {address, rows, links, bytes, skipped,
+    not_installed, optional})``: ``rows`` the manifest rows unpacked, ``not_installed`` and ``optional`` the
+    plan's keys."""
     lock_obj = cli.loads(tree_lock.decode("utf-8"))
     has_packages = any(k for k in lock_obj.get("packages", {}))
     if deps is None:
         if has_packages:
             raise VerifyError("the lock has packages and no deps artifact was given")
-        return [], {"address": None, "rows": [], "links": [], "bytes": 0, "skipped": 0}
+        return [], {"address": None, "rows": [], "links": [], "bytes": 0, "skipped": 0, "not_installed": [],
+                    "optional": []}
     report = N.verify(deps)
     if not report["ok"]:
         return ["deps:%s" % r for r in report["reasons"]], {}
@@ -748,10 +806,18 @@ def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, bu
         return ["deps_lock_mismatch"], {}
     lock_dir = posixpath.dirname(lock) or "."
     links, folders = N.live_workspaces(lock_obj.get("packages"))
-    total = skipped = 0
     for row in manifest["packages"]:
         if not isinstance(row.get("key"), str) or N.key_name(row["key"], folders) is None:
             return ["deps_unpack_unsafe:%s" % row.get("key")], {}
+    keys = [row["key"] for row in manifest["packages"]]
+    plan = (N.platform_plan(lock_obj.get("packages"), keys, platform) if platform is not None
+            else {"installed": keys, "not_installed": [], "unsupported": [], "optional": []})
+    if plan["unsupported"]:
+        return ["platform_unsupported:%s" % key for key in plan["unsupported"]], {}
+    installed = set(plan["installed"])
+    rows = [row for row in manifest["packages"] if row["key"] in installed]
+    total = skipped = 0
+    for row in rows:
         dest = row["key"] if lock_dir == "." else lock_dir + "/" + row["key"]
         with open(os.path.join(deps, "tarballs", row["sha512"] + ".tgz"), "rb") as fh:
             data = fh.read()
@@ -765,12 +831,13 @@ def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, bu
             return ["deps_unpack_unsafe:%s" % row["key"]], {}
         total += n
         skipped += s
-    made = link_bins(staging, lock_dir, manifest["packages"])
+    made = link_bins(staging, lock_dir, rows)
     for key, folder in sorted(links.items()):
         if not link_workspace(staging, lock_dir, key, folder):
             return ["deps_unpack_unsafe:%s" % key], {}
-    return [], {"address": report["address"], "rows": manifest["packages"], "links": made, "bytes": total,
-                "skipped": skipped, "workspaces": sorted(links)}
+    return [], {"address": report["address"], "rows": rows, "links": made, "bytes": total,
+                "skipped": skipped, "workspaces": sorted(links), "not_installed": plan["not_installed"],
+                "optional": plan["optional"]}
 
 
 # ---------------------------------------------------------------- runs
@@ -869,19 +936,40 @@ def stage(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | Non
         return ["limit_hit:unit_inputs_bytes"], {"inputs_bytes": size}, {}
     if os.path.lexists(os.path.join(staging, RESERVED)):
         return ["reserved_path"], {}, {}
-    bad, deps_info = install_deps(staging, lock, deps, D._read_regular(tree, lock), values["worktree_bytes"] - size)
+    platform = container_platform(recipe["env_image"])
+    bad, deps_info = install_deps(staging, lock, deps, D._read_regular(tree, lock), values["worktree_bytes"] - size,
+                                  platform)
     if bad:
-        return bad, {"inputs_bytes": size}, {}
+        return bad, {"inputs_bytes": size, "platform": platform}, {}
     for sub in ("home", "tmp"):
         os.makedirs(os.path.join(staging, RESERVED, sub))
     result: dict[str, Any] = {"inputs_bytes": size, "deps_address": deps_info["address"],
                               "deps_bytes_unpacked": deps_info["bytes"], "bin_links": deps_info["links"],
-                              "skipped_members": deps_info["skipped"], "install": None,
-                              "runs": {"lint": [], "test": []}}
-    scripted = sorted({r["name"] for r in deps_info["rows"] if r.get("install_script")})
+                              "skipped_members": deps_info["skipped"], "platform": platform,
+                              "not_installed": deps_info["not_installed"], "install_optional": [],
+                              "install": None, "runs": {"lint": [], "test": []}}
+    lock_dir = posixpath.dirname(lock) or "."
+    prefix = "/work" if lock_dir == "." else "/work/" + lock_dir
+    rebuild = ["npm", "--prefix", prefix, "rebuild", "--offline", "--foreground-scripts"]
+    by_name: dict[str, list[str]] = {}
+    for row in deps_info["rows"]:
+        if row.get("install_script"):
+            by_name.setdefault(row["name"], []).append(row["key"])
+    scripted = sorted(by_name)
+    optional = set(deps_info["optional"])
+    for name in [n for n in scripted if all(key in optional for key in by_name[n])]:
+        run = _one(rebuild + [name], red_control["cmd"], recipe["env_image"], staging, operating, runner,
+                   staging_root)
+        tried = dict(_public(run), name=name, dropped=[])
+        result["install_optional"].append(tried)
+        if not run["valid"]:
+            return run["reasons"], result, {}
+        if run["exit"] != 0:
+            tried["dropped"] = sorted(by_name[name])
+            result["bin_links"] = drop_rows(staging, lock_dir, tried["dropped"], result["bin_links"])
+            scripted.remove(name)
     if scripted:
-        prefix = "/work" if posixpath.dirname(lock) in ("", ".") else "/work/" + posixpath.dirname(lock)
-        cmd = ["npm", "--prefix", prefix, "rebuild", "--offline", "--foreground-scripts"] + scripted
+        cmd = rebuild + scripted
         run = _one(cmd, red_control["cmd"], recipe["env_image"], staging, operating, runner, staging_root)
         result["install"] = _public(run)
         if not run["valid"]:

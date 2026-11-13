@@ -135,9 +135,16 @@ signals and the interpreter being killed.
     python -m runner.deps_npm store LOCK OUT [--mirror DIR] [--registry URL]... [--recipe FILE]
                                              [--policy FILE] [--product]
     python -m runner.deps_npm verify ARTIFACT_DIR [--address HEX]
+    python -m runner.deps_npm platform LOCK --os OS --cpu CPU [--libc LIBC]
 
 ``--recipe`` is a unit recipe (tohum/26c) whose ``install_scripts_required`` is read; ``--policy`` a
 ``policy.json``.
+
+``platform`` (``platform_report``; nothing fetched, no tarball read) says what npm does with each package of
+the lock on a platform named with node's words (``linux``, ``x64``, ``glibc``): which rows it does not
+install, which make its install fail, and what becomes of the rows with ``hasInstallScript``. The rule is
+``platform_plan``'s, the one the verifier's install follows; what it leaves out of npm's rule is written
+there. A fetch still fetches and checks every package (tohum/29g): the artifact is the lock's, not a platform's.
 """
 
 from __future__ import annotations
@@ -376,6 +383,93 @@ def live_workspaces(packages: Any) -> tuple[dict[str, str], set[str]]:
     taken = {k: f for k, f in links.items() if f in folders and key_name(k, folders) is not None
              and not any(p in ("", ".") for p in f.split("/"))}
     return taken, set(taken.values())
+
+
+PLATFORM_FIELDS = ("os", "cpu", "libc")
+
+
+def _platform_list(value: Any, wanted: Any) -> bool:
+    """npm's ``checkList`` (npm-install-checks): ``wanted`` is a string or a list of strings; ``["any"]`` alone
+    admits everything; an entry ``!x`` excludes ``x``; otherwise some entry without ``!`` equals ``value``, or
+    every entry is a negation. A ``wanted`` of another shape admits nothing (npm's check throws on it, which
+    drops an optional package and fails the install for any other, the same outcome as an exclusion)."""
+    if isinstance(wanted, str):
+        wanted = [wanted]
+    if not isinstance(wanted, list) or not all(isinstance(w, str) for w in wanted):
+        return False
+    if wanted == ["any"]:
+        return True
+    if any(w.startswith("!") and w[1:] == value for w in wanted):
+        return False
+    return any(w == value for w in wanted if not w.startswith("!")) or all(w.startswith("!") for w in wanted)
+
+
+def platform_admits(entry: Any, platform: dict) -> bool:
+    """Whether npm installs a lock entry on ``platform`` (``{os, cpu, libc}``, node's names: ``linux``, ``x64``,
+    ``glibc``; ``libc`` None when not known): npm-install-checks' ``checkPlatform`` over the entry's ``os``,
+    ``cpu`` and ``libc``. A field the entry lacks admits; an entry with ``libc`` on a platform whose libc is not
+    known is excluded, as npm excludes it. ``engines`` is not read (see ``platform_plan``)."""
+    if not isinstance(entry, dict):
+        return True
+    for field in PLATFORM_FIELDS:
+        if field in entry and (platform.get(field) is None or not _platform_list(platform[field], entry[field])):
+            return False
+    return True
+
+
+def platform_plan(packages: Any, keys, platform: dict) -> dict:
+    """What npm does with the lock rows ``keys`` when it installs from the lock on ``platform`` (arborist's
+    reify), each list sorted: ``installed``; ``not_installed`` (a row with ``optional: true`` that the platform
+    excludes -- npm skips it without an error -- and every row below such a row's directory, which goes with
+    it); ``unsupported`` (any other excluded row: npm's install fails with EBADPLATFORM; ``devOptional`` is
+    not ``optional``, npm installs such a row when development dependencies are installed); ``optional`` (the
+    installed rows with ``optional: true``: npm drops one whose install script fails and goes on). The one
+    reading of these lock fields; the verifier (``profile.unit_verify``) installs by it.
+
+    Narrower than npm, each a row npm would not install and this plan installs: an optional row whose
+    ``engines`` exclude the node or npm version (npm checks engines for optional rows as well); the rest of
+    npm's "optional set" (a package that needs a missing row through a dependency that is not optional is
+    removed by npm too, up to the first optional dependency). Both show as a package present here that npm
+    would have left out, never the reverse."""
+    packages = packages if isinstance(packages, dict) else {}
+    plan: dict[str, list[str]] = {"installed": [], "not_installed": [], "unsupported": [], "optional": []}
+    for key in sorted(keys):
+        entry = packages.get(key)
+        entry = entry if isinstance(entry, dict) else {}
+        if any(key.startswith(gone + "/") for gone in plan["not_installed"]):
+            plan["not_installed"].append(key)
+        elif platform_admits(entry, platform):
+            plan["installed"].append(key)
+            if entry.get("optional") is True:
+                plan["optional"].append(key)
+        elif entry.get("optional") is True:
+            plan["not_installed"].append(key)
+        else:
+            plan["unsupported"].append(key)
+    return plan
+
+
+def platform_report(lock: Any, platform: dict) -> dict:
+    """The command line's report of ``platform_plan`` over every package of a lock (``entries``), with the rows
+    whose lock entry says ``hasInstallScript: true`` sorted by what the verifier does with their script:
+    ``required`` (must run and exit 0), ``optional`` (tried; dropped when it fails), ``not_installed`` (not
+    run). ``ok`` is false when the lock has a structure reason or an ``unsupported`` row. A tarball's own
+    scripts are not read here (no tarball is); ``store`` reads them."""
+    reasons, items = entries(lock)
+    packages = lock.get("packages") if isinstance(lock, dict) else None
+    plan = platform_plan(packages, [i["key"] for i in items], platform)
+    scripted = {i["key"] for i in items if i["entry"].get("hasInstallScript") is True}
+    optional = set(plan["optional"])
+    report = {"ok": not reasons and not plan["unsupported"],
+              "platform": {f: platform.get(f) for f in PLATFORM_FIELDS}, "packages": len(items),
+              "installed": len(plan["installed"]), "not_installed": plan["not_installed"],
+              "unsupported": plan["unsupported"],
+              "scripts": {"required": [k for k in plan["installed"] if k in scripted and k not in optional],
+                          "optional": [k for k in plan["installed"] if k in scripted and k in optional],
+                          "not_installed": [k for k in plan["not_installed"] if k in scripted]}}
+    if reasons:
+        report["reasons"] = reasons
+    return report
 
 
 def check(lock: Any, registries=DEFAULT_REGISTRIES, marks: list[str] | None = None) -> dict:
@@ -913,7 +1007,8 @@ def _emit(obj: dict) -> None:
 
 USAGE = ("usage: python -m runner.deps_npm fetch LOCK MIRROR (stdin {registry_egress, install_scripts_required}) | "
          "check LOCK [--registry URL]... [--recipe FILE] | store LOCK OUT [--mirror DIR] [--registry URL]... "
-         "[--recipe FILE] [--policy FILE] [--product] | verify DIR [--address HEX]")
+         "[--recipe FILE] [--policy FILE] [--product] | verify DIR [--address HEX] | "
+         "platform LOCK --os OS --cpu CPU [--libc LIBC]")
 
 
 def main(argv: list[str]) -> int:
@@ -928,7 +1023,7 @@ def main(argv: list[str]) -> int:
         args, opts, regs = [], {}, []
         it = iter(argv)
         for a in it:
-            if a in ("--registry", "--recipe", "--policy", "--mirror", "--address"):
+            if a in ("--registry", "--recipe", "--policy", "--mirror", "--address", "--os", "--cpu", "--libc"):
                 value = next(it, None)
                 if value is None:
                     raise DepsError("%s needs a value" % a)
@@ -942,6 +1037,14 @@ def main(argv: list[str]) -> int:
                 opts[a] = True
             else:
                 args.append(a)
+        if len(args) == 2 and args[0] == "platform" and {"--os", "--cpu"} <= set(opts) <= {"--os", "--cpu", "--libc"} \
+                and not regs:
+            report = platform_report(_parse(_read(args[1]), args[1]),
+                                     {"os": opts["--os"], "cpu": opts["--cpu"], "libc": opts.get("--libc")})
+            _emit(report)
+            return 0 if report["ok"] else 1
+        if {"--os", "--cpu", "--libc"} & set(opts):
+            raise DepsError(USAGE)
         registries = regs or list(DEFAULT_REGISTRIES)
         recipe = _parse(_read(opts["--recipe"]), opts["--recipe"]) if "--recipe" in opts else None
         policy = _parse(_read(opts["--policy"]), opts["--policy"]) if "--policy" in opts else None
