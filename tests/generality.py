@@ -10,25 +10,32 @@ runs this check on every push. Run from anywhere:
 ``python3 tests/generality.py check [--root DIR]`` and ``python3 tests/generality.py names CHECKOUT --repo URL
 --commit SHA``.
 
-``check``, each rule bound by ``tests/test_generality.py``:
+``check`` follows the referee's reading as tohum/29e:55-65 ("Genellik okuması") states it, each rule bound by
+``tests/test_generality.py``:
 
 - **Files read**: every regular file under ``ROOT/referee``, found by walking the directory, in path order. A
   directory named ``__pycache__`` is not entered (python writes its cache there while the tests run and
   ``.gitignore`` keeps it out of a commit). A symbolic link is neither followed nor read.
-- **Text** (``referee_file_not_text:<path>``): a file is text when its bytes decode as UTF-8 and hold no control
-  character (U+0000-U+001F, U+007F) other than tab, line feed and carriage return. The referee's own rule for
-  "text" is not in a page this clone has; this one names, on a931320's tree, the one file the referee named.
-- **Names** (``target_name_in_referee:<path>``): the names are those of ``ROOT/targets/names.json`` (below). A
-  file is named when a name, casefolded, is a substring of the file's casefolded text or of its casefolded path
-  (relative to ``ROOT``, ``/`` separated). Of a file that is not text only the path is searched.
-- The answer is one JSON line: ``ok``, ``files`` (how many were read), ``reasons`` (sorted, each once) and ``why``
-  (per named file, which entries matched, as ``targets[i].names[j]``: the index, not the name, so the answer can
-  be quoted anywhere). Exit 0 when there is no reason, 1 when there is one, 2 when the names file or
+- **Compared** (``fold``): a name and the place it is searched in are read the same way, in the page's order: NFKD,
+  then casefold, then every character with a combining class dropped, then dotless ``ı`` read as ``i``. A name is
+  found when its folded form is a substring of the folded place.
+- **Path first** (``target_name_in_referee:sha256:<16 hex>``): the place searched first is the file's path after
+  ``referee/`` (``/`` separated). A file with a name in its path is not opened: it gets this one reason, whatever
+  its bytes are, and it is shown as ``sha256:`` and the first 16 hex characters of the sha256 of its path
+  (``referee/...``, as UTF-8; a name the directory holds in other bytes, by those bytes), not as the path.
+- **Text** (``referee_file_not_text:<path>``): a file is text when its bytes decode as strict UTF-8 and hold no NUL
+  (U+0000); every other control character is text. A file that is not text gets this reason and nothing more.
+- **Names** (``target_name_in_referee:<path>``): a name in the text of a file whose path holds none. The names are
+  those of ``ROOT/targets/names.json`` (below).
+- The answer is one JSON line: ``ok``, ``files`` (how many were found), ``reasons`` (sorted, each once) and ``why``
+  (per named file, under the path as its reason shows it, which entries matched, as ``targets[i].names[j]``: the
+  index, not the name). Exit 0 when there is no reason, 1 when there is one, 2 when the names file or
   ``ROOT/referee`` cannot be used (``{"ok": false, "reason": ...}``): a missing or malformed list is not an empty
   list.
 
 ``targets/names.json`` (``load_names``): ``{"targets": [{"repo", "commit", "names": [{"name", "from"}]}]}``, exactly
-these keys, every value a non-empty string, ``names`` a list (it may be empty). One entry per target a session has
+these keys, every value a non-empty string, ``names`` a list (it may be empty); a name that ``fold`` leaves nothing
+of (combining marks alone) is refused too, it would be found in every file. One entry per target a session has
 had a checkout of; ``names`` prints a names file holding the one entry of the checkout it is given:
 
 - ``repository``: the last segment of the repository URL's path, a final ``.git`` cut off;
@@ -37,29 +44,38 @@ had a checkout of; ``names`` prints a names file holding the one entry of the ch
   string. A manifest that is there and cannot be parsed stops the command (exit 2): the list is not written short.
 - a name found twice is listed once, under its first source, in the order above.
 
-Not checked, stated: whether these are the names the referee holds (``identifiers`` is the operator's list and
-decides; a name there that no rule above derives is seen only in the referee's verdict); the account that owns a
-target's repository (it owns this brain's and the referee's too, and the verdict on a931320 did not name the files
-that carry it alone); words inside a name, workspace package names and scopes, directory and file names of a target
-(``tests/fixtures`` builds trees with common ones); a target no session has a checkout of (the toy's repository);
-a name written so that the text does not hold it (split, encoded); links and special files under ``referee/``
-(``loop.treehash`` refuses a tree that has one).
+Not checked, stated: whether these are the names the referee holds (``setup/summary.json``
+``targets[].identifiers`` is the operator's list and decides; 29e: neither the list nor its length is given to a
+session, so a name there that no rule above derives is seen only in the referee's verdict, and passing here is not
+passing there); whether the referee's code folds as ``fold`` does where the page leaves room (casefold before NFKD
+gives another result on 637 code points of Unicode 15.0, e.g. U+03D2; another Unicode version another table) and
+which bytes of a path it hashes (its code is not read: the 16 hex characters of a path hit are this tool's
+reading of the page's sentence and may differ from the referee's); files of the archive
+against files of the directory (the referee reads the pushed commit's archive, this walk reads what is on disk,
+an uncommitted file included); the account that owns a target's repository (it owns this brain's and the
+referee's too, and the verdict on a931320 did not name the files that carry it alone); words inside a name,
+workspace package names and scopes, directory and file names of a target (``tests/fixtures`` builds trees with
+common ones); a target no session has a checkout of (the toy's repository); a name written so that the folded text
+does not hold it (split, encoded); links and special files under ``referee/`` (``loop.treehash`` refuses a tree
+that has one). 29e's last sentence holds for this check as well: passing it is not proof of generality.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 import tomllib
+import unicodedata
 import urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REFEREE = "referee"
 NAMES = "targets/names.json"
 SKIP_DIRS = ("__pycache__",)
-TEXT_CONTROLS = "\t\n\r"
+SHOWN_HEX = 16
 ENTRY_KEYS = {"repo", "commit", "names"}
 NAME_KEYS = {"name", "from"}
 # the manifests read at a checkout's root: file, parser, the keys down to the package's name
@@ -96,6 +112,8 @@ def load_names(path: str) -> list[tuple[str, str]]:
             label = "targets[%d].names[%d]" % (i, j)
             if not isinstance(item, dict) or set(item) != NAME_KEYS or not all(_string(v) for v in item.values()):
                 raise Unreadable("names_invalid: %s" % label)
+            if not fold(item["name"]):
+                raise Unreadable("names_invalid: %s" % label)
             out.append((label, item["name"]))
     return out
 
@@ -115,31 +133,44 @@ def files(root: str) -> list[str]:
     return sorted(found)
 
 
+def fold(value: str) -> str:
+    """A name or the place it is searched in, as the two are compared."""
+    value = unicodedata.normalize("NFKD", value).casefold()
+    return "".join(ch for ch in value if not unicodedata.combining(ch)).replace("\u0131", "i")
+
+
 def text(data: bytes) -> str | None:
     """The file's text, or ``None`` when it is not text."""
     try:
         decoded = data.decode("utf-8")
     except UnicodeDecodeError:
         return None
-    if any((ch < " " and ch not in TEXT_CONTROLS) or ch == "\x7f" for ch in decoded):
-        return None
-    return decoded
+    return None if "\x00" in decoded else decoded
+
+
+def shown(rel: str) -> str:
+    """How a path that holds a name is printed."""
+    return "sha256:" + hashlib.sha256(rel.encode("utf-8", "surrogateescape")).hexdigest()[:SHOWN_HEX]
 
 
 def check(root: str, names_path: str | None = None) -> dict:
-    names = load_names(os.path.join(root, NAMES) if names_path is None else names_path)
+    names = [(label, fold(name))
+             for label, name in load_names(os.path.join(root, NAMES) if names_path is None else names_path)]
     rels = files(root)
     reasons, why = [], {}
     for rel in rels:
-        with open(os.path.join(root, rel), "rb") as fh:
-            body = text(fh.read())
-        if body is None:
-            reasons.append("referee_file_not_text:%s" % rel)
-        folded = ("" if body is None else body.casefold(), rel.casefold())
-        hits = [label for label, name in names if any(name.casefold() in part for part in folded)]
+        place, key = fold(rel[len(REFEREE) + 1:]), shown(rel)
+        if not any(name in place for _, name in names):
+            with open(os.path.join(root, rel), "rb") as fh:
+                body = text(fh.read())
+            if body is None:
+                reasons.append("referee_file_not_text:%s" % rel)
+                continue
+            place, key = fold(body), rel
+        hits = [label for label, name in names if name in place]
         if hits:
-            reasons.append("target_name_in_referee:%s" % rel)
-            why[rel] = hits
+            reasons.append("target_name_in_referee:%s" % key)
+            why[key] = hits
     return {"ok": not reasons, "files": len(rels), "reasons": sorted(reasons), "why": why}
 
 
