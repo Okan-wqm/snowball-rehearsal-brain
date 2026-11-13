@@ -125,13 +125,17 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
    --foreground-scripts <names>`` precedes the runs, and its worktree is the start of every run; it must exit 0
    (``install_scripts_failed``). ``npm rebuild`` names packages, not rows, and unlike npm's install it does
    not forgive an optional package's failing script. So before that run each name whose flagged rows are all
-   ``optional: true`` is tried alone in a contained run of the same command from the same worktree
+   optional is tried alone in a contained run of the same command from the same worktree
    (``install_optional`` in the result: the run, ``name``, ``dropped``): when it exits nonzero the referee
-   removes that name's flagged rows from the worktree, with what is below them and their ``.bin`` links, and
-   the name leaves the install run, as npm drops an optional package that fails to build and goes on; when it
-   exits 0 the try's worktree is discarded and the name runs again with the rest. A try that is no valid run
-   (its red control, a limit) gives no verdict. Left out of npm's rule, each stated in ``platform_plan``: an
-   optional row's ``engines``, and the rest of npm's optional set. Whether npm and node-gyp succeed in the
+   removes that name's flagged rows from the worktree, with every row below them and the ``.bin`` links into
+   them (``dropped``: every row removed), as npm drops an optional package that fails to build and goes on;
+   when it exits 0 the try's worktree is discarded and the name runs again with the rest. A name is tried,
+   and later named in the install run, only while one of its flagged rows is still installed. A try that is
+   no valid run (its red control, a limit) gives no verdict. Wider than npm's drop: the exit of ``npm
+   rebuild <name>`` does not say which row's script failed, so when a name has several flagged optional rows
+   all of them go, where npm drops only the failing one (the runs can lack a package npm would have kept).
+   Left out of npm's rule, each stated in
+   ``platform_plan``: an optional row's ``engines``, and the rest of npm's optional set. Whether npm and node-gyp succeed in the
    real image is not proven here (no node in the referee's sandbox); its proof is asama-0/10a #birim.
 4. 3/3. Three attempts, each running ``lint_cmd`` and then ``test_cmd``, every command in its own fresh
    contained run (MF3: no network, read-only root, the image, limits) of the same worktree, working
@@ -764,14 +768,21 @@ def container_platform(image: str, machine: str | None = None) -> dict:
             "libc": "musl" if any(part.startswith("alpine") for part in parts) else "glibc"}
 
 
-def drop_rows(staging: str, lock_dir: str, keys: list[str], links: list[str]) -> list[str]:
-    """Remove the installed packages ``keys`` (their directories under ``<lock dir>/``, with what is below them)
-    and the ``.bin`` links among ``links`` that point into one of them; the links that stay. ``keys`` are rows
-    ``install_deps`` unpacked into ``staging``, so no symlink is on their way."""
+def drop_rows(staging: str, lock_dir: str, keys: list[str], installed: list[str],
+              links: list[str]) -> tuple[list[str], list[str]]:
+    """Remove the installed packages ``keys`` with what is below them; ``(removed, links kept)``: ``removed``
+    the rows of ``installed`` that are gone, sorted (each of ``keys`` and every row below one of them, as
+    ``platform_plan`` counts a row below a row that is not installed), and the ``.bin`` links among ``links``
+    that pointed into one of them are removed too. ``keys`` and ``installed`` are rows ``install_deps`` unpacked
+    into ``staging``, so no symlink is on their way; a row whose tarball unpacked no file has no directory and
+    nothing of it is removed."""
+    removed = sorted(k for k in installed if any(k == key or k.startswith(key + "/") for key in keys))
     gone = []
-    for key in keys:
+    for key in sorted(keys):
         dest = key if lock_dir == "." else lock_dir + "/" + key
-        shutil.rmtree(os.path.join(staging, *dest.split("/")))
+        path = os.path.join(staging, *dest.split("/"))
+        if os.path.lexists(path):       # not there: below a key removed before it, or never unpacked
+            shutil.rmtree(path)
         gone.append(dest + "/")
     kept = []
     for link in links:
@@ -781,7 +792,7 @@ def drop_rows(staging: str, lock_dir: str, keys: list[str], links: list[str]) ->
             os.unlink(path)
         else:
             kept.append(link)
-    return kept
+    return removed, kept
 
 
 def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, budget: int,
@@ -955,9 +966,12 @@ def stage(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | Non
     for row in deps_info["rows"]:
         if row.get("install_script"):
             by_name.setdefault(row["name"], []).append(row["key"])
-    scripted = sorted(by_name)
     optional = set(deps_info["optional"])
-    for name in [n for n in scripted if all(key in optional for key in by_name[n])]:
+    present = [row["key"] for row in deps_info["rows"]]
+    for name in sorted(by_name):
+        keys = [key for key in by_name[name] if key in present]
+        if not keys or not all(key in optional for key in keys):
+            continue
         run = _one(rebuild + [name], red_control["cmd"], recipe["env_image"], staging, operating, runner,
                    staging_root)
         tried = dict(_public(run), name=name, dropped=[])
@@ -965,9 +979,9 @@ def stage(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | Non
         if not run["valid"]:
             return run["reasons"], result, {}
         if run["exit"] != 0:
-            tried["dropped"] = sorted(by_name[name])
-            result["bin_links"] = drop_rows(staging, lock_dir, tried["dropped"], result["bin_links"])
-            scripted.remove(name)
+            tried["dropped"], result["bin_links"] = drop_rows(staging, lock_dir, keys, present, result["bin_links"])
+            present = [key for key in present if key not in tried["dropped"]]
+    scripted = sorted(name for name in by_name if any(key in present for key in by_name[name]))
     if scripted:
         cmd = rebuild + scripted
         run = _one(cmd, red_control["cmd"], recipe["env_image"], staging, operating, runner, staging_root)

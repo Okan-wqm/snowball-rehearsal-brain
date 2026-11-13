@@ -64,15 +64,6 @@
    ]
   },
   {
-   "id": "uv_dr_rmtree",
-   "file": "profile/unit_verify.py",
-   "old": "        shutil.rmtree(os.path.join(staging, *dest.split(\"/\")))\n        gone.append(dest + \"/\")",
-   "new": "        gone.append(dest + \"/\")",
-   "tests": [
-    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on"
-   ]
-  },
-  {
    "id": "uv_id_unsupported",
    "file": "profile/unit_verify.py",
    "old": "    if plan[\"unsupported\"]:\n        return [\"platform_unsupported:%s\" % key for key in plan[\"unsupported\"]], {}\n",
@@ -118,57 +109,12 @@
    ]
   },
   {
-   "id": "uv_st_all",
-   "file": "profile/unit_verify.py",
-   "old": "if all(key in optional for key in by_name[n])]:",
-   "new": "if any(key in optional for key in by_name[n])]:",
-   "tests": [
-    "test_unit_verify.InstallAsNpm.test_a_name_with_a_required_row_is_not_tried_as_optional"
-   ]
-  },
-  {
    "id": "uv_st_invalid",
    "file": "profile/unit_verify.py",
    "old": "        if not run[\"valid\"]:\n            return run[\"reasons\"], result, {}\n        if run[\"exit\"] != 0:\n            tried[\"dropped\"]",
    "new": "        if run[\"exit\"] != 0:\n            tried[\"dropped\"]",
    "tests": [
     "test_unit_verify.InstallAsNpm.test_an_optional_try_that_is_no_valid_run_gives_no_verdict"
-   ]
-  },
-  {
-   "id": "uv_st_never_drop",
-   "file": "profile/unit_verify.py",
-   "old": "        if run[\"exit\"] != 0:\n            tried[\"dropped\"] = sorted(by_name[name])",
-   "new": "        if False:\n            tried[\"dropped\"] = sorted(by_name[name])",
-   "tests": [
-    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on"
-   ]
-  },
-  {
-   "id": "uv_st_always_drop",
-   "file": "profile/unit_verify.py",
-   "old": "        if run[\"exit\"] != 0:\n            tried[\"dropped\"] = sorted(by_name[name])",
-   "new": "        if True:\n            tried[\"dropped\"] = sorted(by_name[name])",
-   "tests": [
-    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_passes_stays"
-   ]
-  },
-  {
-   "id": "uv_st_remove",
-   "file": "profile/unit_verify.py",
-   "old": "            scripted.remove(name)\n",
-   "new": "",
-   "tests": [
-    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on"
-   ]
-  },
-  {
-   "id": "uv_st_drop_rows",
-   "file": "profile/unit_verify.py",
-   "old": "            result[\"bin_links\"] = drop_rows(staging, lock_dir, tried[\"dropped\"], result[\"bin_links\"])\n",
-   "new": "",
-   "tests": [
-    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on"
    ]
   },
   {
@@ -187,6 +133,132 @@
    "new": "return bad, {\"inputs_bytes\": size}, {}",
    "tests": [
     "test_unit_verify.InstallAsNpm.test_a_required_row_the_platform_excludes_refuses_the_recipe"
+   ]
+  },
+  {
+   "id": "uv_dr_rmtree",
+   "file": "profile/unit_verify.py",
+   "old": "        if os.path.lexists(path):       # not there: below a key removed before it, or never unpacked\n            shutil.rmtree(path)\n",
+   "new": "",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on"
+   ]
+  },
+  {
+   "id": "uv_dr_no_lexists",
+   "file": "profile/unit_verify.py",
+   "old": "        if os.path.lexists(path):       # not there: below a key removed before it, or never unpacked\n            shutil.rmtree(path)\n",
+   "new": "        shutil.rmtree(path)\n",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_drop_rows_removes_what_is_there_and_names_every_row_removed"
+   ]
+  },
+  {
+   "id": "uv_dr_removed_only_keys",
+   "file": "profile/unit_verify.py",
+   "old": "any(k == key or k.startswith(key + \"/\") for key in keys)",
+   "new": "k in keys",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_a_dropped_row_takes_the_rows_below_it_and_their_names_are_not_built"
+   ]
+  },
+  {
+   "id": "uv_dr_removed_prefix_no_slash",
+   "file": "profile/unit_verify.py",
+   "old": "any(k == key or k.startswith(key + \"/\") for key in keys)",
+   "new": "any(k.startswith(key) for key in keys)",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_drop_rows_removes_what_is_there_and_names_every_row_removed"
+   ]
+  },
+  {
+   "id": "uv_dr_removed_only_below",
+   "file": "profile/unit_verify.py",
+   "old": "any(k == key or k.startswith(key + \"/\") for key in keys)",
+   "new": "any(k.startswith(key + \"/\") for key in keys)",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on"
+   ]
+  },
+  {
+   "id": "uv_st_all",
+   "file": "profile/unit_verify.py",
+   "old": "        if not keys or not all(key in optional for key in keys):",
+   "new": "        if not keys or not any(key in optional for key in keys):",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_a_name_with_a_required_row_is_not_tried_as_optional"
+   ]
+  },
+  {
+   "id": "uv_st_no_keys_tried",
+   "file": "profile/unit_verify.py",
+   "old": "        if not keys or not all(key in optional for key in keys):",
+   "new": "        if not all(key in optional for key in keys):",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_a_dropped_row_takes_the_rows_below_it_and_their_names_are_not_built"
+   ]
+  },
+  {
+   "id": "uv_st_keys_not_present",
+   "file": "profile/unit_verify.py",
+   "old": "        keys = [key for key in by_name[name] if key in present]",
+   "new": "        keys = list(by_name[name])",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_a_dropped_row_takes_the_rows_below_it_and_their_names_are_not_built"
+   ]
+  },
+  {
+   "id": "uv_st_never_drop",
+   "file": "profile/unit_verify.py",
+   "old": "        if run[\"exit\"] != 0:\n            tried[\"dropped\"], result[\"bin_links\"]",
+   "new": "        if False:\n            tried[\"dropped\"], result[\"bin_links\"]",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on"
+   ]
+  },
+  {
+   "id": "uv_st_always_drop",
+   "file": "profile/unit_verify.py",
+   "old": "        if run[\"exit\"] != 0:\n            tried[\"dropped\"], result[\"bin_links\"]",
+   "new": "        if True:\n            tried[\"dropped\"], result[\"bin_links\"]",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_passes_stays"
+   ]
+  },
+  {
+   "id": "uv_st_present_kept",
+   "file": "profile/unit_verify.py",
+   "old": "            present = [key for key in present if key not in tried[\"dropped\"]]\n",
+   "new": "",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on"
+   ]
+  },
+  {
+   "id": "uv_st_scripted_all_names",
+   "file": "profile/unit_verify.py",
+   "old": "    scripted = sorted(name for name in by_name if any(key in present for key in by_name[name]))",
+   "new": "    scripted = sorted(by_name)",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on"
+   ]
+  },
+  {
+   "id": "uv_st_scripted_every_row",
+   "file": "profile/unit_verify.py",
+   "old": "    scripted = sorted(name for name in by_name if any(key in present for key in by_name[name]))",
+   "new": "    scripted = sorted(name for name in by_name if all(key in present for key in by_name[name]))",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_a_name_with_a_row_left_after_a_drop_is_still_built"
+   ]
+  },
+  {
+   "id": "uv_st_drop_rows",
+   "file": "profile/unit_verify.py",
+   "old": "drop_rows(staging, lock_dir, keys, present, result[\"bin_links\"])",
+   "new": "(sorted(keys), result[\"bin_links\"])",
+   "tests": [
+    "test_unit_verify.InstallAsNpm.test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on"
    ]
   }
  ]
