@@ -232,11 +232,13 @@ class Runner(unittest.TestCase):
         self.assertEqual(self.outcomes([loops], timeout=60.0, factor=5.0, floor=40.0), {"slow_30s": "killed"})
 
     def test_each_entry_is_timed_on_its_own(self):
-        write_tree(self.brain, {"referee/tests/test_pause.py": SLOW.replace("time.sleep(30)", "time.sleep(1.5)")})
-        verdict, seconds = mutate.baseline(self.brain, "referee", ["test_pause.py", "test_mod.py"], 120.0)
-        self.assertEqual((verdict, len(seconds)), ("green", 2))
-        self.assertGreaterEqual(seconds[0], 1.5)
-        self.assertLess(seconds[1], 1.5)
+        # The entries really run; the clock is a list read in turn (how long a process takes to start is the
+        # machine's load, not the rule): the first entry starts at 0 and ends at 7, the second runs from 10 to 12.
+        ticks = iter([0.0, 7.0, 10.0, 12.0])
+        with mock.patch.object(mutate.time, "monotonic", lambda: next(ticks)):
+            verdict, seconds = mutate.baseline(self.brain, "referee", ["test_mod.py", "test_mod.py"], 120.0)
+        self.assertEqual((verdict, seconds), ("green", [7.0, 2.0]))
+        self.assertEqual(list(ticks), [])
 
     def test_the_command_line_passes_its_limits(self):
         slow = "import mod, time\nif mod.add(2, 3) == 6:\n    time.sleep(30)\n"
