@@ -510,6 +510,124 @@ class TestInstallScripts(Base):
             self.assertFalse(any(r["install_script"] for r in json.load(fh)["packages"]))
 
 
+class TestPlatform(unittest.TestCase):
+    """npm's rule for a lock entry's ``os``, ``cpu`` and ``libc`` (npm-install-checks ``checkPlatform``) and what
+    npm then does with the row: an optional row the platform excludes is not installed, any other one fails the
+    install."""
+
+    LINUX = {"os": "linux", "cpu": "x64", "libc": "glibc"}
+
+    def test_a_row_without_the_fields_is_admitted(self):
+        self.assertTrue(N.platform_admits({}, self.LINUX))
+        self.assertTrue(N.platform_admits({"optional": True, "engines": {"node": ">=99"}}, self.LINUX))
+
+    def test_each_field_is_matched_as_npm_matches_it(self):
+        cases = [
+            ({"os": ["darwin"]}, False),
+            ({"os": ["darwin", "linux"]}, True),
+            ({"os": "linux"}, True),                       # a string is a list of one
+            ({"os": "darwin"}, False),
+            ({"os": ["any"]}, True),
+            ({"os": ["any", "darwin"]}, False),             # "any" counts only alone
+            ({"os": ["!win32"]}, True),                     # only negations, none of them the value
+            ({"os": ["!linux"]}, False),
+            ({"os": ["!win32", "darwin"]}, False),          # a positive entry is present and none matches
+            ({"os": ["!win32", "linux"]}, True),
+            ({"os": ["linux", "!linux"]}, False),           # a negation of the value always excludes
+            ({"os": []}, True),                             # npm: no positive entry and every one negated
+            ({"cpu": ["arm64"]}, False),
+            ({"cpu": ["x64", "arm64"]}, True),
+            ({"libc": ["musl"]}, False),
+            ({"libc": ["glibc"]}, True),
+            ({"os": ["linux"], "cpu": ["x64"], "libc": ["musl"]}, False),
+            ({"os": ["linux"], "cpu": ["arm64"], "libc": ["glibc"]}, False),
+            ({"os": ["linux"], "cpu": ["x64"], "libc": ["glibc"]}, True),
+        ]
+        for entry, expected in cases:
+            with self.subTest(entry=entry):
+                self.assertIs(N.platform_admits(entry, self.LINUX), expected)
+
+    def test_a_libc_row_needs_a_known_libc(self):
+        unknown = {"os": "linux", "cpu": "x64", "libc": None}
+        self.assertFalse(N.platform_admits({"libc": ["glibc"]}, unknown))
+        self.assertFalse(N.platform_admits({"libc": ["!musl"]}, unknown))
+        self.assertTrue(N.platform_admits({"os": ["linux"]}, unknown))
+
+    def test_a_field_that_is_not_a_string_or_a_list_of_strings_excludes(self):
+        for value in (7, True, None, {"linux": 1}, ["linux", 7], [["linux"]]):
+            with self.subTest(value=value):
+                self.assertFalse(N.platform_admits({"os": value}, self.LINUX))
+                self.assertFalse(N.platform_admits({"cpu": value}, self.LINUX))
+
+    def test_plan_sorts_rows_into_what_npm_does_with_them(self):
+        packages = {
+            "": {"name": "root"},
+            "node_modules/plain": {"version": "1.0.0"},
+            "node_modules/mac": {"version": "1.0.0", "optional": True, "os": ["darwin"]},
+            "node_modules/mac/node_modules/inner": {"version": "1.0.0", "optional": True},
+            "node_modules/mac-tools": {"version": "1.0.0"},     # a sibling whose name starts alike is not below it
+            "node_modules/musl-binding": {"version": "1.0.0", "optional": True, "dev": True, "libc": ["musl"]},
+            "node_modules/glibc-binding": {"version": "1.0.0", "optional": True, "libc": ["glibc"]},
+            "node_modules/needs-mac": {"version": "1.0.0", "os": ["darwin"]},
+            "node_modules/dev-or-optional": {"version": "1.0.0", "devOptional": True, "cpu": ["arm64"]},
+            "node_modules/optional-not-true": {"version": "1.0.0", "optional": "true", "os": ["darwin"]},
+        }
+        keys = [k for k in packages if k]
+        plan = N.platform_plan(packages, keys, self.LINUX)
+        self.assertEqual(plan, {
+            "installed": ["node_modules/glibc-binding", "node_modules/mac-tools", "node_modules/plain"],
+            "not_installed": ["node_modules/mac", "node_modules/mac/node_modules/inner",
+                              "node_modules/musl-binding"],
+            "unsupported": ["node_modules/dev-or-optional", "node_modules/needs-mac",
+                            "node_modules/optional-not-true"],
+            "optional": ["node_modules/glibc-binding"],
+        })
+        musl = N.platform_plan(packages, keys, dict(self.LINUX, libc="musl"))
+        self.assertIn("node_modules/musl-binding", musl["installed"])
+        self.assertIn("node_modules/glibc-binding", musl["not_installed"])
+        # only the keys asked about are sorted; a key the lock lacks has no fields and is admitted
+        self.assertEqual(N.platform_plan(packages, ["node_modules/absent"], self.LINUX),
+                         {"installed": ["node_modules/absent"], "not_installed": [], "unsupported": [],
+                          "optional": []})
+
+    def test_command_line_reports_the_plan_and_the_rows_with_a_script(self):
+        base = writable_base("deps-plat-")
+        self.addCleanup(shutil.rmtree, base, True)
+        fx = Fixture(base)
+        fx.add("left-pad", "1.3.0")
+        fx.add("mac", "1.0.0")
+        fx.add("native", "1.0.0")
+        fx.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
+        fx.lock["packages"]["node_modules/mac"].update(optional=True, os=["darwin"], hasInstallScript=True)
+        fx.lock["packages"]["node_modules/native"].update(optional=True, hasInstallScript=True)
+        lock_path = fx.write_lock()
+
+        def run(*args):
+            proc = subprocess.run([sys.executable, "-m", "runner.deps_npm", "platform", lock_path] + list(args),
+                                  cwd=REFEREE, capture_output=True, text=True, timeout=60)
+            self.assertNotIn("Traceback", proc.stderr)
+            return proc.returncode, json.loads(proc.stdout)
+        code, out = run("--os", "linux", "--cpu", "x64", "--libc", "glibc")
+        self.assertEqual(code, 0)
+        self.assertEqual(out, {
+            "ok": True, "platform": {"os": "linux", "cpu": "x64", "libc": "glibc"}, "packages": 3, "installed": 2,
+            "not_installed": ["node_modules/mac"], "unsupported": [],
+            "scripts": {"required": ["node_modules/left-pad"], "optional": ["node_modules/native"],
+                        "not_installed": ["node_modules/mac"]}})
+        fx.lock["packages"]["node_modules/mac"]["optional"] = False
+        fx.write_lock()
+        code, out = run("--os", "linux", "--cpu", "x64", "--libc", "glibc")
+        self.assertEqual((code, out["ok"], out["unsupported"]), (1, False, ["node_modules/mac"]))
+        code, out = run("--os", "darwin", "--cpu", "arm64")
+        self.assertEqual((code, out["platform"], out["installed"]),
+                         (0, {"os": "darwin", "cpu": "arm64", "libc": None}, 3))
+        for args in ((), ("--os", "linux"), ("--cpu", "x64"), ("--os", "linux", "--cpu", "x64", "--libc"),
+                     ("--os", "linux", "--cpu", "x64", "--registry", "https://r.example/")):
+            with self.subTest(args=args):
+                code, out = run(*args)
+                self.assertEqual((code, out["ok"]), (2, False))
+
+
 class TestTarball(Base):
     def test_tarball_shape(self):
         manifest = {"name": "left-pad", "version": "1.3.0", "license": "MIT"}

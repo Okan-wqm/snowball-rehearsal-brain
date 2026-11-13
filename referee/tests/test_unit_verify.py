@@ -910,6 +910,199 @@ class Deps(Base):
         self.assertEqual(report["runs"], {"lint": [], "test": []})
 
 
+# ---------------------------------------------------------------- the install as npm makes it
+
+class InstallAsNpm(Base):
+    """Steps 2 and 3 against what npm does when it installs from a lock (arborist's reify): an optional row the
+    container's platform excludes is not installed; any other excluded row fails the install; an optional row
+    whose install script fails is dropped and the install goes on. The npm of these tests is the fake runner's:
+    the rule is bound here, npm's own behaviour in the image is asama-0/10a #birim's."""
+
+    def add(self, name: str, marks=None, **entry) -> None:
+        data = tgz({"package.json": {"name": name, "version": "1.0.0", "license": "MIT", "bin": "cli.js"},
+                    "cli.js": b"#!/usr/bin/env node\n"})
+        u = url(name, "1.0.0")
+        self.put(u, data)
+        row = {"version": "1.0.0", "resolved": u, "integrity": sri(data)}
+        row.update(entry)
+        self.lock["packages"]["node_modules/" + name] = row
+        self.write_lock(self.lock)
+        self.marks = list(marks) if marks is not None else getattr(self, "marks", [])
+        self.deps = self.fetch(marks=self.marks)
+
+    def npm_runner(self, exits: dict):
+        """A runner whose ``npm rebuild`` exits by ``exits[last name]`` (0 when absent) after writing ``BUILT``
+        into every named package it finds; ``self.npm`` lists the rebuilds as ``(names, packages present)``."""
+        inner = FakeDocker()
+        self.npm, self.inner = [], inner
+
+        def runner(argv, env, timeout):
+            image_at = max(i for i, a in enumerate(argv) if a.endswith(DIGEST))
+            cmd = argv[image_at + 1:]
+            if cmd[:1] != ["npm"]:
+                return inner(argv, env, timeout)
+            self.assertEqual(cmd[:5], ["npm", "--prefix", "/work/pkg", "rebuild", "--offline"])
+            self.assertEqual(cmd[5], "--foreground-scripts")
+            names = cmd[6:]
+            work = argv[argv.index("--mount") + 1].split(",")[1][len("src="):]
+            modules = os.path.join(work, "pkg", "node_modules")
+            self.npm.append((names, sorted(n for n in os.listdir(modules) if not n.startswith("."))))
+            for name in names:
+                if os.path.isdir(os.path.join(modules, name)):
+                    with open(os.path.join(modules, name, "BUILT"), "w") as fh:
+                        fh.write("1")
+            return C.RunnerResult(exits.get(names[-1], 0), b"", b"", False)
+        return runner
+
+    def worktree_of_last_run(self) -> tuple[list, list]:
+        """``(packages, bin links)`` of ``pkg/node_modules`` as the last test run saw them."""
+        out = self.inner.calls[-1]["stdout"].decode()
+        line = [x for x in out.splitlines() if x.startswith("modules:")][0]
+        return json.loads(line[len("modules:"):])
+
+    def setUp(self) -> None:
+        super().setUp()
+        write_tree(self.tree, {"pkg/run_tests.py": (
+            "import json, os\n"
+            "m = 'pkg/node_modules'\n"
+            "b = sorted(os.listdir(m + '/.bin')) if os.path.isdir(m + '/.bin') else []\n"
+            "built = sorted(n for n in os.listdir(m) if os.path.exists(m + '/' + n + '/BUILT'))\n"
+            "print('modules:' + json.dumps([sorted(n for n in os.listdir(m) if n != '.bin'), b, built]))\n")})
+
+    def test_an_optional_row_the_platform_excludes_is_not_installed_and_its_script_not_run(self):
+        self.add("mac-only", marks=["node_modules/mac-only"], optional=True, os=["darwin"], hasInstallScript=True)
+        inner_data = tgz({"package.json": {"name": "inner", "version": "1.0.0", "license": "MIT"}})
+        self.put(url("inner", "1.0.0"), inner_data)
+        self.lock["packages"]["node_modules/mac-only/node_modules/inner"] = {
+            "version": "1.0.0", "resolved": url("inner", "1.0.0"), "integrity": sri(inner_data), "optional": True}
+        self.write_lock(self.lock)
+        self.deps = self.fetch(marks=self.marks)
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({}))
+        self.assertEqual(report["verdict"], "verified", report)
+        self.assertEqual(self.npm, [], "no script of a row that is not installed runs")
+        self.assertIsNone(report["install"])
+        self.assertEqual(report["not_installed"], ["node_modules/mac-only", "node_modules/mac-only/node_modules/inner"])
+        self.assertEqual(report["platform"]["os"], "linux")
+        self.assertEqual(report["bin_links"], ["pkg/node_modules/.bin/left-pad"])
+        self.assertEqual(self.worktree_of_last_run(), [["left-pad"], ["left-pad"], []])
+
+    def test_a_row_the_platform_admits_is_installed_as_before(self):
+        self.add("linux-only", optional=True, os=["linux"])
+        self.add("not-windows", os=["!win32"])
+        report = self.verify(runner=self.npm_runner({}))
+        self.assertEqual(report["verdict"], "verified", report)
+        self.assertEqual(report["not_installed"], [])
+        self.assertEqual(self.worktree_of_last_run()[0], ["left-pad", "linux-only", "not-windows"])
+
+    def test_libc_is_the_image_s(self):
+        self.add("musl-binding", optional=True, os=["linux"], libc=["musl"])
+        self.add("glibc-binding", optional=True, os=["linux"], libc=["glibc"])
+        report = self.verify(runner=self.npm_runner({}))
+        self.assertEqual((report["verdict"], report["not_installed"], report["platform"]["libc"]),
+                         ("verified", ["node_modules/musl-binding"], "glibc"), report)
+        alpine = recipe(env_image="node:20.11.1-alpine3.19" + DIGEST)
+        report = self.verify(alpine, runner=self.npm_runner({}))
+        self.assertEqual((report["verdict"], report["not_installed"], report["platform"]["libc"]),
+                         ("verified", ["node_modules/glibc-binding"], "musl"), report)
+
+    def test_a_required_row_the_platform_excludes_refuses_the_recipe(self):
+        for flags in ({}, {"devOptional": True}, {"dev": True}, {"optional": False}):
+            with self.subTest(flags=flags):
+                self.lock["packages"].pop("node_modules/mac-only", None)
+                self.add("mac-only", os=["darwin"], **flags)
+                report = self.verify(runner=self.npm_runner({}))
+                self.assertEqual((report["verdict"], report["reasons"]),
+                                 ("refused", ["platform_unsupported:node_modules/mac-only"]))
+                self.assertEqual((self.npm, self.inner.calls), ([], []), "nothing runs")
+
+    def test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on(self):
+        self.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
+        self.add("opt-native", marks=["left-pad@1.3.0", "node_modules/opt-native"], optional=True,
+                 hasInstallScript=True)
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"opt-native": 1}))
+        self.assertEqual(report["verdict"], "verified", report)
+        self.assertEqual(self.npm, [(["opt-native"], ["left-pad", "opt-native"]), (["left-pad"], ["left-pad"])],
+                         "the optional row is tried alone first; the install then names what is left")
+        self.assertEqual([(p["name"], p["exit"], p["dropped"]) for p in report["install_optional"]],
+                         [("opt-native", 1, ["node_modules/opt-native"])])
+        self.assertEqual(report["install"]["exit"], 0)
+        self.assertEqual(report["bin_links"], ["pkg/node_modules/.bin/left-pad"])
+        self.assertEqual(self.worktree_of_last_run(), [["left-pad"], ["left-pad"], ["left-pad"]],
+                         "the dropped package, its bin link and what its failed script wrote are gone")
+
+    def test_an_optional_row_whose_script_passes_stays(self):
+        self.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
+        self.add("opt-native", marks=["left-pad@1.3.0", "node_modules/opt-native"], optional=True,
+                 hasInstallScript=True)
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({}))
+        self.assertEqual(report["verdict"], "verified", report)
+        self.assertEqual([names for names, _ in self.npm], [["opt-native"], ["left-pad", "opt-native"]])
+        self.assertEqual([(p["name"], p["exit"], p["dropped"]) for p in report["install_optional"]],
+                         [("opt-native", 0, [])])
+        self.assertEqual(self.worktree_of_last_run(),
+                         [["left-pad", "opt-native"], ["left-pad", "opt-native"], ["left-pad", "opt-native"]])
+
+    def test_only_optional_rows_and_all_dropped_needs_no_install_run(self):
+        self.add("opt-native", marks=["node_modules/opt-native"], optional=True, hasInstallScript=True)
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"opt-native": 1}))
+        self.assertEqual(report["verdict"], "verified", report)
+        self.assertEqual([names for names, _ in self.npm], [["opt-native"]])
+        self.assertIsNone(report["install"])
+        self.assertEqual(self.worktree_of_last_run(), [["left-pad"], ["left-pad"], []])
+
+    def test_a_required_row_whose_script_fails_still_refuses(self):
+        self.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
+        self.add("opt-native", marks=["left-pad@1.3.0", "node_modules/opt-native"], optional=True,
+                 hasInstallScript=True)
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"left-pad": 1}))
+        self.assertEqual((report["verdict"], report["reasons"]), ("refused", ["install_scripts_failed"]))
+        self.assertEqual(report["runs"], {"lint": [], "test": []})
+
+    def test_a_name_with_a_required_row_is_not_tried_as_optional(self):
+        # npm rebuild names packages, not lock rows: two rows of one name, one of them required, are one required name
+        self.add("twin", marks=["twin@1.0.0"], hasInstallScript=True)
+        data = tgz({"package.json": {"name": "twin", "version": "1.0.0", "license": "MIT"}})
+        self.lock["packages"]["node_modules/left-pad/node_modules/twin"] = {
+            "version": "1.0.0", "resolved": url("twin", "1.0.0"), "integrity": sri(data), "optional": True,
+            "hasInstallScript": True}
+        self.put(url("twin", "1.0.0"), tgz({"package.json": {"name": "twin", "version": "1.0.0", "license": "MIT",
+                                                              "bin": "cli.js"}, "cli.js": b"#!/usr/bin/env node\n"}))
+        self.lock["packages"]["node_modules/left-pad/node_modules/twin"]["integrity"] = \
+            self.lock["packages"]["node_modules/twin"]["integrity"]
+        self.write_lock(self.lock)
+        self.deps = self.fetch(marks=self.marks)
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"twin": 1}))
+        self.assertEqual((report["verdict"], report["reasons"]), ("refused", ["install_scripts_failed"]))
+        self.assertEqual([names for names, _ in self.npm], [["twin"]])
+        self.assertEqual(report["install_optional"], [])
+
+    def test_an_optional_try_that_is_no_valid_run_gives_no_verdict(self):
+        self.add("opt-native", marks=["node_modules/opt-native"], optional=True, hasInstallScript=True)
+        write_tree(self.tree, {"pkg/green.py": "raise SystemExit(0)\n"})
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"opt-native": 1}),
+                             red={"cmd": ["python", "pkg/green.py"]})
+        self.assertEqual((report["verdict"], report["reasons"]), ("no_verdict", ["red_control_green"]))
+        self.assertEqual(report["runs"], {"lint": [], "test": []})
+
+    def test_container_platform(self):
+        cases = {
+            ("node:20.11.1-bookworm-slim" + DIGEST, "x86_64"): ("x64", "glibc"),
+            ("node:20.11.1" + DIGEST, "aarch64"): ("arm64", "glibc"),
+            ("docker.io/library/node:20.11.1-alpine3.19" + DIGEST, "arm64"): ("arm64", "musl"),
+            ("node:20.11.1-alpine" + DIGEST, "amd64"): ("x64", "musl"),
+            ("node:20.11.1-bullseye" + DIGEST, "armv7l"): ("arm", "glibc"),
+            ("node:20.11.1-slim" + DIGEST, "ppc64le"): ("ppc64", "glibc"),
+            ("node:20.11.1-bookworm" + DIGEST, "s390x"): ("s390x", "glibc"),
+        }
+        for (image, machine), (cpu, libc) in cases.items():
+            with self.subTest(image=image, machine=machine):
+                self.assertEqual(U.container_platform(image, machine), {"os": "linux", "cpu": cpu, "libc": libc})
+        self.assertEqual(U.container_platform(IMAGE)["cpu"], U.container_platform(IMAGE, os.uname().machine)["cpu"])
+        for machine in ("mips", "", "X86_64"):
+            with self.subTest(machine=machine), self.assertRaises(U.VerifyError):
+                U.container_platform(IMAGE, machine)
+
+
 # ---------------------------------------------------------------- command line
 
 class Cli(Base):
