@@ -1,4 +1,4 @@
-"""UNFINISHED (wip/kilit-provasi; founder ledger f1110-f1112): no test of its own, not in snowball-tests.json.
+"""UNFINISHED (wip/kilit-provasi; founder ledger f1111, f1113): no test of its own, not in snowball-tests.json.
 
 The lock rehearsal: tohum/26d's "stage-open'ın kuralı" read by a second reader, written from the page, on
 the final states of test_rehearsal's with-fixtures world (the run that writes the toy's PASS row). Nothing of

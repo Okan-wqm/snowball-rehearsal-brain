@@ -1,4 +1,4 @@
-"""UNFINISHED (wip/kilit-provasi; founder ledger f1109-f1112): no test of its own, not in snowball-tests.json.
+"""UNFINISHED (wip/kilit-provasi; founder ledger f1109, f1112): no test of its own, not in snowball-tests.json.
 
 asama-0/14's module-less red for every MF of the page's table, run with
 tests/run_like_referee.py's own functions. For each MF row: each test of the row runs on the commit's file list
