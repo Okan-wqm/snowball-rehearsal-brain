@@ -3,7 +3,9 @@
 - the composition: unit id, nearest lock and version file, minimal inputs with what a candidate reaches: the
   workspace folders it declares (Node's lookup through the lock's keys, transitive), its imports, tsconfig
   ``extends`` and a jest config's ``preset`` (aliases, links, relative paths; the deepest project or the file;
-  seeds followed; links, missing paths, commented and quoted imports bring nothing), install-script marks from the lock,
+  seeds followed; links, missing paths, commented and quoted imports bring nothing), the flat config an npm lint
+  script's ``eslint`` finds by its own lookup (nearest directory, ESLint's name order, files only; only the program
+  ``eslint``, only the lint script), install-script marks from the lock,
   the image map, the three ``npm --prefix <path> run --silent`` commands;
 - the result: one row per candidate in the derivation's order, its reasons exactly ``check_recipe``'s (the one
   judge), the passing paths;
@@ -27,6 +29,7 @@ BRAIN = os.path.dirname(REFEREE)
 sys.path.insert(0, REFEREE)
 
 from profile import fit as F  # noqa: E402
+from profile import nx as X  # noqa: E402
 from profile import unit_verify as U  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from test_deps_npm import sri, url  # noqa: E402
@@ -269,7 +272,64 @@ class Reached(unittest.TestCase):
 
     def test_the_composed_inputs(self):
         self.assertEqual(F.compose(self.tree, "apps/web")["inputs"],
-                         sorted(["apps/web", "package-lock.json"] + self.WEB))
+                         sorted(["apps/web", "package-lock.json"] + self.WEB  # and the lint script's ESLint config
+                                + ["eslint.config.mjs", "tools/eslint-shared.mjs"]))
+
+
+class LintConfig(Base):
+    """An npm lint script whose program is ``eslint``: the flat config ESLint's own lookup finds is an input."""
+
+    CONFIG = "import rules from './lint/rules.mjs';\nimport plug from './tools/plug/index.js';\nexport default [];\n"
+    FILES = {"eslint.config.mjs": CONFIG, "lint/rules.mjs": "export default {};\n",
+             "tools/plug/package.json": {"name": "plug"}, "tools/plug/index.js": "module.exports = {};\n"}
+    PLAIN = [".nvmrc", "package-lock.json", "pkgs/good"]
+
+    def inputs(self, path: str = "pkgs/good") -> list:
+        return F.compose(self.tree, path)["inputs"]
+
+    def script(self, text: str) -> list:
+        write_tree(self.tree, {"pkgs/good/package.json": package({"lint": text, "test": "node --test"})})
+        return F.commands(self.tree, "pkgs/good")["inputs"]
+
+    def test_the_nearest_config_is_an_input_with_what_it_imports(self):
+        self.assertEqual(self.inputs(), self.PLAIN)  # no flat config in the tree: nothing joins
+        write_tree(self.tree, self.FILES)
+        self.assertEqual(F.commands(self.tree, "pkgs/good")["inputs"], ["eslint.config.mjs"])
+        self.assertEqual(F.commands(self.tree, "pkgs/good")["sources"], {"lint": "npm_script", "test": "npm_script"})
+        self.assertEqual(self.inputs(), sorted(self.PLAIN + ["eslint.config.mjs", "lint/rules.mjs", "tools/plug"]))
+        write_tree(self.tree, {"pkgs/eslint.config.cjs": "module.exports = [];\n"})  # a nearer one wins
+        self.assertEqual(self.inputs(), sorted(self.PLAIN + ["pkgs/eslint.config.cjs"]))
+        write_tree(self.tree, {"pkgs/good/eslint.config.js": "export default [];\n"})  # the candidate's own
+        self.assertEqual(F.commands(self.tree, "pkgs/good")["inputs"], ["pkgs/good/eslint.config.js"])
+        self.assertEqual(self.inputs(), self.PLAIN)
+
+    def test_eslints_name_order_in_one_directory(self):
+        order = ["eslint.config.js", "eslint.config.mjs", "eslint.config.cjs", "eslint.config.ts",
+                 "eslint.config.mts", "eslint.config.cts"]
+        self.assertEqual(list(X.ESLINT_FLAT_CONFIGS), order)
+        self.assertEqual(sorted(X.ESLINT_FLAT_CONFIGS), sorted(X.FLAT_CONFIGS))
+        for i in range(len(order) - 1, -1, -1):  # written from the last name to the first: each new one wins
+            write_tree(self.tree, {order[i]: ""})
+            self.assertEqual(F.commands(self.tree, "pkgs/good")["inputs"], [order[i]])
+
+    def test_a_directory_of_that_name_is_passed_over(self):
+        write_tree(self.tree, {"pkgs/eslint.config.js/x": "", "eslint.config.mjs": ""})
+        self.assertEqual(F.commands(self.tree, "pkgs/good")["inputs"], ["eslint.config.mjs"])
+
+    def test_only_a_script_with_the_program_eslint(self):
+        write_tree(self.tree, self.FILES)
+        for text in ("eslint src", "tsc --noEmit && eslint src --max-warnings 0", "CI=1 eslint .",
+                     "eslint -c other.mjs ."):
+            self.assertEqual(self.script(text), ["eslint.config.mjs"], text)
+        for text in ("biome lint", "echo eslint", "npx eslint .", "node run.mjs eslint src", "eslint 'src",
+                     "node_modules/.bin/eslint ."):
+            self.assertEqual(self.script(text), [], text)
+
+    def test_the_test_script_and_a_missing_lint_script_bring_nothing(self):
+        write_tree(self.tree, self.FILES)
+        write_tree(self.tree, {"pkgs/good/package.json": package({"test": "eslint ."})})
+        self.assertEqual(F.commands(self.tree, "pkgs/good")["inputs"], [])
+        self.assertEqual(F.commands(self.tree, "pkgs/good")["sources"]["lint"], "none:no_workspace")
 
 
 class Fit(Base):

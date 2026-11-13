@@ -350,7 +350,7 @@ class Fit(Base):
         self.assertEqual(sources, {"lint": "npm_script", "test": "nx_target"})
         recipe = F.compose(self.tree, "libs/a", IMAGES)
         self.assertEqual(recipe["lint_cmd"][:3], ["npm", "--prefix", "libs/a"])
-        self.assertNotIn("eslint.config.mjs", recipe["inputs"])
+        self.assertIn("eslint.config.mjs", recipe["inputs"])  # the script's own eslint looks the same file up
         self.project(lint={"executor": "nx:run-commands"})
         write_tree(self.tree, {"libs/a/package.json": package({}, name="@w/a")})
         row = {r["path"]: r for r in F.fit(self.tree, None, None, IMAGES)["rows"]}["libs/a"]

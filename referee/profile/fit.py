@@ -14,7 +14,7 @@ and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this modul
 - ``lockfiles``: ``[derive.nearest_lock]`` (the lock MF4 reads for the candidate), ``[]`` when there is none.
 - ``toolchain``: ``node@<text>`` of ``unit_verify.nearest_version`` with a leading ``v`` dropped (``node@`` when
   there is no version file); ``env_image``: ``images[<that text>]`` when given, else ``""``.
-- ``inputs``: ``path``, the lock, the version file, the files the Nx commands name (below) and what they reach
+- ``inputs``: ``path``, the lock, the version file, the files the commands name (below) and what they reach
   (``reached``), the ones another covers left out (``derive.minimal``). What an input reaches, transitively from
   ``path`` and those files (``path`` ``.`` covers the tree and reaches nothing more):
 
@@ -55,6 +55,17 @@ and MF6 (``unit_verify.check_recipe`` with the tree is the one judge; this modul
   (``script_missing``, ``script_not_installed``). Not judged here: whether the lint tool is ESLint and takes
   ``--format json`` (``verify``'s ``lint_output:`` shows it), whether the tests need services, and anything
   else only a run shows.
+- When the ``lint`` script of ``path/package.json`` has the program ``eslint`` (one of
+  ``unit_verify.script_programs``: the word itself, so not ``npx eslint``, a path to its binary or a wrapper that
+  starts it), the flat config ESLint's own lookup finds joins ``inputs`` and is followed like the Nx files:
+  npm runs the script in ``path``, and ESLint takes the first of ``nx.ESLINT_FLAT_CONFIGS`` that is a file (a
+  symbolic link to one counts) in that directory, else in each directory above it (eslint 9.39.4,
+  ``lib/config/config-loader.js``; here up to the tree's root, the worktree's top in the container). No such file:
+  nothing joins. Not read, stated: the script's own options (with ``--config`` or ``-c`` ESLint reads the file
+  named there and the looked-up one is an input the run does not need; ``--flag v10_config_lookup_from_file``
+  starts the lookup at each linted file), ``ESLINT_USE_FLAT_CONFIG=false``, an ESLint before 9 (it reads an
+  eslintrc file unless ``eslint.config.js`` is there), an eslintrc file of any version, and the ``test`` script's
+  tool configuration (a jest or vitest config outside ``path``).
 - When ``path/package.json`` has no ``lint`` (or no ``test``) script, that command (``test`` giving
   ``affected_test_cmd`` too) is the candidate's Nx target as ``profile.nx`` composes it (an ``@nx/eslint:lint`` or
   ``@nx/jest:jest`` target of ``path/project.json`` in a workspace whose ``nx.json`` and lock are at the tree's
@@ -99,6 +110,7 @@ import cli
 
 LINT_CMD = ("run", "--silent", "lint", "--", "--format", "json")
 TEST_CMD = ("run", "--silent", "test")
+ESLINT = "eslint"  # the program word of a lint script whose flat config is looked up (module docstring)
 UNSAFE_ID = re.compile(r"[^A-Za-z0-9._-]")
 EXTENSIONS = (".ts", ".tsx", ".d.ts", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json")
 PROJECT_MARKERS = ("package.json", "project.json")
@@ -251,7 +263,8 @@ def commands(tree: str, path: str) -> dict:
     """``{lint_cmd, test_cmd, inputs, sources}`` of candidate ``path``: for ``lint`` and ``test`` each, the npm form
     when ``<path>/package.json`` has the script, else the Nx target's command when ``profile.nx`` composes it, else
     the npm form (which ``check_recipe`` refuses as ``script_missing``); ``sources[name]`` is ``npm_script``,
-    ``nx_target`` or ``none:<profile.nx's reason>``; ``inputs`` the files the Nx commands add."""
+    ``nx_target`` or ``none:<profile.nx's reason>``; ``inputs`` the files the Nx commands add and the flat config
+    of an npm lint script that runs ``eslint`` (module docstring)."""
     _, manifest = D._json(tree, "package.json" if path == "." else posixpath.join(path, "package.json"))
     scripts = manifest.get("scripts") if isinstance(manifest, dict) else None
     npm = {"lint": ["npm", "--prefix", path] + list(LINT_CMD), "test": ["npm", "--prefix", path] + list(TEST_CMD)}
@@ -260,6 +273,9 @@ def commands(tree: str, path: str) -> dict:
         out[name + "_cmd"] = npm[name]
         if isinstance(scripts, dict) and isinstance(scripts.get(name), str):
             out["sources"][name] = "npm_script"
+            if name == "lint" and ESLINT in (U.script_programs(scripts[name]) or []):
+                config = X.flat_config(tree, path, X.ESLINT_FLAT_CONFIGS, os.path.isfile)
+                out["inputs"] += [config] if config else []
             continue
         try:
             out[name + "_cmd"], extra = nx(tree, path)

@@ -95,6 +95,10 @@ from runner import contained as C
 
 FLAT_CONFIGS = ("eslint.config.cjs", "eslint.config.js", "eslint.config.mjs", "eslint.config.cts",
                 "eslint.config.ts", "eslint.config.mts")
+# ESLint's own lookup order in one directory (eslint 9.39.4, lib/config/config-loader.js FLAT_CONFIG_FILENAMES,
+# given to find-up from the working directory): the same six names as Nx's, another order.
+ESLINT_FLAT_CONFIGS = ("eslint.config.js", "eslint.config.mjs", "eslint.config.cjs", "eslint.config.ts",
+                       "eslint.config.mts", "eslint.config.cts")
 ESLINTRC = (".eslintrc", ".eslintrc.js", ".eslintrc.cjs", ".eslintrc.yaml", ".eslintrc.yml", ".eslintrc.json")
 EXTENSIONS = ("ts", "cts", "mts", "tsx", "js", "cjs", "mjs", "jsx", "html", "vue")
 PLUGIN = "@nx/eslint/plugin"
@@ -241,13 +245,15 @@ def target(tree: str, path: str, name: str) -> tuple[dict, dict]:
     return project, {k: resolved(v) for k, v in options.items()}
 
 
-def flat_config(tree: str, path: str) -> str | None:
-    """``findFlatConfigFile`` from the candidate's directory up to the root: the tree path, or None."""
+def flat_config(tree: str, path: str, names: tuple = FLAT_CONFIGS, exists=os.path.exists) -> str | None:
+    """The nearest flat config from the candidate's directory up to the root, as a tree path, or None: in each
+    directory the first of ``names`` for which ``exists`` holds. The defaults are Nx's ``findFlatConfigFile``;
+    ``ESLINT_FLAT_CONFIGS`` with ``os.path.isfile`` is ESLint's own lookup from that directory."""
     directory = path
     while True:
-        for file in FLAT_CONFIGS:
+        for file in names:
             rel = file if directory == "." else posixpath.join(directory, file)
-            if os.path.exists(os.path.join(tree, rel)):
+            if exists(os.path.join(tree, rel)):
                 return rel
         if directory == ".":
             return None
