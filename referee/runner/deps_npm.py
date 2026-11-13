@@ -388,13 +388,26 @@ def live_workspaces(packages: Any) -> tuple[dict[str, str], set[str]]:
 PLATFORM_FIELDS = ("os", "cpu", "libc")
 
 
+def js_true(value: Any) -> bool:
+    """Whether JavaScript holds a JSON value true (``!!value``): everything but ``null``, ``false``, the number
+    zero and the empty string; an empty list or object is true there. npm reads a lock entry's ``optional``
+    and tests the presence of its ``os``, ``cpu`` and ``libc`` this way."""
+    return not (value is None or value == "" or (isinstance(value, (int, float)) and value == 0))
+
+
 def _platform_list(value: Any, wanted: Any) -> bool:
-    """npm's ``checkList`` (npm-install-checks): ``wanted`` is a string or a list of strings; ``["any"]`` alone
-    admits everything; an entry ``!x`` excludes ``x``; otherwise some entry without ``!`` equals ``value``, or
-    every entry is a negation. A ``wanted`` of another shape admits nothing (npm's check throws on it, which
-    drops an optional package and fails the install for any other, the same outcome as an exclusion)."""
+    """npm's ``checkList`` (npm-install-checks) over a ``wanted`` JavaScript holds true: a string is a list of
+    one; ``["any"]`` alone admits everything; an entry ``!x`` excludes ``x``; otherwise some entry without ``!``
+    equals ``value``, or every entry is a negation. Any other shape (a number, ``true``, an object, a list
+    holding something that is not a string) admits nothing: npm's check throws on it or says no before it
+    throws, which drops an optional package and fails the install for any other, the same outcome as an
+    exclusion. One object is admitted, because npm's test for ``["any"]`` reads ``length`` and ``0`` and holds
+    for it: one whose ``length`` is the number 1 and whose ``"0"`` is ``"any"``."""
     if isinstance(wanted, str):
         wanted = [wanted]
+    if isinstance(wanted, dict):
+        length = wanted.get("length")
+        return not isinstance(length, bool) and length == 1 and wanted.get("0") == "any"
     if not isinstance(wanted, list) or not all(isinstance(w, str) for w in wanted):
         return False
     if wanted == ["any"]:
@@ -407,24 +420,28 @@ def _platform_list(value: Any, wanted: Any) -> bool:
 def platform_admits(entry: Any, platform: dict) -> bool:
     """Whether npm installs a lock entry on ``platform`` (``{os, cpu, libc}``, node's names: ``linux``, ``x64``,
     ``glibc``; ``libc`` None when not known): npm-install-checks' ``checkPlatform`` over the entry's ``os``,
-    ``cpu`` and ``libc``. A field the entry lacks admits; an entry with ``libc`` on a platform whose libc is not
-    known is excluded, as npm excludes it. ``engines`` is not read (see ``platform_plan``)."""
+    ``cpu`` and ``libc``. A field the entry lacks, or holds with a value JavaScript holds false (``js_true``),
+    admits; an entry with a ``libc`` that is read on a platform whose libc is not known is excluded, as npm
+    excludes it. ``engines`` is not read (see ``platform_plan``)."""
     if not isinstance(entry, dict):
         return True
     for field in PLATFORM_FIELDS:
-        if field in entry and (platform.get(field) is None or not _platform_list(platform[field], entry[field])):
+        if js_true(entry.get(field)) and (platform.get(field) is None
+                                          or not _platform_list(platform[field], entry[field])):
             return False
     return True
 
 
 def platform_plan(packages: Any, keys, platform: dict) -> dict:
     """What npm does with the lock rows ``keys`` when it installs from the lock on ``platform`` (arborist's
-    reify), each list sorted: ``installed``; ``not_installed`` (a row with ``optional: true`` that the platform
+    reify), each list sorted: ``installed``; ``not_installed`` (an optional row that the platform
     excludes -- npm skips it without an error -- and every row below such a row's directory, which goes with
     it); ``unsupported`` (any other excluded row: npm's install fails with EBADPLATFORM; ``devOptional`` is
     not ``optional``, npm installs such a row when development dependencies are installed); ``optional`` (the
-    installed rows with ``optional: true``: npm drops one whose install script fails and goes on). The one
-    reading of these lock fields; the verifier (``profile.unit_verify``) installs by it.
+    installed optional rows: npm drops one whose install script fails and goes on). The one
+    reading of these lock fields; the verifier (``profile.unit_verify``) installs by it. A row is optional when
+    its ``optional`` is a value JavaScript holds true (``js_true``; npm's ``!!optional``, arborist's
+    load-virtual), which a lock npm wrote spells ``true``.
 
     Narrower than npm, each a row npm would not install and this plan installs: an optional row whose
     ``engines`` exclude the node or npm version (npm checks engines for optional rows as well); the rest of
@@ -440,9 +457,9 @@ def platform_plan(packages: Any, keys, platform: dict) -> dict:
             plan["not_installed"].append(key)
         elif platform_admits(entry, platform):
             plan["installed"].append(key)
-            if entry.get("optional") is True:
+            if js_true(entry.get("optional")):
                 plan["optional"].append(key)
-        elif entry.get("optional") is True:
+        elif js_true(entry.get("optional")):
             plan["not_installed"].append(key)
         else:
             plan["unsupported"].append(key)

@@ -1941,7 +1941,7 @@
    "old": "    if not isinstance(wanted, list) or not all(isinstance(w, str) for w in wanted):\n        return False",
    "new": "    if not isinstance(wanted, list) or not all(isinstance(w, str) for w in wanted):\n        return True",
    "tests": [
-    "test_deps_npm.TestPlatform.test_a_field_that_is_not_a_string_or_a_list_of_strings_excludes"
+    "test_deps_npm.TestPlatform.test_a_field_of_another_shape_is_read_as_npm_reads_it"
    ]
   },
   {
@@ -1950,7 +1950,7 @@
    "old": "    if not isinstance(wanted, list) or not all(isinstance(w, str) for w in wanted):",
    "new": "    if not isinstance(wanted, list):",
    "tests": [
-    "test_deps_npm.TestPlatform.test_a_field_that_is_not_a_string_or_a_list_of_strings_excludes"
+    "test_deps_npm.TestPlatform.test_a_field_of_another_shape_is_read_as_npm_reads_it"
    ]
   },
   {
@@ -2001,8 +2001,8 @@
   {
    "id": "dn_pa_unknown",
    "file": "runner/deps_npm.py",
-   "old": "if field in entry and (platform.get(field) is None or not _platform_list(platform[field], entry[field])):",
-   "new": "if field in entry and not _platform_list(platform.get(field), entry[field]):",
+   "old": "if js_true(entry.get(field)) and (platform.get(field) is None\n                                          or not _platform_list(platform[field], entry[field])):",
+   "new": "if js_true(entry.get(field)) and not _platform_list(platform.get(field), entry[field]):",
    "tests": [
     "test_deps_npm.TestPlatform.test_a_libc_row_needs_a_known_libc"
    ]
@@ -2055,7 +2055,7 @@
   {
    "id": "dn_pp_optional_truthy",
    "file": "runner/deps_npm.py",
-   "old": "            if entry.get(\"optional\") is True:\n                plan[\"optional\"].append(key)",
+   "old": "            if js_true(entry.get(\"optional\")):\n                plan[\"optional\"].append(key)",
    "new": "            if entry.get(\"optional\"):\n                plan[\"optional\"].append(key)",
    "tests": [
     "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
@@ -2064,7 +2064,7 @@
   {
    "id": "dn_pp_optional_all",
    "file": "runner/deps_npm.py",
-   "old": "            if entry.get(\"optional\") is True:\n                plan[\"optional\"].append(key)",
+   "old": "            if js_true(entry.get(\"optional\")):\n                plan[\"optional\"].append(key)",
    "new": "            if True:\n                plan[\"optional\"].append(key)",
    "tests": [
     "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
@@ -2073,7 +2073,7 @@
   {
    "id": "dn_pp_skip_truthy",
    "file": "runner/deps_npm.py",
-   "old": "        elif entry.get(\"optional\") is True:",
+   "old": "        elif js_true(entry.get(\"optional\")):",
    "new": "        elif entry.get(\"optional\"):",
    "tests": [
     "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
@@ -2082,8 +2082,8 @@
   {
    "id": "dn_pp_skip_devoptional",
    "file": "runner/deps_npm.py",
-   "old": "        elif entry.get(\"optional\") is True:",
-   "new": "        elif entry.get(\"optional\") is True or entry.get(\"devOptional\") is True:",
+   "old": "        elif js_true(entry.get(\"optional\")):",
+   "new": "        elif js_true(entry.get(\"optional\")) or js_true(entry.get(\"devOptional\")):",
    "tests": [
     "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
    ]
@@ -2091,7 +2091,7 @@
   {
    "id": "dn_pp_skip_all",
    "file": "runner/deps_npm.py",
-   "old": "        elif entry.get(\"optional\") is True:",
+   "old": "        elif js_true(entry.get(\"optional\")):",
    "new": "        elif True:",
    "tests": [
     "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
@@ -2185,6 +2185,123 @@
    "new": "",
    "tests": [
     "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
+   ]
+  },
+  {
+   "id": "dn_pp_optional_is_true",
+   "file": "runner/deps_npm.py",
+   "old": "            if js_true(entry.get(\"optional\")):\n                plan[\"optional\"].append(key)",
+   "new": "            if entry.get(\"optional\") is True:\n                plan[\"optional\"].append(key)",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pp_skip_is_true",
+   "file": "runner/deps_npm.py",
+   "old": "        elif js_true(entry.get(\"optional\")):",
+   "new": "        elif entry.get(\"optional\") is True:",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pa_present",
+   "file": "runner/deps_npm.py",
+   "old": "if js_true(entry.get(field)) and (platform.get(field) is None\n                                          or not _platform_list(platform[field], entry[field])):",
+   "new": "if field in entry and (platform.get(field) is None\n                                          or not _platform_list(platform[field], entry[field])):",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_field_of_another_shape_is_read_as_npm_reads_it"
+   ]
+  },
+  {
+   "id": "dn_pa_python_truth",
+   "file": "runner/deps_npm.py",
+   "old": "if js_true(entry.get(field)) and (platform.get(field) is None\n                                          or not _platform_list(platform[field], entry[field])):",
+   "new": "if entry.get(field) and (platform.get(field) is None\n                                          or not _platform_list(platform[field], entry[field])):",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_field_of_another_shape_is_read_as_npm_reads_it"
+   ]
+  },
+  {
+   "id": "dn_js_null_true",
+   "file": "runner/deps_npm.py",
+   "old": "    return not (value is None or value == \"\" or (isinstance(value, (int, float)) and value == 0))",
+   "new": "    return not (value == \"\" or (isinstance(value, (int, float)) and value == 0))",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_flag_is_set_by_any_value_javascript_holds_true"
+   ]
+  },
+  {
+   "id": "dn_js_empty_string_true",
+   "file": "runner/deps_npm.py",
+   "old": "    return not (value is None or value == \"\" or (isinstance(value, (int, float)) and value == 0))",
+   "new": "    return not (value is None or (isinstance(value, (int, float)) and value == 0))",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_flag_is_set_by_any_value_javascript_holds_true"
+   ]
+  },
+  {
+   "id": "dn_js_zero_true",
+   "file": "runner/deps_npm.py",
+   "old": "    return not (value is None or value == \"\" or (isinstance(value, (int, float)) and value == 0))",
+   "new": "    return not (value is None or value == \"\" or value is False)",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_flag_is_set_by_any_value_javascript_holds_true"
+   ]
+  },
+  {
+   "id": "dn_js_false_true",
+   "file": "runner/deps_npm.py",
+   "old": "    return not (value is None or value == \"\" or (isinstance(value, (int, float)) and value == 0))",
+   "new": "    return not (value is None or value == \"\" or (isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0))",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_flag_is_set_by_any_value_javascript_holds_true"
+   ]
+  },
+  {
+   "id": "dn_js_python_truth",
+   "file": "runner/deps_npm.py",
+   "old": "    return not (value is None or value == \"\" or (isinstance(value, (int, float)) and value == 0))",
+   "new": "    return bool(value)",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_flag_is_set_by_any_value_javascript_holds_true"
+   ]
+  },
+  {
+   "id": "dn_pl_object_never",
+   "file": "runner/deps_npm.py",
+   "old": "        return not isinstance(length, bool) and length == 1 and wanted.get(\"0\") == \"any\"",
+   "new": "        return False",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_field_of_another_shape_is_read_as_npm_reads_it"
+   ]
+  },
+  {
+   "id": "dn_pl_object_length_true",
+   "file": "runner/deps_npm.py",
+   "old": "        return not isinstance(length, bool) and length == 1 and wanted.get(\"0\") == \"any\"",
+   "new": "        return length == 1 and wanted.get(\"0\") == \"any\"",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_field_of_another_shape_is_read_as_npm_reads_it"
+   ]
+  },
+  {
+   "id": "dn_pl_object_any_length",
+   "file": "runner/deps_npm.py",
+   "old": "        return not isinstance(length, bool) and length == 1 and wanted.get(\"0\") == \"any\"",
+   "new": "        return not isinstance(length, bool) and wanted.get(\"0\") == \"any\"",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_field_of_another_shape_is_read_as_npm_reads_it"
+   ]
+  },
+  {
+   "id": "dn_pl_object_any_first",
+   "file": "runner/deps_npm.py",
+   "old": "        return not isinstance(length, bool) and length == 1 and wanted.get(\"0\") == \"any\"",
+   "new": "        return not isinstance(length, bool) and length == 1",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_a_field_of_another_shape_is_read_as_npm_reads_it"
    ]
   }
  ]

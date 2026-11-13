@@ -590,17 +590,21 @@ class TestPlatform(unittest.TestCase):
             "node_modules/optional-word": {"version": "1.0.0", "optional": "false", "os": ["darwin"]},   # ``!!"false"``
             "node_modules/optional-word-kept": {"version": "1.0.0", "optional": 1},
             "node_modules/optional-zero": {"version": "1.0.0", "optional": 0, "os": ["darwin"]},
+            "node_modules/optional-list-kept": {"version": "1.0.0", "optional": []},    # true in JavaScript
+            "node_modules/optional-object": {"version": "1.0.0", "optional": {}, "os": ["darwin"]},
         }
         keys = [k for k in packages if k]
         plan = N.platform_plan(packages, keys, self.LINUX)
         self.assertEqual(plan, {
-            "installed": ["node_modules/glibc-binding", "node_modules/mac-tools",
+            "installed": ["node_modules/glibc-binding", "node_modules/mac-tools", "node_modules/optional-list-kept",
                           "node_modules/optional-word-kept", "node_modules/plain"],
             "not_installed": ["node_modules/mac", "node_modules/mac/node_modules/inner",
-                              "node_modules/musl-binding", "node_modules/optional-word"],
+                              "node_modules/musl-binding", "node_modules/optional-object",
+                              "node_modules/optional-word"],
             "unsupported": ["node_modules/dev-or-optional", "node_modules/needs-mac",
                             "node_modules/optional-zero"],
-            "optional": ["node_modules/glibc-binding", "node_modules/optional-word-kept"],
+            "optional": ["node_modules/glibc-binding", "node_modules/optional-list-kept",
+                         "node_modules/optional-word-kept"],
         })
         musl = N.platform_plan(packages, keys, dict(self.LINUX, libc="musl"))
         self.assertIn("node_modules/musl-binding", musl["installed"])

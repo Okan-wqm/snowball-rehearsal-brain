@@ -100,7 +100,7 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
 2. Dependencies. The ``deps`` artifact is taken by its address (MF5 ``verify``); its lock must be the
    tree's lock byte for byte (``deps_lock_mismatch``). The rows are sorted as npm sorts them when it
    installs from the lock on the container's platform (``runner.deps_npm.platform_plan`` with
-   ``container_platform``: Linux, this machine's cpu, the image's libc): a row with ``optional: true`` whose
+   ``container_platform``: Linux, this machine's cpu, the image's libc): an optional row (``platform_plan``'s reading of the flag) whose
    ``os``, ``cpu`` or ``libc`` exclude the platform is not installed, nor is a row below its directory
    (``not_installed`` in the result); any other excluded row refuses the recipe as it fails npm's install
    (``platform_unsupported:<key>``). Each installed row's tarball is unpacked, by the
