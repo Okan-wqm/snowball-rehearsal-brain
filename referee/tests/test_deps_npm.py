@@ -553,11 +553,28 @@ class TestPlatform(unittest.TestCase):
         self.assertFalse(N.platform_admits({"libc": ["!musl"]}, unknown))
         self.assertTrue(N.platform_admits({"os": ["linux"]}, unknown))
 
-    def test_a_field_that_is_not_a_string_or_a_list_of_strings_excludes(self):
-        for value in (7, True, None, {"linux": 1}, ["linux", 7], [["linux"]]):
+    def test_a_field_of_another_shape_is_read_as_npm_reads_it(self):
+        # the outcomes are npm's own: checkPlatform of npm-install-checks 7 (npm 10.9), asked value by value
+        for value in (None, False, 0, ""):          # ``target.os ? ... : true``: a value JavaScript holds false
             with self.subTest(value=value):
-                self.assertFalse(N.platform_admits({"os": value}, self.LINUX))
-                self.assertFalse(N.platform_admits({"cpu": value}, self.LINUX))
+                for field in ("os", "cpu", "libc"):
+                    self.assertTrue(N.platform_admits({field: value}, self.LINUX))
+                self.assertTrue(N.platform_admits({"libc": value}, dict(self.LINUX, libc=None)))
+        for value in (7, True, {}, {"linux": 1}, ["linux", 7], [["linux"]], [7], ["!linux", 7], [None],
+                      {"length": 1, "0": "linux"}, {"length": 2, "0": "any"}, {"length": True, "0": "any"},
+                      {"length": "1", "0": "any"}):
+            with self.subTest(value=value):         # npm's check throws or says no: the row is excluded
+                for field in ("os", "cpu", "libc"):
+                    self.assertFalse(N.platform_admits({field: value}, self.LINUX))
+        # ``list.length === 1 && list[0] === 'any'`` holds for this object as for the list
+        self.assertTrue(N.platform_admits({"os": {"length": 1, "0": "any"}}, self.LINUX))
+        self.assertTrue(N.platform_admits({"os": {"length": 1, "0": "any", "1": "darwin"}}, self.LINUX))
+
+    def test_a_flag_is_set_by_any_value_javascript_holds_true(self):
+        for value, truth in ((True, True), ("true", True), ("false", True), (1, True), ([], True), ({}, True),
+                             (False, False), (None, False), (0, False), ("", False)):
+            with self.subTest(value=value):
+                self.assertIs(N.js_true(value), truth)
 
     def test_plan_sorts_rows_into_what_npm_does_with_them(self):
         packages = {
@@ -570,19 +587,20 @@ class TestPlatform(unittest.TestCase):
             "node_modules/glibc-binding": {"version": "1.0.0", "optional": True, "libc": ["glibc"]},
             "node_modules/needs-mac": {"version": "1.0.0", "os": ["darwin"]},
             "node_modules/dev-or-optional": {"version": "1.0.0", "devOptional": True, "cpu": ["arm64"]},
-            "node_modules/optional-not-true": {"version": "1.0.0", "optional": "true", "os": ["darwin"]},
-            "node_modules/optional-not-true-kept": {"version": "1.0.0", "optional": "true"},
+            "node_modules/optional-word": {"version": "1.0.0", "optional": "false", "os": ["darwin"]},   # ``!!"false"``
+            "node_modules/optional-word-kept": {"version": "1.0.0", "optional": 1},
+            "node_modules/optional-zero": {"version": "1.0.0", "optional": 0, "os": ["darwin"]},
         }
         keys = [k for k in packages if k]
         plan = N.platform_plan(packages, keys, self.LINUX)
         self.assertEqual(plan, {
             "installed": ["node_modules/glibc-binding", "node_modules/mac-tools",
-                          "node_modules/optional-not-true-kept", "node_modules/plain"],
+                          "node_modules/optional-word-kept", "node_modules/plain"],
             "not_installed": ["node_modules/mac", "node_modules/mac/node_modules/inner",
-                              "node_modules/musl-binding"],
+                              "node_modules/musl-binding", "node_modules/optional-word"],
             "unsupported": ["node_modules/dev-or-optional", "node_modules/needs-mac",
-                            "node_modules/optional-not-true"],
-            "optional": ["node_modules/glibc-binding"],
+                            "node_modules/optional-zero"],
+            "optional": ["node_modules/glibc-binding", "node_modules/optional-word-kept"],
         })
         musl = N.platform_plan(packages, keys, dict(self.LINUX, libc="musl"))
         self.assertIn("node_modules/musl-binding", musl["installed"])
