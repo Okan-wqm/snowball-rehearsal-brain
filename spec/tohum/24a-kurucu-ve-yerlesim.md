@@ -34,8 +34,8 @@ bir Windows kullanıcısında koşar; Kurucu'nun yapılandırması repo dışın
 4. Bitince CLI'nin bildirdiği maliyeti `kind: cost` satırı olarak `founder-ledger.jsonl`'a `26`'nın zincir
    kuralıyla ekler; oturum sayısı ve USD `status-stage0.md`'ye girer.
 
-**Maliyet bir ölçümdür, kapı değil** (`asama-0/12`). Kurucu kendi maliyetini ölçemez; ölçümü başlatıcı
-yazar (rapor yoksa `unmeasured`). Oturum sayısı ve USD toplamları ilerlemenin ve maliyetin ölçüsüdür;
+**Oturumun maliyet satırı** (Y12, `asama-0/12`). `kind: cost` satırını başlatıcı yazar (rapor yoksa
+`unmeasured`). Oturum sayısı ve USD toplamları ilerlemenin ve maliyetin ölçüsüdür;
 çıkış koşulu değildir ve Kurucu'yu durdurmaz. `session_cap_usd` ve aşama toplamı yalnız kaçak frenidir:
 olağan işi durdurmayacak kadar yüksektir, döngüyü keser; takılınca başlatıcı yeni oturum açmaz ve
 operatörü uyarır, bu bir ret değildir. Gerçek sınır aboneliğin kullanım penceresidir (5 saatlik ve

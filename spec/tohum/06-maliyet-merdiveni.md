@@ -55,7 +55,7 @@ oturumları Actions dakikası harcamaz (`24`).
 olağan işi hiçbir zaman durdurmayacak kadar yüksek kurulur; işleri döngüyü kesmektir (aynı commit'in
 saatte bir yeniden koşması, art arda yinelenen rakip çağrıları). Sayılar `policy.json` anahtarıdır
 (`18a`); frene takılan iş durur ve operatör uyarılır, Kurucu'nun reddi değildir. Oturum sayısı ve USD
-toplamları ilerlemenin ve maliyetin **ölçüsüdür**: çıkış koşulu değildir, Kurucu'yu durdurmaz; sonraki
+toplamları ilerlemenin ve maliyetin **ölçüsüdür** (Y12): çıkış koşulu değildir, Kurucu'yu durdurmaz; sonraki
 oturum öncekinin sonucu yeşilken başlar. Gerçek sınır aboneliğin kullanım penceresidir (5 saatlik ve
 haftalık kota): ona takılmak (HTTP 429) operatör uyarısı ve kesintidir, Kurucu reddi ya da ret hafızasına
 giren bir neden değildir (`29b`, `asama-0/12`). Satışta API anahtarına geçilince tavanlar fatura
