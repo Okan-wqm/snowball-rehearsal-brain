@@ -294,7 +294,7 @@ class Activation(unittest.TestCase):
         path, content = patched("good")
         head = w.gh.refs[activate.INTEGRATION]
         self.assertEqual(w.gh.blobs[w.gh.trees[w.gh.commits[head]["tree"]][path]], content)
-        rows = [json.loads(line) for line in out["files"]["ledger.jsonl"].decode().splitlines()]
+        rows = [json.loads(line) for line in out["files"][".brain/ledger.jsonl"].decode().splitlines()]
         ratchet = next(r for r in rows if r["kind"] == "ratchet_base")
         self.assertEqual(ratchet["payload"],
                          {"base_run_sha256": load(os.path.join(CANDIDATES, "good", "finding.json"))["tool_output_sha256"],
