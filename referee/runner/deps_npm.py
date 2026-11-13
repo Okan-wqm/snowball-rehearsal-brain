@@ -474,7 +474,8 @@ def platform_report(lock: Any, platform: dict) -> dict:
     whose lock entry says ``hasInstallScript: true`` sorted by what the verifier does with their script:
     ``required`` (run; the row stays as unpacked when its script fails), ``optional`` (run; the row can be
     dropped when its script fails: ``profile.unit_verify`` step 3 has the rule), ``not_installed`` (not run).
-    ``ok`` is false when the lock has a structure reason, and only then. A tarball's own scripts are not read here (no tarball is); ``store`` reads them."""
+    ``ok`` is false when the lock has a structure reason, and only then. A tarball's own scripts are not read
+    here (no tarball is); ``store`` reads them."""
     reasons, items = entries(lock)
     packages = lock.get("packages") if isinstance(lock, dict) else None
     plan = platform_plan(packages, [i["key"] for i in items], platform)

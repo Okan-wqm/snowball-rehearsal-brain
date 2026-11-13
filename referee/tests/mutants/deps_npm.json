@@ -2073,8 +2073,8 @@
   {
    "id": "dn_pp_skip_truthy",
    "file": "runner/deps_npm.py",
-   "old": "        elif js_true(entry.get(\"optional\")):",
-   "new": "        elif entry.get(\"optional\"):",
+   "old": "            if not js_true(entry.get(\"optional\")):\n                plan[\"unsupported\"]",
+   "new": "            if not entry.get(\"optional\"):\n                plan[\"unsupported\"]",
    "tests": [
     "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
    ]
@@ -2082,8 +2082,8 @@
   {
    "id": "dn_pp_skip_devoptional",
    "file": "runner/deps_npm.py",
-   "old": "        elif js_true(entry.get(\"optional\")):",
-   "new": "        elif js_true(entry.get(\"optional\")) or js_true(entry.get(\"devOptional\")):",
+   "old": "            if not js_true(entry.get(\"optional\")):\n                plan[\"unsupported\"]",
+   "new": "            if not (js_true(entry.get(\"optional\")) or js_true(entry.get(\"devOptional\"))):\n                plan[\"unsupported\"]",
    "tests": [
     "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
    ]
@@ -2091,8 +2091,8 @@
   {
    "id": "dn_pp_skip_all",
    "file": "runner/deps_npm.py",
-   "old": "        elif js_true(entry.get(\"optional\")):",
-   "new": "        elif True:",
+   "old": "            if not js_true(entry.get(\"optional\")):\n                plan[\"unsupported\"]",
+   "new": "            if True:\n                plan[\"unsupported\"]",
    "tests": [
     "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
    ]
@@ -2109,8 +2109,8 @@
   {
    "id": "dn_pr_ok",
    "file": "runner/deps_npm.py",
-   "old": "\"ok\": not reasons and not plan[\"unsupported\"],",
-   "new": "\"ok\": not reasons,",
+   "old": "\"ok\": not reasons,\n",
+   "new": "\"ok\": not reasons and not plan[\"unsupported\"],\n",
    "tests": [
     "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
    ]
@@ -2118,8 +2118,8 @@
   {
    "id": "dn_pr_ok_reasons",
    "file": "runner/deps_npm.py",
-   "old": "\"ok\": not reasons and not plan[\"unsupported\"],",
-   "new": "\"ok\": not plan[\"unsupported\"],",
+   "old": "\"ok\": not reasons,\n",
+   "new": "\"ok\": True,\n",
    "tests": [
     "test_deps_npm.TestPlatform.test_command_line_reports_the_plan_and_the_rows_with_a_script"
    ]
@@ -2199,8 +2199,8 @@
   {
    "id": "dn_pp_skip_is_true",
    "file": "runner/deps_npm.py",
-   "old": "        elif js_true(entry.get(\"optional\")):",
-   "new": "        elif entry.get(\"optional\") is True:",
+   "old": "            if not js_true(entry.get(\"optional\")):\n                plan[\"unsupported\"]",
+   "new": "            if entry.get(\"optional\") is not True:\n                plan[\"unsupported\"]",
    "tests": [
     "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
    ]
@@ -2302,6 +2302,24 @@
    "new": "        return not isinstance(length, bool) and length == 1",
    "tests": [
     "test_deps_npm.TestPlatform.test_a_field_of_another_shape_is_read_as_npm_reads_it"
+   ]
+  },
+  {
+   "id": "dn_pp_skip_none",
+   "file": "runner/deps_npm.py",
+   "old": "            if not js_true(entry.get(\"optional\")):\n                plan[\"unsupported\"]",
+   "new": "            if False:\n                plan[\"unsupported\"]",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_pp_unsupported_installed",
+   "file": "runner/deps_npm.py",
+   "old": "        else:\n            plan[\"not_installed\"].append(key)\n            if not js_true",
+   "new": "        else:\n            if not js_true",
+   "tests": [
+    "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
    ]
   }
  ]

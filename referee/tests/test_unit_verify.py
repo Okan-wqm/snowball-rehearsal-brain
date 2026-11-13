@@ -879,6 +879,7 @@ class Deps(Base):
         self._evil({"package.json": {"name": "evil", "version": "1.0.0"}, "big.bin": b"\0" * 50000})
         report = self.verify(pol=policy(worktree_bytes=20000))
         self.assertEqual(report["reasons"], ["limit_hit:worktree_bytes"])
+        self.assertEqual(report["platform"]["os"], "linux", "a refusal of the install names the platform it was for")
         self.assertEqual(self.runner.calls, [])
 
     def test_marked_install_scripts_run_contained_before_the_runs(self):
