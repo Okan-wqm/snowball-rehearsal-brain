@@ -586,6 +586,7 @@ class TestPlatform(unittest.TestCase):
             "node_modules/musl-binding": {"version": "1.0.0", "optional": True, "dev": True, "libc": ["musl"]},
             "node_modules/glibc-binding": {"version": "1.0.0", "optional": True, "libc": ["glibc"]},
             "node_modules/needs-mac": {"version": "1.0.0", "os": ["darwin"]},
+            "node_modules/needs-mac/node_modules/under": {"version": "1.0.0", "os": ["darwin"]},   # goes with it
             "node_modules/dev-or-optional": {"version": "1.0.0", "devOptional": True, "cpu": ["arm64"]},
             "node_modules/optional-word": {"version": "1.0.0", "optional": "false", "os": ["darwin"]},   # ``!!"false"``
             "node_modules/optional-word-kept": {"version": "1.0.0", "optional": 1},
@@ -598,9 +599,11 @@ class TestPlatform(unittest.TestCase):
         self.assertEqual(plan, {
             "installed": ["node_modules/glibc-binding", "node_modules/mac-tools", "node_modules/optional-list-kept",
                           "node_modules/optional-word-kept", "node_modules/plain"],
-            "not_installed": ["node_modules/mac", "node_modules/mac/node_modules/inner",
-                              "node_modules/musl-binding", "node_modules/optional-object",
-                              "node_modules/optional-word"],
+            "not_installed": ["node_modules/dev-or-optional", "node_modules/mac",
+                              "node_modules/mac/node_modules/inner", "node_modules/musl-binding",
+                              "node_modules/needs-mac", "node_modules/needs-mac/node_modules/under",
+                              "node_modules/optional-object", "node_modules/optional-word",
+                              "node_modules/optional-zero"],
             "unsupported": ["node_modules/dev-or-optional", "node_modules/needs-mac",
                             "node_modules/optional-zero"],
             "optional": ["node_modules/glibc-binding", "node_modules/optional-list-kept",
@@ -645,7 +648,9 @@ class TestPlatform(unittest.TestCase):
         fx.lock["packages"]["node_modules/mac"]["optional"] = False
         fx.write_lock()
         code, out = run("--os", "linux", "--cpu", "x64", "--libc", "glibc")
-        self.assertEqual((code, out["ok"], out["unsupported"]), (1, False, ["node_modules/mac"]))
+        self.assertEqual((code, out["ok"], out["unsupported"], out["not_installed"], out["scripts"]["not_installed"]),
+                         (0, True, ["node_modules/mac"], ["node_modules/mac", "node_modules/mac-plain"],
+                          ["node_modules/mac"]))
         code, out = run("--os", "darwin", "--cpu", "arm64")
         self.assertEqual((code, out["platform"], out["installed"]),
                          (0, {"os": "darwin", "cpu": "arm64", "libc": None}, 7))

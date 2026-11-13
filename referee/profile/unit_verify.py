@@ -98,12 +98,13 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
    operator's ``excluded_paths``) and ``.git`` are left out even under an input such as ``.``. Their
    regular files' bytes above ``unit_inputs_bytes`` stop the run (``limit_hit:unit_inputs_bytes``).
 2. Dependencies. The ``deps`` artifact is taken by its address (MF5 ``verify``); its lock must be the
-   tree's lock byte for byte (``deps_lock_mismatch``). The rows are sorted as npm sorts them when it
-   installs from the lock on the container's platform (``runner.deps_npm.platform_plan`` with
-   ``container_platform``: Linux, this machine's cpu, the image's libc): an optional row (``platform_plan``'s reading of the flag) whose
-   ``os``, ``cpu`` or ``libc`` exclude the platform is not installed, nor is a row below its directory
-   (``not_installed`` in the result); any other excluded row refuses the recipe as it fails npm's install
-   (``platform_unsupported:<key>``). Each installed row's tarball is unpacked, by the
+   tree's lock byte for byte (``deps_lock_mismatch``). The rows are sorted by the container's platform
+   (``runner.deps_npm.platform_plan`` with ``container_platform``: Linux, this machine's cpu, the image's
+   libc): a row whose ``os``, ``cpu`` or ``libc`` exclude the platform is not installed, nor is a row below its
+   directory (``not_installed`` in the result). npm does the same with an optional row and ends its install on
+   any other (``unsupported`` in the result names those); here neither is a reason (tohum/26c "Birim tarifi": a
+   package that is not unpacked refuses nothing, the runs are the measure). Each installed row's tarball is
+   unpacked, by the
    referee and without running anything, into ``<lock dir>/<lock key>/`` with its first path component
    dropped: directories and regular files only (files 0644, or 0755 when the member has an execute
    bit); symbolic and hard links and other member types are skipped, as npm does; a member name that is
@@ -120,23 +121,28 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
    package of the lock provides it), ``directories.bin``, man pages, npm's own install logic, and a
    bound on the number of members (only their bytes are bounded; time is bounded by the job's clock). A lock
    with no package needs no artifact; one with packages and no artifact is unusable input.
-3. Install scripts, of installed rows only. When a row is flagged ``install_script`` (marked in the recipe,
-   checked by MF5), one contained run of ``npm --prefix /work/<lock dir> rebuild --offline
-   --foreground-scripts <names>`` precedes the runs, and its worktree is the start of every run; it must exit 0
-   (``install_scripts_failed``). ``npm rebuild`` names packages, not rows, and unlike npm's install it does
-   not forgive an optional package's failing script. So before that run each name whose flagged rows are all
-   optional is tried alone in a contained run of the same command from the same worktree
-   (``install_optional`` in the result: the run, ``name``, ``dropped``): when it exits nonzero the referee
-   removes that name's flagged rows from the worktree, with every row below them and the ``.bin`` links into
-   them (``dropped``: every row removed), as npm drops an optional package that fails to build and goes on;
-   when it exits 0 the try's worktree is discarded and the name runs again with the rest. A name is tried,
-   and later named in the install run, only while one of its flagged rows is still installed. A try that is
-   no valid run (its red control, a limit) gives no verdict. Wider than npm's drop: the exit of ``npm
-   rebuild <name>`` does not say which row's script failed, so when a name has several flagged optional rows
-   all of them go, where npm drops only the failing one (the runs can lack a package npm would have kept).
-   Left out of npm's rule, each stated in
-   ``platform_plan``: an optional row's ``engines``, and the rest of npm's optional set. Whether npm and node-gyp succeed in the
-   real image is not proven here (no node in the referee's sandbox); its proof is asama-0/10a #birim.
+3. Install scripts, of installed rows only (tohum/26c "Birim tarifi": a mark is leave to fetch a package that
+   has a script; no page says which script runs, and a script that does not run or ends nonzero refuses
+   nothing: the runs are the measure). When a row is flagged ``install_script`` (marked in the recipe, checked
+   by MF5), one contained run of ``npm --prefix /work/<lock dir> rebuild --offline --foreground-scripts
+   <names>`` with every flagged name precedes the runs (``install`` in the result). When it exits 0 its
+   worktree is the start of every run. When it exits nonzero that worktree is discarded (which scripts ran
+   before the failure is npm's queue's to say) and each name runs alone with the same command, in name order,
+   each from the worktree the one before left (``install_each`` in the result: the run, ``name``,
+   ``dropped``). A name that exits 0 leaves its worktree to the next. A name that exits nonzero leaves the
+   worktree as it was before its run, with one change when every flagged row of the name still installed is
+   optional: those rows are removed, with every row below them and the ``.bin`` links into them (``dropped``:
+   every row removed), as npm drops an optional package that fails to build and goes on. Any other name's rows
+   stay as unpacked (``dropped`` is ``[]``). A name is run alone only while one of its flagged rows is still
+   installed. An install run that is no valid run (its red control, a limit) gives no verdict. ``npm rebuild``
+   names packages, not rows, and its exit does not say which row's script failed; so, wider than npm's drop,
+   when a name has several flagged optional rows all of them go, where npm drops only the failing one (the
+   runs can lack a package npm would have kept), and a name with one row that is not optional keeps all its
+   rows. The names run alone in name order, not in npm's dependency order: a script that needs another
+   package's script to have run first can fail here where the joint run's order would have built it. Left out
+   of npm's rule, each stated in ``platform_plan``: an optional row's ``engines``, and the rest of npm's
+   optional set. Whether npm and node-gyp succeed in the real image is not proven here (no node in the
+   referee's sandbox); its proof is asama-0/10a #birim.
 4. 3/3. Three attempts, each running ``lint_cmd`` and then ``test_cmd``, every command in its own fresh
    contained run (MF3: no network, read-only root, the image, limits) of the same worktree, working
    directory ``/work`` (the tree's root), with ``HOME`` and ``TMPDIR`` under ``/work/.snowball``,
@@ -161,7 +167,7 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
 Verdicts: ``verified`` (the recipe, its sha256 over canonical JSON, the deps address, every run's
 results, and ``lint_records``: the three runs' records, the ratchet base's run file once written by
 ``lint_record.run_file``); ``refused`` (a reason about the recipe or the unit: static reasons, ``lock:``,
-``platform_unsupported:``, ``install_scripts_failed``, ``test_red``, ``lint_failed``, ``lint_not_deterministic``, ``lint_output:``,
+``test_red``, ``lint_failed``, ``lint_not_deterministic``, ``lint_output:``,
 ``no_fixable_violation``); ``no_verdict``
 (nothing is learned about the recipe: ``limit_hit:<key>`` -- a limit is the operator's, not counted to the
 Founder, tohum/18a --, an invalid contained run such as ``red_control_green``, ``red_control_fault``,
@@ -797,17 +803,17 @@ def drop_rows(staging: str, lock_dir: str, keys: list[str], installed: list[str]
 
 def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, budget: int,
                  platform: dict | None = None) -> tuple[list[str], dict]:
-    """Take the artifact by its hash and unpack the rows npm installs on ``platform`` (``runner.deps_npm.
+    """Take the artifact by its hash and unpack the rows ``platform`` admits (``runner.deps_npm.
     platform_plan``; every row when ``platform`` is None); ``(reasons, {address, rows, links, bytes, skipped,
-    not_installed, optional})``: ``rows`` the manifest rows unpacked, ``not_installed`` and ``optional`` the
-    plan's keys."""
+    not_installed, unsupported, optional})``: ``rows`` the manifest rows unpacked, ``not_installed``,
+    ``unsupported`` and ``optional`` the plan's keys."""
     lock_obj = cli.loads(tree_lock.decode("utf-8"))
     has_packages = any(k for k in lock_obj.get("packages", {}))
     if deps is None:
         if has_packages:
             raise VerifyError("the lock has packages and no deps artifact was given")
         return [], {"address": None, "rows": [], "links": [], "bytes": 0, "skipped": 0, "not_installed": [],
-                    "optional": []}
+                    "unsupported": [], "optional": []}
     report = N.verify(deps)
     if not report["ok"]:
         return ["deps:%s" % r for r in report["reasons"]], {}
@@ -823,8 +829,6 @@ def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, bu
     keys = [row["key"] for row in manifest["packages"]]
     plan = (N.platform_plan(lock_obj.get("packages"), keys, platform) if platform is not None
             else {"installed": keys, "not_installed": [], "unsupported": [], "optional": []})
-    if plan["unsupported"]:
-        return ["platform_unsupported:%s" % key for key in plan["unsupported"]], {}
     installed = set(plan["installed"])
     rows = [row for row in manifest["packages"] if row["key"] in installed]
     total = skipped = 0
@@ -848,7 +852,7 @@ def install_deps(staging: str, lock: str, deps: str | None, tree_lock: bytes, bu
             return ["deps_unpack_unsafe:%s" % key], {}
     return [], {"address": report["address"], "rows": rows, "links": made, "bytes": total,
                 "skipped": skipped, "workspaces": sorted(links), "not_installed": plan["not_installed"],
-                "optional": plan["optional"]}
+                "unsupported": plan["unsupported"], "optional": plan["optional"]}
 
 
 # ---------------------------------------------------------------- runs
@@ -874,6 +878,7 @@ def _one(job_cmd: list, red_cmd: list, image: str, staging: str, operating: dict
     job = {"image": image, "cmd": job_cmd, "tree": staging, "env": dict(ENV)}
     red = {"image": image, "cmd": red_cmd, "tree": staging, "env": dict(ENV)}
     report = C.run_with_red_control(job, red, operating, timed, base)
+    shutil.rmtree(report["red_control"]["run_root"], ignore_errors=True)    # nothing reads the control's copy
     main = report["result"]
     timing = timed.calls.get(C._flag_value(main["argv"], "--name"), {})
     reasons = list(report["reasons"])
@@ -887,6 +892,11 @@ def _one(job_cmd: list, red_cmd: list, image: str, staging: str, operating: dict
 
 def _public(run: dict) -> dict:
     return {k: v for k, v in run.items() if k not in ("run_root", "stdout")}
+
+
+def _discard(run: dict) -> None:
+    """Remove a finished run's directory (its copy of the worktree): its results are in ``run`` already."""
+    shutil.rmtree(run["run_root"], ignore_errors=True)
 
 
 def lint_records(stdouts: list, staging: str, recipe: dict, derived: dict) -> tuple[list[str], list[dict]]:
@@ -925,6 +935,36 @@ def guard_profile(tree: str, target: Any, policy: Any) -> dict:
             "excluded_dirs": D.minimal(derived["excluded_dirs"] + derived["excluded_paths"])}
 
 
+def _install_each(flagged: dict, deps_info: dict, rebuild: list, lock_dir: str, recipe: dict, red_control: dict,
+                  operating: dict, runner: C.Runner, staging_root: str, staging: str,
+                  result: dict) -> tuple[list[str], str]:
+    """Step 3 after a joint install run that exited nonzero: each flagged name alone, in name order, each from the
+    worktree the one before left; ``(reasons, the worktree the runs start from)``. ``result["install_each"]`` gets
+    a row per run and ``result["bin_links"]`` loses the links of dropped rows. A reason is an invalid run's."""
+    optional = set(deps_info["optional"])
+    present = [row["key"] for row in deps_info["rows"]]
+    for name in sorted(flagged):
+        keys = [key for key in flagged[name] if key in present]
+        if not keys:
+            continue
+        run = _one(rebuild + [name], red_control["cmd"], recipe["env_image"], staging, operating, runner,
+                   staging_root)
+        each = dict(_public(run), name=name, dropped=[])
+        result["install_each"].append(each)
+        if not run["valid"]:
+            return run["reasons"], staging
+        if run["exit"] == 0:
+            previous, staging = staging, os.path.join(run["run_root"], "work")
+            if os.path.dirname(previous) != staging_root:       # an earlier name's run; the first copy stays
+                shutil.rmtree(os.path.dirname(previous), ignore_errors=True)
+            continue
+        _discard(run)
+        if all(key in optional for key in keys):
+            each["dropped"], result["bin_links"] = drop_rows(staging, lock_dir, keys, present, result["bin_links"])
+            present = [key for key in present if key not in each["dropped"]]
+    return [], staging
+
+
 def stage(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | None, target: Any, runner: C.Runner,
           staging_root: str) -> tuple[list[str], dict, dict]:
     """Steps 1-3 under ``staging_root``, after the static check: ``(reasons, result, context)``. ``context`` is
@@ -957,40 +997,30 @@ def stage(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | Non
     result: dict[str, Any] = {"inputs_bytes": size, "deps_address": deps_info["address"],
                               "deps_bytes_unpacked": deps_info["bytes"], "bin_links": deps_info["links"],
                               "skipped_members": deps_info["skipped"], "platform": platform,
-                              "not_installed": deps_info["not_installed"], "install_optional": [],
-                              "install": None, "runs": {"lint": [], "test": []}}
+                              "not_installed": deps_info["not_installed"],
+                              "unsupported": deps_info["unsupported"], "install": None, "install_each": [],
+                              "runs": {"lint": [], "test": []}}
     lock_dir = posixpath.dirname(lock) or "."
     prefix = "/work" if lock_dir == "." else "/work/" + lock_dir
     rebuild = ["npm", "--prefix", prefix, "rebuild", "--offline", "--foreground-scripts"]
-    by_name: dict[str, list[str]] = {}
+    flagged: dict[str, list[str]] = {}
     for row in deps_info["rows"]:
         if row.get("install_script"):
-            by_name.setdefault(row["name"], []).append(row["key"])
-    optional = set(deps_info["optional"])
-    present = [row["key"] for row in deps_info["rows"]]
-    for name in sorted(by_name):
-        keys = [key for key in by_name[name] if key in present]
-        if not keys or not all(key in optional for key in keys):
-            continue
-        run = _one(rebuild + [name], red_control["cmd"], recipe["env_image"], staging, operating, runner,
+            flagged.setdefault(row["name"], []).append(row["key"])
+    if flagged:
+        run = _one(rebuild + sorted(flagged), red_control["cmd"], recipe["env_image"], staging, operating, runner,
                    staging_root)
-        tried = dict(_public(run), name=name, dropped=[])
-        result["install_optional"].append(tried)
-        if not run["valid"]:
-            return run["reasons"], result, {}
-        if run["exit"] != 0:
-            tried["dropped"], result["bin_links"] = drop_rows(staging, lock_dir, keys, present, result["bin_links"])
-            present = [key for key in present if key not in tried["dropped"]]
-    scripted = sorted(name for name in by_name if any(key in present for key in by_name[name]))
-    if scripted:
-        cmd = rebuild + scripted
-        run = _one(cmd, red_control["cmd"], recipe["env_image"], staging, operating, runner, staging_root)
         result["install"] = _public(run)
         if not run["valid"]:
             return run["reasons"], result, {}
-        if run["exit"] != 0:
-            return ["install_scripts_failed"], result, {}
-        staging = os.path.join(run["run_root"], "work")
+        if run["exit"] == 0:
+            staging = os.path.join(run["run_root"], "work")
+        else:
+            _discard(run)
+            bad, staging = _install_each(flagged, deps_info, rebuild, lock_dir, recipe, red_control, operating,
+                                         runner, staging_root, staging, result)
+            if bad:
+                return bad, result, {}
     return [], result, {"staging": staging, "derived": derived, "values": values, "operating": operating}
 
 
@@ -1009,8 +1039,10 @@ def verify(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | No
         for attempt in range(1, ATTEMPTS + 1):
             lint = _one(recipe["lint_cmd"], red_control["cmd"], recipe["env_image"], staging, operating,
                         runner, staging_root)
+            _discard(lint)
             test = _one(recipe["test_cmd"], red_control["cmd"], recipe["env_image"], staging, operating,
                         runner, staging_root, cap)
+            _discard(test)
             result["runs"]["lint"].append(_public(lint))
             stdouts.append(lint["stdout"])
             result["runs"]["test"].append(_public(test))

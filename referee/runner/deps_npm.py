@@ -140,11 +140,12 @@ signals and the interpreter being killed.
 ``--recipe`` is a unit recipe (tohum/26c) whose ``install_scripts_required`` is read; ``--policy`` a
 ``policy.json``.
 
-``platform`` (``platform_report``; nothing fetched, no tarball read) says what npm does with each package of
-the lock on a platform named with node's words (``linux``, ``x64``, ``glibc``): which rows it does not
-install, which make its install fail, and what becomes of the rows with ``hasInstallScript``. The rule is
-``platform_plan``'s, the one the verifier's install follows; what it leaves out of npm's rule is written
-there. A fetch still fetches and checks every package (tohum/29g): the artifact is the lock's, not a platform's.
+``platform`` (``platform_report``; nothing fetched, no tarball read) says what the verifier's install does
+with each package of the lock on a platform named with node's words (``linux``, ``x64``, ``glibc``): which
+rows are not unpacked, on which of those npm's own install would have failed, and what becomes of the rows with
+``hasInstallScript``. The rule is ``platform_plan``'s; what it leaves out of npm's rule is written there. Exit 0
+unless the lock has a structure reason (1) or the input is unusable (2). A fetch still fetches and checks every
+package (tohum/29g): the artifact is the lock's, not a platform's.
 """
 
 from __future__ import annotations
@@ -433,15 +434,17 @@ def platform_admits(entry: Any, platform: dict) -> bool:
 
 
 def platform_plan(packages: Any, keys, platform: dict) -> dict:
-    """What npm does with the lock rows ``keys`` when it installs from the lock on ``platform`` (arborist's
-    reify), each list sorted: ``installed``; ``not_installed`` (an optional row that the platform
-    excludes -- npm skips it without an error -- and every row below such a row's directory, which goes with
-    it); ``unsupported`` (any other excluded row: npm's install fails with EBADPLATFORM; ``devOptional`` is
-    not ``optional``, npm installs such a row when development dependencies are installed); ``optional`` (the
-    installed optional rows: npm drops one whose install script fails and goes on). The one
-    reading of these lock fields; the verifier (``profile.unit_verify``) installs by it. A row is optional when
-    its ``optional`` is a value JavaScript holds true (``js_true``; npm's ``!!optional``, arborist's
-    load-virtual), which a lock npm wrote spells ``true``.
+    """Which of the lock rows ``keys`` are unpacked on ``platform``, each list sorted: ``installed``;
+    ``not_installed`` (a row whose ``os``, ``cpu`` or ``libc`` exclude the platform, ``platform_admits``, and
+    every row below such a row's directory, which goes with it); ``unsupported`` (the excluded rows among
+    ``not_installed`` that are not optional and not below a row already left out: npm skips an excluded
+    optional row without an error, and its install ends with EBADPLATFORM on any other; ``devOptional`` is
+    not ``optional``, npm installs such a row when development dependencies are installed); ``optional`` (the installed optional rows: npm drops one
+    whose install script fails and goes on). The one reading of these lock fields; the verifier
+    (``profile.unit_verify``) installs by it. No list is a refusal (tohum/26c "Birim tarifi": a package that is
+    not unpacked is no reason on any page; the recipe's measure is the runs): ``unsupported`` says where npm's
+    own install would have stopped. A row is optional when its ``optional`` is a value JavaScript holds true
+    (``js_true``; npm's ``!!optional``, arborist's load-virtual), which a lock npm wrote spells ``true``.
 
     Narrower than npm, each a row npm would not install and this plan installs: an optional row whose
     ``engines`` exclude the node or npm version (npm checks engines for optional rows as well); the rest of
@@ -459,25 +462,25 @@ def platform_plan(packages: Any, keys, platform: dict) -> dict:
             plan["installed"].append(key)
             if js_true(entry.get("optional")):
                 plan["optional"].append(key)
-        elif js_true(entry.get("optional")):
-            plan["not_installed"].append(key)
         else:
-            plan["unsupported"].append(key)
+            plan["not_installed"].append(key)
+            if not js_true(entry.get("optional")):
+                plan["unsupported"].append(key)
     return plan
 
 
 def platform_report(lock: Any, platform: dict) -> dict:
     """The command line's report of ``platform_plan`` over every package of a lock (``entries``), with the rows
     whose lock entry says ``hasInstallScript: true`` sorted by what the verifier does with their script:
-    ``required`` (must run and exit 0), ``optional`` (tried; dropped when it fails), ``not_installed`` (not
-    run). ``ok`` is false when the lock has a structure reason or an ``unsupported`` row. A tarball's own
-    scripts are not read here (no tarball is); ``store`` reads them."""
+    ``required`` (run; the row stays as unpacked when its script fails), ``optional`` (run; the row can be
+    dropped when its script fails: ``profile.unit_verify`` step 3 has the rule), ``not_installed`` (not run).
+    ``ok`` is false when the lock has a structure reason, and only then. A tarball's own scripts are not read here (no tarball is); ``store`` reads them."""
     reasons, items = entries(lock)
     packages = lock.get("packages") if isinstance(lock, dict) else None
     plan = platform_plan(packages, [i["key"] for i in items], platform)
     scripted = {i["key"] for i in items if i["entry"].get("hasInstallScript") is True}
     optional = set(plan["optional"])
-    report = {"ok": not reasons and not plan["unsupported"],
+    report = {"ok": not reasons,
               "platform": {f: platform.get(f) for f in PLATFORM_FIELDS}, "packages": len(items),
               "installed": len(plan["installed"]), "not_installed": plan["not_installed"],
               "unsupported": plan["unsupported"],

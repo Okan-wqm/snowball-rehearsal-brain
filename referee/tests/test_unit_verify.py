@@ -904,19 +904,25 @@ class Deps(Base):
                                 "left-pad"]])
         self.assertIn(b"built", inner.calls[-1]["stdout"], "the runs start from the install's worktree")
         self.assertEqual(report["install"]["exit"], 0)
+        del npm[:]
         self.npm_exit = 1
         report = self.verify(recipe(install_scripts_required=["left-pad@1.3.0"]), runner=runner)
-        self.assertEqual((report["verdict"], report["reasons"]), ("refused", ["install_scripts_failed"]))
-        self.assertEqual(report["runs"], {"lint": [], "test": []})
+        self.assertEqual((report["verdict"], report["reasons"]), ("verified", []), report)
+        self.assertEqual([cmd[6:] for cmd in npm], [["left-pad"], ["left-pad"]], "the install, then the name alone")
+        self.assertEqual((report["install"]["exit"], [(e["name"], e["exit"], e["dropped"])
+                                                      for e in report["install_each"]]),
+                         (1, [("left-pad", 1, [])]))
+        self.assertNotIn(b"built", inner.calls[-1]["stdout"], "a failed script's worktree is not the runs'")
 
 
 # ---------------------------------------------------------------- the install as npm makes it
 
 class InstallAsNpm(Base):
-    """Steps 2 and 3 against what npm does when it installs from a lock (arborist's reify): an optional row the
-    container's platform excludes is not installed; any other excluded row fails the install; an optional row
-    whose install script fails is dropped and the install goes on. The npm of these tests is the fake runner's:
-    the rule is bound here, npm's own behaviour in the image is asama-0/10a #birim's."""
+    """Steps 2 and 3 (tohum/26c "Birim tarifi": a package that is not unpacked and a script that does not run or
+    ends nonzero refuse nothing): a row the container's platform excludes is not installed; a failed install
+    run is followed by each name alone, and a name that fails alone is dropped when all its rows are optional
+    and stays as unpacked otherwise. The npm of these tests is the fake runner's: the rule is bound here, npm's
+    own behaviour in the image is asama-0/10a #birim's."""
 
     def add(self, name: str, marks=None, **entry) -> None:
         data = tgz({"package.json": {"name": name, "version": "1.0.0", "license": "MIT", "bin": "cli.js"},
@@ -931,28 +937,36 @@ class InstallAsNpm(Base):
         self.deps = self.fetch(marks=self.marks)
 
     def npm_runner(self, exits: dict):
-        """A runner whose ``npm rebuild`` exits by the largest ``exits[name]`` of its names (0 when absent) after writing ``BUILT``
-        into every named package it finds; ``self.npm`` lists the rebuilds as ``(names, packages present)``."""
+        """A runner whose ``npm rebuild`` exits by ``exits["*"]`` when it has several names and that key is set, else
+        by the largest ``exits[name]`` of its names (0 when absent), after writing ``BUILT`` into every named package
+        it finds; ``self.npm`` lists the rebuilds as ``(names, packages present)``. ``self.roots`` lists, per call
+        that is not the red control's, what the verifier's directory held at that moment."""
         inner = FakeDocker()
-        self.npm, self.inner = [], inner
+        self.npm, self.inner, self.roots = [], inner, []
 
         def runner(argv, env, timeout):
             image_at = max(i for i, a in enumerate(argv) if a.endswith(DIGEST))
             cmd = argv[image_at + 1:]
+            work = argv[argv.index("--mount") + 1].split(",")[1][len("src="):]
+            if cmd != self.red["cmd"]:
+                self.roots.append(sorted(os.listdir(os.path.dirname(os.path.dirname(work)))))
             if cmd[:1] != ["npm"]:
                 return inner(argv, env, timeout)
             self.assertEqual(cmd[:5], ["npm", "--prefix", "/work/pkg", "rebuild", "--offline"])
             self.assertEqual(cmd[5], "--foreground-scripts")
             names = cmd[6:]
-            work = argv[argv.index("--mount") + 1].split(",")[1][len("src="):]
             modules = os.path.join(work, "pkg", "node_modules")
             self.npm.append((names, sorted(n for n in os.listdir(modules) if not n.startswith("."))))
             for name in names:
                 if os.path.isdir(os.path.join(modules, name)):
                     with open(os.path.join(modules, name, "BUILT"), "w") as fh:
                         fh.write("1")
-            return C.RunnerResult(max(exits.get(name, 0) for name in names), b"", b"", False)
+            code = exits["*"] if len(names) > 1 and "*" in exits else max(exits.get(name, 0) for name in names)
+            return C.RunnerResult(code, b"", b"", False)
         return runner
+
+    def each(self, report: dict) -> list:
+        return [(e["name"], e["exit"], e["dropped"]) for e in report["install_each"]]
 
     def worktree_of_last_run(self) -> tuple[list, list]:
         """``(packages, bin links)`` of ``pkg/node_modules`` as the last test run saw them."""
@@ -962,6 +976,7 @@ class InstallAsNpm(Base):
 
     def setUp(self) -> None:
         super().setUp()
+        self.red = RED
         write_tree(self.tree, {"pkg/run_tests.py": (
             "import json, os\n"
             "m = 'pkg/node_modules'\n"
@@ -1005,63 +1020,80 @@ class InstallAsNpm(Base):
         self.assertEqual((report["verdict"], report["not_installed"], report["platform"]["libc"]),
                          ("verified", ["node_modules/glibc-binding"], "musl"), report)
 
-    def test_a_required_row_the_platform_excludes_refuses_the_recipe(self):
+    def test_a_row_that_is_not_optional_and_excluded_is_not_installed_and_is_named(self):
         for flags in ({}, {"devOptional": True}, {"dev": True}, {"optional": False}):
             with self.subTest(flags=flags):
-                self.lock["packages"].pop("node_modules/mac-only", None)
-                self.add("mac-only", os=["darwin"], **flags)
-                report = self.verify(runner=self.npm_runner({}))
-                self.assertEqual((report["verdict"], report["reasons"]),
-                                 ("refused", ["platform_unsupported:node_modules/mac-only"]))
+                for key in [k for k in self.lock["packages"] if k.startswith("node_modules/mac-only")]:
+                    del self.lock["packages"][key]
+                self.add("mac-only", marks=["node_modules/mac-only"], os=["darwin"], hasInstallScript=True, **flags)
+                self.nested("mac-only", "below", hasInstallScript=True)
+                report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({}))
+                self.assertEqual((report["verdict"], report["reasons"]), ("verified", []), report)
+                self.assertEqual(report["unsupported"], ["node_modules/mac-only"])
+                self.assertEqual(report["not_installed"],
+                                 ["node_modules/mac-only", "node_modules/mac-only/node_modules/below"])
                 self.assertEqual(report["platform"], {"os": "linux", "cpu": U.NODE_CPU[os.uname().machine],
                                                       "libc": "glibc"})
-                self.assertEqual((self.npm, self.inner.calls), ([], []), "nothing runs")
+                self.assertEqual(self.npm, [], "no script of a row that is not installed runs")
+                self.assertEqual(self.worktree_of_last_run(), [["left-pad"], ["left-pad"], []])
 
-    def test_an_optional_row_whose_script_fails_is_dropped_and_the_install_goes_on(self):
+    def both(self) -> None:
+        """``left-pad`` (not optional) and ``opt-native`` (optional), each with an install script, marked."""
         self.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
         self.add("opt-native", marks=["left-pad@1.3.0", "node_modules/opt-native"], optional=True,
                  hasInstallScript=True)
+
+    def test_an_install_that_passes_is_one_run_and_its_worktree_is_the_runs(self):
+        self.both()
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({}))
+        self.assertEqual(report["verdict"], "verified", report)
+        self.assertEqual(self.npm, [(["left-pad", "opt-native"], ["left-pad", "opt-native"])])
+        self.assertEqual((report["install"]["exit"], report["install_each"]), (0, []))
+        self.assertEqual(self.worktree_of_last_run(),
+                         [["left-pad", "opt-native"], ["left-pad", "opt-native"], ["left-pad", "opt-native"]])
+
+    def test_an_optional_name_that_fails_alone_is_dropped_and_the_install_goes_on(self):
+        self.both()
         report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"opt-native": 1}))
         self.assertEqual(report["verdict"], "verified", report)
-        self.assertEqual(self.npm, [(["opt-native"], ["left-pad", "opt-native"]), (["left-pad"], ["left-pad"])],
-                         "the optional row is tried alone first; the install then names what is left")
-        self.assertEqual([(p["name"], p["exit"], p["dropped"]) for p in report["install_optional"]],
-                         [("opt-native", 1, ["node_modules/opt-native"])])
-        self.assertEqual(report["install"]["exit"], 0)
+        self.assertEqual(self.npm, [(["left-pad", "opt-native"], ["left-pad", "opt-native"]),
+                                    (["left-pad"], ["left-pad", "opt-native"]),
+                                    (["opt-native"], ["left-pad", "opt-native"])],
+                         "the failed install is followed by each name alone, in name order")
+        self.assertEqual(report["install"]["exit"], 1)
+        self.assertEqual(self.each(report), [("left-pad", 0, []), ("opt-native", 1, ["node_modules/opt-native"])])
         self.assertEqual(report["bin_links"], ["pkg/node_modules/.bin/left-pad"])
         self.assertEqual(self.worktree_of_last_run(), [["left-pad"], ["left-pad"], ["left-pad"]],
                          "the dropped package, its bin link and what its failed script wrote are gone")
 
-    def test_an_optional_row_whose_script_passes_stays(self):
-        self.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
-        self.add("opt-native", marks=["left-pad@1.3.0", "node_modules/opt-native"], optional=True,
-                 hasInstallScript=True)
-        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({}))
-        self.assertEqual(report["verdict"], "verified", report)
-        self.assertEqual([names for names, _ in self.npm], [["opt-native"], ["left-pad", "opt-native"]])
-        self.assertEqual([(p["name"], p["exit"], p["dropped"]) for p in report["install_optional"]],
-                         [("opt-native", 0, [])])
-        self.assertEqual(self.worktree_of_last_run(),
-                         [["left-pad", "opt-native"], ["left-pad", "opt-native"], ["left-pad", "opt-native"]])
-
-    def test_only_optional_rows_and_all_dropped_needs_no_install_run(self):
+    def test_only_an_optional_name_and_it_fails(self):
         self.add("opt-native", marks=["node_modules/opt-native"], optional=True, hasInstallScript=True)
         report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"opt-native": 1}))
         self.assertEqual(report["verdict"], "verified", report)
-        self.assertEqual([names for names, _ in self.npm], [["opt-native"]])
-        self.assertIsNone(report["install"])
+        self.assertEqual([names for names, _ in self.npm], [["opt-native"], ["opt-native"]])
+        self.assertEqual(self.each(report), [("opt-native", 1, ["node_modules/opt-native"])])
         self.assertEqual(self.worktree_of_last_run(), [["left-pad"], ["left-pad"], []])
 
-    def test_a_required_row_whose_script_fails_still_refuses(self):
-        self.lock["packages"]["node_modules/left-pad"]["hasInstallScript"] = True
-        self.add("opt-native", marks=["left-pad@1.3.0", "node_modules/opt-native"], optional=True,
-                 hasInstallScript=True)
+    def test_a_name_that_is_not_optional_and_fails_alone_stays_as_unpacked(self):
+        self.both()
         report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"left-pad": 1}))
-        self.assertEqual((report["verdict"], report["reasons"]), ("refused", ["install_scripts_failed"]))
-        self.assertEqual(report["runs"], {"lint": [], "test": []})
+        self.assertEqual((report["verdict"], report["reasons"]), ("verified", []), report)
+        self.assertEqual([names for names, _ in self.npm], [["left-pad", "opt-native"], ["left-pad"], ["opt-native"]])
+        self.assertEqual(self.each(report), [("left-pad", 1, []), ("opt-native", 0, [])])
+        self.assertEqual(report["bin_links"], ["pkg/node_modules/.bin/left-pad", "pkg/node_modules/.bin/opt-native"])
+        self.assertEqual(self.worktree_of_last_run(),
+                         [["left-pad", "opt-native"], ["left-pad", "opt-native"], ["opt-native"]],
+                         "the package is there; what its failed script and the failed install wrote is not")
 
-    def test_a_name_with_a_required_row_is_not_tried_as_optional(self):
-        # npm rebuild names packages, not lock rows: two rows of one name, one of them required, are one required name
+    def test_an_install_that_fails_where_each_name_passes_alone_builds_each_on_the_one_before(self):
+        self.both()
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"*": 1}))
+        self.assertEqual(report["verdict"], "verified", report)
+        self.assertEqual(self.each(report), [("left-pad", 0, []), ("opt-native", 0, [])])
+        self.assertEqual(self.worktree_of_last_run()[2], ["left-pad", "opt-native"])
+
+    def test_a_name_with_a_row_that_is_not_optional_is_not_dropped(self):
+        # npm rebuild names packages, not lock rows: two rows of one name, one of them not optional, both stay
         self.add("twin", marks=["twin@1.0.0"], hasInstallScript=True)
         data = tgz({"package.json": {"name": "twin", "version": "1.0.0", "license": "MIT"}})
         self.lock["packages"]["node_modules/left-pad/node_modules/twin"] = {
@@ -1074,9 +1106,11 @@ class InstallAsNpm(Base):
         self.write_lock(self.lock)
         self.deps = self.fetch(marks=self.marks)
         report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"twin": 1}))
-        self.assertEqual((report["verdict"], report["reasons"]), ("refused", ["install_scripts_failed"]))
-        self.assertEqual([names for names, _ in self.npm], [["twin"]])
-        self.assertEqual(report["install_optional"], [])
+        self.assertEqual((report["verdict"], report["reasons"]), ("verified", []), report)
+        self.assertEqual([names for names, _ in self.npm], [["twin"], ["twin"]])
+        self.assertEqual(self.each(report), [("twin", 1, [])])
+        self.assertEqual(self.worktree_of_last_run()[0], ["left-pad", "twin"])
+        self.assertIn("pkg/node_modules/.bin/twin", report["bin_links"])
 
     def nested(self, parent: str, name: str, **entry) -> None:
         """A lock row of ``name`` below ``node_modules/<parent>``, fetched; marked when it has a script."""
@@ -1090,9 +1124,9 @@ class InstallAsNpm(Base):
             self.marks = self.marks + [key]
         self.deps = self.fetch(marks=self.marks)
 
-    def test_a_dropped_row_takes_the_rows_below_it_and_their_names_are_not_built(self):
-        # ``outer`` fails and goes with all below it: its own name again, an optional name tried before it
-        # (``inner``), an optional name not yet tried (``zeta``) and a required name (``req``)
+    def test_a_dropped_row_takes_the_rows_below_it_and_their_names_are_not_run(self):
+        # ``outer`` fails and goes with all below it: its own name again, an optional name run before it
+        # (``inner``), an optional name not yet run (``zeta``) and a name that is not optional (``req``)
         self.add("outer", marks=["node_modules/outer"], optional=True, hasInstallScript=True)
         self.nested("outer", "outer", optional=True, hasInstallScript=True)
         self.nested("outer", "inner", optional=True, hasInstallScript=True)
@@ -1101,26 +1135,39 @@ class InstallAsNpm(Base):
         self.nested("outer", "plain", optional=True)
         report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"outer": 1}))
         self.assertEqual(report["verdict"], "verified", report)
-        self.assertEqual([names for names, _ in self.npm], [["inner"], ["outer"]],
-                         "a name whose rows are all gone is neither tried nor named in the install")
-        self.assertEqual([(p["name"], p["exit"], p["dropped"]) for p in report["install_optional"]],
+        self.assertEqual([names for names, _ in self.npm], [["inner", "outer", "req", "zeta"], ["inner"], ["outer"]],
+                         "a name whose rows are all gone is not run alone")
+        self.assertEqual(self.each(report),
                          [("inner", 0, []),
                           ("outer", 1, ["node_modules/outer", "node_modules/outer/node_modules/inner",
                                         "node_modules/outer/node_modules/outer",
                                         "node_modules/outer/node_modules/plain",
                                         "node_modules/outer/node_modules/req",
                                         "node_modules/outer/node_modules/zeta"])])
-        self.assertIsNone(report["install"])
         self.assertEqual(self.worktree_of_last_run(), [["left-pad"], ["left-pad"], []])
 
-    def test_a_name_with_a_row_left_after_a_drop_is_still_built(self):
+    def test_a_name_with_a_row_left_after_a_drop_is_still_run(self):
         self.add("outer", marks=["node_modules/outer"], optional=True, hasInstallScript=True)
         self.nested("outer", "req", hasInstallScript=True)
         self.add("req", marks=self.marks + ["node_modules/req"], hasInstallScript=True)
         report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"outer": 1}))
         self.assertEqual(report["verdict"], "verified", report)
-        self.assertEqual([names for names, _ in self.npm], [["outer"], ["req"]])
+        self.assertEqual([names for names, _ in self.npm], [["outer", "req"], ["outer"], ["req"]])
         self.assertEqual(self.worktree_of_last_run(), [["left-pad", "req"], ["left-pad", "req"], ["req"]])
+
+    def test_the_copies_of_finished_runs_do_not_pile_up(self):
+        self.both()
+        self.add("zz", marks=self.marks + ["node_modules/zz"], optional=True, hasInstallScript=True)
+        self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"*": 1, "opt-native": 1}))
+        self.assertEqual([names for names, _ in self.npm],
+                         [["left-pad", "opt-native", "zz"], ["left-pad"], ["opt-native"], ["zz"]])
+        counts = [len(held) for held in self.roots]
+        # held at each run: the first copy (``tree``), the worktree it starts from when that is an earlier
+        # run's, its red control's copy and its own; an earlier control's copy, a failed run's and a superseded
+        # one's are gone
+        self.assertEqual(counts[:4], [3, 3, 4, 4])
+        self.assertEqual(set(counts[4:]), {4}, self.roots)
+        self.assertEqual(len(counts), 4 + 6)
 
     def test_drop_rows_removes_what_is_there_and_names_every_row_removed(self):
         staging = os.path.join(self.base, "drop")
@@ -1139,12 +1186,31 @@ class InstallAsNpm(Base):
         self.assertEqual(sorted(os.listdir(os.path.join(staging, "pkg", "node_modules"))), [".bin", "ab", "c"])
         self.assertEqual(os.listdir(os.path.join(staging, "pkg", "node_modules", ".bin")), ["c"])
 
-    def test_an_optional_try_that_is_no_valid_run_gives_no_verdict(self):
-        self.add("opt-native", marks=["node_modules/opt-native"], optional=True, hasInstallScript=True)
+    def test_an_install_run_that_is_no_valid_run_gives_no_verdict(self):
+        self.both()
         write_tree(self.tree, {"pkg/green.py": "raise SystemExit(0)\n"})
+        self.red = {"cmd": ["python", "pkg/green.py"]}
         report = self.verify(recipe(install_scripts_required=self.marks), runner=self.npm_runner({"opt-native": 1}),
-                             red={"cmd": ["python", "pkg/green.py"]})
+                             red=self.red)
         self.assertEqual((report["verdict"], report["reasons"]), ("no_verdict", ["red_control_green"]))
+        self.assertEqual((report["install"]["valid"], report["install_each"]), (False, []))
+        self.assertEqual(report["runs"], {"lint": [], "test": []})
+
+    def test_a_name_s_run_that_is_no_valid_run_gives_no_verdict(self):
+        self.both()
+        npm = self.npm_runner({"opt-native": 1})
+        controls = []
+
+        def runner(argv, env, timeout):
+            if argv[-len(RED["cmd"]):] == RED["cmd"]:
+                controls.append(1)
+                if len(controls) == 3:                      # the install's, left-pad's, opt-native's
+                    return C.RunnerResult(0, b"", b"", False)
+            return npm(argv, env, timeout)
+        report = self.verify(recipe(install_scripts_required=self.marks), runner=runner)
+        self.assertEqual((report["verdict"], report["reasons"]), ("no_verdict", ["red_control_green"]))
+        self.assertEqual([(e["name"], e["valid"], e["dropped"]) for e in report["install_each"]],
+                         [("left-pad", True, []), ("opt-native", False, [])])
         self.assertEqual(report["runs"], {"lint": [], "test": []})
 
     def test_container_platform(self):
