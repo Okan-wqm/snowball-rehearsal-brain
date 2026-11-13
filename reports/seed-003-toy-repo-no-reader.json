@@ -2,5 +2,6 @@
   "id": "seed-003-toy-repo-no-reader",
   "kind": "seed_issue",
   "ref": "spec/tohum/27-sozluk-ve-okuyucular.md:50",
-  "state": "open"
+  "state": "confirmed",
+  "update_2026_11_13_epoch_eec6436": "Answered by seed epoch eec6436 of 2026-11-01 (CHANGELOG-4.md:38 names this report); read on 2026-11-13 (founder ledger f1052, f1063). Question (f5): asama-0/13 names tests/fixtures/toy-repo/ as a deliverable and tohum/27's reader table had no row for it, so #okuyucu could fail on the seed's omission. Today's text, tohum/27:70 (the changelog's 27:67 has moved): a row for tests/fixtures/toy-repo/ with its readers (the bootstrap referee at exit, #agac with toy_tree_sha256; import; the operator). Confirmed by a verdict: (A) was accepted (state.exit_accepted_sha 8ebecdb), and #okuyucu is one of its conditions. No test of this brain reads the reader table against asama-0/13 (grep over tests/ and referee/tests/ for the page: no file), so the binding is the referee's condition alone; stated, not built here (tests/ is frozen on main, 29b:73)."
 }

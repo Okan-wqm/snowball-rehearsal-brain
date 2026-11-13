@@ -2,5 +2,6 @@
   "id": "seed-002-29b-stale-after-narrowing",
   "kind": "seed_issue",
   "ref": "spec/tohum/29b-onyukleme-hakemi.md:69",
-  "state": "open"
+  "state": "confirmed",
+  "update_2026_11_13_epoch_eec6436": "Answered by seed epoch eec6436 of 2026-11-01 (spec/tohum/CHANGELOG-4.md:37 names this report); read on 2026-11-13 against today's pages (founder ledger f1052, f1063). Question (f4): 29b asked for spec.lint, gate.lock and 30 micro features at exit while asama-0 has 18 and calls neither in (A). Today's text, tohum/29b:67-70: every micro feature of the stage table must be done, done_mf from 1 to the table's count without a gap, 18 in Stage 0, else not_all_micro_features_done; spec.lint and gate.lock are not called in (A). grep for '30 mikro' or 'asama-0/14 30' in 29b: no line. Confirmed by a verdict, not by a test of mine (the code is the seed's): the signed result at hand holds state.exit_accepted_sha 8ebecdb, so (A) passed on a tree whose referee/ has no spec/ directory and no gate/lock.py (ls referee/gate: check, diffguard, revert, secrets, sentinel)."
 }

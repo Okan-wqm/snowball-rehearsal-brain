@@ -2,5 +2,6 @@
   "id": "seed-007-chain-cli-exit-and-broken-row",
   "kind": "seed_issue",
   "ref": "spec/tohum/29a-tohum-vektorleri.md:70",
-  "state": "open"
+  "state": "confirmed",
+  "update_2026_11_13_epoch_eec6436": "Answered by seed epoch eec6436 of 2026-11-01 (CHANGELOG-4.md:41 names this report); read on 2026-11-13 (founder ledger f1052, f1063). Question (f16): 29a gives verify's output but not the exit code of a broken chain, nor broken_row for a line without row_id; would the seed's runner read exit 1 as a failed command and turn V3 red? Today's text, tohum/29d:24-28: chain runs with its own judge, which reads the last JSON line of stdout and does not compare the exit code (a command that fails with 125 on its last attempt is runner_fault); in verify it reads valid, in V3 also broken_row (r2); the seed fixes neither the exit code of a broken chain nor broken_row for a line without row_id. So both choices stay this brain's and are stated in referee/ledger/chain.py's docstring: exit 1 on a broken chain, 'line:N' for a line that has no row_id. Run today from referee/ as the referee runs it: python -m ledger.chain verify /vec/chain/v3.jsonl gives {\"broken_row\":\"r2\",\"line\":2,...,\"valid\":false} with exit 1; /vec/chain/good.jsonl gives valid true, exit 0. Bound by: cd referee && python -m unittest discover -s tests -p 'test_chain.py' (24 tests green today; VerifyCommand.test_v3_edited_payload_breaks_r2_only, test_unusable_lines_are_broken_rows for line:N, test_row_id_that_is_not_a_string_names_the_line)."
 }

@@ -2,5 +2,6 @@
   "id": "seed-005-push-class-ledger",
   "kind": "seed_issue",
   "ref": "spec/tohum/29b-onyukleme-hakemi.md:36",
-  "state": "open"
+  "state": "confirmed",
+  "update_2026_11_13_epoch_eec6436": "Answered by seed epoch eec6436 of 2026-11-01 (CHANGELOG-4.md:38-39 names this report); read on 2026-11-13 (founder ledger f1052, f1063). Question (f7): no page said that founder-ledger.jsonl and reports/ stay outside the push classes. Today's text, tohum/29e:11-16 'Kurucu kayıtları' (29b:44 points to it): the root's founder-ledger.jsonl and the files under the root's reports/ are founder records, neither spec nor code; they do not change a push's class; a push that changes only them is not evaluated (noop: no test, vector or rival, series and last accepted SHA unchanged); a nested reports/ directory is code. Confirmed by observation: the signed result at hand is for head 49b71a1, a push of founder-ledger.jsonl alone, and reads kind none, verdict noop, reasons [], with state.last_accepted_sha still 63811d2; the previous session's push a3dff17 (ledger and two reports) read the same (f1058). This tree has one reports directory, the root's (find . -name reports -type d)."
 }

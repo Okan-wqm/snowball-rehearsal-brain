@@ -2,5 +2,6 @@
   "id": "seed-006-ledger-kind-set",
   "kind": "seed_issue",
   "ref": "spec/tohum/26-semalar.md:33",
-  "state": "open"
+  "state": "confirmed",
+  "update_2026_11_13_epoch_eec6436": "Answered by seed epoch eec6436 of 2026-11-01 (CHANGELOG-4.md:39-40 names this report); read on 2026-11-13 (founder ledger f1052, f1063). Question (f8): the session instruction asks for missing_capability entries and neither closed kind set (tohum/26 founder row, 26c reports) has that kind. Answer: no new kind; a missing capability is a seed_issue whose text starts with 'missing_capability:' (the session instruction, 'Görevlerin'; no page of spec/tohum holds the word outside the changelog, grep), and both kind sets stay closed (tohum/26:33, 26c:50). This is what f8 said the brain does, so nothing was refused that code follows. Confirmed against the code: referee/ledger/founder.py reads the kind set from tohum/26's line (spec_kinds) and refuses any other kind; tests/test_founder_ledger.py, 49 tests green today (spec_kinds against the page, a kind removed from or added to the page changes the set); ledger.founder check on today's ledger: ok; the 12 rows whose summary starts with 'missing_capability:' (f61 ... f750) are all kind seed_issue; every file of reports/ has one of the three kinds of 26c."
 }
