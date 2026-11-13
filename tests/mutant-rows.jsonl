@@ -950,3 +950,16 @@
 {"file": "referee/tests/mutants/diffguard.json", "fp": "1f721def95bbd9ee0841998de2dc2c8821f86723a82963fe88e06a1d0e80885d", "id": "dg_apply_mid_noeol_ok", "outcome": "killed"}
 {"file": "referee/tests/mutants/copy_gate.json", "fp": "389c2af167636116e621b422b50e12b66f545a925f8cfd091b9813b79e5a80fe", "id": "yaz_closed_gate_writes", "outcome": "killed"}
 {"file": "referee/tests/mutants/copy_gate.json", "fp": "8e88f502b73e885f12bccbce203bf5b59c8436ba15594d55eb0deeaa20c47865", "id": "yaz_gate_without_seed", "outcome": "killed"}
+{"file": "referee/tests/mutants/drill_loop.json", "fp": "246c2ec5c3a3cb24dd6810383fc43b14e3bf0ecc3a163903ce0cfb5f85627981", "id": "never_judged", "outcome": "killed"}
+{"file": "referee/tests/mutants/drill_loop.json", "fp": "8ee5964981538520e03c7c6edb88e97b1ace7dc211a75d6c2715e6ac3d97b163", "id": "plants_beside_unfinished", "outcome": "killed"}
+{"file": "referee/tests/mutants/drill_loop.json", "fp": "1ecb4eaafbba6e651fb35809aaa654bd2cb46c7dd462501cf4576c51f6a097af", "id": "plants_beside_candidate", "outcome": "killed"}
+{"file": "referee/tests/mutants/drill_loop.json", "fp": "11cf7d47d9825ac5e11a3db99878fb48a71b9e40d15338798baa3bd7a714cff4", "id": "commitment_not_checked", "outcome": "killed"}
+{"file": "referee/tests/mutants/copy_gate.json", "fp": "706968703bd5899377b08b41e006238becb3b55bf3ab8a43a1796db52b611ad6", "id": "cek_gate_ignored", "outcome": "killed"}
+{"file": "referee/tests/mutants/copy_gate.json", "fp": "03c9df0d33255fd1cdbf4d6500b0b4e335c03a5246f59f2d13f3764c87632df6", "id": "cek_copy_genesis_at_integration", "outcome": "killed"}
+{"file": "referee/tests/mutants/copy_gate.json", "fp": "c0711e0f1609a1cd098f1b6c9c8a6cc00b5bc27f1a3033421d13c2d8d56a2643", "id": "cek_base_sha_unchecked", "outcome": "killed"}
+{"file": "referee/tests/mutants/drill_loop.json", "fp": "aeefb8b8b5913fbf85122298fc5fa1699974a353921395cca310887e23db5ed2", "id": "key_of_this_run", "outcome": "killed"}
+{"file": "referee/tests/mutants/drill_loop.json", "fp": "eac9bfb59a73496baf60a1aa70a77ed563fdc42a3c80231e44d0427eed69d423", "id": "planted_not_waited", "outcome": "killed"}
+{"file": "referee/tests/mutants/drill_loop.json", "fp": "1fa7ce28c485f469dc132b0cd81d36984be8d755fcf3928ef0ff8cffb99d339d", "id": "plant_said_gate", "outcome": "killed"}
+{"file": "referee/tests/mutants/drill_loop.json", "fp": "412f1710ece5e478dd3103510decb9ab3fb7335306a66e77b6bbc7bb0b1abec2", "id": "misfits_ignored", "outcome": "killed"}
+{"file": "referee/tests/mutants/drill_loop.json", "fp": "da1d6cb66c43e3dd58193ab81a875ad09ff89105b00d7072ce74d9fd89429d38", "id": "d8_always_done", "outcome": "killed"}
+{"file": "referee/tests/mutants/drill_loop.json", "fp": "5ec83d31cc1d8a359fa2397c24600552ad19fb51ebe3a76331429cc3cb3203d4", "id": "fail_not_red", "outcome": "killed"}
