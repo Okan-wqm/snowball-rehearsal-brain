@@ -29,7 +29,7 @@ from loop.pulled import PulledError  # noqa: E402
 import git_store as S  # noqa: E402
 from test_accepted import chained  # noqa: E402
 
-LEDGER, ROOTS = "ledger.jsonl", "chain/root.jsonl"
+LEDGER, ROOTS = ".brain/ledger.jsonl", ".brain/chain/root.jsonl"
 
 
 def rows(part: str, n: int, start: int = 1) -> list[dict]:
@@ -37,7 +37,7 @@ def rows(part: str, n: int, start: int = 1) -> list[dict]:
 
 
 def files(ledger_rows: int, root_rows: int) -> dict:
-    return {LEDGER: chained(rows("e", ledger_rows)), ROOTS: chained(rows("r", root_rows)), "status.md": b"s\n"}
+    return {LEDGER: chained(rows("e", ledger_rows)), ROOTS: chained(rows("r", root_rows)), ".brain/status.md": b"s\n"}
 
 
 def lines(data: bytes) -> list[bytes]:
@@ -90,13 +90,13 @@ class Verify(StateTest):
         self.assertEqual(self.verify(head, self.genesis), {"head": head, "previous": self.genesis,
                                                            "rows": {LEDGER: 5, ROOTS: 2}})
         # the same files, nothing appended, is an extension too (a cycle that wrote only status.md)
-        same = self.head(dict(files(2, 1), **{"status.md": b"t\n"}))
+        same = self.head(dict(files(2, 1), **{".brain/status.md": b"t\n"}))
         self.assertEqual(self.verify(same, self.genesis)["rows"], {LEDGER: 2, ROOTS: 1})
 
     def test_a_file_that_is_not_there(self):
         content = files(3, 2)
         for change, reason in (({LEDGER: None}, "file_missing:%s" % LEDGER),
-                               ({LEDGER: ("120000", b"status.md")}, "file_missing:%s" % LEDGER),
+                               ({LEDGER: ("120000", b".brain/status.md")}, "file_missing:%s" % LEDGER),
                                ({LEDGER: None, LEDGER + "/x": b"1\n"}, "file_missing:%s" % LEDGER),
                                ({ROOTS: None}, "file_missing:%s" % ROOTS)):
             with self.subTest(reason=reason, change=change):

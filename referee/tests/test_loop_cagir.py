@@ -167,7 +167,7 @@ class CagirJob(Base):
                           row["payload"]["model_requested"], row["payload"]["prompt_sha256"]),
                          (12346, 750_000, MODEL, got["prompt_sha256"]))
         # D6's input: the rows go onto the ledger pulled carries, through ledger.append's own rules
-        led = state_files(ledger)["ledger.jsonl"]
+        led = state_files(ledger)[".brain/ledger.jsonl"]
         cycle = append.plan_cycle(led, led, lambda: json.dumps({"rows": got["rows"]}).encode())
         self.assertEqual(len(cycle.row_hashes), 1)
         self.assertEqual(L.spent_micros([json.loads(x) for x in cycle.content.splitlines()]), 262_346)
@@ -268,7 +268,7 @@ class CagirJob(Base):
 
     def test_a_ledger_that_is_not_a_chain_is_no_verdict(self):
         state = state_files(ledger_with_costs(1))
-        state["ledger.jsonl"] = state["ledger.jsonl"].replace(b'"usd_micros": 1', b'"usd_micros": 0')
+        state[".brain/ledger.jsonl"] = state[".brain/ledger.jsonl"].replace(b'"usd_micros": 1', b'"usd_micros": 0')
         self.write_pulled(policy=policy(), state=state)
         self.no_verdict()
 

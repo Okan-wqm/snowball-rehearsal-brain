@@ -55,9 +55,9 @@ class Artifacts(unittest.TestCase):
     def setUpClass(cls):
         w = AW.World()
         cls.out = w.run()
-        cls.ledger = w.gh.read_file("brain/state", "ledger.jsonl")
-        cls.roots = w.gh.read_file("brain/state", "chain/root.jsonl")
-        cls.status = w.gh.read_file("brain/state", "status.md")
+        cls.ledger = w.gh.read_file("brain/state", ".brain/ledger.jsonl")
+        cls.roots = w.gh.read_file("brain/state", ".brain/chain/root.jsonl")
+        cls.status = w.gh.read_file("brain/state", ".brain/status.md")
         cls.rows = lines(cls.ledger)
 
     def test_activation_artifacts_conform(self):

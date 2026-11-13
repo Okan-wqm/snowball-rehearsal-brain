@@ -91,8 +91,9 @@ LISTED = {"brain/state": B.STATE, "brain/integration": B.INTEGRATION, "main": "m
 
 
 class RekorSigner:
-    """``yaz``'s root signer: each payload (a root in ASCII, ``ledger.anchor``) gets a Rekor entry recording its
-    sha256 (``test_rekor.entry_for``), put into ``rekor`` where the next run's D1 reads it."""
+    """``yaz``'s root signer: each payload (a root's preimage, ``ledger.anchor``) gets a Rekor entry recording its
+    sha256, the root (``test_rekor.entry_for``), put into ``rekor`` where the next run's D1 reads it; the bundle it
+    answers names the entry and is no Sigstore bundle."""
 
     def __init__(self, rekor: dict, identity: str) -> None:
         self.rekor, self.identity = rekor, identity
@@ -100,7 +101,7 @@ class RekorSigner:
     def sign(self, payload: bytes) -> dict:
         uuid, entry = entry_for(hashlib.sha256(payload).hexdigest())
         self.rekor[uuid] = entry
-        return {"uuid": uuid, "identity": self.identity}
+        return {"uuid": uuid, "identity": self.identity, "bundle": json.dumps({"rehearsal_entry": uuid}).encode()}
 
 
 class Rekor:

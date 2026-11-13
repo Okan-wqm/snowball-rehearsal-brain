@@ -240,7 +240,10 @@ class D6(StateBase):
         self.assertEqual((written["rows"], written["revert"]), (7, None))
         # the root of the new ledger, signed once, its row appended; status.md's block is the last status row's
         root = AN.root_of(AN.tips(new))
-        self.assertEqual(self.signer.payloads, [root.encode()])
+        self.assertEqual([hashlib.sha256(p).hexdigest() for p in self.signer.payloads], [root])
+        # its bundle as the signer gave it, beside the root row (tohum/26d "Yer")
+        self.assertEqual(json.loads(self.state_file(".brain/chain/%s.sigstore.json" % root)),
+                         dict(self.signer.answer(), fake_signed_sha256=root))
         roots = rows_of(self.state_file(B.STATE_ROOTS))
         self.assertEqual((roots[-1]["row_id"], roots[-1]["root"], roots[-1]["rekor_uuid"]), ("9-1:root", root, "rekor-yaz"))
         self.assertTrue(CH.verify_bytes(self.state_file(B.STATE_ROOTS), self.state[B.STATE_ROOTS])["valid"])
@@ -409,12 +412,12 @@ class D6(StateBase):
                 self.assertEqual([r["row_id"] for r in added if r["part"] == "events"][0], "9-1:start")
                 self.assertEqual(added[0]["payload"]["cycle_id"], CYCLE)
                 self.assertEqual(rows_of(gh.read_file(B.STATE, B.STATE_ROOTS))[-1]["row_id"], "9-1:root")
-                roots.append(AN.root_of(AN.tips(new)).encode())
+                roots.append(AN.root_of(AN.tips(new)))
         # served.json's order: every request to t1 before the first to t2, each root signed in that order
         repos = [repo for repo, _ in router.calls]
         self.assertEqual(repos, sorted(repos))
         self.assertEqual(set(repos), {"acme/t1", "acme/t2"})
-        self.assertEqual(self.signer.payloads, roots)
+        self.assertEqual([hashlib.sha256(p).hexdigest() for p in self.signer.payloads], roots)
 
     def test_a_refused_first_target_stops_the_job_before_the_second(self):
         ghs = self.two_targets({"good": candidate(GOOD)})
@@ -1300,7 +1303,7 @@ class Genesis(StateBase):
         self.assertEqual(rows[3]["payload"]["base_run_sha256"], hashlib.sha256(base_run).hexdigest())
         self.assertEqual(rows[4]["payload"], {"decision": "reject", "candidate": "breaks", "reasons": ["tests_red"]})
         self.assertEqual(SE.unfinished(ledger), [merge["merge_sha"]])
-        self.assertEqual(self.signer.payloads, [AN.root_of(AN.tips(ledger)).encode()])
+        self.assertEqual([hashlib.sha256(p).hexdigest() for p in self.signer.payloads], [AN.root_of(AN.tips(ledger))])
         # the next cycle: an ordinary one on the state the activation wrote; D7 ends the merge's green sentinel
         other = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
                      **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})

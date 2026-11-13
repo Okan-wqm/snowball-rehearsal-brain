@@ -81,8 +81,8 @@ def chained(rows: list[dict]) -> bytes:
 def state_files(ledger: list[dict] | None = None) -> dict[str, bytes]:
     """``brain/state``'s chained files as ``pulled`` carries them: a ``cycle_start`` row in the ledger (a row of
     ``ledger.schema``, no merge) and a root row, or ``ledger``'s rows."""
-    return {"ledger.jsonl": chained(ledger if ledger is not None else [row("g1", "events", "cycle_start", {"cycle_id": "1"})]),
-            "chain/root.jsonl": chained([{"row_id": "r0", "part": "root"}])}
+    return {".brain/ledger.jsonl": chained(ledger if ledger is not None else [row("g1", "events", "cycle_start", {"cycle_id": "1"})]),
+            ".brain/chain/root.jsonl": chained([{"row_id": "r0", "part": "root"}])}
 
 
 def tar_of(root: str) -> bytes:
@@ -311,7 +311,7 @@ class Layout(Base):
         self.write_pulled()
         self.assertFalse(P.genesis(P.read(self.pulled)))
         for heads, state, status in ((genesis, state_files(), None),  # a ledger without a head
-                                     (genesis, dict(empty, **{"chain/root.jsonl": b"x\n"}), None),
+                                     (genesis, dict(empty, **{".brain/chain/root.jsonl": b"x\n"}), None),
                                      (genesis, empty, b"# status\n"),  # a status.md without a head
                                      ({"brain/state": None, "brain/integration": None}, empty, None),
                                      ({"brain/state": "a" * 40, "brain/integration": None}, empty, None)):
@@ -337,9 +337,9 @@ class Layout(Base):
         with self.assertRaises(P.PulledError) as ctx:
             self.write_pulled({"../x": candidate(GOOD)})
         self.assertEqual(ctx.exception.reasons[0].split(":")[0], "path_not_in_layout")
-        for heads, state, want in ((None, {"ledger.jsonl": b""}, "state_incomplete"),
+        for heads, state, want in ((None, {".brain/ledger.jsonl": b""}, "state_incomplete"),
                                    (None, dict(state_files(), extra=b""), "state_incomplete"),
-                                   (None, dict(state_files(), **{"ledger.jsonl": "text"}), "state_incomplete"),
+                                   (None, dict(state_files(), **{".brain/ledger.jsonl": "text"}), "state_incomplete"),
                                    ({"brain/state": "a" * 40}, None, "heads_invalid")):
             with self.subTest(want=want, state=state):
                 with self.assertRaises(P.PulledError) as ctx:
@@ -545,7 +545,7 @@ class KosJob(Base):
         for rows in ([START], [START, merge("c1", head), reverted("r1", head, "test_regression")]):
             with self.subTest(rows=len(rows)):
                 shutil.rmtree(self.temp, ignore_errors=True)
-                self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with(rows)}))
+                self.write_pulled(state=dict(state_files(), **{".brain/ledger.jsonl": ledger_with(rows)}))
                 out = self.run_kos()
                 t1 = self.one(out)
                 self.assertEqual((out["ok"], t1["ok"], t1["done"], t1["index"]["sentinel"]), (True, True, ["D3"], None))
@@ -553,7 +553,7 @@ class KosJob(Base):
 
     def test_the_unfinished_merge_at_the_head_is_watched(self):
         head = HEADS["brain/integration"]
-        self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with([START, merge("c1", head)])}))
+        self.write_pulled(state=dict(state_files(), **{".brain/ledger.jsonl": ledger_with([START, merge("c1", head)])}))
         out = self.run_kos()
         t1 = self.one(out)
         self.assertEqual((out["ok"], t1["ok"], t1["done"]), (True, True, ["D3", "D7"]))
@@ -568,7 +568,7 @@ class KosJob(Base):
                                                                              "unfinished:" + head])):
             with self.subTest(rows=len(rows)):
                 shutil.rmtree(self.temp, ignore_errors=True)
-                self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": ledger_with(rows)}))
+                self.write_pulled(state=dict(state_files(), **{".brain/ledger.jsonl": ledger_with(rows)}))
                 runner = RedAs()
                 out = self.run_kos(runner)
                 self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"]),
@@ -578,8 +578,8 @@ class KosJob(Base):
                 self.assertFalse(os.path.exists(os.path.join(self.temp, "out", "results")))
 
     def test_a_state_it_cannot_read_runs_nothing(self):
-        self.write_pulled(state=dict(state_files(), **{"ledger.jsonl": state_files([row("x", "events", "nope", {})])[
-            "ledger.jsonl"]}))
+        self.write_pulled(state=dict(state_files(), **{".brain/ledger.jsonl": state_files([row("x", "events", "nope", {})])[
+            ".brain/ledger.jsonl"]}))
         runner = RedAs()
         out = self.run_kos(runner)
         self.assertEqual((out["ok"], out["reason"], out["target"]), (False, "state_refused", "t1"))

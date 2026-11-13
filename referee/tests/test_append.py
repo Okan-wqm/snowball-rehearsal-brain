@@ -239,7 +239,7 @@ class OnTheTarget(unittest.TestCase):
         gh = FakeGitHub("acme/toy")
         root = gh.seed_commit("t0")
         gh.refs["main"] = root
-        head = gh.seed_commit("s0", files={"ledger.jsonl": BASE, "status.md": b"s\n"})
+        head = gh.seed_commit("s0", files={".brain/ledger.jsonl": BASE, ".brain/status.md": b"s\n"})
         gh.refs["brain/state"] = head
         return gh, W.Writer("acme/toy", gh), head, root
 
@@ -247,19 +247,19 @@ class OnTheTarget(unittest.TestCase):
         gh, wr, head, root = self.world()
         state = AP.TargetState(wr, head)
         hashes = AP.append_cycle(BASE, BASE, Reader(req({"row_id": "e2"}, {"row_id": "c2"})), state)
-        new = gh.read_file("brain/state", "ledger.jsonl")
+        new = gh.read_file("brain/state", ".brain/ledger.jsonl")
         self.assertTrue(chain.verify_bytes(new, BASE)["valid"])
         self.assertEqual([json.loads(line)["row_hash"] for line in new[len(BASE):].splitlines()], hashes)
         self.assertEqual(gh.commits[gh.refs["brain/state"]]["parents"], [head])
         self.assertEqual(len(state.commits_made), 1)
         self.assertEqual([r for r in gh.requests if r[1].endswith("/git/commits")][0][0], "POST")
         self.assertEqual(sum(1 for r in gh.requests if r[0] == "POST" and r[1].endswith("/git/commits")), 1)
-        self.assertEqual(gh.read_file("brain/state", "status.md"), b"s\n")
+        self.assertEqual(gh.read_file("brain/state", ".brain/status.md"), b"s\n")
         self.assertEqual(gh.refs["main"], root)
         # the next cycle reads the new head and extends the new file
         nxt = AP.TargetState(wr, gh.refs["brain/state"])
         AP.append_cycle(new, new, Reader(req({"row_id": "e3"})), nxt)
-        self.assertTrue(chain.verify_bytes(gh.read_file("brain/state", "ledger.jsonl"), new)["valid"])
+        self.assertTrue(chain.verify_bytes(gh.read_file("brain/state", ".brain/ledger.jsonl"), new)["valid"])
 
     def test_hard_stop_and_secret_send_nothing(self):
         gh, wr, head, _ = self.world()
@@ -273,7 +273,7 @@ class OnTheTarget(unittest.TestCase):
 
     def test_a_stale_head_writes_nothing(self):
         gh, wr, head, _ = self.world()
-        moved = gh.seed_commit("s1", [head], files={"ledger.jsonl": BASE})
+        moved = gh.seed_commit("s1", [head], files={".brain/ledger.jsonl": BASE})
         gh.refs["brain/state"] = moved
         with self.assertRaises(W.Refused):
             AP.append_cycle(BASE, BASE, Reader(req({"row_id": "n"})), AP.TargetState(wr, head))

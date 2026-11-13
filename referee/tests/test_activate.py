@@ -300,14 +300,18 @@ class Activation(unittest.TestCase):
                             and c["name"] == AW.GATE for c in gh.checks))
         for cid in AW.EXPECTED_REJECTS:  # a reject writes nothing on the target
             self.assertNotIn("brain/c/" + cid, gh.refs)
-        # brain/state: an orphan holding exactly the three state files
+        # brain/state: an orphan holding exactly the state files, all under .brain/ (tohum/26d "Yer"), the root's
+        # bundle beside the root row among them
         state = gh.refs["brain/state"]
         self.assertEqual(state, out["state_sha"])
         self.assertEqual(gh.commits[state]["parents"], [])
         self.assertEqual(set(gh.trees[gh.commits[state]["tree"]]),
-                         {"ledger.jsonl", "chain/root.jsonl", "status.md"})
-        ledger = gh.read_file("brain/state", "ledger.jsonl")
-        roots = gh.read_file("brain/state", "chain/root.jsonl")
+                         {".brain/ledger.jsonl", ".brain/chain/root.jsonl", ".brain/status.md",
+                          ".brain/chain/%s.sigstore.json" % out["root"]})
+        self.assertEqual(json.loads(gh.read_file("brain/state", ".brain/chain/%s.sigstore.json" % out["root"])),
+                         dict(w.signer.answer(), fake_signed_sha256=out["root"]))
+        ledger = gh.read_file("brain/state", ".brain/ledger.jsonl")
+        roots = gh.read_file("brain/state", ".brain/chain/root.jsonl")
         self.assertTrue(chain.verify_bytes(ledger)["valid"])
         self.assertEqual(SC.ledger_reasons(ledger), [])
         rows = rows_of(ledger)
@@ -343,9 +347,9 @@ class Activation(unittest.TestCase):
         # the signed root verifies as the next D1 reads it
         rekor = {"entries": {out["entry"]["uuid"]: {"hash": out["entry"]["hash"], "identity": "referee@example"}}}
         self.assertEqual(anchor.verify(ledger, roots, rekor, "referee@example"), {"valid": True, "reasons": []})
-        self.assertEqual(w.signer.payloads, [out["root"].encode()])
+        self.assertEqual([sha(p) for p in w.signer.payloads], [out["root"]])  # signed once: the root's preimage
         self.assertEqual((out["rekor_uuid"], out["edited"]), (out["entry"]["uuid"], False))
-        status = gh.read_file("brain/state", "status.md").decode()
+        status = gh.read_file("brain/state", ".brain/status.md").decode()
         self.assertIn('- Cycle: "%s"\n- Last decision: "merge"\n- Base age: 0 s' % AW.CYCLE, status)
         self.assertEqual(SC.status_reasons(status.encode(), ledger), [])
         # refs written: the cut, the candidate branch, the merge into the cut, the state; never main
@@ -359,18 +363,18 @@ class Activation(unittest.TestCase):
         self.assertIsNone(out["merge"])
         self.assertEqual(w.gh.refs["brain/integration"], w.main)
         self.assertEqual(sorted(set(w.wr.written)), ["refs/heads/brain/integration", "refs/heads/brain/state"])
-        rows = rows_of(w.gh.read_file("brain/state", "ledger.jsonl"))
+        rows = rows_of(w.gh.read_file("brain/state", ".brain/ledger.jsonl"))
         self.assertEqual([r["kind"] for r in rows], ["genesis", "cycle_start", "integration_cut", "ratchet_base",
                                                      "decision", "status"])
         self.assertEqual(rows[4]["payload"], {"decision": "reject", "candidate": "good", "reasons": ["merge_paused"]})
-        self.assertIn('- Last decision: "reject"\n', w.gh.read_file("brain/state", "status.md").decode())
+        self.assertIn('- Last decision: "reject"\n', w.gh.read_file("brain/state", ".brain/status.md").decode())
 
     def test_the_ratchet_base_is_the_referees_run(self):
         w = AW.World()
         w.files["base.jsonl"] = AW.run_file({"tool": "biome", "violations": [AW.violation(n) for n in (1, 2, 3, 4)]})
         w.base_run_sha256 = sha(w.files["base.jsonl"])
         w.run()
-        self.assertEqual(rows_of(w.gh.read_file("brain/state", "ledger.jsonl"))[3]["payload"],
+        self.assertEqual(rows_of(w.gh.read_file("brain/state", ".brain/ledger.jsonl"))[3]["payload"],
                          {"base_run_sha256": w.base_run_sha256, "counts": {"biome": 4}})
 
     def test_d5s_merge_that_cannot_be_written_writes_nothing(self):

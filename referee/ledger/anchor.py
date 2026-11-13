@@ -9,12 +9,17 @@ chain break or a root that cannot be written to Rekor is a hard stop), tohum/26 
   that has a row to the stored ``row_hash`` of that part's last row in file order; ``root`` is the lowercase hex
   sha256 of the RFC 8785 bytes of ``tips`` (``ledger.chain.canonical``). An empty ledger has no tip and is
   ``Unusable``: there is nothing to anchor.
-- **Anchor** (``anchor``): the signer signs the root's 64 hex characters (ASCII) as its payload and answers
-  ``{uuid, identity}``; the entry is ``{uuid, hash: root, identity}``. A signer that cannot sign raises
-  ``Unsignable``, which is a ``HardStop``: no entry, nothing written. ``FakeSigner`` here stands in
-  for a verified Sigstore bundle (asama-0/14 "Kum", tohum/29j) and does no cryptography; the real signer is
-  ``loop.sign.SigstoreSigner`` (``sigstore sign`` in ``yaz``); the seed's pins are not part of this module
-  (asama-0/10a #kok).
+- **Anchor** (``anchor``): the signer signs the tips' RFC 8785 bytes (``preimage``), the bytes whose sha256 the
+  root is, so the hash of the signed data is the root itself and not a digest of it (tohum/26d "Kök": the Rekor
+  record's ``spec.data.hash`` is the root). It answers ``{uuid, identity, bundle}``, ``bundle`` the bytes of the
+  Sigstore bundle it made (non-empty); ``anchor`` returns the entry ``{uuid, hash: root, identity}`` and the bundle,
+  which the cycle keeps beside the root row (``ledger.cycle``, tohum/26d "Yer"). A signer that cannot sign raises
+  ``Unsignable``, which is a ``HardStop``: no entry, nothing written; an answer without one of the three is
+  ``Unsignable`` too. ``FakeSigner`` here stands in for a verified Sigstore bundle (asama-0/14 "Kum", tohum/29j)
+  and does no cryptography: its bundle is a JSON line naming what it was asked to sign, no Sigstore bundle. The
+  real signer is ``loop.sign.SigstoreSigner`` (``sigstore sign`` in ``yaz``); the seed's pins are not part of this
+  module (asama-0/10a #kok). The command ``anchor`` below has a root and no tips: its stand-in signer is asked
+  for its answer alone (``FakeSigner.answer``, ``entry_of``), nothing is signed and no bundle is made.
 - **Verify** (``verify``, the next cycle's D1): reads the ledger's root, only the last line of
   ``chain/root.jsonl`` (``root`` 64 lowercase hex, ``rekor_uuid`` a non-empty string) and the recorded Rekor
   entries ``{entries: {uuid: {hash, identity}}}``. Reasons, in this order: ``root_mismatch`` (the ledger's root
@@ -56,6 +61,7 @@ import cli
 
 LEDGER_PATH = branches.STATE_LEDGER
 ROOTS_PATH = branches.STATE_ROOTS
+bundle_path = branches.state_bundle
 REASONS = ("root_mismatch", "entry_missing", "entry_root_mismatch", "identity_mismatch")
 
 
@@ -85,15 +91,21 @@ def tips(ledger: bytes) -> dict[str, str]:
     return out
 
 
+def preimage(tip_map: dict[str, str]) -> bytes:
+    """The bytes the root is the sha256 of, and the payload the signer signs: the tips' RFC 8785 form."""
+    return chain.canonical(tip_map)
+
+
 def root_of(tip_map: dict[str, str]) -> str:
-    return hashlib.sha256(chain.canonical(tip_map)).hexdigest()
+    return hashlib.sha256(preimage(tip_map)).hexdigest()
 
 
 # ---------------------------------------------------------------- signing
 
 @dataclass
 class FakeSigner:
-    """``{available, identity, uuid}``: answers with its uuid and identity, or cannot sign. Keeps the payloads."""
+    """``{available, identity, uuid}``: answers with its uuid and identity, or cannot sign. Keeps the payloads; its
+    ``bundle`` names the payload's sha256 and is no Sigstore bundle."""
 
     available: bool
     identity: str | None = None
@@ -110,11 +122,16 @@ class FakeSigner:
                     raise Unusable("signer: %s must be a non-empty string" % key)
         return cls(obj["available"], obj.get("identity"), obj.get("uuid"))
 
-    def sign(self, payload: bytes) -> dict:
+    def answer(self) -> dict:
         if not self.available:
             raise Unsignable("signer unavailable")
-        self.payloads.append(payload)
         return {"uuid": self.uuid, "identity": self.identity}
+
+    def sign(self, payload: bytes) -> dict:
+        answer = self.answer()
+        self.payloads.append(payload)
+        named = dict(answer, fake_signed_sha256=hashlib.sha256(payload).hexdigest())
+        return dict(answer, bundle=chain.canonical(named) + b"\n")
 
 
 def _root_text(value: Any) -> str:
@@ -123,13 +140,22 @@ def _root_text(value: Any) -> str:
     return value
 
 
-def anchor(root: str, signer: Any) -> dict:
-    """Sign ``root`` and return the entry ``{uuid, hash, identity}``; ``Unsignable`` if it cannot be signed."""
+def entry_of(root: str, answer: Any) -> dict:
+    """The entry ``{uuid, hash, identity}`` of ``root`` from a signer's answer; ``Unsignable`` without both names."""
     root = _root_text(root)
-    answer = signer.sign(root.encode("ascii"))
     if not isinstance(answer, dict) or not all(isinstance(answer.get(k), str) and answer[k] for k in ("uuid", "identity")):
         raise Unsignable("signer gave no entry")
     return {"uuid": answer["uuid"], "hash": root, "identity": answer["identity"]}
+
+
+def anchor(tip_map: dict[str, str], signer: Any) -> tuple[dict, bytes]:
+    """Have ``signer`` sign the tips' ``preimage`` and return the root's entry ``{uuid, hash, identity}`` and the
+    bundle's bytes; ``Unsignable`` if it cannot be signed or the answer lacks one of them."""
+    answer = signer.sign(preimage(tip_map))
+    entry = entry_of(root_of(tip_map), answer)
+    if not isinstance(answer.get("bundle"), bytes) or not answer["bundle"]:
+        raise Unsignable("signer gave no bundle")
+    return entry, answer["bundle"]
 
 
 # ---------------------------------------------------------------- verify (next D1)
@@ -254,7 +280,7 @@ def main(argv: list[str]) -> int:
             signer = FakeSigner.from_json(_json(_read(argv[1]), "signer"))
             root = _root_text(_stdin_value("root"))
             try:
-                entry = anchor(root, signer)
+                entry = entry_of(root, signer.answer())
             except Unsignable as exc:
                 sys.stderr.write("hard stop: %s\n" % cli.cause(exc))
                 _emit({"ok": False, "hard_stop": True, "entry": None})

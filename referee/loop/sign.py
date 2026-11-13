@@ -3,8 +3,11 @@
 
 Rules: asama-0/14 row 11 (the root is signed with Sigstore, the next D1 verifies it), tohum/01a (``yaz`` holds the
 Sigstore OIDC identity), tohum/13 (a root that cannot be written to Rekor is a hard stop), ``ledger.anchor`` (the
-signer's contract: ``sign(payload) -> {uuid, identity}``, or ``Unsignable``), ``loop.rekor`` (how the next D1 reads
-and judges the entry: through Rekor's v1 API, a ``hashedrekord`` ``0.0.1`` body, the uuid as its leaf hash).
+signer's contract: ``sign(payload) -> {uuid, identity, bundle}``, or ``Unsignable``; the payload is the root's
+preimage, so ``sha256(payload)`` is the root), ``loop.rekor`` (how the next D1 reads and judges the entry: through
+Rekor's v1 API, a ``hashedrekord`` ``0.0.1`` body, the uuid as its leaf hash), tohum/26d "Kök" (the record's
+``spec.data.hash`` is the root itself; ``sign`` takes files only, so the file signed is the preimage) and "Yer" (the
+bundle is kept in ``brain/state``'s commit beside the root row: ``ledger.cycle`` puts the bytes answered here there).
 
 ``SigstoreSigner(pin).sign(payload)``, in a fresh directory:
 
@@ -17,7 +20,8 @@ and judges the entry: through Rekor's v1 API, a ``hashedrekord`` ``0.0.1`` body,
 3. runs ``sigstore verify identity`` of that bundle against the payload file with ``pin`` and GitHub Actions'
    issuer (``loop.accepted.identity_argv``, the form both of the loop's Sigstore checks run): the entry was signed
    by the identity the next D1 will pin, not merely by whichever token the job had;
-4. answers ``{uuid: the leaf hash of the body (64 hex, loop.rekor), identity: pin}``.
+4. answers ``{uuid: the leaf hash of the body (64 hex, loop.rekor), identity: pin, bundle: the bundle file's bytes
+   as ``sigstore`` wrote them}``: the bytes step 2 read and step 3 verified, read once.
 
 A non-zero exit or a program that cannot start at 1 or 3, a missing, oversized or unreadable bundle, a bundle
 without exactly one tlog entry, or a body of another kind, version or digest is ``ledger.anchor.Unsignable`` (a hard
@@ -54,8 +58,8 @@ def sign_argv(sigstore: Sequence[str], bundle: str, payload: str) -> list[str]:
     return [*sigstore, "sign", "--rekor-version", "1", "--bundle", bundle, payload]
 
 
-def _bundle_body(path: str, digest: str) -> str:
-    """The bundle's one ``canonicalizedBody``, checked by the rules above; ``Unsignable``."""
+def _bundle_body(path: str, digest: str) -> tuple[bytes, str]:
+    """The bundle's bytes and its one ``canonicalizedBody``, checked by the rules above; ``Unsignable``."""
     try:
         with open(path, "rb") as fh:
             data = fh.read(R.MAX_ANSWER + 1)
@@ -72,11 +76,11 @@ def _bundle_body(path: str, digest: str) -> str:
     record = R.body_of({"body": body}) if isinstance(body, str) else None
     if record is None or record["spec"]["data"]["hash"]["value"] != digest:
         raise Unsignable("bundle records no hashedrekord 0.0.1 of the payload")
-    return body
+    return data, body
 
 
 class SigstoreSigner:
-    """``sign(payload) -> {uuid, identity}`` by the rules above; ``run(argv) -> exit code``."""
+    """``sign(payload) -> {uuid, identity, bundle}`` by the rules above; ``run(argv) -> exit code``."""
 
     def __init__(self, pin: str, sigstore: Sequence[str], run: Callable[[list[str]], int] = A.run_verifier):
         if not isinstance(pin, str) or not pin:
@@ -91,7 +95,7 @@ class SigstoreSigner:
                 fh.write(payload)
             if self.run(sign_argv(self.sigstore, bundle, path)) != 0:
                 raise Unsignable("sigstore sign failed")
-            body = _bundle_body(bundle, digest)
+            data, body = _bundle_body(bundle, digest)
             if self.run(A.identity_argv(self.sigstore, bundle, self.pin, path)) != 0:
                 raise Unsignable("the bundle is not verified for the pinned identity")
-        return {"uuid": R._leaf(body), "identity": self.pin}
+        return {"uuid": R._leaf(body), "identity": self.pin, "bundle": data}

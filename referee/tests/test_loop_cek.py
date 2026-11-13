@@ -163,7 +163,7 @@ class Brain(unittest.TestCase):
                           state_files()))
 
     def test_the_state_it_carries(self):
-        for kw, want in (({"state": {"ledger.jsonl": b"x\n"}}, ["state_incomplete"]),
+        for kw, want in (({"state": {".brain/ledger.jsonl": b"x\n"}}, ["state_incomplete"]),
                          ({"state_head": "A" * 40}, ["heads_invalid"])):
             with self.subTest(kw=kw):
                 self.assertEqual(self.refused(**kw), want)
@@ -392,7 +392,7 @@ class CekJob(unittest.TestCase):
                   "targets/t1/units.json": json.dumps({"units": [recipe()]}).encode()},
                  **{"candidates/t1/good/%s" % f: d for f, d in candidate(GOOD).items()})
     TARGET = {p: (json.dumps(v) if isinstance(v, dict) else v).encode() for p, v in TREE.items()}
-    STATE = {"ledger.jsonl": [2, 5], "chain/root.jsonl": [1, 2]}  # rows at genesis, at the head on top of it
+    STATE = {".brain/ledger.jsonl": [2, 5], ".brain/chain/root.jsonl": [1, 2]}  # rows at genesis, at the head on top of it
     STATUS_MD = b"# brain/state\n<!-- status.block -->\nx\n<!-- /status.block -->\n"  # carried, not judged by D1
     ANCHORED = (2, 5, 8)  # root row i anchors the first ANCHORED[i] ledger rows (so genesis's and the head's agree)
 
@@ -418,7 +418,7 @@ class CekJob(unittest.TestCase):
         self.rekor = FakeRekor()
         self.state_genesis = self.state_commit({p: n[0] for p, n in self.STATE.items()}, ())
         self.state_head = self.state_commit({p: n[1] for p, n in self.STATE.items()}, (self.state_genesis,),
-                                            {"status.md": self.STATUS_MD})
+                                            {".brain/status.md": self.STATUS_MD})
 
     ledger_rows: list | None = None  # the fixture ledger's rows, ``state_rows`` unless a test gives its own
 
@@ -427,19 +427,19 @@ class CekJob(unittest.TestCase):
         anchors the ledger's first ``ANCHORED[i]`` rows, its entry in the fake Rekor (``ledger.anchor``'s rules)."""
         ledger = self.ledger_rows or state_rows(max(self.ANCHORED))
         content = {}
-        if "ledger.jsonl" in counts:
-            content["ledger.jsonl"] = self.TA.chained(ledger[:counts["ledger.jsonl"]])
-        if "chain/root.jsonl" in counts:
+        if ".brain/ledger.jsonl" in counts:
+            content[".brain/ledger.jsonl"] = self.TA.chained(ledger[:counts[".brain/ledger.jsonl"]])
+        if ".brain/chain/root.jsonl" in counts:
             roots = b""
-            for i in range(counts["chain/root.jsonl"]):
+            for i in range(counts[".brain/chain/root.jsonl"]):
                 root = AN.root_of(AN.tips(self.TA.chained(ledger[:self.ANCHORED[i]])))
-                uuid, entry = entry_for(RK.payload_digest(root))
+                uuid, entry = entry_for(root)
                 self.rekor.entries[uuid] = entry
                 roots = AN.root_row(roots, "r%d" % i, "2026-11-01T00:00:00Z", root, uuid)
-            content["chain/root.jsonl"] = roots
+            content[".brain/chain/root.jsonl"] = roots
         commit = S.store(dict(content, **(extra or {})), parents, self.state_objects)[1]
         self.state_content[commit] = content
-        if "chain/root.jsonl" in counts:
+        if ".brain/chain/root.jsonl" in counts:
             self.rekor.last[commit] = uuid
         return commit
 
@@ -545,7 +545,7 @@ class CekJob(unittest.TestCase):
         line = self.one(out)
         self.assertEqual(sorted(line), ["assembled", "heads", "profile", "root", "state", "target"])
         self.assertEqual(line["state"], {"head": self.state_head, "previous": self.state_genesis,
-                                         "rows": {"ledger.jsonl": 5, "chain/root.jsonl": 2}})
+                                         "rows": {".brain/ledger.jsonl": 5, ".brain/chain/root.jsonl": 2}})
         self.assertEqual(line["profile"], {"unit_id": "pkg"})
         self.assertEqual(out["accepted"]["brain_sha"], commit)
         self.assertEqual(out["accepted"]["referee_tree_sha256"], tree)
@@ -553,7 +553,7 @@ class CekJob(unittest.TestCase):
         self.assertIn("https://github.com/o/referee/.github/workflows/bootstrap.yml@refs/heads/main", self.verified[0])
         # MF11: the head's root (its ledger's, the last root row's) and its Rekor entry, verified against loop.yml
         root = AN.root_of(AN.tips(self.TA.chained(state_rows(5))))
-        uuid = entry_for(RK.payload_digest(root))[0]
+        uuid = entry_for(root)[0]
         self.assertEqual((line["root"], self.rekor.calls), ({"root": root, "rekor_uuid": uuid}, [uuid]))
         self.assertEqual(len(self.verified), 2)
         # both checks run the sigstore step's program (tohum/29s), an argv prefix
@@ -561,7 +561,7 @@ class CekJob(unittest.TestCase):
         self.assertEqual(self.verified[0][:3], list(program))
         self.assertEqual(self.verified[1], A.identity_argv(
             program, self.verified[1][6], "https://github.com/o/referee/.github/workflows/loop.yml@refs/heads/main",
-            "sha256:" + RK.payload_digest(root)))
+            "sha256:" + root))
         argvs = [c["argv"] for c in S.calls(self.bin)]
         fetches = [a for a in argvs if "fetch" in a]
         self.assertEqual([(f[-2], f[-1]) for f in fetches],
@@ -642,7 +642,7 @@ class CekJob(unittest.TestCase):
         write_tree(os.path.join(temps["yaz"], "control"), {"control.json": {"merge_paused": False}})
         # the target at the heads cek read, brain/state holding the files D1 verified
         gh = YW.github_at(heads, self.TARGET, dict(self.state_content[self.state_head],
-                                                         **{"status.md": self.STATUS_MD}), repo="o/target")
+                                                         **{".brain/status.md": self.STATUS_MD}), repo="o/target")
         got = J.run("yaz", YW.env(temps["yaz"], self.work, GITHUB_RUN_ID="1"), transport=gh, signer=YW.signer(),
                     now=lambda: YW.NOW)
         self.assertEqual((got["ok"], self.one(got)["done"]), (True, ["D5", "D6"]))
@@ -653,8 +653,8 @@ class CekJob(unittest.TestCase):
         self.assertEqual((got["written"]["merge"]["candidate"], gh.refs["brain/integration"]),
                          ("good", got["written"]["merge"]["merge_sha"]))
         # D6 appended cagir's cost row, as the response carried it, onto the ledger cek verified
-        ledger = gh.read_file("brain/state", "ledger.jsonl")
-        self.assertTrue(ledger.startswith(self.state_content[self.state_head]["ledger.jsonl"]))
+        ledger = gh.read_file("brain/state", ".brain/ledger.jsonl")
+        self.assertTrue(ledger.startswith(self.state_content[self.state_head][".brain/ledger.jsonl"]))
         [cost] = [json.loads(line) for line in ledger.splitlines() if json.loads(line)["part"] == "cost"]
         self.assertEqual({k: v for k, v in cost.items() if k not in ("prev_hash", "row_hash")}, response["rows"][0])
 
@@ -705,7 +705,7 @@ class CekJob(unittest.TestCase):
         got = self.one(got)
         self.assertEqual((got["merge"], got["written"]["genesis"], got["written"]["integration_sha"]),
                          ("good", True, main))
-        ledger = gh.read_file("brain/state", "ledger.jsonl")
+        ledger = gh.read_file("brain/state", ".brain/ledger.jsonl")
         rows = [json.loads(line) for line in ledger.splitlines()]
         self.assertEqual((rows[0]["kind"], rows[0]["payload"]["base_sha"]), ("genesis", main))
         [cost] = [r for r in rows if r["part"] == "cost"]
@@ -770,7 +770,7 @@ class CekJob(unittest.TestCase):
         self.state_head = self.state_genesis
         out, _, _ = self.run_cek()
         self.assertEqual((out["done"], self.one(out)["state"]), (["D1"], {
-            "head": self.state_genesis, "previous": None, "rows": {"ledger.jsonl": 2, "chain/root.jsonl": 1}}))
+            "head": self.state_genesis, "previous": None, "rows": {".brain/ledger.jsonl": 2, ".brain/chain/root.jsonl": 1}}))
         self.assertEqual([a[-1] for a in (c["argv"] for c in S.calls(self.bin)) if "fetch" in a][1:2],
                          ["%s:refs/pulled" % self.state_genesis])
         self.assertIn("state.git", os.listdir(self.target_dir()))
@@ -789,7 +789,7 @@ class CekJob(unittest.TestCase):
         self.assertTrue(P.genesis(art))
         self.assertEqual((art.heads, art.state, art.status),
                          ({"brain/state": None, "brain/integration": main},
-                          {"ledger.jsonl": b"", "chain/root.jsonl": b""}, None))
+                          {".brain/ledger.jsonl": b"", ".brain/chain/root.jsonl": b""}, None))
         self.assertEqual(self.ls_remotes(), [self.URL["t1"]] * 2)  # the two heads, then main
         self.assertEqual(self.fetched()[1:], [(self.URL["t1"], "%s:refs/pulled" % main)])  # no brain/state fetch
         self.assertEqual(self.rekor.calls, [])
@@ -801,12 +801,12 @@ class CekJob(unittest.TestCase):
     def test_a_state_that_does_not_verify_is_a_refusal_before_the_target_is_fetched(self):
         for name, head, reasons in (
                 # the head rewrote its parent's ledger: fewer rows than the parent had
-                ("rewritten", lambda: self.state_commit({"ledger.jsonl": 1, "chain/root.jsonl": 2},
+                ("rewritten", lambda: self.state_commit({".brain/ledger.jsonl": 1, ".brain/chain/root.jsonl": 2},
                                                         (self.state_genesis,)),
-                 ["not_append_only:ledger.jsonl:2"]),
-                ("no roots", lambda: self.state_commit({"ledger.jsonl": 3}, (self.state_genesis,)),
-                 ["file_missing:chain/root.jsonl"]),
-                ("merge", lambda: self.state_commit({"ledger.jsonl": 3, "chain/root.jsonl": 2},
+                 ["not_append_only:.brain/ledger.jsonl:2"]),
+                ("no roots", lambda: self.state_commit({".brain/ledger.jsonl": 3}, (self.state_genesis,)),
+                 ["file_missing:.brain/chain/root.jsonl"]),
+                ("merge", lambda: self.state_commit({".brain/ledger.jsonl": 3, ".brain/chain/root.jsonl": 2},
                                                     (self.state_genesis, self.state_head)),
                  ["state_merge"])):
             with self.subTest(name):
@@ -828,19 +828,19 @@ class CekJob(unittest.TestCase):
             return self.rekor.last[self.state_head]
 
         def other_entry():
-            self.rekor.entries[last_uuid()] = entry_for(RK.payload_digest("2" * 64))[1]
+            self.rekor.entries[last_uuid()] = entry_for("2" * 64)[1]
 
         def refuse_root(argv):
             return 1 if argv[-1].startswith("sha256:") else 0
         for name, head, setup, kw, reasons in (
                 # the ledger has a row the last root does not anchor: one more commit than the last cycle wrote
-                ("unanchored row", lambda: self.state_commit({"ledger.jsonl": 6, "chain/root.jsonl": 2},
+                ("unanchored row", lambda: self.state_commit({".brain/ledger.jsonl": 6, ".brain/chain/root.jsonl": 2},
                                                              (self.state_genesis,)), None, {}, ["root_mismatch"]),
                 ("no entry", None, lambda: self.rekor.entries.pop(last_uuid()), {}, ["entry_missing"]),
                 ("another root's entry", None, other_entry, {}, ["entry_root_mismatch"]),
                 ("unverified", None, None, {"verifier": refuse_root}, ["entry_unverified"]),
                 ("no root in the last row", lambda: self.state_commit(
-                    {"ledger.jsonl": 2}, (), {"chain/root.jsonl": self.TA.chained([{"row_id": "r0", "part": "p"}])}),
+                    {".brain/ledger.jsonl": 2}, (), {".brain/chain/root.jsonl": self.TA.chained([{"row_id": "r0", "part": "p"}])}),
                  None, {}, ["root_unreadable"])):
             with self.subTest(name):
                 shutil.rmtree(self.temp)
@@ -1016,7 +1016,7 @@ class CekJob(unittest.TestCase):
         self.assertTrue(P.genesis(art))
         self.assertEqual((art.target["kind"], art.heads, art.state, art.status),
                          ("copy", {"brain/state": None, "brain/integration": base},
-                          {"ledger.jsonl": b"", "chain/root.jsonl": b""}, None))
+                          {".brain/ledger.jsonl": b"", ".brain/chain/root.jsonl": b""}, None))
         # the copy: its heads listed once, its base fetched, nothing of a state fetched; no main read
         self.assertEqual(self.ls_remotes(), [self.URL["t1"], self.URL["t2"]])
         self.assertEqual([f for f in self.fetched() if f[0] == self.URL["t2"]],
@@ -1071,7 +1071,7 @@ class CekJob(unittest.TestCase):
         self.assertEqual((got["ok"], line["target"], line["done"]), (True, "t2", ["D5", "D6"]), got)
         self.assertNotIn("gate", line)  # judged on the toy only
         self.assertEqual((line["written"]["genesis"], line["written"]["integration_sha"]), (True, base))
-        rows = [json.loads(x) for x in gh.read_file("brain/state", "ledger.jsonl").splitlines()]
+        rows = [json.loads(x) for x in gh.read_file("brain/state", ".brain/ledger.jsonl").splitlines()]
         self.assertEqual((rows[0]["kind"], rows[0]["payload"]["target"], rows[0]["payload"]["base_sha"]),
                          ("genesis", "t2", base))
 

@@ -23,18 +23,23 @@ cycle's rows (JSON objects without ``prev_hash`` and ``row_hash``), ``setup/impo
    payload's shape, the old rows included: a loop ledger holds only rows the loop writes), else ``Unusable``;
 5. the root row's id is new in the roots file and ``ts`` is a timestamp (``ledger.anchor.root_row_reasons``), else
    ``Unusable``, before the signer is asked;
-6. the root of the new ledger (``ledger.anchor.root_of``) is signed (``Unsignable``, a ``HardStop``, when it cannot
-   be) and one chained root row is appended.
+6. the root of the new ledger (``ledger.anchor.root_of``) is signed (``ledger.anchor.anchor``: the tips' bytes, whose
+   sha256 the root is; ``Unsignable``, a ``HardStop``, when it cannot be) and one chained root row is appended.
 
-``plan`` returns ``{files, row_hashes, root, entry, block_sha256, edited}``, ``files`` exactly ``ledger.jsonl``,
-``chain/root.jsonl`` and ``status.md``; it writes nothing. ``commit`` plans and hands ``files`` to the state writer in
-one ``commit_files`` call (``ledger.append.CountingState`` or ``TargetState``): the cycle's one commit. The
-activation opens ``brain/state`` with ``plan``'s files as an orphan commit (``target.write.Writer.open_orphan``).
+``plan`` returns ``{files, row_hashes, root, entry, block_sha256, edited}``. ``files`` maps paths of ``brain/state``'s
+commit to bytes, all under the state directory (``target.branches.STATE_ROOT``, tohum/26d "Yer"): exactly
+``.brain/ledger.jsonl``, ``.brain/chain/root.jsonl``, ``.brain/status.md`` and the new root's Sigstore bundle as the
+signer gave it, ``.brain/chain/<root>.sigstore.json`` (``ledger.anchor.bundle_path``), beside the root row that names
+that root. The bundles of earlier roots stay where their cycles wrote them. ``plan`` writes nothing. ``commit`` plans
+and hands ``files`` to the state writer in one ``commit_files`` call (``ledger.append.CountingState`` or
+``TargetState``): the cycle's one commit. The activation opens ``brain/state`` with ``plan``'s files as an orphan
+commit (``target.write.Writer.open_orphan``).
 
 Out of scope, stated: which rows a cycle writes (the caller's: ``activate`` and D6 of ``yaz``,
 ``loop.write_cycle``, both through ``ledger.events``); where ``status.md`` and the previous versions come from (the
 caller's read of ``brain/state``: D6 takes them from ``pulled``, which D1 filled); the meaning of a row's values
-(``ledger.schema`` checks shapes).
+(``ledger.schema`` checks shapes); what the bundle's bytes are (the signer's: ``loop.sign`` checks the real one
+before it answers); a ``profile.json`` in the state directory (no module writes one).
 """
 
 from __future__ import annotations
@@ -71,11 +76,12 @@ def plan(ledger: bytes, previous: bytes, roots: bytes, previous_roots: bytes, st
     reasons = anchor.root_row_reasons(roots, root_row_id, ts)
     if reasons:
         raise Unusable("root row: %s" % "; ".join(reasons))
-    root = anchor.root_of(anchor.tips(cycle.content))
-    entry = anchor.anchor(root, signer)
+    tip_map = anchor.tips(cycle.content)
+    root = anchor.root_of(tip_map)
+    entry, bundle = anchor.anchor(tip_map, signer)
     files = {anchor.LEDGER_PATH: cycle.content, anchor.ROOTS_PATH: anchor.root_row(roots, root_row_id, ts, root,
                                                                                    entry["uuid"]),
-             block.STATUS_PATH: planned["status"]}
+             anchor.bundle_path(root): bundle, block.STATUS_PATH: planned["status"]}
     return {"files": files, "row_hashes": cycle.row_hashes, "root": root, "entry": entry,
             "block_sha256": planned["block_sha256"], "edited": planned["edited"]}
 

@@ -15,7 +15,8 @@ another job's output only by artifact and hash; the workflow's download checks t
     policy.json                 the referee repository's policy.json as read
     state/heads.json            {"brain/state": commit | null, "brain/integration": commit}: the heads D1 read
     state/ledger.jsonl          brain/state's files at that head, the bytes D1 verified (``target.branches``'
-    state/chain/root.jsonl        ``STATE_CHAINS``: MF1's verify --previous, MF11's root)
+    state/chain/root.jsonl        ``STATE_CHAINS``, each by its name under the state directory, ``state_name``:
+                                  the commit's ``.brain/`` is not repeated; MF1's verify --previous, MF11's root)
     state/status.md             brain/state's ``status.md`` at that head, as read; absent when the head has none
     candidates/<cid>/finding.json, diff.patch, expect.json
 
@@ -86,8 +87,14 @@ UNITS = "units.json"
 POLICY = "policy.json"
 STATE_DIR = "state"
 HEADS = STATE_DIR + "/heads.json"
-STATE_FILES = (HEADS,) + tuple("%s/%s" % (STATE_DIR, p) for p in B.STATE_CHAINS)
-STATUS = "%s/%s" % (STATE_DIR, B.STATE_STATUS)
+def _carried(path: str) -> str:
+    """Where the artifact carries ``brain/state``'s file ``path``: under ``state/``, by its name under the state
+    directory (``target.branches.state_name``)."""
+    return "%s/%s" % (STATE_DIR, B.state_name(path))
+
+
+STATE_FILES = (HEADS,) + tuple(_carried(p) for p in B.STATE_CHAINS)
+STATUS = _carried(B.STATE_STATUS)
 HEAD_BRANCHES = (B.STATE, B.INTEGRATION)
 TOP = (TREE, UNITS, POLICY) + STATE_FILES   # always listed
 LAYOUT = TOP + (STATUS,)                     # STATUS listed when the head has a status.md
@@ -147,7 +154,7 @@ def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
     if not _heads_valid(heads, state, status):
         raise PulledError(["heads_invalid"])
     files = {TREE: tree_tar, UNITS: units, POLICY: policy, HEADS: _dump(heads)}
-    files.update({"%s/%s" % (STATE_DIR, p): d for p, d in state.items()})
+    files.update({_carried(p): d for p, d in state.items()})
     if status is not None:
         files[STATUS] = status
     for cid, content in candidates.items():
@@ -277,7 +284,7 @@ def read(root: str) -> Pulled:
                 parsed[path] = cli.loads(contents[path].decode("utf-8"))
             except (UnicodeDecodeError, ValueError, RecursionError):
                 reasons.append("json_unreadable:%s" % path)
-    state = {p: contents.get("%s/%s" % (STATE_DIR, p), b"") for p in B.STATE_CHAINS}
+    state = {p: contents.get(_carried(p), b"") for p in B.STATE_CHAINS}
     if HEADS in parsed and not _heads_valid(parsed[HEADS], state, contents.get(STATUS)):
         reasons.append("heads_invalid")
     if reasons:

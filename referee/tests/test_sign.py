@@ -37,6 +37,7 @@ from ledger import anchor as AN  # noqa: E402
 from loop import accepted as A  # noqa: E402
 from loop import rekor as R  # noqa: E402
 from loop import sign as S  # noqa: E402
+from test_anchor import LEDGER  # noqa: E402
 from test_rekor import REAL, REAL_ENTRY  # noqa: E402
 
 PIN = "https://github.com/acme/referee/.github/workflows/loop.yml@refs/heads/main"
@@ -86,9 +87,11 @@ class Program:
 
 class RealBundle(unittest.TestCase):
     def test_answers_the_leaf_hash_and_the_pin(self):
-        run = Program(REAL["published"])
+        written = json.dumps(REAL["published"], indent=1).encode() + b"\n"
+        run = Program(written)
         answer = S.SigstoreSigner(PIN, ("/opt/python", "-m", "sigstore"), run).sign(SIGNED)
-        self.assertEqual(answer, {"uuid": REAL["uuid"][-64:], "identity": PIN})
+        # the bundle is the file's bytes as the program wrote them, not a rewriting of them
+        self.assertEqual(answer, {"uuid": REAL["uuid"][-64:], "identity": PIN, "bundle": written})
         self.assertEqual(R.checked_answer(answer["uuid"], json.loads(REAL["answer"])), REAL_ENTRY)  # Rekor's entry
         sign, verify = run.argvs
         bundle, payload = sign[7], sign[8]
@@ -147,17 +150,30 @@ class RoundTrip(unittest.TestCase):
     """What the signer answers is what the next D1 reads and accepts."""
 
     def test_anchor_then_next_d1(self):
-        root = "ab" * 32
-        made = bundle_for(digest=R.payload_digest(root))
+        tip_map = AN.tips(LEDGER)
+        root = AN.root_of(tip_map)
+        made = bundle_for(digest=root)  # tohum/26d "Kök": the record's spec.data.hash is the root itself
         body = made["verificationMaterial"]["tlogEntries"][0]["canonicalizedBody"]
-        entry = AN.anchor(root, S.SigstoreSigner(PIN, ("sigstore",), Program(made)))
+        program = Program(made)
+        entry, bundle = AN.anchor(tip_map, S.SigstoreSigner(PIN, ("sigstore",), program))
         self.assertEqual(entry, {"uuid": leaf(body), "hash": root, "identity": PIN})
+        self.assertEqual(hashlib.sha256(program.signed).hexdigest(), root)  # the file sigstore hashed
+        self.assertEqual(json.loads(bundle), made)
         rekor = {entry["uuid"]: dict(copy.deepcopy(REAL_ENTRY), body=body)}
         seen = []
         judge = R.entry_reasons(rekor.get, PIN, ("sigstore",), lambda argv: seen.append(argv) or 0)
         self.assertEqual(judge(entry["uuid"], root), [])
         self.assertEqual(seen[0][seen[0].index("--cert-identity") + 1], PIN)
+        self.assertEqual(seen[0][-1], "sha256:" + root)  # the digest stage-open verifies the bundle for
         self.assertEqual(judge(entry["uuid"], "cd" * 32), ["entry_root_mismatch"])
+
+    def test_a_record_of_a_digest_of_the_root_is_not_signed(self):
+        tip_map = AN.tips(LEDGER)
+        of_the_text = hashlib.sha256(AN.root_of(tip_map).encode("ascii")).hexdigest()
+        program = Program(bundle_for(digest=of_the_text))
+        with self.assertRaises(AN.Unsignable):
+            AN.anchor(tip_map, S.SigstoreSigner(PIN, ("sigstore",), program))
+        self.assertEqual(len(program.argvs), 1)  # refused on the bundle's body, before the verifier
 
 
 class RealProcess(unittest.TestCase):

@@ -53,9 +53,12 @@ ROWS = [{"row_id": "e1", "part": "events", "kind": "a"}, {"row_id": "c1", "part"
 LEDGER, H = build(ROWS)
 
 
+def hand_canonical(tips):
+    return ("{" + ",".join('"%s":"%s"' % (k, tips[k]) for k in sorted(tips)) + "}").encode()
+
+
 def hand_root(tips):
-    text = "{" + ",".join('"%s":"%s"' % (k, tips[k]) for k in sorted(tips)) + "}"
-    return hashlib.sha256(text.encode()).hexdigest()
+    return hashlib.sha256(hand_canonical(tips)).hexdigest()
 
 
 class Root(unittest.TestCase):
@@ -95,20 +98,29 @@ class Root(unittest.TestCase):
 
 
 class Signer(unittest.TestCase):
-    def test_anchor_signs_root(self):
-        root = AN.root_of(AN.tips(LEDGER))
+    def test_anchor_signs_the_roots_preimage(self):
+        tip_map = AN.tips(LEDGER)
+        root = AN.root_of(tip_map)
         signer = AN.FakeSigner(True, WORKFLOW, "uuid-1")
-        self.assertEqual(AN.anchor(root, signer), {"uuid": "uuid-1", "hash": root, "identity": WORKFLOW})
-        self.assertEqual(signer.payloads, [root.encode("ascii")])
+        entry, bundle = AN.anchor(tip_map, signer)
+        self.assertEqual(entry, {"uuid": "uuid-1", "hash": root, "identity": WORKFLOW})
+        # tohum/26d "Kök": the hash of the signed data is the root itself, the sha256 of the tips' RFC 8785 bytes
+        self.assertEqual(signer.payloads, [hand_canonical(tip_map)])
+        self.assertEqual([hashlib.sha256(p).hexdigest() for p in signer.payloads], [root])
+        # the stand-in's bundle names what it was asked to sign; it is no Sigstore bundle
+        self.assertEqual(json.loads(bundle), {"uuid": "uuid-1", "identity": WORKFLOW, "fake_signed_sha256": root})
+        self.assertTrue(bundle.endswith(b"\n"))
 
     def test_unsignable_hard_stop(self):
         signer = AN.FakeSigner(False)
         with self.assertRaises(AN.Unsignable):
-            AN.anchor("a" * 64, signer)
+            AN.anchor(AN.tips(LEDGER), signer)
+        with self.assertRaises(AN.Unsignable):
+            signer.answer()
         self.assertTrue(issubclass(AN.Unsignable, AP.HardStop))
         self.assertEqual(signer.payloads, [])
 
-    def test_a_signer_that_answers_no_entry_is_a_hard_stop(self):
+    def test_a_signer_that_answers_no_entry_or_no_bundle_is_a_hard_stop(self):
         class Silent:
             def __init__(self, answer):
                 self.answer = answer
@@ -116,14 +128,20 @@ class Signer(unittest.TestCase):
             def sign(self, payload):
                 return self.answer
 
-        for answer in (None, {}, {"uuid": "u"}, {"uuid": "", "identity": WORKFLOW}, {"uuid": "u", "identity": 3}):
+        good = {"uuid": "u", "identity": WORKFLOW, "bundle": b"{}"}
+        self.assertEqual(AN.anchor(AN.tips(LEDGER), Silent(good))[1], b"{}")
+        for answer in (None, {}, {"uuid": "u", "bundle": b"{}"}, dict(good, uuid=""), dict(good, identity=3),
+                       {"uuid": "u", "identity": WORKFLOW}, dict(good, bundle=b""), dict(good, bundle="{}"),
+                       dict(good, bundle=None)):
             with self.assertRaises(AN.Unsignable):
-                AN.anchor("a" * 64, Silent(answer))
+                AN.anchor(AN.tips(LEDGER), Silent(answer))
 
     def test_root_text_is_64_lowercase_hex(self):
         for bad in ("A" * 64, "a" * 63, "a" * 65, 7, None, "g" * 64):
             with self.assertRaises(AN.Unusable):
-                AN.anchor(bad, AN.FakeSigner(True, WORKFLOW, "u"))
+                AN.entry_of(bad, {"uuid": "u", "identity": WORKFLOW})
+        self.assertEqual(AN.entry_of("a" * 64, {"uuid": "u", "identity": WORKFLOW}),
+                         {"uuid": "u", "hash": "a" * 64, "identity": WORKFLOW})
 
     def test_signer_file_shape(self):
         for bad in ({"available": "true", "identity": WORKFLOW, "uuid": "u"}, {"available": 1, "identity": WORKFLOW, "uuid": "u"},

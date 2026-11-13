@@ -79,8 +79,9 @@ class Plan(unittest.TestCase):
     def test_the_files_hold_the_rows_the_block_and_the_signed_root(self):
         sign = signer()
         out = plan(rows=[start(), reject()], status=b"docs\n", sign=sign)
-        self.assertEqual(set(out["files"]), {"ledger.jsonl", "chain/root.jsonl", "status.md"})
-        ledger, roots = out["files"]["ledger.jsonl"], out["files"]["chain/root.jsonl"]
+        self.assertEqual(set(out["files"]), {".brain/ledger.jsonl", ".brain/chain/root.jsonl", ".brain/status.md",
+                                             ".brain/chain/%s.sigstore.json" % out["root"]})
+        ledger, roots = out["files"][".brain/ledger.jsonl"], out["files"][".brain/chain/root.jsonl"]
         self.assertTrue(chain.verify_bytes(ledger, LEDGER)["valid"])
         self.assertEqual(schema.ledger_reasons(ledger), [])
         new = [json.loads(line) for line in ledger.splitlines()[3:]]
@@ -88,15 +89,20 @@ class Plan(unittest.TestCase):
                                                                    ("st1", "status")])
         self.assertEqual(out["row_hashes"], [r["row_hash"] for r in new])
         # the block counts the cycle's own rows and is recorded by the status row
-        block = SB.split(out["files"]["status.md"])[1]
+        block = SB.split(out["files"][".brain/status.md"])[1]
         self.assertIn(b'"4101"', block)
-        self.assertEqual(out["files"]["status.md"], OPEN + block + CLOSE + b"docs\n")
+        self.assertEqual(out["files"][".brain/status.md"], OPEN + block + CLOSE + b"docs\n")
         self.assertEqual(new[-1]["payload"], {"block_sha256": sha(block)})
         self.assertEqual((out["block_sha256"], out["edited"]), (sha(block), False))
-        self.assertEqual(schema.status_reasons(out["files"]["status.md"], ledger), [])
+        self.assertEqual(schema.status_reasons(out["files"][".brain/status.md"], ledger), [])
         # the signed root is the new ledger's, recorded in one chained root row
         self.assertEqual(out["root"], AN.root_of(AN.tips(ledger)))
-        self.assertEqual(sign.payloads, [out["root"].encode()])
+        self.assertEqual([sha(p) for p in sign.payloads], [out["root"]])  # the data signed hashes to the root itself
+        # the signer's bundle, as it gave it, beside the root row that names the root (tohum/26d "Yer")
+        last = json.loads(roots.splitlines()[-1])
+        self.assertEqual(last["root"], out["root"])
+        self.assertEqual(json.loads(out["files"][".brain/chain/%s.sigstore.json" % last["root"]]),
+                         {"uuid": "uuid-1", "identity": WORKFLOW, "fake_signed_sha256": out["root"]})
         self.assertEqual(schema.roots_reasons(roots), [])
         self.assertEqual(json.loads(roots)["root"], out["root"])
         self.assertEqual(AN.verify(ledger, roots, {"entries": {"uuid-1": out["entry"]}}, WORKFLOW),
@@ -104,10 +110,10 @@ class Plan(unittest.TestCase):
 
     def test_the_next_cycle_chains_onto_this_one(self):
         first = plan()
-        led, roots = first["files"]["ledger.jsonl"], first["files"]["chain/root.jsonl"]
-        second = plan(ledger=led, roots=roots, status=first["files"]["status.md"], rows=[start("s3", "4102")],
+        led, roots = first["files"][".brain/ledger.jsonl"], first["files"][".brain/chain/root.jsonl"]
+        second = plan(ledger=led, roots=roots, status=first["files"][".brain/status.md"], rows=[start("s3", "4102")],
                       fx=facts(row_id="st2"), sign=signer("uuid-2"), root_row_id="r2")
-        led2, roots2 = second["files"]["ledger.jsonl"], second["files"]["chain/root.jsonl"]
+        led2, roots2 = second["files"][".brain/ledger.jsonl"], second["files"][".brain/chain/root.jsonl"]
         self.assertTrue(chain.verify_bytes(led2, led)["valid"])
         self.assertTrue(chain.verify_bytes(roots2, roots)["valid"])
         self.assertFalse(second["edited"])
@@ -117,23 +123,23 @@ class Plan(unittest.TestCase):
 
     def test_a_hand_edited_block_is_regenerated_and_recorded(self):
         first = plan(status=b"docs\n")
-        led = first["files"]["ledger.jsonl"]
-        block = SB.split(first["files"]["status.md"])[1]
+        led = first["files"][".brain/ledger.jsonl"]
+        block = SB.split(first["files"][".brain/status.md"])[1]
         hand = OPEN + b"hand\n" + CLOSE + b"docs\n"
-        second = plan(ledger=led, roots=first["files"]["chain/root.jsonl"], status=hand, rows=[],
+        second = plan(ledger=led, roots=first["files"][".brain/chain/root.jsonl"], status=hand, rows=[],
                       fx=facts(row_id="st2"), root_row_id="r2")
         self.assertTrue(second["edited"])
-        new = [json.loads(line) for line in second["files"]["ledger.jsonl"].splitlines()[len(led.splitlines()):]]
+        new = [json.loads(line) for line in second["files"][".brain/ledger.jsonl"].splitlines()[len(led.splitlines()):]]
         self.assertEqual([(r["kind"], r["payload"]) for r in new],
                          [("status_edited", {"found_sha256": sha(b"hand\n"), "recorded_sha256": sha(block)}),
                           ("status", {"block_sha256": second["block_sha256"]})])
-        self.assertTrue(second["files"]["status.md"].endswith(CLOSE + b"docs\n"))
+        self.assertTrue(second["files"][".brain/status.md"].endswith(CLOSE + b"docs\n"))
 
     def test_the_orphan_plan_of_the_activation(self):
         out = plan(ledger=b"", roots=b"", rows=[row("g", "events", "cycle_start", {"cycle_id": "1"})])
-        self.assertTrue(chain.verify_bytes(out["files"]["ledger.jsonl"])["valid"])
-        self.assertEqual(len(out["files"]["ledger.jsonl"].splitlines()), 2)
-        self.assertEqual(json.loads(out["files"]["chain/root.jsonl"])["prev_hash"], chain.ZERO_HASH)
+        self.assertTrue(chain.verify_bytes(out["files"][".brain/ledger.jsonl"])["valid"])
+        self.assertEqual(len(out["files"][".brain/ledger.jsonl"].splitlines()), 2)
+        self.assertEqual(json.loads(out["files"][".brain/chain/root.jsonl"])["prev_hash"], chain.ZERO_HASH)
 
 
 class Refusals(unittest.TestCase):
@@ -209,7 +215,7 @@ class Commit(unittest.TestCase):
     def test_two_cycles_on_the_target_and_a_hand_edit_between(self):
         gh = FakeGitHub("acme/toy")
         gh.refs["main"] = main = gh.seed_commit("t0")
-        gh.refs["brain/state"] = head = gh.seed_commit("s0", files={"ledger.jsonl": LEDGER})
+        gh.refs["brain/state"] = head = gh.seed_commit("s0", files={".brain/ledger.jsonl": LEDGER})
         wr = W.Writer("acme/toy", gh)
         with self.assertRaises(AN.Unsignable):
             CY.commit(AP.TargetState(wr, head), "m", LEDGER, LEDGER, b"", b"", None, [start()], IMPORTS, facts(),
@@ -221,21 +227,29 @@ class Commit(unittest.TestCase):
         self.assertEqual(gh.commits[gh.refs["brain/state"]]["parents"], [head])
         for path, data in first["files"].items():
             self.assertEqual(gh.read_file("brain/state", path), data)
-        led1, roots1 = first["files"]["ledger.jsonl"], first["files"]["chain/root.jsonl"]
-        hand = gh.read_file("brain/state", "status.md").replace(b"4101", b"9999") + b"## Report\n"
-        gh.refs["brain/state"] = gh.seed_commit("s-hand", [gh.refs["brain/state"]], files={
-            "ledger.jsonl": led1, "chain/root.jsonl": roots1, "status.md": hand})
+        led1, roots1 = first["files"][".brain/ledger.jsonl"], first["files"][".brain/chain/root.jsonl"]
+        hand = gh.read_file("brain/state", ".brain/status.md").replace(b"4101", b"9999") + b"## Report\n"
+        gh.refs["brain/state"] = gh.seed_commit("s-hand", [gh.refs["brain/state"]],
+                                                files=dict(first["files"], **{".brain/status.md": hand}))
         second = CY.commit(AP.TargetState(wr, gh.refs["brain/state"]), "cycle 4102", led1, led1, roots1, roots1,
-                           gh.read_file("brain/state", "status.md"), [start("s3", "4102")], IMPORTS,
+                           gh.read_file("brain/state", ".brain/status.md"), [start("s3", "4102")], IMPORTS,
                            facts(row_id="st2"), signer("uuid-2"), "r2")
         self.assertTrue(second["edited"])
-        status = gh.read_file("brain/state", "status.md")
+        status = gh.read_file("brain/state", ".brain/status.md")
         self.assertTrue(status.endswith(CLOSE + b"## Report\n"))
-        self.assertEqual(schema.status_reasons(status, gh.read_file("brain/state", "ledger.jsonl")), [])
+        self.assertEqual(schema.status_reasons(status, gh.read_file("brain/state", ".brain/ledger.jsonl")), [])
         rekor = {"entries": {"uuid-1": first["entry"], "uuid-2": second["entry"]}}
-        self.assertTrue(AN.verify(gh.read_file("brain/state", "ledger.jsonl"),
-                                  gh.read_file("brain/state", "chain/root.jsonl"), rekor, WORKFLOW)["valid"])
+        self.assertTrue(AN.verify(gh.read_file("brain/state", ".brain/ledger.jsonl"),
+                                  gh.read_file("brain/state", ".brain/chain/root.jsonl"), rekor, WORKFLOW)["valid"])
         self.assertEqual(gh.refs["main"], main)
+        # every file of the state is under .brain/, and the first root's bundle stays beside the second's
+        self.assertNotEqual(first["root"], second["root"])
+        self.assertEqual(set(gh.trees[gh.commits[gh.refs["brain/state"]]["tree"]]), {
+            ".brain/ledger.jsonl", ".brain/chain/root.jsonl", ".brain/status.md",
+            ".brain/chain/%s.sigstore.json" % first["root"], ".brain/chain/%s.sigstore.json" % second["root"]})
+        for made in (first, second):
+            self.assertEqual(json.loads(gh.read_file("brain/state", ".brain/chain/%s.sigstore.json" % made["root"])),
+                             {"uuid": made["entry"]["uuid"], "identity": WORKFLOW, "fake_signed_sha256": made["root"]})
 
 
 if __name__ == "__main__":

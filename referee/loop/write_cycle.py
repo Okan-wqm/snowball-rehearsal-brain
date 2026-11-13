@@ -112,7 +112,7 @@ class _Dry:
     """Signs nothing: the dry plan's signer (step 3)."""
 
     def sign(self, payload: bytes) -> dict:
-        return {"uuid": "dry", "identity": "dry"}
+        return {"uuid": "dry", "identity": "dry", "bundle": b"dry"}
 
 
 DRY = _Dry()

@@ -2,8 +2,9 @@
 
 Rules: asama-0/14 row 11 (``rekor.anchor``: the root signed with Sigstore, the next D1 verifies it), tohum/13 ("Kök ve
 dış günlük": the root is written to Sigstore Rekor; a branch tip that does not match the root in Rekor is tamper
-evidence), tohum/01a (``yaz`` holds the Sigstore OIDC identity), ``ledger.anchor`` (the root, the root row, the
-payload: the root's 64 hex characters in ASCII; ``judge``: the order of the reasons).
+evidence), tohum/01a (``yaz`` holds the Sigstore OIDC identity), tohum/26d "Kök" (the record's ``spec.data.hash`` is
+the root itself, not a digest of it), ``ledger.anchor`` (the root, the root row, the payload: the root's preimage,
+whose sha256 the root is; ``judge``: the order of the reasons).
 
 **Reading** (``RekorHttp.entry``): ``GET https://rekor.sigstore.dev/api/v1/log/entries/<uuid>``, no header, no body,
 no token; 404 is ``None`` (no entry). The uuid must be 64 lowercase hex characters (the entry's leaf hash) or 80
@@ -15,10 +16,11 @@ key a uuid whose last 64 characters are the requested one's and the RFC 6962 lea
 **Judging** (``entry_reasons``, the ``entry_reasons`` of ``ledger.anchor.judge``), for the recorded root ``r``:
 
 - ``entry_root_mismatch``: the entry's body is not a ``hashedrekord`` ``0.0.1`` whose ``spec.data.hash`` is
-  ``sha256`` of the payload, i.e. ``sha256(r)`` in hex (a body that does not decode is one too: it records no root);
+  ``sha256`` with the value ``r`` (a body that does not decode is one too: it records no root; so is a body that
+  records ``sha256`` of ``r``'s text: a digest of the root is not the root);
 - ``entry_unverified``: the bundle (``bundle``) cannot be made from the entry, or ``sigstore verify identity
   --bundle <it> --cert-identity <pin> --cert-oidc-issuer https://token.actions.githubusercontent.com
-  sha256:<sha256(r)>`` (``loop.accepted.identity_argv``, the form the bootstrap state's check runs) exits non-zero.
+  sha256:<r>`` (``loop.accepted.identity_argv``, the form the bootstrap state's check runs) exits non-zero.
   ``sigstore`` judges the signature, the certificate's chain and validity, its identity and issuer, the signed entry
   timestamp and the inclusion proof; it reports one verdict, so the recorded entries' ``identity_mismatch``
   (``ledger.anchor.verify``) is not told apart from the others here.
@@ -62,11 +64,6 @@ PEM = re.compile(r"-----BEGIN CERTIFICATE-----\n([A-Za-z0-9+/=\n]+?)\n?-----END 
 
 class RekorError(Exception):
     """Rekor could not be read, or answered with something that is not the requested entry: no verdict."""
-
-
-def payload_digest(root: str) -> str:
-    """The hex sha256 of the payload ``ledger.anchor`` signs for ``root`` (its 64 hex characters in ASCII)."""
-    return hashlib.sha256(root.encode("ascii")).hexdigest()
 
 
 def _leaf(body: str) -> str:
@@ -199,8 +196,7 @@ def entry_reasons(read: Callable[[str], dict | None], pin: str, sigstore: Sequen
         if entry is None:
             return None
         body = body_of(entry)
-        digest = payload_digest(root)
-        if body is None or body["spec"]["data"]["hash"]["value"] != digest:
+        if body is None or body["spec"]["data"]["hash"]["value"] != root:
             return ["entry_root_mismatch"]
         try:
             made = bundle(entry, body)
@@ -210,6 +206,6 @@ def entry_reasons(read: Callable[[str], dict | None], pin: str, sigstore: Sequen
             path = os.path.join(tmp, "entry.sigstore.json")
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(made, fh)
-            code = verifier(A.identity_argv(sigstore, path, pin, "sha256:" + digest))
+            code = verifier(A.identity_argv(sigstore, path, pin, "sha256:" + root))
         return [] if code == 0 else ["entry_unverified"]
     return judge

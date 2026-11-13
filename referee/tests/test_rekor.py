@@ -154,20 +154,21 @@ class Judging(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_a_body_that_does_not_record_the_root(self):
-        for entry in (entry_for(R.payload_digest("2" * 64))[1], entry_for(self.ROOT)[1],
-                      entry_for(R.payload_digest(self.ROOT), kind="rekord")[1],
+        # another root; sha256 of the root's text (a digest of the root is not the root, tohum/26d "Kök"); another kind
+        for entry in (entry_for("2" * 64)[1], entry_for(hashlib.sha256(self.ROOT.encode()).hexdigest())[1],
+                      entry_for(self.ROOT, kind="rekord")[1],
                       dict(REAL_ENTRY, body="not base64!"), dict(REAL_ENTRY, body=base64.b64encode(b"[]").decode())):
             with self.subTest():
                 self.assertEqual(self.judge(entry), ["entry_root_mismatch"])
                 self.assertEqual(self.calls, [])
 
     def test_the_verifier_judges_the_bundle_against_the_pin_and_the_payload(self):
-        _, entry = entry_for(R.payload_digest(self.ROOT))
+        _, entry = entry_for(self.ROOT)
         self.assertEqual(self.judge(entry), [])
         [(argv, made)] = self.calls
         self.assertEqual(argv, ["sigstore", "verify", "identity", "--bundle", argv[4], "--cert-identity", WORKFLOW,
                                 "--cert-oidc-issuer", "https://token.actions.githubusercontent.com",
-                                "sha256:" + hashlib.sha256(self.ROOT.encode()).hexdigest()])
+                                "sha256:" + self.ROOT])  # stage-open's form: the digest verified is the root
         self.assertEqual(made, R.bundle(entry, R.body_of(entry)))
         self.assertFalse(os.path.exists(argv[4]))  # a temporary file
         self.assertEqual(self.judge(entry, code=1), ["entry_unverified"])
@@ -176,7 +177,7 @@ class Judging(unittest.TestCase):
         self.assertEqual(self.calls[0][0][6], other)  # the pin the caller gives
 
     def test_an_entry_without_a_bundle_piece_is_unverified_without_running(self):
-        digest = R.payload_digest(self.ROOT)
+        digest = self.ROOT
         for drop in ("inclusionProof", "signedEntryTimestamp"):
             with self.subTest(drop=drop):
                 self.assertEqual(self.judge(entry_for(digest, drop=drop)[1]), ["entry_unverified"])
@@ -202,7 +203,7 @@ class Judging(unittest.TestCase):
 
     def test_judge_over_rekor(self):
         root = AN.root_of(AN.tips(LEDGER))
-        uuid, entry = entry_for(R.payload_digest(root))
+        uuid, entry = entry_for(root)
         roots = AN.root_row(b"", "r1", "2026-11-01T00:00:00Z", root, uuid)
         rekor = R.entry_reasons({uuid: entry}.get, WORKFLOW, ("sigstore",), lambda argv: 0)
         self.assertEqual(AN.judge(LEDGER, roots, rekor), {"valid": True, "reasons": [], "root": root, "rekor_uuid": uuid})
