@@ -8,6 +8,7 @@ Okunma: bir sayfanın geçmişi aranırken
   `unusable input: cagir: policy.json has no stage_budgets.asama_0.canary_usd` ile durdu (koşu 43534260172), `yaz`
   koşmadı, hedeflere yazılmadı; aktarım `25a` "Başarısızlık" ile geri alındı, 91bbd27 `reverted_exits`'te. `kos`'un
   ilk durması (`operating` yok) operatöründü: `policy.json`'a `operating{}` ve `security_keywords` yazıldı.
+  E584: `canary_usd` da `policy.json`'da hiç yoktu (operatörün eksiği; `18a:60`'ın 1 USD'si yazıldı); şema `26b:54-59`.
 - 2.2 (2026-11-13, E577–E581; Kurucu raporları, iki uzmanlı iki turlu panelin kararı): `24a` 3: başlatıcının
   `targets.json`'u `targets[]` sırasıyla `[{id, kind, base_sha, unit_candidates}]`'dır (kimlik ya da aday ad taşırsa
   başlatıcı durur; repo, hariç yollar, güvenlik yolları ve adlar verilmez); `policy.json`'un `operating`'i her oturum
