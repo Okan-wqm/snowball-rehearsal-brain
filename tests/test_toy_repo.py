@@ -191,8 +191,8 @@ class Lint(unittest.TestCase):
 
     def test_unit_criteria_4_and_5(self):
         derived = D.derive(TOY, {"excluded_paths": [], "unit_candidates": []})
-        reasons, records = U.lint_records([self.output] * 3, TOY, recipes()[0], derived)
-        self.assertEqual(reasons, [])
+        reasons, records, extras = U.lint_records([self.output] * 3, TOY, recipes()[0], derived)
+        self.assertEqual((reasons, extras), ([], [R.extra_of(b"")] * 3))  # real ESLint stdout: the document alone
         self.assertEqual(records, [R.record(self.output, TOY)] * 3)
         results = json.loads(self.output)
         only_security = [r for r in results if r["filePath"].endswith("/permissions.js")]
@@ -201,7 +201,7 @@ class Lint(unittest.TestCase):
             {"ruleId": "r", "severity": 2, "line": 1, "column": 1, "fix": {"range": [0, 1], "text": "#"}}]}]
         for doc in (only_security, no_fix, outside_inputs):
             self.assertEqual(U.lint_records([json.dumps(doc).encode()], TOY, recipes()[0], derived),
-                             (["no_fixable_violation"], []))
+                             (["no_fixable_violation"], [], []))
 
 
 
