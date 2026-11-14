@@ -10,6 +10,15 @@
    ]
   },
   {
+   "id": "cap_at_top_level",
+   "file": "loop/cagir.py",
+   "old": "CANARY_USD = (\"constitutional\", \"stage_budgets\", \"asama_0\", \"canary_usd\")",
+   "new": "CANARY_USD = (\"stage_budgets\", \"asama_0\", \"canary_usd\")",
+   "tests": [
+    "test_loop_cagir.CagirJob.test_the_cap_is_read_in_the_constitutional_section_only"
+   ]
+  },
+  {
    "id": "spend_not_counted",
    "file": "loop/cagir.py",
    "old": "book = L.CostBook(art.state[B.STATE_LEDGER], None)",

@@ -45,6 +45,7 @@ from loop import inputs  # noqa: E402
 from loop import job as J  # noqa: E402
 from test_kos import operating  # noqa: E402
 from loop import pulled as P  # noqa: E402
+from profile import derive as D  # noqa: E402
 from test_loop_kos import HEADS, TARGET, Base, state_files  # noqa: E402
 from loop_inputs_world import ABSENT, BOOTSTRAP, write_bootstrap  # noqa: E402
 
@@ -62,9 +63,11 @@ def result(**over) -> str:
 
 
 def policy(canary: str = "1") -> bytes:
-    """``policy.json`` with ``canary_usd`` written as the JSON text ``canary`` (so ``0.5`` is a JSON fraction)."""
-    return ('{"operating": %s, "stage_budgets": {"asama_0": {"canary_usd": %s}}}'
-            % (json.dumps(operating()), canary)).encode()
+    """``policy.json`` in tohum/26b's shape, ``canary_usd`` written as the JSON text ``canary`` (so ``0.5`` is a JSON
+    fraction): ``operating{}`` beside ``constitutional{}``, which holds ``stage_budgets{}`` and, as every policy
+    ``profile.derive`` takes, ``security_keywords`` (derive's own list, so a tree derives as with no policy)."""
+    return ('{"operating": %s, "constitutional": {"security_keywords": %s, "stage_budgets": {"asama_0": '
+            '{"canary_usd": %s}}}}' % (json.dumps(operating()), json.dumps(list(D.SECURITY_KEYWORDS)), canary)).encode()
 
 
 def ledger_with_costs(*costs: int) -> list[dict]:
@@ -265,6 +268,26 @@ class CagirJob(Base):
         shutil.rmtree(self.pulled)
         self.write_pulled(policy={"operating": operating()})
         self.no_verdict()
+
+    def test_the_cap_is_read_in_the_constitutional_section_only(self):
+        # tohum/26b: stage_budgets{} is a key of policy.json's constitutional{}; the same amount written at the top
+        # level, beside operating{}, or in operating{} is no cap
+        budgets = {"stage_budgets": {"asama_0": {"canary_usd": 1}}}
+        for where, doc in (("top", dict(budgets, operating=operating())),
+                           ("operating", {"operating": dict(operating(), **budgets)}),
+                           ("constitutional_empty", dict(budgets, operating=operating(), constitutional={}))):
+            with self.subTest(where=where):
+                shutil.rmtree(self.pulled, ignore_errors=True)
+                self.write_pulled(policy=doc)
+                self.no_verdict()
+        shutil.rmtree(self.pulled)
+        fake_claude.behave(self.bin, result())
+        # with both, the constitutional one is the cap: 0.5 USD, not the top level's 1
+        self.write_pulled(policy=dict(budgets, operating=operating(),
+                                      constitutional={"stage_budgets": {"asama_0": {"canary_usd": 0.5}}}))
+        self.assertEqual(self.line(self.run_cagir())["call"]["outcome"], "ok")
+        argv = self.calls()[0]["argv"]
+        self.assertEqual(argv[argv.index("--max-budget-usd") + 1], "0.500000")
 
     def test_a_ledger_that_is_not_a_chain_is_no_verdict(self):
         state = state_files(ledger_with_costs(1))

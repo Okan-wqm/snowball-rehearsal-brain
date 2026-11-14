@@ -18,6 +18,7 @@ import shutil
 import tempfile
 
 from fake_github import FakeGitHub
+import test_loop_cagir
 from ledger import anchor, chain
 from loop import pulled
 from target import branches
@@ -97,7 +98,7 @@ EXPECTED_REJECTS = {
 
 
 APP_ID = 4242
-POLICY = json.dumps({"stage_budgets": {"asama_0": {"canary_usd": 0.22}}}).encode() + b"\n"
+POLICY = test_loop_cagir.policy("0.22") + b"\n"
 
 
 def decided() -> dict:

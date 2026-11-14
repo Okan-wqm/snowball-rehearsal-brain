@@ -3,8 +3,8 @@
 
 Rules: asama-0/01 D4 (``çağır``: the provider identity, runs no code; a typed request in, the response, the served
 model and the cost out; MF15; its green column: only (B)'s canary call), asama-0/12 (the canary's brake is
-``policy.json`` ``stage_budgets.asama_0.canary_usd``, and ``--max-budget-usd`` per call; at the brake no call is made
-and the cycle falls closed), asama-0/10a ``#model`` (the served model is the requested one, ``--max-budget-usd``
+``policy.json`` ``constitutional.stage_budgets.asama_0.canary_usd`` (tohum/26b), and ``--max-budget-usd`` per call;
+at the brake no call is made and the cycle falls closed), asama-0/10a ``#model`` (the served model is the requested one, ``--max-budget-usd``
 applied, the ``cost`` row written, a prompt with a secret pattern not sent), tohum/24 ("Araçsız çağrı": the
 referee's ``llm.call`` builds the prompt from typed input), tohum/29m (``llm.call``'s rules, MF15's own).
 
@@ -59,7 +59,8 @@ from target import branches as B
 
 SCHEMA = "snowball-response/1"
 RESPONSE = "response.json"
-CANARY_USD = ("stage_budgets", "asama_0", "canary_usd")
+# tohum/26b: stage_budgets{} is a key of policy.json's constitutional{} (18a: an "Anayasal" key), not of its top level
+CANARY_USD = ("constitutional", "stage_budgets", "asama_0", "canary_usd")
 CANARY = {
     "fields": {"target": "string"},
     "text": "This is the canary call of the Snowball loop for the target {{target}}. Reply only with the structured "

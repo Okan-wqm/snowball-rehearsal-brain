@@ -313,7 +313,7 @@ class CostBook:
 
 
 def policy_usd(policy: bytes, *path: str) -> int:
-    """The USD value at ``path`` of ``policy.json``'s bytes (e.g. ``stage_budgets``, ``asama_0``, ``canary_usd``)
+    """The USD value at ``path`` of ``policy.json``'s bytes (e.g. ``constitutional``, ``stage_budgets``, ``asama_0``, ``canary_usd``)
     in micro-USD, rounded up exactly as a cost is (``to_micros`` on the number's JSON text, never a float);
     ``Unusable`` when the file is not one JSON object without duplicate keys, the path is absent, or the value is
     not a JSON number >= 0 (``true`` and strings included) within 2^53-1 micro-USD."""

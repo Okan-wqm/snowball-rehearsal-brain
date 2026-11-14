@@ -97,7 +97,7 @@ def state_rows(n: int) -> list[dict]:
 
 SUMMARY = {"targets": [{"id": "t1", "kind": "toy", "excluded_paths": [], "unit_candidates": []},
                        {"id": "t2", "kind": "copy", "excluded_paths": ["x"], "unit_candidates": []}]}
-POLICY = json.dumps({"operating": operating(), "stage_budgets": {"asama_0": {"canary_usd": 1}}}).encode()
+POLICY = test_loop_cagir.policy()  # tohum/26b's shape, the canary's cap 1 USD
 
 
 def names(tar_bytes: bytes) -> list[tuple[str, bytes, str, int]]:
