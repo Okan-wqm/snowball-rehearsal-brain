@@ -69,6 +69,10 @@ if "LINTCRASH" in open("pkg/a.js").read():
 if "GARBAGE" in open("pkg/a.js").read():
     print("not json")
     sys.exit(1)
+if "PLUGIN_LINE" in open("pkg/b.js").read():
+    print("warning: a rule was skipped")
+if "TWICE" in open("pkg/b.js").read():
+    print(json.dumps(out))
 sys.stdout.write(json.dumps(out))
 sys.exit(1 if any(r["messages"] for r in out) else 0)
 '''
@@ -208,6 +212,22 @@ class TheBase(Base):
         write_tree(self.tree, {"pkg/a.js": "GARBAGE\n"})
         index = self.results({})
         self.assertEqual(index["base"]["reasons"], ["lint_output:not_eslint_json"])
+        self.assertFalse(os.path.exists(os.path.join(self.out, "base.jsonl")))
+
+    def test_lines_before_the_document_give_the_same_base(self):
+        """``lint_record.runs``'s stdout rules reach the base: the same three records; the index does not name
+        the extra (``unit_verify.verify``'s report does)."""
+        write_tree(self.tree, {"pkg/b.js": "const c = 3; // PLUGIN_LINE\n"})
+        index = self.results({})
+        record = {"tool": "eslint", "violations": [{"rule_id": "no-var", "path": "pkg/a.js", "line": 1,
+                                                    "fix": [1, 1]}]}
+        self.assertEqual(index["base"], {"verdict": "verified", "reasons": []})
+        self.assertEqual(read(os.path.join(self.out, "base.jsonl")), R.run_file([record] * 3))
+
+    def test_two_documents_give_no_base(self):
+        write_tree(self.tree, {"pkg/b.js": "const c = 3; // TWICE\n"})
+        index = self.results({})
+        self.assertEqual(index["base"]["reasons"], ["lint_output:several_documents"])
         self.assertFalse(os.path.exists(os.path.join(self.out, "base.jsonl")))
 
     def test_a_green_red_control_gives_no_base(self):

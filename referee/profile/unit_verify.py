@@ -159,6 +159,9 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
 6. The lint output, only when 1-5 left no reason (asama-0/08's unit selection, bold criteria 4 and 5). Each
    lint run's stdout, with the worktree it read, becomes a run record (``runner.lint_record``: ESLint's
    ``--format json`` only; its refusals are ``lint_output:<reason>``, e.g. a parse error ``fatal:<path>``).
+   When a run's stdout has bytes before the document (``lint_record``'s rules: a plugin printed there), the
+   verified report carries ``lint_stdout_extra``, each run's ``{bytes, sha256}``; without such bytes the key is
+   absent. The report does not say what those bytes mean (a rule the tool skipped is one measured case).
    Criterion 5: some violation of the first record has a ``fix`` and a path that a ``security_paths``,
    ``excluded_dirs`` or ``excluded_paths`` entry of the derivation does not cover and an ``inputs`` entry
    does (29f coverage, as written); else ``no_fixable_violation``. Configuration, manifest and lock files
@@ -899,22 +902,18 @@ def _discard(run: dict) -> None:
     shutil.rmtree(run["run_root"], ignore_errors=True)
 
 
-def lint_records(stdouts: list, staging: str, recipe: dict, derived: dict) -> tuple[list[str], list[dict]]:
-    """asama-0/08 unit criteria 4 and 5 on the lint runs' stdout: ``(reasons, one run record per run)``."""
-    records, reasons = [], []
-    for out in stdouts:
-        try:
-            records.append(R.record(out if isinstance(out, bytes) else b"", staging))
-        except R.RecordError as exc:
-            reasons += ["lint_output:" + r for r in exc.reasons if "lint_output:" + r not in reasons]
+def lint_records(stdouts: list, staging: str, recipe: dict, derived: dict) -> tuple[list[str], list[dict], list]:
+    """asama-0/08 unit criteria 4 and 5 on the lint runs' stdout: ``(reasons, one run record per run, each run's
+    stdout extra)`` (``lint_record.runs``)."""
+    reasons, records, extras = R.runs(stdouts, staging)
     if reasons:
-        return reasons, []
+        return reasons, [], []
     closed = derived["security_paths"] + derived["excluded_dirs"] + derived["excluded_paths"]
     if not any(v["fix"] is not None and not any(D.covers_as_written(e, v["path"]) for e in closed)
                and any(D.covers_as_written(e, v["path"]) for e in recipe["inputs"])
                for v in records[0]["violations"]):
-        return ["no_fixable_violation"], []
-    return [], records
+        return ["no_fixable_violation"], [], []
+    return [], records, extras
 
 
 def derived_profile(tree: str, target: Any, policy: Any) -> dict:
@@ -1056,9 +1055,11 @@ def verify(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | No
         if all(r["valid"] for r in lints) and len({(r["exit"], r["stdout_sha256"]) for r in lints}) > 1:
             reasons.append("lint_not_deterministic")
         if not reasons:
-            reasons, records = lint_records(stdouts, staging, recipe, derived)
+            reasons, records, extras = lint_records(stdouts, staging, recipe, derived)
             if not reasons:
                 result["lint_records"] = records
+                if any(e["bytes"] for e in extras):
+                    result["lint_stdout_extra"] = extras
         if reasons:
             return _verdict(reasons, **result)
         return dict(_verdict([], **result), recipe=recipe, recipe_sha256=hashlib.sha256(canonical(recipe)).hexdigest())

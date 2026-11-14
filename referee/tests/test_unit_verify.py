@@ -709,6 +709,20 @@ class Run(Base):
         self.assertEqual(report["lint_records"], [RECORD] * 3)
         self.assertEqual(R.run_file(report["lint_records"]).split(b"\n")[:3], [R.line(RECORD)] * 3)
 
+    def test_lines_before_the_document_are_reported_not_dropped_silently(self):
+        """``lint_record``'s stdout rules through ``verify``: the same records, and the extra of each run named."""
+        self.assertNotIn("lint_stdout_extra", self.verify())
+        noise = "warning: a rule was skipped\n"
+        doc = json.dumps([eslint_result("pkg/a.js", NO_VAR)])
+        write_tree(self.tree, {"pkg/lint.py": "import sys\nsys.stdout.write(%r)\nsys.exit(1)\n" % (noise + doc + "\n")})
+        report = self.verify()
+        self.assertEqual((report["verdict"], report["lint_records"]), ("verified", [RECORD] * 3))
+        self.assertEqual(report["lint_stdout_extra"], [R.extra_of(noise.encode())] * 3)
+        write_tree(self.tree, {"pkg/lint.py": "import sys\nsys.stdout.write(%r)\nsys.exit(1)\n" % (doc + "\n" + doc)})
+        report = self.verify()
+        self.assertEqual((report["verdict"], report["reasons"]), ("refused", ["lint_output:several_documents"]))
+        self.assertNotIn("lint_stdout_extra", report)
+
     def test_unit_criteria_4_and_5_on_the_lint_output(self):
         """asama-0/08 unit selection: the tool gives rule, line and fix (4); a fixable violation outside the
         security path, inside the inputs (5)."""

@@ -15,6 +15,27 @@ string | null, fatal?, severity: 1 | 2, line, column, fix?: {range: [start, end]
 worktree the tool read, on the host; ``root`` its path inside the container (``/work``). Any other output is
 refused (``not_eslint_json``); other formatters and tools are out of scope.
 
+**Stdout that is not only the document** (``_split``). A plugin of the target's own lint configuration may
+print on the stdout ESLint writes the document to (measured: ``@nx/eslint-plugin`` 22.7.12 under ESLint 9.39.4
+prints three lines per linted file, "No cached ProjectGraph is available. The rule will be skipped.", when the
+workspace has no cached project graph; the fixture ``tests/fixtures/eslint_nx/``). The rules, each with its test:
+
+1. stdout that is JSON as a whole is the document; nothing is extra (every output without such lines, a
+   pretty-printed document included, is read as before);
+2. otherwise one final ``\n`` is dropped and the document is the bytes after the last ``\n`` left: ESLint's
+   ``json`` formatter writes the document as one line, last. The bytes before it are the **extra**; they are
+   not decoded and not interpreted;
+3. the document must have the shape above, else ``not_eslint_json``: lines after the document, a blank last
+   line, and text on the document's own line are refused, not searched through;
+4. an extra line that itself has the document's shape (``[]`` included) is ``several_documents``: a
+   ``lint_cmd`` that runs ESLint twice would otherwise lose the first run's violations without a trace.
+
+The extra is reported, never dropped silently: ``runs`` gives each run's ``{bytes, sha256}`` (``extra_of``), the
+command line prints it as ``stdout_extra`` when it is not empty. What the extra **means** is not judged here:
+with the lines measured above the tool says a rule was skipped, so a record made from such a run does not show
+that every configured rule ran. Out of scope, stated: an earlier document that spans several lines (rule 4
+reads single lines), and a tool that prints after its document (rule 3 refuses it).
+
 **The record** (``record``), ``{tool: "eslint", violations}``, one violation per message of
 ``messages`` and of ``suppressedMessages`` (a suppressed violation is still a violation: otherwise a
 suppression comment would lower the ratchet's count and hide the target), files in output order, each file's
@@ -33,7 +54,8 @@ messages before its suppressed ones, each list in output order:
   joined to the edited one, so ``last`` is the git line of ``e``, at most the file's last line.
 
 Every reason (refusal; no record): ``not_eslint_json`` (not UTF-8 JSON of the shape above, a missing
-``suppressedMessages`` included: such a tool does not report suppressions); ``path_outside_root:<filePath>``
+``suppressedMessages`` included: such a tool does not report suppressions); ``several_documents`` (rule 4
+above); ``path_outside_root:<filePath>``
 (not under ``root``, or a ``.``, ``..`` or empty component, or a ``\\``); ``file_unreadable:<path>`` (a
 reported file that is not a regular file of ``tree`` with no symlink on its way); ``source_not_utf8:<path>``;
 ``source_mismatch:<path>`` (``source``, when ESLint gives it, differs from the file's text: the tool read
@@ -46,18 +68,26 @@ Out of scope, stated: whether a minimal diff of the fixed file stays in ``[first
 other than ESLint, and checking that ``fix.text`` is what the candidate applies (``gate.check`` judges the diff
 against the range, not the text).
 
+``runs`` converts the stdouts of several runs on one tree for the callers (``unit_verify.verify``,
+``runner.kos``): ``(reasons, records, extras)``, each refusal once as ``lint_output:<reason>`` (``PREFIX``) in
+first-seen order, ``records`` and ``extras`` empty when there is a reason, a stdout that is not bytes read as
+empty.
+
 ``run_file`` writes the records of the three runs as the run file ``gate.check`` reads (``base.jsonl``,
 ``cand.jsonl``): one canonical JSON line each.
 
 Command line, from ``referee/``; stdin the tool's stdout; one JSON line on stdout::
 
     python -m runner.lint_record TREE [ROOT]     {ok, reasons, record}; exit 0 record, 1 refused, 2 usage
+
+A record whose stdout had extra bytes carries one more key, ``stdout_extra: {bytes, sha256}``.
 """
 
 from __future__ import annotations
 
 import array
 import bisect
+import hashlib
 import json
 import os
 import sys
@@ -69,6 +99,7 @@ import cli
 TOOL = "eslint"
 NO_RULE = "eslint:no-rule-id"
 CONTAINER_ROOT = "/work"
+PREFIX = "lint_output:"  # the callers' prefix of this module's reasons (``runs``)
 BOM = "\ufeff"
 NL, CR, LS, PS = 0x0A, 0x0D, 0x2028, 0x2029
 USAGE = "usage: python -m runner.lint_record TREE [ROOT]   (stdin: ESLint --format json output)"
@@ -140,20 +171,45 @@ def _relative(file_path: Any, root: str) -> str | None:
     return rel
 
 
-def _results(output: bytes) -> list[dict]:
+def _json(data: bytes) -> tuple[bool, Any]:
+    """``(True, value)`` when ``data`` is UTF-8 JSON, else ``(False, None)``."""
     try:
-        doc = cli.loads(output.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
-        raise RecordError(["not_eslint_json"]) from exc
-    ok = isinstance(doc, list) and all(
+        return True, cli.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return False, None
+
+
+def _shaped(doc: Any) -> bool:
+    """Whether a JSON value is an ESLint ``json`` document (the module docstring's input shape)."""
+    return isinstance(doc, list) and all(
         isinstance(r, dict) and isinstance(r.get("filePath"), str)
         and all(isinstance(r.get(k), list) and all(isinstance(m, dict) for m in r[k])
                 for k in ("messages", "suppressedMessages"))
         and ("source" not in r or isinstance(r["source"], str))
         for r in doc)
-    if not ok:
+
+
+def _split(output: bytes) -> tuple[bytes, list[dict]]:
+    """``(extra, results)`` of one run's stdout by the module docstring's rules 1-4; raises ``RecordError``."""
+    whole, doc = _json(output)
+    extra = b""
+    if not whole:
+        body = output[:-1] if output.endswith(b"\n") else output
+        cut = body.rfind(b"\n") + 1
+        extra = body[:cut]
+        doc = _json(body[cut:])[1]
+    if not _shaped(doc):
         raise RecordError(["not_eslint_json"])
-    return doc
+    for earlier in extra.split(b"\n"):
+        is_json, value = _json(earlier)
+        if is_json and _shaped(value):
+            raise RecordError(["several_documents"])
+    return extra, doc
+
+
+def extra_of(extra: bytes) -> dict:
+    """How the bytes before the document are reported: their count and sha256, not their text."""
+    return {"bytes": len(extra), "sha256": hashlib.sha256(extra).hexdigest()}
 
 
 def _violation(msg: dict, text: _Text) -> dict | None:
@@ -173,9 +229,15 @@ def _violation(msg: dict, text: _Text) -> dict | None:
 
 def record(output: bytes, tree: str, root: str = CONTAINER_ROOT) -> dict:
     """The run record of one lint run; raises ``RecordError`` with every reason (see the module docstring)."""
+    return convert(output, tree, root)[0]
+
+
+def convert(output: bytes, tree: str, root: str = CONTAINER_ROOT) -> tuple[dict, bytes]:
+    """``(record, extra)`` of one lint run: ``record``'s record and the stdout bytes before the document."""
     reasons: list[str] = []
     violations: list[dict] = []
-    for result in _results(output):
+    extra, results = _split(output)
+    for result in results:
         rel = _relative(result["filePath"], root)
         if rel is None:
             reasons.append("path_outside_root:%s" % result["filePath"])
@@ -206,7 +268,21 @@ def record(output: bytes, tree: str, root: str = CONTAINER_ROOT) -> dict:
         violations.extend(dict(v, path=rel) for v in found)
     if reasons:
         raise RecordError(sorted(set(reasons)))
-    return {"tool": TOOL, "violations": violations}
+    return {"tool": TOOL, "violations": violations}, extra
+
+
+def runs(stdouts: list, tree: str, root: str = CONTAINER_ROOT) -> tuple[list[str], list[dict], list[dict]]:
+    """Several runs' stdout on one tree: ``(reasons, records, extras)`` (see the module docstring)."""
+    reasons, records, extras = [], [], []
+    for out in stdouts:
+        try:
+            rec, extra = convert(out if isinstance(out, bytes) else b"", tree, root)
+        except RecordError as exc:
+            reasons += [PREFIX + r for r in exc.reasons if PREFIX + r not in reasons]
+            continue
+        records.append(rec)
+        extras.append(extra_of(extra))
+    return (reasons, [], []) if reasons else ([], records, extras)
 
 
 def line(rec: dict) -> bytes:
@@ -223,11 +299,14 @@ def main(argv: list[str]) -> int:
         sys.stderr.write(USAGE + "\n")
         return 2
     try:
-        rec = record(sys.stdin.buffer.read(), argv[0], argv[1] if len(argv) == 2 else CONTAINER_ROOT)
+        rec, extra = convert(sys.stdin.buffer.read(), argv[0], argv[1] if len(argv) == 2 else CONTAINER_ROOT)
     except RecordError as exc:
         sys.stdout.write(json.dumps({"ok": False, "reasons": exc.reasons, "record": None}, sort_keys=True) + "\n")
         return 1
-    sys.stdout.write(json.dumps({"ok": True, "reasons": [], "record": rec}, sort_keys=True) + "\n")
+    answer = {"ok": True, "reasons": [], "record": rec}
+    if extra:
+        answer["stdout_extra"] = extra_of(extra)
+    sys.stdout.write(json.dumps(answer, sort_keys=True) + "\n")
     return 0
 
 

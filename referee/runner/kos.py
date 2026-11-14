@@ -191,13 +191,8 @@ def _lint(recipe: dict, red: list, worktree: str, operating: dict, runner: C.Run
         stdouts.append(run["stdout"] if isinstance(run["stdout"], bytes) else b"")
     if [r for r in reasons if r != "red_control_green"] or len(stdouts) != LINT_RUNS:
         return reasons, []
-    records = []
-    for out in stdouts:
-        try:
-            records.append(R.record(out, worktree))
-        except R.RecordError as exc:
-            reasons += ["lint_output:" + r for r in exc.reasons if "lint_output:" + r not in reasons]
-    return reasons, ([] if len(records) != LINT_RUNS else records)
+    refused, records, _ = R.runs(stdouts, worktree)
+    return reasons + refused, records
 
 
 class _NoRun(Exception):
