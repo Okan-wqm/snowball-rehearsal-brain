@@ -32,7 +32,8 @@ that runs both jobs on the handed-over bytes, a stated unread download, or a pro
 3. checkout of the run's own commit of the referee repository, ``persist-credentials: false``.
 4. (``yaz`` only) the writer scope, ``python3 -m loop.job scope`` (``scope``: ``owner`` and ``repositories`` from
    the ``repo`` of every ``targets[]`` entry of the checkout's ``setup/summary.json``, one owner), then the writer
-   App token made inside the job with those two inputs: no operator variable names the owner (tohum/29s).
+   App token made inside the job with those two inputs: no operator variable names the owner (tohum/29s). The
+   token is asked with ``APP_INPUTS``' four permissions, tohum/25 item 6's.
 5. one download per artifact the job reads, by the producing job's artifact id, ``digest-mismatch: error``.
 6. ``python3 -m loop.job run <job>``, with the expected artifact digests and the job's secrets in ``env``.
 7. the upload of the job's artifact, whose id and digest are job outputs.
@@ -304,6 +305,7 @@ from profile import derive as D
 from profile import unit_verify as U
 from runner import deps_npm as N
 from runner import kos as K
+from target import app_jwt as AJ
 from target import branches as B
 from target import land as LN
 from target import write as W
@@ -331,16 +333,23 @@ CONTROL_RUN = (
     " --event \"$GITHUB_EVENT_NAME\" --github-output \"$GITHUB_OUTPUT\"\n"
 )
 
-# The writer App token: made in ``yaz``, limited to what target.write uses (tohum/25 item 6, MF9) and to the
-# repositories of ``targets[]`` (``scope``, from the checkout's setup/summary.json).
+# The writer App's two secrets: the token action's inputs, and ``yaz``'s own for the genesis cycle's ``GET /app``.
+APP_ID_ENV, APP_KEY_ENV = "WRITER_APP_ID", "WRITER_APP_PRIVATE_KEY"
+APP_SECRETS = {name: "${{ secrets.%s }}" % name for name in (APP_ID_ENV, APP_KEY_ENV)}
+
+# The writer App token: made in ``yaz``, limited to the App's permissions of tohum/25 item 6 (what target.write
+# writes with, MF9, and ``administration: read``, which genesis' ``GET actions/permissions`` on a copy asks of the
+# token: a token carries only the permissions asked for when it is made, spec/tohum/CHANGELOG.md 2026-11-15) and to
+# the repositories of ``targets[]`` (``scope``, from the checkout's setup/summary.json).
 APP_INPUTS = {
-    "app-id": "${{ secrets.WRITER_APP_ID }}",
-    "private-key": "${{ secrets.WRITER_APP_PRIVATE_KEY }}",
+    "app-id": APP_SECRETS[APP_ID_ENV],
+    "private-key": APP_SECRETS[APP_KEY_ENV],
     "owner": "${{ steps.scope.outputs.owner }}",
     "repositories": "${{ steps.scope.outputs.repositories }}",
     "permission-contents": "write",
     "permission-pull-requests": "write",
     "permission-checks": "write",
+    "permission-administration": "read",
 }
 
 SCOPE_RUN = "python3 -m loop.job scope\n"
@@ -376,8 +385,8 @@ JOBS: dict[str, Job] = {
                  ("cek",), ("pulled",), "response", ("claude",)),
     "yaz": Job(("D5", "D6", "D7", "D8"), (2, 7, 8, 9, 10, 11, 13, 14, 16), False,
                {"id-token": "write", "contents": "read"},
-               {"WRITER_TOKEN": "${{ steps.app.outputs.token }}", DR.SEED_ENV: "${{ secrets.DRILL_SEED }}",
-                DR.FIXTURES_ENV: "${{ secrets.DRILL_FIXTURES }}"},
+               {"WRITER_TOKEN": "${{ steps.app.outputs.token }}", **APP_SECRETS,
+                DR.SEED_ENV: "${{ secrets.DRILL_SEED }}", DR.FIXTURES_ENV: "${{ secrets.DRILL_FIXTURES }}"},
                ("cek", "getir", "kos", "cagir"), ("pulled", "deps", "results", "response"), None, ("sigstore",)),
 }
 
@@ -857,7 +866,7 @@ def _workspace_file(environ: dict[str, str], path: str) -> bytes:
 
 
 def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, signer: Any,
-                now: Any) -> dict[str, Any]:
+                now: Any, app: bool = False) -> dict[str, Any]:
     """What D6 writes with, in every cycle (the genesis cycle's too): ``{writer, signer, imports, cost, cycle_id,
     ts}``, or ``{reason, reasons?}`` (``response_invalid``, ``target_repo_unsafe``) before anything is written."""
     for name in YAZ_ENV:
@@ -872,10 +881,33 @@ def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, sig
         repo = A.repo_name(art.target.get("repo"))
     except A.StateError:
         return {"reason": "target_repo_unsafe"}
-    return {"writer": W.Writer(repo, transport or W.HttpTransport(environ["WRITER_TOKEN"])),
+    now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
+    return {"writer": W.Writer(repo, transport or writer_transport(environ, now, app)),
             "signer": signer or _signer(environ), "imports": imports, "cost": cost,
             "cycle_id": "%s-%s" % (environ["GITHUB_RUN_ID"], environ["GITHUB_RUN_ATTEMPT"]),
-            "ts": (now or (lambda: datetime.datetime.now(datetime.timezone.utc)))().strftime("%Y-%m-%dT%H:%M:%SZ")}
+            "ts": now().strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
+def writer_transport(environ: dict[str, str], now: Any, app: bool = False, handlers: tuple = ()) -> W.HttpTransport:
+    """``yaz``'s API: ``target.write.HttpTransport`` with ``WRITER_TOKEN``, the installation token. ``app`` (the
+    genesis cycle, whose first read is ``GET /app``) adds the App's own credential: a JWT of ``WRITER_APP_ID`` and
+    ``WRITER_APP_PRIVATE_KEY`` (``target.app_jwt.token``) made at the clock's time when that read is sent; either
+    unset is unusable before any request, a key ``target.app_jwt`` refuses is unusable at that read. Without
+    ``app`` the transport holds no App credential, whatever the environment holds. ``handlers`` are urllib's (tests
+    put their GitHub there)."""
+    if not app:
+        return W.HttpTransport(environ["WRITER_TOKEN"], handlers)
+    for name in (APP_ID_ENV, APP_KEY_ENV):
+        if not environ.get(name):
+            raise Unusable("yaz: %s is not set" % name)
+
+    def jwt() -> str:
+        try:
+            return AJ.token(environ[APP_ID_ENV], environ[APP_KEY_ENV], int(now().timestamp()))
+        except AJ.Unusable as exc:
+            raise W.Unusable(cli.cause(exc)) from None
+
+    return W.HttpTransport(environ["WRITER_TOKEN"], handlers, app=jwt)
 
 
 GENESIS_WRITTEN = ("merge", "state_sha", "integration_sha", "root", "rekor_uuid", "rows", "edited")
@@ -885,8 +917,10 @@ SECURITY_LEDGER = "setup/security-ledger.jsonl"  # tohum/26c, 29o, 29s: the seed
 def yaz_genesis(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
                 signer: Any = None, now: Any = None) -> dict[str, Any]:
     """D6 of the genesis cycle (``loop.pulled.genesis``; see the module docstring): ``activate.activate`` with this
-    cycle's D5 and D3 and the checkout's files: ``{reason, reasons, written?}`` or ``{written}``."""
-    got = _yaz_inputs(environ, tid, art, transport, signer, now)
+    cycle's D5 and D3 and the checkout's files: ``{reason, reasons, written?}`` or ``{written}``. Its own
+    transport (``transport`` ``None``) is ``writer_transport`` with the App's credential, for genesis'
+    ``GET /app``."""
+    got = _yaz_inputs(environ, tid, art, transport, signer, now, app=True)
     if "reason" in got:
         return got
     given = WT.base_run(_dir(environ, "in", "results", tid))

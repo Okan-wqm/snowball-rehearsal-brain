@@ -68,6 +68,14 @@ Transport: ``HttpTransport`` sends to ``https://api.github.com`` with the token;
 redirect would carry the token and the write elsewhere), so a 3xx is an ``ApiError``. ``Writer`` takes any
 callable ``(method, path, body) -> (status, json)``; tests give it an in-process fake.
 
+Two credentials, one rule (``APP_READ``; spec/tohum/CHANGELOG.md 2026-11-15: GitHub answers ``GET /app`` to the
+App's JWT and 401 to an installation token). ``GET /app``, exactly that method and path, is sent with ``app()``,
+the App's JWT (``target.app_jwt.token``; ``loop.job`` gives it in the genesis cycle only); every other request is
+sent with the installation token. A request under ``/app/`` (the App's own routes, which mint tokens and read
+installations) or another method on ``/app`` is refused before any socket, with or without ``app``: the JWT is
+never sent anywhere else, and the token is not sent where GitHub would only answer the JWT. ``GET /app`` without
+``app`` is refused the same way.
+
 Every request the writer sends is kept (``sent``), and the refs each successful write wrote, as the guard
 names them (``written``): the outputs below come from those, not from the responses.
 
@@ -483,25 +491,48 @@ class Writer:
 
 # ---------------------------------------------------------------- transport
 
+def _one_line(value: Any) -> bool:
+    return isinstance(value, str) and bool(value) and not any(c in value for c in "\r\n")
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401 - urllib's signature
         return None
 
 
-class HttpTransport:
-    """GitHub REST over HTTPS with a token; no redirect is followed."""
+APP_READ = ("GET", "/app")  # the one request sent with the App's JWT
 
-    def __init__(self, token: str, handlers: tuple = (), timeout: float = 30.0):
-        if not isinstance(token, str) or not token or any(c in token for c in "\r\n"):
+
+class HttpTransport:
+    """GitHub REST over HTTPS with a token, ``GET /app`` with ``app()``'s JWT (see the module docstring); no
+    redirect is followed."""
+
+    def __init__(self, token: str, handlers: tuple = (), timeout: float = 30.0,
+                 app: Callable[[], str] | None = None):
+        if not _one_line(token):
             raise Unusable("token must be one non-empty line")
         self.token = token
+        self.app = app
         self.timeout = timeout
         self.opener = urllib.request.build_opener(_NoRedirect, *handlers)
 
+    def _credential(self, method: str, path: str) -> str:
+        if (method, path) != APP_READ:
+            if path == APP_READ[1] or path.startswith(APP_READ[1] + "/"):
+                raise Unusable("%s %s: only GET /app is sent as the App" % (method, path))
+            return self.token
+        if self.app is None:
+            raise Unusable("GET /app is answered only to the App's JWT and none was given")
+        jwt = self.app()
+        if not _one_line(jwt):
+            raise Unusable("the App's JWT must be one non-empty line")
+        return jwt
+
     def __call__(self, method: str, path: str, body: Any) -> tuple[int, Any]:
+        credential = self._credential(method, path)
         data = None if body is None else json.dumps(body).encode("utf-8")
         req = urllib.request.Request(API + path, data=data, method=method)
-        req.add_header("Authorization", "Bearer " + self.token)
+        req.add_header("Authorization", "Bearer " + credential)
         req.add_header("Accept", "application/vnd.github+json")
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
         if data is not None:
