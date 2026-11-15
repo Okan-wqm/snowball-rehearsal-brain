@@ -54,7 +54,9 @@ The run (``run``):
   container's uid, and a private entry (a 0700 directory, a 0600 file: what ``tempfile.mkdtemp`` and
   ``mkstemp`` make) of another uid cannot be opened by a host process that is not root, so the run could only
   end ``unreadable_output``. A job that names a ``uid`` gets that uid, and its private entries are then
-  unreadable to a non-root host of another uid (not repaired here). Not sandbox-tested with a real docker
+  unreadable to a non-root host of another uid (not repaired here). The rule takes the container's uid to be
+  the host's uid of the same number, which is docker's default; under user-namespace remapping or a rootless
+  docker it is not, and this rule does not make the outputs readable there. Not sandbox-tested with a real docker
   (this sandbox has none): the tests run a stand-in that applies this ownership rule (``tests/fake_docker``).
 - After docker returns (on timeout: ``docker kill`` by name, then wait), ``work``, ``out`` and ``in`` are
   hashed from the host without following symlinks: a symlink is recorded with its target, a FIFO or
