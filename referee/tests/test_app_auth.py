@@ -140,6 +140,16 @@ class Jwt(unittest.TestCase):
         self.assertNotEqual(small, KEY["d"])
         self.assertEqual(AJ.token("4242", GA.pem(GA.pkcs1(dict(KEY, d=small))), NOW), AJ.token("4242", PEM, NOW))
 
+    def test_sign_answers_only_a_signature_that_verifies(self):
+        key = (KEY["n"], KEY["e"], KEY["d"])
+        sig = AJ.sign(key, b"m")
+        self.assertEqual(len(sig), 256)
+        self.assertEqual(pow(int.from_bytes(sig, "big"), KEY["e"], KEY["n"]).to_bytes(256, "big"), AJ.encoded(b"m", 256))
+        for bad in ((KEY["n"], KEY["e"], KEY["d"] + 2), (KEY["n"], KEY["e"] + 2, KEY["d"])):
+            with self.assertRaises(AJ.Unusable) as ctx:
+                AJ.sign(bad, b"m")
+            self.assertEqual(str(ctx.exception), "private key: the signature does not verify under its own public numbers")
+
     def test_a_modulus_under_2048_bits_is_refused(self):
         self.assertEqual(KEY["n"].bit_length(), 2048)
         near = GA.rsa(2047, seed=7)
