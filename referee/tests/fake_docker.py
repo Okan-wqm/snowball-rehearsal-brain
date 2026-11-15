@@ -12,7 +12,17 @@ flags mean, so a builder that drops a flag gets a container without that protect
   working directory too; ``python``/``python3`` is this interpreter. Only Python commands run.
 
 Blocking is done by an audit hook in the child (``fake_docker_hook.py``), installed before the command.
-Not emulated: the user id, capabilities, memory limit and the image (it is ignored).
+
+The image store. A ``FakeDocker`` is a host: ``images`` is what it holds (nothing by default, a fresh runner)
+and ``registry`` what a pull can get (``None``: any reference). ``docker run`` of an image the host does not
+hold ends 125 and starts nothing, as ``docker run --pull never`` does; ``--pull always`` or ``missing`` pulls
+first; ``docker image inspect REF`` exits 0 or 1; ``docker pull REF`` stores it and exits 0, or exits 1. Every
+call that is not ``docker run`` is recorded in ``other`` (``calls`` holds the runs). The image's content is not
+emulated (every image runs this interpreter), nor a digest check. The stderr texts of these three are written
+from docker's documented behaviour, not captured from a docker (this sandbox has none): tests may rely on the
+exit codes only.
+
+Not emulated: the user id, capabilities and the memory limit.
 """
 
 from __future__ import annotations
@@ -52,12 +62,36 @@ def parse(argv: list[str]) -> dict:
 class FakeDocker:
     """Callable with the ``runner.contained`` runner signature; records every call."""
 
-    def __init__(self, exit_override: int | None = None) -> None:
+    def __init__(self, exit_override: int | None = None, images=(), registry=None) -> None:
         self.calls: list[dict] = []
+        self.other: list[list[str]] = []
         self.exit_override = exit_override
+        self.images = set(images)
+        self.registry = None if registry is None else set(registry)
+
+    def _pull(self, ref: str) -> RunnerResult:
+        if self.registry is not None and ref not in self.registry:
+            return RunnerResult(1, b"", b"Error response from daemon: manifest for %s not found: manifest unknown\n"
+                                % ref.encode(), False)
+        self.images.add(ref)
+        return RunnerResult(0, ref.encode() + b"\n", b"", False)
 
     def __call__(self, argv: list[str], env: dict, timeout: float) -> RunnerResult:
+        if argv[:3] == ["docker", "image", "inspect"]:
+            self.other.append(argv)
+            if argv[-1] in self.images:
+                return RunnerResult(0, b"sha256:" + b"0" * 64 + b"\n", b"", False)
+            return RunnerResult(1, b"\n", b"Error response from daemon: No such image: %s\n" % argv[-1].encode(),
+                                False)
+        if argv[:2] == ["docker", "pull"]:
+            self.other.append(argv)
+            return self._pull(argv[-1])
         spec = parse(argv)
+        if spec["image"] not in self.images:
+            policy = dict((f, v) for f, v in spec["opts"]).get("--pull", "missing")
+            if policy == "never" or self._pull(spec["image"]).exit != 0:
+                self.other.append(argv)
+                return RunnerResult(125, b"", b"Unable to find image '%s' locally\n" % spec["image"].encode(), False)
         cenv: dict[str, str] = {}
         network, read_only, workdir, name = "default", False, "/", None
         mounts: list[dict] = []
@@ -117,3 +151,15 @@ class FixedRunner:
         if self.action:
             self.action(argv)
         return RunnerResult(self.exit_code, b"", b"", self.timed_out)
+
+
+def runs_of(docker):
+    """Decorator for a test's own runner: the function sees the ``docker run`` calls only, so its call counts
+    and argv positions are the contained runs'; every other docker call (inspect, pull) goes to ``docker``."""
+    def wrap(fn):
+        def runner(argv: list[str], env: dict, timeout: float) -> RunnerResult:
+            if argv[:2] != ["docker", "run"]:
+                return docker(argv, env, timeout)
+            return fn(argv, env, timeout)
+        return runner
+    return wrap

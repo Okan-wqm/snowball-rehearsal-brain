@@ -61,6 +61,21 @@ The run (``run``):
   size check after it sees that. ``files_read`` and ``network_attempts`` are not measured here and are
   reported as ``null``; ``paths_written`` is the hash difference of ``work`` and ``out``.
 
+The image (``ensure_image``; tohum/08 item 2: the pull is the ``koş`` job's host step, before code runs). ``run``
+never fetches (``--pull never``): on a host that does not hold the image docker ends 125 before any container
+starts, which ``run`` can only call ``runner_fault``. So the caller that is about to start contained runs of an
+image calls ``ensure_image`` first, once: ``docker image inspect IMAGE`` exit 0 means the host holds it and
+nothing is fetched; otherwise ``docker pull --quiet IMAGE``, by the pinned reference alone (an image that is not
+``name[:tag]@sha256:<64 hex>`` is refused, ``ContainmentError``, and no docker process starts). Exit 0 of the
+pull is ``[]``; a pull or an inspect stopped by the timeout is ``["limit_hit:kos_wall_s"]``; any other pull exit
+is ``["image_unavailable"]`` and the pull's stderr goes to this process's stderr, at most ``FAULT_BYTES`` bytes
+of it, every line prefixed ``docker pull: `` and every character outside printable ASCII escaped (so the job's
+log says why; no container ran, so these are the docker CLI's bytes). Both calls get ``PATH`` and ``HOME`` only,
+like ``run``'s. Out of scope, stated: ``image_unavailable`` does not tell a digest that does not exist from a
+registry that did not answer; a ``runner_fault`` of ``run`` prints nothing (exit 125 can also be the command's
+own exit code, and then stderr is the command's); whether the bytes docker stored match the digest is docker's
+check, not repeated here.
+
 Red control (``run_with_red_control``): every call runs a known bad candidate in its own fresh directory
 with the same image (required), flags and limits. It is red when its status is ``ok`` and its exit code is not
 0, 125, 126 or 127 (docker, not-executable and not-found failures). A green control makes the whole run
@@ -118,6 +133,9 @@ RUN_LIMITS = ("container_mem_bytes", "kos_wall_s", "worktree_bytes", "output_byt
 FORBIDDEN_ENV_PREFIXES = ("ACTIONS_", "GITHUB_", "RUNNER_")
 NOT_RED_EXITS = (0, 125, 126, 127)
 KILL_WAIT_S = 30
+IMAGE_UNAVAILABLE = "image_unavailable"
+FAULT_BYTES = 2000
+FAULT_PREFIX = "docker pull: "
 
 # Flag -> value rule, in the order build_argv writes them. None: no value. Each appears exactly once.
 SINGLE_FLAGS: dict[str, Any] = {
@@ -632,6 +650,10 @@ def docker_runner(argv: list[str], env: dict, timeout: float) -> RunnerResult:
         return RunnerResult(proc.returncode, out, err, False)
     except subprocess.TimeoutExpired:
         name = _flag_value(argv, "--name")
+        if name is None:  # not a container of ours to kill (inspect, pull): end the CLI itself
+            proc.kill()
+            out, err = proc.communicate()
+            return RunnerResult(None, out, err, True)
         subprocess.run(["docker", "kill", name], env=env, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=KILL_WAIT_S, check=False)
         try:
@@ -640,6 +662,44 @@ def docker_runner(argv: list[str], env: dict, timeout: float) -> RunnerResult:
             proc.kill()
             out, err = proc.communicate()
         return RunnerResult(None, out, err, True)
+
+
+def _docker_env(home: str) -> dict:
+    """What the docker CLI's own process gets: ``PATH`` and ``HOME`` only."""
+    return {"PATH": os.environ.get("PATH", os.defpath), "HOME": home}
+
+
+def fault_text(stderr: bytes) -> str:
+    """The lines ``ensure_image`` prints for a failed pull: the first ``FAULT_BYTES`` bytes of ``stderr``, each
+    non-empty line prefixed, characters outside printable ASCII (and the backslash) escaped."""
+    lines = []
+    for line in stderr[:FAULT_BYTES].decode("utf-8", "replace").split("\n"):
+        if line.strip():
+            safe = "".join(ch if " " <= ch <= "~" and ch != "\\" else ch.encode("unicode_escape").decode("ascii")
+                           for ch in line)
+            lines.append(FAULT_PREFIX + safe + "\n")
+    return "".join(lines)
+
+
+def ensure_image(image: Any, timeout: float, home: str, runner: Runner | None = None) -> list[str]:
+    """The host holds ``image`` before any contained run of it: ``[]``, or the reason it does not (see the
+    module docstring, "The image"). ``timeout`` is each docker call's; ``home`` the docker CLI's ``HOME``."""
+    if not (isinstance(image, str) and IMAGE.match(image)):
+        raise ContainmentError("image must be pinned: name[:tag]@sha256:<64 hex>")
+    runner = runner or docker_runner
+    env = _docker_env(home)
+    held = runner(["docker", "image", "inspect", "--format", "{{.Id}}", image], env, timeout)
+    if held.timed_out:
+        return ["limit_hit:kos_wall_s"]
+    if held.exit == 0:
+        return []
+    pulled = runner(["docker", "pull", "--quiet", image], env, timeout)
+    if pulled.timed_out:
+        return ["limit_hit:kos_wall_s"]
+    if pulled.exit == 0:
+        return []
+    sys.stderr.write(fault_text(pulled.stderr))
+    return [IMAGE_UNAVAILABLE]
 
 
 def fresh_run_root(base: str | None = None) -> str:
@@ -696,8 +756,7 @@ def run(job: dict, operating: dict, runner: Runner | None = None, base: str | No
                               "files_read": None, "network_attempts": None}
     if tree_bytes(work_before) > lim["worktree_bytes"]:
         return _finish(result, "limit_hit:worktree_bytes", work_before, work_before, {}, None)
-    docker_env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": root}
-    res = runner(argv, docker_env, lim["kos_wall_s"])
+    res = runner(argv, _docker_env(root), lim["kos_wall_s"])
     result.update(exit=res.exit, timed_out=res.timed_out,
                   stdout_sha256=hashlib.sha256(res.stdout).hexdigest(),
                   stderr_sha256=hashlib.sha256(res.stderr).hexdigest())

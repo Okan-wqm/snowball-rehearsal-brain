@@ -121,6 +121,10 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
    package of the lock provides it), ``directories.bin``, man pages, npm's own install logic, and a
    bound on the number of members (only their bytes are bounded; time is bounded by the job's clock). A lock
    with no package needs no artifact; one with packages and no artifact is unusable input.
+   Then, before the first contained run, the host is made to hold the image (``runner.contained.ensure_image``
+   with the effective ``kos_wall_s``: inspect, else pull by the pinned reference, tohum/08 item 2); only an image
+   the static check accepted, and only once steps 1-2 left no reason, is asked for. A pull that fails is
+   ``image_unavailable``, one the limit stops ``limit_hit:kos_wall_s``: no verdict, no run starts.
 3. Install scripts, of installed rows only (tohum/26c "Birim tarifi": a mark is leave to fetch a package that
    has a script; no page says which script runs, and a script that does not run or ends nonzero refuses
    nothing: the runs are the measure). When a row is flagged ``install_script`` (marked in the recipe, checked
@@ -174,7 +178,8 @@ results, and ``lint_records``: the three runs' records, the ratchet base's run f
 ``no_fixable_violation``); ``no_verdict``
 (nothing is learned about the recipe: ``limit_hit:<key>`` -- a limit is the operator's, not counted to the
 Founder, tohum/18a --, an invalid contained run such as ``red_control_green``, ``red_control_fault``,
-``runner_fault``, ``breach:in_changed``, ``unreadable_output``, or a ``deps`` artifact that does not verify,
+``runner_fault``, ``breach:in_changed``, ``unreadable_output``, an image the host could not get,
+``image_unavailable``, or a ``deps`` artifact that does not verify,
 ``deps:<reason>``, or does not belong to the tree's lock, or cannot be unpacked safely). Out of scope:
 asama-0/08 unit criterion 7 (churn) and whether the tests are "well tested".
 
@@ -263,7 +268,7 @@ LINT_OK_EXITS = (0, 1)
 ENV = {"HOME": "/work/.snowball/home", "TMPDIR": "/work/.snowball/tmp", "CI": "true",
        "npm_config_offline": "true"}
 NO_VERDICT_PREFIXES = ("limit_hit:", "deps:", "deps_lock_mismatch", "deps_unpack_unsafe", "red_control_",
-                       "runner_fault", "breach:", "unreadable_output")
+                       "runner_fault", "breach:", "unreadable_output", C.IMAGE_UNAVAILABLE)
 
 
 class VerifyError(ValueError):
@@ -999,6 +1004,9 @@ def stage(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | Non
                               "not_installed": deps_info["not_installed"],
                               "unsupported": deps_info["unsupported"], "install": None, "install_each": [],
                               "runs": {"lint": [], "test": []}}
+    bad = C.ensure_image(recipe["env_image"], values["kos_wall_s"], staging_root, runner)
+    if bad:
+        return bad, result, {}
     lock_dir = posixpath.dirname(lock) or "."
     prefix = "/work" if lock_dir == "." else "/work/" + lock_dir
     rebuild = ["npm", "--prefix", prefix, "rebuild", "--offline", "--foreground-scripts"]

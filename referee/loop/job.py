@@ -126,7 +126,10 @@ refused tree is ``pulled_invalid``). Then:
   ``diff.patch`` and the ``deps`` artifact, ``runner.deps_npm.artifact_in`` of ``$RUNNER_TEMP/in/deps`` (the
   download of ``getir``'s ``out/deps``; a root that is not exactly one ``<address>/`` directory is ``deps_invalid``,
   nothing run; ``None`` when ``in/deps`` is absent or empty: ``unit_verify`` then accepts only a lock without
-  packages), writing ``$RUNNER_TEMP/out/results``. Before the tree is extracted it reads ``pulled``'s
+  packages), writing ``$RUNNER_TEMP/out/results``. The image is fetched in this step, on the host, by
+  ``runner.kos.results`` itself before its first contained run (tohum/08 item 2; ``runner.contained.ensure_image``:
+  the workflow has no pull step of its own, and a pull that fails prints docker's reason on this step's stderr and
+  gives the base ``no_verdict`` ``image_unavailable``). Before the tree is extracted it reads ``pulled``'s
   ``state/ledger.jsonl`` with ``ledger.serial.unfinished``, the reading ``yaz`` uses (a ledger it cannot read is
   ``state_refused`` with its reasons, nothing run): with no unfinished merge nothing is watched; when the one
   unfinished merge is ``brain/integration``'s head (the tree ``pulled`` carries), ``runner.kos.results`` runs D7's

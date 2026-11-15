@@ -15,6 +15,8 @@ is read-only); with none writable the tests fail, they are never skipped. The fa
 
 from __future__ import annotations
 
+import contextlib
+import io
 import hashlib
 import json
 import os
@@ -524,7 +526,7 @@ class CanaryTest(Base):
         listener = Listener()
         self.addCleanup(listener.close)
         before = snapshot(outside)
-        fake = FakeDocker()
+        fake = FakeDocker(images=[IMAGE])
         result = contained.run(self.job(
             "connect", "127.0.0.1", str(listener.port),
             "write", os.path.join(outside, "keep.txt"), "overwritten",
@@ -566,7 +568,7 @@ class CanaryTest(Base):
         weak = [a for a in argv if a != "--read-only"]
         i = weak.index("--network")
         weak[i + 1] = "bridge"
-        FakeDocker()(weak, {}, 30)
+        FakeDocker(images=[IMAGE])(weak, {}, 30)
         self.assertEqual(listener.accepted, 1)
         self.assertTrue(os.path.exists(os.path.join(outside, "x.txt")))
 
@@ -575,7 +577,7 @@ class CanaryTest(Base):
 
 class RunTest(Base):
     def test_fresh_root_per_run(self):
-        fake = FakeDocker()
+        fake = FakeDocker(images=[IMAGE])
         first = contained.run(self.job("write", "/work/left.txt", "first", "listdir", "/out", "/work/seen.json"),
                               operating(), runner=fake, base=self.base)
         second = contained.run(self.job("listdir", "/work", "/out/seen.json"), operating(), runner=fake,
@@ -597,7 +599,7 @@ class RunTest(Base):
             fh.write(b"host secret file")
         result = contained.run(self.job("write", "/out/a/data.txt", "x", "write", "/out/data.txt", "payload",
                                         "symlink", target, "/out/link", "mkfifo", "/out/fifo",
-                                        "write", "/work/new.txt", "w"), operating(), runner=FakeDocker(),
+                                        "write", "/work/new.txt", "w"), operating(), runner=FakeDocker(images=[IMAGE]),
                                base=self.base)
         out = result["outputs"]
         self.assertEqual(out["data.txt"], {"type": "file", "sha256": sha(b"payload"), "size": 7})
@@ -640,10 +642,10 @@ class RunTest(Base):
         self.assertTrue(result["outputs"]["noread"]["unreadable"])
 
     def test_limits(self):
-        r = contained.run(self.job("write", "/out/o.txt", "x" * 10), operating(output_bytes=10), runner=FakeDocker(),
+        r = contained.run(self.job("write", "/out/o.txt", "x" * 10), operating(output_bytes=10), runner=FakeDocker(images=[IMAGE]),
                           base=self.base)
         self.assertEqual(r["status"], "ok")
-        r = contained.run(self.job("write", "/out/o.txt", "x" * 11), operating(output_bytes=10), runner=FakeDocker(),
+        r = contained.run(self.job("write", "/out/o.txt", "x" * 11), operating(output_bytes=10), runner=FakeDocker(images=[IMAGE]),
                           base=self.base)
         self.assertEqual(r["status"], "limit_hit:output_bytes")
         self.assertFalse(r["valid"])
@@ -653,10 +655,10 @@ class RunTest(Base):
         self.assertEqual((r["status"], never.calls), ("limit_hit:worktree_bytes", []))
         r = contained.run(self.job(), operating(worktree_bytes=size), runner=FixedRunner(0), base=self.base)
         self.assertEqual(r["status"], "ok")
-        r = contained.run(self.job("write", "/work/grow.txt", "x"), operating(worktree_bytes=size), runner=FakeDocker(),
+        r = contained.run(self.job("write", "/work/grow.txt", "x"), operating(worktree_bytes=size), runner=FakeDocker(images=[IMAGE]),
                           base=self.base)
         self.assertEqual(r["status"], "limit_hit:worktree_bytes")
-        fake = FakeDocker()
+        fake = FakeDocker(images=[IMAGE])
         r = contained.run(self.job("sleep", "20"), operating(kos_wall_s=1), runner=fake, base=self.base)
         self.assertEqual((r["status"], r["timed_out"], r["valid"]), ("limit_hit:kos_wall_s", True, False))
         self.assertTrue(fake.calls[0]["killed"])
@@ -730,6 +732,134 @@ class RunTest(Base):
             contained.subprocess = real
         self.assertTrue(res.timed_out)
         self.assertEqual(calls[1], ("run", ["docker", "kill", "snowball-" + "0" * 32], {"PATH": "/bin"}))
+
+    def test_docker_runner_ends_the_cli_itself_when_a_call_that_is_no_run_times_out(self):
+        calls = []
+
+        class Proc:
+            returncode = None
+
+            def __init__(self):
+                self.n = 0
+
+            def communicate(self, timeout=None):
+                self.n += 1
+                if self.n == 1:
+                    raise subprocess.TimeoutExpired("docker", timeout)
+                return b"o", b"e"
+
+            def kill(self):
+                calls.append(("kill",))
+
+        class Sub:
+            PIPE = DEVNULL = None
+            TimeoutExpired = subprocess.TimeoutExpired
+
+            def Popen(self, argv, **kw):
+                calls.append(("popen", argv))
+                return Proc()
+
+            def run(self, argv, **kw):
+                calls.append(("run", argv))
+
+        real = contained.subprocess
+        contained.subprocess = Sub()
+        try:
+            res = contained.docker_runner(["docker", "pull", "--quiet", IMAGE], {"PATH": "/bin"}, 5)
+        finally:
+            contained.subprocess = real
+        self.assertEqual((res.timed_out, res.exit, res.stderr), (True, None, b"e"))
+        self.assertEqual(calls, [("popen", ["docker", "pull", "--quiet", IMAGE]), ("kill",)])
+
+
+# ---------------------------------------------------------------- the image
+
+class ImageTest(Base):
+    """``ensure_image`` (tohum/08 item 2: the pull is the ``kos`` job's host step) on the fake host: a
+    ``FakeDocker`` holds no image until one is loaded or pulled, and its ``docker run --pull never`` of an image
+    it does not hold ends 125, the row both live (B) attempts gave."""
+
+    INSPECT = ["docker", "image", "inspect", "--format", "{{.Id}}", IMAGE]
+    PULL = ["docker", "pull", "--quiet", IMAGE]
+
+    def ensure(self, runner, image=IMAGE, timeout=7) -> tuple[list, str]:
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            reasons = contained.ensure_image(image, timeout, self.base, runner)
+        return reasons, err.getvalue()
+
+    def test_a_host_without_the_image_runs_nothing_and_ensure_makes_the_run_start(self):
+        fresh = FakeDocker()
+        r = contained.run_with_red_control(self.job(), self.job("exit", "1"), operating(), runner=fresh,
+                                           base=self.base)
+        self.assertEqual((r["valid"], r["reasons"]), (False, ["red_control_fault", "runner_fault"]))
+        self.assertEqual(fresh.calls, [], "no container started")
+        self.assertEqual(self.ensure(fresh), ([], ""))
+        r = contained.run_with_red_control(self.job(), self.job("exit", "1"), operating(), runner=fresh,
+                                           base=self.base)
+        self.assertEqual((r["valid"], r["reasons"], len(fresh.calls)), (True, [], 2))
+
+    def test_an_image_the_host_holds_is_not_fetched(self):
+        docker = FakeDocker(images=[IMAGE], registry=[])
+        self.assertEqual(self.ensure(docker), ([], ""))
+        self.assertEqual(docker.other, [self.INSPECT])
+
+    def test_a_missing_image_is_pulled_by_its_pinned_reference_with_path_and_home_only(self):
+        seen = []
+        docker = FakeDocker()
+
+        def runner(argv, env, timeout):
+            seen.append((argv, env, timeout))
+            return docker(argv, env, timeout)
+        os.environ["SNOWBALL_CANARY_IMAGE"] = "secret"
+        self.addCleanup(os.environ.pop, "SNOWBALL_CANARY_IMAGE", None)
+        self.assertEqual(self.ensure(runner), ([], ""))
+        self.assertEqual([a for a, _, _ in seen], [self.INSPECT, self.PULL])
+        for _, env, timeout in seen:
+            self.assertEqual(env, {"PATH": os.environ["PATH"], "HOME": self.base})
+            self.assertEqual(timeout, 7)
+        self.assertEqual(docker.images, {IMAGE})
+
+    def test_a_pull_that_fails_is_image_unavailable_and_its_stderr_is_printed(self):
+        docker = FakeDocker(registry=[])
+        reasons, err = self.ensure(docker)
+        self.assertEqual(reasons, ["image_unavailable"])
+        self.assertEqual(docker.other, [self.INSPECT, self.PULL])
+        self.assertEqual(err, "docker pull: Error response from daemon: manifest for %s not found: manifest "
+                              "unknown\n" % IMAGE)
+
+    def test_any_nonzero_pull_exit_is_image_unavailable(self):
+        for code in (1, 125, 127, -9):
+            with self.subTest(code=code):
+                exits = iter([1, code])
+                reasons, _ = self.ensure(lambda argv, env, timeout: contained.RunnerResult(next(exits), b"", b"", False))
+                self.assertEqual(reasons, ["image_unavailable"])
+
+    def test_a_call_the_timeout_stops_is_the_limit_and_nothing_follows(self):
+        stopped = FixedRunner(None, timed_out=True)
+        self.assertEqual(self.ensure(stopped), (["limit_hit:kos_wall_s"], ""))
+        self.assertEqual(stopped.calls, [self.INSPECT], "an inspect that hangs is not followed by a pull")
+        results = iter([contained.RunnerResult(1, b"", b"", False), contained.RunnerResult(None, b"", b"late", True)])
+        self.assertEqual(self.ensure(lambda argv, env, timeout: next(results)), (["limit_hit:kos_wall_s"], ""))
+
+    def test_an_image_that_is_not_pinned_starts_no_docker_process(self):
+        never = FixedRunner(0)
+        for bad in ("node:20", "node@sha256:" + "ab" * 31, None, ["x"], IMAGE + " --privileged", "-" + IMAGE):
+            with self.subTest(image=bad):
+                with self.assertRaises(contained.ContainmentError):
+                    contained.ensure_image(bad, 7, self.base, never)
+        self.assertEqual(never.calls, [])
+
+    def test_fault_text_is_bounded_prefixed_and_escaped(self):
+        text = contained.fault_text(b"::add-mask::x\n\n  \nplain ~ text\r\n\x1b[31mred\\n \xff\xc3\xa9\n")
+        self.assertEqual(text, "docker pull: ::add-mask::x\n"
+                               "docker pull: plain ~ text\\r\n"
+                               "docker pull: \\x1b[31mred\\\\n \\ufffd\\xe9\n")
+        self.assertTrue(all(line.startswith("docker pull: ") for line in text.splitlines()))
+        self.assertEqual(contained.fault_text(b""), "")
+        long = contained.fault_text(b"a" * (contained.FAULT_BYTES + 500) + b"\nsecond line\n")
+        self.assertEqual(long, "docker pull: " + "a" * contained.FAULT_BYTES + "\n")
+        self.assertEqual(text.encode("ascii").decode("ascii"), text)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,9 @@ The fake runner is ``fake_docker.py`` (Python commands only; what it does not em
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
 import json
 import os
 import shutil
@@ -31,7 +33,7 @@ import refusal  # noqa: E402
 from runner import contained as C  # noqa: E402
 from runner import deps_npm as N  # noqa: E402
 from runner import lint_record as R  # noqa: E402
-from fake_docker import FakeDocker  # noqa: E402
+from fake_docker import FakeDocker, runs_of  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from test_deps_npm import sri, tgz, url  # noqa: E402
 
@@ -173,6 +175,48 @@ class Base(unittest.TestCase):
         self.runner = runner or FakeDocker()
         return U.verify(r or recipe(), self.tree, pol or policy(), red,
                         self.deps if deps == "default" else deps, runner=self.runner, base=self.base, **kw)
+
+
+# ---------------------------------------------------------------- the image
+
+class Image(Base):
+    """The image step of ``stage`` (tohum/08 item 2) on the fake host, which holds no image until one is pulled."""
+
+    def test_a_fresh_host_gets_the_image_once_before_the_first_run(self):
+        docker, order = FakeDocker(), []
+
+        def runner(argv, env, timeout):
+            order.append((argv[1:3], timeout))
+            return docker(argv, env, timeout)
+        report = self.verify(recipe(limits={"kos_wall_s": 41}), runner=runner)
+        self.assertEqual(report["verdict"], "verified", report)
+        self.assertEqual(docker.other, [["docker", "image", "inspect", "--format", "{{.Id}}", IMAGE],
+                                        ["docker", "pull", "--quiet", IMAGE]])
+        self.assertEqual(order[:2], [(["image", "inspect"], 41), (["pull", "--quiet"], 41)],
+                         "before any run, under the effective kos_wall_s")
+        self.assertEqual(len(docker.calls), 12)
+
+    def test_a_host_that_holds_the_image_pulls_nothing(self):
+        docker = FakeDocker(images=[IMAGE], registry=[])
+        self.assertEqual(self.verify(runner=docker)["verdict"], "verified")
+        self.assertEqual([argv[1] for argv in docker.other], ["image"])
+
+    def test_an_image_the_host_cannot_get_is_no_verdict_and_nothing_runs(self):
+        docker, err = FakeDocker(registry=[]), io.StringIO()
+        with contextlib.redirect_stderr(err):
+            report = self.verify(runner=docker)
+        self.assertEqual((report["verdict"], report["reasons"]), ("no_verdict", ["image_unavailable"]))
+        self.assertEqual(docker.calls, [])
+        self.assertEqual([argv[1] for argv in docker.other], ["image", "pull"], "no run was tried")
+        self.assertIn("docker pull: ", err.getvalue())
+
+    def test_a_tree_refused_before_the_runs_asks_docker_nothing(self):
+        docker = FakeDocker()
+        report = self.verify(recipe(lint_cmd=["python", "pkg/absent.py"]), runner=docker)
+        self.assertEqual(report["verdict"], "refused", report)
+        report = self.verify(pol=policy(unit_inputs_bytes=1), runner=docker)
+        self.assertEqual(report["reasons"], ["limit_hit:unit_inputs_bytes"])
+        self.assertEqual((docker.calls, docker.other), ([], []))
 
 
 # ---------------------------------------------------------------- static check
@@ -903,6 +947,7 @@ class Deps(Base):
         inner = FakeDocker()
         npm = []
 
+        @runs_of(inner)
         def runner(argv, env, timeout):
             image_at = argv.index(IMAGE)
             if argv[image_at + 1] == "npm":
@@ -959,6 +1004,7 @@ class InstallAsNpm(Base):
         inner = FakeDocker()
         self.npm, self.inner, self.roots = [], inner, []
 
+        @runs_of(inner)
         def runner(argv, env, timeout):
             image_at = max(i for i, a in enumerate(argv) if a.endswith(DIGEST))
             cmd = argv[image_at + 1:]

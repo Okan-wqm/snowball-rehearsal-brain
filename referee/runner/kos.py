@@ -26,7 +26,9 @@ Verdicts are ``unit_verify``'s classes: ``verified`` (the files are written and 
 reason about the tree: the candidate's or the base's), ``no_verdict`` (a run that tells nothing: a limit, an
 invalid contained run, a green red control, a base that gave no run file).
 
-**The base.** ``stage`` on the pulled tree, then ``lint_cmd`` three times, each in its own contained run. Each run
+**The base.** ``stage`` on the pulled tree (its last step makes the host hold the recipe's image,
+``runner.contained.ensure_image``: an image the host cannot get is ``image_unavailable``, no verdict, and no
+contained run starts), then ``lint_cmd`` three times, each in its own contained run. Each run
 must end ``ok`` with exit 0 or 1 (``lint_failed:<n>``) and convert (``lint_output:<reason>``); any reason of a
 contained run, ``red_control_green`` included, stops the base: no ratchet base comes from a sandbox that a known
 bad command passed. ``base.jsonl`` holds the three records in run order even when they differ: the gate and

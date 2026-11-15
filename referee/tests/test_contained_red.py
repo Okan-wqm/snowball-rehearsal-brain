@@ -39,7 +39,7 @@ class RedControlTest(unittest.TestCase):
         return self.job("write", "/out/verdict.txt", "fail", "exit", "1")
 
     def test_red_control_red_keeps_the_run_valid(self):
-        fake = FakeDocker()
+        fake = FakeDocker(images=[IMAGE])
         r = contained.run_with_red_control(self.job("write", "/out/verdict.txt", "pass"), self.bad(), operating(),
                                            runner=fake, base=self.base)
         self.assertEqual((r["valid"], r["reasons"]), (True, []))
@@ -53,13 +53,13 @@ class RedControlTest(unittest.TestCase):
             self.assertEqual(call["argv"][call["argv"].index("--network") + 1], "none")
 
     def test_red_control_green_invalidates(self):
-        r = contained.run_with_red_control(self.job(), self.job("exit", "0"), operating(), runner=FakeDocker(),
+        r = contained.run_with_red_control(self.job(), self.job("exit", "0"), operating(), runner=FakeDocker(images=[IMAGE]),
                                            base=self.base)
         self.assertEqual((r["valid"], r["reasons"]), (False, ["red_control_green"]))
         self.assertEqual(r["result"]["status"], "ok")  # the job's own result is kept, marked by the run
 
     def test_runner_that_loses_exit_codes_is_caught(self):
-        r = contained.run_with_red_control(self.job(), self.bad(), operating(), runner=FakeDocker(exit_override=0),
+        r = contained.run_with_red_control(self.job(), self.bad(), operating(), runner=FakeDocker(exit_override=0, images=[IMAGE]),
                                            base=self.base)
         self.assertFalse(r["valid"])
         self.assertEqual(r["reasons"], ["red_control_green"])
@@ -70,17 +70,17 @@ class RedControlTest(unittest.TestCase):
             self.assertFalse(r["valid"])
             self.assertIn("red_control_fault", r["reasons"])
         r = contained.run_with_red_control(self.job("write", "/out/big", "x" * 20), self.bad(),
-                                           operating(output_bytes=10), runner=FakeDocker(), base=self.base)
+                                           operating(output_bytes=10), runner=FakeDocker(images=[IMAGE]), base=self.base)
         self.assertEqual((r["valid"], r["reasons"]), (False, ["limit_hit:output_bytes"]))
         r = contained.run_with_red_control(self.job(), self.job("write", "/out/big", "x" * 20, "exit", "1"),
-                                           operating(output_bytes=10), runner=FakeDocker(), base=self.base)
+                                           operating(output_bytes=10), runner=FakeDocker(images=[IMAGE]), base=self.base)
         self.assertEqual((r["valid"], r["reasons"]), (False, ["red_control_fault"]))
 
     def test_every_run_carries_a_control(self):
         other = dict(self.bad(), image="python:3.11-slim@sha256:" + "cd" * 32)
         for missing in (None, {}, {"image": IMAGE}, other, dict(self.bad(), image=None)):
             with self.assertRaises(contained.ContainmentError):
-                contained.run_with_red_control(self.job(), missing, operating(), runner=FakeDocker(), base=self.base)
+                contained.run_with_red_control(self.job(), missing, operating(), runner=FakeDocker(images=[IMAGE]), base=self.base)
         job_file = os.path.join(self.base, "req.json")
         with open(job_file, "w") as fh:
             json.dump({"job": self.job(), "operating": operating(), "base": self.base}, fh)

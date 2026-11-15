@@ -20,7 +20,9 @@ read by the gate (MF8) as they are written; with the fake runner (``fake_docker.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -36,7 +38,7 @@ from runner import contained as C  # noqa: E402
 from runner import kos as K  # noqa: E402
 from runner import lint_record as R  # noqa: E402
 from loop import watch as WT  # noqa: E402
-from fake_docker import FakeDocker  # noqa: E402
+from fake_docker import FakeDocker, runs_of  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 
 IMAGE = "node:20.11.1-bookworm-slim@sha256:" + "ab" * 32
@@ -208,6 +210,22 @@ class TheBase(Base):
         self.assertEqual(index["candidates"]["good"], {"verdict": "no_verdict", "reasons": ["base_unavailable"]})
         self.assertEqual(len(docker.calls), 6)
 
+    def test_an_image_the_host_cannot_get_gives_no_base_and_nothing_runs(self):
+        """What a fresh runner without a pull gave on the live loop twice (two faults in 3 s, every candidate
+        ``base_unavailable``) is now one reason that names the cause, and a host that can pull has a base."""
+        docker, err = FakeDocker(registry=[]), io.StringIO()
+        with contextlib.redirect_stderr(err):
+            index = self.results({"good": GOOD}, runner=docker)
+        self.assertEqual(index["base"], {"verdict": "no_verdict", "reasons": ["image_unavailable"]})
+        self.assertEqual(index["candidates"]["good"], {"verdict": "no_verdict", "reasons": ["base_unavailable"]})
+        self.assertEqual(docker.calls, [])
+        self.assertIn("docker pull: ", err.getvalue())
+        shutil.rmtree(self.out)
+        docker = FakeDocker()
+        index = self.results({"good": GOOD}, runner=docker)
+        self.assertEqual(index["base"], {"verdict": "verified", "reasons": []})
+        self.assertEqual([argv[1] for argv in docker.other], ["image", "pull"], "one pull for the base and the candidate")
+
     def test_output_that_does_not_convert_gives_no_base(self):
         write_tree(self.tree, {"pkg/a.js": "GARBAGE\n"})
         index = self.results({})
@@ -279,6 +297,7 @@ class Candidates(Base):
         docker = FakeDocker()
         calls = {"n": 0}
 
+        @runs_of(docker)
         def runner(argv, env, timeout):
             calls["n"] += 1
             if calls["n"] > 6 and "pkg/red.py" in argv:
@@ -296,6 +315,7 @@ class Candidates(Base):
         docker = FakeDocker()
         calls = {"n": 0}
 
+        @runs_of(docker)
         def runner(argv, env, timeout):
             calls["n"] += 1
             if calls["n"] == 13:
@@ -469,6 +489,7 @@ class Sentinel(Base):
         shutil.rmtree(self.out)
         docker = FakeDocker()
 
+        @runs_of(docker)
         def runner(argv, env, timeout):  # the lint runs' red controls pass
             if len(docker.calls) < 6 and "pkg/red.py" in argv:
                 argv = argv[:-1] + ["pkg/green.py"]
@@ -482,6 +503,7 @@ class Sentinel(Base):
         docker = FakeDocker()
         calls = {"n": 0}
 
+        @runs_of(docker)
         def runner(argv, env, timeout):
             calls["n"] += 1
             if calls["n"] > 6 and "pkg/red.py" in argv:
@@ -498,6 +520,7 @@ class Sentinel(Base):
         docker = FakeDocker()
         calls = {"n": 0}
 
+        @runs_of(docker)
         def runner(argv, env, timeout):
             calls["n"] += 1
             if calls["n"] == 9:
