@@ -22,7 +22,7 @@ The key (``private_key``) is the PEM GitHub hands out for an App, read with the 
 
 ``sign`` computes ``em ** d mod n`` and checks ``sig ** e mod n == em`` before answering; a mismatch raises.
 
-Out of scope, stated: whether ``p`` and ``q`` are prime (a key of composite factors that passes the checks above
+Not done here, stated: whether ``p`` and ``q`` are prime (a key of composite factors that passes the checks above
 signs, and GitHub refuses what does not verify under the App's public key); constant-time arithmetic (Python's
 ``pow`` is not; the key signs one token per genesis cycle on a runner that is discarded, and nothing here answers
 a caller who chooses the message); verifying a JWT (the tests' GitHub does, ``tests/github_auth.py``); every

@@ -160,8 +160,8 @@ class Jwt(unittest.TestCase):
     def test_app_id_and_clock(self):
         for app_id in ("", "a b", "x" * 65, 4242, None, "42\n", "a/b"):
             self.assertEqual(refusal(PEM, app_id=app_id), "App id: not an App id or a client id")
-        for now in (1.5, float(NOW), True, None, "1", 59, -1):
-            self.assertEqual(refusal(PEM, now=now), "now: not whole seconds since the epoch")
+        for at in (1.5, float(NOW), True, None, "1", 59, -1):
+            self.assertEqual(refusal(PEM, now=at), "now: not whole seconds since the epoch")
         self.assertEqual(GA.jwt_claims(AJ.token("4242", PEM, 60), KEY["n"], KEY["e"])["iat"], 0)
 
     def test_no_refusal_holds_key_bytes(self):

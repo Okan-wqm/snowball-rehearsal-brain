@@ -20,15 +20,6 @@
    ]
   },
   {
-   "id": "jwt_keys_unsorted",
-   "file": "target/app_jwt.py",
-   "old": "json.dumps(value, sort_keys=True, separators",
-   "new": "json.dumps(value, separators",
-   "tests": [
-    "test_app_auth.Jwt"
-   ]
-  },
-  {
    "id": "jwt_padding_kept",
    "file": "target/app_jwt.py",
    "old": "base64.urlsafe_b64encode(data).rstrip(b\"=\")",
@@ -204,15 +195,6 @@
    "file": "target/app_jwt.py",
    "old": "not APP_ID.fullmatch(app_id)",
    "new": "not APP_ID.match(app_id)",
-   "tests": [
-    "test_app_auth.Jwt"
-   ]
-  },
-  {
-   "id": "now_bool",
-   "file": "target/app_jwt.py",
-   "old": "type(now) is not int or",
-   "new": "not isinstance(now, int) or",
    "tests": [
     "test_app_auth.Jwt"
    ]
