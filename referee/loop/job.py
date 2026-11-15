@@ -66,7 +66,11 @@ of ``loop.write_cycle``, ``activate.activate`` (``yaz_genesis``) with D5's answe
 ``base_run_missing``) and D4's cost rows, and the checkout's ``setup/summary.json``, ``setup/imports.jsonl`` and
 ``setup/security-ledger.jsonl`` (tohum/26c, 29o; an unreadable one is unusable, exit 2), ``pulled``'s policy and its one
 unit as the recipe: the genesis row, the cut at that commit, D5's merge, the ratchet base and the orphan
-``brain/state`` commit. Its refusals before any write (``activate``'s reasons, ``base_moved`` among them) are
+``brain/state`` commit. Its API is ``writer_transport`` with the App's own credential (``WRITER_APP_ID`` and
+``WRITER_APP_PRIVATE_KEY``, in the ``yaz`` step's ``env`` beside the token; unset is unusable): genesis' first read,
+``GET /app``, is answered only to the App's JWT (``target.app_jwt``; spec/tohum/CHANGELOG.md 2026-11-15), every other
+request goes with the token, and an ordinary cycle's transport is given neither secret. Its refusals before any
+write (``activate``'s reasons, ``base_moved`` among them) are
 ``activation_refused`` with the reasons; a hard stop after the cut is ``hard_stop`` with ``written``. The line has
 ``done`` ``["D5", "D6"]``, ``drill`` ``{action: off, why: genesis}`` (D8 starts in the next cycle) and ``written``
 (``GENESIS_WRITTEN`` of ``activate``'s answer, ``genesis: true``). The next run's ``cek`` finds both heads and serves

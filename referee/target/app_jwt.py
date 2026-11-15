@@ -42,7 +42,7 @@ LIFE = 300      # seconds from ``now`` to ``exp``; GitHub refuses an ``exp`` mor
 SKEW = 60       # seconds ``iat`` is put before ``now`` (GitHub's advice for clock drift)
 MIN_BITS = 2048
 
-# base64 of the DER of DigestInfo{sha256, NULL} without the digest (RFC 8017 section 9.2, note 1)
+# the DER of DigestInfo{sha256, NULL} up to the digest (RFC 8017 section 9.2, note 1)
 SHA256_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
 RSA_OID = bytes.fromhex("2a864886f70d010101")  # 1.2.840.113549.1.1.1 rsaEncryption
 LABELS = ("RSA PRIVATE KEY", "PRIVATE KEY")

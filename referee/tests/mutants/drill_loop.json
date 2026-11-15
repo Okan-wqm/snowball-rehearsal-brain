@@ -219,7 +219,7 @@
   {
    "id": "yaz_fixtures_secret_dropped",
    "file": "loop/job.py",
-   "old": ",\n                DR.FIXTURES_ENV: \"${{ secrets.DRILL_FIXTURES }}\"},",
+   "old": ", DR.FIXTURES_ENV: \"${{ secrets.DRILL_FIXTURES }}\"},",
    "new": "},",
    "tests": [
     "test_loop_workflow.py"

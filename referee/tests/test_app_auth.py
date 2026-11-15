@@ -411,7 +411,10 @@ class Registry(unittest.TestCase):
         self.assertEqual(len(run), 1)
         self.assertEqual({k: v for k, v in run[0]["env"].items() if k.startswith("WRITER_")},
                          dict(J.APP_SECRETS, WRITER_TOKEN="${{ steps.app.outputs.token }}"))
-        self.assertLessEqual(set(J.APP_SECRETS), set(J.SECRET_ENV))
+        for job in ("getir", "kos"):
+            for name in J.APP_SECRETS:
+                out = J.run(job, {"RUNNER_TEMP": "/nonexistent", name: "x"})
+                self.assertEqual((out["ok"], out["reason"]), (False, "secret_in_code_job:" + name))
 
 
 class Job(TLW.Genesis):

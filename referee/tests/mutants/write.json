@@ -894,8 +894,8 @@
   {
    "id": "wr_token_newline",
    "file": "target/write.py",
-   "old": "    if not isinstance(token, str) or not token or any(c in token for c in \"\\r\\n\"):",
-   "new": "    if not isinstance(token, str) or not token:",
+   "old": "    return isinstance(value, str) and bool(value) and not any(c in value for c in \"\\r\\n\")",
+   "new": "    return isinstance(value, str) and bool(value)",
    "tests": [
     "test_write.Transport.test_errors"
    ]
@@ -903,8 +903,8 @@
   {
    "id": "wr_token_empty",
    "file": "target/write.py",
-   "old": "    if not isinstance(token, str) or not token or any(c in token for c in \"\\r\\n\"):",
-   "new": "    if not isinstance(token, str) or any(c in token for c in \"\\r\\n\"):",
+   "old": "    return isinstance(value, str) and bool(value) and not any(c in value for c in \"\\r\\n\")",
+   "new": "    return isinstance(value, str) and not any(c in value for c in \"\\r\\n\")",
    "tests": [
     "test_write.Transport.test_errors"
    ]
