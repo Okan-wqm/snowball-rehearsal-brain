@@ -12,7 +12,13 @@ The fixture ``fixtures/eslint_edge/`` is real output: ESLint 10.13.0 (``--format
   ``[first, last]``; and the gate's own scope rule on the real candidate diff;
 - end to end through ``gate.check.decide``: the real fix merges; the real suppression comment is
   ``not_distinguished`` because a suppressed violation is counted;
-- every refusal on its own input, all reasons together; the run file ``gate.check`` reads; the command line.
+- every refusal on its own input, all reasons together; the run file ``gate.check`` reads; the command line;
+- stdout that is not only the document (``StdoutNotOnlyTheDocument``), on a second real output,
+  ``fixtures/eslint_nx/stdout.bin``: ESLint 9.39.4 with ``@nx/eslint-plugin`` 22.7.12, nx 22.7.12 and
+  ``@typescript-eslint/parser`` 8.59.1 (node 22.23.4, ``NX_DAEMON=false eslint libs --format json``) run on
+  ``fixtures/eslint_nx/tree/`` with no cached project graph; the plugin's lines are on stdout before the
+  document. Only the absolute root of each ``filePath`` was rewritten to ``/work``. Each of the module's four
+  rules has its test; ``runs`` (the callers' one loop) and the command line's ``stdout_extra`` too.
 """
 
 from __future__ import annotations
@@ -194,8 +200,9 @@ class Decide(unittest.TestCase):
 
     def test_without_counting_suppressed_the_suppression_would_merge(self):
         """The mutant the rule exists for: dropping ``suppressedMessages`` makes the bad candidate merge."""
-        real = L._results
-        with unittest.mock.patch.object(L, "_results", lambda o: [dict(r, suppressedMessages=[]) for r in real(o)]):
+        real = L._split  # (extra, results): the function that reads the results out of stdout
+        with unittest.mock.patch.object(
+                L, "_split", lambda o: (real(o)[0], [dict(r, suppressedMessages=[]) for r in real(o)[1]])):
             self.assertEqual(self.decide("cand_sup"), {"decision": "merge", "reasons": []})
 
     def test_run_file_is_what_the_gate_reads(self):
@@ -301,6 +308,113 @@ class Refusals(unittest.TestCase):
                self.result(messages=[self.msg(line=99)])]
         self.assertEqual(self.reasons(doc), ["file_unreadable:nope.js", "message_unusable:a.js",
                                              "path_outside_root:/x/a.js", "source_not_utf8:b.js"])
+
+
+class StdoutNotOnlyTheDocument(unittest.TestCase):
+    NX = os.path.join(REFEREE, "tests", "fixtures", "eslint_nx")
+    NX_TREE = os.path.join(NX, "tree")
+    NX_RECORD = {"tool": "eslint", "violations": [{"rule_id": "no-var", "path": "libs/a/src/index.ts", "line": 1,
+                                                   "fix": [1, 1]}]}
+    NOISE = b"warning: the rule was skipped\n  see the docs\n"
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(cls.NX, "stdout.bin"), "rb") as fh:
+            cls.stdout = fh.read()
+        cls.doc_line = cls.stdout[:-1].rsplit(b"\n", 1)[1]
+        cls.extra = cls.stdout[:-1 - len(cls.doc_line)]
+
+    def reasons(self, output: bytes, tree=None) -> list:
+        with self.assertRaises(L.RecordError) as ctx:
+            L.convert(output, tree or self.NX_TREE)
+        return ctx.exception.reasons
+
+    def test_the_fixture_is_what_the_plugin_printed(self):
+        self.assertTrue(self.stdout.endswith(b"]\n"))
+        self.assertEqual(self.extra.count(b"\n"), 6)
+        self.assertEqual(self.extra.count(b"warning No cached ProjectGraph is available. The rule will be skipped."), 2)
+        self.assertEqual(self.extra.count(b"@nx/enforce-module-boundaries\n"), 2)
+        with self.assertRaises(ValueError):
+            json.loads(self.stdout)
+        self.assertEqual(len(json.loads(self.doc_line)), 2)
+
+    def test_real_output_the_document_is_the_last_line_and_the_rest_is_extra(self):
+        """Rule 2 on the real bytes: the record of the document, the plugin's lines returned as they were."""
+        self.assertEqual(L.convert(self.stdout, self.NX_TREE), (self.NX_RECORD, self.extra))
+        self.assertEqual(L.record(self.stdout, self.NX_TREE), self.NX_RECORD)
+        self.assertEqual(L.record(self.doc_line, self.NX_TREE), self.NX_RECORD)
+
+    def test_rule_1_a_whole_json_stdout_has_no_extra(self):
+        """Also a pretty-printed document and one with blank lines around it: JSON as a whole, so not cut."""
+        doc = json.loads(self.doc_line)
+        for whole in (self.doc_line, self.doc_line + b"\n", json.dumps(doc, indent=2).encode() + b"\n",
+                      b"\n\n" + self.doc_line + b"\n\n", b"[\n]"):
+            rec, extra = L.convert(whole, self.NX_TREE)
+            self.assertEqual((extra, rec["tool"]), (b"", "eslint"), whole[:20])
+        self.assertEqual(L.convert(json.dumps(doc, indent=2).encode(), self.NX_TREE)[0], self.NX_RECORD)
+
+    def test_rule_2_one_final_newline_or_none_and_extra_is_not_decoded(self):
+        for noise in (self.NOISE, b"\xff\xfe not text\n", b"[1, 2]\n{}\n", b"-\r\n"):
+            for end in (b"", b"\n"):
+                self.assertEqual(L.convert(noise + self.doc_line + end, self.NX_TREE), (self.NX_RECORD, noise),
+                                 (noise, end))
+
+    def test_rule_3_only_the_last_line_is_tried(self):
+        doc = self.doc_line
+        for bad in (self.NOISE + doc + b"\ndone\n",      # a line after the document
+                    self.NOISE + doc + b"\n\n",           # a blank last line
+                    self.NOISE + b"note: " + doc + b"\n",  # text on the document's line
+                    self.NOISE + doc + b" done\n",
+                    self.NOISE, self.NOISE + b"{}\n", self.NOISE + b"[1]\n", b"no newline at all",
+                    self.NOISE + json.dumps(json.loads(doc), indent=2).encode() + b"\n"):  # cut inside a document
+            self.assertEqual(self.reasons(bad), ["not_eslint_json"], bad[-30:])
+
+    def test_rule_4_an_earlier_line_that_is_a_document_is_refused(self):
+        """``eslint a; eslint b`` in one ``lint_cmd``: the first run's violations must not vanish."""
+        doc = self.doc_line
+        for first in (doc, b"[]", b" [] ", json.dumps([Refusals.result()]).encode()):
+            for stdout in (first + b"\n" + doc + b"\n", self.NOISE + first + b"\n" + self.NOISE + doc):
+                self.assertEqual(self.reasons(stdout), ["several_documents"], stdout[:30])
+        self.assertEqual(self.reasons(doc + b"\n" + b"[]"), ["several_documents"])
+        self.assertEqual(self.reasons(doc + b"\n" + b"{}"), ["not_eslint_json"])  # rule 3 first: no document
+
+    def test_the_documents_own_refusals_still_hold_behind_extra(self):
+        with tempfile.TemporaryDirectory() as empty:
+            self.assertEqual(self.reasons(self.stdout, empty), ["file_unreadable:libs/a/src/index.ts"])
+        moved = self.stdout.replace(b'"/work/libs/a/', b'"/elsewhere/libs/a/')
+        self.assertEqual(self.reasons(moved), ["path_outside_root:/elsewhere/libs/a/src/index.ts"])
+
+    def test_extra_of_counts_and_hashes(self):
+        self.assertEqual(L.extra_of(self.extra), {"bytes": len(self.extra),
+                                                  "sha256": hashlib.sha256(self.extra).hexdigest()})
+        self.assertEqual(L.extra_of(b""), {"bytes": 0, "sha256": hashlib.sha256(b"").hexdigest()})
+
+    def test_runs_gives_records_and_extras_or_prefixed_reasons_once(self):
+        plain, noisy = self.doc_line, self.stdout
+        none, some = L.extra_of(b""), L.extra_of(self.extra)
+        self.assertEqual(L.runs([noisy, plain, noisy], self.NX_TREE), ([], [self.NX_RECORD] * 3, [some, none, some]))
+        self.assertEqual(L.runs([], self.NX_TREE), ([], [], []))
+        two = plain + b"\n" + plain
+        self.assertEqual(L.runs([b"x", noisy, two, None, two], self.NX_TREE),
+                         (["lint_output:not_eslint_json", "lint_output:several_documents"], [], []))
+        self.assertEqual(L.runs([None], self.NX_TREE), (["lint_output:not_eslint_json"], [], []))
+        moved = plain.replace(b'"/work/', b'"/src/')
+        self.assertEqual(L.runs([moved], self.NX_TREE, "/src"), ([], [self.NX_RECORD], [none]))
+        self.assertEqual(L.runs([moved], self.NX_TREE)[0],
+                         ["lint_output:path_outside_root:/src/libs/a/src/index.ts",
+                          "lint_output:path_outside_root:/src/libs/b/src/index.ts"])
+        self.assertEqual(L.PREFIX, "lint_output:")
+
+    def test_command_line_reports_the_extra_only_when_there_is_one(self):
+        def cli(stdin):
+            res = subprocess.run([sys.executable, "-m", "runner.lint_record", self.NX_TREE], cwd=REFEREE,
+                                 input=stdin, capture_output=True, timeout=60)
+            return res.returncode, json.loads(res.stdout)
+        self.assertEqual(cli(self.stdout), (0, {"ok": True, "reasons": [], "record": self.NX_RECORD,
+                                                "stdout_extra": L.extra_of(self.extra)}))
+        self.assertEqual(cli(self.doc_line), (0, {"ok": True, "reasons": [], "record": self.NX_RECORD}))
+        self.assertEqual(cli(self.doc_line + b"\n" + self.doc_line),
+                         (1, {"ok": False, "reasons": ["several_documents"], "record": None}))
 
 
 class CommandLine(unittest.TestCase):

@@ -77,10 +77,10 @@ import cli
 from gate import check
 from gate import sentinel as S
 from ledger import serial
-from runner import kos
+from runner import kos, lint_record
 
 DOC_KEYS = {"merge_sha", "runs", "verdict", "red", "flaky"}
-FATAL = "lint_output:fatal:"  # kos's prefix of runner.lint_record's fatal:<path>
+FATAL = lint_record.PREFIX + "fatal:"  # kos's prefix of runner.lint_record's fatal:<path>
 
 
 class Refused(Exception):
