@@ -33,6 +33,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import json
@@ -540,6 +541,23 @@ class KosJob(Base):
         # every contained run had the job's red control: 3 base lint, 3 x (3 lint + 1 test)
         self.assertEqual(runner.red_seen, 15)
         self.assertEqual(len(runner.calls), 30)
+
+    def test_an_image_the_host_cannot_get_is_on_the_line_and_on_stderr(self):
+        """The row (B)'s live attempts gave had two faults and no cause; the fresh fake host of every test here
+        gets its image by the job's own pull (``other``), and one that cannot says so."""
+        self.write_pulled({"good": candidate(GOOD)})
+        runner = RedAs()
+        self.one(self.run_kos(runner))
+        self.assertEqual([argv[1] for argv in runner.docker.other], ["image", "pull"])
+        shutil.rmtree(os.path.join(self.temp, "out"))
+        runner, err = RedAs(), io.StringIO()
+        runner.docker.registry = set()
+        with contextlib.redirect_stderr(err):
+            t1 = self.one(self.run_kos(runner))
+        self.assertEqual(t1["index"]["base"], {"verdict": "no_verdict", "reasons": ["image_unavailable"]})
+        self.assertEqual(t1["index"]["candidates"]["good"], {"verdict": "no_verdict", "reasons": ["base_unavailable"]})
+        self.assertEqual(runner.calls, [])
+        self.assertIn("docker pull: ", err.getvalue())
 
     def test_no_unfinished_merge_watches_nothing(self):
         head = HEADS["brain/integration"]
