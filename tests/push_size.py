@@ -16,9 +16,12 @@ What it does, each rule bound by ``tests/test_push_size.py``:
   <head>`` over the whole tree except the founder records at the root, ``founder-ledger.jsonl`` and ``reports/``
   (``EXCLUDED``; tohum/29e "Kurucu kayıtları": the rival sees neither; a ``reports/`` directory that is not at
   the root is measured).
-- **Per path**: the diff is cut at each line that starts with ``diff --git `` (no line of a hunk starts so) and
-  the sections are named, in order, by ``git diff --name-only -z`` with the same arguments; when the two counts
-  differ the diff is unreadable (``sections_mismatch``) rather than named by guess. ``paths`` holds the ``--top``
+- **Per path**: a line of the diff is git's, bytes up to and with a line feed (a carriage return or any other
+  byte ends none). A line that starts with ``diff --git `` opens a section; one equal, byte for byte, to the line
+  that opened the section before it continues that section (git writes a path whose type changed, a file to a
+  symlink, as a deletion and a creation under one such line). The sections are named, in order, by ``git diff
+  --name-only -z`` with the same arguments; when the two counts differ, or bytes come before the first section,
+  the diff is unreadable (``sections_mismatch``) rather than named by guess. ``paths`` holds the ``--top``
   (default 5) largest, ``[path, bytes]``, largest first, equal sizes in path order.
 - **The band** places the measure against ``MEASURED``, the one list of sizes this tool measured for diffs the
   referee answered: ``accepted_before`` when it is at most the largest accepted size, ``refused_before`` when it
@@ -30,13 +33,17 @@ What it does, each rule bound by ``tests/test_push_size.py``:
 Out of scope, stated: the referee's limit is not known here, and its prompt is not this diff alone (it adds the
 seed pages it finds relevant and its own framing, and its diff's format is its own); ``accepted_before`` says a
 diff at least this large, measured the same way, was once judged, not that this one will be, and ``unknown`` is
-unknown. The work tree's uncommitted changes are not measured. A new answer from the referee is a new row of
+unknown. The work tree's uncommitted changes are not measured. The diff is
+read as git's patch format with the caller's git configuration: a setting that changes its bytes changes the
+measure, and one that writes a path without a ``diff --git `` line (``diff.submodule=log``) ends in
+``sections_mismatch``. A new answer from the referee is a new row of
 ``MEASURED``, added by hand with the ledger row that holds its evidence.
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
@@ -92,9 +99,12 @@ def sections(root: str, base: str, head: str, git: str = "git") -> list[tuple[st
     names = [n for n in _git(root, git, *DIFF, "--name-only", "-z", base, head).decode(
         "utf-8", "surrogateescape").split("\0") if n]
     sizes: list[int] = []
-    for line in diff.splitlines(keepends=True):
+    opened = None
+    for line in io.BytesIO(diff):  # git's lines: cut after each LF and nowhere else
         if line.startswith(SECTION):
-            sizes.append(0)
+            if line != opened:
+                sizes.append(0)
+            opened = line
         elif not sizes:
             raise Unreadable("sections_mismatch")
         sizes[-1] += len(line)

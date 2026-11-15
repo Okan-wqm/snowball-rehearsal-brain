@@ -93,6 +93,24 @@ class Measure(Base):
         self.answer([("a.py", b"+diff --git a/x b/x\n-diff --git a/y b/y\n diff --git a/z b/z\n")])
         self.assertEqual(P.sections("/the/root", "B", "H", self.git), [("a.py", len(self.parts[0][1]))])
 
+    def test_only_a_line_feed_ends_a_line_so_the_marker_after_any_other_break_starts_no_section(self):
+        for brk in (b"\r", b"\x0b", b"\x0c", b"\x1c", b"\x1d", b"\x1e", b"\x85", b"\xe2\x80\xa8"):
+            self.answer([("a.txt", b"+x" + brk + b"diff --git a/b b/b\n"), ("c.txt", b"+y\r\n")])
+            self.assertEqual(P.sections("/the/root", "B", "H", self.git), [(p, len(s)) for p, s in self.parts], brk)
+
+    def test_a_section_opened_by_the_line_that_opened_the_one_before_it_is_the_same_path(self):
+        gone = b"diff --git a/f b/f\ndeleted file mode 100644\n--- a/f\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n"
+        came = b"diff --git a/f b/f\nnew file mode 120000\n--- /dev/null\n+++ b/f\n@@ -0,0 +1 @@\n+cr\n"
+        self.answer([("a.py", b"+x\n")])
+        first = self.parts[0][1]
+        self.put("diff", first + gone + came + first)
+        self.put("names", b"a.py\0f\0a.py\0")
+        self.assertEqual(P.sections("/the/root", "B", "H", self.git),
+                         [("a.py", len(first)), ("f", len(gone) + len(came)), ("a.py", len(first))])
+        self.put("names", b"a.py\0f\0")
+        with self.assertRaisesRegex(P.Unreadable, "^sections_mismatch$"):
+            P.sections("/the/root", "B", "H", self.git)
+
     def test_bytes_that_are_not_utf8_and_a_last_line_without_newline_are_counted(self):
         self.answer([("a.bin", b"+\xff\xfe\n"), ("b.txt", b"+end")])
         self.assertEqual(P.sections("/the/root", "B", "H", self.git), [(p, len(s)) for p, s in self.parts])

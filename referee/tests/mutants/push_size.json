@@ -47,6 +47,33 @@
    ]
   },
   {
+   "id": "carriage_return_ends_a_line",
+   "old": "for line in io.BytesIO(diff):",
+   "new": "for line in diff.splitlines(keepends=True):",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "type_change_is_two_paths",
+   "old": "            if line != opened:\n",
+   "new": "            if True:\n",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "any_earlier_section_line_continues",
+   "old": "            opened = line\n",
+   "new": "            opened = opened or line\n",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
    "id": "preamble_not_refused",
    "old": "        elif not sizes:\n",
    "new": "        elif False:\n",
