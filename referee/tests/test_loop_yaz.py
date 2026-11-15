@@ -51,7 +51,7 @@ from test_serial import M1, START, merge  # noqa: E402
 from test_loop_cagir import policy  # noqa: E402
 import yaz_world as YW  # noqa: E402
 from loop import sign as S  # noqa: E402
-from loop_inputs_world import install_sigstore  # noqa: E402
+from loop_inputs_world import install_sigstore, own_path  # noqa: E402
 
 KEY_ID = "AK" + "IA" + "Q7" * 8  # a key id shape (MF2's floor), spelled so this file holds none
 LEAK = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // " + KEY_ID])
@@ -383,7 +383,7 @@ class YazJob(YazBase):
             J.run("yaz", {"RUNNER_TEMP": self.temp})
 
     def test_command_line(self):
-        env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "SYSTEMROOT")}
+        env = {"PATH": own_path(self.base)}
 
         def run():
             proc = subprocess.run([sys.executable, "-m", "loop.job", "run", "yaz"], cwd=REFEREE,

@@ -72,7 +72,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fake_claude  # noqa: E402
 import test_loop_cagir
 import yaz_world as YW  # noqa: E402
-from loop_inputs_world import ABSENT, BOOTSTRAP, install_sigstore, write_bootstrap  # noqa: E402
+from loop_inputs_world import ABSENT, BOOTSTRAP, install_sigstore, own_path, write_bootstrap  # noqa: E402
 from loop import cek as C  # noqa: E402
 from harness import pass_row as PR  # noqa: E402
 from loop import job as J  # noqa: E402
@@ -475,7 +475,7 @@ class CekJob(unittest.TestCase):
         zip_bytes = self.TA.zip_of({"result.json": self.TA.result(commit), "result.json.sigstore.json": b"{}"})
         api = http or self.TA.FakeApi([self.TA.artifact(11, "2026-11-01T00:00:00Z")], zip_bytes)
         environ = {"RUNNER_TEMP": self.temp, "GITHUB_REPOSITORY": "o/referee", "GITHUB_TOKEN": "t",
-                   "GITHUB_WORKSPACE": self.work, "PATH": os.environ.get("PATH", "")}
+                   "GITHUB_WORKSPACE": self.work, "PATH": own_path(self.base)}
         environ.update(env or {})
         self.verified: list = []
 

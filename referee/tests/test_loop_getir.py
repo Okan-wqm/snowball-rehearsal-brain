@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from runner import deps_npm as N  # noqa: E402
+from loop_inputs_world import own_path  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 from test_deps_npm import Fixture  # noqa: E402
 from test_kos import operating, recipe  # noqa: E402
@@ -124,7 +125,7 @@ class Fetch(Getir):
     def test_the_cli_exits_0_when_the_job_is_done(self):
         write_tree(self.src, {"pkg/package-lock.json": TREE["pkg/package-lock.json"]})
         self.write_pulled()
-        env = {k: v for k, v in os.environ.items() if k not in J.SECRET_ENV + J.OIDC_ENV}
+        env = {"PATH": own_path(self.base)}
         proc = subprocess.run([sys.executable, "-m", "loop.job", "run", "getir"], cwd=REFEREE, capture_output=True,
                               env=dict(env, RUNNER_TEMP=self.temp))
         out = json.loads(proc.stdout)

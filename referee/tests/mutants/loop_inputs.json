@@ -125,6 +125,15 @@
    "tests": [
     "test_loop_workflow.py"
    ]
+  },
+  {
+   "id": "own_path_is_the_machine_s",
+   "file": "tests/loop_inputs_world.py",
+   "old": "    path = os.path.join(base, \"path\")\n    os.makedirs(path, exist_ok=True)\n    return path\n",
+   "new": "    return os.environ.get(\"PATH\", \"\")\n",
+   "tests": [
+    "test_loop_cagir.CagirJob.test_the_job_s_path_is_the_test_s_own"
+   ]
   }
  ]
 }
