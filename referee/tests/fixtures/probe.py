@@ -1,7 +1,7 @@
 """What a contained command tries, for tests 20 and 21. argv is a list of steps, each OP and its arguments:
 
     write PATH DATA | connect HOST PORT | env PATH | symlink TARGET PATH | mkfifo PATH | listdir DIR PATH
-    sleep SECONDS | exit CODE
+    sleep SECONDS | exit CODE | mkdir PATH OCTAL_MODE | chmod PATH OCTAL_MODE
 
 Each step's outcome is printed as one JSON line; a refused step is recorded and the next one runs. The
 probe's own report is only a hint: tests judge by what they measure outside the container.
@@ -13,7 +13,8 @@ import socket
 import sys
 import time
 
-ARITY = {"write": 2, "connect": 2, "env": 1, "symlink": 2, "mkfifo": 1, "listdir": 2, "sleep": 1, "exit": 1}
+ARITY = {"write": 2, "connect": 2, "env": 1, "symlink": 2, "mkfifo": 1, "listdir": 2, "sleep": 1, "exit": 1,
+         "mkdir": 2, "chmod": 2}
 
 
 def step(op, args):
@@ -33,6 +34,11 @@ def step(op, args):
     elif op == "listdir":
         with open(args[1], "w") as fh:
             json.dump(sorted(os.listdir(args[0])), fh)
+    elif op == "mkdir":
+        os.mkdir(args[0])
+        os.chmod(args[0], int(args[1], 8))  # mkdir's own mode argument is cut by the umask
+    elif op == "chmod":
+        os.chmod(args[0], int(args[1], 8))
     elif op == "sleep":
         time.sleep(float(args[0]))
     elif op == "exit":

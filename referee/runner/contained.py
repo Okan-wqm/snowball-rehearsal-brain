@@ -48,10 +48,19 @@ The run (``run``):
   ``in`` (a copy of the artifacts, mounted read-only). Docker's own process gets ``PATH`` and ``HOME`` (the
   fresh directory) only, so no other host variable reaches it, and the argv is checked before docker
   starts.
+- The container's user (``run_uid``). A job that names no ``uid`` runs as the uid of this host process, the
+  one that hashes the results afterwards, with gid 65534; when this process is root (uid 0, which the argv
+  refuses) it runs as 65534. Why: what the command makes under ``/work`` and ``/out`` is owned by the
+  container's uid, and a private entry (a 0700 directory, a 0600 file: what ``tempfile.mkdtemp`` and
+  ``mkstemp`` make) of another uid cannot be opened by a host process that is not root, so the run could only
+  end ``unreadable_output``. A job that names a ``uid`` gets that uid, and its private entries are then
+  unreadable to a non-root host of another uid (not repaired here). Not sandbox-tested with a real docker
+  (this sandbox has none): the tests run a stand-in that applies this ownership rule (``tests/fake_docker``).
 - After docker returns (on timeout: ``docker kill`` by name, then wait), ``work``, ``out`` and ``in`` are
   hashed from the host without following symlinks: a symlink is recorded with its target, a FIFO or
   device as its type and is never opened; an entry the host cannot read or list makes the run
-  ``unreadable_output``.
+  ``unreadable_output`` (with the container on the host's uid: an entry the command left without its
+  owner's read bit, or a directory without the owner's read or search bit; modes are not changed to read it).
 - ``status`` is ``ok``; or ``runner_fault`` (docker exit 125); ``limit_hit:kos_wall_s`` (timeout),
   ``limit_hit:worktree_bytes`` (tree too big before the run, or ``work`` too big after),
   ``limit_hit:output_bytes`` (``out`` too big after); ``breach:in_changed`` (the read-only artifacts differ
@@ -714,6 +723,12 @@ def fresh_run_root(base: str | None = None) -> str:
     return root
 
 
+def run_uid() -> int:
+    """The uid of a contained run whose job names none: this process's own, or ``DEFAULT_UID`` when that is 0
+    (the module docstring, "The container's user")."""
+    return os.geteuid() or DEFAULT_UID
+
+
 def _open_tree(top: str) -> None:
     """Let the container user write the copied worktree (the run root itself stays private, 0700)."""
     os.chmod(top, 0o777)
@@ -748,7 +763,7 @@ def run(job: dict, operating: dict, runner: Runner | None = None, base: str | No
     if has_artifacts:
         shutil.copytree(job["artifacts"], inp, symlinks=True, dirs_exist_ok=True)
     argv = build_argv(job["image"], job["cmd"], root, operating, env=job.get("env"),
-                      uid=job.get("uid", DEFAULT_UID), gid=job.get("gid", DEFAULT_GID), artifacts=has_artifacts)
+                      uid=job.get("uid", run_uid()), gid=job.get("gid", DEFAULT_GID), artifacts=has_artifacts)
     _sources_real(root, has_artifacts)
     work_before = hash_tree(work)
     in_before = hash_tree(inp)

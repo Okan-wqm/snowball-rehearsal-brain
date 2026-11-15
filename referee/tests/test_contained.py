@@ -27,6 +27,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import unittest.mock
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
@@ -640,6 +641,46 @@ class RunTest(Base):
         self.assertEqual(result["status"], "unreadable_output")
         self.assertTrue(result["outputs"]["noexec/f"]["unreadable"])
         self.assertTrue(result["outputs"]["noread"]["unreadable"])
+
+    PRIVATE = ("mkdir", "/out/private", "700", "write", "/out/private/f", "in a private directory",
+               "write", "/work/secret", "x", "chmod", "/work/secret", "600")
+
+    def user_of(self, result: dict) -> str:
+        return result["argv"][result["argv"].index("--user") + 1]
+
+    def test_container_runs_as_the_host_reader(self):
+        # a job that names no uid: the container's uid is the hashing process's own, never root
+        result = contained.run(self.job(), operating(), runner=FakeDocker(images=[IMAGE]), base=self.base)
+        self.assertEqual(self.user_of(result), "%d:65534" % (os.geteuid() or 65534))
+        for euid, user in ((1001, "1001:65534"), (0, "65534:65534")):
+            with unittest.mock.patch("os.geteuid", return_value=euid):
+                result = contained.run(self.job(), operating(), runner=FixedRunner(0), base=self.base)
+            self.assertEqual(self.user_of(result), user)
+        named = dict(self.job(), uid=4242)
+        self.assertEqual(self.user_of(contained.run(named, operating(), runner=FixedRunner(0), base=self.base)),
+                         "4242:65534")
+
+    def test_private_entries_of_the_run_are_hashed(self):
+        # what tempfile.mkdtemp and mkstemp leave: a 0700 directory, a 0600 file, owned by the container's uid
+        fake = FakeDocker(images=[IMAGE])
+        self.addCleanup(fake.release)
+        result = contained.run(self.job(*self.PRIVATE), operating(), runner=fake, base=self.base)
+        self.assertEqual((result["status"], result["valid"]), ("ok", True))
+        self.assertEqual(result["outputs"]["private/f"],
+                         {"type": "file", "sha256": sha(b"in a private directory"), "size": 22})
+        self.assertIn("work/secret", result["paths_written"])
+        self.assertEqual(fake.foreign, [])
+        # the same command as another uid, on a host that is not root: the stand-in applies the ownership rule
+        # and the host cannot open what the command made (the status of the third (B) attempt)
+        other = dict(self.job(*self.PRIVATE), uid=os.geteuid() + 1)
+        result = contained.run(other, operating(), runner=fake, base=self.base)
+        if os.geteuid() == 0:
+            self.assertEqual(result["status"], "ok")  # root opens every mode: nothing to emulate
+        else:
+            self.assertEqual((result["status"], result["valid"]), ("unreadable_output", False))
+            self.assertTrue(result["outputs"]["private"]["unreadable"])
+            self.assertEqual(sorted(os.path.relpath(p, result["run_root"]) for p in fake.foreign),
+                             ["out/private", "work/secret"])
 
     def test_limits(self):
         r = contained.run(self.job("write", "/out/o.txt", "x" * 10), operating(output_bytes=10), runner=FakeDocker(images=[IMAGE]),

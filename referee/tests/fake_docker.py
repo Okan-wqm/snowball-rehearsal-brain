@@ -22,13 +22,22 @@ emulated (every image runs this interpreter), nor a digest check. The stderr tex
 from docker's documented behaviour, not captured from a docker (this sandbox has none): tests may rely on the
 exit codes only.
 
-Not emulated: the user id, capabilities and the memory limit.
+The user id (``--user UID[:GID]``), by its one effect the host can see: what the command makes under a writable
+mount is owned by UID. When UID is not this process's uid and this process is not root, the host is "other" for
+those entries (the container's group is taken not to be one of the host's), so after the command every entry it
+made that lacks the others' read bit (a directory: read and search) is set to mode 0, which is what the host
+then meets: it cannot open or list it. Entries that were there before the run keep their owner and are left
+alone. ``release()`` gives those entries back to the owner (0700) so a test can delete its directory. With UID
+equal to this process's uid, or this process root, nothing is changed.
+
+Not emulated: the group id, capabilities and the memory limit.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
 import sys
 
@@ -59,6 +68,15 @@ def parse(argv: list[str]) -> dict:
     return {"opts": opts, "image": argv[i], "cmd": argv[i + 1:]}
 
 
+def _entries(roots: list[str]) -> set:
+    """Every path under ``roots``, symlinks not followed."""
+    found = set()
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root):
+            found.update(os.path.join(dirpath, n) for n in dirnames + filenames)
+    return found
+
+
 class FakeDocker:
     """Callable with the ``runner.contained`` runner signature; records every call."""
 
@@ -68,6 +86,25 @@ class FakeDocker:
         self.exit_override = exit_override
         self.images = set(images)
         self.registry = None if registry is None else set(registry)
+        self.foreign: list[str] = []
+
+    def release(self) -> None:
+        """Owner access back on every entry ``_disown`` closed, outermost first."""
+        for path in sorted(self.foreign):
+            os.chmod(path, 0o700)
+        self.foreign = []
+
+    def _disown(self, before: set, roots: list[str]) -> None:
+        """The module docstring's user id rule, for the entries under ``roots`` that are not in ``before``."""
+        closed = []
+        for path in sorted(_entries(roots) - before):
+            st = os.lstat(path)
+            need = stat.S_IROTH | stat.S_IXOTH if stat.S_ISDIR(st.st_mode) else stat.S_IROTH
+            if not stat.S_ISLNK(st.st_mode) and st.st_mode & need != need:
+                closed.append(path)
+        for path in reversed(closed):  # innermost first: a closed directory hides its entries
+            os.chmod(path, 0)
+        self.foreign += closed
 
     def _pull(self, ref: str) -> RunnerResult:
         if self.registry is not None and ref not in self.registry:
@@ -93,7 +130,7 @@ class FakeDocker:
                 self.other.append(argv)
                 return RunnerResult(125, b"", b"Unable to find image '%s' locally\n" % spec["image"].encode(), False)
         cenv: dict[str, str] = {}
-        network, read_only, workdir, name = "default", False, "/", None
+        network, read_only, workdir, name, user = "default", False, "/", None, None
         mounts: list[dict] = []
         for flag, value in spec["opts"]:
             if flag in ("--env", "-e"):
@@ -110,6 +147,8 @@ class FakeDocker:
                 workdir = value
             elif flag == "--name":
                 name = value
+            elif flag in ("--user", "-u"):
+                user = value.split(":")[0]
             elif flag == "--mount":
                 fields = dict(f.split("=", 1) if "=" in f else (f, "true") for f in value.split(","))
                 mounts.append({"src": fields.get("src") or fields.get("source"),
@@ -128,12 +167,17 @@ class FakeDocker:
         call = {"argv": argv, "env": dict(env), "container_env": cenv, "name": name, "killed": False,
                 "mounts": mounts}
         self.calls.append(call)
+        foreign = os.geteuid() != 0 and user is not None and user != str(os.geteuid())
+        before = _entries(cfg["rw"]) if foreign else set()
         try:
             proc = subprocess.run([sys.executable, "-I", HOOK, json.dumps(cfg)] + cmd[1:], env=cenv,
                                   cwd=host(workdir), capture_output=True, timeout=timeout)
         except subprocess.TimeoutExpired as exc:
             call["killed"] = True
             return RunnerResult(None, exc.stdout or b"", exc.stderr or b"", True)
+        finally:
+            if foreign:
+                self._disown(before, cfg["rw"])
         call["stdout"], call["stderr"] = proc.stdout, proc.stderr
         code = proc.returncode if self.exit_override is None else self.exit_override
         return RunnerResult(code, proc.stdout, proc.stderr, False)
