@@ -212,7 +212,7 @@ class Image(Base):
 
     def test_a_tree_refused_before_the_runs_asks_docker_nothing(self):
         docker = FakeDocker()
-        report = self.verify(recipe(lint_cmd=["python", "pkg/absent.py"]), runner=docker)
+        report = self.verify(recipe(test_cmd=["pkg/node_modules/eslint/x"]), runner=docker)
         self.assertEqual(report["verdict"], "refused", report)
         report = self.verify(pol=policy(unit_inputs_bytes=1), runner=docker)
         self.assertEqual(report["reasons"], ["limit_hit:unit_inputs_bytes"])
