@@ -87,6 +87,11 @@ PIN = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[A-Za-z0-9_./-]+)?@[0-9a-f]{
 SECRET_EXPR = re.compile(r"\$\{\{\s*(secrets\.([A-Za-z0-9_]+)|github\.token)")
 SECRET_JOB_ACTIONS = ("actions/checkout@", "actions/download-artifact@", "actions/upload-artifact@")
 APP_ACTION = "actions/create-github-app-token@"
+# tohum/25 item 6: the writer App's permissions; a token carries only those asked for when it is made (CHANGELOG
+# 2026-11-15), so the token step asks for each of them and for no other.
+WRITER_PERMISSIONS = {"permission-contents": "write", "permission-pull-requests": "write",
+                      "permission-checks": "write", "permission-administration": "read"}
+APP_SECRET = "secrets.WRITER_APP_"  # the App's id and key: the token step's and ``yaz``'s own step's, no other's
 
 # tohum/29p "Adım": every job's first step, byte for byte; ``LOOP_JOB`` is the job's name.
 CONTROL_RUN = (
@@ -215,6 +220,13 @@ def violations(doc: dict) -> list[str]:
             if (len(tokens) != 1 or len(scoped) != 1 or scoped[0] > tokens[0]
                     or {k: (steps[tokens[0]].get("with") or {}).get(k) for k in SCOPE_INPUTS} != SCOPE_INPUTS):
                 out.append("writer_scope" + where)
+            asked = [{k: v for k, v in (steps[i].get("with") or {}).items() if k.startswith("permission-")}
+                     for i in tokens]
+            if asked != [WRITER_PERMISSIONS]:
+                out.append("writer_permissions" + where)
+            holders = [i for i, st in enumerate(steps) if any(APP_SECRET in s for s in _strings(st))]
+            if not set(holders) <= set(tokens) | {entry}:
+                out.append("app_key_outside" + where)
         for index, step in enumerate(steps):
             at = "%s:%d" % (where, index)
             if not isinstance(step, dict):
@@ -530,6 +542,28 @@ class EachRuleFires(unittest.TestCase):
             _in_job(text, "yaz", "python3 -m loop.job scope\n", "python3 -m loop.job scope --any\n")))
         # the scope step in another job is no install there
         self.fires("secret_job_runs_code", _in_job(text, "cek", "      - name: checkout\n", scope + "      - name: checkout\n"))
+
+    def test_writer_permissions(self):
+        text = committed()
+        for line in ("permission-contents: write", "permission-pull-requests: write", "permission-checks: write",
+                     "permission-administration: read"):
+            self.fires("writer_permissions", _in_job(text, "yaz", "          %s\n" % line, ""))
+        self.fires("writer_permissions", _in_job(text, "yaz", "permission-administration: read",
+                                                 "permission-administration: write"))
+        self.fires("writer_permissions", _in_job(text, "yaz", "          permission-checks: write\n",
+                                                 "          permission-checks: write\n"
+                                                 "          permission-actions: write\n"))
+
+    def test_app_key_outside(self):
+        text = committed()
+        held = "          WRITER_APP_PRIVATE_KEY: ${{ secrets.WRITER_APP_PRIVATE_KEY }}\n"
+        # the committed file: the key is the token step's input and the yaz step's environment
+        self.assertEqual(text.count("secrets.WRITER_APP_PRIVATE_KEY"), 2)
+        self.assertIn(held, text[slice(*_job(text, "yaz"))])
+        scope = "        id: scope\n        if: %s\n" % GATE
+        self.fires("app_key_outside", _in_job(text, "yaz", scope, scope + "        env:\n" + held))
+        self.fires("app_key_outside", _in_job(text, "yaz", scope, scope + "        env:\n" + held.replace(
+            "PRIVATE_KEY", "ID")))
 
     def test_code_jobs_run_only_their_entry(self):
         self.fires("unknown_run", _in_job(committed(), "kos", "python3 -m loop.job run kos\n",
