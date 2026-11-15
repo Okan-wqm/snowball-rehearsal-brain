@@ -25,7 +25,7 @@ ne zaman koştuğunu, modülsüz kırmızıyı ve çıkıştaki MF sayısını b
 founder_resume?, reverted_exits?, exam_faults?}`. Kapalıya düşüş: `kill_switch` eksikse açık; `budget_state` (`ok` ya da frene
 takılan kalem) eksikse fren; `loop_schedule` eksikse `false` (zamanlanmış devir `paused` ile yeşil biter); `merge_paused` eksikse
 `true` (gözlem sürer, merge yok); `founder_resume {after_run, note}` yalnız adlandırdığı koşudan sonra bir kez geçerlidir (`24a`);
-`reverted_exits`, (B) kırmızı olduğu için aktarımı geri alınmış çıkışların imzalı sonuçtaki beyin başları (40 karakterlik SHA listesi), eksikse boştur: (A)'nın dondurması sürer (`29b` "Çıkıştan sonra", `25a` "Başarısızlık"); `exam_faults` `[{head, signature}]`, eksikse boştur (`29e` "Sınav hatası").
+`reverted_exits`, (B) kırmızı olduğu için aktarımı geri alınmış çıkışların imzalı sonuçtaki beyin başları (40 karakterlik SHA listesi), eksikse boştur: (A)'nın sabitlediği baş tutulur (`29u`, `25a` "Başarısızlık"); `exam_faults` `[{head, signature}]`, eksikse boştur (`29e` "Sınav hatası").
 
 **setup/summary.json** (`25`'in alanlarına ek): `seed_epochs[]` `{commit, spec_tohum_sha256, seed_sha256,
 bootstrap_sha256}`; `targets[]` `{id, repo, kind: toy|copy, base_sha, identifiers[], excluded_paths[], unit_candidates[],

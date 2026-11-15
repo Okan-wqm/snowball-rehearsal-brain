@@ -15,7 +15,7 @@ Okunma: her sayfa yazarken, her döngüde doküman üretilirken ve her K8 işind
 4. **Üretilebilen sayfa üretilir.** Defterden türetilebilen her şey elle yazılmaz; her döngüde
    yeniden üretilir. Üretilmiş sayfa elle düzenlenemez; düzenleme zincir kırığıdır. Hedefin ve
    sistemin kendi kodunun haritası (neyin neye bağlı olduğu, `13`) insanın okuyacağı bir çizim
-   olarak da üretilir ve ilgili kod değişince yeniden üretilir; bayat çizim bayat sayfadır (E301).
+   olarak da üretilir ve ilgili kod değişince yeniden üretilir; bayat çizim bayat sayfadır (E301; hakem sınar, `29t`).
 5. **Dizin mekaniktir.** `INDEX.md` başlıklardan `docs.index` ile üretilir. Görev haritası elle
    yazılan ayrı bir sayfadır (`00b`).
 6. **Aşama spec'i sayfadır.** Her bölüm ayrı sayfa; özet sayfası ön koşulu, çıkış kapısını ve
@@ -25,6 +25,11 @@ Okunma: her sayfa yazarken, her döngüde doküman üretilirken ve her K8 işind
    ve zincirdedir.
 8. **Spec operatörün dilinde, sistem çıktısı İngilizce.** Bulgular, organ sayfaları, defterler ve
    `status.md` İngilizcedir; ajanlar ve dış okuyucular için tek dil.
+9. **Kurucu'nun hafızası yalnız `main`'dedir** (sahibin kararı 2026-11-14, kesin; E592). Defter, raporlar, kayıtlar
+   ve haritalar (`founder-ledger.jsonl`, `reports/`, `docs/map/`) beyin reposunun `main`'inde yaşar; yan dal yalnız
+   `main`'e ait olmayan işi tutar. Her `wip/` dalı ya `main`'e merge edilir ya da kanıtla kapanır: nedeni
+   `main`'deki defterde yazılıdır. Hiçbir dal sessizce bırakılmaz; merge edilmemiş dal kayıtlı nedeni olmadan
+   silinmez.
 
 **Her organın sayfası.** `<state_root>/docs/organs/<kimlik-hash>.md`, zincirden üretilir: amaç ve
 kapsam, doğduğu boşluk ve ölçüm, prompt ve araç yüzeyi hash'i, kabul ve yaşam döngüsü geçişleri

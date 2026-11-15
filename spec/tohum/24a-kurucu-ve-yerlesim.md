@@ -31,8 +31,8 @@ bir Windows kullanıcısında koşar; Kurucu'nun yapılandırması repo dışın
    `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; çalışma dizini beyin klonu, hedefin salt okunur klonu dışarıda;
    açılış "`00` ve `00a`'yı oku" ve tipli durum; hedeflerin `targets[]` sırasıyla `[{id, kind, base_sha,
    unit_candidates}]`'ı oturumun klasöründe `/work/logs/targets.json`'dadır, adları orada yoktur (`29e` "Genellik
-   okuması"); `policy.json`'un `operating`'i o oturum için okunur, aynı klasörde `/work/logs/operating.json`'dadır:
-   `{operating: {…}}`, alan yoksa `{}`; okunamaz ya da `26c` biçiminde değilse dosya yoktur.
+   okuması"); `policy.json`'un `operating`'i o oturum için okunur, `/work/logs/operating.json`'dadır: `{operating:
+   {…}}`, alan yoksa `{}`; okunamaz ya da `26c` biçiminde değilse dosya yoktur. Bütünü `/work/logs/policy.json`'dadır.
 4. Bitince CLI'nin bildirdiği maliyeti `kind: cost` satırı olarak `founder-ledger.jsonl`'a `26`'nın zincir
    kuralıyla ekler (model ve token toplamları dahil, yorumsuz); oturum sayısı, USD `status-stage0.md`'ye girer.
 

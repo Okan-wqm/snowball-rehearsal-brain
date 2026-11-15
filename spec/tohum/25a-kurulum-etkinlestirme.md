@@ -19,7 +19,7 @@ Hedef repoya dokunan kurulum, Aşama 0'ın ürettiği döngü hakemiyle yapılı
 | 5 | Hedefe kurulu App'lerin listesini özete beyan et. **Aşama 0'da yoktur:** özette alanı (`26c`) ve okuyucusu yoktur, genesis App beyanını okumaz (`29o`); alan okuyucusuyla, `drift.check`'le P1 aktarımında gelir (`01a` Y4, `01b`) | Etkinlik API'sinde beyan dışı aktör sert duruştur (`01b`; P1) |
 | 6 | Hedefin mevcut iş akışlarından sır kullanan ve `brain/**` dallarında ya da PR'larında tetiklenen biri olmadığını doğrula; kopyada Actions tamamen kapalıdır; oyuncakta iş akışı yoktur | Ajan yazımlı kod sırla koşmasın; çatal çaresi yoktur |
 | 7 | **Etkinleştirme:** bu aktarımın prova fikstürleri hakem sırrı olarak yazılmışken (`26f`) kill switch'i kapat; `loop_schedule` kapalı kalır, operatör devirleri elle tetikler. Döngü hakemi önce oyuncak hedefte `brain/state`'i genesis satırıyla açar, `brain/integration`'ı `main`'den keser, profili ve birim tarifini türetir, mandal tabanını kendi araç koşusuyla yazar ve `asama-0/08`'in devir sırasını koşar; oyuncağın 1–5. devirleri yeşil olunca aynı (B) içinde kopyada `targets[].base_sha`'dan genesis yapar. Güvenlik avcısının koltuğu ve güvenlik profili (`30d`, `30f`) P2 aktarımıyla gelir | İlk durum ve canlı kanıt |
-| 8 | **Kopyanın adayları:** Kurucu yalnız `candidates/<kopya>/`'yı değiştiren bir push yapar (yayımlanan bir `fix`'i aynen uygulayan iyi aday ve bir birim testini kıran kötü aday); önyükleme hakemi kod isteği gibi yargılar, `referee/` ağacı değişmemiş olmalıdır. Operatör kopyanın devirlerini tetikler | Kopyada ilk gerçek merge |
+| 8 | **Kopyanın adayları:** Kurucu yalnız `candidates/<kopya>/`'yı değiştiren bir push yapar (yayımlanan bir `fix`'i aynen uygulayan iyi aday ve bir birim testini kıran kötü aday); önyükleme hakemi kod isteği gibi yargılar; `referee/` döngüye yalnız aktarımla gelir (`29u`). Operatör kopyanın devirlerini tetikler | Kopyada ilk gerçek merge |
 | 9 | **Kilidin açılışı:** PASS satırından sonra `stage-open` komutunu koştur; PASS satırını okur, zinciri tohum koduyla ve kökü Sigstore ile doğrular, `setup/stage.json`'u yazar (`asama-0/10a`, `26c`; PASS satırının alanları ve komutun kuralı `26d`); incele ve it. Sonra `control.json` `loop_schedule: true`; kopyanın aynalaması günlük açılır (`25` 10a) | Aşama 1 ancak PASS'ten sonra açılsın |
 
 **Başarısızlık.** Satır 1, 7 ya da 8 kırmızıysa sistem sert durur. Operatör kill switch açık ve `loop.yml` kapalıyken
@@ -32,7 +32,7 @@ uygulamasını yalnız silme süresince kapatır, her `brain/` dalını (`brain/
 `bypass_actors`'ı okumaz, geri açılmamış ruleset'i ise `state_rules_missing` ya da `integration_rules_missing` ile
 durdurur (`29o`). Yazar App'i dal silemez (`29i` `refs`); silme bir insan dokunuşudur, dalın yeniden kesimi ne
 senkron ne zorla itmedir (`07`). (3) **Yeniden aktarım.** Aktarım commit'ini `git revert` eder ve çıkışın imzalı
-sonuçtaki başını `control.json` `reverted_exits`'e ekler (`26c`): (A)'nın dondurması kalkar (`29b` "Çıkıştan sonra"),
+sonuçtaki başını `control.json` `reverted_exits`'e ekler (`26c`): durum (A)'nın başını unutur (`29u`),
 itme yargıcı aktarımdan etkilenmediği için Kurucu'nun yolu açık kalır. Düzeltilmiş SHA (A)'dan yeniden geçer; aktarımı
 yine operatörün işidir ve insan dokunuşu sayacında görünür; prova fikstürleri yeni aktarım satırı için yeniden üretilir
 (`26f`). (B) iki hedefte yeni bir defterin ilk genesis'inden satır 7'deki gibi koşar: oyuncak API'deki `main`'den,

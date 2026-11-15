@@ -4,6 +4,19 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-14, E588–E592; Kurucu raporu ve sahibin iki kararı, iki uzmanlı iki turlu panel): yeni `29u`, `29v`.
+  Sahibin kararı (E590): (A) kabul edilince sabitlenen yalnız kabul edilen SHA'dır, `main` değil; sonraki push olağan
+  yargılanır, `changed_after_exit` ve `referee_changed_after_exit` kalktı, `referee/`'ye dokunan push
+  `referee_ahead_of_exit` uyarısını taşır; döngünün ağaç karşılaştırması son aktarım satırının `brain_sha`'sındadır
+  (`29u`; `29b:73`, `25a:22`, `25a:35`, `26c:28`, `29t:35` ona bakar; donmuş `asama-0` sayfalarının dondurma
+  cümlelerinin yerini `02` 1 gereği `29u` alır). Sahibin kararı (E592): Kurucu'nun hafızası yalnız `main`'dedir,
+  `wip/` dalı `main`'e merge edilir ya da kanıtla kapanır (`15:28-32`). Yanıtlanan rapor:
+  `seed-053-policy-shape-unseen-before-b` → (a) `24a:34-35` (dosyanın bütünü `/work/logs/policy.json`'da), `29v:16-19`
+  (bayt bayt kopya ve koşulları); (b) `29v:21-31` (`python -m policy.reads`, fikstürler `/vec/policy/`, aşamanın
+  zorunlu yolları), `29v:36-47` (bulgular; Aşama 0'da uyarı); (c) `18a:12` (anahtar sütunu tam yoldur, bölümsüz ad
+  o yoldur; donmuş `asama-0/12:20` için de), `18a:49-50` (`deps.fetch` okur), `29b:79` (okudukları `constitutional`
+  altında), `26e:46`. 80 satır sınırı için 2026-11-05 ve 2026-11-06 kayıtları `CHANGELOG-6.md`'ye taşındı.
+- 2.2 (2026-11-14, E585–E587; sahip): `29t` kendi haritası: hakem `docs/map/brain.md`'yi sınar (Aşama 0 uyarı, 1 ret).
 - 2.2 (2026-11-14, E583; gözlem): (B)'nin ilk denemesi kırmızı. Aktarılan 91bbd27; `loop.yml`'un `cagir` işi
   `unusable input: cagir: policy.json has no stage_budgets.asama_0.canary_usd` ile durdu (koşu 43534260172), `yaz`
   koşmadı, hedeflere yazılmadı; aktarım `25a` "Başarısızlık" ile geri alındı, 91bbd27 `reverted_exits`'te. `kos`'un
@@ -40,33 +53,11 @@ Okunma: bir sayfanın geçmişi aranırken
   `24a:32-33` (hedeflerin kimliği ve türü `/work/logs/targets.json`'da), `24a:54` (`targets/<hedef>/`);
   `targets/names.json`'u okuyan ya da reddeden denetim yoktur. 80 satır sınırı için 2026-11-01 E490–E499 kaydı
   `CHANGELOG-5.md`'ye taşındı.
-- 2.2 (2026-11-06, E561–E566; sahibin kararı): `02` "Sahip istisnası": #spec de istisna edilir (E286), Aşama 1'in
-  (A)'sına taşınır; `26c`: `spec_exception` ve yanında tohumun taşıma kaydının (`stages/carry-spec.json`) hash'i
-  `spec_commitment`. Arayüz olgusu (E563): `exit.owner_exception` ve PASS satırının `owner_exception`'ı `anchor`'a göre
-  sıralı bir dizidir (`26d:45-47`, denetim 7); çıkış isteği olmayan push'un sonucu değişmez.
-- 2.2 (2026-11-06, E560; üç uzmanlı iki turlu çıkış panelinin kararı): `seed/founder/prompt.md` "Çıkış sırası": bir
-  aşamanın ya da partinin mikro özellikleri bitince sıradaki iş çıkış isteğidir, koşulların tutup tutmadığını isteğe
-  verilen hakem kararı söyler; istekten önce ancak `referee/` kodunun yanlış karar verdiği gerçek bir girdiyi (girdi,
-  beklenen, gözlenen) gösteren iş gelir, ölçülmemiş ya da sınanmamış olmak bu kanıt değildir. Kural tek yerdedir,
-  tohum sayfaları onu yinelemez. Önceden yanıtlanmış: `seed-046-pass-row-unnamed`'in sonraki düzenlemesi bir ilerleme
-  notudur; `26d:36-47`, `10a:44` ve `seed-048-copy-gate-record-and-a-result-bytes`'ın yanıtı (`26d:47`) onu karşılar.
-  80 satır sınırı için 2026-11-01 E478–E485 kaydı `CHANGELOG-5.md`'ye taşındı.
-- 2.2 (2026-11-05, E550, E551, E553; Kurucu raporları, sahibin kararı): yeni `29e` "Bütçe durması": rakibin bir koşudaki
-  payı ayın tavanından ve aşamanın freninden kalanla koşu başı tavanın en küçüğüdür; payı biten ya da çağrısı frene
-  takılan baş yargılanmaz (`last_evaluated_sha`, seriler ve rakip hata serisi değişmez), sonuç `budget_stop` ile freni
-  ve payı adlandırır, yoklama aynı başı pay büyüyene dek uyarıyla geçer; `29e:26`'nın bütçe istisnası kalktı, `29b`
-  oraya bakar. `18a`: rakip freni 2026-11-05'ten Aşama 0'da da Aşama 1'de de 1000 USD'dir (rakip `claude` CLI
-  aboneliğiyle koşar, fren yalnız kaçak frenidir; `asama-1/10`), `26e` sayıyı yinelemez. Yanıtlanan raporlar:
-  `referee-049-rival-budget-consumes-commit` → `29e:42-53` (bütçe durması; çağrı başı tavan da fren, `per_run`),
-  `29e:26` (bütçe rakip tarafı hata değildir), `29b:76-77` (baş tüketilmez), `18a:59` (politika: 1000 USD),
-  `29e:53` (bu kuraldan önce yargılanmış sayılan baş yeniden açılmaz); declined (11-03 güncellemesi):
-  `seed-044-revert-facts-producers`: ret geçerli (2026-11-01 kaydındaki `declined: seed-044-revert-facts-producers`
-  satırı; `29j:53-60`); `asama-0/10a:26` `#geri-alma` Aşama 0'da değişmedi. 80 satır sınırı için 2026-11-02 E506 ve
-  E507 kayıtları `CHANGELOG-5.md`'ye taşındı.
-- 2.2 (2026-11-04, E499, E540–E546): kırmızı bir (B)'den sonra dalların arşivi ve silinmesi, tohum güvenlik
-  defteri, imzalı (A) sonucunun aktarımdaki yeri ve canlı prova fikstürleri: `CHANGELOG-5.md`.
-- 2.2 (2026-11-02, E506, E507): kapsülde defterin salt-okur dizini ve standart kütüphaneyi gizleyen modül adı:
-  `CHANGELOG-5.md`.
+- 2.2 (2026-11-05 – 2026-11-06, E550, E551, E553, E560–E566): rakibin bütçe durması, çıkış sırası ve sahip
+  istisnasının #spec'i: `CHANGELOG-6.md`.
+- 2.2 (2026-11-02 – 2026-11-04, E499, E506, E507, E540–E546): kırmızı bir (B)'den sonra dalların arşivi ve
+  silinmesi, tohum güvenlik defteri, imzalı (A) sonucunun aktarımdaki yeri, canlı prova fikstürleri, kapsülde
+  defterin salt-okur dizini ve standart kütüphaneyi gizleyen modül adı: `CHANGELOG-5.md`.
 - 2.2 (2026-11-01, E411–E417, E470–E475, E478–E485, E490–E499): `26d`'nin olguları (son kökün paketi, zincirli
   satır, Rekor v1, genesis satırı), içe aktarmanın git nesneleriyle anlatımı, `stage-open`'ın bağları ve döngünün
   üç girdisi (`29s`): `CHANGELOG-5.md`.

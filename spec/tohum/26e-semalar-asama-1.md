@@ -43,10 +43,10 @@ değildir: o parti Aşama 1'in kendi çıkışının (A)'sıyla gelir (`asama-1/
 yargılamaz (`batch`'siz istek `exit_request_wrong_stage`'dir). Tablosu o yargıyla, bir tohum döneminde gelir. P1 ve P2
 aktarılınca açık tablo boştur, `done_mf` `[]`'dir.
 
-**Önyükleme hakemi Aşama 1'de.** Rakip freni açık aşamanın `stage_budgets.asama_<k>.rival_usd`'sidir: `k` kilidin
-`stage`'idir, kilit yokken 0; Aşama 1'inki `asama-1/10`'un tablosundadır (`18a`). Aşamanın harcaması kilidin açılışından
-sayılır: kilitten sonra yargılanan ilk push onu sıfırdan başlatır, imzalı durum aşamayı `spend_stage` olarak tutar (Aşama 0'ın
-durumunda alan yoktur). Kilit açıkken anahtar `policy.json`'da yoksa koşu durur (`26c`: operatör dosyası kapalıya düşer);
-`stage-open` anahtarsız politikayla kilidi açmaz. Kod isteğinde rakip, tohum sayfalarının yanında açık tablonun
-kopyaladığı aşama sayfalarını görür: Aşama 0'da `asama-0/09` ve `asama-0/14`; Aşama 1'de `asama-0/09`, `asama-1/06` ve
-`asama-1/13`.
+**Önyükleme hakemi Aşama 1'de.** Rakip freni açık aşamanın `constitutional.stage_budgets.asama_<k>.rival_usd`'sidir: `k`
+kilidin `stage`'idir, kilit yokken 0; Aşama 1'inki `asama-1/10`'un tablosundadır (`18a`). Aşamanın harcaması kilidin
+açılışından sayılır: kilitten sonra yargılanan ilk push onu sıfırdan başlatır, imzalı durum aşamayı `spend_stage` olarak
+tutar (Aşama 0'ın durumunda alan yoktur). Kilit açıkken anahtar `policy.json`'da yoksa koşu durur (`26c`: operatör
+dosyası kapalıya düşer); `stage-open` anahtarsız politikayla kilidi açmaz. Kod isteğinde rakip, tohum sayfalarının
+yanında açık tablonun kopyaladığı aşama sayfalarını görür: Aşama 0'da `asama-0/09` ve `asama-0/14`; Aşama 1'de
+`asama-0/09`, `asama-1/06` ve `asama-1/13`.

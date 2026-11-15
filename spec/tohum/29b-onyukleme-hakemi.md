@@ -21,7 +21,7 @@ koşturan işin izni ve sırrı, sır taşıyan işin kod koşturması yoktur; a
 |---|---|---|
 | `çek` | Kimliksiz beyin okuma; Actions okuma | Önceki imzalı durumu Sigstore ile doğrular; SHA'yı çeker, sınıflandırır, ağacı blob blob kurar (`export-ignore` etkisizdir) |
 | `getir` | Yok, ağ var | Kilit dosyalarındaki tekerlekleri `--only-binary`, `--require-hashes` ile indirir; kurulum betiği koşmaz |
-| `koş` | Yok | Tekerleklerin lisans kapısı (`24`; hakemin kendi Sigstore tekerlekleri de kurulmadan önce geçer, kaydı `requirements/licenses.json`); kırmızı kontroller, `snowball-tests.json` bildirimindeki Aşama 0 testleri (`asama-0/09`) ve vektörler, her biri `--network none --cap-drop ALL --read-only --user 65534` konteynerde |
+| `koş` | Yok | Tekerleklerin lisans kapısı (`24`; hakemin kendi Sigstore tekerlekleri de kurulmadan önce geçer, kaydı `requirements/licenses.json`); kırmızı kontroller, `snowball-tests.json` bildirimindeki Aşama 0 testleri (`asama-0/09`), vektörler ve kendi haritasının üreticisi (`29t`), her biri `--network none --cap-drop ALL --read-only --user 65534` konteynerde |
 | `çağır` | `CLAUDE_CODE_OAUTH_TOKEN` | Tohum rakibi (aşağıda); sır desenli metin prompta girmez |
 | `yeniden` | Yok | Rakibin ve durumdaki yeniden üreticiler, `koş` ile aynı kumda; gözleneni gösteren her biri boş kontrol ağacında da (`29`) |
 | `yaz` | OIDC, içerik okuma | Kararı verir, sonucu Sigstore ile imzalayıp Rekor'a bağlar, imzalı durumu yükler; kill switch açıksa kabul etmeyen, harcamayı yazan `stopped` sonucu imzalar; iptal edilen koşu hiçbir şey imzalamaz |
@@ -70,11 +70,11 @@ adlandırır. Hakem testleri, vektörleri, durumdaki yeniden üreticileri koşar
 18), değilse sonucun `exit.missing`'inde `not_all_micro_features_done`; `spec.lint` ve `gate.lock` (A)'da çağrılmaz, spec denetimi
 ve kilit tohumun kodudur (`29a`, `asama-0/10`); çıkış SHA'sı ve ondan ayrı en az `stage_params.rival_min_attempts` artefakt
 rakipten sağ çıkmış olmalı (tamamlanmış karar, yeniden üretilmiş çürütme yok); aynı başın yeniden denemesi saklı rakip
-sonucunu kullanır. Sonuç "aktarılabilir"dir, `referee/` ağaç hash'ini ve `repeat_events`'i taşır (`25a` 1). **Çıkıştan sonra** imzalı durum (A)'nın başını `exit_accepted_sha`'da tutar; o andan spec, kod ya da çıkış push'unda Kurucu kayıtları dışında yalnız `candidates/` ve `targets/` değişebilir (`asama-0/10a`, `asama-0/11`, `25a` 8): `referee/` altındaki değişiklik `referee_changed_after_exit`, başka her yol `changed_after_exit:<yol>`'dur (Kurucu'nun nedeni). Dondurma Aşama 0'ındır: kilit sonraki aşamayı açınca ya da (B) kırmızı olup operatör aktarımı geri alıp o başı `control.json` `reverted_exits`'e yazınca biter, sonraki sonuç alanı boşaltır; düzeltilmiş SHA (A)'dan yeniden geçer (`25a` "Başarısızlık"). Kurucu (A)'dan sonra (B)'yi durduracak kendi kusurunu kanıtıyla bildirirse operatör, kanıtı doğruladıktan sonra o başı aktarmadan `reverted_exits`'e yazabilir; dondurma kalkar, düzeltilmiş SHA (A)'yı yeniden ister (seed-052, E576).
+sonucunu kullanır. Sonuç "aktarılabilir"dir, `referee/` ağaç hash'ini ve `repeat_events`'i taşır (`25a` 1). **Çıkıştan sonra** sabitlenen yalnız (A)'nın kabul edilen SHA'sıdır, `main` değil; sonrası `29u`'dadır (sahibin kararı 2026-11-14, E590). Kurucu (A)'dan sonra (B)'yi durduracak kendi kusurunu kanıtıyla bildirirse operatör, kanıtı doğruladıktan sonra o başı aktarmadan `reverted_exits`'e yazabilir; düzeltilmiş SHA (A)'yı yeniden ister (seed-052, E576).
 
-**Asla yapmadıkları.** Hedefe, beyin ve hakem reposuna yazmaz; merge etmez; Kurucu'nun kodunu sırlı işte
-koşturmaz; Actions önbelleği kullanmaz; kill switch açıksa iş başlatmaz. Rakip freni dolunca baş tüketilmez, yoklama
-uyarıyla geçer; aynı baş ay dönünce ya da fren yükselince kendiliğinden yargılanır (`29e`). Aşama 0'da Gözcü yoktur,
-bütçe dondurması buradadır; `monthly_cap_ci_minutes` ölçülmez (fren GitHub harcama sınırıdır,
-`25` 8). Politikadan okudukları: `monthly_cap_usd`, açık aşamanın `stage_budgets.asama_<k>.rival_usd`'si (`26e`),
+**Asla yapmadıkları.** Hedefe, beyin ve hakem reposuna yazmaz; merge etmez; Kurucu'nun kodunu sırlı işte koşturmaz;
+Actions önbelleği kullanmaz; kill switch açıksa iş başlatmaz. Rakip freni dolunca baş tüketilmez, yoklama uyarıyla
+geçer; aynı baş ay dönünce ya da fren yükselince kendiliğinden yargılanır (`29e`). Aşama 0'da Gözcü yoktur, bütçe
+dondurması buradadır; `monthly_cap_ci_minutes` ölçülmez (fren GitHub harcama sınırıdır, `25` 8). Politikadan okudukları,
+hepsi `constitutional` altında (`29v`): `monthly_cap_usd`, açık aşamanın `stage_budgets.asama_<k>.rival_usd`'si (`26e`),
 `stage_params.{rival_min_attempts, repeat_reject_limit}`, `license_allowlist`, `license_exceptions`.
