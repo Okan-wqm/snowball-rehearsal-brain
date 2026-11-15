@@ -30,7 +30,9 @@ invalid contained run, a green red control, a base that gave no run file).
 must end ``ok`` with exit 0 or 1 (``lint_failed:<n>``) and convert (``lint_output:<reason>``); any reason of a
 contained run, ``red_control_green`` included, stops the base: no ratchet base comes from a sandbox that a known
 bad command passed. ``base.jsonl`` holds the three records in run order even when they differ: the gate and
-genesis judge that (``tool_nondeterministic``), this module records it. Without ``base.jsonl`` no candidate runs
+genesis judge that (``tool_nondeterministic``), this module records it. Bytes before the document on a lint
+run's stdout (``lint_record``'s stdout rules) are read past and not carried: the base's records and its index
+entry are the same as without them. Without ``base.jsonl`` no candidate runs
 (``base_unavailable``).
 
 **A candidate** ``cid`` (a directory holding ``diff.patch``; only that file is read). ``cid`` is

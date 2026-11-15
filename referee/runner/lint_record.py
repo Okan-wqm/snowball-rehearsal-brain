@@ -30,8 +30,11 @@ workspace has no cached project graph; the fixture ``tests/fixtures/eslint_nx/``
 4. an extra line that itself has the document's shape (``[]`` included) is ``several_documents``: a
    ``lint_cmd`` that runs ESLint twice would otherwise lose the first run's violations without a trace.
 
-The extra is reported, never dropped silently: ``runs`` gives each run's ``{bytes, sha256}`` (``extra_of``), the
-command line prints it as ``stdout_extra`` when it is not empty. What the extra **means** is not judged here:
+This module hands the extra to its caller and drops it nowhere itself: ``runs`` gives each run's ``{bytes,
+sha256}`` (``extra_of``), the command line prints it as ``stdout_extra`` when it is not empty. What a caller does
+with it is the caller's: ``unit_verify.verify`` carries it in its report, ``runner.kos`` does not carry it (its
+index has no field for it), so the loop's results do not say that a run had extra. What the extra **means** is
+not judged here:
 with the lines measured above the tool says a rule was skipped, so a record made from such a run does not show
 that every configured rule ran. Out of scope, stated: an earlier document that spans several lines (rule 4
 reads single lines), and a tool that prints after its document (rule 3 refuses it).
