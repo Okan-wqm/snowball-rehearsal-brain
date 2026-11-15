@@ -4,6 +4,12 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-15; gözlem ve sahibin istisnası, olgu): (B)'nin üçüncü denemesi kırmızı. Aktarılan 1b0a1e4; iki devir
+  (43721580137, 43721876896) aynı: `kos` oyuncakta `base` `no_verdict` [`unreadable_output`], her aday
+  `base_unavailable`; `yaz` `activation_refused` [`base_run_missing`]; geri alındı, 1b0a1e4 `reverted_exits`'te. Olgu:
+  `loop.yml`'un işleri koşucunun kullanıcısıyla (`ubuntu-24.04`'te uid 1001) koşar; `contained` konteyneri `--user
+  65534:65534` ile başlatır; `unreadable_output` yalnız koşudan sonra `work/` ya da `out/` altında host kullanıcısının
+  açamadığı bir girdi varken çıkar. 80 satır için E583 gözlemi `CHANGELOG-6.md`'de.
 - 2.2 (2026-11-15; sahibin istisnası, olgu): operatörün (B) ön denetimi, iki GitHub API olgusu. (1) `GET /app`
   yalnız App'in JWT'siyle okunur; kurulum belirteci 401 alır (canlı deneme: `A JSON web token could not be
   decoded`). (2) `GET /repos/{repo}/actions/permissions` belirteçte `administration: read` ister; yazar App'inde
@@ -25,11 +31,6 @@ Okunma: bir sayfanın geçmişi aranırken
   o yoldur; donmuş `asama-0/12:20` için de), `18a:49-50` (`deps.fetch` okur), `29b:79` (okudukları `constitutional`
   altında), `26e:46`. 80 satır sınırı için 2026-11-05 ve 2026-11-06 kayıtları `CHANGELOG-6.md`'ye taşındı.
 - 2.2 (2026-11-14, E585–E587; sahip): `29t` kendi haritası: hakem `docs/map/brain.md`'yi sınar (Aşama 0 uyarı, 1 ret).
-- 2.2 (2026-11-14, E583; gözlem): (B)'nin ilk denemesi kırmızı. Aktarılan 91bbd27; `loop.yml`'un `cagir` işi
-  `unusable input: cagir: policy.json has no stage_budgets.asama_0.canary_usd` ile durdu (koşu 43534260172), `yaz`
-  koşmadı, hedeflere yazılmadı; aktarım `25a` "Başarısızlık" ile geri alındı, 91bbd27 `reverted_exits`'te. `kos`'un
-  ilk durması (`operating` yok) operatöründü: `policy.json`'a `operating{}` ve `security_keywords` yazıldı.
-  E584: `canary_usd` da `policy.json`'da hiç yoktu (operatörün eksiği; `18a:60`'ın 1 USD'si yazıldı); şema `26b:54-59`.
 - 2.2 (2026-11-13, E577–E581; Kurucu raporları, iki uzmanlı iki turlu panelin kararı): `24a` 3: başlatıcının
   `targets.json`'u `targets[]` sırasıyla `[{id, kind, base_sha, unit_candidates}]`'dır (kimlik ya da aday ad taşırsa
   başlatıcı durur; repo, hariç yollar, güvenlik yolları ve adlar verilmez); `policy.json`'un `operating`'i her oturum
