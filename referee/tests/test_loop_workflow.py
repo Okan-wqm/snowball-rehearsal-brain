@@ -71,6 +71,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from loop_inputs_world import own_path  # noqa: E402
 from workflow_yaml import Unparseable, parse  # noqa: E402
 
 WORKFLOW = os.path.join(REFEREE, ".github", "workflows", "loop.yml")
@@ -686,7 +687,7 @@ class Scope(unittest.TestCase):
         out = os.path.join(ws, "gh-output")
         with open(out, "w") as fh:
             fh.write("go=true\n")
-        base = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "SYSTEMROOT")}
+        base = {"PATH": own_path(ws)}
         proc = subprocess.run([sys.executable, "-m", "loop.job", "scope"], cwd=REFEREE, capture_output=True,
                               env=dict(base, GITHUB_WORKSPACE=ws, GITHUB_OUTPUT=out))
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -698,9 +699,9 @@ class Scope(unittest.TestCase):
 
 
 def run_job(name: str, env: dict[str, str]) -> tuple[int, dict]:
-    base = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "SYSTEMROOT")}
-    proc = subprocess.run([sys.executable, "-m", "loop.job", "run", name], cwd=REFEREE, env=dict(base, **env),
-                          capture_output=True)
+    with tempfile.TemporaryDirectory(prefix="t-job-entry-") as base:
+        proc = subprocess.run([sys.executable, "-m", "loop.job", "run", name], cwd=REFEREE,
+                              env=dict({"PATH": own_path(base)}, **env), capture_output=True)
     return proc.returncode, json.loads(proc.stdout.decode("utf-8"))
 
 

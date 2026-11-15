@@ -47,7 +47,7 @@ from test_kos import operating  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from profile import derive as D  # noqa: E402
 from test_loop_kos import HEADS, TARGET, Base, state_files  # noqa: E402
-from loop_inputs_world import ABSENT, BOOTSTRAP, write_bootstrap  # noqa: E402
+from loop_inputs_world import ABSENT, BOOTSTRAP, own_path, write_bootstrap  # noqa: E402
 
 from test_llm_call import MODEL, TOKEN  # noqa: E402  (test 37's model and token-shaped value, one source)
 
@@ -86,7 +86,7 @@ class CagirJob(Base):
         os.makedirs(self.work)
         write_bootstrap(self.work, dict(BOOTSTRAP, rival={"model": MODEL}))
         self.env = {"RUNNER_TEMP": self.temp, "CLAUDE_CODE_OAUTH_TOKEN": TOKEN, "GITHUB_WORKSPACE": self.work,
-                    "GITHUB_RUN_ID": "77", "GITHUB_RUN_ATTEMPT": "2", "PATH": os.environ.get("PATH", "")}
+                    "GITHUB_RUN_ID": "77", "GITHUB_RUN_ATTEMPT": "2", "PATH": own_path(self.base)}
 
     def write(self, canary: str = "1", ledger: list[dict] | None = None, **kw) -> None:
         state = state_files(ledger) if ledger is not None else None
@@ -328,9 +328,16 @@ class CagirJob(Base):
         fake_claude.behave(on_path, result())
         os.remove(self.claude)
         with self.assertRaisesRegex(J.Unusable, "claude_missing"):
-            self.run_cagir(PATH=on_path + os.pathsep + os.environ.get("PATH", ""))
+            self.run_cagir(PATH=on_path + os.pathsep + self.env["PATH"])
         self.assertEqual(fake_claude.calls(on_path), [])
         self.assert_nothing()
+
+    def test_the_job_s_path_is_the_test_s_own(self):
+        """f1203: no program of the machine is on the job's ``PATH``, so a job that wrongly took its CLI from
+        ``PATH`` would find none there and is caught by ``test_the_cli_is_the_step_s_not_one_on_path`` alone."""
+        self.assertEqual(self.env["PATH"], os.path.join(self.base, "path"))
+        self.assertEqual(os.listdir(self.env["PATH"]), [])
+        self.assertIsNone(shutil.which("claude", path=self.env["PATH"]))
 
     def test_the_environment(self):
         self.write()

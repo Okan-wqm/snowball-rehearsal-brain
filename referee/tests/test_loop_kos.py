@@ -52,6 +52,7 @@ from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from target import branches as B  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
+from loop_inputs_world import own_path  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from test_revert_drill import ledger_with, reverted, row  # noqa: E402
 from test_serial import START, merge  # noqa: E402
@@ -775,7 +776,7 @@ class KosJob(Base):
                 self.assertFalse(os.path.exists(os.path.join(self.temp, "out", "results")))
 
     def test_command_line(self):
-        env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "SYSTEMROOT")}
+        env = {"PATH": own_path(self.base)}
         proc = subprocess.run([sys.executable, "-m", "loop.job", "run", "kos"], cwd=REFEREE, env=env,
                               capture_output=True)
         self.assertEqual((proc.returncode, json.loads(proc.stdout)), (2, {"ok": False, "reason": None}))

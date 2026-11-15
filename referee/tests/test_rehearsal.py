@@ -60,7 +60,7 @@ from ledger import chain as CH  # noqa: E402
 from loop import accepted as A  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import treehash as T  # noqa: E402
-from loop_inputs_world import BOOTSTRAP, install_sigstore, write_bootstrap  # noqa: E402
+from loop_inputs_world import BOOTSTRAP, install_sigstore, own_path, write_bootstrap  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from target import branches as B  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, diff, recipe  # noqa: E402
@@ -214,7 +214,7 @@ class Flow:
         os.makedirs(temps["cek"])
         install_sigstore(temps["cek"])
         env = {"RUNNER_TEMP": temps["cek"], "GITHUB_REPOSITORY": REFEREE_REPO, "GITHUB_TOKEN": "t",
-               "GITHUB_WORKSPACE": self.work, "PATH": os.environ.get("PATH", "")}
+               "GITHUB_WORKSPACE": self.work, "PATH": own_path(self.base)}
         lines = {"cek": J.run("cek", env, http=self.api, verifier=lambda argv: 0, git=self._git(root),
                               rekor=self.rekor)}
         if not lines["cek"]["ok"]:
