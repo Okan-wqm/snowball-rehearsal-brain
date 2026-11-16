@@ -4,6 +4,13 @@ Tarih: 2026-11-13 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-16; gözlem): (B)'nin altıncı denemesi kırmızı. Hakem koşusu 43886515914: `cek`, `cagir`, `getir`,
+  `kos` yeşil; `yaz` App kimliğinden geçti, sonra `genesis payload: payload.seed_epoch.seed_sha256: not 64 lowercase
+  hex` ile reddetti. Hakem reposunun `setup/summary.json`'unda `seed_epochs[]` satırlarının `seed_sha256`'sı `null`'dır;
+  kurulumun özetteki biçimi `29o:69-76`'da.
+- 2.2 (2026-11-16; gözlem): (B)'nin beşinci denemesi kırmızı. Hakem koşusu 43853494127: `cek`, `cagir`, `getir`,
+  `kos` yeşil; `yaz` `App id: not an App id or a client id` ile reddetti; aynı işin `create-github-app-token` adımı aynı
+  `WRITER_APP_ID` sırrıyla başarılı oldu. Sırların adı ve girilişi `29s:78-80`'de.
 - 2.2 (2026-11-15; gözlem ve sahibin istisnası, olgu): (B)'nin üçüncü denemesi kırmızı. Aktarılan 1b0a1e4; iki devir
   (43721580137, 43721876896) aynı: `kos` oyuncakta `base` `no_verdict` [`unreadable_output`], her aday
   `base_unavailable`; `yaz` `activation_refused` [`base_run_missing`]; geri alındı, 1b0a1e4 `reverted_exits`'te. Olgu:

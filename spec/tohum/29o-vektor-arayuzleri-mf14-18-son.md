@@ -43,7 +43,7 @@ boş ya da geçerli zincir değil).
 
 **Yük**, neden yoksa, on iki anahtar (`asama-0/10a:17`'nin bağladıkları; `26`'da genesis yükü yok, adlar seçim ve
 `26`'ya girmeli): `target`; `base_sha` (`toy`: API'deki `main`'in `object.sha`'sı, özettekini okumaz, oyuncak kurulumda
-boştur, `25:26`, `25a:16`; `copy`: `targets[].base_sha`); son aktarım satırından (`referee_tree_sha256` taşıyan son
+boştur (`null`), `25:26`, `25a:16`; `copy`: `targets[].base_sha`); son aktarım satırından (`referee_tree_sha256` taşıyan son
 imports satırı; sayacın aktarım dışı dokunuşları atlanır, `29n`) `referee_tree_sha256`, `result_sha256`;
 `import_line_sha256` (o satırın LF'siz baytları, `26c:39`); `seed_epoch` (son `seed_epochs[]`); dosya baytlarının
 sha256'sı `policy_sha256`, `summary_sha256`, `seed_security_ledger_sha256` (LF checkout'ta git blob'u, `25:64`);
@@ -60,4 +60,17 @@ aynı tarif başka anahtar sırası ve girintiyle aynı yükü verir; `copy_acti
 `every_fault_named` altı olgu birden düşer, her biri adlanır (onaysız inceleme `main`'i korumaz, oyuncakta iş akışı
 var), oyuncağın kayan `main`'i hata değil; `bypass_named` kopyada yazar App'i `brain/state`'in ruleset'ini atlayabilir
 ve `main`'inkinden muaftır, `main` güncelleme kısıtlı olsa da: ikisi adlanır; `security_ledger_broken` hash'ten sonra
-bir baytı düzenlenmiş tohum güvenlik defteri etkinleştirmeyi durdurur.
+bir baytı düzenlenmiş tohum güvenlik defteri etkinleştirmeyi durdurur; `toy_base_empty` kurulumun yazdığı özette (oyuncağın
+`base_sha`'sı ve her `seed_sha256` `null`), `toy_base_absent` oyuncağın satırında anahtar yok: yük `toy_genesis_row`'unkidir,
+yalnız `seed_epoch.seed_sha256` `null` ve `summary_sha256` fikstürün kendi baytlarınındır; `copy_base_empty` kopyanın
+`base_sha`'sı `null` iken kopya istenir: kullanılamaz girdi (çıkış 2); `seed_epoch_seed_null` kurulumun özetinde kopya:
+`seed_epoch` son satırdır, `seed_sha256`'sı `null`.
+
+**Kurulumun özetteki biçimi** (seed-059). Önyükleme hakemi `setup/summary.json`'u şu biçimde okur, başkasında her işi durur
+(`seed/bootstrap/snowball_bootstrap/config.py` `summary_of`, `target`, `_epoch`). Zorunlu: `seed_commit` (40 küçük onaltılık
+hane), `seed_tree_sha256` (64), her `targets[]` satırında yedi anahtar. `null` olabilen: `targets[].base_sha` (commit'i
+henüz olmayan hedef; oyuncak kurulumda boştur, yazılan `null`'dır; boş dize ya da eksik anahtar okunmaz) ve
+`seed_epochs[].seed_sha256` (beyinde `seed/` yoksa; `25` 10b gereği beyne yalnız `spec/tohum` gider, her teslim satırında
+`null`'dır). Yazılmayabilen: `seed_epochs`, `targets`, `honesty_commitment`, `honesty_exception`, `spec_commitment`,
+`spec_exception`, `targets[].safety_paths`. Başlatıcının `/work/logs/targets.json`'u `base_sha`'yı olduğu gibi taşır
+(`24a:32-33`). Genesis oyuncağın tabanını okumaz; `seed_epoch` son satırı olduğu gibi taşır.

@@ -64,8 +64,8 @@ dosyaları içindir; kod dizinlerinin çağıranları `24` ve `26a`'dadır. Hede
 | `founder-ledger.jsonl`, beyin reposu | Kurucu, kendi koduyla (`26`'nın zincir kuralı); başlatıcı (`cost`) | Kurucu sonraki oturum, önyükleme hakemi (zincir) | Neye devam edilecek; `founder_ledger_invalid` | Aşama 0 |
 | `reports/*.json`, beyin reposu | Kurucu | önyükleme hakemi, operatör | İtiraz (`disputed`), uyarı, tohum dönemi | Aşama 0 |
 | `spec/`, `INDEX.md`, beyin reposu | Kurucu | Kurucu, tohumun spec denetimi, önyükleme hakemi (kilit) | Aşama açma, kilit | Aşama 0 |
-| `referee/` ve `referee/.github/workflows/loop.yml`, beyin reposu | Kurucu | önyükleme hakemi (`wiring` dahil), `import` | Aktarılacak hakem ve döngü iş akışı | Aşama 0 |
-| `targets/<hedef>/units.json`, beyin reposu | Kurucu | `unit.verify` | Doğrulanmış tarif | Aşama 0 |
+| `referee/` ve `referee/.github/workflows/loop.yml`, beyin reposu | Kurucu | önyükleme hakemi (`wiring` dahil; çıkışta `runner.contained`, `29z`), `import` | Aktarılacak hakem ve döngü iş akışı | Aşama 0 |
+| `targets/<hedef>/units.json`, beyin reposu | Kurucu | `unit.verify`; önyükleme hakemi çıkışta (oyuncağınkinin ilk biriminin `env_image`'ı, `29z`) | Doğrulanmış tarif; çıkış kanaryasının imajı | Aşama 0 |
 | `candidates/<hedef>/<cid>/`, beyin reposu | Kurucu | döngü hakemi (D1, D5) | Merge ya da ret | Aşama 0 |
 | `tests/fixtures/toy-repo/`, beyin reposu | Kurucu | önyükleme hakemi çıkışta (#agac: alt ağacın hash'i sonuçta `toy_tree_sha256`), `import` (taze dizine açar, hash'i `toy_tree_sha256` ile aynı olmalı; `25a` 2), operatör (oyuncak hedefin `main`'ine iter) | Oyuncak hedefin içeriği; #agac (`asama-0/10`), #oyuncak (`asama-0/10a`) | Aşama 0 |
 | `snowball-tests.json`, `exit-request.json`, beyin reposu | Kurucu | önyükleme hakemi | Hangi testlerin koşacağı, pinlenecek çıkış SHA'sı | Aşama 0 |

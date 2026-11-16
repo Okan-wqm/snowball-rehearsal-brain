@@ -75,4 +75,6 @@ aktarım satırının adlandırdığı imzalı (A) sonucu `setup/results/<result
 
 **GitHub kimlikleri** (seed-057). `GET /app` yalnız App'in JWT'siyle okunur (App ID ve özel anahtarla imzalı, ömrü en
   çok 10 dakika); kurulum belirteci orada 401 alır. Hedeflerin okunması ve yazılması kurulum belirteciyledir; belirteç
-  yalnız basılırken istenen izinleri taşır, `GET /repos/{repo}/actions/permissions` `administration: read` ister.
+  yalnız basılırken istenen izinleri taşır, `GET /repos/{repo}/actions/permissions` `administration: read` ister. Yazar App'inin
+  iki hakem reposu sırrı (seed-060): `WRITER_APP_ID` (App ID) ve `WRITER_APP_PRIVATE_KEY` (GitHub'ın indirdiği `.pem` dosyasının tamamı); sahip
+  2026-10-31'de GitHub web arayüzünden girdi. Operatör bir sırrın değerini okuyamaz: `WRITER_APP_ID`'nin çevresinde boşluk ya da satır sonu olup olmadığı bilinmiyor; tohum bundan öte bir biçim güvencesi vermez.
