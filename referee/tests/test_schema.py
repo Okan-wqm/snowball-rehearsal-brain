@@ -298,6 +298,27 @@ class Artifacts(unittest.TestCase):
         for payload, fragment in cases:
             self.assert_reason(dict(gen, payload=payload), fragment)
 
+    def test_genesis_seed_epoch_forms(self):
+        """``seed_epoch.seed_sha256`` is null (an epoch that brought the brain only ``spec/tohum``, tohum/25:28) or
+        64 lowercase hex; the other three keys are never null; the entry has the four keys and no other."""
+        gen = self.row("genesis")
+        p, epoch = gen["payload"], gen["payload"]["seed_epoch"]
+        self.assertIsNone(epoch["seed_sha256"])  # the form setup writes is the one the activation ran on
+        for seed in (None, "7" * 64):
+            row = dict(gen, payload=dict(p, seed_epoch=dict(epoch, seed_sha256=seed)))
+            self.assertEqual(schema.row_reasons(stored(row)), [], seed)
+        for seed in ("", "null", "7" * 63, "A" * 64, 0, False, []):
+            self.assert_reason(dict(gen, payload=dict(p, seed_epoch=dict(epoch, seed_sha256=seed))),
+                               "payload.seed_epoch.seed_sha256: not 64 lowercase hex")
+        for key in ("commit", "spec_tohum_sha256", "bootstrap_sha256"):
+            self.assert_reason(dict(gen, payload=dict(p, seed_epoch=dict(epoch, **{key: None}))),
+                               "payload.seed_epoch.%s: not" % key)
+        for key in epoch:
+            self.assert_reason(dict(gen, payload=dict(p, seed_epoch={k: v for k, v in epoch.items() if k != key})),
+                               "payload.seed_epoch.%s: missing" % key)
+        self.assert_reason(dict(gen, payload=dict(p, seed_epoch=dict(epoch, note="x"))), "payload.seed_epoch.note")
+        self.assert_reason(dict(gen, payload=dict(p, seed_epoch=None)), "payload.seed_epoch")
+
     def test_root_status_and_chain_rules(self):
         root = lines(self.roots)[0]
         bad_root = rechain([dict(root, signer="x")])

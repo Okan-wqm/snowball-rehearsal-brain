@@ -45,12 +45,12 @@ summary's not read; ``copy``: ``targets[].base_sha``); of the last ``imports.jso
 ``referee_tree_sha256`` (a counter row that is no transfer is skipped; read by ``loop.accepted.last_import``, the
 one reader D1 shares): ``referee_tree_sha256``, ``result_sha256``
 and ``import_line_sha256`` (that line's bytes without its LF); ``seed_epoch`` (the last ``seed_epochs[]`` entry as
-written); ``policy_sha256``, ``summary_sha256``, ``seed_security_ledger_sha256`` (sha256 of each file's bytes as
+written, in ``ledger.schema.SEED_EPOCH``'s form: its ``seed_sha256`` null or 64 lowercase hex, tohum/25:28); ``policy_sha256``, ``summary_sha256``, ``seed_security_ledger_sha256`` (sha256 of each file's bytes as
 given); ``seed_security_last_row_hash``; ``recipe_sha256`` (of the recipe's RFC 8785 form); ``facts_sha256`` (of
 the RFC 8785 form of ``{"GET <path>": body}`` over the reads). Unusable (``Unusable``): the target not exactly once
 in ``targets[]``, of another kind or without a ``repo`` string, a copy whose ``base_sha`` is not 40 lowercase hex
 (a toy's ``base_sha`` is not read, whatever the entry holds there or lacks: setup leaves it empty), a file that
-is not the JSON it names (``imports.jsonl`` a valid chain of objects), no transfer row or one whose ``referee_tree_sha256`` is not 64 lowercase hex, a read not answered or malformed (a rule without an integer ``ruleset_id`` included).
+is not the JSON it names (``imports.jsonl`` a valid chain of objects), no transfer row or one whose ``referee_tree_sha256`` is not 64 lowercase hex, a last ``seed_epochs[]`` entry of another form (an earlier entry is not read), a read not answered or malformed (a rule without an integer ``ruleset_id`` included).
 
 **Activation** (``activate``): the write half of the genesis cycle (``loop.pulled.genesis``: a target with neither
 ``brain/state`` nor ``brain/integration``), run by ``yaz`` (``loop.job``) after D5 judged the cycle's candidates. Its

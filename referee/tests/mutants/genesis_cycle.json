@@ -198,6 +198,71 @@
    "tests": [
     "test_activate.Genesis.test_bases"
    ]
+  },
+  {
+   "id": "seed_epoch_null_seed_refused",
+   "file": "ledger/schema.py",
+   "old": "\"seed_sha256\": nullable(hex64),",
+   "new": "\"seed_sha256\": hex64,",
+   "tests": [
+    "test_schema.Artifacts.test_genesis_seed_epoch_forms",
+    "test_activate.Genesis.test_seed_epoch_forms"
+   ]
+  },
+  {
+   "id": "seed_epoch_seed_unchecked",
+   "file": "ledger/schema.py",
+   "old": "\"seed_sha256\": nullable(hex64),",
+   "new": "\"seed_sha256\": any_value,",
+   "tests": [
+    "test_schema.Artifacts.test_genesis_seed_epoch_forms"
+   ]
+  },
+  {
+   "id": "seed_epoch_seed_unchecked_at_genesis",
+   "file": "ledger/schema.py",
+   "old": "\"seed_sha256\": nullable(hex64),",
+   "new": "\"seed_sha256\": any_value,",
+   "tests": [
+    "test_activate.Genesis.test_seed_epoch_forms"
+   ]
+  },
+  {
+   "id": "seed_epoch_commit_nullable",
+   "file": "ledger/schema.py",
+   "old": "SEED_EPOCH = shape({\"commit\": hex40,",
+   "new": "SEED_EPOCH = shape({\"commit\": nullable(hex40),",
+   "tests": [
+    "test_schema.Artifacts.test_genesis_seed_epoch_forms",
+    "test_activate.Genesis.test_seed_epoch_forms"
+   ]
+  },
+  {
+   "id": "seed_epoch_spec_nullable",
+   "file": "ledger/schema.py",
+   "old": "SEED_EPOCH = shape({\"commit\": hex40, \"spec_tohum_sha256\": hex64,",
+   "new": "SEED_EPOCH = shape({\"commit\": hex40, \"spec_tohum_sha256\": nullable(hex64),",
+   "tests": [
+    "test_schema.Artifacts.test_genesis_seed_epoch_forms"
+   ]
+  },
+  {
+   "id": "seed_epoch_bootstrap_nullable",
+   "file": "ledger/schema.py",
+   "old": "                    \"bootstrap_sha256\": hex64})",
+   "new": "                    \"bootstrap_sha256\": nullable(hex64)})",
+   "tests": [
+    "test_activate.Genesis.test_seed_epoch_forms"
+   ]
+  },
+  {
+   "id": "seed_epoch_first_read",
+   "file": "activate.py",
+   "old": "\"seed_epoch\": summary[\"seed_epochs\"][-1],",
+   "new": "\"seed_epoch\": summary[\"seed_epochs\"][0],",
+   "tests": [
+    "test_activate.Genesis.test_seed_epoch_forms"
+   ]
   }
  ]
 }

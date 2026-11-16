@@ -89,7 +89,7 @@ def genesis_payload(target: str, counter: dict = COUNTER) -> dict:
     return {"target": target, "base_sha": h(1), "referee_tree_sha256": "2" * 64,
             "result_sha256": hashlib.sha256(counter["result"]).hexdigest(),
             "import_line_sha256": counter["line_sha256"], "seed_epoch": {"commit": h(5), "spec_tohum_sha256": h(6, 64),
-                                                           "seed_sha256": h(7, 64), "bootstrap_sha256": h(8, 64)},
+                                                           "seed_sha256": None, "bootstrap_sha256": h(8, 64)},
             "policy_sha256": h(9, 64), "summary_sha256": h(10, 64), "seed_security_ledger_sha256": h(11, 64),
             "seed_security_last_row_hash": h(12, 64), "recipe_sha256": h(13, 64), "facts_sha256": h(14, 64)}
 

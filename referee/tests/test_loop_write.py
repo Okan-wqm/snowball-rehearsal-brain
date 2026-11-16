@@ -1243,8 +1243,7 @@ class Genesis(StateBase):
         super().setUp()
         self.state = dict({p: b"" for p in B.STATE_CHAINS}, **{B.STATE_STATUS: None})
         self.transfer = YW.transfer()
-        summary = {"seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
-                                    "bootstrap_sha256": "4" * 64}],
+        summary = {"seed_epochs": [AW.seed_epoch()],
                    "targets": [dict(TARGET, repo=YW.REPO, base_sha=AW.summary_base(TARGET["kind"], "c" * 40),
                                     identifiers=[])]}
         self.security = YW.chained([{"row_id": "sec-1", "part": "security", "kind": "note", "payload": {}}])

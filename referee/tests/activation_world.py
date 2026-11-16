@@ -138,6 +138,13 @@ def summary_base(kind: str, commit: str) -> str | None:
     return commit if kind == "copy" else None
 
 
+def seed_epoch(digit: int = 1, seed_sha256: str | None = None) -> dict:
+    """One ``seed_epochs[]`` entry as setup writes it: ``seed_sha256`` null, since an epoch brings the brain only
+    ``spec/tohum`` (tohum/25:28); a test of the hex form names one. The one place the test worlds take it from."""
+    return {"commit": "%x" % digit * 40, "spec_tohum_sha256": "%x" % (digit + 1) * 64, "seed_sha256": seed_sha256,
+            "bootstrap_sha256": "%x" % (digit + 3) * 64}
+
+
 _TREES: list[str] = []
 
 
@@ -165,8 +172,7 @@ class World:
                                  "toy_tree_sha256": "f" * 64},
                                 {"ts": "2026-10-30T10:00:00Z", "stage": 0}])  # a touch that is no transfer
         self.summary = json.dumps({
-            "seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
-                             "bootstrap_sha256": "4" * 64}],
+            "seed_epochs": [seed_epoch()],
             "targets": [{"id": "toy", "repo": REPO, "kind": kind, "base_sha": summary_base(kind, self.main),
                          "identifiers": [],
                          "excluded_paths": [], "unit_candidates": []}]}).encode()

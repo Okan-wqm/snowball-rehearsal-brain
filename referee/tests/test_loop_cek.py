@@ -665,8 +665,7 @@ class CekJob(unittest.TestCase):
         import activation_world as AW
         self.BRAIN = dict(self.BRAIN, **{"candidates/t1/breaks/%s" % f: d for f, d in candidate(BREAKS_TEST).items()})
         _, main = S.store(self.TARGET)
-        summary = {"seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
-                                    "bootstrap_sha256": "4" * 64}],
+        summary = {"seed_epochs": [AW.seed_epoch()],
                    "targets": [dict(self.summary["targets"][0], base_sha=AW.summary_base("toy", main),
                                     identifiers=[])]}
         out, _, _ = self.run_cek(summary=summary, listing=b"%s\trefs/heads/main\n" % main.encode())
@@ -1030,8 +1029,7 @@ class CekJob(unittest.TestCase):
         import activation_world as AW
         self.gated(row("l3", "events", "copy_gate", PR.gate_payload()))
         _, base = S.store(self.TARGET)
-        summary = dict(self.copy_at(base), seed_epochs=[{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64,
-                                                         "seed_sha256": "3" * 64, "bootstrap_sha256": "4" * 64}])
+        summary = dict(self.copy_at(base), seed_epochs=[AW.seed_epoch()])
         summary["targets"] = [dict(t, identifiers=[]) for t in summary["targets"]]
         out, _, _ = self.run_cek(summary=summary, listings=self.listings(t2=b""))
         self.assertEqual(out["ok"], True, out)

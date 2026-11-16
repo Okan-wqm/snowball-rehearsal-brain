@@ -229,10 +229,15 @@ def evidence(value: Any, where: str) -> list[str]:
     return out
 
 
+# One ``seed_epochs[]`` entry of ``setup/summary.json`` (tohum/26c:30-31), the form the genesis row carries. Its
+# ``seed_sha256`` is null or 64 lowercase hex: an epoch that brings the brain only ``spec/tohum`` and no seed code
+# is written with null (tohum/25:28). No page says null of the other three keys, so null is refused there.
+SEED_EPOCH = shape({"commit": hex40, "spec_tohum_sha256": hex64, "seed_sha256": nullable(hex64),
+                    "bootstrap_sha256": hex64})
+
 GENESIS = shape({  # tohum/29o's twelve keys (activate.genesis)
     "target": text, "base_sha": hex40, "referee_tree_sha256": hex64, "result_sha256": hex64,
-    "import_line_sha256": hex64, "seed_epoch": shape({"commit": hex40, "spec_tohum_sha256": hex64,
-                                                      "seed_sha256": hex64, "bootstrap_sha256": hex64}),
+    "import_line_sha256": hex64, "seed_epoch": SEED_EPOCH,
     "policy_sha256": hex64, "summary_sha256": hex64, "seed_security_ledger_sha256": hex64,
     "seed_security_last_row_hash": hex64, "recipe_sha256": hex64, "facts_sha256": hex64,
 })

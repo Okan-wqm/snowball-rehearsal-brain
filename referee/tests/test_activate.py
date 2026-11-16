@@ -136,6 +136,40 @@ class Genesis(unittest.TestCase):
         with self.assertRaises(activate.Unusable):
             self.gen(w)
 
+    def with_epoch(self, w: AW.World, **change) -> AW.World:
+        summary = json.loads(w.files["summary.json"])
+        summary["seed_epochs"][-1] = {k: v for k, v in dict(summary["seed_epochs"][-1], **change).items()
+                                      if v is not ...}
+        w.files["summary.json"] = json.dumps(summary).encode()
+        return w
+
+    def test_seed_epoch_forms(self):
+        """The last ``seed_epochs[]`` entry goes into the payload as written when its ``seed_sha256`` is null (an
+        epoch that brought the brain only ``spec/tohum``, tohum/25:28: the form of the sixth (B) attempt's summary)
+        or 64 lowercase hex, for a toy and for a copy. Any other form of the entry is unusable: another value of
+        ``seed_sha256``, the key absent, null in one of the other three keys, a key no page names."""
+        self.assertIsNone(json.loads(AW.World().files["summary.json"])["seed_epochs"][-1]["seed_sha256"])  # setup's
+        for kind in ("toy", "copy"):
+            for seed in (None, "7" * 64):
+                with self.subTest(kind=kind, seed=seed):
+                    w = self.with_epoch(AW.World(kind=kind), seed_sha256=seed)
+                    got = self.gen(w)
+                    self.assertEqual((got["ok"], got["reasons"]), (True, []))
+                    self.assertEqual(got["payload"]["seed_epoch"], AW.seed_epoch(seed_sha256=seed))
+                    self.assertEqual(got["payload"]["summary_sha256"], sha(w.files["summary.json"]))
+        for change in ({"seed_sha256": ""}, {"seed_sha256": "7" * 63}, {"seed_sha256": "A" * 64},
+                       {"seed_sha256": 0}, {"seed_sha256": False}, {"seed_sha256": ...}, {"commit": None},
+                       {"spec_tohum_sha256": None}, {"bootstrap_sha256": None}, {"bootstrap_sha256": ...},
+                       {"note": "x"}):
+            with self.subTest(change=change):
+                with self.assertRaises(activate.Unusable):
+                    self.gen(self.with_epoch(AW.World(), **change))
+        earlier = AW.World()  # only the last entry is read: a malformed earlier one changes nothing but the bytes
+        summary = json.loads(earlier.files["summary.json"])
+        summary["seed_epochs"].insert(0, {"seed_sha256": "x"})
+        earlier.files["summary.json"] = json.dumps(summary).encode()
+        self.assertEqual(self.gen(earlier)["payload"]["seed_epoch"], AW.seed_epoch())
+
     def test_each_change_shows_in_its_own_field(self):
         first = self.gen(AW.World())["payload"]
         self.assertEqual(self.gen(AW.World())["payload"], first)
