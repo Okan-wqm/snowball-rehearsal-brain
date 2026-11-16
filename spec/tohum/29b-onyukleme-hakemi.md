@@ -43,15 +43,15 @@ isteğidir**; diğer her push **kod isteğidir**, `spec/asama-0` donmadan kabul 
 spec ile kodu karıştıran, `seed/**`, başka `spec/` yolu ya da `.github/` değiştiren, geçmişi yeniden yazan push reddedilir.
 Kurucu kayıtları: `29e`.
 
-**Rakip çağrısı.** İç kullanımda API anahtarı yoktur (satışta anahtara geçilir): rakip, operatörün
-`CLAUDE_CODE_OAUTH_TOKEN`'ıyla koşan, `requirements/claude-cli/`'de sha512'yle pinli `claude` CLI'sidir; yerleşik araç,
-ayar kaynağı, slash komutu ve oturum kaydı yoktur, tavan `--max-budget-usd`'dir. Artefaktı (son kabul edilmiş SHA'dan bu
-yana tam diff) ve ilgili tohum sayfalarını görür, commit ağacını tek MCP sunucusu `rival_mcp.py`'nin `read_file`, `grep`,
-`glob`'uyla salt okur, kararı `submit_verdict` ile verir (`init` olayından kanıtlanır); `founder-ledger.jsonl` diff'ten ve
-ağaçtan çıkarılır. Sunulan model farklıysa, ret, bütçe ya da tur sonu ve biçimsiz karar kabul değil `unresolved`'dır;
-yedek model yoktur. Kimlik, kota, ağ, zaman aşımı ve 5xx kesintidir (`api_error`), ret sayılmaz: aynı SHA üçüncüden sonra
-günde bir, en çok 7 gün denenir, sonra görünür durur. 400/404/413/422 `request_rejected`'dır: değerlendirilmiş sayılır,
-Kurucu'ya yazılmaz, operatörü uyarır. İzolasyon hatası operatör için durdurur. Sır desenli metin: `29e`.
+**Rakip çağrısı.** Rakip `requirements/claude-cli/`'de pinli `claude` CLI'sidir; yerleşik araç, ayar kaynağı, slash
+komutu ve oturum kaydı yoktur, tavan `--max-budget-usd`'dir. İstem: koltuk metni, protokol, değişen yollar, ilgili
+sayfalar, açık iddialar, son kabulden bu yana `--binary` diff. İstemin Unicode kod noktası sayısı `bootstrap.json`
+`limits.max_prompt_chars`'ı aşarsa rakip çağrılmaz (`prompt_too_large`); sonucun `rival` kaydı her koşuda
+`prompt_chars`, `prompt_diff_chars` ve `prompt_max_chars` taşır. Commit ağacını yalnız `rival_mcp.py`'nin `read_file`,
+`grep`, `glob`'uyla salt okur, kararı `submit_verdict` ile verir (`init` olayından kanıtlanır). Sunulan model farklıysa,
+ret, bütçe ya da tur sonu ve biçimsiz karar `unresolved`'dır; yedek model yoktur. Kesinti (`api_error`, `24`) aynı
+SHA'da üçüncüden sonra günde bir, en çok 7 gün denenir, sonra görünür durur. 400/404/413/422 `request_rejected`'dır:
+değerlendirilmiş sayılır, Kurucu'ya yazılmaz. İzolasyon hatası operatör için durdurur. Sır desenli metin: `29e`.
 
 **Kabul.** Kod SHA'sı: Aşama 0 testleri yeşil; vektörler geçer ve değiştirilmiş girdiyi reddeder; kırmızı
 kontroller doğru; rakip geçerli karar verdi; ne yeni bir çürütme ne durumda tutulan kanıtlanmış kusur

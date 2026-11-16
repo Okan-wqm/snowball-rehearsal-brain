@@ -72,3 +72,7 @@ sözleşmeyi sınar (sunulan model istenen, tavan, `cost` satırı; `asama-0/10a
 API'siyle değil: tohum güvenlik defteri `setup/security-ledger.jsonl` (genesis okur ve hash'ler, `29o`, `26c`) ve son
 aktarım satırının adlandırdığı imzalı (A) sonucu `setup/results/<result_sha256>.json` (`yaz` PASS satırının
 `owner_exception`'ını ondan alır, `26d`; adı ve denetimi `26c`). İkisini yalnız operatör yazar (tohum dönemi, aktarım).
+
+**GitHub kimlikleri** (seed-057). `GET /app` yalnız App'in JWT'siyle okunur (App ID ve özel anahtarla imzalı, ömrü en
+  çok 10 dakika); kurulum belirteci orada 401 alır. Hedeflerin okunması ve yazılması kurulum belirteciyledir; belirteç
+  yalnız basılırken istenen izinleri taşır, `GET /repos/{repo}/actions/permissions` `administration: read` ister.
