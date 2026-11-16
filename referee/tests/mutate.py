@@ -116,6 +116,14 @@ not written when none is killed. Then the summary line and exit as above. A surv
 whether it is equivalent or writes the test that kills it. The killers are one run's evidence; run KEPT in the
 normal mode to keep it.
 
+**The child's home.** Every test process (a baseline's, a mutant's, a collector's) gets this process's environment
+with ``HOME`` an empty directory made beside its copy and removed with it, so code a mutant has changed does not
+reach the caller's home through ``HOME`` or ``~`` (a kept mutant that made ``runner.contained`` remove ``$HOME``
+emptied a session's home, its git credentials with it, on 2026-11-16). This is one variable, not a sandbox: a
+mutant still runs as this user and can write or remove any path the user can, named another way (an absolute
+path, the password database's home, ``TMPDIR``); a mutant whose changed code removes or overwrites a path it
+does not make itself is not to be kept.
+
 Out of scope, stated: tests outside the ``tests/`` of a root in ``ROOTS``, mutants that are not one
 textual replacement, and equivalent mutants (a ``survived`` mutant may be one: the runner says it survived,
 a person says why).
@@ -145,6 +153,7 @@ sys.path.insert(0, os.path.join(BRAIN, "referee"))
 from status import depmap  # noqa: E402
 FIELDS = ("id", "file", "old", "new", "tests")
 # A mutant file's root (module docstring) -> its import spaces, brain-relative, in the order a name is found.
+CHILD_HOME = "home"  # beside the copy, in the copy's own temporary directory
 ROOTS = {"referee": ("referee/tests/", "referee/"), ".": ("tests/", "referee/tests/", "referee/")}
 TEST_ID = re.compile(r"[A-Za-z_]\w*(\.[A-Za-z_]\w*){1,2}", re.ASCII)
 # One name run as discover would: referee/tests first on sys.path, the cwd (referee/) after it.
@@ -206,7 +215,14 @@ def _copy(brain: str, mutant: dict[str, Any] | None = None) -> str:
             text = fh.read()
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text.replace(mutant["old"], mutant["new"]))
+    os.mkdir(os.path.join(work, CHILD_HOME))
     return copy
+
+
+def child_env(copy: str) -> dict[str, str]:
+    """The environment of a test process run in ``copy``: this process's, with ``HOME`` the empty directory made
+    beside the copy (module docstring, "The child's home")."""
+    return dict(os.environ, HOME=os.path.join(os.path.dirname(copy), CHILD_HOME))
 
 
 def _emitter(emit: Callable[[Any], None] | None) -> Callable[[Any], None]:
@@ -230,7 +246,7 @@ def _run_tests(copy: str, root: str, tests: list[str], limits: list[float]) -> t
         start = time.monotonic()
         try:
             done = subprocess.run(argv,
-                                  cwd=os.path.join(copy, root), stdout=subprocess.DEVNULL,
+                                  cwd=os.path.join(copy, root), env=child_env(copy), stdout=subprocess.DEVNULL,
                                   stderr=subprocess.DEVNULL, timeout=limit)
         except subprocess.TimeoutExpired:
             return "timeout", seconds + [time.monotonic() - start]
@@ -540,7 +556,8 @@ def _collect(copy: str, root: str, entry: str, limit: float) -> tuple[dict[str, 
     try:
         try:
             done = subprocess.run([sys.executable, "-c", COLLECT, entry, path], cwd=os.path.join(copy, root),
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=limit)
+                                  env=child_env(copy), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                  timeout=limit)
         except subprocess.TimeoutExpired:
             return None, time.monotonic() - start
         took = time.monotonic() - start

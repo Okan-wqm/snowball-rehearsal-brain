@@ -592,6 +592,51 @@ class Discover(unittest.TestCase):
         self.assertEqual(sorted(r["id"] for r in emitted[1:]), ["held_first", "third"])
 
 
+class ChildHome(unittest.TestCase):
+    """A test process's ``HOME`` is an empty directory beside its copy, never the caller's. The caller's home is a
+    scratch directory here (the mutant below writes where ``~`` points; it must never be a real home)."""
+
+    def setUp(self):
+        self.brain = tempfile.mkdtemp(prefix="t-mutate-")
+        self.addCleanup(shutil.rmtree, self.brain, ignore_errors=True)
+        write_tree(self.brain, {"referee/mod.py": MOD, "referee/tests/test_mod.py": TEST, "callers-home/keep": "k"})
+        self.home, self.marker = os.path.join(self.brain, "callers-home"), os.path.join(self.brain, "marker")
+        patcher = mock.patch.dict(os.environ, {"HOME": self.home})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        new = ("import os\n    home = os.path.expanduser('~')\n"
+               "    open(%r, 'a').write(home + ' ' + ','.join(os.listdir(home)) + '\\n')\n"
+               "    open(os.path.join(home, 'seen'), 'w').close()\n    return a - b" % self.marker)
+        self.mutant = mutant("h", "return a + b", new)
+        self.file = os.path.join(self.brain, "m.json")
+        with open(self.file, "w") as fh:
+            json.dump({"mutants": [self.mutant]}, fh)
+
+    def check(self, runs: int) -> None:
+        self.assertEqual(os.listdir(self.home), ["keep"], "the caller's home is as it was")
+        with open(self.marker) as fh:
+            seen = [line.rstrip("\n").split(" ") for line in fh]
+        self.assertEqual(len(seen), runs, "the mutant's code ran and said where its home was")
+        for home, entries in seen:
+            self.assertEqual((os.path.basename(home), entries), (mutate.CHILD_HOME, ""), "an empty directory")
+            self.assertTrue(os.path.basename(os.path.dirname(home)).startswith("mutate-"), home)
+            self.assertFalse(os.path.exists(os.path.dirname(home)), "removed with its copy")
+
+    def test_a_mutants_test_process_has_its_own_empty_home(self):
+        rows = mutate.run(self.brain, [self.file], 2, 120.0)
+        self.assertEqual([r["outcome"] for r in rows], ["killed"])
+        self.check(1)
+
+    def test_a_collectors_test_process_has_its_own_empty_home(self):
+        rows = mutate.discover(self.brain, self.file, os.path.join(self.brain, "kept.json"), 2, 120.0)
+        self.assertEqual([r["outcome"] for r in rows], ["killed"])
+        self.check(1)
+
+    def test_child_env_changes_home_alone(self):
+        env = mutate.child_env(os.path.join(self.brain, "x", "brain"))
+        self.assertEqual(env, dict(os.environ, HOME=os.path.join(self.brain, "x", mutate.CHILD_HOME)))
+
+
 class Select(unittest.TestCase):
     """``--touched``'s rule: which mutants a set of changed paths selects, on a small brain made here."""
 

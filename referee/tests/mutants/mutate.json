@@ -450,6 +450,42 @@
    "tests": [
     "test_mutate.Runner.test_the_command_line_passes_its_limits"
    ]
+  },
+  {
+   "id": "child_home_not_given_to_run",
+   "file": "tests/mutate.py",
+   "old": "cwd=os.path.join(copy, root), env=child_env(copy), stdout=subprocess.DEVNULL,\n                                  stderr=subprocess.DEVNULL, timeout=limit)\n        except subprocess.TimeoutExpired:\n            return \"timeout\"",
+   "new": "cwd=os.path.join(copy, root), stdout=subprocess.DEVNULL,\n                                  stderr=subprocess.DEVNULL, timeout=limit)\n        except subprocess.TimeoutExpired:\n            return \"timeout\"",
+   "tests": [
+    "test_mutate.ChildHome.test_a_mutants_test_process_has_its_own_empty_home"
+   ]
+  },
+  {
+   "id": "child_home_not_given_to_collector",
+   "file": "tests/mutate.py",
+   "old": "                                  env=child_env(copy), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n",
+   "new": "                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n",
+   "tests": [
+    "test_mutate.ChildHome.test_a_collectors_test_process_has_its_own_empty_home"
+   ]
+  },
+  {
+   "id": "child_home_is_the_copy",
+   "file": "tests/mutate.py",
+   "old": "HOME=os.path.join(os.path.dirname(copy), CHILD_HOME))",
+   "new": "HOME=copy)",
+   "tests": [
+    "test_mutate.ChildHome.test_child_env_changes_home_alone"
+   ]
+  },
+  {
+   "id": "child_env_is_home_alone",
+   "file": "tests/mutate.py",
+   "old": "return dict(os.environ, HOME=",
+   "new": "return dict(PATH=os.environ.get(\"PATH\", \"\"), HOME=",
+   "tests": [
+    "test_mutate.ChildHome.test_child_env_changes_home_alone"
+   ]
   }
  ]
 }

@@ -148,15 +148,6 @@
       ]
     },
     {
-      "id": "img_run_cmd_home_is_host_home",
-      "file": "runner/contained.py",
-      "old": "    home = tempfile.mkdtemp(prefix=\"snowball-home-\", dir=base)\n",
-      "new": "    home = os.environ.get(\"HOME\", \"/\")\n",
-      "tests": [
-        "test_contained.ImageTest.test_the_run_command_fetches_the_image_a_fresh_host_lacks_then_runs_control_and_job"
-      ]
-    },
-    {
       "id": "img_run_cmd_fetch_before_control_check",
       "file": "runner/contained.py",
       "old": "    _control_checked(job, red_control)\n    home = ",
