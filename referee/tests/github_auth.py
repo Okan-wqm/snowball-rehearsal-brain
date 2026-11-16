@@ -8,6 +8,13 @@ What it holds as fact (spec/tohum/CHANGELOG.md, 2026-11-15, the operator's two o
 - ``GET /repos/{repo}/actions/permissions`` asks ``administration: read`` of the token, and a token carries only
   the permissions asked for when it was made.
 
+What it holds from the token action's own source (actions/create-github-app-token at the commit ``loop.yml`` pins,
+64ab729a, ``dist/main.cjs``, read 2026-11-16), for ``mint``: every input is read with ``@actions/core``'s
+``getInput``, which answers ``val.trim()`` (``get_input`` here, the code points written out from ECMA-262, not
+taken from the code under test); an id or a key empty after that is refused; the key's two-character ``\\n`` is
+made a line end before it is read. Not emulated: what else Node's key reader accepts of a PEM (``mint`` takes the
+App's own PEM text, trimmed, and no other writing of the key).
+
 What it holds from my reading of GitHub's REST documentation, not observed live by anyone here (a wrong row is this
 file's error, to be corrected when a real run shows it):
 
@@ -43,6 +50,21 @@ LEVELS = {"read": 1, "write": 2}
 # tohum/25 item 6: what the writer App is installed with
 APP_PERMISSIONS = {"contents": "write", "pull_requests": "write", "checks": "write", "administration": "read",
                    "metadata": "read"}
+
+# ECMA-262 WhiteSpace (TAB, VT, FF, SP, NBSP, ZWNBSP and category Zs) and LineTerminator (LF, CR, LS, PS)
+JS_TRIMMED = [0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0xA0, 0x1680, *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F,
+              0x205F, 0x3000, 0xFEFF]
+
+
+def get_input(value: str) -> str:
+    """``value.trim()`` as JavaScript does it."""
+    start, end = 0, len(value)
+    while start < end and ord(value[start]) in JS_TRIMMED:
+        start += 1
+    while end > start and ord(value[end - 1]) in JS_TRIMMED:
+        end -= 1
+    return value[start:end]
+
 
 # (method, route under /repos/{repo}/) -> (permission, level); the first row that matches decides
 NEEDS = [
@@ -211,14 +233,18 @@ class GitHub(urllib.request.BaseHandler):
 
     def mint(self, inputs: dict, secrets: dict, repositories: list[str]) -> str:
         """An installation token as the token action makes it from its ``with`` (``loop.job.APP_INPUTS``):
-        ``${{ secrets.X }}`` read from ``secrets``, the App's JWT made by GitHub's side from ``app-id`` and
-        ``private-key`` (they must be this App's), ``permission-<name>: <level>`` the token's permissions (with
-        none asked, every permission of the App), ``repositories`` what the scope step gave."""
+        ``${{ secrets.X }}`` read from ``secrets`` and then as the action reads an input (the module docstring),
+        the App's JWT made by GitHub's side from ``app-id`` and ``private-key`` (they must be this App's),
+        ``permission-<name>: <level>`` the token's permissions (with none asked, every permission of the App),
+        ``repositories`` what the scope step gave."""
         def secret(value):
             m = re.fullmatch(r"\$\{\{ secrets\.([A-Z0-9_]+) \}\}", value)
-            return secrets[m.group(1)] if m else value
+            return get_input(str(secrets[m.group(1)] if m else value))
 
-        if str(secret(inputs["app-id"])) != str(self.app.id) or secret(inputs["private-key"]) != self.app.pem:
+        app_id, key = secret(inputs["app-id"]), secret(inputs["private-key"])
+        if not app_id or not key:
+            raise MintRefused("an input that must be set to a non-empty string")
+        if app_id != str(self.app.id) or get_input(key.replace("\\n", "\n")) != self.app.pem.strip():
             raise MintRefused("401: not this App's id and key")
         asked = {name[len("permission-"):].replace("-", "_"): level for name, level in inputs.items()
                  if name.startswith("permission-")}

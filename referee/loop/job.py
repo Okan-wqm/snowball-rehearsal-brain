@@ -341,6 +341,18 @@ CONTROL_RUN = (
 APP_ID_ENV, APP_KEY_ENV = "WRITER_APP_ID", "WRITER_APP_PRIVATE_KEY"
 APP_SECRETS = {name: "${{ secrets.%s }}" % name for name in (APP_ID_ENV, APP_KEY_ENV)}
 
+# What JavaScript's ``String.prototype.trim`` removes (ECMA-262 WhiteSpace and LineTerminator): the token action
+# reads each input through ``@actions/core``'s ``getInput``, which answers ``val.trim()``.
+JS_SPACE = "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a" \
+           "\u2028\u2029\u202f\u205f\u3000\ufeff"
+
+
+def action_input(value: str) -> str:
+    """``value`` as the token action's ``getInput`` reads an input: without ``JS_SPACE`` at either end, nothing
+    else changed (space inside the value stays, and so does a character ``JS_SPACE`` does not hold)."""
+    return value.strip(JS_SPACE)
+
+
 # The writer App token: made in ``yaz``, limited to the App's permissions of tohum/25 item 6 (what target.write
 # writes with, MF9, and ``administration: read``, which genesis' ``GET actions/permissions`` on a copy asks of the
 # token: a token carries only the permissions asked for when it is made, spec/tohum/CHANGELOG.md 2026-11-15) and to
@@ -895,19 +907,22 @@ def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, sig
 def writer_transport(environ: dict[str, str], now: Any, app: bool = False, handlers: tuple = ()) -> W.HttpTransport:
     """``yaz``'s API: ``target.write.HttpTransport`` with ``WRITER_TOKEN``, the installation token. ``app`` (the
     genesis cycle, whose first read is ``GET /app``) adds the App's own credential: a JWT of ``WRITER_APP_ID`` and
-    ``WRITER_APP_PRIVATE_KEY`` (``target.app_jwt.token``) made at the clock's time when that read is sent; either
-    unset is unusable before any request, a key ``target.app_jwt`` refuses is unusable at that read. Without
-    ``app`` the transport holds no App credential, whatever the environment holds. ``handlers`` are urllib's (tests
-    put their GitHub there)."""
+    ``WRITER_APP_PRIVATE_KEY`` (``target.app_jwt.token``) made at the clock's time when that read is sent. The two
+    secrets are the ones the ``writer token`` step gave the token action in the same job, and each is read here
+    as that action reads its input (``action_input``): the installation token in ``WRITER_TOKEN`` was made from
+    the trimmed values, so the JWT is too. Either unset, or empty once read so, is unusable before any request;
+    an id or a key ``target.app_jwt`` refuses is unusable at that read. Without ``app`` the transport holds no
+    App credential, whatever the environment holds. ``handlers`` are urllib's (tests put their GitHub there)."""
     if not app:
         return W.HttpTransport(environ["WRITER_TOKEN"], handlers)
-    for name in (APP_ID_ENV, APP_KEY_ENV):
-        if not environ.get(name):
+    secrets = {name: action_input(environ.get(name) or "") for name in (APP_ID_ENV, APP_KEY_ENV)}
+    for name, value in secrets.items():
+        if not value:
             raise Unusable("yaz: %s is not set" % name)
 
     def jwt() -> str:
         try:
-            return AJ.token(environ[APP_ID_ENV], environ[APP_KEY_ENV], int(now().timestamp()))
+            return AJ.token(secrets[APP_ID_ENV], secrets[APP_KEY_ENV], int(now().timestamp()))
         except AJ.Unusable as exc:
             raise W.Unusable(cli.cause(exc)) from None
 

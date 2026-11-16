@@ -72,6 +72,18 @@ class Jwt(unittest.TestCase):
         # line ends and outer blank lines are the file's, not the key's
         self.assertEqual(AJ.token("4242", "\n" + PEM.replace("\n", "\r\n") + "\n", NOW), token)
 
+    def test_line_ends_written_as_backslash_n_are_line_ends(self):
+        token, one_line = AJ.token("4242", PEM, NOW), PEM.replace("\n", "\\n")
+        self.assertNotIn("\n", one_line)
+        self.assertEqual(AJ.token("4242", one_line, NOW), token)
+        half = len(PEM) // 2
+        self.assertEqual(AJ.token("4242", PEM[:half].replace("\n", "\\n") + PEM[half:], NOW), token)
+        self.assertEqual(AJ.token("4242", GA.pem(GA.pkcs8(GA.pkcs1(KEY)), "PRIVATE KEY").replace("\n", "\\n"), NOW),
+                         token)
+        # only that pair of characters: another escape stays what it is and is no part of a PEM line
+        for other in ("\\r\\n", "\\\\n", "\\N", "/n", "\\t"):
+            self.assertRegex(refusal(PEM.replace("\n", other)), r"\Aprivate key: ", other)
+
     def test_a_pem_that_is_not_one_plain_rsa_block_is_refused(self):
         der = GA.pkcs1(KEY)
         body = PEM.splitlines()
@@ -158,8 +170,15 @@ class Jwt(unittest.TestCase):
             self.assertEqual(refusal(GA.pem(GA.pkcs1(key))), "private key: a modulus under 2048 bits")
 
     def test_app_id_and_clock(self):
-        for app_id in ("", "a b", "x" * 65, 4242, None, "42\n", "a/b"):
-            self.assertEqual(refusal(PEM, app_id=app_id), "App id: not an App id or a client id")
+        space, other = "space or a line end in it", "a character that is not an ASCII letter, a digit, '.', '_' or '-'"
+        for app_id, why in (("", "empty"), (4242, "not text"), (None, "not text"), (b"4242", "not text"),
+                            ("x" * 65, "longer than 64 characters"), (" " * 65, "longer than 64 characters"),
+                            ("a b", space), ("42\n", space), ("\t42", space), ("42\x1f", space), ("4\u00a02", space),
+                            ("a/b", other), ("\ufeff42", other), ("42\u200b", other), ("\"42\"", other),
+                            ("4\u06f2", other), ("\u00e9", other), ("42\\n", other), ("a/ b", space)):
+            self.assertEqual(refusal(PEM, app_id=app_id), "App id: not an App id or a client id (%s)" % why)
+        for app_id in ("4242", "Iv1.0123456789abcdef", "Iv23liABCDEFGHIJKLMNOP", "x" * 64, "a", "._-"):
+            self.assertEqual(GA.jwt_claims(AJ.token(app_id, PEM, NOW), KEY["n"], KEY["e"])["iss"], app_id)
         for at in (1.5, float(NOW), True, None, "1", 59, -1):
             self.assertEqual(refusal(PEM, now=at), "now: not whole seconds since the epoch")
         self.assertEqual(GA.jwt_claims(AJ.token("4242", PEM, 60), KEY["n"], KEY["e"])["iat"], 0)
@@ -371,6 +390,49 @@ class WriterTransport(unittest.TestCase):
                 self.assertEqual(str(ctx.exception), "yaz: %s is not set" % name)
         self.assertEqual(gh.seen, [])
 
+    def test_the_two_secrets_are_read_as_the_token_action_reads_them(self):
+        """The fifth (B) attempt (run 43853494127): the action made the token from ``WRITER_APP_ID`` and ``yaz``
+        refused the same secret. Each rule of ``action_input`` against the tests' token action, which reads its
+        inputs by its own list of code points."""
+        world, gh, token = self.world()
+        app = (200, {"id": AW.APP_ID, "slug": "snowball-writer"})
+
+        def read(app_id, key):
+            """``GET /app`` with the secrets as given, after the action made a token from the same two."""
+            secrets = {J.APP_ID_ENV: app_id, J.APP_KEY_ENV: key}
+            gh.mint(J.APP_INPUTS, secrets, [AW.REPO])
+            return J.writer_transport(environ(token, **secrets), CLOCK, True, (gh,))("GET", "/app", None)
+
+        # every character JavaScript's trim removes, at either end of either secret, alone and together
+        self.assertEqual(sorted(map(ord, J.JS_SPACE)), sorted(GA.JS_TRIMMED))
+        for space in list(J.JS_SPACE) + ["\r\n", " \t\ufeff\n"]:
+            for app_id, key in ((space + "4242", PEM), ("4242" + space, PEM), ("4242", space + PEM),
+                                ("4242", PEM + space), (space + "4242" + space, space + PEM + space)):
+                self.assertEqual(read(app_id, key), app, ascii(space))
+        self.assertEqual(read("4242\n", PEM.replace("\n", "\\n") + "\n"), app)  # a key kept on one line
+        self.assertEqual(len(gh.seen), 5 * (len(GA.JS_TRIMMED) + 2) + 1)
+        # nothing else is removed: what Python's strip takes and JavaScript's trim does not, a zero-width space,
+        # space inside the id. The action makes no token of these and yaz sends nothing
+        sent = len(gh.seen)
+        for app_id in ("4242\x1f", "\x1c4242", "4242\x85", "\u200b4242", "4242\u180e", "42 42", "42\n42",
+                       "\"4242\"", "4242\\n"):
+            with self.assertRaises(GA.MintRefused, msg=ascii(app_id)):
+                gh.mint(J.APP_INPUTS, {J.APP_ID_ENV: app_id, J.APP_KEY_ENV: PEM}, [AW.REPO])
+            with self.assertRaises(W.Unusable, msg=ascii(app_id)) as ctx:
+                J.writer_transport(environ(token, **{J.APP_ID_ENV: app_id}), CLOCK, True, (gh,))("GET", "/app", None)
+            self.assertRegex(str(ctx.exception), r"\AApp id: not an App id or a client id \((space or a line end in "
+                                                 r"it|a character that is not [^()]+)\)\Z")
+            self.assertNotIn(app_id.strip("\x1f\x1c\x85\u200b\u180e\"\\n"), str(ctx.exception))
+        # a secret that is only such space is not set, for the action and here
+        for name in (J.APP_ID_ENV, J.APP_KEY_ENV):
+            for blank in ("\n", " \t\r\n", "\ufeff", J.JS_SPACE):
+                with self.assertRaises(GA.MintRefused):
+                    gh.mint(J.APP_INPUTS, dict(SECRETS, **{name: blank}), [AW.REPO])
+                with self.assertRaises(J.Unusable) as ctx:
+                    J.writer_transport(environ(token, **{name: blank}), CLOCK, True, (gh,))
+                self.assertEqual(str(ctx.exception), "yaz: %s is not set" % name)
+        self.assertEqual(len(gh.seen), sent)
+
     def test_a_key_that_is_refused_is_unusable_at_the_read_without_its_bytes(self):
         world, gh, token = self.world()
         bad = GA.pem(GA.pkcs1(KEY), "EC PRIVATE KEY")
@@ -382,7 +444,7 @@ class WriterTransport(unittest.TestCase):
         self.assertEqual(len(gh.seen), 1)
         with self.assertRaises(W.Unusable) as ctx:
             J.writer_transport(environ(token, **{J.APP_ID_ENV: "a b"}), CLOCK, True, (gh,))("GET", "/app", None)
-        self.assertEqual(str(ctx.exception), "App id: not an App id or a client id")
+        self.assertEqual(str(ctx.exception), "App id: not an App id or a client id (space or a line end in it)")
 
     def test_the_jwt_is_made_at_the_clock_s_time_of_the_read(self):
         world, gh, token = self.world()
@@ -447,7 +509,11 @@ class Job(TLW.Genesis):
         with self.assertRaises(J.Unusable):
             self.own(**{J.APP_KEY_ENV: ""})
         self.assertEqual(self.auth.seen, [])
-        out = self.own()
+        # the genesis cycle with the secrets as a paste may leave them (a line end after the id, the key on one
+        # line): the token action makes its token of them, and so does yaz its JWT
+        pasted = {J.APP_ID_ENV: SECRETS[J.APP_ID_ENV] + "\n", J.APP_KEY_ENV: PEM.replace("\n", "\\n") + "\n"}
+        self.auth.mint(J.APP_INPUTS, pasted, [YW.REPO])
+        out = self.own(**pasted)
         self.assertEqual((out["ok"], out["done"], out["merge"]), (True, ["D5", "D6"], "good"), out)
         self.assertEqual(self.apps, [True])
         self.assertEqual(self.auth.seen[0], ("GET", "/app", "jwt", 200))

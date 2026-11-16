@@ -11,6 +11,9 @@ of its JSON with sorted keys and no spaces, signed with RSASSA-PKCS1-v1_5 over S
 
 The key (``private_key``) is the PEM GitHub hands out for an App, read with the standard library alone:
 
+- its line ends may be written as the two characters ``\\n`` (a key kept on one line): each is read as a line
+  end first, as the JWT library of the token action reads the same secret (``privateKey.replace(/\\\\n/g, "\\n")``
+  in universal-github-app-jwt, read in actions/create-github-app-token 64ab729a's ``dist/main.cjs``);
 - one block, ``RSA PRIVATE KEY`` (PKCS#1 ``RSAPrivateKey``, the form GitHub downloads) or ``PRIVATE KEY`` (PKCS#8
   ``PrivateKeyInfo`` whose algorithm is ``rsaEncryption`` with NULL parameters, holding the same structure); text
   before or after the block, a header line inside it (an encrypted PEM has ``Proc-Type``), any other label
@@ -22,11 +25,15 @@ The key (``private_key``) is the PEM GitHub hands out for an App, read with the 
 
 ``sign`` computes ``em ** d mod n`` and checks ``sig ** e mod n == em`` before answering; a mismatch raises.
 
+Refused here, though the token action's side may read it (it gives a PKCS#1 key to Node's ``createPrivateKey``,
+whose PEM reader was not compared with this one), stated: a PKCS#1 block with text before or after it.
+
 Not done here, stated: whether ``p`` and ``q`` are prime (a key of composite factors that passes the checks above
 signs, and GitHub refuses what does not verify under the App's public key); constant-time arithmetic (Python's
 ``pow`` is not; the key signs one token per genesis cycle on a runner that is discarded, and nothing here answers
 a caller who chooses the message); verifying a JWT (the tests' GitHub does, ``tests/github_auth.py``); every
-algorithm but RS256. No message of ``Unusable`` holds a byte of the key.
+algorithm but RS256. No message of ``Unusable`` holds a byte of the key or a character of the App id; the App id's
+refusal names the rule it breaks (``_why_not``), so a job's line says why without showing the secret.
 """
 
 from __future__ import annotations
@@ -127,7 +134,7 @@ def private_key(pem: str) -> tuple[int, int, int]:
     """``(n, e, d)`` of the PEM (see the module docstring); ``Unusable`` otherwise."""
     if not isinstance(pem, str):
         raise Unusable("private key: not text")
-    lines = [line.strip() for line in pem.strip().splitlines()]
+    lines = [line.strip() for line in pem.replace("\\n", "\n").strip().splitlines()]
     for label in LABELS:
         if len(lines) >= 3 and lines[0] == "-----BEGIN %s-----" % label and lines[-1] == "-----END %s-----" % label:
             break
@@ -161,10 +168,23 @@ def sign(key: tuple[int, int, int], message: bytes) -> bytes:
     return sig.to_bytes(size, "big")
 
 
+def _why_not(app_id: object) -> str:
+    """Which rule of ``APP_ID`` the value breaks, the first of these that holds, with no character of the value."""
+    if not isinstance(app_id, str):
+        return "not text"
+    if not app_id:
+        return "empty"
+    if len(app_id) > 64:
+        return "longer than 64 characters"
+    if any(ch.isspace() for ch in app_id):
+        return "space or a line end in it"
+    return "a character that is not an ASCII letter, a digit, '.', '_' or '-'"
+
+
 def token(app_id: str, pem: str, now: int) -> str:
     """The App's JWT at ``now`` (seconds since the epoch); see the module docstring."""
     if not isinstance(app_id, str) or not APP_ID.fullmatch(app_id):
-        raise Unusable("App id: not an App id or a client id")
+        raise Unusable("App id: not an App id or a client id (%s)" % _why_not(app_id))
     if type(now) is not int or now < SKEW:
         raise Unusable("now: not whole seconds since the epoch")
     key = private_key(pem)

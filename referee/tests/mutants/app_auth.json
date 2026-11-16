@@ -321,8 +321,8 @@
   {
    "id": "empty_secret_passes",
    "file": "loop/job.py",
-   "old": "    for name in (APP_ID_ENV, APP_KEY_ENV):\n        if not environ.get(name):",
-   "new": "    for name in (APP_ID_ENV, APP_KEY_ENV):\n        if name not in environ:",
+   "old": "        if not value:\n            raise Unusable(\"yaz: %s is not set\" % name)",
+   "new": "        if value is None:\n            raise Unusable(\"yaz: %s is not set\" % name)",
    "tests": [
     "test_app_auth.WriterTransport"
    ]
@@ -352,6 +352,79 @@
    "new": "{\"WRITER_TOKEN\": \"${{ steps.app.outputs.token }}\",",
    "tests": [
     "test_app_auth.Registry"
+   ]
+  },
+  {
+   "id": "secret_not_read_as_action_input",
+   "file": "loop/job.py",
+   "old": "{name: action_input(environ.get(name) or \"\") for name",
+   "new": "{name: environ.get(name) or \"\" for name",
+   "tests": [
+    "test_app_auth.WriterTransport"
+   ]
+  },
+  {
+   "id": "secret_python_strip",
+   "file": "loop/job.py",
+   "old": "    return value.strip(JS_SPACE)",
+   "new": "    return value.strip()",
+   "tests": [
+    "test_app_auth.WriterTransport"
+   ]
+  },
+  {
+   "id": "secret_trim_left_only",
+   "file": "loop/job.py",
+   "old": "    return value.strip(JS_SPACE)",
+   "new": "    return value.lstrip(JS_SPACE)",
+   "tests": [
+    "test_app_auth.WriterTransport"
+   ]
+  },
+  {
+   "id": "jwt_of_untrimmed_secret",
+   "file": "loop/job.py",
+   "old": "AJ.token(secrets[APP_ID_ENV], secrets[APP_KEY_ENV],",
+   "new": "AJ.token(environ[APP_ID_ENV], secrets[APP_KEY_ENV],",
+   "tests": [
+    "test_app_auth.WriterTransport"
+   ]
+  },
+  {
+   "id": "key_escaped_line_ends_unread",
+   "file": "target/app_jwt.py",
+   "old": "pem.replace(\"\\\\n\", \"\\n\").strip()",
+   "new": "pem.strip()",
+   "tests": [
+    "test_app_auth.Jwt"
+   ]
+  },
+  {
+   "id": "job_secret_line_end_kept",
+   "file": "loop/job.py",
+   "old": "    return value.strip(JS_SPACE)",
+   "new": "    return value.strip(\" \")",
+   "tests": [
+    "test_app_auth.Job"
+   ]
+  },
+  {
+   "id": "app_id_why_line_end_unnamed",
+   "file": "target/app_jwt.py",
+   "old": "    if any(ch.isspace() for ch in app_id):",
+   "new": "    if \" \" in app_id:",
+   "tests": [
+    "test_app_auth.Jwt"
+   ]
+  },
+  {
+   "id": "app_id_why_holds_the_value",
+   "file": "target/app_jwt.py",
+   "old": "        return \"space or a line end in it\"",
+   "new": "        return \"space or a line end in %r\" % app_id",
+   "tests": [
+    "test_app_auth.Jwt",
+    "test_app_auth.WriterTransport"
    ]
   }
  ]
