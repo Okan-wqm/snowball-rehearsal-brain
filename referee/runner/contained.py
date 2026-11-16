@@ -104,6 +104,14 @@ signals and the interpreter being killed.
     python -m runner.contained run FILE  FILE {job, red_control, operating, base?}; job and red_control are
                                          {image, cmd, tree?, artifacts?, env?, uid?, gid?}
 
+``run`` (``run_request``; tohum/29z's command): the red control's two rules first (a request without one, or
+with one in another image, is refused before any docker call), then ``ensure_image`` on the job's image, once,
+with ``operating.kos_wall_s`` as each docker call's timeout and a fresh directory, removed afterwards, as the
+docker CLI's ``HOME``; then ``run_with_red_control``. A host that cannot be made to hold the image gets
+``{"valid": false, "reasons": [<ensure_image's reason>], "result": null, "red_control": null}``, exit 1, and no
+container starts. The command's own wall time is therefore up to four docker calls of ``kos_wall_s`` each
+(inspect, pull, control, job); it holds no total of its own.
+
 ``argv`` (tohum/29f group ``contained``): builds the request layout's argv; it does not run docker, reads
 no host path and makes nothing on disk. All nine fields are required, of their JSON types (``cmd`` a
 non-empty list of strings, ``artefacts`` strings, ``env`` string values; other keys are ignored); otherwise
@@ -816,19 +824,38 @@ def red_control_reasons(red: dict) -> list[str]:
     return []
 
 
-def run_with_red_control(job: dict, red_control: dict, operating: dict, runner: Runner | None = None,
-                         base: str | None = None) -> dict:
-    """``job`` and the known bad ``red_control``, each contained; the run is valid only if the control is red."""
+def _control_checked(job: dict, red_control: Any) -> None:
     if not isinstance(red_control, dict) or not red_control.get("cmd"):
         raise ContainmentError("every run carries a red control")
     if red_control.get("image") != job.get("image"):
         raise ContainmentError("the red control runs in the job's image")
+
+
+def run_with_red_control(job: dict, red_control: dict, operating: dict, runner: Runner | None = None,
+                         base: str | None = None) -> dict:
+    """``job`` and the known bad ``red_control``, each contained; the run is valid only if the control is red."""
+    _control_checked(job, red_control)
     red = run(red_control, operating, runner, base)
     main = run(job, operating, runner, base)
     reasons = red_control_reasons(red)
     if not main["valid"]:
         reasons.append(main["status"])
     return {"valid": not reasons, "reasons": reasons, "result": main, "red_control": red}
+
+
+def run_request(req: dict, runner: Runner | None = None) -> dict:
+    """The ``run`` command's request ``{job, red_control, operating, base?}``: the host is made to hold the
+    job's image, then ``run_with_red_control``; see the module docstring, "``run``"."""
+    job, red_control, operating, base = req["job"], req.get("red_control"), req["operating"], req.get("base")
+    _control_checked(job, red_control)
+    home = tempfile.mkdtemp(prefix="snowball-home-", dir=base)
+    try:
+        bad = ensure_image(job["image"], limits(operating, RUN_LIMITS)["kos_wall_s"], home, runner)
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+    if bad:
+        return {"valid": False, "reasons": bad, "result": None, "red_control": None}
+    return run_with_red_control(job, red_control, operating, runner, base)
 
 
 # ---------------------------------------------------------------- command line
@@ -848,7 +875,7 @@ def main(argv: list[str]) -> int:
         if len(argv) == 2 and argv[0] == "run":
             with open(argv[1], encoding="utf-8") as fh:
                 req = cli.load(fh)
-            report = run_with_red_control(req["job"], req.get("red_control"), req["operating"], base=req.get("base"))
+            report = run_request(req)
             _emit(report)
             return 0 if report["valid"] else 1
         _emit({"error": "usage: python -m runner.contained argv|check|run FILE"})

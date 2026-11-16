@@ -840,6 +840,101 @@ class ImageTest(Base):
                                            base=self.base)
         self.assertEqual((r["valid"], r["reasons"], len(fresh.calls)), (True, [], 2))
 
+    def command(self, docker, req) -> tuple[int, dict, str]:
+        """``python -m runner.contained run FILE`` in this process, ``docker`` in the docker CLI's place and
+        every directory the command makes under ``self.base``: exit code, stdout's last line, stderr."""
+        path = os.path.join(self.base, "request.json")
+        with open(path, "w") as fh:
+            json.dump(req, fh)
+        out, err = io.StringIO(), io.StringIO()
+        with unittest.mock.patch.object(contained, "docker_runner", docker), \
+                unittest.mock.patch.object(tempfile, "tempdir", self.base), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = contained.main(["run", path])
+        return code, json.loads(out.getvalue().splitlines()[-1]), err.getvalue()
+
+    def canary_request(self, *steps: str) -> dict:
+        """tohum/29z's request: three keys, ``job`` and ``red_control`` of ``image`` and ``cmd`` alone."""
+        probe = os.path.join(self.tree, "probe.py")  # a host path outside the container's /work, /out, /in
+        return {"job": {"image": IMAGE, "cmd": ["python3", probe, *steps]},
+                "red_control": {"image": IMAGE, "cmd": ["python3", probe, "exit", "1"]},
+                "operating": operating(kos_wall_s=41)}
+
+    def test_the_run_command_fetches_the_image_a_fresh_host_lacks_then_runs_control_and_job(self):
+        """29z: the host holds no image and only this command can fetch it. The job is a canary judged from
+        outside: the secret in the command's environment, a write outside, a connection, a 0600 output."""
+        outside = os.path.join(self.base, "outside")
+        os.mkdir(outside)
+        listener = Listener()
+        self.addCleanup(listener.close)
+        seen = []
+        docker = FakeDocker()
+
+        def runner(argv, env, timeout):
+            seen.append((argv[:2], dict(env), timeout, os.path.isdir(env["HOME"])))
+            return docker(argv, env, timeout)
+        secret = os.urandom(16).hex()
+        os.environ["SNOWBALL_CANARY_SECRET"] = secret
+        self.addCleanup(os.environ.pop, "SNOWBALL_CANARY_SECRET", None)
+        code, line, err = self.command(runner, self.canary_request(
+            "env", "/out/env.json", "write", os.path.join(outside, "x.txt"), "planted",
+            "connect", "127.0.0.1", str(listener.port),
+            "write", "/out/canary.json", "{}", "chmod", "/out/canary.json", "600"))
+        self.assertEqual((code, line["valid"], line["reasons"], line["result"]["exit"], err), (0, True, [], 0, ""))
+        self.assertEqual(docker.other, [self.INSPECT, self.PULL])
+        self.assertEqual(docker.calls[0]["argv"][-2:], ["exit", "1"], "the control runs first")
+        self.assertEqual(line["red_control"]["exit"], 1)
+        steps = [json.loads(ln)["ok"] for ln in docker.calls[1]["stdout"].decode().splitlines()]
+        self.assertEqual(steps, [True, False, False, True, True], "the probe ran: env, write, connect, out, chmod")
+        self.assertEqual(len(docker.calls), 2)
+        # every docker call: PATH and HOME only, the limit as its timeout, HOME a directory that existed then
+        self.assertEqual([(a, set(e), t, d) for a, e, t, d in seen],
+                         [(["docker", "image"], {"PATH", "HOME"}, 41, True),
+                          (["docker", "pull"], {"PATH", "HOME"}, 41, True),
+                          (["docker", "run"], {"PATH", "HOME"}, 41, True),
+                          (["docker", "run"], {"PATH", "HOME"}, 41, True)])
+        homes = [e["HOME"] for _, e, _, _ in seen]
+        self.assertEqual(homes[0], homes[1])
+        self.assertFalse(os.path.exists(homes[0]), "the fetch's HOME is removed")
+        self.assertEqual(len(set(homes)), 3, "the fetch and each run have their own directory")
+        # judged outside: nothing planted, nothing connected, the secret in no output, the 0600 file hashed
+        self.assertEqual((os.listdir(outside), listener.accepted), ([], 0))
+        self.assertEqual(line["result"]["outputs"]["canary.json"]["sha256"], sha(b"{}"))
+        for dirpath, _, files in os.walk(self.base):
+            for name in files:
+                with open(os.path.join(dirpath, name), "rb") as fh:
+                    self.assertNotIn(secret.encode(), fh.read(), name)
+
+    def test_the_run_command_on_a_host_that_cannot_get_the_image_starts_no_container(self):
+        docker = FakeDocker(registry=[])
+        code, line, err = self.command(docker, self.canary_request())
+        self.assertEqual(code, 1)
+        self.assertEqual(line, {"valid": False, "reasons": ["image_unavailable"], "result": None,
+                                "red_control": None})
+        self.assertEqual((docker.calls, docker.other), ([], [self.INSPECT, self.PULL]))
+        self.assertTrue(err.startswith("docker pull: "), err)
+        self.assertEqual(sorted(os.listdir(self.base)), ["request.json", "tree"], "no directory is left behind")
+
+    def test_the_run_command_does_not_fetch_what_the_host_holds(self):
+        docker = FakeDocker(images=[IMAGE], registry=[])
+        code, line, _ = self.command(docker, self.canary_request())
+        self.assertEqual((code, line["valid"], docker.other, len(docker.calls)), (0, True, [self.INSPECT], 2))
+
+    def test_the_run_command_refuses_a_request_without_its_red_control_before_any_docker_call(self):
+        good = self.canary_request()
+        for red in (None, {"image": IMAGE, "cmd": []}, {"image": IMAGE_2, "cmd": ["python3", PROBE, "exit", "1"]}):
+            docker = FakeDocker()
+            code, line, _ = self.command(docker, dict(good, red_control=red))
+            self.assertEqual((code, set(line), docker.other, docker.calls), (1, {"error"}, [], []), red)
+
+    def test_the_run_command_without_the_wall_limit_is_refused_before_any_docker_call(self):
+        docker = FakeDocker()
+        req = self.canary_request()
+        del req["operating"]["kos_wall_s"]
+        code, line, _ = self.command(docker, req)
+        self.assertEqual((code, set(line), docker.other, docker.calls), (1, {"error"}, [], []))
+        self.assertEqual(sorted(os.listdir(self.base)), ["request.json", "tree"])
+
     def test_an_image_the_host_holds_is_not_fetched(self):
         docker = FakeDocker(images=[IMAGE], registry=[])
         self.assertEqual(self.ensure(docker), ([], ""))

@@ -110,6 +110,78 @@
         "test_contained.ImageTest",
         "test_unit_verify.Image"
       ]
+    },
+    {
+      "id": "img_run_cmd_skips_fetch",
+      "file": "runner/contained.py",
+      "old": "            report = run_request(req)\n",
+      "new": "            report = run_with_red_control(req[\"job\"], req.get(\"red_control\"), req[\"operating\"], base=req.get(\"base\"))\n",
+      "tests": [
+        "test_contained.ImageTest.test_the_run_command_fetches_the_image_a_fresh_host_lacks_then_runs_control_and_job"
+      ]
+    },
+    {
+      "id": "img_run_cmd_ignores_fetch_reason",
+      "file": "runner/contained.py",
+      "old": "    if bad:\n        return {\"valid\": False, \"reasons\": bad, \"result\": None, \"red_control\": None}\n",
+      "new": "",
+      "tests": [
+        "test_contained.ImageTest.test_the_run_command_on_a_host_that_cannot_get_the_image_starts_no_container"
+      ]
+    },
+    {
+      "id": "img_run_cmd_fixed_timeout",
+      "file": "runner/contained.py",
+      "old": "limits(operating, RUN_LIMITS)[\"kos_wall_s\"], home, runner)",
+      "new": "600, home, runner)",
+      "tests": [
+        "test_contained.ImageTest.test_the_run_command_fetches_the_image_a_fresh_host_lacks_then_runs_control_and_job"
+      ]
+    },
+    {
+      "id": "img_run_cmd_home_kept",
+      "file": "runner/contained.py",
+      "old": "    finally:\n        shutil.rmtree(home, ignore_errors=True)\n    if bad:",
+      "new": "    finally:\n        pass\n    if bad:",
+      "tests": [
+        "test_contained.ImageTest.test_the_run_command_fetches_the_image_a_fresh_host_lacks_then_runs_control_and_job"
+      ]
+    },
+    {
+      "id": "img_run_cmd_home_is_host_home",
+      "file": "runner/contained.py",
+      "old": "    home = tempfile.mkdtemp(prefix=\"snowball-home-\", dir=base)\n",
+      "new": "    home = os.environ.get(\"HOME\", \"/\")\n",
+      "tests": [
+        "test_contained.ImageTest.test_the_run_command_fetches_the_image_a_fresh_host_lacks_then_runs_control_and_job"
+      ]
+    },
+    {
+      "id": "img_run_cmd_fetch_before_control_check",
+      "file": "runner/contained.py",
+      "old": "    _control_checked(job, red_control)\n    home = ",
+      "new": "    home = ",
+      "tests": [
+        "test_contained.ImageTest.test_the_run_command_refuses_a_request_without_its_red_control_before_any_docker_call"
+      ]
+    },
+    {
+      "id": "img_run_cmd_fetch_reason_valid",
+      "file": "runner/contained.py",
+      "old": "{\"valid\": False, \"reasons\": bad, \"result\": None",
+      "new": "{\"valid\": True, \"reasons\": bad, \"result\": None",
+      "tests": [
+        "test_contained.ImageTest.test_the_run_command_on_a_host_that_cannot_get_the_image_starts_no_container"
+      ]
+    },
+    {
+      "id": "img_run_cmd_default_runner_only",
+      "file": "runner/contained.py",
+      "old": "        bad = ensure_image(job[\"image\"], limits(operating, RUN_LIMITS)[\"kos_wall_s\"], home, runner)",
+      "new": "        bad = ensure_image(job[\"image\"], limits(operating, RUN_LIMITS)[\"kos_wall_s\"], home, None) if runner is None else []",
+      "tests": [
+        "test_contained.ImageTest.test_the_run_command_does_not_fetch_what_the_host_holds"
+      ]
     }
   ]
 }
