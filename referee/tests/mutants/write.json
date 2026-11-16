@@ -1052,6 +1052,79 @@
    "tests": [
     "test_write.CommandLine.test_unrecorded_call_is_unusable"
    ]
+  },
+  {
+   "id": "wr_merge_null_not_reread",
+   "file": "target/write.py",
+   "old": "        while isinstance(data, dict) and \"mergeable\" in data and data[\"mergeable\"] is None and reads < MERGE_READS:",
+   "new": "        while isinstance(data, dict) and \"mergeable\" in data and data[\"mergeable\"] is None and reads < 1:",
+   "tests": [
+    "test_write.WriterLoop.test_a_merge_reads_again_while_mergeable_is_null"
+   ]
+  },
+  {
+   "id": "wr_merge_one_read_more",
+   "file": "target/write.py",
+   "old": "        while isinstance(data, dict) and \"mergeable\" in data and data[\"mergeable\"] is None and reads < MERGE_READS:",
+   "new": "        while isinstance(data, dict) and \"mergeable\" in data and data[\"mergeable\"] is None and reads <= MERGE_READS:",
+   "tests": [
+    "test_write.WriterLoop.test_a_merge_is_sent_after_the_last_read_when_mergeable_stays_null"
+   ]
+  },
+  {
+   "id": "wr_merge_reads_unbounded",
+   "file": "target/write.py",
+   "old": "        while isinstance(data, dict) and \"mergeable\" in data and data[\"mergeable\"] is None and reads < MERGE_READS:",
+   "new": "        while isinstance(data, dict) and \"mergeable\" in data and data[\"mergeable\"] is None:",
+   "tests": [
+    "test_write.WriterLoop.test_a_merge_is_sent_after_the_last_read_when_mergeable_stays_null"
+   ]
+  },
+  {
+   "id": "wr_merge_false_waits",
+   "file": "target/write.py",
+   "old": "        while isinstance(data, dict) and \"mergeable\" in data and data[\"mergeable\"] is None and reads < MERGE_READS:",
+   "new": "        while isinstance(data, dict) and \"mergeable\" in data and not data[\"mergeable\"] and reads < MERGE_READS:",
+   "tests": [
+    "test_write.WriterLoop.test_a_read_that_answers_mergeable_is_read_once"
+   ]
+  },
+  {
+   "id": "wr_merge_absent_waits",
+   "file": "target/write.py",
+   "old": "        while isinstance(data, dict) and \"mergeable\" in data and data[\"mergeable\"] is None and reads < MERGE_READS:",
+   "new": "        while isinstance(data, dict) and data.get(\"mergeable\") is None and reads < MERGE_READS:",
+   "tests": [
+    "test_write.WriterLoop.test_a_read_that_answers_mergeable_is_read_once"
+   ]
+  },
+  {
+   "id": "wr_merge_no_pause",
+   "file": "target/write.py",
+   "old": "            self.pause(MERGE_PAUSE_S)\n",
+   "new": "            pass\n",
+   "tests": [
+    "test_write.WriterLoop.test_a_merge_reads_again_while_mergeable_is_null"
+   ]
+  },
+  {
+   "id": "wr_merge_pause_not_the_clock",
+   "file": "target/write.py",
+   "old": "pause: Callable[[float], None] = time.sleep",
+   "new": "pause: Callable[[float], None] = lambda seconds: None",
+   "tests": [
+    "test_write.WriterLoop.test_the_pause_is_the_clock_unless_one_is_given"
+   ]
+  },
+  {
+   "id": "wr_merge_reread_past_the_guard",
+   "file": "target/write.py",
+   "old": "            data = self._call(\"GET\", \"pulls/%d\" % number)\n            reads += 1",
+   "new": "            data = self.transport(\"GET\", self.guard.prefix + \"pulls/%d\" % number, None)[1]\n            reads += 1",
+   "tests": [
+    "test_write.WriterLoop.test_a_merge_is_pinned_to_the_last_read",
+    "test_write.WriterLoop.test_a_pull_retargeted_to_main_while_the_merge_waits_is_refused"
+   ]
   }
  ]
 }

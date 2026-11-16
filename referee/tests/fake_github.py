@@ -11,6 +11,10 @@ It models what the writer depends on and the target's rulesets (tohum/25a row 3)
   rule also refuses that creation is not modelled as known, both answers are tested (asama-0/10a #genesis);
 - a merge needs the base head to be an ancestor of the pull's head (no three-way merge is modelled; else 405);
   the merge commit has parents ``[base head, head sha]`` and the head's tree; ``sha`` must equal the head;
+- ``mergeable`` of a pull: GitHub's REST page for ``GET pulls/<n>`` says the field is ``null`` while a background
+  job computes it (my reading of the documentation, not observed live; how many reads that lasts is not
+  documented). Modelled only for a pull a test names in ``mergeable_pending`` (number -> reads still answered
+  ``null``, then ``true``); any other pull's read carries no ``mergeable`` key, and a merge does not look at it;
 - a commit's tree must already be known (from a seeded commit or ``POST git/trees``), its parents must exist;
 - blobs hold bytes and trees map paths to blobs (``base_tree`` entries kept, the new ones set on top), so
   ``read_file`` gives a branch's file content back.
@@ -62,6 +66,7 @@ class FakeGitHub:
         self.create_denied = set(create_denied)
         self.required_check = required_check
         self.overrides: dict[tuple, tuple] = {}
+        self.mergeable_pending: dict[int, int] = {}
 
     # ---- seeding
     def seed_commit(self, tree_name: str, parents=(), msg="seed", files=None) -> str:
@@ -146,8 +151,13 @@ class FakeGitHub:
 
     def _pull(self, n):
         p = self.pulls[n]
-        return {"number": n, "state": p["state"], "merged": p["merged"],
-                "base": {"ref": p["base"]}, "head": {"ref": p["head"], "sha": self.refs.get(p["head"], p["sha"])}}
+        out = {"number": n, "state": p["state"], "merged": p["merged"],
+               "base": {"ref": p["base"]}, "head": {"ref": p["head"], "sha": self.refs.get(p["head"], p["sha"])}}
+        if n in self.mergeable_pending:
+            left = self.mergeable_pending[n]
+            self.mergeable_pending[n] = max(0, left - 1)
+            out["mergeable"] = None if left else True
+        return out
 
     def _get(self, rest, body):
         m = re.fullmatch(r"git/ref/heads/(.+)", rest)

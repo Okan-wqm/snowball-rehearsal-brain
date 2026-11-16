@@ -53,6 +53,16 @@ seen here (in write mode the target's ruleset keeps the writer App off ``main``,
 as done when the API answers ``merged: true`` with a sha; the base's new head is not read back (29i fixes
 the calls a merge makes). Rulesets are enforced by GitHub, not here.
 
+Merge read (``Writer.merge``). GitHub computes a pull request's ``mergeable`` in a background job and answers
+``mergeable: null`` until it is done (its REST page for ``GET pulls/<n>``; read as documentation, not observed
+live), and the writer merges right after it opens the pull request. Rules, each with a test in ``test_write``:
+a read whose body carries the key ``mergeable`` with ``null`` is repeated after ``MERGE_PAUSE_S`` seconds, at most
+``MERGE_READS`` reads in all; the merge is sent after the first read that answers anything else (``true``,
+``false``, or no ``mergeable`` key, the form of tohum/29i's recorded reads), or after the last read; it is pinned
+to the head sha of the last read, and every read passes the guard's pull rules again. Outside: what GitHub
+answers to a merge sent while ``mergeable`` is still ``null`` or is ``false`` (the ``PUT`` is sent and its answer
+is taken as any other, a non-2xx is an ``ApiError``), and a refused ``PUT`` is never sent again.
+
 State commit (``commit_files``, caller ``ledger.append``, MF10): one direct commit on a ``brain/`` branch
 (``brain/state`` takes no pull request, tohum/01b) whose parent is the head the caller read its files at:
 the head is read first and a different head is refused (``state_head_moved``) before any object is created;
@@ -105,6 +115,7 @@ import binascii
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Callable
@@ -329,14 +340,19 @@ def revert_commit(commits: dict, head: str, merge: str) -> tuple[list[str], dict
 
 # ---------------------------------------------------------------- writer
 
+MERGE_READS = 10  # reads of a pull request before its merge is sent while GitHub answers mergeable: null
+MERGE_PAUSE_S = 1.0  # seconds between two of those reads
+
+
 class Writer:
     """Branch, commit, state commit, pull request, check, merge and revert on one repository, every request
     guarded."""
 
-    def __init__(self, repo: str, transport: Transport):
+    def __init__(self, repo: str, transport: Transport, pause: Callable[[float], None] = time.sleep):
         self.repo = repo
         self.guard = Guard(repo)
         self.transport = transport
+        self.pause = pause
         self.sent: list[tuple[str, str, Any]] = []
         self.written: list[str] = []
 
@@ -461,8 +477,14 @@ class Writer:
 
     def merge(self, number: int, head_sha: str | None = None) -> str:
         """Read pull ``number``, then merge it pinned to the head sha read (and to ``head_sha`` when given);
-        return the merge commit."""
-        self._call("GET", "pulls/%d" % number)
+        return the merge commit. A read that answers ``mergeable: null`` is repeated (module docstring, "Merge
+        read")."""
+        data = self._call("GET", "pulls/%d" % number)
+        reads = 1
+        while isinstance(data, dict) and "mergeable" in data and data["mergeable"] is None and reads < MERGE_READS:
+            self.pause(MERGE_PAUSE_S)
+            data = self._call("GET", "pulls/%d" % number)
+            reads += 1
         pinned = self.guard.pulls[number]["head_sha"]
         if head_sha is not None and head_sha != pinned:
             raise Refused(["merge_head_moved"])

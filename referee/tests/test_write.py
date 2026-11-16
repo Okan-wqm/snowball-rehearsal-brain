@@ -31,6 +31,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import urllib.request
 import urllib.response
@@ -360,6 +361,91 @@ class WriterLoop(unittest.TestCase):
         with self.assertRaises(W.Refused) as ctx:
             wr.merge(n, sha)
         self.assertEqual(ctx.exception.reasons, ["merge_head_moved"])
+
+    def waiting(self, pending=None):
+        """A candidate with a green check and a writer whose pauses are recorded, not slept."""
+        gh, _, root = world()
+        pauses = []
+        wr = W.Writer(REPO, gh, pause=pauses.append)
+        n, sha = candidate(gh, wr)
+        wr.check(sha, GATE, "success")
+        if pending is not None:
+            gh.mergeable_pending[n] = pending
+        return gh, wr, n, sha, pauses
+
+    def pull_calls(self, gh, n):
+        return [m for m, path, _ in gh.requests if path in (P + "pulls/%d" % n, P + "pulls/%d/merge" % n)]
+
+    def test_a_merge_reads_again_while_mergeable_is_null(self):
+        for nulls in (1, 3, W.MERGE_READS - 1):
+            with self.subTest(nulls=nulls):
+                gh, wr, n, sha, pauses = self.waiting(nulls)
+                merged = wr.merge(n, sha)
+                self.assertEqual(gh.refs["brain/integration"], merged)
+                self.assertEqual(self.pull_calls(gh, n), ["GET"] * (nulls + 1) + ["PUT"])
+                self.assertEqual(pauses, [W.MERGE_PAUSE_S] * nulls)
+
+    def test_a_merge_is_sent_after_the_last_read_when_mergeable_stays_null(self):
+        gh, wr, n, sha, pauses = self.waiting(W.MERGE_READS + 5)
+        merged = wr.merge(n, sha)
+        self.assertEqual(gh.refs["brain/integration"], merged)
+        self.assertEqual(self.pull_calls(gh, n), ["GET"] * W.MERGE_READS + ["PUT"])
+        self.assertEqual(pauses, [W.MERGE_PAUSE_S] * (W.MERGE_READS - 1))
+        self.assertGreater(W.MERGE_READS, 1)
+        self.assertGreater(W.MERGE_PAUSE_S, 0)
+
+    def test_a_read_that_answers_mergeable_is_read_once(self):
+        absent = object()
+        for answer in (absent, True, False):
+            with self.subTest(answer=answer):
+                gh, wr, n, sha, pauses = self.waiting(0 if answer is True else None)
+
+                def transport(method, path, body, gh=gh, answer=answer):
+                    status, data = gh(method, path, body)
+                    if answer is False and method == "GET" and path == P + "pulls/%d" % n:
+                        data = dict(data, mergeable=False)
+                    return status, data
+                wr.transport = transport
+                merged = wr.merge(n, sha)
+                self.assertEqual(gh.refs["brain/integration"], merged)
+                self.assertEqual(self.pull_calls(gh, n), ["GET", "PUT"])
+                self.assertEqual(pauses, [])
+
+    def test_a_merge_is_pinned_to_the_last_read(self):
+        for given in (True, False):
+            with self.subTest(head_sha_given=given):
+                gh, wr, n, sha, pauses = self.waiting(2)
+                newer = gh.seed_commit("t9", [sha])
+                wr.check(newer, GATE, "success")
+
+                def pause(seconds, gh=gh, newer=newer):  # the head moves while the writer waits
+                    gh.refs["brain/c/1"] = newer
+                wr.pause = pause
+                if given:
+                    with self.assertRaises(W.Refused) as ctx:
+                        wr.merge(n, sha)
+                    self.assertEqual(ctx.exception.reasons, ["merge_head_moved"])
+                    self.assertEqual(self.pull_calls(gh, n), ["GET"] * 3)
+                else:
+                    merged = wr.merge(n)
+                    self.assertEqual(gh.commits[merged]["parents"][1], newer)
+                    self.assertEqual(gh.requests[-1][2]["sha"], newer)
+
+    def test_a_pull_retargeted_to_main_while_the_merge_waits_is_refused(self):
+        gh, wr, n, sha, pauses = self.waiting(2)
+        root = gh.refs["main"]
+
+        def pause(seconds):
+            gh.pulls[n]["base"] = "main"
+        wr.pause = pause
+        with self.assertRaises(W.Refused) as ctx:
+            wr.merge(n, sha)
+        self.assertEqual(ctx.exception.reasons, ["ref_outside_brain"])
+        self.assertEqual(self.pull_calls(gh, n), ["GET"] * 3)
+        self.assertEqual(gh.refs["main"], root)
+
+    def test_the_pause_is_the_clock_unless_one_is_given(self):
+        self.assertIs(W.Writer(REPO, W.Replay({})).pause, time.sleep)
 
     def test_responses_that_do_not_answer_the_question(self):
         gh, wr, root = world()
