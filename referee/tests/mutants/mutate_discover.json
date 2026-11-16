@@ -318,7 +318,7 @@
   {
    "id": "disc_entry_limit_not_enforced",
    "file": "tests/mutate.py",
-   "old": "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=limit)",
+   "old": "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n                                  timeout=limit)",
    "new": "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)",
    "tests": [
     "test_mutate.Discover.test_an_entry_over_its_limit_is_a_timeout_and_the_others_still_run"

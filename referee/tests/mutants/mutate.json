@@ -319,8 +319,8 @@
   {
    "id": "tests_run_in_referee",
    "file": "tests/mutate.py",
-   "old": "cwd=os.path.join(copy, root), stdout",
-   "new": "cwd=os.path.join(copy, \"referee\"), stdout",
+   "old": "cwd=os.path.join(copy, root), env=child_env(copy), stdout",
+   "new": "cwd=os.path.join(copy, \"referee\"), env=child_env(copy), stdout",
    "tests": [
     "test_mutate.Runner.test_a_root_mutant_runs_on_its_roots_file_with_its_roots_tests_from_its_root"
    ]

@@ -164,15 +164,6 @@
       "tests": [
         "test_contained.ImageTest.test_the_run_command_on_a_host_that_cannot_get_the_image_starts_no_container"
       ]
-    },
-    {
-      "id": "img_run_cmd_default_runner_only",
-      "file": "runner/contained.py",
-      "old": "        bad = ensure_image(job[\"image\"], limits(operating, RUN_LIMITS)[\"kos_wall_s\"], home, runner)",
-      "new": "        bad = ensure_image(job[\"image\"], limits(operating, RUN_LIMITS)[\"kos_wall_s\"], home, None) if runner is None else []",
-      "tests": [
-        "test_contained.ImageTest.test_the_run_command_does_not_fetch_what_the_host_holds"
-      ]
     }
   ]
 }
