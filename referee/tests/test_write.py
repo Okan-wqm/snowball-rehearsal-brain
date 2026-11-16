@@ -712,6 +712,67 @@ class Revert(unittest.TestCase):
         self.assertEqual(W.revert_commit(three, B, B), (["revert_not_merge"], None))
 
 
+class Said(unittest.TestCase):
+    """``said``: what an ``ApiError`` adds from an error answer's body (the module's rules 1 to 3)."""
+
+    def test_rule_1_what_is_read(self):
+        for body, want in (
+                ({"message": "Reference already exists", "documentation_url": "https://x", "status": "422"},
+                 "; GitHub: Reference already exists"),
+                ({"message": "Validation Failed", "errors": [
+                    {"resource": "PullRequest", "code": "custom", "message": "A pull request already exists"},
+                    {"resource": "Issue", "field": "title", "code": "missing_field"}, "plain"]},
+                 "; GitHub: Validation Failed | A pull request already exists | Issue.title.missing_field | plain"),
+                ({"errors": [{"code": "invalid", "field": 3, "message": None}]}, "; GitHub: invalid"),
+                ({"message": "m", "errors": ["a", "b", "c", "d"]}, "; GitHub: m | a | b | c"),  # SAID_ERRORS items
+                ({"message": "m", "errors": [5, {}, {"x": "y"}, "d"]}, "; GitHub: m"),  # items that give no part
+                ({"message": "m", "errors": {"message": "not a list"}}, "; GitHub: m"),
+                ({"message": "m", "errors": "text"}, "; GitHub: m"),
+                ({"message": 5}, ""), ({"message": " \n\t"}, ""), ({"message": ""}, ""), ({}, ""),
+                ({"error": "other key"}, ""), (None, ""), ([{"message": "in a list"}], ""), ("message", ""), (422, "")):
+            self.assertEqual(W.said(body), want, body)
+        self.assertEqual(W.SAID_ERRORS, 3)
+
+    def test_rule_2_how_it_is_written(self):
+        self.assertEqual(W.said({"message": "Repository rule violations found\n\nCannot create ref\r\n\t due to "
+                                            "creations being restricted.\n\n"}),
+                         "; GitHub: Repository rule violations found Cannot create ref due to creations being "
+                         "restricted.")
+        kept = "AZaz09 .,:;'()/_|-"
+        self.assertEqual(W.said({"message": kept}), "; GitHub: " + kept)
+        for other in '"`<>[]{}=+*&%$#@!?\\~^\x00\x1b\x7f\u00e9':
+            self.assertEqual(W.said({"message": "a%sb" % other}), "; GitHub: a?b", repr(other))
+        for space in " \t\n\r\x0b\x0c\x1c\x85\u00a0\u2028":  # whitespace is str.split's
+            self.assertEqual(W.said({"message": "a%sb" % (space * 2)}), "; GitHub: a b", repr(space))
+        self.assertEqual(W.said({"message": "x" * (W.SAID_MAX + 50)}), "; GitHub: " + "x" * W.SAID_MAX)
+        self.assertEqual(W.said({"message": "x" * W.SAID_MAX}), "; GitHub: " + "x" * W.SAID_MAX)
+        self.assertEqual(W.SAID_MAX, 300)
+
+    def test_rule_3_a_secret_withholds_the_message(self):
+        withheld = "; GitHub's message withheld (secret scan)"
+        token = "ghp_" + "a1B2" * 9
+        self.assertEqual(W.said({"message": "bad credentials %s" % token}), withheld)
+        self.assertEqual(W.said({"message": "ok", "errors": [{"message": "saw %s" % token}]}), withheld)
+        # scanned as read: rule 2 would turn the '=' into '?' and the scanner would no longer see an assignment
+        assigned = "password = hunter2secretvalue"
+        self.assertTrue(W.secrets.scan(assigned, "row"))
+        self.assertFalse(W.secrets.scan(assigned.replace("=", "?"), "row"))
+        self.assertEqual(W.said({"message": assigned}), withheld)
+        # and before the cut: a secret past SAID_MAX characters withholds too
+        self.assertEqual(W.said({"message": "x" * W.SAID_MAX + " " + token}), withheld)
+
+    def test_writer_error_carries_it(self):
+        def refuse(method, path, body):
+            return 422, {"message": "Reference already exists"}
+        wr = W.Writer(REPO, refuse)
+        with self.assertRaises(W.ApiError) as ctx:
+            wr.create_branch("brain/c/1", A)
+        self.assertEqual((ctx.exception.status, str(ctx.exception)),
+                         (422, "422: POST %sgit/refs; GitHub: Reference already exists" % P))
+        self.assertEqual(wr.written, [])
+        self.assertEqual(str(W.ApiError(None, "ref response without object.sha")), "None: ref response without object.sha")
+
+
 class _FakeHttps(urllib.request.BaseHandler):
     handler_order = 100
 
@@ -752,13 +813,20 @@ class Transport(unittest.TestCase):
             self.assertEqual([r.full_url for r in fake.seen], ["https://api.github.com" + P + "git/refs"])
 
     def test_errors(self):
-        fake = _FakeHttps([(422, b'{"message": "no"}', {}), (200, b"<html>", {})])
+        fake = _FakeHttps([(422, b'{"message": "no"}', {}), (200, b"<html>", {}), (502, b"<html>", {}),
+                           (403, b"", {}), (404, b'["x"]', {})])
         t = W.HttpTransport("tok", handlers=(fake,))
         with self.assertRaises(W.ApiError) as ctx:
             t("GET", P + "pulls/1", None)
-        self.assertEqual(ctx.exception.status, 422)
-        with self.assertRaises(W.ApiError):
+        self.assertEqual((ctx.exception.status, str(ctx.exception)), (422, "422: GET %spulls/1; GitHub: no" % P))
+        with self.assertRaises(W.ApiError) as ctx:
             t("GET", P + "pulls/1", None)
+        self.assertEqual((ctx.exception.status, str(ctx.exception)), (200, "200: response is not JSON"))
+        # an error whose body is not JSON, is empty or is no object: the status and the request, nothing added
+        for status in (502, 403, 404):
+            with self.assertRaises(W.ApiError) as ctx:
+                t("GET", P + "pulls/1", None)
+            self.assertEqual((ctx.exception.status, str(ctx.exception)), (status, "%d: GET %spulls/1" % (status, P)))
         for token in ("", "a\nb", None):
             with self.assertRaises(W.Unusable):
                 W.HttpTransport(token)

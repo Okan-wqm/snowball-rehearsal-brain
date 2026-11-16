@@ -705,8 +705,8 @@
   {
    "id": "wr_call_written_before",
    "file": "target/write.py",
-   "old": "        self.sent.append((method, path, body))\n        status, data = self.transport(method, path, body)\n        if not isinstance(status, int) or not 200 <= status < 300:\n            raise ApiError(status, \"%s %s\" % (method, path))\n        self.written += refs",
-   "new": "        self.sent.append((method, path, body))\n        self.written += refs\n        status, data = self.transport(method, path, body)\n        if not isinstance(status, int) or not 200 <= status < 300:\n            raise ApiError(status, \"%s %s\" % (method, path))",
+   "old": "        self.sent.append((method, path, body))\n        status, data = self.transport(method, path, body)\n        if not isinstance(status, int) or not 200 <= status < 300:\n            raise ApiError(status, \"%s %s\" % (method, path), data)\n        self.written += refs",
+   "new": "        self.sent.append((method, path, body))\n        self.written += refs\n        status, data = self.transport(method, path, body)\n        if not isinstance(status, int) or not 200 <= status < 300:\n            raise ApiError(status, \"%s %s\" % (method, path), data)",
    "tests": [
     "test_write.CommandLine.test_unrecorded_call_is_unusable"
    ]
@@ -885,7 +885,7 @@
   {
    "id": "wr_redirect_followed",
    "file": "target/write.py",
-   "old": "        self.opener = urllib.request.build_opener(_NoRedirect, *handlers)",
+   "old": "        self.opener = urllib.request.build_opener(_AnyStatus, *handlers)",
    "new": "        self.opener = urllib.request.build_opener(*handlers)",
    "tests": [
     "test_write.Transport.test_no_redirect_is_followed"
@@ -921,8 +921,8 @@
   {
    "id": "wr_http_error_status",
    "file": "target/write.py",
-   "old": "            raise ApiError(exc.code, \"%s %s\" % (method, path)) from None",
-   "new": "            raise ApiError(None, \"%s %s\" % (method, path)) from None",
+   "old": "        if not 200 <= status < 300:\n            raise ApiError(status, \"%s %s\" % (method, path), data)\n        return status, data",
+   "new": "        if not 200 <= status < 300:\n            raise ApiError(None, \"%s %s\" % (method, path), data)\n        return status, data",
    "tests": [
     "test_write.Transport.test_errors"
    ]
@@ -930,8 +930,8 @@
   {
    "id": "wr_http_not_json",
    "file": "target/write.py",
-   "old": "            raise ApiError(status, \"response is not JSON\") from None",
-   "new": "            return status, None",
+   "old": "                raise ApiError(status, \"response is not JSON\") from None",
+   "new": "                return status, None",
    "tests": [
     "test_write.Transport.test_errors"
    ]
@@ -1124,6 +1124,160 @@
    "tests": [
     "test_write.WriterLoop.test_a_merge_is_pinned_to_the_last_read",
     "test_write.WriterLoop.test_a_pull_retargeted_to_main_while_the_merge_waits_is_refused"
+   ]
+  },
+  {
+   "id": "wr_said_scans_what_is_written",
+   "file": "target/write.py",
+   "old": "    if secrets.scan(read, \"row\"):",
+   "new": "    if secrets.scan(_SAID_OTHER.sub(\"?\", read), \"row\"):",
+   "tests": [
+    "test_write.Said.test_rule_3_a_secret_withholds_the_message"
+   ]
+  },
+  {
+   "id": "wr_said_scans_after_the_cut",
+   "file": "target/write.py",
+   "old": "    if secrets.scan(read, \"row\"):",
+   "new": "    if secrets.scan(read[:SAID_MAX], \"row\"):",
+   "tests": [
+    "test_write.Said.test_rule_3_a_secret_withholds_the_message"
+   ]
+  },
+  {
+   "id": "wr_said_never_withholds",
+   "file": "target/write.py",
+   "old": "    if secrets.scan(read, \"row\"):",
+   "new": "    if False:",
+   "tests": [
+    "test_write.Said.test_rule_3_a_secret_withholds_the_message"
+   ]
+  },
+  {
+   "id": "wr_said_scans_message_only",
+   "file": "target/write.py",
+   "old": "    if secrets.scan(read, \"row\"):",
+   "new": "    if isinstance(parts[0], str) and secrets.scan(parts[0], \"row\"):",
+   "tests": [
+    "test_write.Said.test_rule_3_a_secret_withholds_the_message"
+   ]
+  },
+  {
+   "id": "wr_said_not_cut",
+   "file": "target/write.py",
+   "old": "\" \".join(read.split()))[:SAID_MAX]",
+   "new": "\" \".join(read.split()))",
+   "tests": [
+    "test_write.Said.test_rule_2_how_it_is_written"
+   ]
+  },
+  {
+   "id": "wr_said_keeps_every_character",
+   "file": "target/write.py",
+   "old": "_SAID_OTHER.sub(\"?\", \" \".join(read.split()))",
+   "new": "\" \".join(read.split())",
+   "tests": [
+    "test_write.Said.test_rule_2_how_it_is_written"
+   ]
+  },
+  {
+   "id": "wr_said_whitespace_not_folded",
+   "file": "target/write.py",
+   "old": "_SAID_OTHER.sub(\"?\", \" \".join(read.split()))",
+   "new": "_SAID_OTHER.sub(\"?\", read)",
+   "tests": [
+    "test_write.Said.test_rule_2_how_it_is_written"
+   ]
+  },
+  {
+   "id": "wr_said_keeps_a_double_quote",
+   "file": "target/write.py",
+   "old": "_SAID_OTHER = re.compile(r\"[^A-Za-z0-9 .,:;'()/_|-]\")",
+   "new": "_SAID_OTHER = re.compile(r\"[^A-Za-z0-9 .,:;'()/_|\\\"-]\")",
+   "tests": [
+    "test_write.Said.test_rule_2_how_it_is_written"
+   ]
+  },
+  {
+   "id": "wr_said_every_error_item",
+   "file": "target/write.py",
+   "old": "errors[:SAID_ERRORS] if",
+   "new": "errors if",
+   "tests": [
+    "test_write.Said.test_rule_1_what_is_read"
+   ]
+  },
+  {
+   "id": "wr_said_errors_any_type",
+   "file": "target/write.py",
+   "old": "errors[:SAID_ERRORS] if isinstance(errors, list) else []",
+   "new": "errors[:SAID_ERRORS] if errors else []",
+   "tests": [
+    "test_write.Said.test_rule_1_what_is_read"
+   ]
+  },
+  {
+   "id": "wr_said_item_message_over_names",
+   "file": "target/write.py",
+   "old": "            item = item[\"message\"] if isinstance(item.get(\"message\"), str) else named",
+   "new": "            item = named or item.get(\"message\")",
+   "tests": [
+    "test_write.Said.test_rule_1_what_is_read"
+   ]
+  },
+  {
+   "id": "wr_said_blank_part_kept",
+   "file": "target/write.py",
+   "old": "if isinstance(part, str) and part.strip())",
+   "new": "if isinstance(part, str))",
+   "tests": [
+    "test_write.Said.test_rule_1_what_is_read"
+   ]
+  },
+  {
+   "id": "wr_said_list_body_read",
+   "file": "target/write.py",
+   "old": "    if not isinstance(body, dict):\n        return \"\"\n    parts = [body.get(\"message\")]",
+   "new": "    if isinstance(body, list) and body:\n        body = body[0]\n    if not isinstance(body, dict):\n        return \"\"\n    parts = [body.get(\"message\")]",
+   "tests": [
+    "test_write.Said.test_rule_1_what_is_read"
+   ]
+  },
+  {
+   "id": "wr_writer_error_drops_what_github_said",
+   "file": "target/write.py",
+   "old": "        if not isinstance(status, int) or not 200 <= status < 300:\n            raise ApiError(status, \"%s %s\" % (method, path), data)\n        self.written += refs",
+   "new": "        if not isinstance(status, int) or not 200 <= status < 300:\n            raise ApiError(status, \"%s %s\" % (method, path))\n        self.written += refs",
+   "tests": [
+    "test_write.Said.test_writer_error_carries_it",
+    "test_activate.Refusals.test_refused_candidate_branch_after_the_cut_says_what_github_said"
+   ]
+  },
+  {
+   "id": "wr_http_error_drops_what_github_said",
+   "file": "target/write.py",
+   "old": "        if not 200 <= status < 300:\n            raise ApiError(status, \"%s %s\" % (method, path), data)\n        return status, data",
+   "new": "        if not 200 <= status < 300:\n            raise ApiError(status, \"%s %s\" % (method, path))\n        return status, data",
+   "tests": [
+    "test_write.Transport.test_errors"
+   ]
+  },
+  {
+   "id": "wr_http_error_body_must_be_json",
+   "file": "target/write.py",
+   "old": "            if 200 <= status < 300:\n                raise ApiError(status, \"response is not JSON\") from None",
+   "new": "            if True:\n                raise ApiError(status, \"response is not JSON\") from None",
+   "tests": [
+    "test_write.Transport.test_errors"
+   ]
+  },
+  {
+   "id": "wr_http_error_status_returned",
+   "file": "target/write.py",
+   "old": "        if not 200 <= status < 300:\n            raise ApiError(status, \"%s %s\" % (method, path), data)\n        return status, data",
+   "new": "        return status, data",
+   "tests": [
+    "test_write.Transport.test_errors"
    ]
   }
  ]

@@ -597,6 +597,17 @@ class Refusals(unittest.TestCase):
         self.assertEqual(ctx.exception.written, ["refs/heads/brain/c/good", "refs/heads/brain/integration"])
         self.assertNotIn("brain/state", w.gh.refs)
 
+    def test_refused_candidate_branch_after_the_cut_says_what_github_said(self):
+        # the seventh (B)'s yaz line (run 43926970052): the cut written, the candidate's branch answered 422
+        w = AW.World(create_denied=("brain/c/good",))
+        with self.assertRaises(activate.HardStop) as ctx:
+            w.run()
+        self.assertEqual(ctx.exception.written, ["refs/heads/brain/integration"])
+        self.assertEqual(str(ctx.exception),
+                         "ApiError: 422: POST /repos/%s/git/refs; GitHub: Repository rule violations: changes must be "
+                         "made through a pull request (written: refs/heads/brain/integration)" % AW.REPO)
+        self.assertEqual(sorted(w.gh.refs), ["brain/integration", "main"])
+
 
 class Apply(unittest.TestCase):
     def block(self, text: str) -> dict:

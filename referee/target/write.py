@@ -78,6 +78,23 @@ Transport: ``HttpTransport`` sends to ``https://api.github.com`` with the token;
 redirect would carry the token and the write elsewhere), so a 3xx is an ``ApiError``. ``Writer`` takes any
 callable ``(method, path, body) -> (status, json)``; tests give it an in-process fake.
 
+What GitHub said (``said``; the seventh (B)'s ``yaz`` line was ``ApiError: 422: POST .../git/refs`` and did not
+say which rule refused the branch). An ``ApiError`` for a status outside 2xx, raised by ``Writer`` or by
+``HttpTransport``, ends with what the answer's JSON body says, by these rules, each with a test in ``test_write``:
+
+1. Read: the body's ``message`` when it is a string, then of at most ``SAID_ERRORS`` first items of its ``errors``
+   when that is a list: an item that is a string; a ``dict`` item's ``message`` when a string, else its ``resource``,
+   ``field`` and ``code`` that are strings, joined with ``.`` (GitHub's REST page "Client errors"; read as
+   documentation). The parts that are not empty or all whitespace are joined with `` | ``. A body that is not an
+   object, or gives no such part: nothing is added.
+2. Written: every run of whitespace (``str.split``'s) is one space, every other character outside ``[A-Za-z0-9 .,:;'()/_|-]`` is ``?``,
+   and the text is cut at ``SAID_MAX`` characters, as ``; GitHub: <text>``.
+3. Withheld: when ``gate.secrets.scan`` (kind ``row``) matches the text of rule 1 as read (before rule 2 changes
+   a character or cuts it), none of it is written, only ``; GitHub's message withheld (secret scan)``.
+
+Outside: an error body that is not JSON (nothing is added), fields other than those of rule 1, and whether the
+message names the cause (it is GitHub's text, not judged here).
+
 Two credentials, one rule (``APP_READ``; spec/tohum/CHANGELOG.md 2026-11-15: GitHub answers ``GET /app`` to the
 App's JWT and 401 to an installation token). ``GET /app``, exactly that method and path, is sent with ``app()``,
 the App's JWT (``target.app_jwt.token``; ``loop.job`` gives it in the genesis cycle only); every other request is
@@ -116,10 +133,10 @@ import json
 import re
 import sys
 import time
-import urllib.error
 import urllib.request
 from typing import Any, Callable
 
+from gate import secrets
 import cli
 
 API = "https://api.github.com"
@@ -146,9 +163,34 @@ class Refused(Exception):
 class ApiError(Exception):
     """The API answered with an error status, or with a body that does not say what was asked."""
 
-    def __init__(self, status: int | None, message: str):
-        super().__init__("%s: %s" % (status, message))
+    def __init__(self, status: int | None, message: str, body: Any = None):
+        super().__init__("%s: %s%s" % (status, message, said(body)))
         self.status = status
+
+
+SAID_MAX = 300
+SAID_ERRORS = 3
+_SAID_OTHER = re.compile(r"[^A-Za-z0-9 .,:;'()/_|-]")
+
+
+def said(body: Any) -> str:
+    """What an error answer's JSON ``body`` says, as the end of an ``ApiError``'s text (module docstring, "What
+    GitHub said"); ``""`` when it says nothing readable."""
+    if not isinstance(body, dict):
+        return ""
+    parts = [body.get("message")]
+    errors = body.get("errors")
+    for item in errors[:SAID_ERRORS] if isinstance(errors, list) else []:
+        if isinstance(item, dict):
+            named = ".".join(item[k] for k in ("resource", "field", "code") if isinstance(item.get(k), str))
+            item = item["message"] if isinstance(item.get("message"), str) else named
+        parts.append(item)
+    read = " | ".join(part for part in parts if isinstance(part, str) and part.strip())
+    if not read:
+        return ""
+    if secrets.scan(read, "row"):
+        return "; GitHub's message withheld (secret scan)"
+    return "; GitHub: %s" % _SAID_OTHER.sub("?", " ".join(read.split()))[:SAID_MAX]
 
 
 class Unusable(ValueError):
@@ -364,7 +406,7 @@ class Writer:
         self.sent.append((method, path, body))
         status, data = self.transport(method, path, body)
         if not isinstance(status, int) or not 200 <= status < 300:
-            raise ApiError(status, "%s %s" % (method, path))
+            raise ApiError(status, "%s %s" % (method, path), data)
         self.written += refs
         self.guard.observe(method, path, data)
         return data
@@ -517,9 +559,16 @@ def _one_line(value: Any) -> bool:
     return isinstance(value, str) and bool(value) and not any(c in value for c in "\r\n")
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401 - urllib's signature
-        return None
+class _AnyStatus(urllib.request.HTTPErrorProcessor):
+    """Hands back the response of any status: urllib's own processor turns a status outside 2xx into its error
+    handlers (a 3xx into the redirect handler, the rest into an ``HTTPError`` whose body rule 7 of ``cli`` keeps a
+    handler from reading). With this one in its place no redirect is followed and the transport reads an error's
+    body like any other."""
+
+    def http_response(self, request, response):  # noqa: D401 - urllib's signature
+        return response
+
+    https_response = http_response
 
 
 APP_READ = ("GET", "/app")  # the one request sent with the App's JWT
@@ -527,7 +576,7 @@ APP_READ = ("GET", "/app")  # the one request sent with the App's JWT
 
 class HttpTransport:
     """GitHub REST over HTTPS with a token, ``GET /app`` with ``app()``'s JWT (see the module docstring); no
-    redirect is followed."""
+    redirect is followed; a status outside 2xx is an ``ApiError`` carrying the status and what the body ``said``."""
 
     def __init__(self, token: str, handlers: tuple = (), timeout: float = 30.0,
                  app: Callable[[], str] | None = None):
@@ -536,7 +585,7 @@ class HttpTransport:
         self.token = token
         self.app = app
         self.timeout = timeout
-        self.opener = urllib.request.build_opener(_NoRedirect, *handlers)
+        self.opener = urllib.request.build_opener(_AnyStatus, *handlers)
 
     def _credential(self, method: str, path: str) -> str:
         if (method, path) != APP_READ:
@@ -559,15 +608,17 @@ class HttpTransport:
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
         if data is not None:
             req.add_header("Content-Type", "application/json")
+        with self.opener.open(req, timeout=self.timeout) as resp:
+            status, raw = resp.status, resp.read()
         try:
-            with self.opener.open(req, timeout=self.timeout) as resp:
-                status, raw = resp.status, resp.read()
-        except urllib.error.HTTPError as exc:
-            raise ApiError(exc.code, "%s %s" % (method, path)) from None
-        try:
-            return status, (cli.loads(raw) if raw else None)
+            data = cli.loads(raw) if raw else None
         except ValueError:
-            raise ApiError(status, "response is not JSON") from None
+            if 200 <= status < 300:
+                raise ApiError(status, "response is not JSON") from None
+            data = None
+        if not 200 <= status < 300:
+            raise ApiError(status, "%s %s" % (method, path), data)
+        return status, data
 
 
 # ---------------------------------------------------------------- command line
