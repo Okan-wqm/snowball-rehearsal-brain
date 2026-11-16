@@ -164,7 +164,7 @@ class Flow:
                                   if not k[1].startswith(("/app", "/installation"))})
             self.hubs[repo] = hub
             targets.append({"id": tid, "kind": kind, "repo": repo, "excluded_paths": [], "unit_candidates": [],
-                            "base_sha": hub.refs["main"], "identifiers": []})
+                            "base_sha": AW.summary_base(kind, hub.refs["main"]), "identifiers": []})
         summary = {"seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
                                     "bootstrap_sha256": "4" * 64}], "targets": targets}
         tree = T.digest([(p, "file", d) for p, d in self.brain.items()])

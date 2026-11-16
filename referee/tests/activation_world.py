@@ -132,6 +132,12 @@ def facts(kind: str, repo: str = REPO) -> dict:
     return {("GET", path): (200, body) for path, body in out.items()}
 
 
+def summary_base(kind: str, commit: str) -> str | None:
+    """``targets[].base_sha`` as setup writes it: the copy's base commit; null for a toy, which has none at setup
+    (tohum/25:26, 29o:45-46). The one place the test worlds take it from."""
+    return commit if kind == "copy" else None
+
+
 _TREES: list[str] = []
 
 
@@ -161,7 +167,8 @@ class World:
         self.summary = json.dumps({
             "seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
                              "bootstrap_sha256": "4" * 64}],
-            "targets": [{"id": "toy", "repo": REPO, "kind": kind, "base_sha": self.main, "identifiers": [],
+            "targets": [{"id": "toy", "repo": REPO, "kind": kind, "base_sha": summary_base(kind, self.main),
+                         "identifiers": [],
                          "excluded_paths": [], "unit_candidates": []}]}).encode()
         self.recipe = json.dumps({"unit_id": "toy", "inputs": ["src/", "test/", "eslint.config.js",
                                                                "package.json"]}).encode()

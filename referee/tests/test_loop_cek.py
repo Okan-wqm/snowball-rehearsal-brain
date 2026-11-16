@@ -667,7 +667,8 @@ class CekJob(unittest.TestCase):
         _, main = S.store(self.TARGET)
         summary = {"seed_epochs": [{"commit": "1" * 40, "spec_tohum_sha256": "2" * 64, "seed_sha256": "3" * 64,
                                     "bootstrap_sha256": "4" * 64}],
-                   "targets": [dict(self.summary["targets"][0], base_sha=main, identifiers=[])]}
+                   "targets": [dict(self.summary["targets"][0], base_sha=AW.summary_base("toy", main),
+                                    identifiers=[])]}
         out, _, _ = self.run_cek(summary=summary, listing=b"%s\trefs/heads/main\n" % main.encode())
         self.assertEqual((out["ok"], self.one(out)["genesis"]), (True, True))
         temps = {}

@@ -48,8 +48,9 @@ and ``import_line_sha256`` (that line's bytes without its LF); ``seed_epoch`` (t
 written); ``policy_sha256``, ``summary_sha256``, ``seed_security_ledger_sha256`` (sha256 of each file's bytes as
 given); ``seed_security_last_row_hash``; ``recipe_sha256`` (of the recipe's RFC 8785 form); ``facts_sha256`` (of
 the RFC 8785 form of ``{"GET <path>": body}`` over the reads). Unusable (``Unusable``): the target not exactly once
-in ``targets[]`` or of another kind, a file that is not the JSON it names (``imports.jsonl`` a valid chain of
-objects), no transfer row or one whose ``referee_tree_sha256`` is not 64 lowercase hex, a read not answered or malformed (a rule without an integer ``ruleset_id`` included).
+in ``targets[]``, of another kind or without a ``repo`` string, a copy whose ``base_sha`` is not 40 lowercase hex
+(a toy's ``base_sha`` is not read, whatever the entry holds there or lacks: setup leaves it empty), a file that
+is not the JSON it names (``imports.jsonl`` a valid chain of objects), no transfer row or one whose ``referee_tree_sha256`` is not 64 lowercase hex, a read not answered or malformed (a rule without an integer ``ruleset_id`` included).
 
 **Activation** (``activate``): the write half of the genesis cycle (``loop.pulled.genesis``: a target with neither
 ``brain/state`` nor ``brain/integration``), run by ``yaz`` (``loop.job``) after D5 judged the cycle's candidates. Its
@@ -218,9 +219,11 @@ def _target(summary: Any, target_id: Any) -> dict:
     if not isinstance(target_id, str) or len(found) != 1:
         raise Unusable("target %r is not exactly once in targets[]" % (target_id,))
     target = found[0]
-    if target.get("kind") not in KINDS or not isinstance(target.get("repo"), str) or schema.hex40(
-            target.get("base_sha"), "base_sha"):
-        raise Unusable("target %r: kind toy or copy, a repo and a 40-hex base_sha" % target_id)
+    if target.get("kind") not in KINDS or not isinstance(target.get("repo"), str):
+        raise Unusable("target %r: kind toy or copy and a repo" % target_id)
+    # The toy's ``base_sha`` is not read: setup leaves it empty and the base is the API's ``main`` (tohum/29o:45-46).
+    if target["kind"] == "copy" and schema.hex40(target.get("base_sha"), "base_sha"):
+        raise Unusable("target %r: a copy's base_sha must be 40 lowercase hex" % target_id)
     return target
 
 

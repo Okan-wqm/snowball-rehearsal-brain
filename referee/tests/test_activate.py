@@ -104,17 +104,37 @@ class Genesis(unittest.TestCase):
         self.assertEqual(got["payload"]["facts_sha256"],
                          canon_sha({"GET " + p: w.gh.overrides[("GET", p)][1] for p in reads}))
 
+    @staticmethod
+    def with_base(w: AW.World, base) -> AW.World:
+        """The world with its target's summary ``base_sha`` set to ``base`` (``...``: the key removed)."""
+        summary = json.loads(w.files["summary.json"])
+        summary["targets"][0].pop("base_sha")
+        if base is not ...:
+            summary["targets"][0]["base_sha"] = base
+        w.files["summary.json"] = json.dumps(summary).encode()
+        return w
+
     def test_bases(self):
-        w = AW.World()
-        summary = json.loads(w.files["summary.json"])
-        summary["targets"][0]["base_sha"] = "9" * 40  # the toy's summary base is not read
-        w.files["summary.json"] = json.dumps(summary).encode()
-        self.assertEqual(self.gen(w)["payload"]["base_sha"], w.main)
-        w = AW.World(kind="copy")
-        summary = json.loads(w.files["summary.json"])
-        summary["targets"][0]["base_sha"] = "9" * 40
-        w.files["summary.json"] = json.dumps(summary).encode()
+        """The toy's base is the API's ``main`` whatever its summary entry holds for ``base_sha`` (setup leaves it
+        empty, tohum/29o:45-46): null, no key, an empty string, another commit, a non-string. The copy's is its
+        summary entry's, which must be 40 lowercase hex."""
+        self.assertIsNone(json.loads(AW.World().files["summary.json"])["targets"][0]["base_sha"])  # setup's form
+        for base in (None, ..., "", "9" * 40, "main", 7, ["9" * 40]):
+            with self.subTest(toy=base):
+                w = self.with_base(AW.World(), base)
+                got = self.gen(w)
+                self.assertEqual((got["ok"], got["payload"]["base_sha"]), (True, w.main))
+                self.assertEqual(got["payload"]["summary_sha256"], sha(w.files["summary.json"]))
+        w = self.with_base(AW.World(kind="copy"), "9" * 40)
         self.assertEqual(self.gen(w)["payload"]["base_sha"], "9" * 40)
+        for base in (None, ..., "", "9" * 39, "9" * 41, "A" * 40, 7, ["9" * 40]):
+            with self.subTest(copy=base):
+                with self.assertRaises(activate.Unusable):
+                    self.gen(self.with_base(AW.World(kind="copy"), base))
+        w = self.with_base(AW.World(kind="copy"), None)  # unusable before any reason is weighed
+        fact(w, "/actions/permissions")["enabled"] = True
+        with self.assertRaises(activate.Unusable):
+            self.gen(w)
 
     def test_each_change_shows_in_its_own_field(self):
         first = self.gen(AW.World())["payload"]
@@ -254,6 +274,8 @@ class Genesis(unittest.TestCase):
             lambda w: w.files.update({"summary.json": b"{"}),
             lambda w: w.files.update({"summary.json": b'{"targets": [], "seed_epochs": [{}]}'}),
             lambda w: w.files.update({"summary.json": w.summary.replace(b'"kind": "toy"', b'"kind": "fork"')}),
+            lambda w: w.files.update({"summary.json": w.summary.replace(b'"repo": "%s"' % AW.REPO.encode(),
+                                                                         b'"repo": null')}),
             lambda w: w.files.update({"summary.json": w.summary.replace(b'"seed_epochs": [{', b'"seed_epochs": [], '
                                                                                              b'"x": [{')}),
             lambda w: w.files.update({"policy.json": b"nope"}),
