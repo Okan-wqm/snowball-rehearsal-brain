@@ -4,6 +4,9 @@ Tarih: 2026-11-13 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-16; gözlem): (B)'nin yedinci denemesi kırmızı. Hakem koşusu 43926970052: `cek`, `cagir`, `getir`,
+  `kos` yeşil; `yaz` oyuncakta `refs/heads/brain/integration`'ı yazdı (dal oyuncakta duruyor, başı de5b57c), sonraki
+  `POST /repos/Okan-wqm/snowball-rehearsal-toy/git/refs` 422 aldı (`hard_stop`).
 - 2.2 (2026-11-16; gözlem): (B)'nin altıncı denemesi kırmızı. Hakem koşusu 43886515914: `cek`, `cagir`, `getir`,
   `kos` yeşil; `yaz` App kimliğinden geçti, sonra `genesis payload: payload.seed_epoch.seed_sha256: not 64 lowercase
   hex` ile reddetti. Hakem reposunun `setup/summary.json`'unda `seed_epochs[]` satırlarının `seed_sha256`'sı `null`'dır;
