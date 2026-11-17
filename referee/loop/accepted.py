@@ -5,7 +5,7 @@ the referee repository's ``main``, two files ``result.json`` and ``result.json.s
 ``sigstore verify identity`` against the referee repository's ``bootstrap.yml`` on ``main``; a reader that cannot
 verify it, or finds none, stops with exit 2; the last accepted SHA is ``state.last_accepted_sha``), tohum/26c
 ``setup/imports.jsonl`` (one chained row per import, with ``referee_tree_sha256``; ``loop.treehash`` is the rule),
-asama-0/01 D1 (green: the accepted SHA's ``referee/`` hash is the last ``imports.jsonl`` row's).
+asama-0/01 D1 and tohum/29u (the running tree, below).
 
 Every refusal is ``StateError`` with one reason (``reasons[0]``); the ``cek`` job turns it into exit 2 (no verdict), as 29b says.
 
@@ -36,9 +36,23 @@ Only bytes that passed the verifier are parsed.
 transfer has a row of its own form), so the import is the last row that carries ``referee_tree_sha256`` (tohum/29o:
 "the last imports row carrying ``referee_tree_sha256``; the counter's other touches are skipped"); no such row is
 ``imports_no_transfer``; its value must be 64 lowercase hex (``imports_invalid``). It returns that row and its line's
-bytes without the LF (``activate``'s ``import_line_sha256``). ``check_tree``: the accepted commit's ``referee/`` hash (``loop.treehash.of_commit``) equals it;
-a tree the hash refuses is ``referee_tree_refused`` (the hash's reasons after it in ``reasons``), a different hash
-``referee_tree_mismatch``.
+bytes without the LF (``activate``'s ``import_line_sha256``).
+
+**The running tree** (tohum/29u "Döngü ne okur", which replaces the comparison in asama-0/01 D1's last cell: the
+running referee tree is the ``referee/`` at the last transfer row's ``brain_sha``; that SHA is the accepted SHA
+itself or an ancestor of it, and the ``referee/`` hash there is the row's ``referee_tree_sha256``; a ``referee/``
+at the accepted SHA that differs from the transferred one is no reason to stop). Three rules, each a function:
+
+- ``transfer_commit(row)``: the row's ``brain_sha``, which must be 40 lowercase hex (``imports_invalid``; only D1
+  reads the field, ``activate`` does not).
+- ``check_ancestor(source, accepted, transfer)``: ``transfer`` is ``accepted`` or is reached from it over
+  ``parent`` lines (every parent of a merge is followed; each commit read with ``loop.gitobj.parents``, its id
+  recomputed), else ``transfer_not_ancestor``; a commit of that walk the source lacks or cannot read is
+  ``transfer_ancestry_unreadable`` (the object reasons after it, marked ``brain:``). Equal ids read nothing.
+- ``check_tree(source, transfer, row)``: the ``referee/`` hash of the transfer commit
+  (``loop.treehash.of_commit``) equals the row's; a tree the hash refuses is ``referee_tree_refused`` (the hash's
+  reasons after it in ``reasons``), a different hash ``referee_tree_mismatch``. The accepted commit's own
+  ``referee/`` is not hashed and not compared.
 
 Which ``sigstore`` program runs is the caller's argument (``sigstore``, an argv prefix): in a run, the one the
 ``sigstore`` step installs from ``bootstrap/requirements/sign.txt`` (tohum/29s, ``loop.inputs.sigstore``).
@@ -68,6 +82,7 @@ from typing import Any, Callable, Sequence
 
 import cli
 from ledger import chain as C
+from loop import gitobj as G
 from loop import treehash as T
 from loop.pulled import PulledError
 
@@ -308,10 +323,36 @@ def last_import(data: bytes) -> tuple[dict, bytes]:
     return row, line
 
 
-def check_tree(source: Any, commit: str, imported: dict) -> str:
-    """The accepted commit's ``referee/`` hash, which must equal the last import's (the rules above)."""
+def transfer_commit(imported: dict) -> str:
+    """The transfer row's ``brain_sha`` (the rules above)."""
+    sha = imported.get("brain_sha")
+    if not (isinstance(sha, str) and G.SHA.fullmatch(sha)):
+        raise StateError("imports_invalid")
+    return sha
+
+
+def check_ancestor(source: Any, accepted: str, transfer: str) -> None:
+    """``transfer`` is ``accepted`` or one of its ancestors in ``source`` (the rules above)."""
+    seen: set[str] = set()
+    todo = [accepted]
+    while todo:
+        commit = todo.pop()
+        if commit == transfer:
+            return
+        if commit in seen:
+            continue
+        seen.add(commit)
+        try:
+            todo += G.parents(source, commit)
+        except PulledError as exc:
+            raise StateError("transfer_ancestry_unreadable", ["brain:%s" % r for r in exc.reasons]) from None
+    raise StateError("transfer_not_ancestor")
+
+
+def check_tree(source: Any, transfer: str, imported: dict) -> str:
+    """The transfer commit's ``referee/`` hash, which must equal its import row's (the rules above)."""
     try:
-        got = T.of_commit(source, commit)
+        got = T.of_commit(source, transfer)
     except T.TreeHashError as exc:
         raise StateError("referee_tree_refused", exc.reasons) from None
     except PulledError as exc:

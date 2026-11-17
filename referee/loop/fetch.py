@@ -25,6 +25,13 @@ and no terminal prompt, nothing is asked for a password:
    <url> <sha>:refs/pulled``: only https, no tags, no submodule, the one commit with its whole tree and no
    history, kept by the ref ``refs/pulled``; no garbage collection after it.
 
+``fetch(git_dir, url, sha, history=True)`` asks for the commit's history instead of its tree: step 2 has
+``--filter=tree:0`` in the place of ``--depth=1`` (every commit reachable from ``sha``, no tree and no blob; the
+partial-clone filter of git's protocol v2, which the server must allow: github.com does,
+``tests/fixtures/git-fetch.json`` ``history``). ``loop.accepted.check_ancestor`` walks it; a tree asked of such a
+directory is not there (real git then asks the server for it: it marks the URL a promisor remote in the
+directory's own config; D1 asks it for commits only).
+
 A process that cannot start is ``git_unavailable``; a non-zero exit is ``fetch_failed:init:<code>`` or
 ``fetch_failed:fetch:<code>`` (git's own message goes to stderr). Last, the commit is read back through
 ``loop.gitobj.GitBatch`` with ``loop.gitobj.read`` (its id recomputed); its reasons (``object_missing:<sha>``,
@@ -81,13 +88,13 @@ def _checks(git_dir: str, url: str) -> list[str]:
     return reasons
 
 
-def argv(git: str, git_dir: str, url: str, sha: str) -> list[list[str]]:
-    """The two commands ``fetch`` runs, in order."""
+def argv(git: str, git_dir: str, url: str, sha: str, history: bool = False) -> list[list[str]]:
+    """The two commands ``fetch`` runs, in order (``history``: the commit's history without trees)."""
     config = [a for c in CONFIG for a in ("-c", c)]
     return [
         [git, "init", "--bare", "--quiet", git_dir],
         [git, *config, "--git-dir=%s" % git_dir, "fetch", "--quiet", "--no-tags", "--no-recurse-submodules",
-         "--depth=1", "--no-write-fetch-head", "--", url, "%s:%s" % (sha, REF)],
+         "--filter=tree:0" if history else "--depth=1", "--no-write-fetch-head", "--", url, "%s:%s" % (sha, REF)],
     ]
 
 
@@ -148,7 +155,8 @@ def heads(git_dir: str, url: str, refs: list[str], git: str = "git",
         shutil.rmtree(git_dir, ignore_errors=True)
 
 
-def fetch(git_dir: str, url: str, sha: str, git: str = "git", environ: dict[str, str] | None = None) -> None:
+def fetch(git_dir: str, url: str, sha: str, git: str = "git", environ: dict[str, str] | None = None,
+          history: bool = False) -> None:
     """Fill the new bare git directory ``git_dir`` with commit ``sha`` of ``url`` by the rules above."""
     reasons = [] if isinstance(sha, str) and G.SHA.fullmatch(sha) else ["fetch_sha_unsafe"]
     reasons += _checks(git_dir, url)
@@ -156,7 +164,7 @@ def fetch(git_dir: str, url: str, sha: str, git: str = "git", environ: dict[str,
         raise PulledError(reasons)
     env = dict(G.git_env(environ), GIT_TERMINAL_PROMPT="0")
     try:
-        for step, cmd in zip(("init", "fetch"), argv(git, git_dir, url, sha)):
+        for step, cmd in zip(("init", "fetch"), argv(git, git_dir, url, sha, history)):
             code = _run(cmd, env).returncode
             if code != 0:
                 raise PulledError(["fetch_failed:%s:%d" % (step, code)])

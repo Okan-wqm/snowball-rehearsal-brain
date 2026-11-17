@@ -5,13 +5,15 @@ argv and environment and answers ``cat-file --batch`` with real git's records (`
 
 - the two commands and the read-back, exactly, with the environment of ``loop.gitobj.git_env`` plus
   ``GIT_TERMINAL_PROMPT=0`` (no inherited ``GIT_*`` or ``SSH_ASKPASS``), stdin and stdout ``/dev/null``;
+- ``history=True``: ``--filter=tree:0`` in the place of ``--depth=1``, nothing else different;
 - every unsafe input refused together before any process starts; the URLs that are accepted;
 - a failing ``init`` or ``fetch``, a git that cannot start, a commit missing or not a commit after the fetch:
   each its reason, and the directory removed.
 
 Real git: ``fixtures/git-fetch.json`` is git 2.47.3 running these commands against github.com and a local
 ``file://`` repository (``capture_git_fetch.py``); ``RealGit`` checks its argv is today's ``loop.fetch.argv`` and
-what git did: a public commit fetched with no history, an unknown commit, a missing repository and a ``file://``
+what git did: a public commit's history fetched with ``history=True`` (``--filter=tree:0``) and walked by
+``loop.accepted.check_ancestor``, a public commit fetched with no history, an unknown commit, a missing repository and a ``file://``
 URL refused, and the ``SSH_ASKPASS`` program run only when it is put back after ``git_env``.
 
 ``loop.fetch.heads`` over the same fake ``git`` (its ``ls-remote`` writes a given answer): the two commands exactly,
@@ -99,6 +101,21 @@ class Fetch(unittest.TestCase):
             self.assertNotIn("SSH_ASKPASS", call["env"])
         self.assertEqual([c["fds"] for c in calls[:2]], [[os.devnull, os.devnull]] * 2)  # nothing can be asked
 
+    def test_history_asks_for_every_commit_and_no_tree(self):
+        git = S.install_git(self.bin, self.answers)
+        F.fetch(self.git_dir, URL, REAL_COMMIT, git=git, history=True)
+        fetch = self.calls()[1]["argv"]
+        self.assertEqual(fetch, CONFIG + ["--git-dir=%s" % self.git_dir, "fetch", "--quiet", "--no-tags",
+                                          "--no-recurse-submodules", "--filter=tree:0", "--no-write-fetch-head",
+                                          "--", URL, "%s:refs/pulled" % REAL_COMMIT])
+        self.assertEqual(self.calls()[2]["argv"], ["--git-dir=%s" % self.git_dir, "cat-file", "--batch"])  # read back
+        self.assertEqual(self.calls()[1]["fds"], [os.devnull, os.devnull])
+        shutil.rmtree(self.git_dir)
+        os.remove(os.path.join(self.bin, "calls.jsonl"))
+        self.fetch()  # without it: one commit, no history, and no filter
+        self.assertIn("--depth=1", self.calls()[1]["argv"])
+        self.assertNotIn("--filter=tree:0", self.calls()[1]["argv"])
+
     def test_unsafe_inputs_start_no_process(self):
         os.mkdir(self.git_dir)
         self.refused(["fetch_sha_unsafe", "fetch_url_unsafe", "fetch_dir_unsafe"],
@@ -177,6 +194,20 @@ class RealGit(unittest.TestCase):
 
     def test_the_captured_commands_are_fetchs(self):
         self.assertEqual(self.doc["argv"], F.argv("git", "<git_dir>", "<url>", "<sha>"))
+        self.assertEqual(self.doc["history_argv"], F.argv("git", "<git_dir>", "<url>", "<sha>", history=True))
+        self.assertNotEqual(self.doc["history_argv"], self.doc["argv"])
+
+    def test_what_real_git_did_with_history(self):
+        # github.com serves the filter; what was fetched answers loop.accepted.check_ancestor both ways
+        got = self.doc["cases"]["history"]
+        self.assertEqual((got["exits"], got["shallow_file"], got["promisor"]), ([0, 0], False, "true"))
+        self.assertEqual(got["ancestor"], {"reasons": [], "walked": 3})
+        self.assertEqual(got["not_ancestor"]["reasons"], ["transfer_not_ancestor"])
+        self.assertGreater(got["not_ancestor"]["walked"], 600)  # to the roots: every commit was there
+        # a depth-1 directory holds one commit: its parent is named on it, nothing further back can be answered
+        self.assertEqual(got["shallow_parent"], {"reasons": [], "walked": 1})
+        self.assertEqual(got["shallow_walk"], {"reasons": ["transfer_ancestry_unreadable",
+                                                           "brain:object_missing:<parent>"], "walked": 2})
 
     def test_what_real_git_did(self):
         cases = self.doc["cases"]
@@ -187,7 +218,7 @@ class RealGit(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(cases[name]["exits"], [0, 128])  # init, then a refused fetch
         self.assertEqual({n: c["prompt_script_ran"] for n, c in cases.items()},
-                         {"public": False, "unknown_commit": False, "no_repository": False,
+                         {"public": False, "history": False, "unknown_commit": False, "no_repository": False,
                           "no_repository_prompt_kept": True, "file_transport": False})
         for name in ("public", "unknown_commit", "no_repository"):
             self.assertTrue(F.URL.fullmatch(cases[name]["url"]) and G.SHA.fullmatch(cases[name]["sha"]))

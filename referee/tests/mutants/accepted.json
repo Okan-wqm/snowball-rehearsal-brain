@@ -917,6 +917,177 @@
    "tests": [
     "test_accepted.Unpack.test_a_zip_python_cannot_read"
    ]
+  },
+  {
+   "id": "ac_transfer_sha_unchecked",
+   "file": "loop/accepted.py",
+   "old": "    if not (isinstance(sha, str) and G.SHA.fullmatch(sha)):\n        raise StateError(\"imports_invalid\")\n    return sha",
+   "new": "    return sha",
+   "tests": [
+    "test_accepted.TransferCommit"
+   ]
+  },
+  {
+   "id": "ac_transfer_sha_match",
+   "file": "loop/accepted.py",
+   "old": "isinstance(sha, str) and G.SHA.fullmatch(sha)",
+   "new": "isinstance(sha, str) and G.SHA.match(sha)",
+   "tests": [
+    "test_accepted.TransferCommit"
+   ]
+  },
+  {
+   "id": "ac_ancestor_always",
+   "file": "loop/accepted.py",
+   "old": "    raise StateError(\"transfer_not_ancestor\")",
+   "new": "    return None",
+   "tests": [
+    "test_accepted.CheckAncestor.test_not_an_ancestor"
+   ]
+  },
+  {
+   "id": "ac_ancestor_first_parent_only",
+   "file": "loop/accepted.py",
+   "old": "            todo += G.parents(source, commit)\n",
+   "new": "            todo += G.parents(source, commit)[:1]\n",
+   "tests": [
+    "test_accepted.CheckAncestor.test_every_parent_of_a_merge_is_followed"
+   ]
+  },
+  {
+   "id": "ac_ancestor_one_step",
+   "file": "loop/accepted.py",
+   "old": "        if commit in seen:\n            continue\n",
+   "new": "        if seen:\n            continue\n",
+   "tests": [
+    "test_accepted.CheckAncestor.test_an_ancestor_over_one_or_more_parent_lines"
+   ]
+  },
+  {
+   "id": "ac_ancestor_seen_dropped",
+   "file": "loop/accepted.py",
+   "old": "        seen.add(commit)\n",
+   "new": "",
+   "tests": [
+    "test_accepted.CheckAncestor.test_a_shared_ancestor_is_read_once"
+   ]
+  },
+  {
+   "id": "ac_ancestor_missing_is_no",
+   "file": "loop/accepted.py",
+   "old": "            raise StateError(\"transfer_ancestry_unreadable\", [\"brain:%s\" % r for r in exc.reasons]) from None",
+   "new": "            continue",
+   "tests": [
+    "test_accepted.CheckAncestor.test_a_history_that_is_not_there_is_not_a_no"
+   ]
+  },
+  {
+   "id": "ac_ancestor_equal_reads",
+   "file": "loop/accepted.py",
+   "old": "        if commit == transfer:\n            return\n        if commit in seen:\n            continue\n        seen.add(commit)\n        try:\n            todo += G.parents(source, commit)",
+   "new": "        if commit in seen:\n            continue\n        seen.add(commit)\n        try:\n            todo += G.parents(source, commit)\n            if commit == transfer:\n                return",
+   "tests": [
+    "test_accepted.CheckAncestor.test_the_commit_itself_reads_nothing"
+   ]
+  },
+  {
+   "id": "ac_job_tree_of_accepted",
+   "file": "loop/job.py",
+   "old": "            tree = A.check_tree(transferred, transfer, imported)",
+   "new": "            tree = A.check_tree(transferred, sha, imported)",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_main_ahead_of_the_transfer_runs_on_the_transferred_tree"
+   ]
+  },
+  {
+   "id": "ac_job_old_rule",
+   "file": "loop/job.py",
+   "old": "        transfer = A.transfer_commit(imported)\n",
+   "new": "        transfer = A.transfer_commit(imported) and sha\n",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_main_ahead_of_the_transfer_runs_on_the_transferred_tree"
+   ]
+  },
+  {
+   "id": "ac_job_ancestor_unchecked",
+   "file": "loop/job.py",
+   "old": "                A.check_ancestor(history, sha, transfer)",
+   "new": "                pass",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_transfer_that_is_no_ancestor_of_the_accepted_commit"
+   ]
+  },
+  {
+   "id": "ac_job_ancestor_reversed",
+   "file": "loop/job.py",
+   "old": "                A.check_ancestor(history, sha, transfer)",
+   "new": "                A.check_ancestor(history, transfer, sha)",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_main_ahead_of_the_transfer_runs_on_the_transferred_tree"
+   ]
+  },
+  {
+   "id": "ac_job_always_fetches",
+   "file": "loop/job.py",
+   "old": "        if transfer != sha:  #",
+   "new": "        if True:  #",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_transfer_that_is_the_accepted_commit_fetches_nothing_more"
+   ]
+  },
+  {
+   "id": "ac_job_history_shallow",
+   "file": "loop/job.py",
+   "old": "git=git, environ=environ, history=True)",
+   "new": "git=git, environ=environ)",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_main_ahead_of_the_transfer_runs_on_the_transferred_tree"
+   ]
+  },
+  {
+   "id": "ac_job_transfer_sha_line",
+   "file": "loop/job.py",
+   "old": "\"transfer_sha\": transfer,",
+   "new": "\"transfer_sha\": sha,",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_main_ahead_of_the_transfer_runs_on_the_transferred_tree"
+   ]
+  },
+  {
+   "id": "ac_job_history_failure_swallowed",
+   "file": "loop/job.py",
+   "old": "                raise Unusable(\"cek: brain history fetch: %s\" % \", \".join(exc.reasons)) from None",
+   "new": "                return _refused(exc.reasons)",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_history_or_transfer_fetch_that_fails_is_no_verdict"
+   ]
+  },
+  {
+   "id": "ac_fetch_history_flag",
+   "file": "loop/fetch.py",
+   "old": "\"--filter=tree:0\" if history else \"--depth=1\"",
+   "new": "\"--depth=1\"",
+   "tests": [
+    "test_fetch.Fetch.test_history_asks_for_every_commit_and_no_tree"
+   ]
+  },
+  {
+   "id": "ac_fetch_history_blobless",
+   "file": "loop/fetch.py",
+   "old": "\"--filter=tree:0\" if history",
+   "new": "\"--filter=blob:none\" if history",
+   "tests": [
+    "test_fetch.RealGit.test_the_captured_commands_are_fetchs"
+   ]
+  },
+  {
+   "id": "ac_fetch_history_not_passed",
+   "file": "loop/fetch.py",
+   "old": "argv(git, git_dir, url, sha, history)):",
+   "new": "argv(git, git_dir, url, sha)):",
+   "tests": [
+    "test_fetch.Fetch.test_history_asks_for_every_commit_and_no_tree"
+   ]
   }
  ]
 }

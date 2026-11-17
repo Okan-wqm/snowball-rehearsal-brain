@@ -13,7 +13,11 @@
   an object, an id that is not a target id), ``target_ambiguous``, ``target_kind_invalid``, listed together;
 - the ``cek`` job's D1 accepted-SHA check (``loop.job.cek_d1``): a fake Actions API and verifier, the real
   ``loop.fetch`` and ``loop.gitobj.GitBatch`` with ``git_store``'s test ``git`` holding the brain's commit, the
-  checkout's ``setup/imports.jsonl``, ``setup/summary.json`` and ``policy.json``; then the targets list
+  checkout's ``setup/imports.jsonl``, ``setup/summary.json`` and ``policy.json``; the running tree by tohum/29u: a
+  transfer row naming the accepted commit (nothing more fetched), naming its parent whose ``referee/`` differs
+  (served, on the row's hash, with the accepted commit's candidates), naming an unrelated commit
+  (``transfer_not_ancestor``), carrying another hash than the transfer commit's or no commit id, and a history or
+  transfer fetch that fails (no verdict); then the targets list
   (``loop.cek.targets``): a refused list is the job's reason, with ``accepted``, before any target is read (no
   listing, no fetch but the brain's, no Rekor read, nothing uploaded); then for each target, in the summary's
   order, in its own directory ``cek-*/<id>/``, the target half: the heads read by ``loop.fetch.heads`` (the fake
@@ -449,11 +453,17 @@ class CekJob(unittest.TestCase):
         return b"".join(b"%s\t%s\n" % (sha.encode(), ref.encode()) for sha, ref in rows if sha)
 
     def run_cek(self, brain=None, imported=None, verifier=None, exits=None, env=None, http=None, listing=None,
-                target=None, summary=None, rekor=None, bootstrap=None, sigstore=True, listings=None):
-        """``bootstrap``: the checkout's ``bootstrap.json`` (a dict, raw bytes, or ``ABSENT``); ``sigstore``: whether
+                target=None, summary=None, rekor=None, bootstrap=None, sigstore=True, listings=None,
+                transfer=None, related=True, row_sha=None, wrap=None):
+        """``transfer``: the files of an earlier transfer commit (the row names it and, unless ``imported``, its
+        ``referee/`` hash; the accepted commit is its child, or with ``related`` false a commit without parent);
+        ``row_sha``: the row's ``brain_sha`` as given; ``wrap``: makes the ``git`` the job runs from the fake's path;
+        ``bootstrap``: the checkout's ``bootstrap.json`` (a dict, raw bytes, or ``ABSENT``); ``sigstore``: whether
         the sigstore step's program is in place (``loop.inputs.sigstore``); ``listings``: each repository's own
         ``ls-remote`` answer (URL -> bytes, ``install_listing_git``), else ``listing`` for every repository."""
-        objects, commit = S.store(self.BRAIN if brain is None else brain)
+        objects, self.transfer_commit = ({}, None) if transfer is None else S.store(transfer)
+        objects, commit = S.store(self.BRAIN if brain is None else brain, objects=objects,
+                                  parents=(self.transfer_commit,) if transfer is not None and related else ())
         tobjects, self.target_commit = S.store(self.TARGET)
         if target is not None:
             tobjects = target
@@ -463,10 +473,14 @@ class CekJob(unittest.TestCase):
                             listing=self.listing(self.target_commit) if listing is None else listing)
         if listings is not None:
             git = install_listing_git(self.bin, listings)
-        tree = T.digest([(p, "file", d) for p, d in self.BRAIN.items()])
+        tree = imported if imported is not None else T.digest(
+            [(p, "file", d) for p, d in (self.BRAIN if transfer is None else transfer).items()])
+        named = row_sha if row_sha is not None else self.transfer_commit or commit
         with open(os.path.join(self.work, "setup", "imports.jsonl"), "wb") as fh:
-            fh.write(self.TA.chained([self.TA.import_row(tree if imported is None else imported, commit)])
+            fh.write(self.TA.chained([self.TA.import_row(tree, named)])
                      if imported != "" else b"")
+        if wrap is not None:
+            git = wrap(git)
         with open(os.path.join(self.work, "setup", "summary.json"), "wb") as fh:
             fh.write(json.dumps(self.summary if summary is None else summary).encode())
         write_bootstrap(self.work, bootstrap)
@@ -742,6 +756,85 @@ class CekJob(unittest.TestCase):
         out, _, _ = self.run_cek(brain=changed)
         self.assertEqual(out["reason"], "referee_tree_mismatch")
         self.assertFalse([a for c in S.calls(self.bin) for a in c["argv"] if a == "ls-remote"])  # nothing after it
+
+    # ---- tohum/29u "Döngü ne okur": main ahead of the transfer. The input that showed the old rule wrong is
+    # loop run 44094922317 (2026-11-17): the bootstrap referee accepted a push that changed referee/ after the
+    # transfer, and cek stopped with referee_tree_mismatch.
+
+    OLD = {"referee/loop/job.py": b"x = 0\n", "referee/a.py": b"before\n", "candidates/t1/gone/x": b"x"}
+
+    def brain_fetches(self) -> list[tuple[str, str]]:
+        """``(how, refspec)`` of each fetch from the brain's repository, in order."""
+        return [("history" if "--filter=tree:0" in a else "commit" if "--depth=1" in a else "?", a[-1])
+                for a in (c["argv"] for c in S.calls(self.bin)) if "fetch" in a and a[-2] == "https://github.com/o/brain"]
+
+    def test_a_main_ahead_of_the_transfer_runs_on_the_transferred_tree(self):
+        out, commit, old_tree = self.run_cek(transfer=self.OLD)
+        self.assertEqual((out["ok"], out["done"]), (True, ["D1"]), out)
+        new_tree = T.digest([(p, "file", d) for p, d in self.BRAIN.items()])
+        self.assertNotEqual(old_tree, new_tree)  # the accepted commit's referee/ is another tree
+        self.assertEqual(out["accepted"], {"brain_sha": commit, "transfer_sha": self.transfer_commit,
+                                           "referee_tree_sha256": old_tree, "artifact_id": 11,
+                                           "result_sha256": out["accepted"]["result_sha256"]})
+        # candidates/ and targets/ are the accepted commit's, not the transfer's
+        self.assertEqual(self.one(out)["assembled"]["candidates"], ["good"])
+        self.assertEqual(self.brain_fetches(), [("commit", "%s:refs/pulled" % commit),
+                                                ("history", "%s:refs/pulled" % commit),
+                                                ("commit", "%s:refs/pulled" % self.transfer_commit)])
+        dirs = [a.split("=", 1)[1] for c in S.calls(self.bin) if "fetch" in c["argv"] for a in c["argv"]
+                if a.startswith("--git-dir=")][:3]
+        self.assertEqual([os.path.basename(d) for d in dirs], ["brain.git", "history.git", "transfer.git"])
+        self.assertEqual(len({os.path.dirname(d) for d in dirs}), 1)
+
+    def test_a_transfer_that_is_the_accepted_commit_fetches_nothing_more(self):
+        out, commit, tree = self.run_cek()
+        self.assertEqual((out["accepted"]["transfer_sha"], out["accepted"]["referee_tree_sha256"]), (commit, tree))
+        self.assertEqual(self.brain_fetches(), [("commit", "%s:refs/pulled" % commit)])
+
+    def test_a_transfer_that_is_no_ancestor_of_the_accepted_commit(self):
+        out, commit, _ = self.run_cek(transfer=self.OLD, related=False)
+        self.assertEqual((out["ok"], out["reason"]), (False, "transfer_not_ancestor"))
+        self.assertNotIn("accepted", out)
+        # the transfer commit is not fetched, no target is listed
+        self.assertEqual(self.brain_fetches(), [("commit", "%s:refs/pulled" % commit),
+                                                ("history", "%s:refs/pulled" % commit)])
+        self.assertFalse([a for c in S.calls(self.bin) for a in c["argv"] if a == "ls-remote"])
+
+    def test_the_rows_hash_must_be_the_transfer_commits(self):
+        # the accepted commit's own referee/ hash in the row is not the transferred tree's
+        new_tree = T.digest([(p, "file", d) for p, d in self.BRAIN.items()])
+        out, _, _ = self.run_cek(transfer=self.OLD, imported=new_tree)
+        self.assertEqual((out["ok"], out["reason"]), (False, "referee_tree_mismatch"))
+        self.clean()
+        out, _, _ = self.run_cek(transfer=dict(self.OLD, **{"referee/Setup": b""}), imported=new_tree)
+        self.assertEqual((out["reason"], out["reasons"]), ("referee_tree_refused", ["operator_name:Setup"]))
+
+    def test_a_row_without_a_commit_id(self):
+        for bad in ("", "x" * 40, "A" * 40, "a" * 39):
+            with self.subTest(bad=bad):
+                out, commit, _ = self.run_cek(row_sha=bad)
+                self.assertEqual((out["ok"], out["reason"]), (False, "imports_invalid"))
+                self.assertEqual(self.brain_fetches(), [("commit", "%s:refs/pulled" % commit)])
+                self.clean()
+
+    def test_a_history_or_transfer_fetch_that_fails_is_no_verdict(self):
+        def failing(marker):
+            def wrap(git):
+                path = os.path.join(self.bin, "git-failing")
+                with open(path, "w") as fh:
+                    fh.write('#!/bin/sh\ncase " $* " in *" fetch "*%s*) exit 128;; esac\nexec "%s" "$@"\n'
+                             % (marker, git))
+                os.chmod(path, 0o755)
+                return path
+            return wrap
+        with self.assertRaisesRegex(J.Unusable, "cek: brain history fetch: fetch_failed:fetch:128"):
+            self.run_cek(transfer=self.OLD, wrap=failing("--filter=tree:0"))
+        self.assertFalse(os.path.lexists(os.path.join(self.temp, "out", "pulled")))
+        self.clean()
+        _, transfer = S.store(self.OLD)
+        with self.assertRaisesRegex(J.Unusable, "cek: transfer fetch: fetch_failed:fetch:128"):
+            self.run_cek(transfer=self.OLD, wrap=failing(transfer + ":"))
+        self.assertFalse(os.path.lexists(os.path.join(self.temp, "out", "pulled")))
 
     def test_a_refused_tree_and_a_broken_import(self):
         out, _, _ = self.run_cek(brain=dict(self.BRAIN, **{"referee/Setup": b""}))

@@ -533,6 +533,11 @@ class CheckTree(unittest.TestCase):
         with self.assertRaises(A.StateError):
             A.check_tree(self.objects.__getitem__, self.commit, import_row(last))
 
+    def test_the_tree_hashed_is_the_commit_named(self):
+        # tohum/29u: the row's commit is hashed; a later commit with another referee/ in the same source is not read
+        later, _ = S.store({"referee/a.py": b"changed"}, parents=(self.commit,), objects=dict(self.objects))
+        self.assertEqual(A.check_tree(later.__getitem__, self.commit, import_row(self.hash)), self.hash)
+
     def test_refused(self):
         objects, commit = S.store({"referee/a.py": b"x", "referee/setup": b"y"})
         with self.assertRaises(A.StateError) as ctx:
@@ -541,6 +546,83 @@ class CheckTree(unittest.TestCase):
         with self.assertRaises(A.StateError) as ctx:
             A.check_tree({}.__getitem__, commit, import_row(self.hash))
         self.assertEqual(ctx.exception.reasons, ["referee_tree_refused", "brain:object_missing:%s" % commit])
+
+
+class TransferCommit(unittest.TestCase):
+    def test_the_rows_brain_sha(self):
+        self.assertEqual(A.transfer_commit(import_row("1" * 64, "b" * 40)), "b" * 40)
+
+    def test_anything_else_is_invalid(self):
+        row = import_row("1" * 64)
+        del row["brain_sha"]
+        for bad in (row, import_row("1" * 64, "B" * 40), import_row("1" * 64, "b" * 39), import_row("1" * 64, "b" * 41),
+                    import_row("1" * 64, None), import_row("1" * 64, 7), import_row("1" * 64, "b" * 40 + "\n")):
+            with self.subTest(bad=bad.get("brain_sha", "absent")), self.assertRaises(A.StateError) as ctx:
+                A.transfer_commit(bad)
+            self.assertEqual(ctx.exception.reasons, ["imports_invalid"])
+
+
+class CheckAncestor(unittest.TestCase):
+    """root <- a <- b <- merge(b, side) with side <- root2; ``other`` shares nothing."""
+
+    def setUp(self):
+        self.objects: dict = {}
+        _, self.root = S.store({"f": b"0"}, objects=self.objects)
+        _, self.a = S.store({"f": b"1"}, (self.root,), self.objects)
+        _, self.b = S.store({"f": b"2"}, (self.a,), self.objects)
+        _, self.root2 = S.store({"g": b"0"}, objects=self.objects)
+        _, self.side = S.store({"g": b"1"}, (self.root2,), self.objects)
+        _, self.merge = S.store({"f": b"2", "g": b"1"}, (self.b, self.side), self.objects)
+        _, self.other = S.store({"h": b"0"}, objects=self.objects)
+        self.read: list[str] = []
+
+    def source(self, sha):
+        self.read.append(sha)
+        return self.objects[sha]
+
+    def refused(self, accepted, transfer, reasons, objects=None):
+        source = self.source if objects is None else objects.__getitem__
+        with self.assertRaises(A.StateError) as ctx:
+            A.check_ancestor(source, accepted, transfer)
+        self.assertEqual(ctx.exception.reasons, reasons)
+
+    def test_the_commit_itself_reads_nothing(self):
+        self.assertIsNone(A.check_ancestor({}.__getitem__, self.b, self.b))
+
+    def test_an_ancestor_over_one_or_more_parent_lines(self):
+        for accepted, transfer in ((self.b, self.a), (self.b, self.root), (self.merge, self.root)):
+            self.assertIsNone(A.check_ancestor(self.source, accepted, transfer))
+
+    def test_every_parent_of_a_merge_is_followed(self):
+        self.assertIsNone(A.check_ancestor(self.source, self.merge, self.root2))  # behind the second parent
+        self.assertIsNone(A.check_ancestor(self.source, self.merge, self.side))
+        self.assertIsNone(A.check_ancestor(self.source, self.merge, self.b))
+
+    def test_not_an_ancestor(self):
+        self.refused(self.b, self.other, ["transfer_not_ancestor"])
+        self.assertEqual(sorted(self.read), sorted([self.b, self.a, self.root]))  # each commit of the history, once
+        self.refused(self.a, self.b, ["transfer_not_ancestor"])       # a descendant is no ancestor
+        self.refused(self.b, self.side, ["transfer_not_ancestor"])    # a sibling line
+        self.refused(self.merge, self.other, ["transfer_not_ancestor"])
+        self.refused(self.root, "0" * 40, ["transfer_not_ancestor"])
+
+    def test_a_shared_ancestor_is_read_once(self):
+        _, twice = S.store({"f": b"9"}, (self.a, self.a, self.b), self.objects)
+        self.refused(twice, self.other, ["transfer_not_ancestor"])
+        self.assertEqual(sorted(self.read), sorted([twice, self.b, self.a, self.root]))
+
+    def test_a_history_that_is_not_there_is_not_a_no(self):
+        # a depth-1 fetch: the commit names a parent the source lacks; "not found" must not be said of it
+        shallow = {k: v for k, v in self.objects.items() if k != self.a}
+        self.refused(self.b, self.other, ["transfer_ancestry_unreadable", "brain:object_missing:%s" % self.a], shallow)
+        self.refused(self.b, self.root, ["transfer_ancestry_unreadable", "brain:object_missing:%s" % self.a], shallow)
+        self.assertIsNone(A.check_ancestor(shallow.__getitem__, self.b, self.a))  # named by the commit that is there
+        swapped = dict(self.objects)
+        swapped[self.a] = self.objects[self.root]  # another commit's bytes under this id
+        self.refused(self.b, self.other, ["transfer_ancestry_unreadable", "brain:object_mismatch:%s" % self.a], swapped)
+        blob = dict(self.objects)
+        blob[self.b] = ("blob", b"x")
+        self.refused(self.b, self.other, ["transfer_ancestry_unreadable", "brain:object_mismatch:%s" % self.b], blob)
 
 
 if __name__ == "__main__":

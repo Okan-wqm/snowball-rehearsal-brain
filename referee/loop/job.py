@@ -195,8 +195,14 @@ refused tree is ``pulled_invalid``). Then:
   job's ``GITHUB_TOKEN``, ``actions: read``; the artifact verified by the ``sigstore`` step's program,
   ``loop.inputs.sigstore``, which the Rekor entry's check below runs too), fetches the accepted
   brain commit with ``loop.fetch`` from ``loop.accepted.repo_url`` of ``bootstrap.json``'s ``brain_repo`` in the
-  checkout (``loop.inputs.brain_repo``, tohum/29s) into ``$RUNNER_TEMP/work/cek-*/brain.git``, and compares its ``referee/`` hash with the last
-  transfer row of the checkout's ``setup/imports.jsonl`` (``loop.accepted.last_import``, ``check_tree``). Then the
+  checkout (``loop.inputs.brain_repo``, tohum/29s) into ``$RUNNER_TEMP/work/cek-*/brain.git``, and checks the running tree by tohum/29u
+  (``loop.accepted``'s "The running tree"): the last transfer row of the checkout's ``setup/imports.jsonl``
+  (``last_import``) names the transfer commit (``transfer_commit``); when it is the accepted commit itself, that
+  commit's ``referee/`` hash must be the row's (``check_tree``), nothing more is fetched; when it is another, the
+  accepted commit's history is fetched without trees into ``cek-*/history.git`` (``loop.fetch`` ``history``) and the
+  transfer commit must be an ancestor (``check_ancestor``), then the transfer commit is fetched into
+  ``cek-*/transfer.git`` and its ``referee/`` hash must be the row's; the accepted commit's own ``referee/`` is
+  not compared, so a ``main`` that moved on after the transfer does not stop the loop. Then the
   target half, once per ``targets[]`` entry of the checkout's ``setup/summary.json`` in order (``loop.cek.targets``;
   its refusals ``summary_unreadable``, ``targets_empty``, ``target_id_unsafe``, ``target_ambiguous``,
   ``target_kind_invalid`` stop the job before any target is read), each in its own ``cek-*/<id>/``: its ``repo`` made a URL by
@@ -206,9 +212,9 @@ refused tree is ``pulled_invalid``). Then:
   into ``cek-*/<id>/pulled``, not into ``out/pulled``: the upload takes the artifact only once D1's other checks
   pass for every target. An unset variable, an unusable ``bootstrap.json`` or ``brain_repo``, no ``sigstore`` step program, a bootstrap
   state that is absent, unreadable or unverified, an unreadable checkout file, a
-  failed listing and a failed fetch (of a ``brain/state`` commit too) are unusable (exit 2: 29b's reader stops). Refusals (exit 1): ``imports_broken``,
-  ``imports_no_transfer``, ``imports_invalid``, ``referee_tree_refused`` (with the hash's reasons),
-  ``referee_tree_mismatch``; ``target_repo_unsafe``; ``head_missing:<branch>`` for each head the target lacks (a
+  failed listing and a failed fetch (of the brain's history, the transfer commit or a ``brain/state`` commit too) are unusable (exit 2: 29b's reader stops). Refusals (exit 1): ``imports_broken``,
+  ``imports_no_transfer``, ``imports_invalid``, ``transfer_not_ancestor``, ``transfer_ancestry_unreadable`` (with the object reasons),
+  ``referee_tree_refused`` (with the hash's reasons), ``referee_tree_mismatch``; ``target_repo_unsafe``; ``head_missing:<branch>`` for each head the target lacks (a
   toy with neither is its genesis cycle and a copy with neither is waiting, or its genesis cycle once the gate is
   open, above; nothing of the target is fetched). Then, unless it is the genesis cycle, MF1's ``verify --previous`` of ``brain/state`` (``loop.state``), before
   anything else of the target is fetched: its head fetched with ``loop.fetch`` into ``cek-*/state.git``, its one
@@ -234,8 +240,9 @@ refused tree is ``pulled_invalid``). Then:
   (``profile.unit_verify.check_recipe`` with the artifact's policy and ``targets[]`` entry: MF6's recipe rules and,
   on the tree, ``profile.derive check`` of the recipe against the referee's own derivation of that tree; a reason
   is ``recipe_refused`` with the reasons). A refusal after the assembly carries ``heads``, ``state``, ``root``
-  and ``assembled``. When all of it holds, the target's line has (``brain_sha``, ``referee_tree_sha256``,
-  ``result_sha256``, ``artifact_id``) at the job's top level; ``heads`` (branch to commit), ``state`` (``head``, ``previous``, ``rows``),
+  and ``assembled``. When all of it holds, the line's ``accepted`` has ``brain_sha`` (the accepted commit: ``candidates/`` and ``targets/`` are read there),
+  ``transfer_sha`` (the transfer row's commit) and ``referee_tree_sha256`` (the ``referee/`` hash of
+  ``transfer_sha``, equal to the row's), ``result_sha256``, ``artifact_id``; each target's line has ``heads`` (branch to commit), ``state`` (``head``, ``previous``, ``rows``),
   ``root`` (``root``, ``rekor_uuid``), ``assembled`` (``target``, ``commit``, ``candidates``), ``profile``
   (``unit_id``); the job's ``checked`` is ``CEK_CHECKED``: every check of D1's row has run. When every target
   holds, each served target's assembled directory, the bytes MF4 judged, is moved to ``$RUNNER_TEMP/out/pulled/<id>``
@@ -1043,12 +1050,26 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
         raise Unusable("cek: brain fetch: %s" % ", ".join(exc.reasons)) from None
     try:
         imported, _ = A.last_import(files[IMPORTS])
-        with G.GitBatch(brain_dir, git=git, environ=environ) as brain:
-            tree = A.check_tree(brain, sha, imported)
+        transfer = A.transfer_commit(imported)
+        transfer_dir = brain_dir
+        if transfer != sha:  # main moved on after the transfer (tohum/29u): the running tree is the transfer's
+            history_dir, transfer_dir = os.path.join(root, "history.git"), os.path.join(root, "transfer.git")
+            try:
+                F.fetch(history_dir, brain_url, sha, git=git, environ=environ, history=True)
+            except P.PulledError as exc:
+                raise Unusable("cek: brain history fetch: %s" % ", ".join(exc.reasons)) from None
+            with G.GitBatch(history_dir, git=git, environ=environ) as history:
+                A.check_ancestor(history, sha, transfer)
+            try:
+                F.fetch(transfer_dir, brain_url, transfer, git=git, environ=environ)
+            except P.PulledError as exc:
+                raise Unusable("cek: transfer fetch: %s" % ", ".join(exc.reasons)) from None
+        with G.GitBatch(transfer_dir, git=git, environ=environ) as transferred:
+            tree = A.check_tree(transferred, transfer, imported)
     except A.StateError as exc:
         return _refused(exc.reasons)
-    accepted = {"brain_sha": sha, "referee_tree_sha256": tree, "result_sha256": state["result_sha256"],
-                "artifact_id": state["artifact_id"]}
+    accepted = {"brain_sha": sha, "transfer_sha": transfer, "referee_tree_sha256": tree,
+                "result_sha256": state["result_sha256"], "artifact_id": state["artifact_id"]}
     try:
         pin = A.workflow_identity(environ["GITHUB_REPOSITORY"], A.LOOP_WORKFLOW)
     except A.StateError as exc:
