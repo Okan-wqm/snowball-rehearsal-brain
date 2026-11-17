@@ -54,13 +54,15 @@ from typing import Any
 import cli
 from dispatcher import llm_call as L
 from loop import pulled as P
+from policy import reads as R
 from profile import derive as D
 from target import branches as B
 
 SCHEMA = "snowball-response/1"
 RESPONSE = "response.json"
-# tohum/26b: stage_budgets{} is a key of policy.json's constitutional{} (18a: an "Anayasal" key), not of its top level
-CANARY_USD = ("constitutional", "stage_budgets", "asama_0", "canary_usd")
+# tohum/26b: stage_budgets{} is a key of policy.json's constitutional{} (18a: an "Anayasal" key), not of its top level;
+# the path is policy.reads', where the command of tohum/29v names it
+CANARY_USD = R.CANARY_USD
 CANARY = {
     "fields": {"target": "string"},
     "text": "This is the canary call of the Snowball loop for the target {{target}}. Reply only with the structured "

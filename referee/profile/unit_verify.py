@@ -198,7 +198,9 @@ order, ``<input>`` and ``<key>`` as written in the recipe:
   ``CLAUDE.md``, ``AGENTS.md``, ``.mcp.json`` or ``.envrc``);
 - ``cmd_empty:<field>``: ``lint_cmd``, ``test_cmd`` or ``affected_test_cmd`` is missing, not a list, empty,
   or holds a non-string or an empty string;
-- ``limit_key_unknown:<key>``: a ``limits`` key is not a key of ``policy.operating`` (values not looked at);
+- ``limit_key_unknown:<key>``: a ``limits`` key is not one of ``OPERATING_NAMES`` present in ``policy.operating``
+  (``policy.reads.operating``: a key of ``operating{}`` the loop does not read is no limit key; values not looked
+  at);
 - ``services_not_empty``: ``services`` is not ``[]`` (missing included).
 
 Unusable input there (exit 2): a file missing or not JSON, ``recipe`` not an object, ``policy`` not
@@ -236,6 +238,7 @@ import tempfile
 import time
 from typing import Any
 
+from policy import reads as P
 from profile import derive as D
 from runner import contained as C
 from runner import deps_npm as N
@@ -243,8 +246,7 @@ from runner import lint_record as R
 import cli
 
 RECIPE_FIELDS = D.RECIPE_FIELDS
-OPERATING_NAMES = ("unit_inputs_bytes", "deps_bytes", "worktree_bytes", "container_mem_bytes", "kos_wall_s",
-                  "test_total_s", "output_bytes")
+OPERATING_NAMES = P.OPERATING_NAMES  # the operating keys the loop reads: policy.reads names each path (tohum/29v)
 RUN_LIMIT_NAMES = ("unit_inputs_bytes", "worktree_bytes", "container_mem_bytes", "kos_wall_s", "test_total_s",
             "output_bytes")
 UNIT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
@@ -286,9 +288,21 @@ def _argv_ok(value: Any) -> bool:
             and all(isinstance(v, str) and v and "\x00" not in v for v in value))
 
 
+OPERATING_SHAPE = "policy must be {operating: {key: {value, band}}}"
+
+
+def _policy_operating(policy: Any) -> dict | None:
+    """``policy.reads.operating``: the named ``operating`` entries, ``None`` without a policy or its ``operating``;
+    ``VerifyError`` when ``operating`` is not an object."""
+    try:
+        return P.operating(policy)
+    except P.Malformed:
+        raise VerifyError(OPERATING_SHAPE) from None
+
+
 def _operating(policy: Any, keys) -> dict:
     """``{key: (value, band)}`` for ``keys`` from ``policy.operating``; each must be valid (MF3's rule)."""
-    operating = policy.get("operating") if isinstance(policy, dict) else None
+    operating = _policy_operating(policy)
     try:
         values = C.limits(operating, tuple(keys))
     except C.ContainmentError as exc:
@@ -303,9 +317,9 @@ def vector_check(recipe: Any, policy: Any) -> list[str]:
     ``path``, ``inputs`` (a list of strings) or ``limits`` (an object) is missing or of another type."""
     if not isinstance(recipe, dict):
         raise VerifyError("recipe is not an object")
-    operating = policy.get("operating") if isinstance(policy, dict) else None
-    if not isinstance(operating, dict):
-        raise VerifyError("policy must be {operating: {key: {value, band}}}")
+    operating = _policy_operating(policy)
+    if operating is None:
+        raise VerifyError(OPERATING_SHAPE)
     path, inputs, limits = recipe.get("path"), recipe.get("inputs"), recipe.get("limits")
     if not isinstance(path, str):
         raise VerifyError("recipe.path must be a string")
@@ -422,7 +436,7 @@ def _limit_reasons(limits: Any, policy: Any) -> list[str]:
     if not isinstance(limits, dict):
         return ["invalid:limits"]
     reasons = []
-    operating = policy.get("operating") if isinstance(policy, dict) else None
+    operating = _policy_operating(policy)
     for key in sorted(limits):
         value = limits[key]
         if key not in OPERATING_NAMES:
@@ -925,7 +939,7 @@ def derived_profile(tree: str, target: Any, policy: Any) -> dict:
     """The derivation the staging copies inputs under (``profile.derive`` with the policy's security keywords when
     the policy has a ``constitutional`` part, the seed's default list otherwise). One call for every reader of the
     staged tree: ``stage`` here and the gate's path rules in ``yaz`` (``loop.decide``) judge the same profile."""
-    return D.derive(tree, target, policy if isinstance(policy, dict) and "constitutional" in policy else None)
+    return D.derive(tree, target, policy if isinstance(policy, dict) and P.CONSTITUTIONAL in policy else None)
 
 
 def guard_profile(tree: str, target: Any, policy: Any) -> dict:

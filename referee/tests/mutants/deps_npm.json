@@ -937,24 +937,6 @@
    ]
   },
   {
-   "id": "dn_pol_notdict",
-   "file": "runner/deps_npm.py",
-   "old": "    if not isinstance(policy, dict):\n        raise DepsError(\"policy is not an object\")\n",
-   "new": "",
-   "tests": [
-    "test_deps_npm.TestCli.test_cli_unusable_input_is_exit_2_with_json_error"
-   ]
-  },
-  {
-   "id": "dn_pol_sections",
-   "file": "runner/deps_npm.py",
-   "old": "    if not isinstance(const, dict) or not isinstance(operating, dict):\n        raise DepsError",
-   "new": "    if False:\n        raise DepsError",
-   "tests": [
-    "test_deps_npm.TestLicense.test_policy_shape"
-   ]
-  },
-  {
    "id": "dn_pol_allow",
    "file": "runner/deps_npm.py",
    "old": "    if not isinstance(allow, list) or not all(isinstance(a, str) for a in allow):",

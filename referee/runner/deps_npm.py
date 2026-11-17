@@ -167,6 +167,7 @@ import urllib.request
 from typing import Any, Callable
 
 import cli
+from policy import reads as P
 
 DEFAULT_REGISTRIES = ("https://registry.npmjs.org/",)
 LICENSE_ALLOWLIST = ("MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "0BSD", "Apache-2.0", "ISC", "PSF-2.0",
@@ -656,25 +657,30 @@ def https_fetcher(url: str, cap: int | None) -> bytes:  # pragma: no cover - nee
         raise DepsError("fetch failed: %s: %s" % (url, cli.cause(exc))) from None
 
 
+DEPS_BYTES = (P.OPERATING, "deps_bytes")
+
+
 def _policy_values(policy: Any) -> tuple[list[str], dict, int | None]:
     if policy is None:
         return list(LICENSE_ALLOWLIST), {}, None
-    if not isinstance(policy, dict):
-        raise DepsError("policy is not an object")
-    const = policy.get("constitutional", {})
-    operating = policy.get("operating", {})
-    if not isinstance(const, dict) or not isinstance(operating, dict):
-        raise DepsError("policy constitutional or operating is not an object")
-    allow = const.get("license_allowlist", list(LICENSE_ALLOWLIST))
+    try:
+        allow = P.at(policy, P.LICENSE_ALLOWLIST)
+        exceptions = P.at(policy, P.LICENSE_EXCEPTIONS)
+        entry = P.at(policy, DEPS_BYTES)
+    except P.Malformed as exc:
+        raise DepsError(cli.cause(exc)) from None
+    if allow is P.ABSENT:
+        allow = list(LICENSE_ALLOWLIST)
     if not isinstance(allow, list) or not all(isinstance(a, str) for a in allow):
         raise DepsError("license_allowlist is not a list of strings")
-    exceptions = const.get("license_exceptions", {})
+    if exceptions is P.ABSENT:
+        exceptions = {}
     if not isinstance(exceptions, dict) or not all(
             isinstance(v, dict) and isinstance(v.get("expression"), str) for v in exceptions.values()):
         raise DepsError("license_exceptions is not {name==version: {expression, evidence}}")
     limit = None
-    if "deps_bytes" in operating:
-        value = operating["deps_bytes"].get("value") if isinstance(operating["deps_bytes"], dict) else None
+    if entry is not P.ABSENT:
+        value = entry.get("value") if isinstance(entry, dict) else None
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             raise DepsError("operating.deps_bytes.value is not a non-negative integer")
         limit = value

@@ -155,6 +155,7 @@ import tarfile
 from typing import Any
 
 import cli
+from policy import reads as P
 
 # What makes a directory a project, in the order a candidate's manifest is judged: npm's, then Nx's. The one list
 # for unit candidates here, the project an input belongs to (``profile.fit``) and Nx's project bounds (``profile.nx``).
@@ -305,8 +306,10 @@ def excluded(derived: dict, path: str) -> str | None:
 def _keywords(policy: dict | None) -> list[str]:
     if policy is None:
         return list(SECURITY_KEYWORDS)
-    constitutional = policy.get("constitutional") if isinstance(policy, dict) else None
-    words = constitutional.get("security_keywords") if isinstance(constitutional, dict) else None
+    try:
+        words = P.at(policy, P.SECURITY_KEYWORDS)
+    except P.Malformed:
+        words = None
     if not (isinstance(words, list) and words and all(isinstance(w, str) and w for w in words)):
         raise DeriveError("policy.constitutional.security_keywords is not a list of words")
     return [w.casefold() for w in words]

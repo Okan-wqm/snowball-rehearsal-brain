@@ -96,6 +96,7 @@ from typing import Any
 
 from gate import secrets
 from ledger import append, chain
+from policy import reads as P
 import cli
 
 INPUT_TYPES = ("string", "integer")
@@ -321,10 +322,12 @@ def policy_usd(policy: bytes, *path: str) -> int:
         node = _strict_json(policy.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError, chain.ChainError) as exc:
         raise Unusable("policy.json: %s" % cli.cause(exc)) from None
-    for key in path:
-        if not isinstance(node, dict) or key not in node:
-            raise Unusable("policy.json has no %s" % ".".join(path))
-        node = node[key]
+    try:
+        node = P.at(node, path)
+    except P.Malformed:
+        node = P.ABSENT
+    if node is P.ABSENT:
+        raise Unusable("policy.json has no %s" % ".".join(path))
     micros = _cost(node)
     if micros is None:
         raise Unusable("policy.json %s must be a JSON number >= 0 USD" % ".".join(path))
