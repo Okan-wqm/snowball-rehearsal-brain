@@ -310,6 +310,7 @@ from loop import drill as DR
 from loop import fetch as F
 from loop import gitobj as G
 from loop import inputs as IN
+from loop import program as PG
 from loop import pulled as P
 from loop import rekor as RK
 from loop import sign as SG
@@ -1029,7 +1030,7 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
         sigstore = IN.sigstore(environ)
         brain_url = A.repo_url(IN.brain_repo(environ["GITHUB_WORKSPACE"]))
         state = A.read_state(http or A.ActionsHttp(environ["GITHUB_TOKEN"]), environ["GITHUB_REPOSITORY"],
-                             sigstore, verifier=verifier or A.run_verifier)
+                             sigstore, verifier=verifier or PG.run)
     except (A.StateError, IN.InputError) as exc:
         raise Unusable("cek: %s" % cli.cause(exc)) from None
     files = {}
@@ -1077,7 +1078,7 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
     targets, reasons = C.targets(files["setup/summary.json"])
     if reasons:
         return dict(_refused(reasons), accepted=accepted)
-    entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, sigstore, verifier=verifier or A.run_verifier)
+    entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, sigstore, verifier=verifier or PG.run)
     lines: list[dict[str, Any]] = []
     opened = False  # the copy's genesis gate, read from a toy served before it in this run
     for target in targets:

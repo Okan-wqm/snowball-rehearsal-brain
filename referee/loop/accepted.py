@@ -55,7 +55,8 @@ at the accepted SHA that differs from the transferred one is no reason to stop).
   ``referee/`` is not hashed and not compared.
 
 Which ``sigstore`` program runs is the caller's argument (``sigstore``, an argv prefix): in a run, the one the
-``sigstore`` step installs from ``bootstrap/requirements/sign.txt`` (tohum/29s, ``loop.inputs.sigstore``).
+``sigstore`` step installs from ``bootstrap/requirements/sign.txt`` (tohum/29s, ``loop.inputs.sigstore``). It is
+run by ``loop.program.run`` unless the caller gives a ``verifier``; only whether its exit code is 0 is used here.
 
 Out of scope, stated: the bundle's transparency-log checks beyond what ``sigstore verify identity`` does; the
 other fields of ``result.json`` (its previous result's hash, the frozen specs); which repository the accepted brain
@@ -72,7 +73,6 @@ import io
 import json
 import os
 import re
-import subprocess
 import tempfile
 import urllib.parse
 import urllib.request
@@ -83,6 +83,7 @@ import cli
 import httpbody
 from ledger import chain as C
 from loop import gitobj as G
+from loop import program as PG
 from loop import treehash as T
 from loop.pulled import PulledError
 
@@ -186,16 +187,8 @@ def verify_argv(sigstore: Sequence[str], repo: str, directory: str) -> list[str]
                          os.path.join(directory, RESULT))
 
 
-def run_verifier(argv: list[str]) -> int:
-    """The default verifier: the program's exit code; its output goes to stderr; one that cannot start is 127."""
-    try:
-        return subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=2, check=False).returncode
-    except OSError:
-        return 127
-
-
 def open_state(result: bytes, bundle: bytes, repo: str, sigstore: Sequence[str],
-               verifier: Callable[[list[str]], int] = run_verifier) -> dict:
+               verifier: Callable[[list[str]], int] = PG.run) -> dict:
     """The verified result: ``{last_accepted_sha, result_sha256}``, by the rules above (``repo_unsafe`` from
     ``verify_argv``, before the verifier runs)."""
     with tempfile.TemporaryDirectory(prefix="bootstrap-state-") as tmp:
@@ -304,7 +297,7 @@ def list_artifacts(http: Any, repo: str) -> list[Any]:
 
 
 def read_state(http: Any, repo: str, sigstore: Sequence[str],
-               verifier: Callable[[list[str]], int] = run_verifier) -> dict:
+               verifier: Callable[[list[str]], int] = PG.run) -> dict:
     """D1's read of the bootstrap state: listed, chosen, downloaded, unpacked, verified (the rules above)."""
     entry = choose(list_artifacts(http, repo))
     url = http.redirect("/repos/%s/actions/artifacts/%d/zip" % (repo_name(repo), entry["id"]))

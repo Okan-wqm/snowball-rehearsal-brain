@@ -505,24 +505,6 @@
    ]
   },
   {
-   "id": "ac_run_verifier_127",
-   "file": "loop/accepted.py",
-   "old": "    except OSError:\n        return 127",
-   "new": "    except OSError:\n        return 0",
-   "tests": [
-    "test_accepted.Verify.test_the_default_verifier_runs_a_program"
-   ]
-  },
-  {
-   "id": "ac_run_verifier_stdin",
-   "file": "loop/accepted.py",
-   "old": "subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=2, check=False)",
-   "new": "subprocess.run(argv, stdout=2, check=False)",
-   "tests": [
-    "test_accepted.Verify.test_the_verifier_reads_no_input"
-   ]
-  },
-  {
    "id": "ac_open_nonzero",
    "file": "loop/accepted.py",
    "old": "if verifier(verify_argv(sigstore, repo, tmp)) != 0:",

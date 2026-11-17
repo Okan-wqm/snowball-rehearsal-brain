@@ -55,6 +55,7 @@ from typing import Any, Callable, Sequence
 import cli
 import httpbody
 from loop import accepted as A
+from loop import program as PG
 
 REKOR = "https://rekor.sigstore.dev/api/v1/log/entries/"
 UUID = re.compile(r"(?:[0-9a-f]{16})?[0-9a-f]{64}")
@@ -188,7 +189,7 @@ def bundle(entry: dict, body: dict) -> dict:
 
 
 def entry_reasons(read: Callable[[str], dict | None], pin: str, sigstore: Sequence[str],
-                  verifier: Callable[[list[str]], int] = A.run_verifier) -> Callable[[str, str], list[str] | None]:
+                  verifier: Callable[[list[str]], int] = PG.run) -> Callable[[str, str], list[str] | None]:
     """``ledger.anchor.judge``'s entry judgement over Rekor (``read``: ``RekorHttp().entry`` or a fake), by the
     judging rules above."""
 

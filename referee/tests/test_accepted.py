@@ -4,7 +4,7 @@
   whatever the listing's order; every other artifact is passed over; a malformed entry stops the read;
 - ``unpack``: exactly the two files; ``verify_argv``: 29b's ``sigstore verify identity`` command, byte for byte;
 - ``open_state``: the verifier sees the two files' bytes and runs before anything is parsed; ``state_unverified``,
-  ``state_invalid``; ``run_verifier`` with a real program (its exit code; 127 when it cannot start);
+  ``state_invalid``; the default verifier with a real program (``loop.program.run``, test_program.py; one that cannot start);
 - ``list_artifacts`` over pages, ``read_state`` end to end with a fake API; ``ActionsHttp``: the token goes to the API
   only, never to the location a 302 names, and nothing is followed by urllib;
 - ``last_import``: a chained ``setup/imports.jsonl`` (tohum/26c), broken, empty, invalid; ``check_tree``: equal,
@@ -285,27 +285,10 @@ class Verify(unittest.TestCase):
                          % sys.executable)
             os.chmod(prog, os.stat(prog).st_mode | stat.S_IXUSR)
             self.assertEqual(A.open_state(result(), b"B", REPO, (prog,))["last_accepted_sha"], SHA)
-            self.assertEqual(A.run_verifier([prog, "other"]), 3)
-            self.assertEqual(A.run_verifier([os.path.join(tmp, "absent")]), 127)
             with self.assertRaises(A.StateError) as ctx:
                 A.open_state(result(), b"B", REPO, (os.path.join(tmp, "absent"),))
             self.assertEqual(ctx.exception.reasons, ["state_unverified"])
 
-    def test_the_verifier_reads_no_input(self):
-        # the caller's stdin holds bytes; the program gets none (its exit code is how many it read)
-        prog = [sys.executable, "-c", "import sys; sys.exit(len(sys.stdin.buffer.read()))"]
-        read, write = os.pipe()
-        os.write(write, b"xyz")
-        os.close(write)
-        saved = os.dup(0)
-        os.dup2(read, 0)
-        try:
-            code = A.run_verifier(prog)
-        finally:
-            os.dup2(saved, 0)
-            os.close(saved)
-            os.close(read)
-        self.assertEqual(code, 0)
 
 
 class FakeApi:

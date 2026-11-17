@@ -102,8 +102,8 @@
   {
    "id": "rekor_check_sigstore_on_path",
    "file": "loop/job.py",
-   "old": "    entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, sigstore, verifier=verifier or A.run_verifier)\n",
-   "new": "    entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, (\"sigstore\",), verifier=verifier or A.run_verifier)\n",
+   "old": "    entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, sigstore, verifier=verifier or PG.run)\n",
+   "new": "    entries = RK.entry_reasons((rekor or RK.RekorHttp()).entry, pin, (\"sigstore\",), verifier=verifier or PG.run)\n",
    "tests": [
     "test_loop_cek.py"
    ]
