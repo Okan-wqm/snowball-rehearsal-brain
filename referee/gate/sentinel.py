@@ -16,7 +16,8 @@ each in a fresh container.
   the four, ``flaky`` the ids that fail in at least one and not in all; an id absent from a run did not fail in
   that run. The verdict is ``red`` when ``red`` is not empty or when none of the four runs has a result, else
   ``flaky``. ``red`` and ``flaky`` are sorted by code point; both are ``[]`` for ``green`` and ``rerun``.
-  ``revert`` is true exactly for ``red``.
+  ``revert`` is true exactly for ``red``: the tests' part of the question. The loop's whole rule, which also
+  reverts a green or flaky verdict at a head that did not build or whose lint rose, is ``gate.revert.assess``.
 - **The loop** (``watch``): ``decide`` on run 1; while the verdict is ``rerun``, one more run from the
   ``rerun`` callable, then ``decide`` again. So a green first run asks for no rerun, a red one for exactly
   three, and ``watch`` and the command line judge with the same rule.

@@ -1,5 +1,5 @@
-"""``yaz``'s half of D7: the sentinel's verdict read from ``kos``'s results, and the facts ``gate.revert`` needs for a
-red (stage 0).
+"""``yaz``'s half of D7: the sentinel's verdict read from ``kos``'s results, and the facts ``gate.revert`` judges
+with it (stage 0): whether the watched head is a red (``gate.revert.assess``) and, if so, its cause.
 
 Rules: asama-0/01 D7 (the sentinel runs in the next cycle's ``koş`` and ``yaz``; green, or a revert with its
 ``cause``), tohum/07 (on red, the 3/3 rule, then ``gate.revert``; a revert is written with a ``cause``), tohum/01b
@@ -51,8 +51,9 @@ only with a base run, which exists only when every file parsed), at a planted me
 parses what the unit's runtime loads; a file that configuration cannot parse but the runtime would load (a syntax
 the runtime has and the configured parser lacks) is judged ``false``, a build break the runtime would not show.
 
-**The facts of a red** (``facts(sentinel, ledger, after, build_ok)``), each rule exact and stated, since no page names
-them:
+**The facts** (``facts(sentinel, ledger, after, build_ok)``) of a sentinel whose verdict is not ``null``, red or
+not (a green or flaky verdict at a head that did not build, or whose lint rose, is ``gate.revert.assess``'s revert),
+each rule exact and stated, since no page names them:
 
 - ``impact``: every test id the sentinel's runs report, sorted. Stage 0's impact set is the unit's whole
   service-free test set (asama-0/08 item 6), which is what ``affected_test_cmd`` runs; so a red test is always in
@@ -170,7 +171,7 @@ def base_build(results: str) -> bool | None:
 
 
 def facts(sentinel: dict, ledger: bytes, after: dict | None, build_ok: bool | None) -> dict[str, Any]:
-    """``{impact, build_ok, lint}`` of a red ``sentinel`` (``read``'s answer); see the module docstring.
+    """``{impact, build_ok, lint}`` of ``sentinel`` (``read``'s answer with its runs); see the module docstring.
     ``ledger.serial.Unusable`` for a ledger it cannot read."""
     impact = sorted({r["id"] for run in sentinel["runs"] for r in run["results"]})
     before = serial.lint_before(ledger, sentinel["merge_sha"])

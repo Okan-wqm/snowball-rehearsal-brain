@@ -157,7 +157,10 @@ refused tree is ``pulled_invalid``). Then:
   same state by ``kos``'s rule (``_watched``; ``sentinel_unplaced`` likewise), and the results' sentinel read by its
   hash and judged again by MF12 (``loop.watch.read``; a reason is ``sentinel_refused`` with it, exit 1, nothing
   written); the output's ``sentinel`` is ``null`` (nothing watched) or ``{merge_sha, verdict, red?, flaky?, reasons?}``,
-  with ``facts`` (``loop.watch.facts``: impact, ``build_ok``, lint before and after) on a red, which D6 reverts. A green
+  with ``facts`` (``loop.watch.facts``: impact, ``build_ok``, lint before and after: what the rule read is in
+  the line whether it reverts or not), and with ``cause`` when ``gate.revert.assess`` of the runs and the facts is a
+  revert (red tests, or a green or flaky verdict at a head that
+  did not build or whose lint rose over the merge's), which D6 reverts. Any other green
   or flaky verdict is ended by D6's ``events``/``sentinel`` row (seed-043's draft, this brain's stated assumption),
   which finishes the merge in ``ledger.serial``, so the next cycle can merge; a ``null`` verdict writes nothing (the
   merge stays unfinished and the next cycle's ``kos`` watches it again). Then D6 (``yaz_d6``): it needs ``YAZ_ENV`` set (``WRITER_TOKEN``, the
@@ -285,6 +288,7 @@ import tempfile
 from typing import Any, NamedTuple
 
 from dispatcher import llm_call as LL
+from gate import revert as RV
 from harness import pass_row as PR
 from ledger import anchor as AN
 from ledger import append as LA
@@ -713,8 +717,8 @@ def yaz_d5(environ: dict[str, str], tid: str) -> tuple[dict[str, Any], Any, str 
 
 def yaz_d7(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any], dict | None, dict | None]:
     """D7's half in ``yaz`` (see the module docstring): ``({sentinel} or {reason, reasons}, end, base_lint)``:
-    ``end`` the verified sentinel D6 ends (``loop.watch.read``'s answer, with ``facts`` on a red: D6 reverts a red
-    and writes the end row of a green or flaky), or ``None``; ``base_lint``
+    ``end`` the verified sentinel D6 ends (``loop.watch.read``'s answer with its ``facts``: D6 reverts what
+    ``gate.revert.assess`` calls a revert and writes the end row of any other green or flaky), or ``None``; ``base_lint``
     ``loop.watch.base_lint`` of the results."""
     results = _dir(environ, "in", "results", tid)
     unfinished, refused = _unfinished(art)
@@ -730,13 +734,15 @@ def yaz_d7(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any],
     if seen is None or seen["verdict"] is None:
         return {"sentinel": seen}, None, lint
     line = {k: v for k, v in seen.items() if k != "runs"}
-    if seen["verdict"] != "red":
-        return {"sentinel": line}, seen, lint
     try:
         facts = WT.facts(seen, art.state[B.STATE_LEDGER], lint, WT.base_build(results))
     except SE.Unusable as exc:
         return {"reason": "state_refused", "reasons": exc.reasons}, None, None
-    return {"sentinel": dict(line, facts=facts)}, dict(seen, facts=facts), lint
+    line = dict(line, facts=facts)
+    assessed = RV.assess(seen["runs"], facts)
+    if assessed["revert"]:
+        line = dict(line, cause=assessed["cause"])
+    return {"sentinel": line}, dict(seen, facts=facts), lint
 
 
 YAZ_ENV = ("WRITER_TOKEN", "GITHUB_REPOSITORY", "GITHUB_WORKSPACE", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")

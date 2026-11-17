@@ -112,8 +112,8 @@
   {
    "id": "assess_null_lint_as_empty",
    "file": "gate/revert.py",
-   "old": "        return dict(out, cause=\"build_break\" if found == \"build_break\" else \"unknown\")",
-   "new": "        return dict(out, cause=found)",
+   "old": "        return \"build_break\" if found == \"build_break\" else \"unknown\"",
+   "new": "        return found",
    "tests": [
     "test_revert.py",
     "test_watch.py"
@@ -277,8 +277,44 @@
   {
    "id": "assess_unknown_build_lint_judged",
    "file": "gate/revert.py",
-   "old": "        cause(checked)\n        return dict(out, cause=\"unknown\")",
-   "new": "        return dict(out, cause=cause(dict(checked, build_ok=True)))",
+   "old": "        cause(checked)\n        return \"unknown\"",
+   "new": "        return cause(dict(checked, build_ok=True))",
+   "tests": [
+    "test_revert.py"
+   ]
+  },
+  {
+   "id": "assess_red_tests_only",
+   "file": "gate/revert.py",
+   "old": "    if verdict[\"revert\"] or found in WITHOUT_RED_TESTS:",
+   "new": "    if verdict[\"revert\"]:",
+   "tests": [
+    "test_revert.py"
+   ]
+  },
+  {
+   "id": "assess_any_stated_cause_reverts",
+   "file": "gate/revert.py",
+   "old": "    if verdict[\"revert\"] or found in WITHOUT_RED_TESTS:",
+   "new": "    if True:",
+   "tests": [
+    "test_revert.py"
+   ]
+  },
+  {
+   "id": "assess_lint_rise_no_red",
+   "file": "gate/revert.py",
+   "old": "WITHOUT_RED_TESTS = (\"build_break\", \"lint_regression\")",
+   "new": "WITHOUT_RED_TESTS = (\"build_break\",)",
+   "tests": [
+    "test_revert.py"
+   ]
+  },
+  {
+   "id": "assess_rerun_reads_facts",
+   "file": "gate/revert.py",
+   "old": "    if verdict[\"verdict\"] == \"rerun\":\n        return out\n",
+   "new": "    if False:\n        return out\n",
    "tests": [
     "test_revert.py"
    ]

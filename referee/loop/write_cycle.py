@@ -14,8 +14,8 @@ the target's repository; ``signer``, the root's signer (``loop.sign.SigstoreSign
 ``setup/imports.jsonl``'s bytes (``status.block``'s human-touch count); ``cycle_id`` and ``ts``; ``base_lint``,
 the lint totals of the base this cycle's ``kos`` ran (``loop.watch.base_lint``: ``{base_run_sha256, counts}``,
 required when D5 chose a merge, else ``Unusable``); ``end``, D7's sentinel to end, ``{merge_sha, verdict, runs,
-flaky, sha256, facts?}`` (``loop.watch.read``'s verified answer at ``brain/integration``'s head, with
-``loop.watch.facts`` on a red), or ``None``; ``drill``, ``loop.drill.step``'s answer or ``None``: only ``commit``
+flaky, sha256, facts}`` (``loop.watch.read``'s verified answer at ``brain/integration``'s head, with
+``loop.watch.facts``), or ``None``; ``drill``, ``loop.drill.step``'s answer or ``None``: only ``commit``
 (``{payload}``) and ``plant`` (``{instance_id, path, content}``) write; an action ``loop.drill`` does not give is
 ``Unusable``; ``gate``, the payload of the toy's ``copy_gate`` row (``harness.pass_row.gate_payload``) when the copy's
 genesis gate opened on this cycle's state, or ``None``; ``passed``, the payload of the toy's PASS row
@@ -27,10 +27,11 @@ planned:
 1. the merge, when D5 chose one: its diff applied to the tree (``target.land.applied``, the one application
    ``activate`` makes); a reason here means D5 chose a candidate that cannot be written, ``Unusable``. An ``end``
    must be of ``brain/integration``'s head in a cycle with no merge (D5 merges nothing while a sentinel is
-   unfinished), and MF12's ``gate.sentinel.decide`` of its runs must give its ``verdict`` (and ``flaky``): a red's
-   ``gate.revert.assess`` of its runs and facts must be a revert, so its cause is known before any write; a green
-   or flaky one is ended by a row (``ledger.serial``); anything else (a ``rerun``, a verdict its runs do not give)
-   is ``Unusable``. A ``plant`` is the cycle's one merge: with D5's merge or an ``end`` it is ``Unusable``, and like a
+   unfinished), and MF12's ``gate.sentinel.decide`` of its runs must give its ``verdict`` (and ``flaky``). Whether
+   it is a red is ``gate.revert.assess`` of its runs and facts, the one rule (red tests, or a green or flaky verdict
+   whose facts state ``build_break`` or ``lint_regression``): a revert's cause is known before any write; a green
+   or flaky end that is no revert is ended by a row (``ledger.serial``); anything else (a ``rerun``, a verdict its
+   runs do not give, an end without ``facts``) is ``Unusable``. A ``plant`` is the cycle's one merge: with D5's merge or an ``end`` it is ``Unusable``, and like a
    merge it needs ``base_lint``;
 2. both heads read from the target equal ``pulled``'s (``head_moved:<branch>``, ``Refused``): the state this cycle
    decided on is still the state it writes on, so a second run of the same cycle (a rerun of ``yaz`` after its
@@ -41,7 +42,7 @@ planned:
    the root row's id. A failure is ``Refused`` with ``state_unwritable`` (a ``ledger.append.HardStop`` stays a hard
    stop, ``target.land.HardStop`` with nothing written);
 4. the merge landed (``target.land.land``) on ``brain/integration``'s head with the check ``target.branches.CHECK``,
-   or a red ``end`` reverted (``target.land.revert``: the revert commit on ``brain/revert/<merge_sha>``, its pull
+   or a reverted ``end`` (``target.land.revert``: the revert commit on ``brain/revert/<merge_sha>``, its pull
    request, the same check and the merge), or D8's plant landed (``target.land.plant``: ``brain/drill/<cycle_id>``,
    its pull request, the same check, saying it is no gate decision, and the merge); a green or flaky ``end`` and a
    ``commit`` write nothing on ``brain/integration``;
@@ -57,7 +58,7 @@ counts}`` when the cycle merges or plants (``base_lint``: the merge's lint befor
 reject's ``decision`` with D5's reasons and ``ledger.events.cause``; the merge's ``decision`` and then its ``merge``
 row with ``path``, ``target.land.land``'s ``{pull, head_sha, merge_sha}`` and ``hunk_covered``, the record of
 the hunks step 1 applied, ``ledger.events.hunk_covered``); ``revert {merge_sha}`` with
-``gate.revert``'s cause for a red ``end``, or ``sentinel {merge_sha, verdict, red: [], flaky}`` for a green or flaky
+``gate.revert``'s cause for an ``end`` it reverts, or ``sentinel {merge_sha, verdict, red: [], flaky}`` for a green or flaky
 one (the row that finishes the merge's sentinel, ``ledger.serial``; tohum/26f); D8's ``drill`` row (``commit`` with its payload, or ``plant`` with ``harness.revert_drill``'s
 ``{drill, family, instance_id, merge_sha}``, the planted merge's SHA; ``ledger.events.drill``); the ``copy_gate`` row
 with ``gate`` (``harness.pass_row``'s gate); the ``pass`` row with ``passed`` (tohum/26d); the response's cost rows as
@@ -177,13 +178,11 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
             judged = sentinel.decide(end["runs"])
             if (judged["verdict"], judged["flaky"]) != (end["verdict"], end["flaky"]):
                 raise Unusable("sentinel: its runs give %s, not %s" % (judged["verdict"], end["verdict"]))
-            if judged["verdict"] == "red":
-                red, assessed = end, gate_revert.assess(end["runs"], end["facts"])
-                if not assessed["revert"]:
-                    raise Unusable("revert: the sentinel's runs are not a verified red")
-                cause = assessed["cause"]
-            elif judged["verdict"] not in schema.SENTINEL_ENDS:
+            if judged["verdict"] != "red" and judged["verdict"] not in schema.SENTINEL_ENDS:
                 raise Unusable("sentinel: %s ends nothing" % judged["verdict"])
+            assessed = gate_revert.assess(end["runs"], end.get("facts"))
+            if assessed["revert"]:
+                red, cause = end, assessed["cause"]
         except (gate_revert.Unusable, sentinel.Unusable) as exc:
             raise Unusable("sentinel: %s" % cli.cause(exc)) from None
     moved = ["head_moved:%s" % b for b in P.HEAD_BRANCHES if writer.head(b) != art.heads[b]]

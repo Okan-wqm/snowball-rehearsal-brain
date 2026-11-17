@@ -39,8 +39,8 @@
   {
    "id": "job_green_not_passed",
    "file": "loop/job.py",
-   "old": "        return {\"sentinel\": line}, seen, lint",
-   "new": "        return {\"sentinel\": line}, None, lint",
+   "old": "    return {\"sentinel\": line}, dict(seen, facts=facts), lint",
+   "new": "    return {\"sentinel\": line}, None, lint",
    "tests": [
     "test_loop_write.py"
    ]
@@ -75,8 +75,8 @@
   {
    "id": "write_rerun_ends",
    "file": "loop/write_cycle.py",
-   "old": "            elif judged[\"verdict\"] not in schema.SENTINEL_ENDS:",
-   "new": "            elif False:",
+   "old": "        if judged[\"verdict\"] != \"red\" and judged[\"verdict\"] not in schema.SENTINEL_ENDS:",
+   "new": "        if False:",
    "tests": [
     "test_loop_write.py"
    ]
@@ -86,6 +86,24 @@
    "file": "loop/write_cycle.py",
    "old": "if merge is not None or end[\"merge_sha\"] != art.heads[B.INTEGRATION]:",
    "new": "if merge is not None:",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "write_reverts_red_tests_only",
+   "file": "loop/write_cycle.py",
+   "old": "        if assessed[\"revert\"]:",
+   "new": "        if assessed[\"revert\"] and judged[\"verdict\"] == \"red\":",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "job_facts_not_passed",
+   "file": "loop/job.py",
+   "old": "    return {\"sentinel\": line}, dict(seen, facts=facts), lint",
+   "new": "    return {\"sentinel\": line}, dict(seen, facts=None), lint",
    "tests": [
     "test_loop_write.py"
    ]

@@ -79,11 +79,12 @@ TARGETS = (("t1", "toy", "o/toy"), ("c1", "copy", "o/copy"))
 MERGE = {"decision": "merge"}
 CANDIDATES = {"t1": {"good": (GOOD, MERGE), "breaks": (BREAKS_TEST, {"decision": "reject", "reason": "tests_red"})},
               "c1": {"good": (GOOD, MERGE)}}
-# The drill's patches (``test_loop_write.D8``'s, moved to line 2): each turns the sentinel red, RD_LINT also adds a
-# ``var`` line. They change ``const b``, a line ``good`` leaves as it was, so they apply after its merge.
+# The drill's patches (``test_loop_write.D8``'s, moved to line 2): RD_TEST and RD_BUILD turn the sentinel red,
+# RD_LINT only adds a ``var`` line (tests green, the lint total up: tohum/29j's ``lint_regression`` case). They
+# change ``const b``, a line ``good`` leaves as it was, so they apply after its merge.
 # RD_BUILD is the set's build break: the same red on a line that does not parse (PARSE_ERROR, a fatal lint message).
 DRILL_PATCHES = {RD_TEST: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED"], start=2),
-                 RD_LINT: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED", "var z = 2;"], start=2),
+                 RD_LINT: diff("pkg/a.js", ["const b = 2;"], ["const b = 2;", "var z = 2;"], start=2),
                  RD_BUILD: diff("pkg/a.js", ["const b = 2;"], ["const b = 2; // SENTINEL_RED PARSE_ERROR"], start=2)}
 DRILL_CAUSES = {RD_TEST: "test_regression", RD_LINT: "lint_regression", RD_BUILD: "build_break"}
 SHA40 = re.compile(r"\b[0-9a-f]{40}\b")
@@ -415,8 +416,8 @@ class Rehearsal(unittest.TestCase):
 
     def test_with_the_drills_fixtures_b_reaches_its_pass_row(self):
         """Fixtures of the three causes 10a #geri-alma asks for, with a seed that plants RD_TEST, RD_LINT and
-        RD_BUILD in turn: each drill is committed, planted as the cycle's one merge, watched red and reverted by
-        D7, then revealed and judged ``PASS``. RD_BUILD's head does not parse (``PARSE_ERROR``: the toy's lint
+        RD_BUILD in turn: each drill is committed, planted as the cycle's one merge, watched and reverted by D7
+        (RD_LINT with the sentinel's tests green: its red is the lint total), then revealed and judged ``PASS``. RD_BUILD's head does not parse (``PARSE_ERROR``: the toy's lint
         reports a fatal message), so ``kos`` has no base run in that cycle (the candidates are ``base_unavailable``)
         and D7 reverts it as ``build_break`` (``loop.watch.base_build``, seed-044's answer). Then the toy's gate
         opens, the next run serves the copy and runs its genesis, the copy's sentinel ends green while the toy's
@@ -443,7 +444,7 @@ class Rehearsal(unittest.TestCase):
                                           gate=closed(geri_alma=unshown[1:]))},
             {"waiting": ["c1"], "t1": toy(drill={"action": "plant", "instance_id": RD_LINT}, done=d8,
                                           gate=closed(geri_alma=unshown[1:]))},
-            {"waiting": ["c1"], "t1": toy(sentinel="red", drill=wait, done=d78,
+            {"waiting": ["c1"], "t1": toy(sentinel="green", drill=wait, done=d78,
                                           gate=closed(geri_alma=["drill_fail:%s:not_reverted" % RD_LINT] + unshown[1:]))},
             {"waiting": ["c1"], "t1": toy(drill=dict(commit, judged=[RD_LINT, "PASS", []]), done=d8,
                                           gate=closed(geri_alma=unshown[1:2]))},
@@ -458,7 +459,7 @@ class Rehearsal(unittest.TestCase):
                                       judged={"waiting": "copy_genesis"}),
              "c1": {"genesis": True, "merge": "good", "decisions": {"good": []}, "sentinel": None,
                     "drill": {"action": "off", "why": "genesis"}, "gate": None, "pass": None, "done": ["D5", "D6"]}},
-            {"waiting": [], "t1": toy(sentinel="red", drill=wait, done=d78, judged={
+            {"waiting": [], "t1": toy(sentinel="green", drill=wait, done=d78, judged={
                 "verdict": "FAIL", "conditions": {"#geri-alma": ["toy:drill_fail:%s:not_reverted" % RD_LINT],
                                                   "#nobetci #hayatta": ["copy:sentinel_unfinished:<sha>"]}}),
              "c1": {"genesis": False, "merge": None, "decisions": {"good": stale}, "sentinel": "green",

@@ -88,6 +88,7 @@ sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import diffguard as G  # noqa: E402
+from gate import revert as RV  # noqa: E402
 from ledger import anchor as AN  # noqa: E402
 from ledger import chain as CH  # noqa: E402
 from ledger import cycle as CY  # noqa: E402
@@ -497,7 +498,8 @@ class D7(StateBase):
         (name, before), = ratchet["payload"]["counts"].items()
         self.assertEqual(out["sentinel"], {
             "merge_sha": merge_sha, "verdict": "red", "red": ["a holds at the head"], "flaky": [],
-            "sha256": out["sentinel"]["sha256"], "facts": {"impact": ["a holds at the head", "a loads"], "build_ok": True,
+            "sha256": out["sentinel"]["sha256"], "cause": "test_regression",
+            "facts": {"impact": ["a holds at the head", "a loads"], "build_ok": True,
                       "lint": {name: {"before": before, "after": 0}}}})
         self.assertEqual(before, 1)  # the base's var; the merged a.js has none
         revert = out["written"]["revert"]
@@ -555,20 +557,26 @@ class D7(StateBase):
 
     def test_an_end_its_runs_do_not_give_writes_nothing(self):
         """``loop.write_cycle`` judges the end it is handed again (``loop.watch.read``'s answer replaced here, after
-        the real read of a green sentinel), so a wrong verdict reaching it writes nothing."""
+        the real read of a green sentinel), so a wrong verdict reaching it writes nothing; a merge the ledger does not
+        hold has no facts (``loop.watch.facts``) and is refused before it."""
         self.merged_then_watched(GOOD)
         real = WT.read
         fail = {"results": [{"id": "a loads", "status": "pass"}, {"id": "a holds at the head", "status": "fail"}]}
         facts = {"impact": ["a holds at the head", "a loads"], "build_ok": True, "lint": None}
-        for name, change in (("red of green runs", lambda g: dict(g, verdict="red", facts=facts)),
-                             ("green of a failing run", lambda g: dict(g, runs=[fail])),
-                             ("a rerun", lambda g: dict(g, runs=[fail], verdict="rerun")),
-                             ("another flaky list", lambda g: dict(g, flaky=["a loads"])),
-                             ("another merge", lambda g: dict(g, merge_sha="0" * 40))):
+        for name, change, refused in (
+                ("red of green runs", lambda g: dict(g, verdict="red", facts=facts), None),
+                ("green of a failing run", lambda g: dict(g, runs=[fail]), None),
+                ("a rerun", lambda g: dict(g, runs=[fail], verdict="rerun"), None),
+                ("another flaky list", lambda g: dict(g, flaky=["a loads"]), None),
+                ("another merge", lambda g: dict(g, merge_sha="0" * 40), "state_refused")):
             with self.subTest(name), mock.patch.object(J.WT, "read", lambda r, w: change(real(r, w))):
                 writes = len(self.writes())
-                with self.assertRaises(J.Unusable):
-                    self.run_yaz(GITHUB_RUN_ID="10")
+                if refused is None:
+                    with self.assertRaises(J.Unusable):
+                        self.run_yaz(GITHUB_RUN_ID="10")
+                else:
+                    out = self.run_yaz(GITHUB_RUN_ID="10")
+                    self.assertEqual((out["ok"], out["reason"]), (False, refused), out)
                 self.assertEqual(len(self.writes()), writes)
         self.assertEqual(self.run_yaz(GITHUB_RUN_ID="10")["sentinel"]["verdict"], "green")  # unchanged, it ends
 
@@ -591,13 +599,20 @@ class D7(StateBase):
                 self.assertEqual(len(self.writes()), writes)
 
 
-# D8: the live drill fixtures, yaz's DRILL_FIXTURES secret (tohum/26f). Each patch turns pkg/a.js red for the
-# sentinel (SENTINEL_RED); RD_LINT also adds a ``var`` line, so the lint after rises over the plant cycle's ratchet
-# base; RD_BUILD's line does not parse (PARSE_ERROR: test_kos's lint reports a fatal message), so the watching cycle
+# D8: the live drill fixtures, yaz's DRILL_FIXTURES secret (tohum/26f). RD_TEST turns pkg/a.js red for the sentinel
+# (SENTINEL_RED). RD_LINT is tohum/29j's ``lint_regression`` case, tests and build clean and the tool's total up: it
+# only adds a ``var`` line, so the sentinel's tests are green and the lint after rises over the plant cycle's ratchet
+# base. RD_BUILD's line does not parse (PARSE_ERROR: test_kos's lint reports a fatal message), so the watching cycle
 # has no base run and D7 reverts it as a build break (``loop.watch.base_build``). 26f asks every cause once.
 DRILL_PATCHES = {RD_TEST: RED_AT_HEAD,
-                 RD_LINT: diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // SENTINEL_RED", "var z = 2;"]),
+                 RD_LINT: diff("pkg/a.js", ["var a = 1;"], ["var a = 1;", "var z = 2;"]),
                  RD_BUILD: diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // SENTINEL_RED PARSE_ERROR"])}
+# What the sentinel's tests say of each planted merge: a red needs no red test (``gate.revert.assess``).
+DRILL_VERDICTS = {RD_TEST: "red", RD_LINT: "green", RD_BUILD: "red"}
+# The build break alone: the sentinel's tests do not read the line that does not parse.
+BUILD_ONLY = dict(DRILL_PATCHES, **{RD_BUILD: diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // PARSE_ERROR"])})
+# A planted change neither the sentinel's tests nor the lint nor the build sees.
+UNSEEN = dict(DRILL_PATCHES, **{RD_LINT: diff("pkg/a.js", ["var a = 1;"], ["var a = 1; // unseen"])})
 DRILL_CAUSES = {RD_TEST: "test_regression", RD_LINT: "lint_regression", RD_BUILD: "build_break"}
 # A catalog that names RD_TEST's and RD_BUILD's causes the other way round: what the loop gives is not the key's.
 SWAPPED_CAUSES = dict(DRILL_CAUSES, **{RD_TEST: "build_break", RD_BUILD: "test_regression"})
@@ -671,9 +686,11 @@ class D8(StateBase):
         self.assertEqual(self.gh.refs[B.INTEGRATION], integration)
         return out
 
-    def chain(self, instance_id: str, causes: dict[str, str]) -> tuple[dict, dict]:
-        """Cycles 9-1 to 12-1 with the seed that selects ``instance_id``; returns (cycle 12-1's line, the key)."""
-        doc = self.catalog(causes)
+    def chain(self, instance_id: str, causes: dict[str, str], patches: dict[str, bytes] | None = None,
+              verdict: str | None = None) -> tuple[dict, dict]:
+        """Cycles 9-1 to 12-1 with the seed that selects ``instance_id``; returns (cycle 12-1's line, the key).
+        ``verdict``: what the sentinel's tests say of the planted merge (``DRILL_VERDICTS`` unless given)."""
+        doc = self.catalog(causes, patches)
         seed = seed_for(doc, instance_id, "9")
         key = RD.key(seed, "9", doc)
         old = self.state[B.STATE_LEDGER]
@@ -705,15 +722,17 @@ class D8(StateBase):
                           ("cagir-10-1", "cost"), ("10-1:status", "status")])
         self.assertEqual(added[2]["payload"], RD.plant_payload(instance_id, plant["merge_sha"]))
         self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [plant["merge_sha"]])
-        # 11-1: kos watches the planted merge (red); yaz reverts it with gate.revert's cause; the drill waits
+        # 11-1: kos watches the planted merge; yaz reverts it with gate.revert's cause; the drill waits
         watched = self.next_cycle({}, "11", units=SENTINEL_UNITS)
         self.assertEqual((watched["done"], watched["index"]["sentinel"]["merge_sha"]),
                          (["D3", "D7"], plant["merge_sha"]))
         old = self.state[B.STATE_LEDGER]
         out = self.yaz("11", seed)
         self.assertEqual((out["ok"], out["done"], out["sentinel"]["verdict"], out["drill"]),
-                         (True, ["D5", "D6", "D7", "D8"], "red", {"action": "wait", "why": "drill_unfinished"}))
-        self.assertEqual(out["written"]["revert"]["reverted"], plant["merge_sha"])
+                         (True, ["D5", "D6", "D7", "D8"], verdict or DRILL_VERDICTS[instance_id],
+                          {"action": "wait", "why": "drill_unfinished"}))
+        self.assertEqual((out["written"]["revert"]["reverted"], out["written"]["revert"]["cause"]),
+                         (plant["merge_sha"], out["sentinel"]["cause"]))
         self.assertEqual(self.gh.read_file(B.INTEGRATION, "pkg/a.js"), A_JS.encode())
         added = self.added(old)
         self.assertEqual([(r["kind"], r.get("cause")) for r in added],
@@ -747,6 +766,34 @@ class D8(StateBase):
                 with mock.patch("sys.stdout", new=io.StringIO()) as printed:
                     self.assertEqual(RD.main(["judge", ledger, keyfile]), 0)
                 self.assertEqual(json.loads(printed.getvalue()), {"verdict": "PASS", "reasons": []})
+
+    def test_a_broken_build_the_sentinels_tests_do_not_see_is_reverted(self):
+        """The planted line does not parse and no sentinel test reads it: the tests are green, the head did not
+        build, and the merge is reverted as a build break."""
+        out, key = self.chain(RD_BUILD, DRILL_CAUSES, BUILD_ONLY, verdict="green")
+        self.assertEqual((out["ok"], key["cause"], out["drill"]["judged"]["verdict"], out["drill"]["judged"]["reasons"]),
+                         (True, "build_break", "PASS", []))
+
+    def test_a_planted_merge_nothing_sees_ends_green_and_is_judged_fail(self):
+        """The fixtures say a comment is a lint regression; the tests are green, the build holds and no total
+        rises: no red, so the merge ends green where it is and the judge's not_reverted makes the job red."""
+        doc = self.catalog(DRILL_CAUSES, UNSEEN)
+        seed = seed_for(doc, RD_LINT, "9")
+        self.commit_cycle(seed)
+        self.next_cycle({}, "10", units=SENTINEL_UNITS)
+        plant = self.yaz("10", seed)["written"]["plant"]
+        self.next_cycle({}, "11", units=SENTINEL_UNITS)
+        out = self.yaz("11", seed)
+        self.assertEqual((out["ok"], out["sentinel"]["verdict"], out["written"]["revert"]), (True, "green", None))
+        self.assertNotIn("cause", out["sentinel"])
+        facts = out["sentinel"]["facts"]  # what the rule read is in the line of an end it does not revert
+        self.assertEqual((facts["build_ok"], [t for t, n in facts["lint"].items() if n["after"] > n["before"]]),
+                         (True, []))
+        self.assertEqual(self.gh.refs[B.INTEGRATION], plant["merge_sha"])
+        self.next_cycle({}, "12", units=SENTINEL_UNITS)
+        out = self.yaz("12", seed)
+        self.assertEqual((out["ok"], out["reason"], out["drill"]["judged"]["verdict"],
+                          out["drill"]["judged"]["reasons"]), (False, "drill_fail", "FAIL", ["not_reverted"]))
 
     def test_a_catalog_cause_the_loop_does_not_give_is_judged_fail(self):
         """The fixtures say RD_TEST's planted merge (a red test, code that parses) is a build break; the loop
@@ -1372,9 +1419,12 @@ class LandRevert(unittest.TestCase):
         gh = YW.github_at(HEADS, {"pkg/a.js": A_JS.encode()})
         writer = W.Writer(YW.REPO, gh)
         passing, failing = {"results": [{"id": "a", "status": "pass"}]}, {"results": [{"id": "a", "status": "fail"}]}
+        clean = {"impact": ["a"], "build_ok": True, "lint": {"eslint": {"before": 1, "after": 1}}}
         for runs in ([passing], [failing], [failing, passing, passing, passing]):  # green, rerun, flaky
             with self.subTest(runs=len(runs)), self.assertRaises(LN.Unusable):
-                LN.revert(writer, HEADS[B.INTEGRATION], runs, None, B.CHECK)
+                LN.revert(writer, HEADS[B.INTEGRATION], runs, clean, B.CHECK)
+        with self.assertRaises(RV.Unusable):  # a green verdict whose facts were not read is no answer
+            LN.revert(writer, HEADS[B.INTEGRATION], [passing], None, B.CHECK)
         self.assertEqual([m for m, _, _ in gh.requests if m != "GET"], [])
 
 

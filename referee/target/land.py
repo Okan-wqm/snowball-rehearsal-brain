@@ -28,10 +28,10 @@ and is not a gate decision; returns ``{pull, head_sha, merge_sha}``. ``harness.r
 writes through the same function (``pull_merge``).
 
 ``revert(writer, merge_sha, runs, facts, check)``: D7's revert of ``merge_sha``, ``brain/integration``'s head, when
-``runs`` are a verified red: ``gate.revert.revert_red`` (the revert commit, whose tree is the merge's first
+``gate.revert.assess`` of ``runs`` and ``facts`` is a revert: ``gate.revert.revert_red`` (the revert commit, whose tree is the merge's first
 parent's, on ``brain/revert/<merge_sha>``, and its pull request into ``brain/integration``), then the same check and
 pinned merge as a candidate's. Returns ``{cause, pull, commit, merge_sha}`` (``merge_sha`` the revert's merge
-commit). Runs that are not red are ``Unusable``, before anything is written (the caller reverts only a red).
+commit). Runs and facts that are no revert are ``Unusable``, before anything is written.
 
 Out of scope, stated: whether ``base`` is still ``brain/integration``'s head (the caller reads it before landing;
 GitHub refuses a merge that is not a fast-forward of a moved base only by the ruleset's strict check); that the
@@ -123,7 +123,7 @@ def revert(writer: Any, merge_sha: str, runs: Any, facts: Any, check: str) -> di
     """D7's revert of ``merge_sha`` onto ``brain/integration`` (see the module docstring)."""
     done = gate_revert.revert_red(writer, runs, facts, merge_sha, branches.INTEGRATION, REVERT_PREFIX + merge_sha)
     if not done["reverted"]:  # revert_red sent nothing
-        raise Unusable("the sentinel's runs are not a verified red (%s): nothing to revert" % done["verdict"])
+        raise Unusable("the sentinel's runs and facts are no red (%s): nothing to revert" % done["verdict"])
     summary = "gate: revert of %s, cause %s" % (merge_sha, done["cause"])
     return {"cause": done["cause"], "pull": done["pull"], "commit": done["commit"],
             "merge_sha": _checked_merge(writer, done["pull"], done["commit"], check, summary)}

@@ -1,5 +1,5 @@
-"""``gate.revert``: on the sentinel's verified red, the referee reverts the merge, with a mechanical ``cause``
-(stage 0, MF13).
+"""``gate.revert``: on a red at the watched head (the sentinel's verified red tests, a head that did not build,
+or a lint tool's total above the merge's), the referee reverts the merge, with a mechanical ``cause`` (stage 0, MF13).
 
 Rules: asama-0/14 row 13, asama-0/09 test 25, tohum/07 (on red, first the 3/3 rule, then ``gate.revert``
 reverts that merge; a revert is written with a ``cause``; it passes the gate like a merge), tohum/26 (``cause``
@@ -23,19 +23,31 @@ and at the head. The first rule that holds is the cause:
 Only these five of tohum/26's ten causes are mechanical at stage 0 (asama-0/09 test 25); the others are never
 returned here. Any other shape is unusable (``Unusable``), never a cause.
 
-**The assessment** (``assess``, pure). It judges the runs itself with ``sentinel.decide`` (calls 12 -> 13), so
-only a verified red reverts and ``red_tests`` is the sentinel's ``red`` by construction, not a second input that
-could disagree. ``facts`` is ``{impact, build_ok, lint}``, checked as the request is, except that ``lint`` may
+**The assessment** (``assess``, pure): what is a red, and its cause. It judges the runs itself with
+``sentinel.decide`` (calls 12 -> 13), so ``red_tests`` is the sentinel's ``red`` by construction, not a second input
+that could disagree. ``facts`` is ``{impact, build_ok, lint}``, checked as the request is, except that ``lint`` may
 be ``null``: the totals could not be read (the loop's base lint gave no file, or the merge's cycle recorded no
 ratchet base). Then rule 1 still holds when ``build_ok`` is false, and otherwise the cause is ``unknown``: rule 2
 comes before rule 3, so without the totals neither ``lint_regression`` nor a later rule can be stated
 mechanically. ``build_ok`` may be ``null`` too: whether the head built could not be read (``loop.watch.base_build``).
 Then no rule can be stated (rule 1 is the question, and every later rule holds only when it does not), so the
 cause is ``unknown``, whatever ``lint`` is. The command line's ``cause`` takes no ``null`` (29j's request has the
-facts).
+facts). With that cause (``stated``), by the tests' verdict:
 
-**The revert** (``revert_red``). ``assess`` first. Not red (``green``, ``flaky``, ``rerun``): nothing is sent and
-``reverted`` is false. Red: the cause is computed first (an unusable request sends nothing), then ``target.write``'s
+- ``red`` (the 3/3 rule held): a revert, with the cause, ``unknown`` included;
+- ``green`` or ``flaky`` (the tests name no red test): a revert exactly when the cause is ``build_break`` or
+  ``lint_regression``, the two rules that hold with no red test (29j's cases ``lint_regression`` and
+  ``lint_per_tool`` have ``red_tests: []``; tohum/07's ratchet: no merge raises a tool's total; tohum/26f's planted
+  ``lint_regression`` leaves tests and build clean and asama-0/10a ``#geri-alma`` wants it reverted). ``unknown``
+  here is no red: nothing is reverted. ``facts`` are required and checked as on a red (an end without them is
+  ``Unusable``: no sentinel is ended with the facts unread);
+- ``rerun`` (fewer than four runs after a first run that was not green): nothing is reverted and ``facts`` are not
+  read; the tests have not told yet.
+
+``verdict`` and ``red`` in the answer are the tests' (``red`` is ``[]`` on a revert the facts alone gave).
+
+**The revert** (``revert_red``). ``assess`` first. No revert: nothing is sent and
+``reverted`` is false. A revert: the cause is computed first (an unusable request sends nothing), then ``target.write``'s
 ``Writer.revert`` (calls 9 -> 13) puts a commit whose tree is the merge's first parent's tree on ``revert_branch``
 (refused, nothing written, if the merge is not ``onto``'s head or not a merge), and a pull request from that branch to
 ``onto`` is opened. The message and the title carry the cause.
@@ -63,6 +75,7 @@ from ledger import chain
 import cli
 
 CAUSES = ("build_break", "lint_regression", "test_regression", "impact_miss", "unknown")
+WITHOUT_RED_TESTS = ("build_break", "lint_regression")  # the causes that are a red with no red test (``assess``)
 REQUEST = {"red_tests", "impact", "build_ok", "lint"}
 COUNTS = {"before", "after"}
 
@@ -114,29 +127,40 @@ def cause(request: Any) -> str:
 
 def assess(runs: Any, facts: Any) -> dict:
     """``{revert, verdict, red, cause}`` of ``runs`` and ``facts`` (see the module docstring); ``cause`` is null
-    unless ``revert``. Malformed runs raise ``sentinel.Unusable``, malformed facts of a red ``Unusable``."""
+    unless ``revert``. Malformed runs raise ``sentinel.Unusable``; malformed or missing facts ``Unusable``, unless
+    the verdict is ``rerun``."""
     verdict = sentinel.decide(runs)
-    out = {"revert": verdict["revert"], "verdict": verdict["verdict"], "red": verdict["red"], "cause": None}
-    if not verdict["revert"]:
+    out = {"revert": False, "verdict": verdict["verdict"], "red": verdict["red"], "cause": None}
+    if verdict["verdict"] == "rerun":
         return out
+    found = stated(facts, verdict["red"])
+    if verdict["revert"] or found in WITHOUT_RED_TESTS:
+        return dict(out, revert=True, cause=found)
+    return out
+
+
+def stated(facts: Any, red: list[str]) -> str:
+    """The cause ``facts`` (``{impact, build_ok, lint}``, ``build_ok`` and ``lint`` possibly ``None``) state with the
+    sentinel's ``red``: ``cause``'s, or ``unknown`` where a ``None`` leaves no rule to state (see the module
+    docstring). ``Unusable`` for any other shape."""
     if not isinstance(facts, dict) or "red_tests" in facts:
         raise Unusable("facts must be {impact, build_ok, lint}; red_tests is the sentinel's red")
-    request = dict(facts, red_tests=verdict["red"])
+    request = dict(facts, red_tests=red)
     if "build_ok" in facts and facts["build_ok"] is None:
         checked = dict(request, build_ok=True)  # the shape checked as the request's; no rule can be judged
         if "lint" in checked and checked["lint"] is None:
             checked["lint"] = {}
         cause(checked)
-        return dict(out, cause="unknown")
+        return "unknown"
     if "lint" in facts and facts["lint"] is None:
         found = cause(dict(request, lint={}))  # the shape checked as the request's; the lint rule cannot be judged
-        return dict(out, cause="build_break" if found == "build_break" else "unknown")
-    return dict(out, cause=cause(request))
+        return "build_break" if found == "build_break" else "unknown"
+    return cause(request)
 
 
 def revert_red(writer: Any, runs: Any, facts: Any, merge: str, onto: str, revert_branch: str) -> dict:
-    """Revert ``merge`` (``onto``'s head) when ``runs`` are a verified red; ``facts`` is ``{impact, build_ok,
-    lint}``. Returns ``{reverted, verdict, red, cause, commit, tree, parents, pull}`` (the last five null when
+    """Revert ``merge`` (``onto``'s head) when ``assess`` of ``runs`` and ``facts`` (``{impact, build_ok,
+    lint}``) is a revert. Returns ``{reverted, verdict, red, cause, commit, tree, parents, pull}`` (the last five null when
     not reverted). Malformed runs raise ``sentinel.Unusable``, malformed facts ``Unusable``; a refused revert
     ``target.write.Refused``; in each case before anything is written."""
     judged = assess(runs, facts)

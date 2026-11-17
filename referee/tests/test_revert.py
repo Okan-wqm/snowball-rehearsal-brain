@@ -9,6 +9,9 @@
   first parent's tree, on a branch, with a pull request carrying the cause; after the gate's check and merge,
   ``brain/integration`` has the first parent's tree again; green, flaky and too few runs send nothing; the red
   tests are the sentinel's, not the caller's; unusable facts and a merge that is not the head write nothing;
+- a red with no red test: a green or flaky verdict whose facts state ``build_break`` or ``lint_regression`` is a
+  revert (29j's ``lint_regression`` and ``lint_per_tool`` cases have no red test); one whose facts state nothing
+  is not; a ``rerun`` reverts nothing and reads no facts; a green or flaky verdict without usable facts is unusable;
 - ``assess``: the same verdict and cause with nothing sent; ``build_ok`` null (the build unread) is ``unknown``
   whatever the lint, with the other fields' shapes still checked; ``lint`` null (the totals unreadable) is ``unknown``
   unless the build broke, the other facts still checked; the command line refuses a null ``lint`` or ``build_ok``;
@@ -204,6 +207,20 @@ class Revert(unittest.TestCase):
         self.assertEqual(ctx.exception.reasons, ["revert_not_head"])
         self.assertEqual(len(writes(gh)), sent)
 
+    def test_a_lint_rise_with_green_tests_is_reverted(self):
+        """The planted ``lint_regression`` of tohum/26f (tests and build clean): the merge is reverted to its first
+        parent's tree with that cause; the same facts with an equal total send nothing."""
+        gh, wr, root, merge = self.merged()
+        before = len(gh.requests)
+        same = R.revert_red(wr, [GREEN_RUN], FACTS, merge, "brain/integration", "brain/c/revert-1")
+        self.assertEqual((same["reverted"], len(gh.requests)), (False, before))
+        rising = dict(FACTS, lint={"eslint": {"before": 3, "after": 4}})
+        out = R.revert_red(wr, [GREEN_RUN], rising, merge, "brain/integration", "brain/c/revert-1")
+        self.assertEqual((out["reverted"], out["verdict"], out["red"], out["cause"]),
+                         (True, "green", [], "lint_regression"))
+        self.assertEqual(out["tree"], gh.commits[gh.commits[merge]["parents"][0]]["tree"])
+        self.assertEqual(gh.commits[out["commit"]]["message"], "revert %s: lint_regression" % merge)
+
     def test_build_break_reverts_with_build_break(self):
         gh, wr, root, merge = self.merged()
         empty = {"results": []}
@@ -218,7 +235,52 @@ class Assess(unittest.TestCase):
     def test_the_cause_without_writing(self):
         self.assertEqual(R.assess([RED_A] * 4, FACTS), {"revert": True, "verdict": "red", "red": ["a"],
                                                         "cause": R.cause(dict(FACTS, red_tests=["a"]))})
-        self.assertEqual(R.assess([GREEN_RUN], None), {"revert": False, "verdict": "green", "red": [], "cause": None})
+        self.assertEqual(R.assess([GREEN_RUN], FACTS), {"revert": False, "verdict": "green", "red": [], "cause": None})
+
+    FLAKY = [RED_A, GREEN_RUN, GREEN_RUN, GREEN_RUN]
+    RISING = {"eslint": {"before": 3, "after": 4}}
+    PER_TOOL = {"eslint": {"before": 3, "after": 2}, "stylelint": {"before": 0, "after": 1}}
+
+    def test_a_lint_rise_or_a_broken_build_is_a_red_with_no_red_test(self):
+        """tohum/29j's cases ``lint_regression`` and ``lint_per_tool`` (``red_tests: []``) and a head that did
+        not build: reverted on a green and on a flaky verdict, ``red`` staying the tests'."""
+        for runs, verdict in (([GREEN_RUN], "green"), (self.FLAKY, "flaky")):
+            for facts, cause in ((dict(FACTS, lint=self.RISING), "lint_regression"),
+                                 (dict(FACTS, lint=self.PER_TOOL), "lint_regression"),
+                                 (dict(FACTS, build_ok=False), "build_break"),
+                                 (dict(FACTS, build_ok=False, lint=None), "build_break"),
+                                 (dict(FACTS, build_ok=False, lint=self.RISING), "build_break")):
+                with self.subTest(verdict=verdict, facts=facts):
+                    self.assertEqual(R.assess(runs, facts),
+                                     {"revert": True, "verdict": verdict, "red": [], "cause": cause})
+
+    def test_no_red_test_and_no_stated_cause_is_no_red(self):
+        """``unknown`` with no red test reverts nothing: equal or falling totals, unread totals, an unread build
+        (whatever the lint)."""
+        falling = {"eslint": {"before": 3, "after": 2}}
+        for runs, verdict in (([GREEN_RUN], "green"), (self.FLAKY, "flaky")):
+            for facts in (FACTS, dict(FACTS, lint=falling), dict(FACTS, lint={}), dict(FACTS, lint=None),
+                          dict(FACTS, build_ok=None), dict(FACTS, build_ok=None, lint=self.RISING),
+                          dict(FACTS, build_ok=None, lint=None)):
+                with self.subTest(verdict=verdict, facts=facts):
+                    self.assertEqual(R.assess(runs, facts),
+                                     {"revert": False, "verdict": verdict, "red": [], "cause": None})
+
+    def test_a_rerun_reverts_nothing_and_reads_no_facts(self):
+        for runs in ([], [RED_A], [RED_A] * 3):
+            for facts in (None, dict(FACTS, build_ok=False), dict(FACTS, lint=self.RISING), {"x": 1}):
+                with self.subTest(runs=len(runs), facts=facts):
+                    self.assertEqual(R.assess(runs, facts),
+                                     {"revert": False, "verdict": "rerun", "red": [], "cause": None})
+
+    def test_a_green_or_flaky_verdict_needs_its_facts(self):
+        """No verdict of the tests ends without the facts read: missing or malformed facts are unusable."""
+        for runs in ([GREEN_RUN], self.FLAKY):
+            for facts in (None, {}, {"impact": ["a"]}, dict(FACTS, build_ok="no"), dict(FACTS, lint={"x": {}}),
+                          dict(FACTS, red_tests=[]), dict(FACTS, lint=None, impact=[""]),
+                          dict(FACTS, build_ok=None, lint={"x": {}})):
+                with self.subTest(runs=len(runs), facts=facts), self.assertRaises(R.Unusable):
+                    R.assess(runs, facts)
 
     def test_unreadable_lint_is_unknown_unless_the_build_broke(self):
         rising = dict(FACTS, lint={"eslint": {"before": 0, "after": 9}})
