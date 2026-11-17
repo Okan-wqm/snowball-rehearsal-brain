@@ -8,7 +8,10 @@
 - ``list_artifacts`` over pages, ``read_state`` end to end with a fake API; ``ActionsHttp``: the token goes to the API
   only, never to the location a 302 names, and nothing is followed by urllib;
 - ``last_import``: a chained ``setup/imports.jsonl`` (tohum/26c), broken, empty, invalid; ``check_tree``: equal,
-  different, refused.
+  different, refused, and the tree hashed is the named commit's;
+- tohum/29u "Döngü ne okur": ``transfer_commit``: the row's ``brain_sha`` or ``imports_invalid``; ``check_ancestor``:
+  the transfer commit reached over any parent line of the accepted one, each commit read once, a missing or
+  mismatched object is ``transfer_ancestry_unreadable`` and never a "no".
 """
 
 from __future__ import annotations
