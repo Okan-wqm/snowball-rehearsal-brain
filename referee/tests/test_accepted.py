@@ -438,7 +438,8 @@ class Http(unittest.TestCase):
 
     def test_an_answer_that_is_no_json_or_too_long(self):
         long = b'{"a": "' + b"x" * (16 * MIB) + b'"}'
-        for body in (b"<html>", long):
+        padded = b'{"a": 1}' + b" " * (16 * MIB)  # its first MAX_FILE + 1 bytes alone are JSON: the length decides
+        for body in (b"<html>", long, padded):
             fake = _FakeHttps([(200, body, {})])
             with self.assertRaises(A.StateError) as ctx:
                 A.ActionsHttp("tok", handlers=(fake,)).json("/x")
