@@ -109,31 +109,81 @@
    ]
   },
   {
-   "id": "ls_verify_extra_never",
-   "file": "profile/unit_verify.py",
-   "old": "                if any(e[\"bytes\"] for e in extras):\n",
-   "new": "                if False:\n",
+   "id": "ls_carried_never",
+   "file": "runner/lint_record.py",
+   "old": "    return {EXTRA_KEY: extras} if any(e[\"bytes\"] for e in extras) else {}\n",
+   "new": "    return {}\n",
    "tests": [
-    "test_unit_verify.Run.test_lines_before_the_document_are_reported_not_dropped_silently"
+    "test_unit_verify.Run.test_lines_before_the_document_are_reported_not_dropped_silently",
+    "test_kos.TheBase.test_lines_before_the_document_give_the_same_base_and_the_index_names_them",
+    "test_kos.Candidates.test_a_candidate_whose_lint_runs_print_before_the_document_says_so_in_the_index"
    ]
   },
   {
-   "id": "ls_verify_extra_always",
-   "file": "profile/unit_verify.py",
-   "old": "                if any(e[\"bytes\"] for e in extras):\n",
-   "new": "                if True:\n",
+   "id": "ls_carried_always",
+   "file": "runner/lint_record.py",
+   "old": "    return {EXTRA_KEY: extras} if any(e[\"bytes\"] for e in extras) else {}\n",
+   "new": "    return {EXTRA_KEY: extras}\n",
    "tests": [
-    "test_unit_verify.Run.test_lines_before_the_document_are_reported_not_dropped_silently"
+    "test_unit_verify.Run.test_lines_before_the_document_are_reported_not_dropped_silently",
+    "test_kos.TheBase.test_base_jsonl_is_three_records_of_the_base_tree",
+    "test_kos.Candidates.test_a_candidate_whose_lint_runs_print_before_the_document_says_so_in_the_index"
    ]
   },
   {
    "id": "ls_kos_refusal_dropped",
    "file": "runner/kos.py",
-   "old": "    return reasons + refused, records\n",
-   "new": "    return reasons, records\n",
+   "old": "    return reasons + refused, records, R.carried(extras)\n",
+   "new": "    return reasons, records, R.carried(extras)\n",
    "tests": [
     "test_kos.TheBase.test_output_that_does_not_convert_gives_no_base",
     "test_kos.TheBase.test_two_documents_give_no_base"
+   ]
+  },
+  {
+   "id": "ls_verify_extra_not_carried",
+   "file": "profile/unit_verify.py",
+   "old": "                result.update(R.carried(extras))\n",
+   "new": "                pass\n",
+   "tests": [
+    "test_unit_verify.Run.test_lines_before_the_document_are_reported_not_dropped_silently"
+   ]
+  },
+  {
+   "id": "ls_kos_lint_extra_dropped",
+   "file": "runner/kos.py",
+   "old": "    return reasons + refused, records, R.carried(extras)\n",
+   "new": "    return reasons + refused, records, {}\n",
+   "tests": [
+    "test_kos.TheBase.test_lines_before_the_document_give_the_same_base_and_the_index_names_them",
+    "test_kos.Candidates.test_a_candidate_whose_lint_runs_print_before_the_document_says_so_in_the_index"
+   ]
+  },
+  {
+   "id": "ls_kos_base_extra_dropped",
+   "file": "runner/kos.py",
+   "old": "        index[\"base\"] = dict(_verdict(reasons), **extra)\n",
+   "new": "        index[\"base\"] = _verdict(reasons)\n",
+   "tests": [
+    "test_kos.TheBase.test_lines_before_the_document_give_the_same_base_and_the_index_names_them"
+   ]
+  },
+  {
+   "id": "ls_kos_candidate_extra_dropped",
+   "file": "runner/kos.py",
+   "old": "                fh.write(data)\n        return dict(_verdict(reasons), **extra)\n",
+   "new": "                fh.write(data)\n        return _verdict(reasons)\n",
+   "tests": [
+    "test_kos.Candidates.test_a_candidate_whose_lint_runs_print_before_the_document_says_so_in_the_index"
+   ]
+  },
+  {
+   "id": "ls_kos_candidate_extra_dropped_without_files",
+   "file": "runner/kos.py",
+   "old": "reasons if r != \"red_control_green\"]:\n            return dict(_verdict(reasons), **extra)\n",
+   "new": "reasons if r != \"red_control_green\"]:\n            return _verdict(reasons)\n",
+   "tests": [
+    "test_kos.Candidates.test_the_extra_is_carried_whatever_the_test_run_gave"
    ]
   },
   {

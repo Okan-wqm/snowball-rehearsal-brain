@@ -31,12 +31,14 @@ workspace has no cached project graph; the fixture ``tests/fixtures/eslint_nx/``
    ``lint_cmd`` that runs ESLint twice would otherwise lose the first run's violations without a trace.
 
 This module hands the extra to its caller and drops it nowhere itself: ``runs`` gives each run's ``{bytes,
-sha256}`` (``extra_of``), the command line prints it as ``stdout_extra`` when it is not empty. What a caller does
-with it is the caller's: ``unit_verify.verify`` carries it in its report, ``runner.kos`` does not carry it (its
-index has no field for it), so the loop's results do not say that a run had extra. What the extra **means** is
-not judged here:
-with the lines measured above the tool says a rule was skipped, so a record made from such a run does not show
-that every configured rule ran. Out of scope, stated: an earlier document that spans several lines (rule 4
+sha256}`` (``extra_of``), the command line prints it as ``stdout_extra`` when it is not empty. Both callers of
+``runs`` carry it by one rule (``carried``): when some run of the list had extra, the key ``lint_stdout_extra``
+holds every run's ``{bytes, sha256}`` in run order; when none had, the key is absent. ``unit_verify.verify``
+carries it in its report, ``runner.kos`` in its index entry of the base and of each candidate whose lint runs
+converted, so the ``kos`` job's output line names it. What the extra **means** is not judged here or by any
+caller, and no gate decision reads it: with the lines measured above the tool says a rule was skipped, so a record
+made from such a run does not show that every configured rule ran; the carried count and hash say that a run
+printed something there, and whether two runs printed the same bytes, not what. Out of scope, stated: an earlier document that spans several lines (rule 4
 reads single lines), and a tool that prints after its document (rule 3 refuses it).
 
 **The record** (``record``), ``{tool: "eslint", violations}``, one violation per message of
@@ -213,6 +215,15 @@ def _split(output: bytes) -> tuple[bytes, list[dict]]:
 def extra_of(extra: bytes) -> dict:
     """How the bytes before the document are reported: their count and sha256, not their text."""
     return {"bytes": len(extra), "sha256": hashlib.sha256(extra).hexdigest()}
+
+
+EXTRA_KEY = "lint_stdout_extra"
+
+
+def carried(extras: list[dict]) -> dict:
+    """What a caller of ``runs`` adds to its report for ``extras`` (``runs``'s third answer): ``{EXTRA_KEY:
+    extras}`` when some run had bytes before the document, else ``{}``."""
+    return {EXTRA_KEY: extras} if any(e["bytes"] for e in extras) else {}
 
 
 def _violation(msg: dict, text: _Text) -> dict | None:

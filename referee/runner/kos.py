@@ -18,8 +18,8 @@ decide`` (MF8) and ``activate`` (MF18) read; it decides nothing.
     c/<cid>/checks.json                 {red_control: pass|fail, tests: [{id, status: pass|fail}]}
     c/<cid>/hashes.json                 {"base.jsonl", "cand.jsonl", "checks.json"}: sha256 of the bytes written
     sentinel.json                       {merge_sha, runs, verdict, red, flaky}: only when a merge is watched
-    index.json                          {base: {verdict, reasons}, base_run_sha256,
-                                         candidates: {cid: {verdict, reasons}},
+    index.json                          {base: {verdict, reasons, lint_stdout_extra?}, base_run_sha256,
+                                         candidates: {cid: {verdict, reasons, lint_stdout_extra?}},
                                          sentinel: null | {merge_sha, verdict, reasons, sha256}}
 
 Verdicts are ``unit_verify``'s classes: ``verified`` (the files are written and no reason holds), ``refused`` (a
@@ -33,9 +33,15 @@ must end ``ok`` with exit 0 or 1 (``lint_failed:<n>``) and convert (``lint_outpu
 contained run, ``red_control_green`` included, stops the base: no ratchet base comes from a sandbox that a known
 bad command passed. ``base.jsonl`` holds the three records in run order even when they differ: the gate and
 genesis judge that (``tool_nondeterministic``), this module records it. Bytes before the document on a lint
-run's stdout (``lint_record``'s stdout rules) are read past and not carried: the base's records and its index
-entry are the same as without them. Without ``base.jsonl`` no candidate runs
-(``base_unavailable``).
+run's stdout (``lint_record``'s stdout rules) are read past: the base's records, its run file and its verdict
+are the same as without them. They are not dropped silently: when the three runs converted and one of them had
+such bytes, the base's index entry carries ``lint_stdout_extra``, each run's ``{bytes, sha256}`` in run order
+(``lint_record.carried``, the rule ``unit_verify``'s report uses); without such bytes, or without converted
+runs, the key is absent. The same holds for a candidate's entry once its three lint runs converted, whatever
+its test run gave. Nothing reads the key to decide: it says a plugin printed beside the document (one measured
+case: a rule the tool skipped), so a reader of the ``kos`` line can tell a base or a candidate whose record may
+not hold every configured rule, and whether a candidate's runs printed other bytes than the base's. Without
+``base.jsonl`` no candidate runs (``base_unavailable``).
 
 **A candidate** ``cid`` (a directory holding ``diff.patch``; only that file is read). ``cid`` is
 ``[A-Za-z0-9][A-Za-z0-9._-]{0,127}`` (else ``candidate_id_invalid``, nothing written for it). Its worktree is a
@@ -182,8 +188,11 @@ def checks(stdout: bytes, exit_code: int | None, red_control_green: bool) -> byt
 
 # ---------------------------------------------------------------- runs
 
-def _lint(recipe: dict, red: list, worktree: str, operating: dict, runner: C.Runner, root: str) -> tuple[list, list]:
-    """Three lint runs: ``(reasons, records)``; ``records`` only when no reason but ``red_control_green``."""
+def _lint(recipe: dict, red: list, worktree: str, operating: dict, runner: C.Runner,
+          root: str) -> tuple[list, list, dict]:
+    """Three lint runs: ``(reasons, records, extra)``; ``records`` only when no reason but ``red_control_green``,
+    ``extra`` what the index entry carries of the runs' stdout extra (``lint_record.carried``; ``{}`` without
+    records)."""
     reasons, stdouts = [], []
     for n in range(1, LINT_RUNS + 1):
         run = U._one(recipe["lint_cmd"], red, recipe["env_image"], worktree, operating, runner, root)
@@ -194,9 +203,9 @@ def _lint(recipe: dict, red: list, worktree: str, operating: dict, runner: C.Run
             reasons.append("lint_failed:%d" % n)
         stdouts.append(run["stdout"] if isinstance(run["stdout"], bytes) else b"")
     if [r for r in reasons if r != "red_control_green"] or len(stdouts) != LINT_RUNS:
-        return reasons, []
-    refused, records, _ = R.runs(stdouts, worktree)
-    return reasons + refused, records
+        return reasons, [], {}
+    refused, records, extras = R.runs(stdouts, worktree)
+    return reasons + refused, records, R.carried(extras)
 
 
 class _NoRun(Exception):
@@ -281,14 +290,14 @@ def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx
         bad = _patch(worktree, diff)
         if bad:
             return _verdict(bad)
-        reasons, records = _lint(recipe, red, worktree, ctx["operating"], runner, work_root)
+        reasons, records, extra = _lint(recipe, red, worktree, ctx["operating"], runner, work_root)
         if not records:
             return _verdict(reasons)
         test = U._one(recipe["test_cmd"], red, recipe["env_image"], worktree, ctx["operating"], runner, work_root,
                       ctx["values"]["test_total_s"])
         reasons += [r for r in test["reasons"] if r not in reasons]
         if test["status"] != "ok" or [r for r in reasons if r != "red_control_green"]:
-            return _verdict(reasons)
+            return dict(_verdict(reasons), **extra)
         stdout = test["stdout"] if isinstance(test["stdout"], bytes) else b""
         files = {"cand.jsonl": R.run_file(records),
                  "checks.json": checks(stdout, test["exit"], "red_control_green" in reasons)}
@@ -299,7 +308,7 @@ def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx
         for name, data in files.items():
             with open(os.path.join(directory, name), "xb") as fh:
                 fh.write(data)
-        return _verdict(reasons)
+        return dict(_verdict(reasons), **extra)
     finally:
         shutil.rmtree(work_root, ignore_errors=True)
 
@@ -321,15 +330,15 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
     root = tempfile.mkdtemp(prefix="snowball-kos-", dir=base)
     try:
         bad, _, ctx = U.stage(recipe, tree, policy, red_control, deps, target, runner, root)
-        reasons, records = (bad, []) if bad else _lint(recipe, red_control["cmd"], ctx["staging"], ctx["operating"],
-                                                       runner, root)
+        reasons, records, extra = (bad, [], {}) if bad else _lint(recipe, red_control["cmd"], ctx["staging"],
+                                                                  ctx["operating"], runner, root)
         index: dict[str, Any] = {"base_run_sha256": None, "candidates": {}, "sentinel": None}
         if records and not reasons:
             base_run = R.run_file(records)
             with open(os.path.join(out, BASE), "xb") as fh:
                 fh.write(base_run)
             index["base_run_sha256"] = sha256(base_run)
-        index["base"] = _verdict(reasons)
+        index["base"] = dict(_verdict(reasons), **extra)
         if watch is not None:
             index["sentinel"] = ({"merge_sha": watch, "verdict": None, "reasons": bad, "sha256": None} if bad else
                                  _sentinel(watch, recipe, red_control["cmd"], ctx["staging"], ctx, runner, root, out))

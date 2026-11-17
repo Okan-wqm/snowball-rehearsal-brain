@@ -1080,8 +1080,7 @@ def verify(recipe: Any, tree: str, policy: Any, red_control: Any, deps: str | No
             reasons, records, extras = lint_records(stdouts, staging, recipe, derived)
             if not reasons:
                 result["lint_records"] = records
-                if any(e["bytes"] for e in extras):
-                    result["lint_stdout_extra"] = extras
+                result.update(R.carried(extras))
         if reasons:
             return _verdict(reasons, **result)
         return dict(_verdict([], **result), recipe=recipe, recipe_sha256=hashlib.sha256(canonical(recipe)).hexdigest())

@@ -3,6 +3,8 @@ read by the gate (MF8) as they are written; with the fake runner (``fake_docker.
 
 - the base: three lint runs become ``base.jsonl``; a failing, unconvertible or uncontained base gives no file and
   no candidate runs;
+- bytes a lint run printed before its document: read past for the records, named in the index entry of the base
+  and of a candidate whose lint runs converted (``lint_stdout_extra``), absent without them;
 - a candidate: a fresh copy of the base worktree with its diff applied (refusals of a diff that does not apply
   in place, a path outside the worktree or behind a symlink, the runs' own directory), three lint runs and one
   test run, ``checks.json`` from the TAP, ``hashes.json`` of the bytes written; ``gate.check decide`` (MF8's own
@@ -71,7 +73,7 @@ if "LINTCRASH" in open("pkg/a.js").read():
 if "GARBAGE" in open("pkg/a.js").read():
     print("not json")
     sys.exit(1)
-if "PLUGIN_LINE" in open("pkg/b.js").read():
+if "PLUGIN_LINE" in open("pkg/a.js").read() + open("pkg/b.js").read():
     print("warning: a rule was skipped")
 if "TWICE" in open("pkg/b.js").read():
     print(json.dumps(out))
@@ -126,6 +128,9 @@ GOOD = diff("pkg/a.js", ["var a = 1;"], ["let a = 1;"])
 BREAKS_TEST = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // BROKEN"])
 RAISES = diff("pkg/a.js", ["var a = 1;"], ["let a = 1;", "eval(a);", "eval(a);"])
 NOISY = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // NOISE"])
+# A diff after which every lint run prints a line before its document (LINT's PLUGIN_LINE), and that line's extra.
+PRINTS = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // PLUGIN_LINE"])
+PLUGIN_EXTRA = R.extra_of(b"warning: a rule was skipped\n")
 FINDING = {"rule_id": "no-var", "path": "pkg/a.js", "line": 1, "fix_range": [1, 1], "tool_output_sha256": "0" * 64}
 
 
@@ -232,20 +237,25 @@ class TheBase(Base):
         self.assertEqual(index["base"]["reasons"], ["lint_output:not_eslint_json"])
         self.assertFalse(os.path.exists(os.path.join(self.out, "base.jsonl")))
 
-    def test_lines_before_the_document_give_the_same_base(self):
-        """``lint_record.runs``'s stdout rules reach the base: the same three records; the index does not name
-        the extra (``unit_verify.verify``'s report does)."""
+    def test_lines_before_the_document_give_the_same_base_and_the_index_names_them(self):
+        """``lint_record.runs``'s stdout rules reach the base: the same three records and the same verdict; the
+        index entry carries each run's extra (``lint_record.carried``), which a base without such lines does not
+        have (``test_base_jsonl_is_three_records_of_the_base_tree``)."""
         write_tree(self.tree, {"pkg/b.js": "const c = 3; // PLUGIN_LINE\n"})
         index = self.results({})
         record = {"tool": "eslint", "violations": [{"rule_id": "no-var", "path": "pkg/a.js", "line": 1,
                                                     "fix": [1, 1]}]}
-        self.assertEqual(index["base"], {"verdict": "verified", "reasons": []})
-        self.assertEqual(read(os.path.join(self.out, "base.jsonl")), R.run_file([record] * 3))
+        self.assertEqual(index["base"], {"verdict": "verified", "reasons": [], R.EXTRA_KEY: [PLUGIN_EXTRA] * 3})
+        data = read(os.path.join(self.out, "base.jsonl"))
+        self.assertEqual(data, R.run_file([record] * 3))
+        self.assertEqual(index["base_run_sha256"], sha(data))
+        self.assertEqual(json.loads(read(os.path.join(self.out, "index.json"))), index)
 
     def test_two_documents_give_no_base(self):
-        write_tree(self.tree, {"pkg/b.js": "const c = 3; // TWICE\n"})
+        write_tree(self.tree, {"pkg/b.js": "const c = 3; // TWICE PLUGIN_LINE\n"})
         index = self.results({})
-        self.assertEqual(index["base"]["reasons"], ["lint_output:several_documents"])
+        self.assertEqual(index["base"], {"verdict": "refused", "reasons": ["lint_output:several_documents"]},
+                         "runs that did not convert carry no extra")
         self.assertFalse(os.path.exists(os.path.join(self.out, "base.jsonl")))
 
     def test_a_green_red_control_gives_no_base(self):
@@ -291,6 +301,36 @@ class Candidates(Base):
         self.results({"a-breaks": BREAKS_TEST, "b-good": GOOD})
         self.assertEqual(self.decide("b-good", GOOD), {"decision": "merge", "reasons": []})
         self.assertEqual(read(os.path.join(self.tree, "pkg/a.js")).decode(), A_JS)
+
+    def test_a_candidate_whose_lint_runs_print_before_the_document_says_so_in_the_index(self):
+        """The diff makes the tool print a line before its document (a plugin that skips a rule): the candidate's
+        files and verdict are those of the same diff without it, the gate merges it, and its index entry carries
+        the three runs' extra while the base's entry has none: the ``kos`` line shows the difference, no rule
+        judges it."""
+        index = self.results({"plain": GOOD, "prints": PRINTS})
+        self.assertEqual(index["base"], {"verdict": "verified", "reasons": []})
+        self.assertEqual(index["candidates"]["plain"], {"verdict": "verified", "reasons": []})
+        self.assertEqual(index["candidates"]["prints"],
+                         {"verdict": "verified", "reasons": [], R.EXTRA_KEY: [PLUGIN_EXTRA] * 3})
+        for name in ("cand.jsonl", "checks.json"):
+            self.assertEqual(read(os.path.join(self.out, "c", "prints", name)),
+                             read(os.path.join(self.out, "c", "plain", name)), name)
+        self.assertEqual(self.decide("prints", PRINTS), {"decision": "merge", "reasons": []})
+        self.assertEqual(json.loads(read(os.path.join(self.out, "index.json"))), index)
+
+    def test_the_extra_is_carried_whatever_the_test_run_gave(self):
+        """Once the three lint runs converted the entry carries their extra: with a test run over its limit (no
+        file) as with a green red control (files written); a candidate whose lint runs did not convert has none."""
+        write_tree(self.tree, {"pkg/run_tests.py": "import time\nif 'SLOW' in open('pkg/a.js').read():\n"
+                                                   "    time.sleep(5)\nprint('ok 1 - a')\n"})
+        slow = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // SLOW PLUGIN_LINE"])
+        twice = diff("pkg/b.js", ["const c = 3;"], ["const c = 3; // PLUGIN_LINE TWICE"])
+        index = self.results({"slow": slow, "twice": twice}, rec=recipe(limits={"test_total_s": 2}))
+        self.assertEqual(index["candidates"]["slow"], {"verdict": "no_verdict", "reasons": ["limit_hit:test_total_s"],
+                                                       R.EXTRA_KEY: [PLUGIN_EXTRA] * 3})
+        self.assertFalse(os.path.exists(os.path.join(self.out, "c", "slow")))
+        self.assertEqual(index["candidates"]["twice"],
+                         {"verdict": "refused", "reasons": ["lint_output:several_documents"]})
 
     def test_a_green_red_control_is_written_for_the_gate(self):
         # base ran with the real red control; the candidate's runs then meet a green one
