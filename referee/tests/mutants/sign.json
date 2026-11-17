@@ -12,8 +12,8 @@
   {
    "id": "sign_exit_ignored",
    "file": "loop/sign.py",
-   "old": "            if code != 0:\n                return None, code\n",
-   "new": "            if code is None:\n                return None, code\n",
+   "old": "                if code == 0:\n",
+   "new": "                if code is not None:\n",
    "tests": [
     "test_sign.py"
    ]
@@ -21,8 +21,8 @@
   {
    "id": "verify_exit_ignored",
    "file": "loop/sign.py",
-   "old": "            if self.run(A.identity_argv(self.sigstore, bundle, self.pin, path)) != 0:\n",
-   "new": "            if self.run(A.identity_argv(self.sigstore, bundle, self.pin, path)) is None:\n",
+   "old": "        if self.run(A.identity_argv(self.sigstore, bundle, self.pin, path)) != 0:\n",
+   "new": "        if self.run(A.identity_argv(self.sigstore, bundle, self.pin, path)) is None:\n",
    "tests": [
     "test_sign.py"
    ]
@@ -66,8 +66,8 @@
   {
    "id": "uuid_not_leaf",
    "file": "loop/sign.py",
-   "old": "        return {\"uuid\": R._leaf(body), \"identity\": self.pin, \"bundle\": data}, 0\n",
-   "new": "        return {\"uuid\": hashlib.sha256(body.encode()).hexdigest(), \"identity\": self.pin, \"bundle\": data}, 0\n",
+   "old": "        return {\"uuid\": R._leaf(body), \"identity\": self.pin, \"bundle\": data}\n",
+   "new": "        return {\"uuid\": hashlib.sha256(body.encode()).hexdigest(), \"identity\": self.pin, \"bundle\": data}\n",
    "tests": [
     "test_sign.py"
    ]
@@ -75,8 +75,8 @@
   {
    "id": "identity_from_nowhere",
    "file": "loop/sign.py",
-   "old": "        return {\"uuid\": R._leaf(body), \"identity\": self.pin, \"bundle\": data}, 0\n",
-   "new": "        return {\"uuid\": R._leaf(body), \"identity\": self.sigstore, \"bundle\": data}, 0\n",
+   "old": "        return {\"uuid\": R._leaf(body), \"identity\": self.pin, \"bundle\": data}\n",
+   "new": "        return {\"uuid\": R._leaf(body), \"identity\": self.sigstore, \"bundle\": data}\n",
    "tests": [
     "test_sign.py"
    ]
@@ -84,8 +84,8 @@
   {
    "id": "payload_not_written",
    "file": "loop/sign.py",
-   "old": "                fh.write(payload)\n",
-   "new": "                fh.write(payload[:-1])\n",
+   "old": "                    fh.write(payload)\n",
+   "new": "                    fh.write(payload[:-1])\n",
    "tests": [
     "test_sign.py"
    ]
@@ -147,8 +147,8 @@
   {
    "id": "sign_one_directory",
    "file": "loop/sign.py",
-   "old": "        with tempfile.TemporaryDirectory(prefix=\"root-sign-\") as tmp:\n",
-   "new": "        os.makedirs(os.path.join(tempfile.gettempdir(), \"root-sign-shared\"), exist_ok=True)\n        with __import__(\"contextlib\").nullcontext(os.path.join(tempfile.gettempdir(), \"root-sign-shared\")) as tmp:\n",
+   "old": "            with tempfile.TemporaryDirectory(prefix=\"root-sign-\") as tmp:\n",
+   "new": "            os.makedirs(os.path.join(tempfile.gettempdir(), \"root-sign-shared\"), exist_ok=True)\n            with __import__(\"contextlib\").nullcontext(os.path.join(tempfile.gettempdir(), \"root-sign-shared\")) as tmp:\n",
    "tests": [
     "test_sign.py"
    ]

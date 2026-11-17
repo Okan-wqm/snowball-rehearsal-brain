@@ -113,26 +113,23 @@ class SigstoreSigner:
             raise ValueError("identity pin must be a non-empty string")
         self.pin, self.sigstore, self.run, self.sleep = pin, sigstore, run, sleep
 
-    def _signed(self, payload: bytes, digest: str) -> tuple[dict | None, int]:
-        """Steps 1 to 4 once, in a fresh directory: the answer and 0, or None and a failed ``sign``'s exit code."""
-        with tempfile.TemporaryDirectory(prefix="root-sign-") as tmp:
-            path, bundle = os.path.join(tmp, PAYLOAD), os.path.join(tmp, BUNDLE)
-            with open(path, "wb") as fh:
-                fh.write(payload)
-            code = self.run(sign_argv(self.sigstore, bundle, path))
-            if code != 0:
-                return None, code
-            data, body = _bundle_body(bundle, digest)
-            if self.run(A.identity_argv(self.sigstore, bundle, self.pin, path)) != 0:
-                raise Unsignable("the bundle is not verified for the pinned identity")
-        return {"uuid": R._leaf(body), "identity": self.pin, "bundle": data}, 0
+    def _answer(self, bundle: str, path: str, digest: str) -> dict:
+        """Steps 2 to 4 on the bundle a ``sign`` that exited 0 wrote."""
+        data, body = _bundle_body(bundle, digest)
+        if self.run(A.identity_argv(self.sigstore, bundle, self.pin, path)) != 0:
+            raise Unsignable("the bundle is not verified for the pinned identity")
+        return {"uuid": R._leaf(body), "identity": self.pin, "bundle": data}
 
     def sign(self, payload: bytes) -> dict:
         digest = hashlib.sha256(payload).hexdigest()
         for made in range(1, RUNS + 1):
-            answer, code = self._signed(payload, digest)
-            if answer is not None:
-                return answer
+            with tempfile.TemporaryDirectory(prefix="root-sign-") as tmp:
+                path, bundle = os.path.join(tmp, PAYLOAD), os.path.join(tmp, BUNDLE)
+                with open(path, "wb") as fh:
+                    fh.write(payload)
+                code = self.run(sign_argv(self.sigstore, bundle, path))
+                if code == 0:
+                    return self._answer(bundle, path, digest)
             if code != AGAIN or made == RUNS:
                 break
             self.sleep(PAUSES[made - 1])
