@@ -27,7 +27,7 @@ and no terminal prompt, nothing is asked for a password:
 
 ``fetch(git_dir, url, sha, history=True)`` asks for the commit's history instead of its tree: step 2 has
 ``--filter=tree:0`` in the place of ``--depth=1`` (every commit reachable from ``sha``, no tree and no blob; the
-partial-clone filter of git's protocol v2, which the server must allow: github.com does,
+partial-clone filter of git's protocol v2, which the server must allow: the brain's host did,
 ``tests/fixtures/git-fetch.json`` ``history``). ``loop.accepted.check_ancestor`` walks it; a tree asked of such a
 directory is not there (real git then asks the server for it: it marks the URL a promisor remote in the
 directory's own config; D1 asks it for commits only).
