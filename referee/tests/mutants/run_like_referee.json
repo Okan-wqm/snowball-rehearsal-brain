@@ -273,8 +273,8 @@
   },
   {
    "id": "order_by_finish",
-   "old": "results = list(pool.map(lambda t: run_one(t, root, names, path, work, timeout), tests))",
-   "new": "results = list(pool.map(lambda t: run_one(t, root, names, path, work, timeout), tests)); results.sort(key=lambda r: r[\"duration_ms\"])",
+   "old": "results = list(pool.map(lambda t: run_one(t, root, names, path, work, timeout, watch), tests))",
+   "new": "results = list(pool.map(lambda t: run_one(t, root, names, path, work, timeout, watch), tests)); results.sort(key=lambda r: r[\"duration_ms\"])",
    "file": "tests/run_like_referee.py",
    "tests": [
     "test_run_like_referee.py"
