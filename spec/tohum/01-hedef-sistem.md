@@ -29,6 +29,21 @@ tutmak, başka repolardan ve modelin kendi bilgisinden yararlanmak bunun araçla
 hata oranıdır (Y5). Bir repodan öğrenilen kalıp kopyalanmaz: modelin kendi bilgisinden gelen bir
 alternatifle çekiştirilir ve kazananı yürütme seçer (`10`, `21`).
 
+**Sahibin hedefi (sahip kararı, 2026-11-17).** Amaç belirli bir model değil, kabul edilmiş sağlam değişiklik başına
+en düşük maliyettir; doğruluk ve güvenlik önce gelir (Y12). Sistemin bilgisi bir modelde değil repodadır: defterin
+dersleri, skill'ler, araçlar, testler. Kaydedilen bu bilgi o maliyeti her model için düşürür: bilgi zaten orada
+olduğundan güçlü bir model daha az token ve daha az yeniden denemeyle çalışır, çok daha küçük ve ucuz bir model de
+ondan sağlam kod üretebilir. Bu yüzden Kurucu'nun kurduğu her şey (beynin döngüsü, skill'ler, araçlar, testler,
+dersler, sonraki oturumların okuduğu kayıtlar), ondan sonraki oturumlar ve ajanlar çok daha küçük modellerde koşsa da
+kullanılabilir ve güvenlidir; öğrenilen, daha zayıf bir modelin kullanabileceği biçimde yazılır: kendi başına
+anlaşılır dersler, yazıldığı gibi koşan yeniden denetimler (`26g`); bir ders araç, skill ya da test olabiliyorsa o
+biçim tercih edilir. Hangi modelin koşacağını varsayım değil, kabul edilmiş değişiklik başına ölçülen maliyet
+belirler; güçlü model bugün mimardır, sistemin gereği değildir. Karmaşıklık da sistemin taşıdığı bir maliyettir ve
+düşük tutulur (sahip kararı, 2026-11-17): sistemin kendi boyutu (spec sayfaları, denetimler, CI süresi, mutantlar,
+araçlar) ölçülür ve raporlanır; yerini ölçülmüş bir ihtiyaçla hak etmeyen birleştirilir ya da kaldırılır. Yeni bir
+mekanizma yalnız ölçülmüş bir ihtiyaçtan doğar, "lazım olabilir" diye doğmaz. Kaçınılan uyarı işaretleri: aşırı
+karmaşıklık, aşılamayan kilitler, biçimi doğruluk sanmak, değer yerine canlılığı ölçmek.
+
 **En basit döngü.** Döngü en basit hâliyle başlar. Aşama 0'da Kurucu yürüyen iskeleti kurar: hazır
 bir adayı kapıdan geçirip merge eden, izleyen ve geri alan ilk canlı döngü, önce oyuncak hedefte, sonra
 gerçek hedefin kopyasında tek birimde. Aşama 1'de canlı olan yalnız şudur: profildeki lint aracını saran tek adapter, aracın `fix` aralığını

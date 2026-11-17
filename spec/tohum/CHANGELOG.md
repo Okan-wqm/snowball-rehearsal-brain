@@ -4,6 +4,18 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-17, E609–E611; sahip kararı, 2026-11-17): yeni `26g`. `founder` bölümüne `lesson` türü,
+  `26g` (E609, E610): yükü `{summary, refs[], recheck}`; iddia tek cümle ve kendi başına anlaşılır,
+  `refs[]` kanıttır, `recheck` beyin kökünden yazıldığı gibi koşan komut ya da `none: <neden>`. Yürürlükten
+  çıkma bugünkü `closes:<row_id>` ref'i ya da `13`'ün `supersedes`'i; yeni mekanizma yok, hakem yalnız
+  yapıyı denetler. Ad `learning` değil: beynin defterinde `13`'le kapatılmış altı `kind: learning` satırı
+  var, tür kümeye girseydi kapatanları geçersiz olurdu (E609). Başlatıcı her oturumdan önce
+  `/work/logs/lessons.json`'u yazar: yürürlükteki derslerin en yeni 100'ünün `row_id`'si ve iddiası (500
+  karakter), dışarıda kalanların sayısı; `recheck`'i koşturmaz (E610). Sahibin hedefi `01`'de, `00` ona
+  işaret eder: ölçü kabul edilmiş sağlam değişiklik başına maliyet, bilgi repoda, model değil (E611).
+  Karmaşıklık da maliyettir (sahip kararı, 2026-11-17, `01`): sistemin kendi boyutu ölçülür ve raporlanır,
+  yerini ölçülmüş ihtiyaçla hak etmeyen birleştirilir ya da kaldırılır, yeni mekanizma yalnız ölçülmüş
+  ihtiyaçtan (E611). 28 mutant, CI 92 parça.
 - 2.2 (2026-11-17, E608; Kurucu raporu, olgu): yeni kural, vaka ve mutant yok. Yanıtlanan rapor:
   `seed-063-outside-brain-ruleset-covers-nested-brain-branches` → `25a:17` (iki hedefte `brain-disi`'nin hariç listesi
   2026-11-17'den beri `refs/heads/brain/**`, `refs/heads/brain/**/*`, `~DEFAULT_BRANCH`; `brain/c/good`, `brain/drill/x`,

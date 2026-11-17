@@ -6,7 +6,7 @@ Okunma: Aşama 0 inşasında ve her şema değişikliğinde
 
 ---
 
-Alanların tek kaynağı bu sayfa ve devamları (`26b`, `26c`, `26d`), güvenlik şemaları için `30d` ile `30e`'dir;
+Alanların tek kaynağı bu sayfa ve devamları (`26b`, `26c`, `26d`, `26g`), güvenlik şemaları için `30d` ile `30e`'dir;
 başka sayfa alan adı tanımlamaz. Hepsi JSON Schema olarak hakem reposunda `schemas/` altındadır; harness her
 artefaktı şemaya karşı doğrular. Alan adları İngilizce. Araç imzaları `26a`'da. Şema hakem kodudur: yeni alan ya
 da yeni kategori önerisini genesis değil şerit yazarı yapar (`09a`).
@@ -23,16 +23,16 @@ da yeni kategori önerisini genesis değil şerit yazarı yapar (`09a`).
 | — (unresolved satırları) | `<state_root>/unresolved.jsonl` | Hakem kapısı | Aşama 1 |
 | — (kökler) | `<state_root>/chain/root.jsonl` | Hakem `yaz` işi | Etkinleştirme |
 
-**ledger row** (tüm bölümler): `row_id`, `ts`, `part`, `kind`, `payload`, `derivation`, `trust`,
-`snapshot_id`, `evidence_refs`, `cause?`, `miss_reason?`, `derived_from?`, `proposed_by?`,
-`prev_hash`, `row_hash`. Satırı her zaman hakem yazar; oyuncunun önerdiği içerik `proposed_by`
-ile işaretlenir ve `trust: inferred` saklanır. Kanonik biçim RFC 8785; `row_hash =
-sha256(canonical(row − row_hash) ‖ prev_hash)`, küçük harf onaltılık; ilk satırın `prev_hash`'i
-64 sıfır. Vektörler `29a`'da. **Sayılar:** hash'lenen hiçbir artefaktta kayan nokta yoktur;
-tamsayı (para `*_micros`, süre `*_ms`) ya da en çok altı ondalıklı sabit ondalık dizgi
-(`"0.962400"`) kullanılır. **`founder` satırı:** `kind` ∈ {`session_start`, `decision`, `build`, `blocked`, `seed_issue`,
-`cost`, `session_end`}, `payload` `{summary, refs[]}`, `snapshot_id` beyin reposunun o anki SHA'sı, `supersedes?` aynı dosyada
-anlamı bozuk önceki satırın `row_hash`'i (`13`). `findings.jsonl` ve `unresolved.jsonl` satırları da `prev_hash`, `row_hash` taşır.
+**ledger row** (tüm bölümler): `row_id`, `ts`, `part`, `kind`, `payload`, `derivation`, `trust`, `snapshot_id`,
+`evidence_refs`, `cause?`, `miss_reason?`, `derived_from?`, `proposed_by?`, `prev_hash`, `row_hash`. Satırı her zaman
+hakem yazar; oyuncunun önerdiği içerik `proposed_by` ile işaretlenir ve `trust: inferred` saklanır. Kanonik biçim RFC
+8785; `row_hash = sha256(canonical(row − row_hash) ‖ prev_hash)`, küçük harf onaltılık; ilk satırın `prev_hash`'i 64
+sıfır. Vektörler `29a`'da. **Sayılar:** hash'lenen hiçbir artefaktta kayan nokta yoktur; tamsayı (para `*_micros`,
+süre `*_ms`) ya da en çok altı ondalıklı sabit ondalık dizgi (`"0.962400"`) kullanılır. **`founder` satırı:** `kind` ∈
+{`session_start`, `decision`, `build`, `blocked`, `seed_issue`, `cost`, `session_end`, `lesson`}, `payload`
+`{summary, refs[]}` (`lesson`'ınki `{summary, refs[], recheck}`, `26g`), `snapshot_id` beyin reposunun o anki SHA'sı,
+`supersedes?` aynı dosyada anlamı bozuk önceki satırın `row_hash`'i (`13`). `findings.jsonl` ve `unresolved.jsonl`
+satırları da `prev_hash`, `row_hash` taşır.
 
 **derivation** (kapalı küme): `tool`, `static_analysis`, `test_verified`, `llm_inference`,
 `name_similarity`, `imported`. **trust**: `verified`, `observed`, `inferred`. Merge kararına
