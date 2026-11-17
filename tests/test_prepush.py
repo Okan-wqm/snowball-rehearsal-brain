@@ -1,6 +1,12 @@
 """``tests/prepush.py``'s rules, each bound by a test below (the rules are listed in its docstring, the one
 source), ``run_like_referee``'s ``watch`` and ``skills/push/SKILL.md``'s form and the commands it names. No git is
-needed: git's answers come from a fake that answers by its subcommand. Run from the brain's root."""
+needed: git's answers come from a fake that answers by its subcommand. Run from the brain's root.
+
+What these tests need of the machine, stated: the tests that expect a list of readers (``Watch``, ``Check`` and
+``Run``'s first) need a temporary directory whose file system moves access times on a read. Where it does not
+(``noatime``), each of them fails at ``moving_access_times`` with that message and is not skipped: the rules
+they bind are not shown on such a machine. The rule for such a machine itself (``readers`` null) is bound with
+``atime_moves`` replaced, so it runs on either kind."""
 
 from __future__ import annotations
 
@@ -51,6 +57,9 @@ class Base(unittest.TestCase):
         os.chmod(self.git, 0o755)
         self.dirty = ""
 
+    def moving_access_times(self) -> None:
+        self.assertTrue(R.atime_moves(self.work), "this test needs a file system where access times move")
+
     def put(self, name: str, text: str = "x\n", mode: int = 0o644) -> str:
         path = os.path.join(self.root, name)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -89,7 +98,7 @@ class Base(unittest.TestCase):
 
 class Watch(Base):
     def test_read_names_the_watched_files_whose_bytes_a_command_read(self):
-        self.assertTrue(R.atime_moves(self.work), "this test needs a file system where access times move")
+        self.moving_access_times()
         names = [self.put("a.txt"), self.put("b.txt"), self.put("c.txt")]
         path = R.bindir(os.path.join(self.tmp, "bin"))
         r = R.run_one({"id": "T0", "cmd": "python -c \"open('b.txt').read(); open('c.txt').read(); "
@@ -98,6 +107,7 @@ class Watch(Base):
         self.assertEqual((r["ok"], r["read"]), (True, ["b.txt"]))
 
     def test_without_watch_a_result_has_no_read_field_and_a_watched_read_is_no_write(self):
+        self.moving_access_times()
         names = [self.put("a.txt")]
         path = R.bindir(os.path.join(self.tmp, "bin"))
         cmd = {"id": "T0", "cmd": "python -c \"open('a.txt').read()\""}
@@ -106,6 +116,7 @@ class Watch(Base):
         self.assertEqual((r["ok"], r["wrote"], r["read"]), (True, [], ["a.txt"]))
 
     def test_run_passes_watch_to_every_command(self):
+        self.moving_access_times()
         names = [self.put("a.txt")]
         lines: list[str] = []
         R.run(self.root, [{"id": "T0", "cmd": "python -c \"open('a.txt').read()\""},
@@ -133,6 +144,7 @@ class State(Base):
 
 class Run(Base):
     def test_a_green_run_writes_the_stamp_with_the_ledgers_readers(self):
+        self.moving_access_times()
         self.world(READS_LEDGER, LISTS_ONLY, "python -c pass")
         got = self.green()
         self.assertEqual((got["ok"], got["reasons"], got["readers"]), (True, [], ["T0"]))
@@ -171,16 +183,25 @@ class Run(Base):
         self.put(P.LEDGER, "row1\nrow2\n")
         self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": ["T0", "T1"]})
 
-    def test_a_brain_without_a_ledger(self):
-        self.world("python -c pass", ledger=None)
+    def test_a_brain_without_a_ledger_has_null_readers_and_a_ledger_made_later_runs_every_command(self):
+        # No command of the run could read a ledger that was not there, so the run knows no reader of it.
+        self.world("python -c pass", "python -c \"import os, sys; sys.exit(os.path.exists('founder-ledger.jsonl') "
+                                     "and 'bad' in open('founder-ledger.jsonl').read())\"", ledger=None)
         got = self.green()
-        self.assertEqual((got["ok"], got["readers"], self.read_stamp()["ledger"]), (True, [], None))
+        self.assertEqual((got["ok"], got["readers"]), (True, None))
+        stamp = self.read_stamp()
+        self.assertEqual((stamp["ledger"], stamp["readers"]), (None, None))
         self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": []})
+        self.put(P.LEDGER, "row1\n")
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": ["T0", "T1"]})
+        self.put(P.LEDGER, "bad row\n")
+        self.assertEqual(self.check(), {"ok": False, "reasons": ["test_failed:T1"], "reran": ["T0", "T1"]})
 
 
 class Check(Base):
     def setUp(self):
         super().setUp()
+        self.moving_access_times()
         self.world(LEDGER_HAS_NO_BAD, "python -c pass")
         self.assertEqual(self.green()["readers"], ["T0"])
 
@@ -192,7 +213,8 @@ class Check(Base):
         stamp = self.read_stamp()
         for doc in (None, "{", [], dict(stamp, schema="other/1"), dict(stamp, files=[]),
                     dict(stamp, files={"a.txt": 1}), dict(stamp, ledger={"bytes": "5", "sha256": "x"}),
-                    dict(stamp, ledger={"bytes": 5}), dict(stamp, readers="T0"), dict(stamp, readers=[1])):
+                    dict(stamp, ledger={"bytes": 5}), dict(stamp, readers="T0"), dict(stamp, readers=[1]),
+                    dict(stamp, ledger=None), dict(stamp, ledger=None, readers=[])):
             with self.subTest(doc=doc):
                 if doc is None:
                     os.remove(self.stamp)

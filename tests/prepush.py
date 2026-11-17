@@ -17,8 +17,10 @@ Rules, each bound by ``tests/test_prepush.py``:
 - **The stamp** holds ``state`` of every file ``git add -A`` would commit except ``founder-ledger.jsonl`` (a
   file's sha256 and execute bit, a link's target), the ledger's length and sha256, and ``readers``: the ids of the
   commands that read the ledger's bytes from their copy during the run (``run_like_referee.run_one``'s ``read``,
-  with its stated blind spots), or ``null`` when access times do not move on the temporary directory's file
-  system, which ``check`` reads as "every command".
+  with its stated blind spots). ``readers`` is ``null`` when the run could not know them, which ``check`` reads
+  as "every command"; that is so in two cases and no other: the brain had no ledger at the run (no command could
+  read a file that was not there, so a ledger made afterwards has no known reader), or access times do not move
+  on the temporary directory's file system. A stamp with no ledger and a ``readers`` list is not a stamp.
 - **check** is ok only when: a stamp is there and readable (else ``no_green_run``); every file but the ledger is
   as stamped (else ``tree_changed:<path>`` per path added, removed or changed); git reports nothing uncommitted
   (else ``uncommitted``; what is pushed is a commit, and the comparison is of the work tree); and the ledger is
@@ -117,10 +119,8 @@ def green(root: str, git: str, path: str, jobs: int, timeout: float, emit=print)
         if os.path.lexists(path):
             os.remove(path)
         return {"ok": False, "reasons": reasons, "failed": summary["failed"], "stamp": None}
-    if book is None:
-        readers: list[str] | None = []
-    else:
-        readers = [r["id"] for r in results if r["read"]] if watched else None
+    # One rule for "who read the ledger is not known": nothing was watched (no ledger at the run, or a still clock).
+    readers = [r["id"] for r in results if r["read"]] if watched else None
     stamp = {"schema": SCHEMA, "files": {n: v for n, v in before.items() if n != LEDGER},
              "ledger": None if book is None else {"bytes": len(book), "sha256": hashlib.sha256(book).hexdigest()},
              "readers": readers, "tests": summary["tests"]}
@@ -146,6 +146,8 @@ def read_stamp(path: str) -> dict | None:
                                  and isinstance(book.get("sha256"), str)):
         return None
     if readers is not None and not (isinstance(readers, list) and all(isinstance(i, str) for i in readers)):
+        return None
+    if book is None and readers is not None:
         return None
     return stamp
 

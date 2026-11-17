@@ -279,6 +279,24 @@
    "tests": [
     "test_prepush.py"
    ]
+  },
+  {
+   "id": "no_ledger_reads_as_no_reader",
+   "file": "tests/prepush.py",
+   "old": "readers = [r[\"id\"] for r in results if r[\"read\"]] if watched else None",
+   "new": "readers = [] if book is None else ([r[\"id\"] for r in results if r[\"read\"]] if watched else None)",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "ledgerless_stamp_with_readers_read",
+   "file": "tests/prepush.py",
+   "old": "if book is None and readers is not None:",
+   "new": "if False:",
+   "tests": [
+    "test_prepush.py"
+   ]
   }
  ]
 }
