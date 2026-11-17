@@ -642,8 +642,26 @@
   {
    "id": "ac_json_limit",
    "file": "loop/accepted.py",
-   "old": "return cli.loads(resp.read(MAX_FILE))",
-   "new": "return cli.loads(resp.read())",
+   "old": "body = httpbody.read(resp, MAX_FILE)",
+   "new": "body = httpbody.read(resp)",
+   "tests": [
+    "test_accepted.Http.test_a_blob_is_read_up_to_its_limit"
+   ]
+  },
+  {
+   "id": "ac_json_over_limit_parsed",
+   "file": "loop/accepted.py",
+   "old": "            if len(body) <= MAX_FILE:\n",
+   "new": "            if True:\n",
+   "tests": [
+    "test_accepted.Http.test_an_answer_that_is_no_json_or_too_long"
+   ]
+  },
+  {
+   "id": "ac_json_limit_exclusive",
+   "file": "loop/accepted.py",
+   "old": "            if len(body) <= MAX_FILE:\n",
+   "new": "            if len(body) < MAX_FILE:\n",
    "tests": [
     "test_accepted.Http.test_an_answer_that_is_no_json_or_too_long"
    ]
@@ -651,8 +669,8 @@
   {
    "id": "ac_json_except",
    "file": "loop/accepted.py",
-   "old": "        except (urllib.error.URLError, OSError, ValueError):\n            raise StateError(\"actions_unreadable\") from None\n\n    def redirect",
-   "new": "        except (urllib.error.URLError, OSError):\n            raise StateError(\"actions_unreadable\") from None\n\n    def redirect",
+   "old": "        except (*httpbody.ERRORS, ValueError):\n            pass\n        raise StateError",
+   "new": "        except httpbody.ERRORS:\n            pass\n        raise StateError",
    "tests": [
     "test_accepted.Http.test_an_answer_that_is_no_json_or_too_long"
    ]
@@ -696,8 +714,8 @@
   {
    "id": "ac_blob_read",
    "file": "loop/accepted.py",
-   "old": "body = resp.read(limit + 1)",
-   "new": "body = resp.read()",
+   "old": "body = httpbody.read(resp, limit)",
+   "new": "body = httpbody.read(resp)",
    "tests": [
     "test_accepted.Http.test_a_blob_is_read_up_to_its_limit"
    ]

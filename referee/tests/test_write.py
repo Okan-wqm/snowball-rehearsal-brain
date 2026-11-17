@@ -848,6 +848,9 @@ NET_MODULES = {"urllib.request", "http.client", "socket", "ssl", "requests", "ht
 # ``loop.rekor`` (GET only, no token: ``test_actions_read_is_get_only`` too).
 NET_ALLOWED = {os.path.join("target", "write.py"), os.path.join("runner", "deps_npm.py"),
                os.path.join("loop", "accepted.py"), os.path.join("loop", "rekor.py")}
+# ``httpbody`` opens nothing: it reads the response one of those four opened and names http.client's exception
+# types (``test_httpbody_imports_http_client_alone_and_opens_nothing``).
+NET_TYPES_ONLY = {"httpbody.py": {"http.client"}}
 # The modules that may name GitHub's hosts: the writer, and cek's reader (the API, the brain's URL, the bootstrap
 # workflow's certificate identity).
 GITHUB_NAMED = {os.path.join("target", "write.py"), os.path.join("loop", "accepted.py")}
@@ -862,7 +865,8 @@ def scan(rel, src):
         elif isinstance(node, ast.ImportFrom) and node.module:
             mods = [node.module] + [node.module + "." + a.name for a in node.names]
         if rel not in NET_ALLOWED:
-            found += ["%s: import %s" % (rel, m) for m in mods if m in NET_MODULES]
+            found += ["%s: import %s" % (rel, m) for m in mods
+                      if m in NET_MODULES and m not in NET_TYPES_ONLY.get(rel, ())]
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and rel != os.path.join("target", "write.py"):
             if ("github.com" in node.value.lower() and rel not in GITHUB_NAMED) \
                     or node.value in ("push", "send-pack", "receive-pack"):
@@ -894,6 +898,16 @@ class OneWay(unittest.TestCase):
             "gate/x.py: 'https://API.GitHub.com/repos'", "gate/x.py: 'push'", "gate/x.py: import http",
             "gate/x.py: import http.client", "gate/x.py: import urllib.request"])
         self.assertEqual(scan(os.path.join("runner", "deps_npm.py"), "import urllib.request\n"), [])
+
+    def test_httpbody_imports_http_client_alone_and_opens_nothing(self):
+        src = dict(referee_modules())["httpbody.py"]
+        imported = sorted(a.name if isinstance(n, ast.Import) else n.module for n in ast.walk(ast.parse(src))
+                          if isinstance(n, (ast.Import, ast.ImportFrom)) for a in n.names)
+        self.assertEqual(imported, ["__future__", "http.client", "typing"])
+        self.assertEqual(scan("httpbody.py", src), [])
+        self.assertEqual(scan("httpbody.py", "import http.client\nimport urllib.request\nimport socket\n"),
+                         ["httpbody.py: import urllib.request", "httpbody.py: import socket"])
+        self.assertEqual(scan("cli.py", "import http.client\n"), ["cli.py: import http.client"])
 
     def test_actions_read_is_get_only(self):
         """``loop.accepted`` builds every request as ``urllib.request.Request(<url>)``: one argument, no ``data``,

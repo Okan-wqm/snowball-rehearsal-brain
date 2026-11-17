@@ -474,6 +474,16 @@ class Http(unittest.TestCase):
         finally:
             tracemalloc.stop()
         self.assertLess(peak, MIB)
+        Zeros.left = 96 * MIB  # json reads MAX_FILE + 1 bytes of an answer at most, not the answer
+        tracemalloc.start()
+        try:
+            with self.assertRaises(A.StateError) as ctx:
+                A.ActionsHttp("tok", handlers=(Lazy([]),)).json("/x")
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(ctx.exception.reasons, ["actions_unreadable"])
+        self.assertLess(peak, 3 * A.MAX_FILE)
 
     def test_a_blob_over_the_limit(self):
         fake = _FakeHttps([(200, b"x" * 11, {})])

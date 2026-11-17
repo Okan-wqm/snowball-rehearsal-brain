@@ -48,7 +48,7 @@
   {
    "id": "hf_http_exception_uncaught",
    "file": "runner/deps_npm.py",
-   "old": "    except (OSError, http.client.HTTPException) as exc:\n        raise FetchAgain(",
+   "old": "    except httpbody.ERRORS as exc:\n        raise FetchAgain(",
    "new": "    except OSError as exc:\n        raise FetchAgain(",
    "tests": [
     "test_deps_npm.TestHttps.test_a_body_shorter_than_its_length_is_read_again"
@@ -75,17 +75,17 @@
   {
    "id": "hf_2xx_taken",
    "file": "runner/deps_npm.py",
-   "old": "            if resp.status != 200:\n                raise DepsError(\"fetch failed: %s: HTTP %s\" % (url, resp.status))\n            return resp.read() if cap is None else resp.read(cap + 1)\n    except urllib.error.HTTPError",
-   "new": "            return resp.read() if cap is None else resp.read(cap + 1)\n    except urllib.error.HTTPError",
+   "old": "            if resp.status != 200:\n                raise DepsError(\"fetch failed: %s: HTTP %s\" % (url, resp.status))\n            return httpbody.read(resp, cap)\n    except urllib.error.HTTPError",
+   "new": "            return httpbody.read(resp, cap)\n    except urllib.error.HTTPError",
    "tests": [
     "test_deps_npm.TestHttps.test_any_other_answer_ends_the_fetch_at_the_first_read"
    ]
   },
   {
-   "id": "hf_cap_exact",
+   "id": "hf_cap_dropped",
    "file": "runner/deps_npm.py",
-   "old": "            return resp.read() if cap is None else resp.read(cap + 1)\n    except urllib.error.HTTPError",
-   "new": "            return resp.read() if cap is None else resp.read(cap)\n    except urllib.error.HTTPError",
+   "old": "            return httpbody.read(resp, cap)\n",
+   "new": "            return httpbody.read(resp)\n",
    "tests": [
     "test_deps_npm.TestHttps.test_a_200_answer_is_its_body_read_once_and_capped"
    ]
@@ -223,6 +223,24 @@
    "new": "        return \"URLError: %s\" % exc.reason\n",
    "tests": [
     "test_cli.CauseOf.test_builtin_messages_never_reach_the_text"
+   ]
+  },
+  {
+   "id": "hf_capped_read_its_own",
+   "file": "runner/deps_npm.py",
+   "old": "            return httpbody.read(resp, cap)\n",
+   "new": "            return resp.read() if cap is None else resp.read(cap + 1)\n",
+   "tests": [
+    "test_deps_npm.TestHttps.test_a_body_shorter_than_its_length_is_read_again"
+   ]
+  },
+  {
+   "id": "hf_capped_read_its_own_fetch",
+   "file": "runner/deps_npm.py",
+   "old": "            return httpbody.read(resp, cap)\n",
+   "new": "            return resp.read() if cap is None else resp.read(cap + 1)\n",
+   "tests": [
+    "test_deps_npm.TestHttps.test_fetch_takes_the_read_that_answers_and_judges_it_by_integrity"
    ]
   }
  ]

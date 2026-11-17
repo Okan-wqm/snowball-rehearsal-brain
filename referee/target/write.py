@@ -138,6 +138,7 @@ from typing import Any, Callable
 
 from gate import secrets
 import cli
+import httpbody
 
 API = "https://api.github.com"
 HEADS = "refs/heads/"
@@ -609,7 +610,7 @@ class HttpTransport:
         if data is not None:
             req.add_header("Content-Type", "application/json")
         with self.opener.open(req, timeout=self.timeout) as resp:
-            status, raw = resp.status, resp.read()
+            status, raw = resp.status, httpbody.read(resp)
         try:
             data = cli.loads(raw) if raw else None
         except ValueError:

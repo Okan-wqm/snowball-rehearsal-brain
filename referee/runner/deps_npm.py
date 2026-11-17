@@ -87,12 +87,13 @@ so the downloader passes ``verify`` the directory whose name is the address (``l
 
 Fetching: ``--mirror DIR`` reads ``DIR/<host>/<path>`` (the referee's fixtures and tests); without it
 the tarball is fetched over HTTPS (``HttpsFetcher`` over ``https_once``) with redirects refused and the read
-capped. A tarball that cannot be fetched is no verdict (exit 2), not a refusal: an outage says nothing about
+capped (``httpbody.read``). A tarball that cannot be fetched is no verdict (exit 2), not a refusal: an outage says nothing about
 the lock. One GET is read again only when it failed in one of these ways, which say nothing about the tarball:
 
-- the connection or the read failed (an ``OSError`` that is not an HTTP answer: a name not resolved, a
-  connection refused or reset, a TLS failure, a timeout of 60 seconds; or an ``http.client.HTTPException``:
-  a body shorter than its ``Content-Length``, a status line that cannot be read);
+- the connection or the read failed (``httpbody.ERRORS``: an ``OSError`` that is not an HTTP answer, as a name
+  not resolved, a connection refused or reset, a TLS failure, a timeout of 60 seconds; or an
+  ``http.client.HTTPException``, as a status line that cannot be read, a chunked body cut inside a chunk, or a
+  body that ended short of its ``Content-Length`` at or under the cap, with a cap or without one);
 - the answer's status is 429 or 500 to 599.
 
 Any other answer ends the fetch at the first read: another 4xx status (a tarball that is not there stays not
@@ -101,7 +102,9 @@ pausing 1, 2 and 4 seconds between reads, and one fetcher (one per ``fetch``) re
 reads over all its URLs (sixteen), so the repeats add at most 16 pauses and 16 timeouts to a fetch; when either
 bound ends it the error says how many times the URL was read. A second read cannot change what is taken: the
 bytes of whichever read answers are judged by the lock's ``integrity`` as before, and a body cut short without
-the length saying so is ``integrity_mismatch``, a refusal, not read again. The tests here run these rules
+the answer saying so (its ``Content-Length`` agrees with the cut body, or it has neither a length nor chunks) is
+``integrity_mismatch``, a refusal, not read again; a body over the cap is ``limit_hit:deps_bytes`` whether or
+not it was complete. The tests here run these rules
 through urllib's own opener with a handler in place of the socket (no network in the sandbox): the status and
 redirect handling and the body length check are the standard library's real code, the connection failures are
 raised by the handler as the types the socket layer raises. The network itself is asama-0/10a #getir's.
@@ -169,7 +172,6 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
-import http.client
 import io
 import json
 import os
@@ -186,6 +188,7 @@ import urllib.request
 from typing import Any, Callable
 
 import cli
+import httpbody
 from policy import reads as P
 
 DEFAULT_REGISTRIES = ("https://registry.npmjs.org/",)
@@ -681,11 +684,11 @@ def https_once(url: str, cap: int | None, handlers: tuple = (), timeout: float =
         with opener.open(url, timeout=timeout) as resp:
             if resp.status != 200:
                 raise DepsError("fetch failed: %s: HTTP %s" % (url, resp.status))
-            return resp.read() if cap is None else resp.read(cap + 1)
+            return httpbody.read(resp, cap)
     except urllib.error.HTTPError as exc:
         again = exc.code == 429 or 500 <= exc.code <= 599
         raise (FetchAgain if again else DepsError)("fetch failed: %s: HTTP %d" % (url, exc.code)) from None
-    except (OSError, http.client.HTTPException) as exc:
+    except httpbody.ERRORS as exc:
         raise FetchAgain("fetch failed: %s: %s" % (url, cli.cause(exc))) from None
 
 

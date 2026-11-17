@@ -53,6 +53,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from runner import deps_npm as N  # noqa: E402
+from http_wire import Wire, answer, chunked  # noqa: E402
 from profile_tree import writable_base  # noqa: E402
 
 REG = "https://registry.npmjs.org/"
@@ -1001,40 +1002,6 @@ class TestLimitAndVerify(Base):
         self.assertEqual(reasons[0], "manifest_unreadable")
 
 
-def answer(status: int, body: bytes = b"", length: int | None = None, headers: tuple = ()) -> bytes:
-    """The bytes of one HTTP/1.1 answer; ``length`` is the ``Content-Length`` written (the body's own by default)."""
-    lines = ["HTTP/1.1 %d X" % status, "Content-Length: %d" % (len(body) if length is None else length)]
-    return "\r\n".join(lines + list(headers) + ["", ""]).encode("ascii") + body
-
-
-class _Sock:
-    def __init__(self, raw: bytes):
-        self.raw = raw
-
-    def makefile(self, *_args, **_kwargs):
-        return io.BytesIO(self.raw)
-
-
-class Wire(urllib.request.BaseHandler):
-    """In place of the socket: each ``https_open`` takes the next step of ``script``, an exception (raised, as a
-    failed connection is) or the bytes of an answer, which ``http.client.HTTPResponse`` parses as it parses a
-    socket's and urllib's processors then judge (statuses, redirects)."""
-    handler_order = 100
-
-    def __init__(self, *script):
-        self.script, self.seen = list(script), []
-
-    def https_open(self, req):
-        self.seen.append(req.full_url)
-        step = self.script.pop(0)
-        if isinstance(step, BaseException):
-            raise step
-        resp = http.client.HTTPResponse(_Sock(step), method=req.get_method(), url=req.full_url)
-        resp.begin()
-        resp.msg = resp.reason
-        return resp
-
-
 URL = "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz"
 FAILED = "fetch failed: %s: " % URL
 
@@ -1079,6 +1046,15 @@ class TestHttps(unittest.TestCase):
         self.assertEqual(self.pauses, [1.0])
         self.assertEqual(self.refused(self.fetcher(short, short, short, short)),
                          FAILED + "IncompleteRead (read 4 times)")
+        for cap in (100, 7, 3):  # with a cap as without one (``httpbody.read``): fetch passes one under deps_bytes
+            with self.subTest(cap=cap):
+                self.assertEqual(self.fetcher(short, answer(200, b"tarball"))(URL, cap), b"tarball"[:cap + 1])
+                self.assertEqual((len(self.wire.seen), self.pauses), (2, [1.0]))
+        cut = chunked(200, b"tar", b"ball", cut=9)
+        for cap in (None, 100):
+            self.assertEqual(self.fetcher(cut, chunked(200, b"tar", b"ball"))(URL, cap), b"tarball")
+            self.assertEqual((len(self.wire.seen), self.pauses), (2, [1.0]))
+        self.assertEqual(self.fetcher(short)(URL, 2), b"tar")  # over the cap: fetch's limit_hit, not read again
 
     def test_429_and_5xx_are_read_again(self):
         for status in (429, 500, 502, 503, 504, 599):
@@ -1135,6 +1111,13 @@ class TestHttps(unittest.TestCase):
         report = N.fetch(lock, os.path.join(base, "out"), self.fetcher(down, answer(200, good)))
         self.assertEqual((report["ok"], report["packages"], self.wire.seen, self.pauses),
                          (True, 1, [resolved, resolved], [1.0]))
+        for cap in (len(good), len(good) + 100):  # deps_bytes: a body short of its length is read again under it
+            report = N.fetch(lock, os.path.join(base, "out"), cap=cap,
+                             fetcher=self.fetcher(answer(200, good[:-1], length=len(good)), answer(200, good)))
+            self.assertEqual((report["ok"], len(self.wire.seen), self.pauses), (True, 2, [1.0]), cap)
+        report = N.fetch(lock, os.path.join(base, "out"), cap=len(good) - 2,
+                         fetcher=self.fetcher(answer(200, good[:-1], length=len(good)), answer(200, good)))
+        self.assertEqual((report, len(self.wire.seen)), ({"ok": False, "reasons": ["limit_hit:deps_bytes"]}, 1))
         cut = answer(200, good[:-1])  # cut short with a length that agrees: not a failed read
         report = N.fetch(lock, os.path.join(base, "out2"), self.fetcher(down, cut, answer(200, good)))
         self.assertEqual((report, len(self.wire.seen)),

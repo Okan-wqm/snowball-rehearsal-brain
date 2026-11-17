@@ -74,13 +74,13 @@ import os
 import re
 import subprocess
 import tempfile
-import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 from typing import Any, Callable, Sequence
 
 import cli
+import httpbody
 from ledger import chain as C
 from loop import gitobj as G
 from loop import treehash as T
@@ -232,7 +232,9 @@ class _Capture(urllib.request.HTTPRedirectHandler):
 class ActionsHttp:
     """GET over HTTPS: ``json(path)`` from the REST API with the token; ``redirect(path)`` the ``Location`` of a
     302 the API answers (an artifact's zip); ``blob(url)`` that location's bytes, without the token (the token is
-    never sent to another host), at most ``limit`` bytes. No redirect is followed by urllib."""
+    never sent to another host), at most ``limit`` bytes. No redirect is followed by urllib. A failed exchange
+    (``httpbody.ERRORS``), a body cut short of its length (``httpbody.read``) and a ``json`` answer that
+    is over ``MAX_FILE`` bytes or not JSON are ``actions_unreadable``."""
 
     def __init__(self, token: str, timeout: float = 60.0, handlers: tuple = ()):
         if not isinstance(token, str) or not token or any(c in token for c in "\r\n"):
@@ -250,16 +252,19 @@ class ActionsHttp:
     def json(self, path: str) -> Any:
         try:
             with self.opener.open(self._req(path), timeout=self.timeout) as resp:
-                return cli.loads(resp.read(MAX_FILE))
-        except (urllib.error.URLError, OSError, ValueError):
-            raise StateError("actions_unreadable") from None
+                body = httpbody.read(resp, MAX_FILE)
+            if len(body) <= MAX_FILE:
+                return cli.loads(body)
+        except (*httpbody.ERRORS, ValueError):
+            pass
+        raise StateError("actions_unreadable")
 
     def redirect(self, path: str) -> str:
         capture = _Capture()
         try:
             with urllib.request.build_opener(capture, *self.handlers).open(self._req(path), timeout=self.timeout):
                 pass
-        except (urllib.error.URLError, OSError):
+        except httpbody.ERRORS:
             pass
         if capture.location is None or not capture.location.startswith("https://"):
             raise StateError("actions_unreadable")
@@ -270,8 +275,8 @@ class ActionsHttp:
             raise StateError("actions_unreadable")
         try:
             with self.opener.open(urllib.request.Request(url), timeout=self.timeout) as resp:
-                body = resp.read(limit + 1)
-        except (urllib.error.URLError, OSError):
+                body = httpbody.read(resp, limit)
+        except httpbody.ERRORS:
             raise StateError("actions_unreadable") from None
         if len(body) > limit:
             raise StateError("state_unreadable")

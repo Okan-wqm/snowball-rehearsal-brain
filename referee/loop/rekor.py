@@ -53,6 +53,7 @@ import urllib.request
 from typing import Any, Callable, Sequence
 
 import cli
+import httpbody
 from loop import accepted as A
 
 REKOR = "https://rekor.sigstore.dev/api/v1/log/entries/"
@@ -96,12 +97,12 @@ class RekorHttp:
             return None
         try:
             with self.opener.open(urllib.request.Request(REKOR + uuid), timeout=self.timeout) as resp:
-                data = resp.read(MAX_ANSWER + 1)
+                data = httpbody.read(resp, MAX_ANSWER)
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 return None
             raise RekorError("rekor: HTTP %d" % exc.code) from None
-        except (urllib.error.URLError, OSError) as exc:
+        except httpbody.ERRORS as exc:
             raise RekorError("rekor unreadable: %s" % type(exc).__name__) from None
         if len(data) > MAX_ANSWER:
             raise RekorError("rekor answer too large")
