@@ -184,6 +184,21 @@ class Environment(Base):
         self.assertEqual(listed, ["python", "python3"])
         self.assertTrue(env["TMPDIR"].startswith(self.work))
 
+    def test_the_summary_names_the_interpreter_the_links_go_to(self):
+        dump = os.path.join(self.tmp, "exe.json")
+        cmd = ("python -c \"import json,os,sys; json.dump([os.path.realpath(os.path.join(os.environ['PATH'], n)) "
+               "for n in ('python', 'python3')] + [sys.executable, os.environ['PATH']], open(%r,'w'))\"" % dump)
+        out, summary = self.run_cmds(cmd)
+        self.assertTrue(out[0]["ok"], out)
+        with open(dump) as f:
+            python, python3, executable, path = json.load(f)
+        self.assertEqual((python, executable), (python3, os.path.join(path, "python")))
+        self.assertIn(summary["python"], ("own", "moved_home"))
+        if summary["python"] == "own":
+            self.assertEqual(python, os.path.realpath(sys.executable))
+        else:
+            self.assertTrue(python.startswith(self.work + os.sep), python)
+
     def test_a_program_other_than_python_is_not_found(self):
         out, _ = self.run_cmds("python -c pass && python3 -c pass", "command -v ls", "git --version")
         self.assertEqual([r["ok"] for r in out], [True, False, False])
@@ -209,6 +224,175 @@ class Environment(Base):
         self.assertTrue(out[0]["ok"], out)
 
 
+FAKE_PYTHON = """#!%s
+# A stand-in for a python binary: started as ``<it> -I -c SELF`` it answers from where its own file lies, as a
+# python finds its prefix; MODE makes it break one of the things ``interpreter`` checks of a moved home.
+import json, os, sys
+MODE, FIRST, TAG = %r, %r, %r
+if sys.argv[1:3] != ["-I", "-c"] or set(os.environ) - {"LC_CTYPE"}:  # LC_CTYPE: python's own locale coercion
+    sys.exit(9)
+prefix = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+moved = prefix != FIRST
+lib = os.path.join(prefix, "lib", "py")
+if moved and MODE == "fails":
+    sys.exit(1)
+if not (moved and MODE == "no_bytecode"):
+    try:
+        os.makedirs(os.path.join(lib, "json", "__pycache__"), exist_ok=True)
+        open(os.path.join(lib, "json", "__pycache__", "__init__.%%s.pyc" %% TAG), "w").close()
+    except OSError:
+        pass
+said = FIRST if moved and MODE == "old_prefix" else prefix + "/venv" if MODE == "venv" and not moved else prefix
+path = [lib, os.path.join(lib, "site"), "/elsewhere"] + (["/more"] if moved and MODE == "other_path" else [])
+print(json.dumps([said, said, said, os.path.join(lib, "json", "__init__.py"), path]))
+"""
+
+
+class Interpreter(Base):
+    def stdlib(self, name: str = "lib") -> str:
+        lib = os.path.join(self.tmp, name)
+        os.makedirs(os.path.join(lib, "json"))
+        with open(os.path.join(lib, "json", "__init__.py"), "w") as f:
+            f.write("")
+        return lib
+
+    def bytecode(self, lib: str) -> str:
+        return os.path.join(lib, "json", "__pycache__", "__init__.%s.pyc" % sys.implementation.cache_tag)
+
+    def lock(self, path: str) -> None:
+        os.chmod(path, 0o555)
+        self.addCleanup(os.chmod, path, 0o755)
+
+    def test_cold_is_no_bytecode_and_no_way_to_write_it(self):
+        # Not as root: os.access answers for this user, and root can write anywhere.
+        lib = self.stdlib()
+        self.assertFalse(R.stdlib_cold(lib))                       # no bytecode, but python can write it
+        self.lock(os.path.join(lib, "json"))
+        self.assertTrue(R.stdlib_cold(lib))                        # no bytecode, no place to write it
+        os.chmod(os.path.join(lib, "json"), 0o755)
+        os.mkdir(os.path.dirname(self.bytecode(lib)))
+        self.lock(os.path.dirname(self.bytecode(lib)))
+        self.assertTrue(R.stdlib_cold(lib))                        # the cache directory is there and closed
+        os.chmod(os.path.dirname(self.bytecode(lib)), 0o755)
+        open(self.bytecode(lib), "w").close()
+        self.lock(os.path.dirname(self.bytecode(lib)))
+        self.lock(os.path.join(lib, "json"))
+        self.assertFalse(R.stdlib_cold(lib))                       # the bytecode is there to load
+
+    def test_mirror_makes_directories_and_links_the_rest(self):
+        src, dst = os.path.join(self.tmp, "src"), os.path.join(self.tmp, "dst")
+        os.makedirs(os.path.join(src, "pkg", "__pycache__"))
+        os.makedirs(os.path.join(src, "__pycache__"))
+        for name in ("m.py", os.path.join("pkg", "n.py"), os.path.join("pkg", "__pycache__", "n.pyc")):
+            open(os.path.join(src, name), "w").close()
+        os.symlink("pkg", os.path.join(src, "alias"))
+        R.mirror(src, dst)
+        seen = {os.path.relpath(os.path.join(top, n), dst): os.path.islink(os.path.join(top, n))
+                for top, dirs, names in os.walk(dst) for n in dirs + names}
+        self.assertEqual(seen, {"m.py": True, "pkg": False, os.path.join("pkg", "n.py"): True, "alias": True})
+        self.assertEqual(os.readlink(os.path.join(dst, "m.py")), os.path.join(src, "m.py"))
+        # a file python writes beside a mirrored module lands in the mirror, not in the source
+        os.mkdir(os.path.join(dst, "pkg", "__pycache__"))
+        self.assertEqual(sorted(os.listdir(os.path.join(src, "pkg", "__pycache__"))), ["n.pyc"])
+
+    def fake(self, mode: str) -> dict:
+        first = os.path.join(self.tmp, "first-" + mode)
+        lib = os.path.join(first, "lib", "py")
+        os.makedirs(os.path.join(first, "bin"))
+        os.makedirs(os.path.join(lib, "json"))
+        open(os.path.join(lib, "json", "__init__.py"), "w").close()
+        open(os.path.join(first, "lib", "libpython-fake.so"), "w").close()
+        open(os.path.join(first, "lib", "other.so"), "w").close()
+        exe = os.path.join(first, "bin", "py-fake")
+        with open(exe, "w") as f:
+            f.write(FAKE_PYTHON % (sys.executable, mode, first, sys.implementation.cache_tag))
+        os.chmod(exe, 0o755)
+        link = os.path.join(first, "bin", "python")
+        os.symlink(exe, link)
+        return {"executable": link, "prefix": first, "stdlib": lib, "libdir": os.path.join(first, "lib")}
+
+    def test_a_warm_standard_library_keeps_the_own_interpreter(self):
+        py, home = self.fake("good"), os.path.join(self.tmp, "home")
+        self.assertEqual(R.interpreter(home, cold=lambda lib: False, python=py), (py["executable"], "own"))
+        self.assertFalse(os.path.lexists(home))
+
+    def test_a_cold_one_moves_home_when_the_three_checks_pass(self):
+        py, home = self.fake("good"), os.path.join(self.tmp, "home")
+        asked = []
+        binary, kind = R.interpreter(home, cold=lambda lib: asked.append(lib) or True, python=py)
+        self.assertEqual(asked, [py["stdlib"]])
+        self.assertEqual((binary, kind), (os.path.join(home, "bin", "py-fake"), "moved_home"))
+        self.assertFalse(os.path.islink(binary))                   # the binary is a copy: its place is its prefix
+        self.assertTrue(os.access(binary, os.X_OK))
+        moved = os.path.join(home, "lib", "py", "json", "__init__.py")
+        self.assertEqual(os.readlink(moved), os.path.join(py["stdlib"], "json", "__init__.py"))
+        self.assertEqual(sorted(os.listdir(os.path.join(home, "lib"))), ["libpython-fake.so", "py"])
+        self.assertEqual(os.readlink(os.path.join(home, "lib", "libpython-fake.so")),
+                         os.path.join(py["libdir"], "libpython-fake.so"))
+
+    def test_a_moved_home_failing_a_check_is_removed_and_the_own_one_stays(self):
+        for mode in ("old_prefix", "other_path", "no_bytecode", "fails", "venv"):
+            with self.subTest(mode=mode):
+                py, home = self.fake(mode), os.path.join(self.tmp, "home-" + mode)
+                self.assertEqual(R.interpreter(home, cold=lambda lib: True, python=py), (py["executable"], "own"))
+                self.assertFalse(os.path.lexists(home))
+
+    def test_a_layout_that_cannot_move_keeps_the_own_interpreter(self):
+        py, home = self.fake("good"), os.path.join(self.tmp, "home")
+        outside = self.stdlib("outside")
+        for change in ({"stdlib": outside}, {"libdir": outside}, {"executable": sys.executable},
+                       {"executable": os.path.join(self.tmp, "absent")}):
+            with self.subTest(change=change):
+                bent = dict(py, **change)
+                self.assertEqual(R.interpreter(home, cold=lambda lib: True, python=bent), (bent["executable"], "own"))
+                self.assertFalse(os.path.lexists(home))
+
+    def test_a_run_links_to_what_interpreter_answers_and_says_its_kind(self):
+        asked = []
+        saved = R.interpreter
+        self.addCleanup(setattr, R, "interpreter", saved)
+        R.interpreter = lambda home: asked.append(home) or (sys.executable, "a-kind")
+        dump = os.path.join(self.tmp, "link.txt")
+        out, summary = self.run_cmds("python -c \"import json,os; p=os.environ['PATH']; json.dump([p, os.readlink("
+                                     "os.path.join(p, 'python3'))], open(%r,'w'))\"" % dump)
+        self.assertTrue(out[0]["ok"], out)
+        self.assertEqual(summary["python"], "a-kind")
+        with open(dump) as f:
+            path, link = json.load(f)
+        self.assertEqual(link, sys.executable)
+        # the home is asked for in the run's own directory, beside its PATH directory, so it is removed with it
+        self.assertEqual(asked, [os.path.join(os.path.dirname(path), "python-home")])
+        self.assertEqual(os.path.dirname(os.path.dirname(path)), self.work)
+
+    def test_this_interpreter_made_cold_serves_bytecode_to_a_child_with_an_empty_environment(self):
+        # The real interpreter: where its layout moves (the three checks say), a module a child imports is
+        # compiled once into the home and loaded from there by the next child, with no variable passed.
+        home = os.path.join(self.tmp, "home")
+        python, kind = R.interpreter(home, cold=lambda lib: True)
+        if kind == "own":
+            self.assertEqual((python, os.path.lexists(home)), (sys.executable, False))
+            return
+        import subprocess
+        path = R.bindir(os.path.join(self.tmp, "bin"), python)
+        code = "import colorsys, sys; print(sys.prefix); print(colorsys.__file__); print(colorsys.__cached__)"
+        said = []
+        for _ in range(2):
+            proc = subprocess.run([os.path.join(path, "python"), "-c", code], env={}, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            said.append(proc.stdout.decode().split())
+        self.assertEqual(said[0], said[1])
+        prefix, source, cached = said[0]
+        self.assertEqual(prefix, home)
+        self.assertTrue(source.startswith(home + os.sep) and cached.startswith(home + os.sep), said[0])
+        self.assertEqual(os.path.realpath(source), os.path.realpath(colorsys_source()))
+        self.assertTrue(os.path.isfile(cached))
+
+
+def colorsys_source() -> str:
+    import colorsys
+    return colorsys.__file__
+
+
 class Results(Base):
     def test_exit_tail_and_order(self):
         out, summary = self.run_cmds("python -c \"import time; time.sleep(0.3); print('a'*700)\"",
@@ -218,6 +402,7 @@ class Results(Base):
         self.assertEqual([(r["exit"], r["ok"]) for r in out], [(0, True), (3, False), (0, True)])
         self.assertEqual(out[0]["tail"], "a" * 599 + "\n")
         self.assertEqual(out[1]["tail"], "boom")
+        self.assertIn(summary.pop("python"), ("own", "moved_home"))
         self.assertEqual(summary, {"ok": False, "tests": 3, "failed": ["T1"], "network": "not_isolated"})
 
     def test_a_command_over_the_limit_is_timed_out(self):

@@ -138,7 +138,7 @@ def compare(root: str, runs: list[dict], before_rev: str, jobs: int = 1, timeout
         before, after = os.path.join(work, "before"), os.path.join(work, "after")
         archive(root, before_rev, before, git)
         RLR.stage(root, RLR.files(root, git), after)
-        path = RLR.bindir(os.path.join(work, "bin"))
+        path, _ = RLR.pythons(work)
         pairs = [(r, tree) for r in runs for tree in (before, after)]
         with concurrent.futures.ThreadPoolExecutor(max(1, jobs)) as pool:
             got = list(pool.map(lambda p: run_one(p[0], p[1], path, work, timeout), pairs))

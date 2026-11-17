@@ -22,9 +22,21 @@ What it does, each rule bound by ``tests/test_run_like_referee.py``:
   ``wrote`` and the command is not ok. One exception, python's own: a path under a directory named
   ``__pycache__`` is not compared, because python writes its bytecode cache there and, on a read-only tree,
   skips that write without an error (any python the command starts, whatever its environment).
-- **PATH holds only python**: a directory holding ``python`` and ``python3``, links to this interpreter. The
+- **PATH holds only python**: a directory holding ``python`` and ``python3``, links to one interpreter. The
   command runs under ``/bin/sh -c`` (the shell is found by its path, not by PATH), from the copy's root (tohum/26c:
   ``cmd`` runs from the repository root), stdin ``/dev/null`` (not the runner's own stdin).
+- **Which interpreter** (``interpreter``): this one (``sys.executable``), except where its standard library is
+  cold (``stdlib_cold``: no bytecode file for ``json`` and no way for this user to write one), so that every python
+  process a command starts compiles every standard module it imports. There the links go to a moved home
+  (``move_home``): a copy of this interpreter's binary beside a mirror of its standard library (directories made,
+  files linked, no ``__pycache__`` taken over), where python writes the bytecode on first import and later
+  processes of the run load it with no variable handed to them (a test's child with an empty environment
+  included; a child told not to write bytecode writes none and loads what is there). It is used only when,
+  started with an empty environment, it reports itself as its prefix, the same module search path as this
+  interpreter's with the prefix replaced, and has written ``json``'s bytecode; otherwise the links go to this
+  interpreter as before. The summary's ``python`` says which: ``own`` or ``moved_home``. Measured where this was
+  written (founder ledger, 2026-11-17): the capsule's ``/usr/local/lib/python3.12`` holds no bytecode and is
+  read-only; one ``python -m loop.job`` start took 1.14 s cold and 0.56 s from a moved home.
 - **The environment is only** ``PATH``, ``HOME=/nonexistent`` (no home to read or write), ``TMPDIR`` (a new
   directory per command) and ``LANG=C.UTF-8``; nothing of this session's environment passes.
 - **A time limit per command** (``--timeout``, default 1800 s, the referee's bound for a whole push): a command
@@ -32,7 +44,7 @@ What it does, each rule bound by ``tests/test_run_like_referee.py``:
 - One JSON line per command (``id``, ``exit``, ``ok``, ``timed_out``, ``wrote``, ``duration_ms``, ``tail``: the
   last 600 characters of stdout and stderr together; ``read`` only when the caller watches paths, see ``run_one``),
   then one summary line (``ok``, ``tests``, ``failed``,
-  ``network``). Exit 0 when every command exited 0, 1 when one did not, 2 when the manifest or the file list
+  ``network``, ``python``). Exit 0 when every command exited 0, 1 when one did not, 2 when the manifest or the file list
   cannot be read. The copy and every ``TMPDIR`` are removed after the run.
 
 Out of scope, stated (the referee does these; this runner does not): no network isolation (``--network none``
@@ -40,7 +52,9 @@ needs a namespace this session cannot make: ``unshare -rn`` is refused here), so
 not_isolated`` and a test reaching the network can still pass here; no ``--cap-drop ALL`` and no ``--user 65534``;
 a write outside the tree (``/tmp`` aside, the referee's root file system is read-only) is not seen;
 the referee's image (its python version, its ``/bin/sh``, its installed programs other than git) is not this
-machine's. A green run here is necessary evidence, not the referee's verdict.
+machine's; under a moved home ``sys.prefix`` and the standard library's paths are the run's directory, not the
+installed ones (a test that reads them sees the difference), and whether the referee's own standard library is
+cold is not known here. A green run here is necessary evidence, not the referee's verdict.
 """
 
 from __future__ import annotations
@@ -48,12 +62,14 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
 import stat
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import time
 
@@ -154,12 +170,118 @@ def remove(path: str) -> None:
     shutil.rmtree(path)
 
 
+def stdlib_cold(stdlib: str) -> bool:
+    """Whether a python process pays for compiling ``stdlib`` at every start: ``PROBE`` there (the ``json``
+    package: a module python does not carry frozen in its binary, and the one ``SELF`` imports) has no bytecode
+    file where this process would look for one, and this user cannot write to the directory that would hold it."""
+    cache = importlib.util.cache_from_source(os.path.join(stdlib, PROBE))
+    if os.path.exists(cache):
+        return False
+    holder = os.path.dirname(cache)
+    while not os.path.isdir(holder):
+        holder = os.path.dirname(holder)
+    return not os.access(holder, os.W_OK)
+
+
+def mirror(src: str, dst: str) -> None:
+    """Make ``dst`` a tree of ``src``'s directories with a link to each of its other entries; a directory named
+    ``__pycache__`` is not taken over, and a link to a directory stays one link."""
+    os.makedirs(dst)
+    for name in sorted(os.listdir(src)):
+        if name == PYCACHE:
+            continue
+        path = os.path.join(src, name)
+        if os.path.isdir(path) and not os.path.islink(path):
+            mirror(path, os.path.join(dst, name))
+        else:
+            os.symlink(path, os.path.join(dst, name))
+
+
+def move_home(dst: str, binary: str, prefix: str, stdlib: str, libdir: str | None) -> str:
+    """Build under the new directory ``dst`` what python needs to take ``dst`` as its prefix: a copy of
+    ``binary`` at its place relative to ``prefix``, ``mirror`` of ``stdlib`` at its place, and a link to every
+    ``libpython*`` file of ``libdir`` at its place (where the binary finds its shared library relative to itself).
+    Returns the copied binary. ``binary``, ``stdlib`` and ``libdir`` must lie under ``prefix``: ValueError if not."""
+    def moved(path: str) -> str:
+        rel = os.path.relpath(path, prefix)
+        if rel == os.curdir or rel.split(os.sep)[0] == os.pardir:
+            raise ValueError("outside_prefix:%s" % path)
+        return os.path.join(dst, rel)
+
+    out, lib = moved(binary), moved(stdlib)
+    libs = moved(libdir) if libdir else None
+    os.makedirs(os.path.dirname(out))
+    shutil.copyfile(binary, out)
+    os.chmod(out, 0o755)
+    os.makedirs(os.path.dirname(lib), exist_ok=True)
+    mirror(stdlib, lib)
+    if libs:
+        os.makedirs(libs, exist_ok=True)
+        for name in sorted(os.listdir(libdir)):
+            if name.startswith("libpython") and not os.path.lexists(os.path.join(libs, name)):
+                os.symlink(os.path.join(libdir, name), os.path.join(libs, name))
+    return out
+
+
+PROBE = os.path.join("json", "__init__.py")
+SELF = "import json,sys; print(json.dumps([sys.prefix, sys.base_prefix, sys.exec_prefix, json.__file__, sys.path]))"
+
+
+def describe(python: str) -> list | None:
+    """What ``python`` says of itself (``SELF``) started isolated (``-I``) with an empty environment; None when it
+    does not start, fails or prints something else."""
+    try:
+        proc = subprocess.run([python, "-I", "-c", SELF], env={}, stdin=subprocess.DEVNULL, capture_output=True,
+                              timeout=60)
+        return json.loads(proc.stdout) if proc.returncode == 0 else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def this() -> dict[str, str | None]:
+    """This interpreter as ``interpreter`` reads it: the path it was started by, its prefix, its standard library
+    and the directory of its shared library (None when the build names none)."""
+    return {"executable": sys.executable, "prefix": sys.base_prefix, "stdlib": sysconfig.get_path("stdlib"),
+            "libdir": sysconfig.get_config_var("LIBDIR")}
+
+
+def interpreter(home: str, cold=stdlib_cold, python: dict | None = None) -> tuple[str, str]:
+    """The interpreter a run's ``python`` links to and its kind: ``(<executable>, "own")``, or, where the
+    standard library of ``python`` (``this()`` when None) is ``cold``, ``(<binary under home>, "moved_home")``
+    when the moved home built at the new directory ``home`` passes the module's three checks (prefix, search
+    path, bytecode written). A home that cannot be built or fails a check is removed and the answer is ``own``."""
+    py = python or this()
+    if not cold(py["stdlib"]):
+        return py["executable"], "own"
+    prefix = py["prefix"]
+    try:
+        binary = move_home(home, os.path.realpath(py["executable"]), prefix, py["stdlib"], py["libdir"])
+        mine, moved = describe(py["executable"]), describe(binary)
+        if mine and mine[:3] == [prefix] * 3:
+            swap = lambda p: home + p[len(prefix):] if p.startswith(prefix + os.sep) else p  # noqa: E731
+            cache = os.path.join(os.path.dirname(swap(mine[3])), PYCACHE,
+                                 "__init__.%s.pyc" % sys.implementation.cache_tag)
+            if moved == [home, home, home, swap(mine[3]), [swap(p) for p in mine[4]]] and os.path.isfile(cache):
+                return binary, "moved_home"
+    except (OSError, ValueError, TypeError, IndexError):
+        pass
+    if os.path.lexists(home):
+        remove(home)
+    return py["executable"], "own"
+
+
 def bindir(path: str, python: str = sys.executable) -> str:
     """A directory holding only ``python`` and ``python3``, links to ``python``."""
     os.mkdir(path)
     for name in ("python", "python3"):
         os.symlink(python, os.path.join(path, name))
     return path
+
+
+def pythons(work: str) -> tuple[str, str]:
+    """The ``PATH`` directory of a run under ``work`` (``bindir`` of ``interpreter``) and the interpreter's kind."""
+    python, kind = interpreter(os.path.join(work, "python-home"))
+    return bindir(os.path.join(work, "bin"), python), kind
 
 
 def env(path: str, tmp: str) -> dict[str, str]:
@@ -232,13 +354,13 @@ def run(root: str, tests: list[dict], names: list[str], jobs: int = 1, timeout: 
     return the summary. ``watch``: see ``run_one``."""
     work = tempfile.mkdtemp(prefix="like-referee-")
     try:
-        path = bindir(os.path.join(work, "bin"))
+        path, kind = pythons(work)
         with concurrent.futures.ThreadPoolExecutor(max(1, jobs)) as pool:
             results = list(pool.map(lambda t: run_one(t, root, names, path, work, timeout, watch), tests))
         for r in results:
             emit(json.dumps(r, sort_keys=True))
         return {"ok": all(r["ok"] for r in results), "tests": len(results),
-                "failed": [r["id"] for r in results if not r["ok"]], "network": "not_isolated"}
+                "failed": [r["id"] for r in results if not r["ok"]], "network": "not_isolated", "python": kind}
     finally:
         remove(work)
 

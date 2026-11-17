@@ -342,6 +342,231 @@
    "tests": [
     "test_run_like_referee.py"
    ]
+  },
+  {
+   "id": "cold_ignores_bytecode",
+   "old": "    if os.path.exists(cache):\n        return False\n    holder",
+   "new": "    holder",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "cold_whatever_can_be_written",
+   "old": "return not os.access(holder, os.W_OK)",
+   "new": "return True",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "cold_never",
+   "old": "return not os.access(holder, os.W_OK)",
+   "new": "return False",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "cold_asks_the_library_root_only",
+   "old": "    holder = os.path.dirname(cache)\n    while not os.path.isdir(holder):\n        holder = os.path.dirname(holder)",
+   "new": "    holder = stdlib",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "mirror_takes_pycache",
+   "old": "        if name == PYCACHE:\n            continue\n        path = os.path.join(src, name)",
+   "new": "        path = os.path.join(src, name)",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "mirror_descends_linked_directories",
+   "old": "if os.path.isdir(path) and not os.path.islink(path):",
+   "new": "if os.path.isdir(path):",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "mirror_copies_files",
+   "old": "            os.symlink(path, os.path.join(dst, name))",
+   "new": "            shutil.copyfile(path, os.path.join(dst, name))",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "home_binary_linked",
+   "old": "    shutil.copyfile(binary, out)\n    os.chmod(out, 0o755)",
+   "new": "    os.symlink(binary, out)",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "home_binary_not_executable",
+   "old": "    shutil.copyfile(binary, out)\n    os.chmod(out, 0o755)",
+   "new": "    shutil.copyfile(binary, out)",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "home_without_shared_library",
+   "old": "if name.startswith(\"libpython\") and not",
+   "new": "if False and not",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "home_links_every_library",
+   "old": "if name.startswith(\"libpython\") and not",
+   "new": "if True and not",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "home_outside_prefix_allowed",
+   "old": "if rel == os.curdir or rel.split(os.sep)[0] == os.pardir:",
+   "new": "if False:",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "describe_passes_the_environment",
+   "old": "[python, \"-I\", \"-c\", SELF], env={},",
+   "new": "[python, \"-I\", \"-c\", SELF], env=None,",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "describe_adds_a_variable",
+   "old": "[python, \"-I\", \"-c\", SELF], env={},",
+   "new": "[python, \"-I\", \"-c\", SELF], env={\"PYTHONDONTWRITEBYTECODE\": \"1\"},",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "describe_not_isolated",
+   "old": "[python, \"-I\", \"-c\", SELF]",
+   "new": "[python, \"-c\", SELF]",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "interpreter_always_own",
+   "old": "    if not cold(py[\"stdlib\"]):",
+   "new": "    if True:",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "interpreter_moves_a_warm_one",
+   "old": "    if not cold(py[\"stdlib\"]):",
+   "new": "    if False:",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "moved_prefix_unchecked",
+   "old": "if moved == [home, home, home, swap(mine[3]), [swap(p) for p in mine[4]]] and",
+   "new": "if moved and moved[3:] == [swap(mine[3]), [swap(p) for p in mine[4]]] and",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "moved_path_unchecked",
+   "old": "if moved == [home, home, home, swap(mine[3]), [swap(p) for p in mine[4]]] and",
+   "new": "if moved and moved[:4] == [home, home, home, swap(mine[3])] and",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "bytecode_unchecked",
+   "old": "[swap(p) for p in mine[4]]] and os.path.isfile(cache):",
+   "new": "[swap(p) for p in mine[4]]]:",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "own_prefix_unchecked",
+   "old": "if mine and mine[:3] == [prefix] * 3:",
+   "new": "if mine:",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "failed_home_kept",
+   "old": "    if os.path.lexists(home):\n        remove(home)\n    return py[\"executable\"], \"own\"",
+   "new": "    return py[\"executable\"], \"own\"",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "run_skips_interpreter",
+   "old": "    python, kind = interpreter(os.path.join(work, \"python-home\"))",
+   "new": "    python, kind = sys.executable, \"own\"",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "run_home_outside_the_work",
+   "old": "interpreter(os.path.join(work, \"python-home\"))",
+   "new": "interpreter(os.path.join(os.path.dirname(work), \"python-home\"))",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "summary_without_kind",
+   "old": "\"network\": \"not_isolated\", \"python\": kind}",
+   "new": "\"network\": \"not_isolated\", \"python\": \"own\"}",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
   }
  ]
 }
