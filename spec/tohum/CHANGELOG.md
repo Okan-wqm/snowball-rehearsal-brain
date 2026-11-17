@@ -4,6 +4,11 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-17, E608; Kurucu raporu, olgu): yeni kural, vaka ve mutant yok. Yanıtlanan rapor:
+  `seed-063-outside-brain-ruleset-covers-nested-brain-branches` → `25a:17` (iki hedefte `brain-disi`'nin hariç listesi
+  2026-11-17'den beri `refs/heads/brain/**`, `refs/heads/brain/**/*`, `~DEFAULT_BRANCH`; `brain/c/good`, `brain/drill/x`,
+  `brain/revert/x` için okunan kural yok). (B)'nin sekizinci ve dokuzuncu denemesi, arşiv: `CHANGELOG-7.md`. 80 satır
+  için 2026-11-13 E577–E582 kaydı `CHANGELOG-7.md`'ye taşındı.
 - 2.2 (2026-11-16, E606–E607; Kurucu raporları, olgu): yeni kural, vaka ve mutant yok. Yanıtlanan raporlar:
   `seed-062-genesis-vector-seed-sha256-not-setups-form` → `29o:69-76` (kurulumun özetteki biçimi; `null` olabilen yalnız
   `targets[].base_sha` ve `seed_epochs[].seed_sha256`), `29o:63-67` (`seed_epoch_seed_null`, `toy_base_empty`,
@@ -43,25 +48,8 @@ Okunma: bir sayfanın geçmişi aranırken
   o yoldur; donmuş `asama-0/12:20` için de), `18a:49-50` (`deps.fetch` okur), `29b:79` (okudukları `constitutional`
   altında), `26e:46`. 80 satır sınırı için 2026-11-05 ve 2026-11-06 kayıtları `CHANGELOG-6.md`'ye taşındı.
 - 2.2 (2026-11-14, E585–E587; sahip): `29t` kendi haritası: hakem `docs/map/brain.md`'yi sınar (Aşama 0 uyarı, 1 ret).
-- 2.2 (2026-11-13, E577–E581; Kurucu raporları, iki uzmanlı iki turlu panelin kararı): `24a` 3: başlatıcının
-  `targets.json`'u `targets[]` sırasıyla `[{id, kind, base_sha, unit_candidates}]`'dır (kimlik ya da aday ad taşırsa
-  başlatıcı durur; repo, hariç yollar, güvenlik yolları ve adlar verilmez); `policy.json`'un `operating`'i her oturum
-  için okunup `/work/logs/operating.json`'a yazılır (`seed/founder/prompt.md` "Hedefler"). `26c` "Birim tarifi":
-  sürüm dosyası hedefin iş akışlarına ve `engines`'a karşı geçerlidir; işaret getirme iznidir, koşma buyruğu
-  değildir; tarifin ölçüsü yalnız `unit.verify`'dır. Yanıtlanan raporlar:
-  `seed-050-copy-target-row-unreadable-for-unit-proposal` → (a) E571, `24a:32-33`; (b), (c) `24a:32-33` (adaylar ve
-  taban `/work/logs/targets.json`'da); (d) `24a:34-35` (`operating.json`; değerler operatöründür, hakem reposunun
-  `policy.json`'unda bugün `operating` yoktur, E579); (e) `26c:67` (sürüm dosyası kazanır, o sürümde kırmızı koşu
-  ölçümdür); `seed-051-install-marks-run-platform-foreign-scripts` → (1) `26c:71` (işaret izindir, hangi betiğin
-  koşacağını hiçbir sayfa sabitlemez); (2) `29g:20-21` (platform koşulu olmadan getirilir ve denetlenir), `26c:71`
-  (açılmayan paket ret nedeni değildir); (3) `26c:71` (hiçbir betiğin başarısızlığı, isteğe bağlı paketinki dahil, ret
-  nedeni değildir; ölçü `unit.verify`). E576'nın yanıtı adlandırılmamıştı (E581):
-  `seed-052-known-b-stop-has-no-path-before-b` → `29b:73`. seed-049 kaydının `24a:53`'ü `24a:54` oldu. 80 satır
-  sınırı için `24a` "Oturumun maliyet satırı" yeniden sarıldı (içerik değişmedi) ve 2026-11-04 E499, E540–E546 kaydı
-  `CHANGELOG-5.md`'ye taşındı.
-  Sahibin kararı (E582): `cost` satırı modeli ve CLI'nin token toplamlarını da taşır (`24a:35`).
-- 2.2 (2026-11-12 – 2026-11-13, E569–E574): `29e` "Genellik okuması", hedeflerin `targets.json`'u ve yasa `00`
-  Y12 "Maliyet": `CHANGELOG-7.md`.
+- 2.2 (2026-11-12 – 2026-11-13, E569–E574, E577–E582): `29e` "Genellik okuması", hedeflerin `targets.json`'u, yasa
+  `00` Y12 "Maliyet", başlatıcının `targets.json`'u ve `operating.json`'u: `CHANGELOG-7.md`.
 - 2.2 (2026-11-05 – 2026-11-06, E550, E551, E553, E560–E566): rakibin bütçe durması, çıkış sırası ve sahip
   istisnasının #spec'i: `CHANGELOG-6.md`.
 - 2.2 (2026-11-02 – 2026-11-04, E499, E506, E507, E540–E546): kırmızı bir (B)'den sonra dalların arşivi ve
