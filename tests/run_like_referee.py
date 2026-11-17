@@ -30,7 +30,8 @@ What it does, each rule bound by ``tests/test_run_like_referee.py``:
 - **A time limit per command** (``--timeout``, default 1800 s, the referee's bound for a whole push): a command
   that exceeds it is killed and is ``timed_out``, not ok.
 - One JSON line per command (``id``, ``exit``, ``ok``, ``timed_out``, ``wrote``, ``duration_ms``, ``tail``: the
-  last 600 characters of stdout and stderr together), then one summary line (``ok``, ``tests``, ``failed``,
+  last 600 characters of stdout and stderr together; ``read`` only when the caller watches paths, see ``run_one``),
+  then one summary line (``ok``, ``tests``, ``failed``,
   ``network``). Exit 0 when every command exited 0, 1 when one did not, 2 when the manifest or the file list
   cannot be read. The copy and every ``TMPDIR`` are removed after the run.
 
@@ -165,14 +166,46 @@ def env(path: str, tmp: str) -> dict[str, str]:
     return {"PATH": path, "HOME": HOME, "TMPDIR": tmp, "LANG": "C.UTF-8"}
 
 
-def run_one(test: dict, root: str, names: list[str], path: str, work: str, timeout: float) -> dict:
-    """Run one command on its own copy of ``names``; the copy and its ``TMPDIR`` are removed when it ends."""
+def unread(path: str) -> None:
+    """Set a file's access time to 0 and keep its modification time, so that the next read of its bytes moves the
+    access time (on a file system mounted ``relatime`` or ``strictatime``; ``atime_moves`` asks which)."""
+    os.utime(path, ns=(0, os.stat(path).st_mtime_ns))
+
+
+def was_read(path: str) -> bool:
+    return os.stat(path).st_atime_ns != 0
+
+
+def atime_moves(directory: str) -> bool:
+    """Whether reading a file under ``directory`` moves an access time ``unread`` set: False on a ``noatime``
+    mount, where ``run_one``'s ``read`` would be empty whatever a command read."""
+    fd, probe = tempfile.mkstemp(dir=directory)
+    try:
+        os.write(fd, b"x")
+        os.close(fd)
+        unread(probe)
+        with open(probe, "rb") as f:
+            f.read()
+        return was_read(probe)
+    finally:
+        os.remove(probe)
+
+
+def run_one(test: dict, root: str, names: list[str], path: str, work: str, timeout: float,
+            watch: tuple[str, ...] = ()) -> dict:
+    """Run one command on its own copy of ``names``; the copy and its ``TMPDIR`` are removed when it ends. With
+    ``watch`` (names of regular files in ``names``), the result carries ``read``: the watched files whose bytes the
+    command read from its copy, by access time (``unread`` before the command, ``was_read`` after it; meaningful
+    only where ``atime_moves``). Not seen: a read with ``O_NOATIME``, a command that sets the times itself, and the
+    same bytes read from anywhere but the copy."""
     own = tempfile.mkdtemp(prefix="%s-" % test["id"], dir=work)
     try:
         tree, tmp = os.path.join(own, "brain"), os.path.join(own, "tmp")
         stage(root, names, tree)
         os.mkdir(tmp, 0o700)
         before = snapshot(tree)
+        for name in watch:
+            unread(os.path.join(tree, name))
         start = time.monotonic()
         try:
             proc = subprocess.run([SHELL, "-c", test["cmd"]], cwd=tree, env=env(path, tmp),
@@ -182,22 +215,26 @@ def run_one(test: dict, root: str, names: list[str], path: str, work: str, timeo
         except subprocess.TimeoutExpired as e:
             code, out, timed_out = None, e.output or b"", True
         duration = int((time.monotonic() - start) * 1000)
+        read = sorted(n for n in watch if os.path.isfile(os.path.join(tree, n)) and was_read(os.path.join(tree, n)))
         changed = wrote(before, snapshot(tree))
     finally:
         remove(own)
-    return {"id": test["id"], "exit": code, "ok": code == 0 and not changed, "timed_out": timed_out,
-            "wrote": changed, "duration_ms": duration, "tail": out.decode("utf-8", "replace")[-TAIL:]}
+    result = {"id": test["id"], "exit": code, "ok": code == 0 and not changed, "timed_out": timed_out,
+              "wrote": changed, "duration_ms": duration, "tail": out.decode("utf-8", "replace")[-TAIL:]}
+    if watch:
+        result["read"] = read
+    return result
 
 
 def run(root: str, tests: list[dict], names: list[str], jobs: int = 1, timeout: float = TIMEOUT,
-        emit=print) -> dict:
+        emit=print, watch: tuple[str, ...] = ()) -> dict:
     """Run ``tests``, each on its own copy of ``names``; ``emit`` each result line, in the manifest's order;
-    return the summary."""
+    return the summary. ``watch``: see ``run_one``."""
     work = tempfile.mkdtemp(prefix="like-referee-")
     try:
         path = bindir(os.path.join(work, "bin"))
         with concurrent.futures.ThreadPoolExecutor(max(1, jobs)) as pool:
-            results = list(pool.map(lambda t: run_one(t, root, names, path, work, timeout), tests))
+            results = list(pool.map(lambda t: run_one(t, root, names, path, work, timeout, watch), tests))
         for r in results:
             emit(json.dumps(r, sort_keys=True))
         return {"ok": all(r["ok"] for r in results), "tests": len(results),

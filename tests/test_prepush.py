@@ -1,0 +1,328 @@
+"""``tests/prepush.py``'s rules, each bound by a test below (the rules are listed in its docstring, the one
+source), ``run_like_referee``'s ``watch`` and ``skills/push/SKILL.md``'s form and the commands it names. No git is
+needed: git's answers come from a fake that answers by its subcommand. Run from the brain's root."""
+
+from __future__ import annotations
+
+import contextlib
+import io
+import json
+import os
+import sys
+import tempfile
+import unittest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "tests"))
+
+import prepush as P  # noqa: E402
+import run_like_referee as R  # noqa: E402
+
+# Answers by subcommand (the first argument after ``-C <root>``) from a JSON file: {subcommand: [stdout, exit]}.
+FAKE_GIT = """#!%s
+import json, sys
+with open(%r) as f:
+    out, code = json.load(f)[sys.argv[3]]
+sys.stdout.write(out)
+sys.exit(code)
+"""
+READS_LEDGER = "python -c \"open('founder-ledger.jsonl').read()\""
+LISTS_ONLY = "python -c \"import os; os.stat('founder-ledger.jsonl'); os.listdir('.')\""
+LEDGER_HAS_NO_BAD = "python -c \"import sys; sys.exit('bad' in open('founder-ledger.jsonl').read())\""
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="test-prepush-")
+        self.addCleanup(R.remove, self.tmp)
+        self.root = os.path.join(self.tmp, "root")
+        os.mkdir(self.root)
+        self.work = os.path.join(self.tmp, "work")
+        os.mkdir(self.work)
+        saved = tempfile.tempdir
+        tempfile.tempdir = self.work
+        self.addCleanup(setattr, tempfile, "tempdir", saved)
+        self.stamp = os.path.join(self.tmp, "gitdir", P.STAMP)
+        os.mkdir(os.path.dirname(self.stamp))
+        self.answers = os.path.join(self.tmp, "answers.json")
+        self.git = os.path.join(self.tmp, "git")
+        with open(self.git, "w") as f:
+            f.write(FAKE_GIT % (sys.executable, self.answers))
+        os.chmod(self.git, 0o755)
+        self.dirty = ""
+
+    def put(self, name: str, text: str = "x\n", mode: int = 0o644) -> str:
+        path = os.path.join(self.root, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
+        os.chmod(path, mode)
+        return name
+
+    def world(self, *cmds: str, ledger: str | None = "row1\n") -> None:
+        """A brain: a manifest of ``cmds`` (ids T0, T1, ...), one other file and, unless None, a ledger."""
+        self.put("snowball-tests.json", json.dumps(
+            {"tests": [{"id": "T%d" % n, "cmd": c, "stage": 0} for n, c in enumerate(cmds)]}))
+        self.put("a.txt")
+        if ledger is not None:
+            self.put(P.LEDGER, ledger)
+
+    def call(self, fn, **kw) -> dict:
+        names = [os.path.relpath(os.path.join(top, n), self.root)
+                 for top, _, ns in os.walk(self.root) for n in ns]
+        with open(self.answers, "w") as f:
+            json.dump({"ls-files": ["\0".join(names), 0], "status": [self.dirty, 0],
+                       "rev-parse": [os.path.dirname(self.stamp) + "\n", 0]}, f)
+        self.lines: list[str] = []
+        return fn(self.root, self.git, self.stamp, 2, 60.0, emit=self.lines.append, **kw)
+
+    def green(self) -> dict:
+        return self.call(P.green)
+
+    def check(self) -> dict:
+        return self.call(P.check)
+
+    def read_stamp(self) -> dict:
+        with open(self.stamp) as f:
+            return json.load(f)
+
+
+class Watch(Base):
+    def test_read_names_the_watched_files_whose_bytes_a_command_read(self):
+        self.assertTrue(R.atime_moves(self.work), "this test needs a file system where access times move")
+        names = [self.put("a.txt"), self.put("b.txt"), self.put("c.txt")]
+        path = R.bindir(os.path.join(self.tmp, "bin"))
+        r = R.run_one({"id": "T0", "cmd": "python -c \"open('b.txt').read(); open('c.txt').read(); "
+                                          "import os; os.stat('a.txt')\""},
+                      self.root, names, path, self.work, 60.0, watch=("a.txt", "b.txt"))
+        self.assertEqual((r["ok"], r["read"]), (True, ["b.txt"]))
+
+    def test_without_watch_a_result_has_no_read_field_and_a_watched_read_is_no_write(self):
+        names = [self.put("a.txt")]
+        path = R.bindir(os.path.join(self.tmp, "bin"))
+        cmd = {"id": "T0", "cmd": "python -c \"open('a.txt').read()\""}
+        self.assertNotIn("read", R.run_one(cmd, self.root, names, path, self.work, 60.0))
+        r = R.run_one(cmd, self.root, names, path, self.work, 60.0, watch=("a.txt",))
+        self.assertEqual((r["ok"], r["wrote"], r["read"]), (True, [], ["a.txt"]))
+
+    def test_run_passes_watch_to_every_command(self):
+        names = [self.put("a.txt")]
+        lines: list[str] = []
+        R.run(self.root, [{"id": "T0", "cmd": "python -c \"open('a.txt').read()\""},
+                          {"id": "T1", "cmd": "python -c pass"}], names, 2, 60.0, emit=lines.append,
+              watch=("a.txt",))
+        self.assertEqual([json.loads(l)["read"] for l in lines], [["a.txt"], []])
+
+
+class State(Base):
+    def test_bytes_execute_bit_and_link_target(self):
+        self.put("a.txt", "one\n")
+        os.symlink("a.txt", os.path.join(self.root, "ln"))
+        first = P.state(self.root, ["a.txt", "ln"])
+        self.assertEqual(first["ln"], "link:a.txt")
+        self.put("a.txt", "two\n")
+        second = P.state(self.root, ["a.txt", "ln"])
+        self.put("a.txt", "two\n", mode=0o755)
+        third = P.state(self.root, ["a.txt", "ln"])
+        self.assertEqual(len({first["a.txt"], second["a.txt"], third["a.txt"]}), 3)
+        self.assertEqual(third["a.txt"], second["a.txt"] + ":x")
+        os.remove(os.path.join(self.root, "ln"))
+        os.symlink("b.txt", os.path.join(self.root, "ln"))
+        self.assertEqual(P.state(self.root, ["ln"]), {"ln": "link:b.txt"})
+
+
+class Run(Base):
+    def test_a_green_run_writes_the_stamp_with_the_ledgers_readers(self):
+        self.world(READS_LEDGER, LISTS_ONLY, "python -c pass")
+        got = self.green()
+        self.assertEqual((got["ok"], got["reasons"], got["readers"]), (True, [], ["T0"]))
+        stamp = self.read_stamp()
+        self.assertEqual(sorted(stamp["files"]), ["a.txt", "snowball-tests.json"])
+        self.assertEqual((stamp["ledger"]["bytes"], stamp["readers"], stamp["tests"]), (5, ["T0"], 3))
+        self.assertEqual(len(self.lines), 3)
+        self.assertEqual(P.read_stamp(self.stamp), stamp)
+
+    def test_a_red_run_writes_no_stamp_and_removes_an_older_one(self):
+        self.world("python -c pass")
+        self.assertTrue(self.green()["ok"])
+        self.world("python -c pass", "python -c \"raise SystemExit(1)\"")
+        got = self.green()
+        self.assertEqual((got["ok"], got["reasons"], got["failed"]), (False, ["tests_red"], ["T1"]))
+        self.assertFalse(os.path.exists(self.stamp))
+
+    def test_a_tree_that_changes_during_the_run_gets_no_stamp(self):
+        target = os.path.join(self.root, "a.txt")
+        self.world("python -c \"open(%r,'a').write('more')\"" % target)
+        got = self.green()
+        self.assertEqual((got["ok"], got["reasons"]), (False, ["tree_changed_during_run"]))
+        self.assertFalse(os.path.exists(self.stamp))
+
+    def test_a_ledger_row_added_during_the_run_gets_no_stamp(self):
+        self.world("python -c \"open(%r,'a').write('row2')\"" % os.path.join(self.root, P.LEDGER))
+        self.assertEqual(self.green()["reasons"], ["tree_changed_during_run"])
+
+    def test_where_access_times_do_not_move_readers_is_null_and_check_runs_every_command(self):
+        self.world("python -c pass", LEDGER_HAS_NO_BAD)
+        saved = R.atime_moves
+        R.atime_moves = lambda directory: False
+        self.addCleanup(setattr, R, "atime_moves", saved)
+        self.assertIsNone(self.green()["readers"])
+        self.assertIsNone(self.read_stamp()["readers"])
+        self.put(P.LEDGER, "row1\nrow2\n")
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": ["T0", "T1"]})
+
+    def test_a_brain_without_a_ledger(self):
+        self.world("python -c pass", ledger=None)
+        got = self.green()
+        self.assertEqual((got["ok"], got["readers"], self.read_stamp()["ledger"]), (True, [], None))
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": []})
+
+
+class Check(Base):
+    def setUp(self):
+        super().setUp()
+        self.world(LEDGER_HAS_NO_BAD, "python -c pass")
+        self.assertEqual(self.green()["readers"], ["T0"])
+
+    def test_the_stamped_tree_is_ok_and_nothing_is_run(self):
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": []})
+        self.assertEqual(self.lines, [])
+
+    def test_no_stamp_and_a_stamp_of_another_form_are_no_green_run(self):
+        stamp = self.read_stamp()
+        for doc in (None, "{", [], dict(stamp, schema="other/1"), dict(stamp, files=[]),
+                    dict(stamp, files={"a.txt": 1}), dict(stamp, ledger={"bytes": "5", "sha256": "x"}),
+                    dict(stamp, ledger={"bytes": 5}), dict(stamp, readers="T0"), dict(stamp, readers=[1])):
+            with self.subTest(doc=doc):
+                if doc is None:
+                    os.remove(self.stamp)
+                else:
+                    with open(self.stamp, "w") as f:
+                        f.write(doc if isinstance(doc, str) else json.dumps(doc))
+                self.assertEqual(self.check(), {"ok": False, "reasons": ["no_green_run"], "reran": []})
+
+    def test_a_file_changed_added_removed_or_made_executable_is_named(self):
+        self.put("reports/r.json", "{}\n")
+        self.assertEqual(self.check()["reasons"], ["tree_changed:reports/r.json"])
+        os.remove(os.path.join(self.root, "reports/r.json"))
+        self.put("a.txt", "y\n")
+        self.assertEqual(self.check()["reasons"], ["tree_changed:a.txt"])
+        self.put("a.txt", "x\n", mode=0o755)
+        self.assertEqual(self.check()["reasons"], ["tree_changed:a.txt"])
+        os.remove(os.path.join(self.root, "a.txt"))
+        self.assertEqual(self.check()["reasons"], ["tree_changed:a.txt"])
+        self.put("a.txt")
+        self.assertTrue(self.check()["ok"])
+
+    def test_uncommitted_work_is_not_ok(self):
+        self.dirty = " M a.txt\0"
+        self.assertEqual(self.check(), {"ok": False, "reasons": ["uncommitted"], "reran": []})
+
+    def test_a_grown_ledger_runs_its_readers_again_and_only_them(self):
+        self.put(P.LEDGER, "row1\nrow2\n")
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": ["T0"]})
+        self.assertEqual([json.loads(l)["id"] for l in self.lines], ["T0"])
+
+    def test_a_grown_ledger_no_command_read_runs_nothing(self):
+        self.world(LISTS_ONLY, "python -c pass")
+        self.assertEqual(self.green()["readers"], [])
+        self.put(P.LEDGER, "row1\nrow2\n")
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": []})
+        self.assertEqual(self.lines, [])
+
+    def test_a_grown_ledger_a_reader_refuses_is_that_readers_failure(self):
+        self.put(P.LEDGER, "row1\nbad row\n")
+        self.assertEqual(self.check(), {"ok": False, "reasons": ["test_failed:T0"], "reran": ["T0"]})
+
+    def test_a_ledger_cut_changed_or_removed_is_rewritten(self):
+        for text in ("row", "rowX\n", "rowX\nrow2\n", None):
+            with self.subTest(text=text):
+                if text is None:
+                    os.remove(os.path.join(self.root, P.LEDGER))
+                else:
+                    self.put(P.LEDGER, text)
+                self.assertEqual(self.check(), {"ok": False, "reasons": ["ledger_rewritten"], "reran": []})
+
+    def test_readers_are_not_run_while_another_reason_stands(self):
+        self.put(P.LEDGER, "row1\nbad row\n")
+        self.put("a.txt", "y\n")
+        self.assertEqual(self.check(), {"ok": False, "reasons": ["tree_changed:a.txt"], "reran": []})
+
+
+class Main(Base):
+    def main(self, *argv: str) -> tuple[int, dict]:
+        self.call(lambda *a, **kw: None)  # writes git's answers for the tree as it is
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = P.main(list(argv), root=self.root, git=self.git)
+        return code, json.loads(buf.getvalue().splitlines()[-1])
+
+    def test_exit_codes_and_the_stamp_in_the_git_directory(self):
+        self.world("python -c pass")
+        self.assertEqual(self.main("check"), (1, {"ok": False, "reasons": ["no_green_run"], "reran": []}))
+        code, got = self.main("run", "-j", "2")
+        self.assertEqual((code, got["stamp"]), (0, self.stamp))
+        self.assertEqual(self.main("check")[0], 0)
+        other = os.path.join(self.tmp, "other.json")
+        self.assertEqual(self.main("check", "--stamp", other)[0], 1)
+        self.world("python -c \"raise SystemExit(1)\"")
+        self.assertEqual(self.main("run")[0], 1)
+        os.remove(self.git)
+        self.assertEqual(self.main("check"), (2, {"ok": False, "reason": "git_unavailable"}))
+
+    def test_a_git_that_fails_is_unreadable(self):
+        self.world("python -c pass")
+        self.call(lambda *a, **kw: None)
+        with open(self.answers) as f:
+            answers = json.load(f)
+        answers["rev-parse"] = ["", 128]
+        with open(self.answers, "w") as f:
+            json.dump(answers, f)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = P.main(["check"], root=self.root, git=self.git)
+        self.assertEqual((code, json.loads(buf.getvalue())), (2, {"ok": False, "reason": "git_failed:rev-parse:128"}))
+
+
+class Skill(unittest.TestCase):
+    """tohum/24a "Ajan ve skill tanımları": between ``---`` lines one ``<key>: <value>`` per line, the keys
+    ``name`` and ``description`` and no other, then text that is not empty. Bound here for every skill of the
+    brain, with one more rule of this brain: ``name`` is the directory's name."""
+
+    def skills(self) -> list[str]:
+        top = os.path.join(ROOT, "skills")
+        return sorted(os.listdir(top))
+
+    def parse(self, name: str) -> tuple[dict, str]:
+        with open(os.path.join(ROOT, "skills", name, "SKILL.md"), encoding="utf-8") as f:
+            lines = f.read().split("\n")
+        self.assertEqual(lines[0], "---")
+        end = lines.index("---", 1)
+        pairs = [line.split(": ", 1) for line in lines[1:end]]
+        self.assertTrue(all(len(p) == 2 and p[1].strip() for p in pairs), pairs)
+        return dict(pairs), "\n".join(lines[end + 1:])
+
+    def test_every_skill_has_the_seeds_form(self):
+        self.assertIn("push", self.skills())
+        for name in self.skills():
+            with self.subTest(skill=name):
+                head, body = self.parse(name)
+                self.assertEqual(sorted(head), ["description", "name"])
+                self.assertEqual(head["name"], name)
+                self.assertTrue(body.strip())
+
+    def test_the_push_skill_names_commands_that_exist(self):
+        _, body = self.parse("push")
+        for command in ("run", "check"):
+            self.assertIn("python3 tests/prepush.py %s" % command, body)
+        for path in ("tests/prepush.py", "tests/run_like_referee.py", "tests/vec_compare.py", "docs/map/brain.md",
+                     "referee/ledger/founder.py", "referee/status/depmap.py"):
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, path)), path)
+        for named in ("tests/run_like_referee.py", "tests/vec_compare.py", "docs/map/brain.md",
+                      "python -m ledger.founder append", "python -m ledger.founder check",
+                      "python -m status.depmap brain"):
+            self.assertIn(named, body)
+
+
+if __name__ == "__main__":
+    unittest.main()
