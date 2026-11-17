@@ -720,7 +720,9 @@ class CauseOf(unittest.TestCase):
     def test_builtin_messages_never_reach_the_text(self):
         import errno
         import re
+        import socket
         import tarfile
+        import urllib.error
         data = (MARK + "\xff").encode("latin-1")
         try:
             json.loads('{"' + MARK)
@@ -741,6 +743,11 @@ class CauseOf(unittest.TestCase):
             (UnicodeEncodeError("ascii", MARK + "\u00e9", len(MARK), len(MARK) + 1, MARK),
              "UnicodeEncodeError at position %d (ascii)" % len(MARK)),
             (UnicodeError(MARK), "UnicodeError"),
+            (urllib.error.URLError(OSError(MARK)), "URLError: OSError"),
+            (urllib.error.URLError(OSError(errno.ECONNREFUSED, MARK)), "URLError: ConnectionRefusedError"),
+            (urllib.error.URLError(socket.gaierror(socket.EAI_AGAIN, MARK)), "URLError: gaierror"),
+            (urllib.error.URLError(MARK), "URLError"),
+            (urllib.error.HTTPError(MARK, 503, MARK, None, None), "HTTPError"),
             (tarfile.ReadError(MARK), "ReadError"),
             (re.error(MARK), "error"),
         ]

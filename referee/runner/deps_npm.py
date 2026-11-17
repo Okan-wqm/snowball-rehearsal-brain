@@ -86,9 +86,25 @@ one ``<address>/`` directory under the downloaded root (exactly one entry, a dir
 so the downloader passes ``verify`` the directory whose name is the address (``loop.job``'s ``getir`` and ``kos``).
 
 Fetching: ``--mirror DIR`` reads ``DIR/<host>/<path>`` (the referee's fixtures and tests); without it
-the tarball is fetched over HTTPS with redirects refused and the read capped. The HTTPS path is not
-exercised by the tests here (no network in the sandbox); its proof is asama-0/10a #getir. A tarball that
-cannot be fetched is no verdict (exit 2), not a refusal: an outage says nothing about the lock.
+the tarball is fetched over HTTPS (``HttpsFetcher`` over ``https_once``) with redirects refused and the read
+capped. A tarball that cannot be fetched is no verdict (exit 2), not a refusal: an outage says nothing about
+the lock. One GET is read again only when it failed in one of these ways, which say nothing about the tarball:
+
+- the connection or the read failed (an ``OSError`` that is not an HTTP answer: a name not resolved, a
+  connection refused or reset, a TLS failure, a timeout of 60 seconds; or an ``http.client.HTTPException``:
+  a body shorter than its ``Content-Length``, a status line that cannot be read);
+- the answer's status is 429 or 500 to 599.
+
+Any other answer ends the fetch at the first read: another 4xx status (a tarball that is not there stays not
+there), a redirect, a 2xx status other than 200. A URL is read at most ``len(FETCH_PAUSES_S) + 1`` times (four),
+pausing 1, 2 and 4 seconds between reads, and one fetcher (one per ``fetch``) repeats at most ``FETCH_REPEATS``
+reads over all its URLs (sixteen), so the repeats add at most 16 pauses and 16 timeouts to a fetch; when either
+bound ends it the error says how many times the URL was read. A second read cannot change what is taken: the
+bytes of whichever read answers are judged by the lock's ``integrity`` as before, and a body cut short without
+the length saying so is ``integrity_mismatch``, a refusal, not read again. The tests here run these rules
+through urllib's own opener with a handler in place of the socket (no network in the sandbox): the status and
+redirect handling and the body length check are the standard library's real code, the connection failures are
+raised by the handler as the types the socket layer raises. The network itself is asama-0/10a #getir's.
 
 Group ``npmlock`` (tohum/29g, the vector interface; ``fetch``, a report, nothing written): stdin
 ``{registry_egress[], install_scripts_required[]}``, each registry ``https://<host>/...`` ending with ``/``,
@@ -153,6 +169,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -162,6 +179,8 @@ import stat
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Callable
@@ -646,15 +665,53 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise DepsError("fetch failed: %s: redirect refused" % req.full_url)
 
 
-def https_fetcher(url: str, cap: int | None) -> bytes:  # pragma: no cover - needs the network (10a #getir)
-    opener = urllib.request.build_opener(_NoRedirect)
+FETCH_PAUSES_S = (1.0, 2.0, 4.0)  # seconds before the second, third and fourth read of one URL
+FETCH_REPEATS = 16  # repeated reads one HttpsFetcher makes in all, over every URL it is asked for
+
+
+class FetchAgain(DepsError):
+    """One read of a URL failed in a way ``HttpsFetcher`` reads again (the module docstring, "Fetching")."""
+
+
+def https_once(url: str, cap: int | None, handlers: tuple = (), timeout: float = 60.0) -> bytes:
+    """One GET of ``url``: the body of a 200 answer (at most ``cap + 1`` bytes), ``FetchAgain`` for a failure of
+    the repeated kinds, ``DepsError`` for any other."""
+    opener = urllib.request.build_opener(_NoRedirect, *handlers)
     try:
-        with opener.open(url, timeout=60) as resp:
+        with opener.open(url, timeout=timeout) as resp:
             if resp.status != 200:
                 raise DepsError("fetch failed: %s: HTTP %s" % (url, resp.status))
             return resp.read() if cap is None else resp.read(cap + 1)
-    except OSError as exc:
-        raise DepsError("fetch failed: %s: %s" % (url, cli.cause(exc))) from None
+    except urllib.error.HTTPError as exc:
+        again = exc.code == 429 or 500 <= exc.code <= 599
+        raise (FetchAgain if again else DepsError)("fetch failed: %s: HTTP %d" % (url, exc.code)) from None
+    except (OSError, http.client.HTTPException) as exc:
+        raise FetchAgain("fetch failed: %s: %s" % (url, cli.cause(exc))) from None
+
+
+class HttpsFetcher:
+    """``fetch``'s fetcher over HTTPS (the module docstring, "Fetching"): ``once`` is read, and read again after a
+    pause while it raises ``FetchAgain``, within ``pauses`` for one URL and ``repeats`` for this fetcher."""
+
+    def __init__(self, once: Callable[[str, int | None], bytes] = https_once,
+                 pause: Callable[[float], None] = time.sleep, pauses: tuple = FETCH_PAUSES_S,
+                 repeats: int = FETCH_REPEATS):
+        self.once, self.pause, self.pauses, self.repeats, self.left = once, pause, tuple(pauses), repeats, repeats
+
+    def __call__(self, url: str, cap: int | None) -> bytes:
+        reads = 0
+        while True:
+            try:
+                return self.once(url, cap)
+            except FetchAgain as exc:
+                reads += 1
+                if reads > len(self.pauses):
+                    raise DepsError("%s (read %d times)" % (cli.cause(exc), reads)) from None
+                if not self.left:
+                    raise DepsError("%s (read %d times; none of the fetch's %d repeats is left)"
+                                    % (cli.cause(exc), reads, self.repeats)) from None
+            self.left -= 1
+            self.pause(self.pauses[reads - 1])
 
 
 DEPS_BYTES = (P.OPERATING, "deps_bytes")
@@ -1080,7 +1137,7 @@ def main(argv: list[str]) -> int:
             _emit({"ok": report["ok"], "reasons": report["reasons"]})
             return 0 if report["ok"] else 1
         if len(args) == 3 and args[0] == "store" and "--address" not in opts:
-            fetcher = mirror_fetcher(opts["--mirror"]) if "--mirror" in opts else https_fetcher
+            fetcher = mirror_fetcher(opts["--mirror"]) if "--mirror" in opts else HttpsFetcher()
             report = fetch(args[1], args[2], fetcher, registries, _marks(recipe), policy, "--product" in opts)
             _emit(report)
             return 0 if report["ok"] else 1

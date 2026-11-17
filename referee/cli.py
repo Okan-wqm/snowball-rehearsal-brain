@@ -103,6 +103,7 @@ import os
 import re
 import sys
 import tarfile
+import urllib.error
 import zipfile
 import zlib
 from typing import Any, Callable
@@ -204,6 +205,8 @@ def cause(exc: BaseException) -> str:
     - ``UnicodeError`` with a position: ``<type> at position N (<encoding>)`` (the default text quotes the byte).
     - ``OSError`` with an error text (``strerror``, set with an errno; for a system call the OS's text,
       ``No such file or directory``): that text, never the file name.
+    - ``urllib.error.URLError`` whose ``reason`` is an exception (urllib's wrapper of a failed connection):
+      ``URLError: <the reason's type name>`` (``URLError: gaierror``), the wrapped type and none of its message.
     - Anything else: the type's name alone (``KeyError``, ``ValueError``, ``TarError``).
     """
     if _own(exc):
@@ -216,6 +219,8 @@ def cause(exc: BaseException) -> str:
                                            encoding if isinstance(encoding, str) else "unknown encoding")
     if isinstance(exc, OSError) and isinstance(exc.strerror, str):
         return exc.strerror
+    if isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, BaseException):
+        return "URLError: %s" % type(exc.reason).__name__
     return type(exc).__name__
 
 

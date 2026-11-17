@@ -1,5 +1,5 @@
 """Test 34 (asama-0/09) and group ``npmlock`` (tohum/29d): ``deps.fetch`` for npm, on local fixture
-tarballs served by a mirror directory (the sandbox has no network; the HTTPS path is asama-0/10a #getir).
+tarballs served by a mirror directory (the sandbox has no network; the network is asama-0/10a #getir's).
 
 - every tarball equals the lock's ``integrity``; one changed byte is refused and no artifact is written;
 - ``resolved`` off the allowed registry (host, scheme, user, port, query, path, name), git and file
@@ -16,12 +16,16 @@ tarballs served by a mirror directory (the sandbox has no network; the HTTPS pat
   artifact by its hash and refuses a changed tarball, lock or manifest and an extra file;
 - the license report is written; with ``--product`` an unlisted or missing license is refused;
 - ``operating.deps_bytes`` stops the fetch; unusable input is exit 2 with one JSON line, never a traceback;
+- the HTTPS fetcher (``TestHttps``): which failed reads are read again and which end the fetch at once, the
+  pauses, the bound per URL and per fetcher, the text when a bound ends it; run through urllib's opener with
+  ``Wire`` in place of the socket, so statuses, redirects and the body length are judged by the standard
+  library's code and the connection failures are the socket layer's types raised by ``Wire``;
 - the ``npmlock`` vector interface (tohum/29g), ``fetch LOCK MIRROR`` with stdin, is ``TestNpmlock``: the
   named cases, the order of reasons per package, the address recomputed here, exit 2; the artifact is
   written by ``store`` and prints the same ``artefact``.
 
 Kept mutants of the module's guard rules are in ``tests/mutants/deps_npm.json``, each named with the test here that
-kills it; the HTTPS fetcher (no network here) and the artifact's write-then-rename have none.
+kills it; the artifact's write-then-rename has none.
 """
 
 from __future__ import annotations
@@ -30,14 +34,19 @@ import base64
 import copy
 import gzip
 import hashlib
+import http.client
 import io
 import json
 import os
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tarfile
 import unittest
+import urllib.error
+import urllib.request
 from unittest import mock
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -992,6 +1001,157 @@ class TestLimitAndVerify(Base):
         self.assertEqual(reasons[0], "manifest_unreadable")
 
 
+def answer(status: int, body: bytes = b"", length: int | None = None, headers: tuple = ()) -> bytes:
+    """The bytes of one HTTP/1.1 answer; ``length`` is the ``Content-Length`` written (the body's own by default)."""
+    lines = ["HTTP/1.1 %d X" % status, "Content-Length: %d" % (len(body) if length is None else length)]
+    return "\r\n".join(lines + list(headers) + ["", ""]).encode("ascii") + body
+
+
+class _Sock:
+    def __init__(self, raw: bytes):
+        self.raw = raw
+
+    def makefile(self, *_args, **_kwargs):
+        return io.BytesIO(self.raw)
+
+
+class Wire(urllib.request.BaseHandler):
+    """In place of the socket: each ``https_open`` takes the next step of ``script``, an exception (raised, as a
+    failed connection is) or the bytes of an answer, which ``http.client.HTTPResponse`` parses as it parses a
+    socket's and urllib's processors then judge (statuses, redirects)."""
+    handler_order = 100
+
+    def __init__(self, *script):
+        self.script, self.seen = list(script), []
+
+    def https_open(self, req):
+        self.seen.append(req.full_url)
+        step = self.script.pop(0)
+        if isinstance(step, BaseException):
+            raise step
+        resp = http.client.HTTPResponse(_Sock(step), method=req.get_method(), url=req.full_url)
+        resp.begin()
+        resp.msg = resp.reason
+        return resp
+
+
+URL = "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz"
+FAILED = "fetch failed: %s: " % URL
+
+
+class TestHttps(unittest.TestCase):
+    def fetcher(self, *script, **kwargs):
+        self.wire, self.pauses = Wire(*script), []
+        return N.HttpsFetcher(lambda url, cap: N.https_once(url, cap, (self.wire,)), self.pauses.append, **kwargs)
+
+    def refused(self, fetcher, url=URL) -> str:
+        with self.assertRaises(N.DepsError) as caught:
+            fetcher(url, None)
+        self.assertNotIsInstance(caught.exception, N.FetchAgain)
+        return str(caught.exception)
+
+    def test_a_200_answer_is_its_body_read_once_and_capped(self):
+        self.assertEqual(self.fetcher(answer(200, b"tarball"))(URL, None), b"tarball")
+        self.assertEqual((self.wire.seen, self.pauses), ([URL], []))
+        self.assertEqual(self.fetcher(answer(200, b"tarball"))(URL, 3), b"tarb")  # cap + 1: fetch sees it is over
+
+    def test_each_connection_failure_is_read_again(self):
+        failures = [
+            (urllib.error.URLError(socket.gaierror(socket.EAI_AGAIN, "x")), "URLError: gaierror"),
+            (urllib.error.URLError(ConnectionRefusedError(111, "Connection refused")),
+             "URLError: ConnectionRefusedError"),
+            (urllib.error.URLError(ssl.SSLError(1, "x")), "URLError: SSLError"),
+            (urllib.error.URLError(TimeoutError("x")), "URLError: TimeoutError"),
+            (TimeoutError("x"), "TimeoutError"),
+            (ConnectionResetError(104, "Connection reset by peer"), "Connection reset by peer"),
+            (http.client.RemoteDisconnected("x"), "RemoteDisconnected"),
+            (http.client.BadStatusLine("x"), "BadStatusLine"),
+        ]
+        for failure, text in failures:
+            with self.subTest(text):
+                self.assertEqual(self.fetcher(failure, answer(200, b"ok"))(URL, None), b"ok")
+                self.assertEqual((self.wire.seen, self.pauses), ([URL, URL], [1.0]))
+                self.assertEqual(self.refused(self.fetcher(*[failure] * 4)), FAILED + text + " (read 4 times)")
+
+    def test_a_body_shorter_than_its_length_is_read_again(self):
+        short = answer(200, b"tar", length=7)
+        self.assertEqual(self.fetcher(short, answer(200, b"tarball"))(URL, None), b"tarball")
+        self.assertEqual(self.pauses, [1.0])
+        self.assertEqual(self.refused(self.fetcher(short, short, short, short)),
+                         FAILED + "IncompleteRead (read 4 times)")
+
+    def test_429_and_5xx_are_read_again(self):
+        for status in (429, 500, 502, 503, 504, 599):
+            with self.subTest(status):
+                self.assertEqual(self.fetcher(answer(status), answer(200, b"ok"))(URL, None), b"ok")
+                self.assertEqual(self.pauses, [1.0])
+                self.assertEqual(self.refused(self.fetcher(*[answer(status)] * 4)),
+                                 FAILED + "HTTP %d (read 4 times)" % status)
+
+    def test_any_other_answer_ends_the_fetch_at_the_first_read(self):
+        cases = [(answer(s), "HTTP %d" % s) for s in (400, 401, 403, 404, 410, 428, 430, 499, 600, 204, 206)]
+        cases += [(answer(s, headers=("Location: https://registry.npmjs.org/elsewhere.tgz",)), "redirect refused")
+                  for s in (301, 302, 303, 307, 308)]
+        for raw, text in cases:
+            with self.subTest(text, raw=raw[:16]):
+                self.assertEqual(self.refused(self.fetcher(raw, answer(200, b"never read"))), FAILED + text)
+                self.assertEqual((self.wire.seen, self.pauses), ([URL], []))
+
+    def test_a_url_is_read_four_times_with_pauses_of_1_2_and_4_seconds(self):
+        down = urllib.error.URLError(TimeoutError("x"))
+        self.assertEqual(self.fetcher(down, down, down, answer(200, b"ok"))(URL, None), b"ok")
+        self.assertEqual((len(self.wire.seen), self.pauses), (4, [1.0, 2.0, 4.0]))
+        self.refused(self.fetcher(down, down, down, down, answer(200, b"a fifth read")))
+        self.assertEqual((len(self.wire.seen), self.pauses), (4, [1.0, 2.0, 4.0]))
+        self.assertEqual((N.FETCH_PAUSES_S, N.FETCH_REPEATS), ((1.0, 2.0, 4.0), 16))
+
+    def test_one_fetcher_repeats_sixteen_reads_over_all_its_urls(self):
+        down, urls = answer(503), [URL + "?%d" % n for n in range(9)]
+        script = []
+        for _ in urls[:8]:
+            script += [down, down, answer(200, b"ok")]  # two repeats each: sixteen in all
+        fetcher = self.fetcher(*script, down, answer(200, b"a repeat too many"))
+        for url in urls[:8]:
+            self.assertEqual(fetcher(url, None), b"ok")
+        self.assertEqual((len(self.pauses), fetcher.left), (16, 0))
+        self.assertEqual(self.refused(fetcher, urls[8]), "fetch failed: %s: HTTP 503 (read 1 times; none of the "
+                         "fetch's 16 repeats is left)" % urls[8])
+        self.assertEqual((len(self.wire.seen), len(self.pauses)), (25, 16))
+        fresh = self.fetcher(down, answer(200, b"ok"))  # the count is the fetcher's, not the module's
+        self.assertEqual(fresh(URL, None), b"ok")
+
+    def test_a_first_read_needs_no_repeat_left(self):
+        fetcher = self.fetcher(answer(200, b"ok"), repeats=0)
+        self.assertEqual(fetcher(URL, None), b"ok")
+
+    def test_fetch_takes_the_read_that_answers_and_judges_it_by_integrity(self):
+        base = writable_base("deps-https-")
+        self.addCleanup(shutil.rmtree, base, True)
+        fx = Fixture(base)
+        fx.add("left-pad", "1.3.0")
+        (resolved, good), = fx.blobs.items()
+        lock = fx.write_lock()
+        down = urllib.error.URLError(ConnectionResetError(104, "x"))
+        report = N.fetch(lock, os.path.join(base, "out"), self.fetcher(down, answer(200, good)))
+        self.assertEqual((report["ok"], report["packages"], self.wire.seen, self.pauses),
+                         (True, 1, [resolved, resolved], [1.0]))
+        cut = answer(200, good[:-1])  # cut short with a length that agrees: not a failed read
+        report = N.fetch(lock, os.path.join(base, "out2"), self.fetcher(down, cut, answer(200, good)))
+        self.assertEqual((report, len(self.wire.seen)),
+                         ({"ok": False, "reasons": ["integrity_mismatch:node_modules/left-pad"]}, 2))
+        with self.assertRaises(N.DepsError) as caught:
+            N.fetch(lock, os.path.join(base, "out3"), self.fetcher(down, down, down, down))
+        self.assertEqual(str(caught.exception),
+                         "fetch failed: %s: URLError: ConnectionResetError (read 4 times)" % resolved)
+        self.assertFalse(os.path.exists(os.path.join(base, "out3")))
+
+    def test_the_default_fetcher_reads_https_once_and_sleeps(self):
+        import time
+        fetcher = N.HttpsFetcher()
+        self.assertEqual((fetcher.once, fetcher.pause, fetcher.pauses, fetcher.left),
+                         (N.https_once, time.sleep, N.FETCH_PAUSES_S, N.FETCH_REPEATS))
+
+
 class TestCli(Base):
     def run_cli(self, *args):
         proc = subprocess.run([sys.executable, "-m", "runner.deps_npm", *args], cwd=REFEREE, input="",
@@ -1006,6 +1166,24 @@ class TestCli(Base):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(obj if isinstance(obj, str) else json.dumps(obj))
         return path
+
+    def test_store_without_a_mirror_reads_through_the_https_fetcher(self):
+        made, mirror = [], N.mirror_fetcher(self.fx.mirror)
+
+        class Recording(N.HttpsFetcher):
+            def __init__(self):
+                super().__init__(once=mirror)
+                made.append(self)
+
+        def bare(url, cap):
+            raise AssertionError("store read %s without HttpsFetcher" % url)
+
+        held = io.StringIO()
+        with mock.patch.object(N, "HttpsFetcher", Recording), mock.patch.object(N, "https_once", bare), \
+                mock.patch.object(sys, "stdout", held):
+            code = N.main(["store", self.fx.write_lock(), self.fx.out])
+        report = json.loads(held.getvalue())
+        self.assertEqual((code, report["ok"], report["packages"], len(made)), (0, True, 3, 1))
 
     def test_cli(self):
         lock = self.fx.write_lock()

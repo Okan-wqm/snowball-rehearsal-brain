@@ -13,7 +13,9 @@ directory (the sandbox has no network; the HTTPS fetch is asama-0/10a #getir), `
   (``deps_invalid``);
 - refusals before and during the fetch: a refused artifact, two units, an unsafe tree and a recipe the static check
   refuses fetch nothing; a git dependency, a changed tarball byte and the recipe's ``limits.deps_bytes`` are MF5's
-  refusals (``deps_refused``), nothing written; a failed fetch and an existing ``out/deps/<id>`` are no verdict.
+  refusals (``deps_refused``), nothing written; a failed fetch and an existing ``out/deps/<id>`` are no verdict;
+- without a ``fetcher`` (the live path) each served target is fetched through its own ``N.HttpsFetcher()``, whose
+  repeat of a failed read (MF5's rules, ``test_deps_npm.TestHttps``) happens inside the job.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ import subprocess
 import sys
 import tarfile
 import unittest
+from unittest import mock
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
@@ -314,6 +317,36 @@ class Targets(Getir):
             self.assertEqual(N.artifact_in(here), os.path.join(here, address))
         resolved = self.fx.lock["packages"]["node_modules/left-pad"]["resolved"]
         self.assertEqual(self.fetched, [resolved, resolved])
+
+    def test_without_a_fetcher_each_target_reads_through_its_own_https_fetcher(self):
+        """The live path (no ``fetcher`` given): one ``N.HttpsFetcher()`` per served target, so a read that fails
+        in a repeated way is read again inside the job and each target has its own count of repeats."""
+        made, pauses, test = [], [], self
+
+        class Flaky(N.HttpsFetcher):
+            def __init__(self):
+                super().__init__(once=self.read, pause=pauses.append)
+                self.reads = 0
+                made.append(self)
+
+            def read(self, url, cap):
+                self.reads += 1
+                if self.reads == 1:
+                    raise N.FetchAgain("fetch failed: %s: URLError: TimeoutError" % url)
+                return test.fetcher(url, cap)
+
+        def bare(url, cap):
+            raise AssertionError("the job read %s without HttpsFetcher" % url)
+
+        with mock.patch.object(N, "HttpsFetcher", Flaky), mock.patch.object(N, "https_once", bare):
+            line = J.run("getir", {"RUNNER_TEMP": self.temp})
+        self.assertEqual((line["ok"], [(t["target"], t["done"]) for t in line["targets"]]),
+                         (True, [("t2", ["D2"]), ("t1", ["D2"])]))
+        self.assertEqual(([f.reads for f in made], [f.left for f in made], pauses),
+                         ([2, 2], [N.FETCH_REPEATS - 1] * 2, [1.0, 1.0]))
+        for entry in line["targets"]:
+            here = os.path.join(self.deps, entry["target"])
+            self.assertEqual(N.verify(N.artifact_in(here))["ok"], True)
 
     def test_kos_reads_each_targets_own_deps(self):
         self.assertTrue(self.run_getir()["ok"])

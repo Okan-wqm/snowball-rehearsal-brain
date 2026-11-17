@@ -655,7 +655,7 @@ def getir_d2(environ: dict[str, str], tid: str, fetcher: Any = None) -> dict[str
     except FileExistsError:
         raise Unusable("getir: %s exists" % out) from None
     try:
-        report = N.fetch(os.path.join(tree, D.norm_path(unit["lockfiles"][0])), out, fetcher or N.https_fetcher,
+        report = N.fetch(os.path.join(tree, D.norm_path(unit["lockfiles"][0])), out, fetcher or N.HttpsFetcher(),
                          N.DEFAULT_REGISTRIES, unit["install_scripts_required"], art.policy,
                          cap=unit["limits"].get("deps_bytes"))
     except N.DepsError as exc:
