@@ -334,7 +334,7 @@ class Fit(Base):
                          (eslint_cmd("eslint.config.mjs", "libs/a"),
                           ["env", TS, "node_modules/.bin/jest", "--config", "libs/a/jest.config.ts"],
                           ["env", TS, "node_modules/.bin/jest", "--config", "libs/a/jest.config.ts"],
-                          [".nvmrc", "eslint.config.mjs", "libs/a", "package-lock.json"]))
+                          [".nvmrc", "eslint.config.mjs", "libs/a", "package-lock.json", "package.json"]))
         row = {r["path"]: r for r in F.fit(self.tree, None, None, IMAGES)["rows"]}["libs/a"]
         self.assertEqual((row["reasons"], row["sources"]), ([], {"lint": "nx_target", "test": "nx_target"}))
         # The lock without jest's bin: check_recipe, the one judge, refuses the .bin path.
@@ -381,7 +381,7 @@ class Fit(Base):
         row = {r["path"]: r for r in F.fit(self.tree, None, None, IMAGES)["rows"]}["libs/a"]
         self.assertEqual((row["reasons"], row["sources"], row["recipe"]["lint_cmd"], row["recipe"]["inputs"]),
                          ([], {"lint": "nx_target", "test": "nx_target"}, inferred("libs/a"),
-                          [".nvmrc", "eslint.config.mjs", "libs/a", "package-lock.json"]))
+                          [".nvmrc", "eslint.config.mjs", "libs/a", "package-lock.json", "package.json"]))
         write_tree(self.tree, {"package-lock.json": lock(**{
             "node_modules/eslint": entry("eslint", "9.39.4"),
             "node_modules/jest": entry("jest", "30.5.2", bin={"jest": "bin/jest.js"})})})

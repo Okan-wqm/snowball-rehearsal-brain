@@ -19,6 +19,7 @@
         "libs/shared-contracts",
         "libs/testing",
         "package-lock.json",
+        "package.json",
         "platform/libs/event-bus",
         "platform/libs/outbox",
         "platform/libs/pagination-contracts",

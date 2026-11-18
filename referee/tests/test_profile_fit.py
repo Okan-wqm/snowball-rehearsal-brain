@@ -7,6 +7,9 @@
   script's ``eslint`` finds by its own lookup (nearest directory, ESLint's name order, files only; only the program
   ``eslint``, only the lint script), install-script marks from the lock,
   the image map, the three ``npm --prefix <path> run --silent`` commands;
+- the manifests above the inputs: every level up to the root, a file input's own directory, regular files only
+  (a directory, a symbolic link, a link on the way: none), the root input none; a unit with no manifest of its
+  own takes the ones above it;
 - the result: one row per candidate in the derivation's order, its reasons exactly ``check_recipe``'s (the one
   judge), the passing paths;
 - the command line: ``--units`` writes the first passing recipe and nothing when none passes; exit 0 / 1 / 2;
@@ -83,7 +86,8 @@ class Compose(Base):
     def test_the_recipe_of_a_member_below_the_root_lock(self):
         npm = ["npm", "--prefix", "pkgs/good", "run", "--silent"]
         self.assertEqual(F.compose(self.tree, "pkgs/good", IMAGES), {
-            "unit_id": "pkgs-good", "path": "pkgs/good", "inputs": [".nvmrc", "package-lock.json", "pkgs/good"],
+            "unit_id": "pkgs-good", "path": "pkgs/good",
+            "inputs": [".nvmrc", "package-lock.json", "package.json", "pkgs/good"],
             "toolchain": "node@20.11.1", "env_image": IMAGE, "lockfiles": ["package-lock.json"],
             "install_scripts_required": ["node_modules/a/node_modules/b", "node_modules/esbuild"],
             "lint_cmd": npm + ["lint", "--", "--format", "json"], "test_cmd": npm + ["test"],
@@ -93,7 +97,7 @@ class Compose(Base):
         write_tree(self.tree, {"pkgs/good/.node-version": "20.11.2", "pkgs/good/package-lock.json": lock()})
         r = F.compose(self.tree, "pkgs/good", {"20.11.2": "x"})
         self.assertEqual((r["inputs"], r["lockfiles"], r["toolchain"], r["env_image"], r["install_scripts_required"]),
-                         (["pkgs/good"], ["pkgs/good/package-lock.json"], "node@20.11.2", "x", []))
+                         (["package.json", "pkgs/good"], ["pkgs/good/package-lock.json"], "node@20.11.2", "x", []))
         write_tree(self.tree, {"pkgs/good/npm-shrinkwrap.json": lock()})
         self.assertEqual(F.compose(self.tree, "pkgs/good")["lockfiles"], ["pkgs/good/npm-shrinkwrap.json"])
         self.assertEqual(F.compose(self.tree, ".")["inputs"], ["."])
@@ -105,6 +109,56 @@ class Compose(Base):
         self.assertEqual((r["lockfiles"], r["toolchain"], r["env_image"], r["inputs"], r["install_scripts_required"]),
                          ([], "node@", "", ["x"], []))
         self.assertEqual(F.compose(self.tree, "pkgs/good", {"20.11.1": 3})["env_image"], "")
+
+
+class Manifests(unittest.TestCase):
+    """``manifests``: the ``package.json`` of every directory above an input, up to the root, regular files only;
+    in ``compose`` a unit with no manifest of its own takes the one above it."""
+
+    def setUp(self) -> None:
+        self.base = writable_base("t-fit-man-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.tree = os.path.join(self.base, "tree")
+        write_tree(self.tree, {
+            "package.json": package({}),
+            "package-lock.json": lock(),
+            "platform/package.json": package({}),
+            "platform/libs/outbox/project.json": json.dumps({"name": "outbox"}),
+            "platform/libs/outbox/src/a.ts": "export const a = 1;\n",
+            "platform/libs/own/package.json": package(),
+            "tools/x/package.json": package({}),
+            "tools/x/run.ts": "export const r = 1;\n",
+            "deep/a/b/c/file.ts": "export const f = 1;\n",
+        })
+
+    def test_every_level_above_and_a_file_inputs_own_directory(self):
+        self.assertEqual(F.manifests(self.tree, ["platform/libs/outbox"]), ["package.json", "platform/package.json"])
+        self.assertEqual(F.manifests(self.tree, ["tools/x/run.ts"]), ["package.json", "tools/x/package.json"])
+        self.assertEqual(F.manifests(self.tree, ["deep/a/b/c/file.ts"]), ["package.json"])
+        # a directory input's own manifest is not above it; the root input reaches nothing
+        self.assertEqual(F.manifests(self.tree, ["platform/libs/own"]), ["package.json", "platform/package.json"])
+        self.assertEqual(F.manifests(self.tree, ["."]), [])
+        self.assertEqual(F.manifests(self.tree, []), [])
+
+    def test_only_regular_files_with_no_link_on_the_way(self):
+        os.remove(os.path.join(self.tree, "platform/package.json"))
+        os.mkdir(os.path.join(self.tree, "platform/package.json"))  # a directory of that name
+        os.remove(os.path.join(self.tree, "package.json"))
+        self.assertEqual(F.manifests(self.tree, ["platform/libs/outbox"]), [])
+        os.symlink("tools/x/package.json", os.path.join(self.tree, "package.json"))
+        self.assertEqual(F.manifests(self.tree, ["platform/libs/outbox"]), [])
+        write_tree(self.tree, {"real/package.json": package({})})
+        os.symlink("real", os.path.join(self.tree, "via"))
+        os.makedirs(os.path.join(self.tree, "real/u"))
+        self.assertEqual(F.manifests(self.tree, ["via/u"]), [])
+
+    def test_a_unit_with_no_manifest_takes_the_ones_above_it(self):
+        inputs = F.compose(self.tree, "platform/libs/outbox")["inputs"]
+        self.assertEqual(inputs, ["package-lock.json", "package.json", "platform/libs/outbox",
+                                  "platform/package.json"])
+        # what another input covers is left out
+        self.assertEqual(F.compose(self.tree, "platform")["inputs"],
+                         ["package-lock.json", "package.json", "platform"])
 
 
 class WorkspaceFolders(unittest.TestCase):
@@ -282,7 +336,7 @@ class LintConfig(Base):
     CONFIG = "import rules from './lint/rules.mjs';\nimport plug from './tools/plug/index.js';\nexport default [];\n"
     FILES = {"eslint.config.mjs": CONFIG, "lint/rules.mjs": "export default {};\n",
              "tools/plug/package.json": {"name": "plug"}, "tools/plug/index.js": "module.exports = {};\n"}
-    PLAIN = [".nvmrc", "package-lock.json", "pkgs/good"]
+    PLAIN = [".nvmrc", "package-lock.json", "package.json", "pkgs/good"]
 
     def inputs(self, path: str = "pkgs/good") -> list:
         return F.compose(self.tree, path)["inputs"]

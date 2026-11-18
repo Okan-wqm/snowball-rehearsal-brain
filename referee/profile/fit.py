@@ -15,7 +15,8 @@ candidates, in the operator's order when ``targets[]`` names them, else every di
 - ``toolchain``: ``node@<text>`` of ``unit_verify.nearest_version`` with a leading ``v`` dropped (``node@`` when
   there is no version file); ``env_image``: ``images[<that text>]`` when given, else ``""``.
 - ``inputs``: ``path``, the lock, the version file, the files the commands name (below) and what they reach
-  (``reached``), the ones another covers left out (``derive.minimal``). What an input reaches, transitively from
+  (``reached``) and the manifests above all of these (``manifests``, below), the ones another covers left out
+  (``derive.minimal``). What an input reaches, transitively from
   ``path`` and those files (``path`` ``.`` covers the tree and reaches nothing more):
 
   - a directory input's ``package.json`` names in ``unit_verify.DEP_FIELDS``, each looked up as Node does,
@@ -45,6 +46,13 @@ candidates, in the operator's order when ``targets[]`` names them, else every di
   read at run time, and a file type other than JS/TS and tsconfig (``.vue``, ``.svelte``, CSS). An import inside
   a comment or a string is not one (``jsimports.code_view``, whose lexing limits are stated there); a whole
   project directory is an input when one of its files is reached, so an input may be more than the run needs.
+- the ``package.json`` of every directory above an input (``manifests``), up to the tree's root: Node's package
+  scope and the ``pkg-up`` lookup tools make (eslint-plugin-import's ``import/order`` among them, which throws
+  when it finds none) start at a file's directory and walk up, so a unit with no manifest of its own needs the
+  one above it. A manifest that is not a regular file, or has a symbolic link on its way, is not added (it is no
+  input ``check_recipe`` takes). Not added, stated: any other file a tool looks up by walking up (a
+  ``tsconfig.json``, ``.npmrc``, ``.babelrc``, a jest or ESLint configuration found that way other than the
+  flat config below), whose need shows only in ``verify``'s 3/3 run.
 - ``install_scripts_required``: the lock keys whose entry says ``hasInstallScript: true`` (MF5's lock reading),
   sorted. A script only a tarball declares is not known before the fetch (MF5 refuses it then).
 - ``lint_cmd``: ``npm --prefix <path> run --silent lint -- --format json``; ``test_cmd`` and
@@ -258,6 +266,20 @@ def reached(tree: str, path: str, lock: str | None, seeds=(), memo: dict | None 
     return sorted(found)
 
 
+def manifests(tree: str, inputs) -> list[str]:
+    """The ``package.json`` of each directory above an input of ``inputs`` (its own directory for a file input),
+    up to the tree's root, that is a regular file with no symbolic link on its way; tree paths, sorted."""
+    out = set()
+    for p in inputs:
+        if p == ".":
+            continue
+        for d in D._ancestors(posixpath.dirname(p) or "."):
+            rel = "package.json" if d == "." else posixpath.join(d, "package.json")
+            if D._read_regular(tree, rel) is not None:
+                out.add(rel)
+    return sorted(out)
+
+
 def commands(tree: str, path: str) -> dict:
     """``{lint_cmd, test_cmd, inputs, sources}`` of candidate ``path``: for ``lint`` and ``test`` each, the npm form
     when ``<path>/package.json`` has the script, else the Nx target's command when ``profile.nx`` composes it, else
@@ -293,11 +315,12 @@ def compose(tree: str, path: str, images: dict | None = None, memo: dict | None 
     version_file, text = U.nearest_version(tree, path)
     version = text[1:] if text and text.startswith("v") else (text or "")
     image = (images or {}).get(version)
+    inputs = D.minimal([p for p in (path, lock, version_file) if p] + found["inputs"]
+                       + reached(tree, path, lock, found["inputs"], memo))
     return {
         "unit_id": unit_id(path),
         "path": path,
-        "inputs": D.minimal([p for p in (path, lock, version_file) if p] + found["inputs"]
-                            + reached(tree, path, lock, found["inputs"], memo)),
+        "inputs": D.minimal(inputs + manifests(tree, inputs)),
         "toolchain": "node@" + version,
         "env_image": image if isinstance(image, str) else "",
         "lockfiles": [lock] if lock else [],

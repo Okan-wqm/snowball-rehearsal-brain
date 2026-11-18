@@ -111,8 +111,8 @@
   {
    "id": "reach_not_in_compose",
    "file": "profile/fit.py",
-   "old": "+ reached(tree, path, lock, found[\"inputs\"], memo)),",
-   "new": "),",
+   "old": "+ reached(tree, path, lock, found[\"inputs\"], memo))\n",
+   "new": ")\n",
    "tests": [
     "test_profile_fit.py"
    ]
