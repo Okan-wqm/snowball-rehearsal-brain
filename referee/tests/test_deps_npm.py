@@ -3,7 +3,7 @@ tarballs served by a mirror directory (the sandbox has no network; the network i
 
 - every tarball equals the lock's ``integrity``; one changed byte is refused and no artifact is written;
 - ``resolved`` off the allowed registry (host, scheme, user, port, query, path, name), git and file
-  dependencies, bundled entries and keys outside ``node_modules`` that no workspace link names are refused
+  dependencies, bundled lock entries and keys outside ``node_modules`` that no workspace link names are refused
   before anything is fetched; npm workspaces (tohum/29g): a workspace link and the folder it names are skipped,
   nested ``<folder>/node_modules/*`` packages are judged and fetched under their keys (``TestWorkspaces`` and
   the ``workspace`` cases of ``TestNpmlock``);
@@ -12,6 +12,10 @@ tarballs served by a mirror directory (the sandbox has no network; the network i
   ``install_scripts_required`` (bare name, scoped bare name, a path this lock does not hold, ``""``, a range
   or tag) is ``mark_not_usable`` for ``check`` and unusable input for ``store`` and ``fetch``, before any
   tarball is fetched; a ``name@version`` the lock does not hold marks nothing;
+- a tarball's version is the lock's after npm's cleaning of ``v``, ``=`` and whitespace
+  (``TestManifestVersion``; the table against npm's own answers is ``test_npm_capture``); packages a tarball
+  carries below its own ``node_modules`` are read with it (``TestBundled``): an install script there needs the
+  tarball's mark, their licenses are reported and gated under their own path, an exception does not reach them;
 - the same lock gives the same content address, one changed lock byte another; ``verify`` takes the
   artifact by its hash and refuses a changed tarball, lock or manifest and an extra file;
 - the license report is written; with ``--product`` an unlisted or missing license is refused;
@@ -743,6 +747,11 @@ class TestTarball(Base):
             self.fx.lock["packages"]["node_modules/left-pad"]["integrity"] = sri(data)
             report = self.fx.fetch()[0]
             self.assertEqual(report["reasons"], ["%s:node_modules/left-pad" % reason] if reason else [], size)
+            self.setUp()
+            body = json.dumps({"name": "x", "version": "1.0.0", "license": "MIT"}).encode()
+            self.fx.add("left-pad", "1.3.0", extra={"node_modules/x/package.json": body + b" " * (size - len(body))})
+            report = self.fx.fetch()[0]
+            self.assertEqual(report["reasons"], ["%s:node_modules/left-pad" % reason] if reason else [], size)
 
     def test_top_directory_name_is_free(self):
         data = tgz({"package.json": {"name": "left-pad", "version": "1.3.0", "license": "MIT"}}, "left-pad")
@@ -795,6 +804,7 @@ class TestBundled(Base):
 
     def test_bundled_packages_are_fetched_with_their_tarball_and_listed(self):
         files = dict(BUNDLED, **{"node_modules/.bin/q": b"#!", "node_modules/w/index.js": b"w",
+                                 "node_modules/u": ("symlink", "x"),      # a member that is the directory's own name
                                  "node_modules/x/lib/package.json": b"{not json", "lib/node_modules/v/package.json": b"["})
         report = self.bundle(files)
         self.assertTrue(report["ok"], report)
@@ -860,6 +870,16 @@ class TestBundled(Base):
             self.assertEqual(self.bundle(files, product=True)["reasons"], reasons, files)
             self.assertEqual(self.fx.artifacts(), [])
             self.assertTrue(self.fx.fetch()[0]["ok"])           # reported, not gated, without --product
+
+    def test_a_bundled_directory_where_the_lock_has_an_entry_is_refused(self):
+        # Base's lock has node_modules/left-pad/node_modules/inner, fetched by its own resolved
+        files = {"node_modules/inner/index.js": b"x", "node_modules/x/package.json": {"name": "x", "license": "MIT"}}
+        self.assertEqual(self.bundle(files)["reasons"],
+                         ["bundled_over_lock_entry:node_modules/left-pad/node_modules/inner"])
+        self.assertEqual(self.fx.artifacts(), [])
+        self.setUp()
+        self.assertTrue(self.bundle({"node_modules/inner/node_modules/x/index.js": b"x",
+                                     "node_modules/inner2/index.js": b"x"})["ok"])
 
     def test_a_license_exception_is_the_lock_s_package_alone(self):
         files = dict(BUNDLED, **{"node_modules/x/node_modules/z/package.json": {"name": "z", "version": "3.0.0"}})

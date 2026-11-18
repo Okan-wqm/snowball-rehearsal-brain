@@ -118,7 +118,8 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
    non-directory on its way, or an entry already there, refuses the artifact (``deps_unpack_unsafe:<key>``). A
    folder outside the inputs leaves the link dangling, which shows in the run. Out of scope: the ``bin`` links
    of a workspace package (none is made, and the static rule above refuses such a ``.bin`` path unless a
-   package of the lock provides it), ``directories.bin``, man pages, npm's own install logic, and a
+   package of the lock provides it), the ``bin`` links of a package bundled inside another's tarball (its files
+   are unpacked with that tarball; no link is made), ``directories.bin``, man pages, npm's own install logic, and a
    bound on the number of members (only their bytes are bounded; time is bounded by the job's clock). A lock
    with no package needs no artifact; one with packages and no artifact is unusable input.
    Then, before the first contained run, the host is made to hold the image (``runner.contained.ensure_image``

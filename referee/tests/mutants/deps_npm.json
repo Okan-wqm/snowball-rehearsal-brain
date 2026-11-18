@@ -739,10 +739,73 @@
    ]
   },
   {
-   "id": "dn_tb_nm",
+   "id": "dn_bp_name",
    "file": "runner/deps_npm.py",
-   "old": "                if len(parts) >= 2 and parts[1] == \"node_modules\":\n                    return \"bundled_dependency\", {}\n",
-   "new": "",
+   "old": "        if len(parts) < at + 1 + width or not NAME_RE.fullmatch(name):",
+   "new": "        if len(parts) < at + 1 + width:",
+   "tests": [
+    "test_deps_npm.TestBundled.test_bundled_path"
+   ]
+  },
+  {
+   "id": "dn_bp_scope",
+   "file": "runner/deps_npm.py",
+   "old": "        width = 2 if at + 1 < len(parts) and parts[at + 1].startswith(\"@\") else 1",
+   "new": "        width = 1",
+   "tests": [
+    "test_deps_npm.TestBundled.test_bundled_path"
+   ]
+  },
+  {
+   "id": "dn_tb_b_rest",
+   "file": "runner/deps_npm.py",
+   "old": "                if chain and rest:",
+   "new": "                if chain:",
+   "tests": [
+    "test_deps_npm.TestBundled.test_bundled_packages_are_fetched_with_their_tarball_and_listed"
+   ]
+  },
+  {
+   "id": "dn_tb_b_gyp",
+   "file": "runner/deps_npm.py",
+   "old": "                    if rest == [\"binding.gyp\"]:",
+   "new": "                    if rest[-1:] == [\"binding.gyp\"]:",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_bundled_install_script_needs_the_tarball_s_mark"
+   ]
+  },
+  {
+   "id": "dn_tb_b_gyp_set",
+   "file": "runner/deps_npm.py",
+   "old": "                        pack[\"binding_gyp\"] = True",
+   "new": "                        pass",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_bundled_install_script_needs_the_tarball_s_mark"
+   ]
+  },
+  {
+   "id": "dn_tb_b_json",
+   "file": "runner/deps_npm.py",
+   "old": "                    if rest == [\"package.json\"]:",
+   "new": "                    if rest[-1:] == [\"package.json\"]:",
+   "tests": [
+    "test_deps_npm.TestBundled.test_bundled_packages_are_fetched_with_their_tarball_and_listed"
+   ]
+  },
+  {
+   "id": "dn_tb_b_size",
+   "file": "runner/deps_npm.py",
+   "old": "if member.size > PACKAGE_JSON_MAX or not member.isfile():",
+   "new": "if not member.isfile():",
+   "tests": [
+    "test_deps_npm.TestTarball.test_package_json_is_at_most_one_mebibyte"
+   ]
+  },
+  {
+   "id": "dn_tb_b_isfile",
+   "file": "runner/deps_npm.py",
+   "old": "if member.size > PACKAGE_JSON_MAX or not member.isfile():",
+   "new": "if member.size > PACKAGE_JSON_MAX:",
    "tests": [
     "test_deps_npm.TestTarball.test_tarball_shape"
    ]
@@ -786,8 +849,17 @@
   {
    "id": "dn_tb_ambiguous",
    "file": "runner/deps_npm.py",
-   "old": "    if len(found) > 1:\n        return \"tarball_ambiguous_package_json\", {}\n",
-   "new": "",
+   "old": "    if len(found) > 1 or any(len(pack[\"found\"]) > 1 for pack in bundled.values()):",
+   "new": "    if any(len(pack[\"found\"]) > 1 for pack in bundled.values()):",
+   "tests": [
+    "test_deps_npm.TestTarball.test_tarball_shape"
+   ]
+  },
+  {
+   "id": "dn_tb_b_ambiguous",
+   "file": "runner/deps_npm.py",
+   "old": "    if len(found) > 1 or any(len(pack[\"found\"]) > 1 for pack in bundled.values()):",
+   "new": "    if len(found) > 1:",
    "tests": [
     "test_deps_npm.TestTarball.test_tarball_shape"
    ]
@@ -795,8 +867,8 @@
   {
    "id": "dn_tb_notdict",
    "file": "runner/deps_npm.py",
-   "old": "    if not isinstance(manifest, dict):\n        return \"tarball_package_json_unreadable\", {}\n    return None, {\"manifest\"",
-   "new": "    return None, {\"manifest\"",
+   "old": "        if not isinstance(manifest, dict):\n            return \"tarball_package_json_unreadable\", {}\n        packs.append(manifest)",
+   "new": "        packs.append(manifest)",
    "tests": [
     "test_deps_npm.TestTarball.test_tarball_shape"
    ]
@@ -1057,7 +1129,7 @@
    "id": "dn_f_inspect",
    "file": "runner/deps_npm.py",
    "old": "        if bad:\n            reasons.append(\"%s:%s\" % (bad, key))\n            continue\n        manifest = info",
-   "new": "        if bad and bad != \"bundled_dependency\":\n            reasons.append(\"%s:%s\" % (bad, key))\n            continue\n        manifest = info",
+   "new": "        if bad and bad != \"tarball_ambiguous_package_json\":\n            reasons.append(\"%s:%s\" % (bad, key))\n            continue\n        manifest = info",
    "tests": [
     "test_deps_npm.TestTarball.test_tarball_shape"
    ]
@@ -1065,8 +1137,8 @@
   {
    "id": "dn_f_mf_name",
    "file": "runner/deps_npm.py",
-   "old": "if manifest.get(\"name\") != item[\"name\"] or manifest.get(\"version\") != entry[\"version\"]:",
-   "new": "if manifest.get(\"version\") != entry[\"version\"]:",
+   "old": "if manifest.get(\"name\") != item[\"name\"] or manifest_version(manifest.get(\"version\")) != entry[\"version\"]:",
+   "new": "if manifest_version(manifest.get(\"version\")) != entry[\"version\"]:",
    "tests": [
     "test_deps_npm.TestTarball.test_tarball_shape"
    ]
@@ -1074,17 +1146,80 @@
   {
    "id": "dn_f_mf_version",
    "file": "runner/deps_npm.py",
-   "old": "if manifest.get(\"name\") != item[\"name\"] or manifest.get(\"version\") != entry[\"version\"]:",
+   "old": "if manifest.get(\"name\") != item[\"name\"] or manifest_version(manifest.get(\"version\")) != entry[\"version\"]:",
    "new": "if manifest.get(\"name\") != item[\"name\"]:",
    "tests": [
     "test_deps_npm.TestTarball.test_tarball_shape"
    ]
   },
   {
+   "id": "dn_f_mf_raw",
+   "file": "runner/deps_npm.py",
+   "old": "manifest_version(manifest.get(\"version\")) != entry[\"version\"]:",
+   "new": "manifest.get(\"version\") != entry[\"version\"]:",
+   "tests": [
+    "test_deps_npm.TestManifestVersion.test_a_version_npm_cleans_to_the_lock_s_is_the_lock_s"
+   ]
+  },
+  {
+   "id": "dn_f_mf_name_cleaned",
+   "file": "runner/deps_npm.py",
+   "old": "if manifest.get(\"name\") != item[\"name\"] or",
+   "new": "if manifest_version(manifest.get(\"name\")) != item[\"name\"] or",
+   "tests": [
+    "test_deps_npm.TestTarball.test_tarball_shape"
+   ]
+  },
+  {
+   "id": "dn_mv_space",
+   "file": "runner/deps_npm.py",
+   "old": "    return value.strip(MANIFEST_SPACE).lstrip(\"v=\" + MANIFEST_SPACE)",
+   "new": "    return value.strip().lstrip(\"v=\" + MANIFEST_SPACE)",
+   "tests": [
+    "test_deps_npm.TestTarball.test_tarball_shape"
+   ]
+  },
+  {
+   "id": "dn_mv_case",
+   "file": "runner/deps_npm.py",
+   "old": "    return value.strip(MANIFEST_SPACE).lstrip(\"v=\" + MANIFEST_SPACE)",
+   "new": "    return value.strip(MANIFEST_SPACE).lstrip(\"vV=\" + MANIFEST_SPACE)",
+   "tests": [
+    "test_deps_npm.TestTarball.test_tarball_shape"
+   ]
+  },
+  {
+   "id": "dn_mv_inner_space",
+   "file": "runner/deps_npm.py",
+   "old": "    return value.strip(MANIFEST_SPACE).lstrip(\"v=\" + MANIFEST_SPACE)",
+   "new": "    return value.strip(MANIFEST_SPACE).lstrip(\"v=\")",
+   "tests": [
+    "test_npm_capture.NpmCapture.test_a_manifest_version_is_read_as_npm_reads_it_or_left_as_written"
+   ]
+  },
+  {
+   "id": "dn_mv_build",
+   "file": "runner/deps_npm.py",
+   "old": "    return value.strip(MANIFEST_SPACE).lstrip(\"v=\" + MANIFEST_SPACE)",
+   "new": "    return value.strip(MANIFEST_SPACE).lstrip(\"v=\" + MANIFEST_SPACE).split(\"+\")[0]",
+   "tests": [
+    "test_npm_capture.NpmCapture.test_a_manifest_version_is_read_as_npm_reads_it_or_left_as_written"
+   ]
+  },
+  {
+   "id": "dn_mv_str",
+   "file": "runner/deps_npm.py",
+   "old": "    if not isinstance(value, str):\n        return None\n    return value.strip(MANIFEST_SPACE)",
+   "new": "    return str(value).strip(MANIFEST_SPACE)",
+   "tests": [
+    "test_npm_capture.NpmCapture.test_a_manifest_version_is_read_as_npm_reads_it_or_left_as_written"
+   ]
+  },
+  {
    "id": "dn_f_gyp",
    "file": "runner/deps_npm.py",
-   "old": "        script = info[\"binding_gyp\"] or entry.get(\"hasInstallScript\") is True or (",
-   "new": "        script = entry.get(\"hasInstallScript\") is True or (",
+   "old": "    return binding_gyp or (isinstance(scripts, dict)",
+   "new": "    return (isinstance(scripts, dict)",
    "tests": [
     "test_deps_npm.TestInstallScripts.test_tarball_scripts_and_binding_gyp_need_a_mark_even_when_lock_is_silent"
    ]
@@ -1092,8 +1227,8 @@
   {
    "id": "dn_f_lockflag",
    "file": "runner/deps_npm.py",
-   "old": "        script = info[\"binding_gyp\"] or entry.get(\"hasInstallScript\") is True or (",
-   "new": "        script = info[\"binding_gyp\"] or (",
+   "old": "        script = entry.get(\"hasInstallScript\") is True or needs_script(manifest, info[\"binding_gyp\"]) or any(",
+   "new": "        script = needs_script(manifest, info[\"binding_gyp\"]) or any(",
    "tests": [
     "test_deps_npm.TestInstallScripts.test_a_marked_lock_flag_is_recorded_and_only_true_is_the_flag"
    ]
@@ -1101,10 +1236,46 @@
   {
    "id": "dn_f_scripts",
    "file": "runner/deps_npm.py",
-   "old": "            isinstance(scripts, dict) and any(s in scripts for s in INSTALL_SCRIPTS))\n        if script and not report",
-   "new": "            False)\n        if script and not report",
+   "old": "    return binding_gyp or (isinstance(scripts, dict) and any(s in scripts for s in INSTALL_SCRIPTS))",
+   "new": "    return binding_gyp",
    "tests": [
     "test_deps_npm.TestInstallScripts.test_tarball_scripts_and_binding_gyp_need_a_mark_even_when_lock_is_silent"
+   ]
+  },
+  {
+   "id": "dn_f_scripts_dict",
+   "file": "runner/deps_npm.py",
+   "old": "    return binding_gyp or (isinstance(scripts, dict) and any(s in scripts for s in INSTALL_SCRIPTS))",
+   "new": "    return binding_gyp or any(s in (scripts or ()) for s in INSTALL_SCRIPTS)",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_bundled_install_script_needs_the_tarball_s_mark"
+   ]
+  },
+  {
+   "id": "dn_f_own_script",
+   "file": "runner/deps_npm.py",
+   "old": "        script = entry.get(\"hasInstallScript\") is True or needs_script(manifest, info[\"binding_gyp\"]) or any(",
+   "new": "        script = entry.get(\"hasInstallScript\") is True or any(",
+   "tests": [
+    "test_deps_npm.TestInstallScripts.test_tarball_scripts_and_binding_gyp_need_a_mark_even_when_lock_is_silent"
+   ]
+  },
+  {
+   "id": "dn_f_b_script",
+   "file": "runner/deps_npm.py",
+   "old": " or any(\n            needs_script(pack[\"manifest\"], pack[\"binding_gyp\"]) for pack in info[\"bundled\"])",
+   "new": "",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_bundled_install_script_needs_the_tarball_s_mark"
+   ]
+  },
+  {
+   "id": "dn_f_b_script_gyp",
+   "file": "runner/deps_npm.py",
+   "old": "needs_script(pack[\"manifest\"], pack[\"binding_gyp\"]) for pack in info[\"bundled\"])",
+   "new": "needs_script(pack[\"manifest\"], False) for pack in info[\"bundled\"])",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_bundled_install_script_needs_the_tarball_s_mark"
    ]
   },
   {
@@ -1119,10 +1290,46 @@
   {
    "id": "dn_f_exception",
    "file": "runner/deps_npm.py",
-   "old": "values = [exceptions[pinned][\"expression\"]] if pinned in exceptions else found",
-   "new": "values = found",
+   "old": "[exceptions[pinned][\"expression\"]] if pinned in exceptions else found)]",
+   "new": "found)]",
    "tests": [
     "test_deps_npm.TestLicense.test_policy_allowlist_and_exception"
+   ]
+  },
+  {
+   "id": "dn_f_b_listed",
+   "file": "runner/deps_npm.py",
+   "old": "        for pack in info[\"bundled\"]:\n            if key + \"/\"",
+   "new": "        for pack in []:\n            if key + \"/\"",
+   "tests": [
+    "test_deps_npm.TestBundled.test_product_gates_a_bundled_license_under_its_own_path"
+   ]
+  },
+  {
+   "id": "dn_f_b_exception",
+   "file": "runner/deps_npm.py",
+   "old": "                           licenses_of(inner)))",
+   "new": "                           [exceptions[\"%s==%s\" % (inner.get(\"name\"), inner.get(\"version\"))][\"expression\"]]\n                           if \"%s==%s\" % (inner.get(\"name\"), inner.get(\"version\")) in exceptions else licenses_of(inner)))",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_license_exception_is_the_lock_s_package_alone"
+   ]
+  },
+  {
+   "id": "dn_f_b_name_type",
+   "file": "runner/deps_npm.py",
+   "old": "*(v if isinstance(v, str) else None for v in",
+   "new": "*(v for v in",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_bundled_name_or_version_of_another_type_is_reported_as_none"
+   ]
+  },
+  {
+   "id": "dn_f_b_gate_key",
+   "file": "runner/deps_npm.py",
+   "old": "                reasons.append(\"%s:%s\" % (\"license_not_allowed\" if values else \"license_not_found\", where))",
+   "new": "                reasons.append(\"%s:%s\" % (\"license_not_allowed\" if values else \"license_not_found\", key))",
+   "tests": [
+    "test_deps_npm.TestBundled.test_product_gates_a_bundled_license_under_its_own_path"
    ]
   },
   {
@@ -2302,6 +2509,15 @@
    "new": "        else:\n            if not js_true",
    "tests": [
     "test_deps_npm.TestPlatform.test_plan_sorts_rows_into_what_npm_does_with_them"
+   ]
+  },
+  {
+   "id": "dn_f_b_over",
+   "file": "runner/deps_npm.py",
+   "old": "            if key + \"/\" + pack[\"path\"] in lock[\"packages\"]:\n                reasons.append(\"bundled_over_lock_entry:%s/%s\" % (key, pack[\"path\"]))\n",
+   "new": "",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_bundled_directory_where_the_lock_has_an_entry_is_refused"
    ]
   }
  ]

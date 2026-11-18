@@ -26,8 +26,9 @@ The lock (``check``, before anything is fetched; every reason listed as ``<reaso
   no ``://`` is a file
   dependency (``file_dependency``); one that starts with ``git+``, ``git:``, ``git@``, ``github:``,
   ``gitlab:``, ``bitbucket:`` or ``gist:`` (casefolded) is a git dependency (``git_dependency``); a bundled
-  entry (``inBundle: true``) is refused (``bundled_dependency``): its bytes come inside another tarball
-  and are not judged on their own here.
+  entry (``inBundle: true``) is refused (``bundled_dependency``): tohum/29g fetches every entry of the lock
+  by its own ``resolved``, and such an entry has none (its bytes come inside another tarball, where the
+  fetch below does read them; a lock that also lists them is ``reports/seed-069``).
 - Otherwise ``resolved`` must be exactly ``https://<host><prefix><name>/-/<bare>-<version>.tgz`` for an
   allowed registry (scheme ``https``; a host of ``[A-Za-z0-9.-]`` as written, so no user, port or a character
   that only lowercases into ASCII such as the Kelvin sign, equal to the registry's after lowercasing; no query
@@ -51,10 +52,27 @@ strong ``integrity`` token must equal the bytes' digest (``integrity_mismatch``;
 caught). A tarball that matches is read in memory, never extracted: it must be gzip tar
 (``tarball_unreadable``) with exactly one regular member ``<top>/package.json`` (``tarball_no_package_json``,
 ``tarball_ambiguous_package_json``; at most 1 MiB, a JSON object, else ``tarball_package_json_unreadable``)
-whose ``name`` and ``version`` equal the lock's (``tarball_manifest_mismatch``), and no member under
-``<top>/node_modules/`` (``bundled_dependency``, as for a bundled lock entry). A ``preinstall``,
-``install`` or ``postinstall`` key in its ``scripts``, or a ``<top>/binding.gyp`` member (npm's implicit
-``node-gyp rebuild``), needs the same recipe mark as ``hasInstallScript``. The tarball's decompression
+whose ``name`` equals the lock's and whose ``version``, read as ``manifest_version`` reads it (npm's cleaning
+of a leading ``v`` or ``=`` and of surrounding whitespace; nothing else of npm's loose reading), equals the
+lock's (``tarball_manifest_mismatch``). A ``preinstall``, ``install`` or ``postinstall`` key in its ``scripts``,
+or a ``<top>/binding.gyp`` member (npm's implicit ``node-gyp rebuild``), needs the same recipe mark as
+``hasInstallScript``.
+
+Bundled packages: a tarball may carry packages of its own below ``<top>/node_modules/`` (npm's
+``bundleDependencies``). Their bytes are the tarball's, so the tarball's ``integrity`` covers them and they
+are stored with it; what is judged of each package directory there (``bundled_path``: a chain of
+``node_modules/<name>``, at any depth, holding at least one member) is what is judged of a package: its
+``package.json``, when it has one, must be one regular member of at most 1 MiB holding a JSON object (the
+same reasons as above, under the tarball's key); an install script there (the three ``scripts`` keys, or a
+``binding.gyp`` directly in the directory) needs the mark of the tarball's own package, the only package the
+lock names; its licenses are reported and, with ``--product``, gated under ``<key>/<chain>``. Not judged: a
+bundled package's ``name`` and ``version`` (nothing in the lock states them; they are reported as written,
+None when not a string), whether the bundling package's manifest lists it, and members under ``node_modules``
+outside every chain (``node_modules/.bin``). The artifact's manifest has no row for a bundled package. A
+bundled package directory at a path the lock has an entry for (``<key>/<chain>`` is a key of ``packages``) is
+refused (``bundled_over_lock_entry:<key>/<chain>``): two tarballs would be unpacked into one directory, and
+which npm keeps is not measured here.
+The tarball's decompression
 time is bounded only by the job's wall clock. ``operating.deps_bytes`` (from ``--policy``) bounds the
 total bytes of distinct tarballs, or ``cap`` when it is smaller (a recipe's ``limits.deps_bytes``, which may only
 tighten the operator's value); going over it stops the fetch with ``limit_hit:deps_bytes``.
@@ -62,7 +80,8 @@ tighten the operator's value); going over it stops the fetch with ``limit_hit:de
 Licenses: every place in the tarball's ``package.json`` that states one (``license`` as a string or an
 object's ``type``; each entry of ``licenses``) is listed in the report; license files are not read, and a
 value of another type is listed as ``<unreadable>``. ``license_exceptions["name==version"].expression``
-replaces the listed values. Without ``--product`` the report is written and nothing is gated (the
+replaces the listed values of the lock's package of that name and version, never a bundled package's (whose
+name and version are its own word). Without ``--product`` the report is written and nothing is gated (the
 target's dependencies do not enter the product). With ``--product`` a package with no value is
 ``license_not_found`` and one with a value that is not allowed is ``license_not_allowed``. A value is
 allowed when it is an SPDX expression of identifiers joined by ``AND``/``OR`` with parentheses and every
@@ -606,7 +625,7 @@ def inspect_tarball(data: bytes) -> tuple[str | None, dict]:
                     if rest == ["binding.gyp"]:
                         pack["binding_gyp"] = True
                     if rest == ["package.json"]:
-                        if not member.isfile() or member.size > PACKAGE_JSON_MAX:
+                        if member.size > PACKAGE_JSON_MAX or not member.isfile():
                             return "tarball_package_json_unreadable", {}
                         fh = tar.extractfile(member)
                         pack["found"].append(fh.read(PACKAGE_JSON_MAX + 1) if fh else b"")
@@ -859,6 +878,8 @@ def fetch(lock_path: str, out: str, fetcher: Callable[[str, int | None], bytes],
         listed = [(key, item["name"], entry["version"],
                    [exceptions[pinned]["expression"]] if pinned in exceptions else found)]
         for pack in info["bundled"]:
+            if key + "/" + pack["path"] in lock["packages"]:
+                reasons.append("bundled_over_lock_entry:%s/%s" % (key, pack["path"]))
             inner = pack["manifest"] or {}
             listed.append((key + "/" + pack["path"], *(v if isinstance(v, str) else None for v in
                                                          (inner.get("name"), inner.get("version"))),
