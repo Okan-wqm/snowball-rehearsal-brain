@@ -9,20 +9,23 @@ Rules checked by ``problems``:
 - every row has tohum/26's row fields (``ledger.schema.ROW_FIELDS`` and ``ROW_OPTIONAL_FIELDS``, the one source),
   plus the founder row's optional ``supersedes`` (64 lowercase hex) and no other field (a float is refused by the
   chain itself); ``payload`` is exactly ``{summary, refs[]}``, summary a non-empty string and refs a list of
-  non-empty strings;
+  non-empty strings; a ``lesson`` row's payload (tohum/26g) has ``recheck`` too, a non-empty string, and no row
+  of another kind has it. What ``recheck`` says (a command run from the brain's root, or ``none: <reason>``) is
+  not read here, and neither is the one-sentence form 26g asks of a lesson's summary;
 - the meaning rules tohum/13 names (``part``, ``kind``, ``supersedes``): ``part`` is ``founder``; ``kind`` is in the
   set tohum/26 lists after "**`founder` satırı:** `kind` ∈", read from the page (``spec_kinds``), not copied;
   ``supersedes`` names the ``row_hash`` of an earlier row of this file that breaks a meaning rule;
 - a row that breaks a meaning rule is a problem unless a later row that breaks none and has the row shape names its
   ``row_hash`` in ``supersedes`` (the row is closed);
 - a ref ``closes:<row_id>`` (this brain's rule, not tohum's: an item is not a broken row, so ``supersedes`` cannot
-  close it) names an earlier row of kind ``seed_issue`` or ``blocked`` (an item) that no earlier valid closer has
-  closed, once per row; anything else is a problem, and it is not closable. A row closes the items it names only when
+  close it) names an earlier row of kind ``seed_issue`` or ``blocked`` (an item) or ``lesson`` (tohum/26g: a
+  lesson goes out of force when a later row names it so) that no earlier valid closer has closed, once per row; anything else is a problem, and it is not closable. A row closes the items it names only when
   it breaks no meaning rule and has the row shape.
 
 **Open items** (``open``): what this brain has reported and not closed, generated instead of copied into a session's
 summary. The items are (1) every ``seed_issue`` or ``blocked`` row no valid ``closes:`` ref names, with its
-``row_id``, kind, ``ts`` and the first 200 characters of its summary, in ledger order; then (2) every
+``row_id``, kind, ``ts`` and the first 200 characters of its summary, in ledger order (a ``lesson`` row is no
+item: the launcher's ``/work/logs/lessons.json`` lists the lessons in force); then (2) every
 ``reports/<id>.json`` (tohum/26c; the report's ``state`` is its one source, a ledger row does not close it) whose
 ``state`` is not ``confirmed``, by id, with kind, state and ref. A report that is not a JSON object with ``id`` equal
 to its file's stem and a non-empty string ``state`` makes the list unusable (exit 2); a ledger with any problem gives
@@ -76,7 +79,7 @@ Command line, run from ``referee/`` (stdout one JSON line; exit 0 ok, 1 problem 
 
     python -m ledger.founder check [--ledger FILE] [--page FILE]
     python -m ledger.founder open [--ledger FILE] [--page FILE] [--reports DIR]
-    python -m ledger.founder append --kind KIND --summary TEXT|- --snapshot SHA [--ref PATH ...]
+    python -m ledger.founder append --kind KIND --summary TEXT|- --snapshot SHA [--ref PATH ...] [--recheck TEXT]
         [--derivation D] [--trust T] [--supersedes HASH] [--ts TS] [--ledger FILE] [--page FILE]
 
 ``--summary -`` reads the summary from stdin (UTF-8, one trailing newline dropped). Defaults: derivation
@@ -106,12 +109,14 @@ REPORTS = os.path.join(BRAIN, "reports")
 FOUNDER = "founder"
 ROW_ID = re.compile(r"f(\d+)\Z")
 ITEM_KINDS = frozenset({"seed_issue", "blocked"})  # the founder kinds that report something to be closed
+LESSON = "lesson"  # tohum/26g: payload {summary, refs[], recheck}; closed like an item, listed by the launcher
+CLOSABLE_KINDS = ITEM_KINDS | {LESSON}
 CLOSES = "closes:"
 CLOSED_REPORT_STATES = frozenset({"confirmed"})  # tohum/26c: the Founder confirms what a seed epoch fixed
 HEAD = 200
 REF = re.compile(r"([^:\s]+):([1-9][0-9]*)(?:-([1-9][0-9]*))?\Z")
 
-PAYLOAD = schema.shape({"summary": schema.text, "refs": schema.list_of(schema.text)})
+PAYLOAD = schema.shape({"summary": schema.text, "refs": schema.list_of(schema.text)}, {"recheck": schema.text})
 # part and kind are meaning rules (closable), so the shape takes any non-empty string there
 FOUNDER_ROW = schema.shape({**schema.ROW_FIELDS, "part": schema.text, "kind": schema.text, "payload": PAYLOAD},
                            {**schema.ROW_OPTIONAL_FIELDS, "supersedes": schema.hex64})
@@ -146,6 +151,8 @@ def _judge(data: bytes, kinds: frozenset) -> tuple[list[dict], list[str], list[l
     for i, row in enumerate(rows):
         where = "line %d (%s)" % (i + 1, row.get("row_id"))
         out += FOUNDER_ROW(row, where)
+        if (row.get("kind") == LESSON) != (isinstance(row.get("payload"), dict) and "recheck" in row["payload"]):
+            out.append("%s: payload.recheck is a lesson row's field, and every lesson row has it" % where)
         broken = []
         if row.get("part") != FOUNDER:
             broken.append("part %r is not founder" % row.get("part"))
@@ -159,7 +166,7 @@ def _judge(data: bytes, kinds: frozenset) -> tuple[list[dict], list[str], list[l
                 broken.append("supersedes names line %d, which breaks no meaning rule" % (j + 1))
         breaks.append(broken)
         earlier[row.get("row_hash")] = i
-    items: dict[str, int] = {}  # row_id of an earlier seed_issue or blocked row -> its index
+    items: dict[str, int] = {}  # row_id of an earlier seed_issue, blocked or lesson row -> its index
     closed: dict[str, str] = {}
     for i, row in enumerate(rows):
         where = "line %d (%s)" % (i + 1, row.get("row_id"))
@@ -169,14 +176,14 @@ def _judge(data: bytes, kinds: frozenset) -> tuple[list[dict], list[str], list[l
         counts = not breaks[i] and not FOUNDER_ROW(row, "")
         for n, name in enumerate(names):
             if name not in items:
-                out.append("%s: %s%s names no earlier seed_issue or blocked row" % (where, CLOSES, name))
+                out.append("%s: %s%s names no earlier seed_issue, blocked or lesson row" % (where, CLOSES, name))
             elif name in names[:n]:
                 out.append("%s: %s%s is named twice" % (where, CLOSES, name))
             elif name in closed:
                 out.append("%s: %s%s, already closed by %s" % (where, CLOSES, name, closed[name]))
             elif counts:
                 closed[name] = row.get("row_id")
-        if row.get("kind") in ITEM_KINDS and isinstance(row.get("row_id"), str):
+        if row.get("kind") in CLOSABLE_KINDS and isinstance(row.get("row_id"), str):
             items.setdefault(row["row_id"], i)
     return rows, out, breaks, closed
 
@@ -334,7 +341,8 @@ def open_items(data: bytes, kinds: frozenset, reports: list[dict],
 
 
 def next_row(data: bytes, kind: str, summary: str, refs: list[str], snapshot: str, ts: str,
-             derivation: str = "llm_inference", trust: str = "inferred", supersedes: str | None = None) -> dict:
+             derivation: str = "llm_inference", trust: str = "inferred", supersedes: str | None = None,
+             recheck: str | None = None) -> dict:
     """The row that follows the last row of ``data`` (a chain), hashed; its fields are not checked here."""
     lines = chain._lines(data)
     if lines:
@@ -349,6 +357,8 @@ def next_row(data: bytes, kind: str, summary: str, refs: list[str], snapshot: st
            "derivation": derivation, "trust": trust, "snapshot_id": snapshot, "evidence_refs": [], "prev_hash": prev}
     if supersedes is not None:
         row["supersedes"] = supersedes
+    if recheck is not None:
+        row["payload"]["recheck"] = recheck
     row["row_hash"] = chain.row_hash(row)
     return row
 
@@ -411,6 +421,7 @@ def _parser() -> argparse.ArgumentParser:
     a.add_argument("--derivation", default="llm_inference")
     a.add_argument("--trust", default="inferred")
     a.add_argument("--supersedes")
+    a.add_argument("--recheck")
     a.add_argument("--ts")
     return p
 
@@ -447,7 +458,7 @@ def main(argv: list[str], stdin=None) -> int:
         ts = args.ts or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         try:
             row = next_row(data, args.kind, summary, args.ref, args.snapshot, ts, args.derivation, args.trust,
-                           args.supersedes)
+                           args.supersedes, args.recheck)
         except (chain.ChainError, UnicodeDecodeError) as exc:
             raise Unusable("ledger_unusable: %s" % cli.cause(exc)) from None
         reasons = append(args.ledger, row, kinds)

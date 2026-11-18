@@ -46,7 +46,10 @@ def build(specs: list[dict]) -> tuple[bytes, list[str]]:
     return ("\n".join(lines) + "\n").encode("utf-8"), hashes
 
 
-KINDS = frozenset({"session_start", "decision", "build", "blocked", "seed_issue", "cost", "session_end"})
+KINDS = frozenset({"session_start", "decision", "build", "blocked", "seed_issue", "cost", "session_end", "lesson"})
+
+
+LESSON = {"kind": "lesson", "payload": {"summary": "a lesson", "refs": [], "recheck": "none: a test row"}}
 
 
 class Rules(unittest.TestCase):
@@ -54,7 +57,7 @@ class Rules(unittest.TestCase):
         return problems(build(specs)[0], KINDS)
 
     def test_valid_rows_are_clean(self):
-        self.assertEqual(self.check([{"kind": k} for k in sorted(KINDS)]), [])
+        self.assertEqual(self.check([LESSON if k == "lesson" else {"kind": k} for k in sorted(KINDS)]), [])
 
     def test_unknown_kind_open_then_closed(self):
         self.assertEqual(len(self.check([{}, {"kind": "learning"}])), 1)
@@ -98,6 +101,21 @@ class Rules(unittest.TestCase):
                         {"summary": "x", "refs": [], "extra": 1}, {"summary": "x", "refs": "a"}, "x"):
             with self.subTest(payload=payload):
                 self.assertNotEqual(self.check([{"payload": payload}]), [])
+
+    def test_recheck_is_the_lesson_row_s_field(self):
+        # tohum/26g: a lesson row's payload is {summary, refs[], recheck}; no other kind's has recheck
+        self.assertEqual(self.check([LESSON]), [])
+        for spec in ({"kind": "lesson"}, {"payload": LESSON["payload"]},
+                     {"kind": "seed_issue", "payload": LESSON["payload"]}):
+            with self.subTest(spec=spec):
+                found = self.check([spec])
+                self.assertEqual(len(found), 1, found)
+                self.assertIn("payload.recheck is a lesson row's field", found[0])
+                self.assertEqual(self.check([spec, {"supersedes": 0}])[:1], found)    # no closer takes it away
+        for recheck in ("", 1, None, ["x"]):
+            with self.subTest(recheck=recheck):
+                self.assertNotEqual(self.check([{"kind": "lesson", "payload": dict(LESSON["payload"], recheck=recheck)}]), [])
+        self.assertNotEqual(self.check([{"kind": "lesson", "payload": "x"}]), [])
 
     def test_row_fields(self):
         for spec in ({"cause2": "x"}, {"ts": "2026-10-31"}, {"trust": "sure"}, {"derivation": "guess"},
@@ -227,6 +245,25 @@ class Append(Cli):
         self.assertEqual(row["payload"], {"summary": "a row", "refs": ["a.py", "b.py"]})
         self.assertEqual((row["part"], row["snapshot_id"], row["ts"]), (FOUNDER, self.SHA, "2026-10-31T23:00:00Z"))
         self.assertEqual(problems(self.read(path), KINDS), [])
+
+    def test_recheck_is_written_for_a_lesson_and_refused_elsewhere(self):
+        path = self.ledger(b"")
+        code, out = self.add(path, "--recheck", "python3 -m unittest tests.test_x", "--ref", "a.py", kind="lesson")
+        self.assertEqual((code, out["ok"]), (0, True))
+        row = chain.parse_row(self.read(path).decode("utf-8"))
+        self.assertEqual(row["payload"], {"summary": "a row", "refs": ["a.py"],
+                                          "recheck": "python3 -m unittest tests.test_x"})
+        self.assertEqual(problems(self.read(path), KINDS), [])
+        data = self.read(path)
+        for extra, kind in ((("--recheck", "x"), "decision"), ((), "lesson"), (("--recheck", ""), "lesson"),
+                            (("--recheck", ""), "decision")):       # an empty recheck is one, not an absent one
+            with self.subTest(extra=extra, kind=kind):
+                code, out = self.add(path, *extra, kind=kind)
+                self.assertEqual(code, 1)
+                self.assertTrue(any(r.startswith("problem:") and "recheck" in r for r in out["reasons"]), out)
+                self.assertEqual(self.read(path), data)
+        self.assertEqual(self.add(path)[0], 0)                     # a row of another kind has no recheck field
+        self.assertNotIn("recheck", chain.parse_row(self.read(path).decode("utf-8").splitlines()[1])["payload"])
 
     def test_a_row_follows_the_last_and_keeps_the_old_bytes(self):
         data, hashes = build([{}, {"kind": "build"}])
@@ -382,7 +419,7 @@ class Items(Cli):
         return [item["id"] for item in out["open"]]
 
     def test_seed_issue_and_blocked_rows_are_items_until_closed(self):
-        rows = [{"kind": k} for k in sorted(KINDS)]  # blocked f0, build f1, cost f2, decision f3, seed_issue f4
+        rows = [{"kind": k} for k in sorted(KINDS - {"lesson"})]  # blocked f0, build f1, cost f2, decision f3, seed_issue f4
         self.assertEqual(self.ids(build(rows)[0]), ["f0", "f4"])
         self.assertEqual(self.ids(build(rows + [self.closer("f4")])[0]), ["f0"])
         self.assertEqual(self.ids(build(rows + [self.closer("f0", "f4")])[0]), [])
@@ -392,13 +429,23 @@ class Items(Cli):
         self.assertEqual(out["open"], [{"id": "f0", "source": "ledger", "kind": "seed_issue",
                                         "ts": "2026-10-31T00:00:00Z", "head": "x" * 200}])
 
+    def test_a_lesson_is_closed_like_an_item_and_is_no_item(self):
+        # tohum/26g: a lesson goes out of force when a later row names it with closes:; open lists no lesson
+        self.assertEqual(self.ids(build([LESSON, {"kind": "blocked"}])[0]), ["f1"])
+        self.assertEqual(self.ids(build([LESSON, self.closer("f0")])[0]), [])
+        replaced = dict(LESSON, payload=dict(LESSON["payload"], refs=["closes:f0"]))
+        self.assertEqual(self.ids(build([LESSON, replaced])[0]), [])
+        found = problems(build([LESSON, self.closer("f0"), self.closer("f0")])[0], KINDS)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("already closed by f1", found[0])
+
     def test_bad_closes_refs_are_problems(self):
         item = {"kind": "seed_issue"}
-        for rows, what in (([item, self.closer("f9")], "names no earlier seed_issue or blocked row"),
-                           ([{}, self.closer("f0")], "names no earlier seed_issue or blocked row"),
-                           ([self.closer("f1"), item], "names no earlier seed_issue or blocked row"),
-                           ([self.closer("f0", kind="seed_issue")], "names no earlier seed_issue or blocked row"),
-                           ([item, self.closer("seed-040")], "names no earlier seed_issue or blocked row"),
+        for rows, what in (([item, self.closer("f9")], "names no earlier seed_issue, blocked or lesson row"),
+                           ([{}, self.closer("f0")], "names no earlier seed_issue, blocked or lesson row"),
+                           ([self.closer("f1"), item], "names no earlier seed_issue, blocked or lesson row"),
+                           ([self.closer("f0", kind="seed_issue")], "names no earlier seed_issue, blocked or lesson row"),
+                           ([item, self.closer("seed-040")], "names no earlier seed_issue, blocked or lesson row"),
                            ([item, self.closer("f0", "f0")], "is named twice"),
                            ([item, self.closer("f0"), self.closer("f0")], "already closed by f1")):
             with self.subTest(what=what, rows=len(rows)):
@@ -456,7 +503,7 @@ class Items(Cli):
              "ref_check": {"status": "unknown", "why": "not_in_git"}}])
         # a ledger row does not close a report: the report's state is its one source
         self.assertEqual(problems(build([{"kind": "seed_issue"}, self.closer("b-2")])[0], KINDS)[0][-30:],
-                         "names no earlier seed_issue or blocked row"[-30:])
+                         "names no earlier seed_issue, blocked or lesson row"[-30:])
         missing = os.path.join(d, "no-such-dir")
         self.assertEqual(self.ids(build([{}])[0], missing), [])
 

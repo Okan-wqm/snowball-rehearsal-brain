@@ -30,8 +30,8 @@
   },
   {
    "id": "payload_extra_field_ok",
-   "old": "PAYLOAD = schema.shape({\"summary\": schema.text, \"refs\": schema.list_of(schema.text)})",
-   "new": "PAYLOAD = schema.shape({\"summary\": schema.text}, {\"refs\": schema.list_of(schema.text)})",
+   "old": "PAYLOAD = schema.shape({\"summary\": schema.text, \"refs\": schema.list_of(schema.text)}, {\"recheck\": schema.text})",
+   "new": "PAYLOAD = schema.shape({\"summary\": schema.text}, {\"refs\": schema.list_of(schema.text), \"recheck\": schema.text})",
    "file": "referee/ledger/founder.py",
    "tests": [
     "test_founder_ledger.py"
@@ -165,7 +165,7 @@
   },
   {
    "id": "closes_any_kind",
-   "old": "if row.get(\"kind\") in ITEM_KINDS and isinstance(row.get(\"row_id\"), str):",
+   "old": "if row.get(\"kind\") in CLOSABLE_KINDS and isinstance(row.get(\"row_id\"), str):",
    "new": "if isinstance(row.get(\"row_id\"), str):",
    "file": "referee/ledger/founder.py",
    "tests": [
@@ -467,6 +467,96 @@
    "file": "referee/ledger/founder.py",
    "tests": [
     "test_founder_ledger.py"
+   ]
+  },
+  {
+   "id": "lesson_recheck_optional_dropped",
+   "old": "}, {\"recheck\": schema.text})",
+   "new": "})",
+   "file": "referee/ledger/founder.py",
+   "tests": [
+    "test_founder_ledger.Rules.test_valid_rows_are_clean"
+   ]
+  },
+  {
+   "id": "lesson_recheck_rule_dropped",
+   "old": "        if (row.get(\"kind\") == LESSON) != (isinstance(row.get(\"payload\"), dict) and \"recheck\" in row[\"payload\"]):\n            out.append(\"%s: payload.recheck is a lesson row's field, and every lesson row has it\" % where)\n",
+   "new": "",
+   "file": "referee/ledger/founder.py",
+   "tests": [
+    "test_founder_ledger.Rules.test_recheck_is_the_lesson_row_s_field"
+   ]
+  },
+  {
+   "id": "lesson_recheck_only_required",
+   "old": "        if (row.get(\"kind\") == LESSON) != (isinstance(row.get(\"payload\"), dict) and \"recheck\" in row[\"payload\"]):",
+   "new": "        if row.get(\"kind\") == LESSON and not (isinstance(row.get(\"payload\"), dict) and \"recheck\" in row[\"payload\"]):",
+   "file": "referee/ledger/founder.py",
+   "tests": [
+    "test_founder_ledger.Rules.test_recheck_is_the_lesson_row_s_field"
+   ]
+  },
+  {
+   "id": "lesson_recheck_only_forbidden",
+   "old": "        if (row.get(\"kind\") == LESSON) != (isinstance(row.get(\"payload\"), dict) and \"recheck\" in row[\"payload\"]):",
+   "new": "        if row.get(\"kind\") != LESSON and (isinstance(row.get(\"payload\"), dict) and \"recheck\" in row[\"payload\"]):",
+   "file": "referee/ledger/founder.py",
+   "tests": [
+    "test_founder_ledger.Rules.test_recheck_is_the_lesson_row_s_field"
+   ]
+  },
+  {
+   "id": "lesson_recheck_closable",
+   "old": "            out.append(\"%s: payload.recheck is a lesson row's field, and every lesson row has it\" % where)\n        broken = []\n",
+   "new": "            pass\n        broken = []\n        if (row.get(\"kind\") == LESSON) != (isinstance(row.get(\"payload\"), dict) and \"recheck\" in row[\"payload\"]):\n            broken.append(\"payload.recheck is a lesson row's field, and every lesson row has it\")\n",
+   "file": "referee/ledger/founder.py",
+   "tests": [
+    "test_founder_ledger.Rules.test_recheck_is_the_lesson_row_s_field"
+   ]
+  },
+  {
+   "id": "lesson_not_closable",
+   "old": "CLOSABLE_KINDS = ITEM_KINDS | {LESSON}",
+   "new": "CLOSABLE_KINDS = ITEM_KINDS",
+   "file": "referee/ledger/founder.py",
+   "tests": [
+    "test_founder_ledger.Items.test_a_lesson_is_closed_like_an_item_and_is_no_item"
+   ]
+  },
+  {
+   "id": "lesson_is_an_item",
+   "old": "for row in rows if row[\"kind\"] in ITEM_KINDS and row[\"row_id\"] not in closed]",
+   "new": "for row in rows if row[\"kind\"] in CLOSABLE_KINDS and row[\"row_id\"] not in closed]",
+   "file": "referee/ledger/founder.py",
+   "tests": [
+    "test_founder_ledger.Items.test_a_lesson_is_closed_like_an_item_and_is_no_item"
+   ]
+  },
+  {
+   "id": "lesson_recheck_not_written",
+   "old": "    if recheck is not None:\n        row[\"payload\"][\"recheck\"] = recheck\n",
+   "new": "",
+   "file": "referee/ledger/founder.py",
+   "tests": [
+    "test_founder_ledger.Append.test_recheck_is_written_for_a_lesson_and_refused_elsewhere"
+   ]
+  },
+  {
+   "id": "lesson_recheck_arg_dropped",
+   "old": "args.supersedes, args.recheck)",
+   "new": "args.supersedes)",
+   "file": "referee/ledger/founder.py",
+   "tests": [
+    "test_founder_ledger.Append.test_recheck_is_written_for_a_lesson_and_refused_elsewhere"
+   ]
+  },
+  {
+   "id": "lesson_recheck_empty_is_none",
+   "old": "    if recheck is not None:\n        row[\"payload\"][\"recheck\"] = recheck",
+   "new": "    if recheck:\n        row[\"payload\"][\"recheck\"] = recheck",
+   "file": "referee/ledger/founder.py",
+   "tests": [
+    "test_founder_ledger.Append.test_recheck_is_written_for_a_lesson_and_refused_elsewhere"
    ]
   }
  ]
