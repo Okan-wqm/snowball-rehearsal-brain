@@ -1,3 +1,11 @@
+{"file": "referee/tests/mutants/not_staged.json", "fp": "2861bb7e3b3cdae16146a271b079ff87132bb3b14dacc7276a93422b0e5541a6", "id": "ns_children_by_the_derivation_rule", "outcome": "killed"}
+{"file": "referee/tests/mutants/not_staged.json", "fp": "98dfb87f286c946be94d49b632f7dcd0d5166e4d6a34ee83c066a0041e5cbcb4", "id": "ns_top_input_by_the_derivation_rule", "outcome": "killed"}
+{"file": "referee/tests/mutants/not_staged.json", "fp": "b91b690bae7c177d8ac511e0a7c5658e57f08a4eddae948efa157ede909e2112", "id": "ns_top_input_always_copied", "outcome": "killed"}
+{"file": "referee/tests/mutants/not_staged.json", "fp": "95012afafa68ccfb9ee2a063ff12c09cdc3897b937f2488aea7611c9ff0a813a", "id": "ns_agent_workspaces_staged", "outcome": "killed"}
+{"file": "referee/tests/mutants/not_staged.json", "fp": "931351ec6c59c7f2cd3d3a914af168b22658373af41e11e98688055a86306bac", "id": "ns_node_modules_staged", "outcome": "killed"}
+{"file": "referee/tests/mutants/not_staged.json", "fp": "32ac1fe5b0df3a5c037dc077d38a1f927e06948d75511cbadcc09290f3c5c1ec", "id": "ns_operator_path_under_an_output_name_staged", "outcome": "killed"}
+{"file": "referee/tests/mutants/not_staged.json", "fp": "a2c31b8cddd1399acdddc4257fea281d3e8762822e4e2c8ae77927081b3296dc", "id": "ns_names_compared_as_written", "outcome": "killed"}
+{"file": "referee/tests/mutants/not_staged.json", "fp": "30033a87cb4d91c1946ae6e26f62818b4dcf0f143074e217041f329d00ab6ce3", "id": "ns_an_output_name_moved_to_not_staged", "outcome": "killed"}
 {"file": "referee/tests/mutants/kos_failed.json", "fp": "63ac6fed5effa47dad05e5862e72562028e267e55e8b48dedff7deab410d6109", "id": "kf_no_key_for_a_failed_base", "outcome": "killed"}
 {"file": "referee/tests/mutants/kos_failed.json", "fp": "dd2ebd91964c7553f06bab91ca27bbc4e364ce51ab20ec4eb6c1cca4502ece84", "id": "kf_candidate_entry_drops_it", "outcome": "killed"}
 {"file": "referee/tests/mutants/kos_failed.json", "fp": "0982f042c0e8ecc18e0c474642cd62705b96b29c8d4840b90a14b4d06affd6c8", "id": "kf_every_run_listed_as_failed", "outcome": "killed"}
