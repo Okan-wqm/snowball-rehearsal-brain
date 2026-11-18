@@ -496,8 +496,8 @@
   {
    "id": "ck_bc_counts",
    "file": "gate/check.py",
-   "old": "return {\"reasons\": [], \"counts\": _counts(run)}",
-   "new": "return {\"reasons\": [], \"counts\": {}}",
+   "old": "return {\"reasons\": [], \"counts\": _counts(run), \"fixable\": fixable(run)}",
+   "new": "return {\"reasons\": [], \"counts\": {}, \"fixable\": fixable(run)}",
    "tests": [
     "test_activate.Activation.test_d5s_merge_landed_rejects_recorded_one_orphan_state",
     "test_activate.Activation.test_the_ratchet_base_is_the_referees_run"
