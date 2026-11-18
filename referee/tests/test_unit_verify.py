@@ -844,6 +844,54 @@ class Run(Base):
         copied = sum(len(f) for _, _, f in os.walk(staging))
         self.assertLessEqual(copied, 2)
 
+    def staged(self, files: dict, inputs: list[str], target: dict | None = None) -> set[str]:
+        write_tree(self.tree, files)
+        derived = U.D.derive(self.tree, target)
+        staging = os.path.join(self.base, "stage")
+        os.mkdir(staging)
+        U.copy_inputs(self.tree, inputs, derived, staging, 1 << 20)
+        return {os.path.relpath(os.path.join(d, f), staging).replace(os.sep, "/")
+                for d, _, fs in os.walk(staging) for f in fs}
+
+    def test_a_directory_with_an_output_name_is_copied_under_an_input(self):
+        names = {"lib/%s/index.js" % n: "x" for n in U.D.OUTPUT_DIR_NAMES}
+        names.update({"lib/sub/Dist/deep/m.js": "x", "lib/dist/coverage/c.js": "x"})
+        got = self.staged(names, ["lib"])
+        self.assertEqual(got, set(names) | {"lib/shared.py"})
+        self.assertIn("lib/dist", U.D.derive(self.tree)["excluded_dirs"], "still excluded by the derivation")
+
+    def test_what_is_not_loaded_is_left_out_whatever_holds_it(self):
+        left = ["lib/node_modules/p/i.js", "lib/dist/Node_Modules/p/i.js", "lib/dist/.claude/s.json",
+                "lib/dist/CLAUDE.md", "lib/dist/vendored/v.js", "lib/dist/.git/HEAD", "lib/coverage/.envrc"]
+        left += ["lib/%s/w" % n for n in U.D.AGENT_WORKSPACE_DIR_NAMES]
+        left += ["lib/dist/%s/w" % n.upper() for n in U.D.AGENT_WORKSPACE_DIR_NAMES]
+        files = dict.fromkeys(left, "x")
+        files["lib/dist/kept.js"] = "x"
+        got = self.staged(files, ["lib"], {"excluded_paths": ["vendored"]})
+        self.assertEqual(got, {"lib/shared.py", "lib/dist/kept.js"})
+
+    def test_an_input_that_is_an_output_directory_is_copied_and_one_not_loaded_is_not(self):
+        files = {"lib/dist/a.js": "x", "lib/.cursor/w": "x", "lib/vendored/v.js": "x", "lib/coverage/c": "x"}
+        files.update({"lib/.codex/w": "x", "lib/node_modules/p/i.js": "x"})
+        got = self.staged(files, ["lib/dist", "lib/.cursor", "lib/vendored", "lib/coverage/c", "lib/.codex/w",
+                                  "lib/node_modules/p/i.js"], {"excluded_paths": ["vendored"]})
+        self.assertEqual(got, {"lib/dist/a.js", "lib/coverage/c"})
+        self.assertEqual(sorted(os.listdir(os.path.join(self.base, "stage", "lib"))), ["coverage", "dist"],
+                         "not as an empty directory either")
+
+    def test_the_name_groups_are_the_excluded_names_in_their_order(self):
+        D = U.D
+        self.assertEqual(D.INSTALLED_DIR_NAMES + D.OUTPUT_DIR_NAMES + D.AGENT_WORKSPACE_DIR_NAMES,
+                         D.EXCLUDED_DIR_NAMES)
+        self.assertEqual(D.INSTALLED_DIR_NAMES, ("node_modules",))
+        self.assertEqual(D.AGENT_WORKSPACE_DIR_NAMES, (".cursor", ".codex", ".gemini", ".windsurf", ".continue",
+                                                       ".roo", ".aider.tags.cache.v3"))
+        d = D.derive(self.tree)
+        for name in D.EXCLUDED_DIR_NAMES:
+            self.assertEqual(D.excluded(d, "a/%s/b" % name), "excluded_dir", name)
+            self.assertEqual(D.not_staged(d, "a/%s/b" % name),
+                             None if name in D.OUTPUT_DIR_NAMES else "excluded_dir", name)
+
     def test_test_total_s_caps_the_test_command(self):
         runner = Clockless("pkg/run_tests.py", 5)
         report = self.verify(recipe(limits={"test_total_s": 1}), runner=runner)

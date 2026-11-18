@@ -93,9 +93,11 @@ The run (``verify``), only when the static check passes (steps 1-3 are ``stage``
 
 1. Worktree. The inputs are copied from the tree into a fresh staging directory, topmost input first,
    without following symlinks (a symlink is copied as a symlink; its target is not; a FIFO, socket or
-   device is not copied); an entry the
-   derivation excludes (agent configuration, excluded directory names such as ``node_modules``, the
-   operator's ``excluded_paths``) and ``.git`` are left out even under an input such as ``.``. Their
+   device is not copied); ``.git`` and an entry ``derive.not_staged`` names (agent configuration, the
+   operator's ``excluded_paths``, ``node_modules``, another agent's workspace directory) are left out even
+   under an input such as ``.``. Every other entry under an input is copied, a directory with a
+   build-output, cache or other dependency name (``dist``, ``coverage``, ``.venv``, ...) included: the
+   derivation excludes those from scanning and from diffs, not from what a command may load. Their
    regular files' bytes above ``unit_inputs_bytes`` stop the run (``limit_hit:unit_inputs_bytes``).
 2. Dependencies. The ``deps`` artifact is taken by its address (MF5 ``verify``); its lock must be the
    tree's lock byte for byte (``deps_lock_mismatch``). The rows are sorted by the container's platform
@@ -640,7 +642,7 @@ def copy_inputs(tree: str, inputs: list[str], derived: dict, staging: str, limit
     total = 0
     tops = D.minimal(D.norm_path(p) for p in inputs)
     for top in tops:
-        if top != "." and D.excluded(derived, top):
+        if top != "." and D.not_staged(derived, top):
             continue
         stack = [top]
         while stack:
@@ -656,7 +658,7 @@ def copy_inputs(tree: str, inputs: list[str], derived: dict, staging: str, limit
                 os.makedirs(dst, exist_ok=True)
                 for name in sorted(os.listdir(src), reverse=True):
                     child = name if rel == "." else rel + "/" + name
-                    if name != ".git" and not D.excluded(derived, child):
+                    if name != ".git" and not D.not_staged(derived, child):
                         stack.append(child)
             elif stat.S_ISREG(st.st_mode):
                 shutil.copy2(src, dst, follow_symlinks=False)

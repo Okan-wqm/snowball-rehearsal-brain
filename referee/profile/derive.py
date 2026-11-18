@@ -27,6 +27,14 @@ What ``derive`` returns, and the exact rule for each field (all paths are relati
   other agents' workspace names (``EXCLUDED_DIR_NAMES``); an entry with such a name is excluded, and
   ``excluded_dirs`` lists the topmost ones found. ``.git`` is skipped and not listed. Other names are
   not excluded here; the operator's ``excluded_paths`` is the channel for them.
+  Excluded and staged (``not_staged``, the one rule ``unit_verify.copy_inputs`` copies by): excluded says an
+  entry is not scanned as application code and is closed to a diff; it does not say a unit's commands can
+  run without it. A unit's worktree leaves out agent configuration and the operator's ``excluded_paths``
+  (tohum/14: not loaded), ``INSTALLED_DIR_NAMES`` (``node_modules``: the staging writes the lock's own) and
+  ``AGENT_WORKSPACE_DIR_NAMES``; an entry whose only excluded components are the other names
+  (``OUTPUT_DIR_NAMES``: ``dist``, ``coverage``, ``.cache``, ...) is copied when it is under an input, since
+  a tree may hold such a directory as content its commands load (a package whose entry file is under
+  ``dist``). Names are compared after casefold, as ``excluded`` does.
 - ``languages``: ``{name: {files: n}}`` over regular files that are not excluded, by file extension
   (``EXTENSIONS``, casefolded). A file with another extension, or none, counts for no language.
 - ``security_paths``: topmost paths (file or directory, symlinks included, excluded ones not) one of
@@ -161,11 +169,13 @@ from policy import reads as P
 # for unit candidates here, the project an input belongs to (``profile.fit``) and Nx's project bounds (``profile.nx``).
 PROJECT_MANIFESTS = ("package.json", "project.json")
 AGENT_CONFIG = (".claude", "CLAUDE.md", "AGENTS.md", ".mcp.json", ".vscode", ".envrc", ".devcontainer")
-EXCLUDED_DIR_NAMES = (
-    "node_modules", "bower_components", "jspm_packages", "dist", "coverage", ".nyc_output", ".next", ".nuxt",
+INSTALLED_DIR_NAMES = ("node_modules",)
+OUTPUT_DIR_NAMES = (
+    "bower_components", "jspm_packages", "dist", "coverage", ".nyc_output", ".next", ".nuxt",
     ".turbo", ".parcel-cache", ".cache", "__pycache__", ".venv", ".tox", ".mypy_cache", ".pytest_cache",
-    ".cursor", ".codex", ".gemini", ".windsurf", ".continue", ".roo", ".aider.tags.cache.v3",
 )
+AGENT_WORKSPACE_DIR_NAMES = (".cursor", ".codex", ".gemini", ".windsurf", ".continue", ".roo", ".aider.tags.cache.v3")
+EXCLUDED_DIR_NAMES = INSTALLED_DIR_NAMES + OUTPUT_DIR_NAMES + AGENT_WORKSPACE_DIR_NAMES
 SECURITY_KEYWORDS = ("auth", "guard", "security", "session", "token", "secret", "crypto", "tenant",
                      "permission", "role", "policy", "payment", "billing", "pii")
 SAFETY_KEYWORDS = ("pump", "pompa", "aerat", "havalandir", "oxygen", "oksijen", "feeding", "feeder", "besleme",
@@ -194,6 +204,7 @@ _AGENT = frozenset(n.casefold() for n in AGENT_CONFIG)
 AGENT_CONFIG_DIRS = frozenset(n.casefold() for n in (".claude", ".vscode", ".devcontainer"))
 AGENT_CONFIG_FILES = frozenset(n.casefold() for n in AGENT_CONFIG) - AGENT_CONFIG_DIRS
 _EXCL_DIR = frozenset(n.casefold() for n in EXCLUDED_DIR_NAMES)
+_NOT_STAGED_DIR = frozenset(n.casefold() for n in INSTALLED_DIR_NAMES + AGENT_WORKSPACE_DIR_NAMES)
 
 
 class DeriveError(ValueError):
@@ -295,6 +306,20 @@ def excluded(derived: dict, path: str) -> str | None:
     if any(part in _AGENT for part in parts):
         return "agent_config"
     if any(part in _EXCL_DIR for part in parts):
+        return "excluded_dir"
+    if any(pattern_matches(p, path) for p in derived.get("excluded_paths", [])):
+        return "excluded_path"
+    return None
+
+
+def not_staged(derived: dict, path: str) -> str | None:
+    """Why ``path`` is left out of a unit's worktree, or None: ``excluded``'s answer, except that a component
+    named in ``OUTPUT_DIR_NAMES`` is no reason (see the module text, "Excluded and staged")."""
+    why = excluded(derived, path)
+    if why != "excluded_dir":
+        return why
+    parts = [part.casefold() for part in path.split("/")]
+    if any(part in _NOT_STAGED_DIR for part in parts):
         return "excluded_dir"
     if any(pattern_matches(p, path) for p in derived.get("excluded_paths", [])):
         return "excluded_path"
