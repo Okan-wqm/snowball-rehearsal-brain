@@ -16,7 +16,7 @@ bir klondan **veri olarak** okur; hedefin yönerge, ayar, hook ve MCP dosyaları
 kodunu kendi makinesinde koşturmaz, adayını hakemin yayımladığı araç çıktısından yazar
 (`asama-0/08`). Her itmeden önce son imzalı sonucu okur; ret nedenleri tiplidir ve nedeni giderilmemiş
 bir itme öğrenilmemiş ret sayılır. Sonuç `not_learning` derse oturum durur (`22a`, `29b`).
-Kapsülde `/opt/founder/ledger_index.py` vardır: defterin salt-okur dizini; tohumun ekleme aracı yoktur.
+Kapsülde `/opt/founder/ledger_index.py` vardır: defterin salt-okur dizini; tohumun ekleme aracı yoktur. Kapsülün imajı `seed/founder/Dockerfile`'dır (seed-064, E632): tabanı özetle sabitli `python:3.12-slim`'dir ve tabanın kendi derlemesi standart kütüphanenin her `*.pyc`'sini siler; imaj standart kütüphaneyi kurulurken `compileall` ile derler. Oturumda kök salt okunurdur ve `PYTHONDONTWRITEBYTECODE=1`'dir; yazılabilir yerler `/tmp`, `/home/founder` ve `/work/brain` tmpfs'leridir (`launch.py`). Hakemin konteyneri (`bootstrap.json` `image`: aynı taban, aynı özet) standart kütüphaneyi derlemeden, salt okunur kökle ve `PYTHONDONTWRITEBYTECODE=1` ile koşar (`container.py`); bu dönem onu değiştirmez.
 
 **Başlatıcı sözleşmesi** (`seed/launcher/`, tohum kodu). Operatör onu Kurucu'nun kapsülünde ya da ayrı
 bir Windows kullanıcısında koşar; Kurucu'nun yapılandırması repo dışında, başlatıcıya aittir:

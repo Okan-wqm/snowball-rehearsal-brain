@@ -4,6 +4,18 @@ Tarih: 2026-11-13 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-17, E608; Kurucu raporu, olgu): yeni kural, vaka ve mutant yok. Yanıtlanan rapor:
+  `seed-063-outside-brain-ruleset-covers-nested-brain-branches` → `25a:17` (iki hedefte `brain-disi`'nin hariç listesi
+  2026-11-17'den beri `refs/heads/brain/**`, `refs/heads/brain/**/*`, `~DEFAULT_BRANCH`; `brain/c/good`, `brain/drill/x`,
+  `brain/revert/x` için okunan kural yok). (B)'nin sekizinci ve dokuzuncu denemesi, arşiv: `CHANGELOG-7.md`. 80 satır
+  için 2026-11-13 E577–E582 kaydı `CHANGELOG-7.md`'ye taşındı.
+- 2.2 (2026-11-16, E606–E607; Kurucu raporları, olgu): yeni kural, vaka ve mutant yok. Yanıtlanan raporlar:
+  `seed-062-genesis-vector-seed-sha256-not-setups-form` → `29o:69-76` (kurulumun özetteki biçimi; `null` olabilen yalnız
+  `targets[].base_sha` ve `seed_epochs[].seed_sha256`), `29o:63-67` (`seed_epoch_seed_null`, `toy_base_empty`,
+  `toy_base_absent`: `seed_epoch.seed_sha256` `null`); hakemin özetinde 23 dönem satırı, her biri dört anahtarlı, her
+  `seed_sha256` `null`; `bootstrap_sha256` `null` vakası yok, `26c:30` türsüz (E606).
+  `seed-061-integration-cut-needs-create-exemption` → `25a:17` (iki hedefin beş ruleset'i, olgu; `brain-integration`'da
+  `do_not_enforce_on_create: true`). (B)'nin yedinci denemesi: `CHANGELOG-7.md`.
 - 2.2 (2026-11-17; gözlem): (B)'nin sekizinci denemesi, hakem koşusu 44021027967, `cek`'te `head_missing:brain/state` ile
   durdu (`brain/integration` yedinci denemeden oyuncakta duruyordu). Dokuzuncusu kırmızı. Hakem koşusu 44021409653: `yaz`
   oyuncakta `refs/heads/brain/integration`'ı yazdı, sonraki `POST /repos/Okan-wqm/snowball-rehearsal-toy/git/refs` 422

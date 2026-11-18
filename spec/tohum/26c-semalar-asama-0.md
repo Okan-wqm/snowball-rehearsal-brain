@@ -12,8 +12,8 @@ alan kapalıya düşer**: okuyucu en kısıtlayıcı değeri varsayar ve operat�
 **snowball-tests.json** (beyin kökü): `{tests: [{id, cmd, stage}], done_mf: [], lockfiles: []}`; `id`
 §0.9 test numarasıdır (`T13`); `cmd` repo kökünden koşar. `done_mf` geçerli aşamanın tablosuna göre
 bitmiş MF'lerin 1'den kesintisiz önekidir. **exit-request.json** (kök): `{stage, sha, spec_sha256}`;
-`sha` son kabul edilmiş commit, `spec_sha256` donmuş aşama dizininin hash'idir; yalnız bu dosyayı
-değiştiren push çıkış isteğidir; reddedilmiş bir istekle bayt bayt aynı dosya sonraki kod push'larında yok
+`sha` son kabul edilmiş commit (ya da başın altındaki kendi kodu, `29b` "Çıkış isteği", E630), `spec_sha256` donmuş aşama dizininin hash'idir; yalnız bu dosyayı
+değiştiren push çıkış isteğidir, kendi kodunun üstündeki commit'te gelen istek kod push'udur, çıkışı kod kabul edilince yargılanır; reddedilmiş bir istekle bayt bayt aynı dosya sonraki kod push'larında yok
 sayılır (`29b`, `asama-0/10`). Parti isteği aynı biçimdedir, `batch` alanıyla.
 
 **Aşama tablosu** (tohumda `seed/bootstrap/stages/stage0.json`; `asama-0/14`'ün makine kopyası): `{stage, mfs: [{mf, tests[],

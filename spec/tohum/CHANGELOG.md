@@ -4,6 +4,17 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-17, E630–E633; sahibin onayı, sahip kararı ve Kurucu raporları): tek turda çıkış (E630).
+  `exit-request.json` başın atası olan ve ondan başa yalnız isteğin değiştiği commit'i de adlandırabilir: push önce kod
+  olarak yargılanır; kod kabul edilirse (A) aynı koşuda aynı başta yargılanır ve geçerse o baş sabitlenir, edilmezse
+  çıkış yargılanmaz (`exit.not_judged`: `code_not_accepted`); son kabul edilmiş SHA'yı adlandıran istek değişmedi
+  (`29b:73`, `26c:14-16`). Yanıtlanan raporlar: `seed-064-capsule-stdlib-has-no-bytecode` → `24a:19` (kapsülün imajı,
+  tabanın sildiği `*.pyc`'ler, hakemin konteyneri; imaj artık standart kütüphaneyi derler, E632);
+  `seed-065-revert-trigger-without-red-test-unstated` → `07:35-39` (geri almayı `29j`'nin `unknown` dışı nedeni başlatır,
+  kırmızı testsiz `build_break` ve `lint_regression` da; flaky test doğrulanmış kırmızı değildir, `rerun` geri almaz,
+  E631), `29j:59-60` (`build_ok`'un ve lint toplamının üreticisi Kurucu'nun hakem kodudur). Sahip kararı:
+  `25a` "Dış kesinti" (E633; `ETKINLESTIRME.md` 7. adım): yalnız adı konmuş dış kesintiden kırmızı (B) koşusu o devir
+  için bir kez yeniden tetiklenir, insan dokunuşu olarak kaydedilir; yeni kod denetimi yok.
 - 2.2 (2026-11-17, E609–E611; sahip kararı, 2026-11-17): yeni `26g`. `founder` bölümüne `lesson` türü,
   `26g` (E609, E610): yükü `{summary, refs[], recheck}`; iddia tek cümle ve kendi başına anlaşılır,
   `refs[]` kanıttır, `recheck` beyin kökünden yazıldığı gibi koşan komut ya da `none: <neden>`. Yürürlükten
@@ -16,18 +27,7 @@ Okunma: bir sayfanın geçmişi aranırken
   Karmaşıklık da maliyettir (sahip kararı, 2026-11-17, `01`): sistemin kendi boyutu ölçülür ve raporlanır,
   yerini ölçülmüş ihtiyaçla hak etmeyen birleştirilir ya da kaldırılır, yeni mekanizma yalnız ölçülmüş
   ihtiyaçtan (E611). 28 mutant, CI 92 parça.
-- 2.2 (2026-11-17, E608; Kurucu raporu, olgu): yeni kural, vaka ve mutant yok. Yanıtlanan rapor:
-  `seed-063-outside-brain-ruleset-covers-nested-brain-branches` → `25a:17` (iki hedefte `brain-disi`'nin hariç listesi
-  2026-11-17'den beri `refs/heads/brain/**`, `refs/heads/brain/**/*`, `~DEFAULT_BRANCH`; `brain/c/good`, `brain/drill/x`,
-  `brain/revert/x` için okunan kural yok). (B)'nin sekizinci ve dokuzuncu denemesi, arşiv: `CHANGELOG-7.md`. 80 satır
-  için 2026-11-13 E577–E582 kaydı `CHANGELOG-7.md`'ye taşındı.
-- 2.2 (2026-11-16, E606–E607; Kurucu raporları, olgu): yeni kural, vaka ve mutant yok. Yanıtlanan raporlar:
-  `seed-062-genesis-vector-seed-sha256-not-setups-form` → `29o:69-76` (kurulumun özetteki biçimi; `null` olabilen yalnız
-  `targets[].base_sha` ve `seed_epochs[].seed_sha256`), `29o:63-67` (`seed_epoch_seed_null`, `toy_base_empty`,
-  `toy_base_absent`: `seed_epoch.seed_sha256` `null`); hakemin özetinde 23 dönem satırı, her biri dört anahtarlı, her
-  `seed_sha256` `null`; `bootstrap_sha256` `null` vakası yok, `26c:30` türsüz (E606).
-  `seed-061-integration-cut-needs-create-exemption` → `25a:17` (iki hedefin beş ruleset'i, olgu; `brain-integration`'da
-  `do_not_enforce_on_create: true`). (B)'nin yedinci denemesi: `CHANGELOG-7.md`.
+- 2.2 (2026-11-16 – 2026-11-17, E606–E608; Kurucu raporları, olgu): `seed-061`, `seed-062`, `seed-063`: `CHANGELOG-7.md`.
 - 2.2 (2026-11-16, E600–E605; Kurucu raporları, sahibin onayı): yeni `29z`. Önyükleme hakemi çıkış isteğinde ayrı,
   sırsız ve izinsiz `kanarya` işinde beynin `python -m runner.contained run`'ını konteynerin dışında, oyuncağın birim
   tarifinin imajında bir kez koşturur; geçerli olmayan ya da kırmızı kanarya `exit.missing`'de `canary:<durum>`, iş

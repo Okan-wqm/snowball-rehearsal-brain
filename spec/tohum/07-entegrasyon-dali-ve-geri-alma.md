@@ -32,7 +32,11 @@ nöbetçi koşusu bitince sıraya girer. Böylece her kırmızının tek bir ş�
 
 **Nöbetçi.** Her merge'den sonra hakemin nöbetçi işi (`sentinel.run`) `brain/integration` başında
 etkilenen testleri `koş` işinde koşar. Kırmızı çıkarsa önce 3/3 kuralıyla flaky olmadığı
-doğrulanır; sonra hakemin `gate.revert` işi o merge'ü geri alır. Bisect yalnız merge'ler sıralı
+doğrulanır; sonra hakemin `gate.revert` işi o merge'ü geri alır. Geri almayı başlatan nöbetçinin baştaki
+kararıdır (seed-065, E631): `29j`'nin `cause` kuralı (doğrulanmış kırmızı testler, `build_ok`, araç başına lint
+toplamları) `unknown` dışında bir neden verirse merge geri alınır; kırmızı test olmadan da `build_break` ve
+`lint_regression` geri alınır (`26f`, `asama-0/10a` #geri-alma). 3/3 kuralının flaky dediği test doğrulanmış kırmızı
+değildir; karar vermemiş (`rerun`) bir koşu henüz hiçbir şeyi geri almaz. Bisect yalnız merge'ler sıralı
 olmadığında gerekir (örneğin `main` senkronu açıldığında); o zaman `git bisect --first-parent`
 yalnız son yeşilden bu yana beynin merge commit'leri üzerinde yürür, insan commit'leri bölünmez,
 adım süresi ve sayısı `policy.json`'dadır. Bisect bir insan commit'ini gösterirse geri alınmaz;
