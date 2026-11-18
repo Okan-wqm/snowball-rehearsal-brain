@@ -2,12 +2,11 @@
   "units": [
     {
       "affected_test_cmd": [
-        "npm",
-        "--prefix",
-        "web/modules/hr-module",
-        "run",
-        "--silent",
-        "test"
+        "env",
+        "TS_NODE_COMPILER_OPTIONS={\"moduleResolution\":\"Node10\",\"module\":\"commonjs\",\"customConditions\":null}",
+        "node_modules/.bin/jest",
+        "--config",
+        "platform/libs/outbox/jest.config.json"
       ],
       "env_image": "node:20.11.0-bookworm-slim@sha256:ecc9a2581f8588014a49a523a9ed146d27963f6d988d11bd16bbdcb3598f5f98",
       "inputs": [
@@ -15,17 +14,37 @@
         "eslint.config.mjs",
         "eslint.project-overrides.mjs",
         "jest.preset.js",
-        "libs/aquaculture-engines",
+        "libs/backend-common",
         "libs/event-contracts",
         "libs/shared-contracts",
         "libs/testing",
         "package-lock.json",
+        "platform/libs/event-bus",
+        "platform/libs/outbox",
         "platform/libs/pagination-contracts",
+        "platform/libs/service-catalog",
+        "tools/aqua-ctl/aqua-ctl.ts",
         "tools/eslint-rules",
+        "tools/gates/compliance-attestation-coverage.ts",
+        "tools/gates/expand-contract-ast.ts",
+        "tools/gates/finding-evidence-shape.ts",
+        "tools/gates/finding-id-aliases.ts",
+        "tools/gates/finding-id-grammar.ts",
+        "tools/gates/finding-registry-chain.ts",
+        "tools/gates/finding-registry-events.ts",
+        "tools/gates/finding-registry-owners.ts",
+        "tools/gates/finding-registry-projection.ts",
+        "tools/gates/finding-registry-rows.ts",
+        "tools/gates/finding-registry-store.ts",
+        "tools/gates/finding-traceability.ts",
+        "tools/gates/gha-sha-pin.ts",
+        "tools/gates/git-reachability.ts",
+        "tools/gates/migration-codeowners-coverage.ts",
+        "tools/gates/npm-audit.ts",
+        "tools/gates/schema-snapshot-diff.ts",
+        "tools/scripts/backfill-schema-object-history.ts",
         "tools/toolchain/toolchain-runtime.mjs",
-        "tsconfig.base.json",
-        "web/modules/hr-module",
-        "web/shared-ui"
+        "tsconfig.base.json"
       ],
       "install_scripts_required": [
         "node_modules/@apollo/protobufjs",
@@ -46,31 +65,29 @@
       ],
       "limits": {},
       "lint_cmd": [
-        "npm",
-        "--prefix",
-        "web/modules/hr-module",
-        "run",
-        "--silent",
-        "lint",
-        "--",
+        "/bin/sh",
+        "-c",
+        "cd -- \"$0\" && exec \"$@\"",
+        "platform/libs/outbox",
+        "/work/node_modules/.bin/eslint",
+        ".",
         "--format",
         "json"
       ],
       "lockfiles": [
         "package-lock.json"
       ],
-      "path": "web/modules/hr-module",
+      "path": "platform/libs/outbox",
       "services": [],
       "test_cmd": [
-        "npm",
-        "--prefix",
-        "web/modules/hr-module",
-        "run",
-        "--silent",
-        "test"
+        "env",
+        "TS_NODE_COMPILER_OPTIONS={\"moduleResolution\":\"Node10\",\"module\":\"commonjs\",\"customConditions\":null}",
+        "node_modules/.bin/jest",
+        "--config",
+        "platform/libs/outbox/jest.config.json"
       ],
       "toolchain": "node@20.11.0",
-      "unit_id": "web-modules-hr-module"
+      "unit_id": "platform-libs-outbox"
     }
   ]
 }
