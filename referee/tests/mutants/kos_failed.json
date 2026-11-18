@@ -3,7 +3,7 @@
   {
    "id": "kf_no_key_for_a_failed_base",
    "file": "runner/kos.py",
-   "old": "        return reasons, [], failed(bad)\n",
+   "old": "        return reasons, [], failed(bad, shown)\n",
    "new": "        return reasons, [], {}\n",
    "tests": [
     "test_kos.TheBase.test_a_failing_lint_says_its_exit_code_and_what_it_wrote_on_stderr"
@@ -93,8 +93,8 @@
   {
    "id": "kf_last_run_shown",
    "file": "runner/kos.py",
-   "old": "dict(stderr_shown(rows[0][2]),",
-   "new": "dict(stderr_shown(rows[-1][2]),",
+   "old": "dict(stderr_shown(rows[0][2]) if shown else {},",
+   "new": "dict(stderr_shown(rows[-1][2]) if shown else {},",
    "tests": [
     "test_kos.TheBase.test_failed_names_only_the_failed_runs_and_shows_the_first"
    ]
@@ -133,6 +133,33 @@
    "new": "ch if \" \" <= ch <= \"\\x7f\" and ch != \"\\\\\" else",
    "tests": [
     "test_contained.ImageTest.test_escaped_leaves_printable_ascii_and_escapes_the_rest"
+   ]
+  },
+  {
+   "id": "kf_candidate_text_on_the_line",
+   "file": "runner/kos.py",
+   "old": "ctx[\"operating\"], runner, work_root, False)",
+   "new": "ctx[\"operating\"], runner, work_root, True)",
+   "tests": [
+    "test_kos.Candidates.test_a_candidate_whose_lint_fails_says_how_and_the_others_do_not"
+   ]
+  },
+  {
+   "id": "kf_base_without_text",
+   "file": "runner/kos.py",
+   "old": "ctx[\"operating\"], runner, root, True)",
+   "new": "ctx[\"operating\"], runner, root, False)",
+   "tests": [
+    "test_kos.TheBase.test_a_failing_lint_says_its_exit_code_and_what_it_wrote_on_stderr"
+   ]
+  },
+  {
+   "id": "kf_line_base_without_text",
+   "file": "runner/kos.py",
+   "old": "ctx[\"operating\"], runner, root, True)",
+   "new": "ctx[\"operating\"], runner, root, False)",
+   "tests": [
+    "test_loop_kos.KosJob.test_a_failed_lint_is_on_the_line_with_its_exit_code_and_stderr"
    ]
   }
  ]

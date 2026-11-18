@@ -47,16 +47,19 @@ not hold every configured rule, and whether a candidate's runs printed other byt
 is not 0 or 1). The reason alone does not say why (measured: a live base refused with the three reasons and
 nothing else in the ``kos`` line), so the entry of the base, and of a candidate, whose runs got the reason carries
 ``lint_failed``: ``runs``, one ``{run, exit, stderr_bytes, stderr_sha256}`` per such run in run order (the
-command's exit code as docker gave it; the count and hash of the whole stderr), and ``stderr_head`` and
-``stderr_tail`` of the first such run (``stderr_shown``): the first 800 bytes of its stderr and the last 800 of
-the bytes after those (``""`` when there are none), each decoded as UTF-8 with replacement, every character
-outside printable ASCII and the backslash escaped (``contained.escaped``, the rule of ``fault_text``), then cut
-to 800 characters (the head keeps its start, the tail its end; a cut may fall inside an escape). An entry
-without such a run has no key. The texts are bytes the tree's own code wrote in a container without network and
-with ``unit_verify.ENV`` only: they are data for the reader of the ``kos`` line, nothing here or after reads the
-key to decide, and the verdict and reasons are the same as without it. Out of scope: the stderr of the other
-failed runs beyond its count and hash, the middle of a longer stderr, a failed run's stdout, and the stderr of
-runs that are not lint runs (the staging's install runs, the test and sentinel runs) or that did not end ``ok``.
+command's exit code as docker gave it; the count and hash of the whole stderr). The base's entry has also
+``stderr_head`` and ``stderr_tail`` of the first such run (``stderr_shown``): the first 800 bytes of its stderr
+and the last 800 of the bytes after those (``""`` when there are none), each decoded as UTF-8 with replacement,
+every character outside printable ASCII and the backslash escaped (``contained.escaped``, the rule of
+``fault_text``), then cut to 800 characters (the head keeps its start, the tail its end; a cut may fall inside
+an escape). A candidate's entry has no text: its tree holds a diff the loop was given, and bytes such a diff can
+choose are not put on the line; its exit codes and hashes say whether its runs failed as the base's or as each
+other. An entry without such a run has no key. The base's texts are bytes the pulled tree's own code wrote in a
+container without network and with ``unit_verify.ENV`` only: they are data for the reader of the ``kos`` line,
+not instructions; nothing here or after reads the key to decide, and the verdict and reasons are the same as
+without it. Out of scope: the stderr of the base's other failed runs beyond count and hash, the middle of a
+longer stderr, a failed run's stdout, and the stderr of runs that are not lint runs (the staging's install
+runs, the test and sentinel runs) or that did not end ``ok``.
 
 **A candidate** ``cid`` (a directory holding ``diff.patch``; only that file is read). ``cid`` is
 ``[A-Za-z0-9][A-Za-z0-9._-]{0,127}`` (else ``candidate_id_invalid``, nothing written for it). Its worktree is a
@@ -217,22 +220,23 @@ def stderr_shown(stderr: bytes) -> dict:
             "stderr_tail": text(stderr[STDERR_SIDE:][-STDERR_SIDE:])[-STDERR_SIDE:]}
 
 
-def failed(rows: list[tuple[int, Any, bytes]]) -> dict:
+def failed(rows: list[tuple[int, Any, bytes]], shown: bool) -> dict:
     """What an index entry carries of its lint runs that got ``lint_failed:<n>``, ``rows`` being ``(n, exit,
-    stderr)`` in run order: ``{FAILED_KEY: {runs: [{run, exit, stderr_bytes, stderr_sha256}], stderr_head,
-    stderr_tail}}``, the two texts of the first row's stderr (``stderr_shown``); ``{}`` without rows."""
+    stderr)`` in run order: ``{FAILED_KEY: {runs: [{run, exit, stderr_bytes, stderr_sha256}]}}``, with
+    ``stderr_head`` and ``stderr_tail`` of the first row's stderr (``stderr_shown``) when ``shown`` (the base);
+    ``{}`` without rows."""
     if not rows:
         return {}
-    return {FAILED_KEY: dict(stderr_shown(rows[0][2]),
+    return {FAILED_KEY: dict(stderr_shown(rows[0][2]) if shown else {},
                              runs=[{"run": n, "exit": code, "stderr_bytes": len(err), "stderr_sha256": sha256(err)}
                                    for n, code, err in rows])}
 
 
 def _lint(recipe: dict, red: list, worktree: str, operating: dict, runner: C.Runner,
-          root: str) -> tuple[list, list, dict]:
+          root: str, shown: bool) -> tuple[list, list, dict]:
     """Three lint runs: ``(reasons, records, extra)``; ``records`` only when no reason but ``red_control_green``,
     ``extra`` what the index entry carries: of the runs' stdout extra with records (``lint_record.carried``), of
-    the runs that got ``lint_failed:<n>`` without them (``failed``), else ``{}``."""
+    the runs that got ``lint_failed:<n>`` without them (``failed``, its texts when ``shown``), else ``{}``."""
     reasons, stdouts, bad = [], [], []
     for n in range(1, LINT_RUNS + 1):
         run = U._one(recipe["lint_cmd"], red, recipe["env_image"], worktree, operating, runner, root)
@@ -244,7 +248,7 @@ def _lint(recipe: dict, red: list, worktree: str, operating: dict, runner: C.Run
             bad.append((n, run["exit"], run["stderr"] if isinstance(run["stderr"], bytes) else b""))
         stdouts.append(run["stdout"] if isinstance(run["stdout"], bytes) else b"")
     if [r for r in reasons if r != "red_control_green"] or len(stdouts) != LINT_RUNS:
-        return reasons, [], failed(bad)
+        return reasons, [], failed(bad, shown)
     refused, records, extras = R.runs(stdouts, worktree)
     return reasons + refused, records, R.carried(extras)
 
@@ -331,7 +335,7 @@ def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx
         bad = _patch(worktree, diff)
         if bad:
             return _verdict(bad)
-        reasons, records, extra = _lint(recipe, red, worktree, ctx["operating"], runner, work_root)
+        reasons, records, extra = _lint(recipe, red, worktree, ctx["operating"], runner, work_root, False)
         if not records:
             return dict(_verdict(reasons), **extra)
         test = U._one(recipe["test_cmd"], red, recipe["env_image"], worktree, ctx["operating"], runner, work_root,
@@ -372,7 +376,7 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
     try:
         bad, _, ctx = U.stage(recipe, tree, policy, red_control, deps, target, runner, root)
         reasons, records, extra = (bad, [], {}) if bad else _lint(recipe, red_control["cmd"], ctx["staging"],
-                                                                  ctx["operating"], runner, root)
+                                                                  ctx["operating"], runner, root, True)
         index: dict[str, Any] = {"base_run_sha256": None, "candidates": {}, "sentinel": None}
         if records and not reasons:
             base_run = R.run_file(records)

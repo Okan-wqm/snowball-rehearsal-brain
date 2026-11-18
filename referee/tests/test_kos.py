@@ -6,8 +6,8 @@ read by the gate (MF8) as they are written; with the fake runner (``fake_docker.
 - bytes a lint run printed before its document: read past for the records, named in the index entry of the base
   and of a candidate whose lint runs converted (``lint_stdout_extra``), absent without them;
 - a lint run that failed: the entry of the base and of a candidate carries each such run's exit code and its
-  stderr's count and hash, and the bounded, escaped head and tail of the first one's stderr (``lint_failed``);
-  absent from every entry without such a run; verdicts and reasons unchanged;
+  stderr's count and hash (``lint_failed``), the base's also the bounded, escaped head and tail of the first
+  one's stderr, a candidate's no text; absent from every entry without such a run; verdicts and reasons unchanged;
 - a candidate: a fresh copy of the base worktree with its diff applied (refusals of a diff that does not apply
   in place, a path outside the worktree or behind a symlink, the runs' own directory), three lint runs and one
   test run, ``checks.json`` from the TAP, ``hashes.json`` of the bytes written; ``gate.check decide`` (MF8's own
@@ -268,7 +268,7 @@ class TheBase(Base):
     def test_a_long_stderr_is_shown_by_its_two_ends_escaped_and_bounded(self):
         """Through the contained run: 800 bytes from the start, the last 800 of the rest, the middle only counted
         and hashed; bytes that are not printable ASCII arrive escaped and each text stays within 800 characters,
-        so the three runs of a base and of five candidates stay far under the 16 KiB a job's summary may have."""
+        so the entry stays far under the 16 KiB a job's summary may have."""
         err = b"first line\n" + b"h" * 789 + b"M" * 5000 + b"t" * 780 + b"\x1b[31m::warning::\xff\\ end\n"
         write_tree(self.tree, {"pkg/a.js": "LINTCRASH\n"})
         with open(os.path.join(self.tree, "pkg", "stderr.bin"), "wb") as fh:
@@ -297,12 +297,14 @@ class TheBase(Base):
         self.assertEqual(got["stderr_tail"], ("\\n" * side + "Z")[-side:])
 
     def test_failed_names_only_the_failed_runs_and_shows_the_first(self):
-        self.assertEqual(K.failed([]), {})
-        got = K.failed([(2, 134, b"heap\n"), (3, 2, b"other")])
+        self.assertEqual((K.failed([], True), K.failed([], False)), ({}, {}))
+        got = K.failed([(2, 134, b"heap\n"), (3, 2, b"other")], True)
         self.assertEqual(got, {K.FAILED_KEY: {
             "runs": [{"run": 2, "exit": 134, "stderr_bytes": 5, "stderr_sha256": sha(b"heap\n")},
                      {"run": 3, "exit": 2, "stderr_bytes": 5, "stderr_sha256": sha(b"other")}],
             "stderr_head": "heap\\n", "stderr_tail": ""}})
+        self.assertEqual(K.failed([(2, 134, b"heap\n"), (3, 2, b"other")], False),
+                         {K.FAILED_KEY: {"runs": got[K.FAILED_KEY]["runs"]}})
 
     def test_an_image_the_host_cannot_get_gives_no_base_and_nothing_runs(self):
         """What a fresh runner without a pull gave on the live loop twice (two faults in 3 s, every candidate
@@ -479,16 +481,16 @@ class Candidates(Base):
         self.assertFalse(os.path.exists(os.path.join(self.out, "c", "bad")))
 
     def test_a_candidate_whose_lint_fails_says_how_and_the_others_do_not(self):
-        """The candidate's own entry carries its failed runs (its tree's stderr, not the base's); the base and a
-        candidate whose lint ran have no such key."""
+        """The candidate's own entry carries its failed runs' exit codes and the count and hash of what each wrote
+        on stderr, and no text of it (the bytes a diff can choose stay off the line); the base and a candidate
+        whose lint ran have no such key."""
         with open(os.path.join(self.tree, "pkg", "stderr.bin"), "wb") as fh:
             fh.write(b"TypeError: boom\n")
         index = self.results({"bad": diff("pkg/a.js", ["var a = 1;"], ["LINTCRASH"]), "good": GOOD})
         row = {"exit": 2, "stderr_bytes": 16, "stderr_sha256": sha(b"TypeError: boom\n")}
         self.assertEqual(index["candidates"]["bad"], {
             "verdict": "refused", "reasons": ["lint_failed:1", "lint_failed:2", "lint_failed:3"],
-            K.FAILED_KEY: {"runs": [dict(row, run=n) for n in (1, 2, 3)], "stderr_head": "TypeError: boom\\n",
-                           "stderr_tail": ""}})
+            K.FAILED_KEY: {"runs": [dict(row, run=n) for n in (1, 2, 3)]}})
         self.assertEqual(index["base"], {"verdict": "verified", "reasons": []})
         self.assertEqual(index["candidates"]["good"], {"verdict": "verified", "reasons": []})
 
