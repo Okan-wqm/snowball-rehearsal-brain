@@ -25,9 +25,10 @@ Any reason is ``Refused`` with it; nothing is decided from a sentinel this reade
 
 **The base's lint** (``base_lint(results)``): ``base.jsonl`` of the results with ``index.json``'s
 ``base_run_sha256``, read by ``gate.check.base_counts`` (the hash, the three records one): ``{base_run_sha256,
-counts}`` or ``None`` when there is no such file, its hash or records do not hold, or ``run_file`` refuses it.
+counts, fixable}`` or ``None`` when there is no such file, its hash or records do not hold, or ``run_file`` refuses it.
 It is the lint at ``brain/integration``'s head: D6 records it as the ``ratchet_base`` of a cycle that merges (the
-merge's lint before) and D7 reads it as a red's lint after.
+merge's lint before) and as the ``observation`` of a base run not yet published, and D7 reads it as a red's lint
+after.
 
 **The head's build** (``base_build(results)``). ``build_ok`` is whether the code at the red head built and loaded
 (tohum/29j); the seed leaves its producer to this code (its answer to seed-044). A stage 0 unit has no build command
@@ -144,7 +145,7 @@ def base_run(results: str) -> tuple[bytes, str] | None:
 
 
 def base_lint(results: str) -> dict | None:
-    """``{base_run_sha256, counts}`` of the results' base run, or ``None``; see the module docstring."""
+    """``{base_run_sha256, counts, fixable}`` of the results' base run, or ``None``; see the module docstring."""
     given = base_run(results)
     if given is None:
         return None
@@ -153,7 +154,7 @@ def base_lint(results: str) -> dict | None:
         got = check.base_counts(raw, sha)
     except check.Unusable:
         return None
-    return None if got["reasons"] else {"base_run_sha256": sha, "counts": got["counts"]}
+    return None if got["reasons"] else {"base_run_sha256": sha, "counts": got["counts"], "fixable": got["fixable"]}
 
 
 def base_build(results: str) -> bool | None:

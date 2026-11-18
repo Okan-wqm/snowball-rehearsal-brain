@@ -12,7 +12,8 @@ extracted to (the tree D3 ran on and D5 judged); ``decided``, ``loop.decide``'s 
 the cost rows of this cycle's ``response`` (``loop.cagir.read_response``); ``writer``, a ``target.write.Writer`` on
 the target's repository; ``signer``, the root's signer (``loop.sign.SigstoreSigner`` in the job); ``imports``,
 ``setup/imports.jsonl``'s bytes (``status.block``'s human-touch count); ``cycle_id`` and ``ts``; ``base_lint``,
-the lint totals of the base this cycle's ``kos`` ran (``loop.watch.base_lint``: ``{base_run_sha256, counts}``,
+the lint totals of the base this cycle's ``kos`` ran (``loop.watch.base_lint``: ``{base_run_sha256, counts,
+fixable}``,
 required when D5 chose a merge, else ``Unusable``); ``end``, D7's sentinel to end, ``{merge_sha, verdict, runs,
 flaky, sha256, facts}`` (``loop.watch.read``'s verified answer at ``brain/integration``'s head, with
 ``loop.watch.facts``), or ``None``; ``drill``, ``loop.drill.step``'s answer or ``None``: only ``commit``
@@ -54,7 +55,10 @@ A failure after the first write of step 4 or 5 is ``target.land.HardStop`` namin
 
 **The rows**, in this order, each ``ledger.events``': ``cycle_start {cycle_id}``; ``ratchet_base {base_run_sha256,
 counts}`` when the cycle merges or plants (``base_lint``: the merge's lint before, which a later revert reads with
-``ledger.serial.lint_before``); per candidate in code-point order of its id, ``ledger.events.decided``'s rows (a
+``ledger.serial.lint_before``); ``observation {base_run_sha256, fixable}`` when ``base_lint`` is given and its
+``base_run_sha256`` is not the one of the ledger's last observation row (``ledger.serial.observed``): the base's
+published tool output (asama-0/08 rows 1 and 6, the fields a ready candidate's ``finding.json`` takes, tohum/26c),
+once per base run, in any cycle, merging or not; per candidate in code-point order of its id, ``ledger.events.decided``'s rows (a
 reject's ``decision`` with D5's reasons and ``ledger.events.cause``; the merge's ``decision`` and then its ``merge``
 row with ``path``, ``target.land.land``'s ``{pull, head_sha, merge_sha}`` and ``hunk_covered``, the record of
 the hunks step 1 applied, ``ledger.events.hunk_covered``); ``revert {merge_sha}`` with
@@ -65,7 +69,7 @@ with ``gate`` (``harness.pass_row``'s gate); the ``pass`` row with ``passed`` (t
 they are; then
 ``status.block``'s rows (``ledger.cycle``). ``ts`` is the given time; ``snapshot_id`` is ``brain/integration``'s
 head in ``pulled`` (the snapshot D3 ran on and D5 judged; the cost row carries the same, ``loop.cagir``). Row ids are
-``<cycle_id>:start``, ``<cycle_id>:ratchet``, ``<cycle_id>:c:<cid>``, ``<cycle_id>:m:<cid>``, ``<cycle_id>:revert`` or
+``<cycle_id>:start``, ``<cycle_id>:ratchet``, ``<cycle_id>:observation``, ``<cycle_id>:c:<cid>``, ``<cycle_id>:m:<cid>``, ``<cycle_id>:revert`` or
 ``<cycle_id>:sentinel``, ``<cycle_id>:drill``, ``<cycle_id>:gate``, ``<cycle_id>:pass``, ``<cycle_id>:status``
 and the root row's ``<cycle_id>:root``. The
 status facts' ``canary_cap_usd_micros`` is ``canary_usd`` of ``pulled``'s policy (``loop.cagir.CANARY_USD``, the
@@ -87,7 +91,7 @@ from gate import revert as gate_revert
 from gate import sentinel
 from harness import pass_row as PR
 from harness import revert_drill
-from ledger import append, cycle, events, schema
+from ledger import append, cycle, events, schema, serial
 from loop import cagir
 from loop import pulled as P
 from target import branches as B
@@ -185,6 +189,13 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
                 red, cause = end, assessed["cause"]
         except (gate_revert.Unusable, sentinel.Unusable) as exc:
             raise Unusable("sentinel: %s" % cli.cause(exc)) from None
+    observe = None  # the base's tool output, published once per base run (ledger.events.observation)
+    if base_lint is not None:
+        try:
+            if serial.observed(art.state[B.STATE_LEDGER]) != base_lint["base_run_sha256"]:
+                observe = base_lint
+        except serial.Unusable as exc:
+            raise Unusable("state: %s" % cli.cause(exc)) from None
     moved = ["head_moved:%s" % b for b in P.HEAD_BRANCHES if writer.head(b) != art.heads[b]]
     if moved:
         raise Refused(moved)
@@ -194,6 +205,8 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         out = [events.start(cyc)]
         if merge is not None or planted:
             out.append(events.ratchet_base(cyc, base_lint["base_run_sha256"], base_lint["counts"]))
+        if observe is not None:
+            out.append(events.observation(cyc, observe["base_run_sha256"], observe["fixable"]))
         out += candidate_rows(cyc, decided, merged, change)
         if red is not None:
             out.append(events.revert(cyc, red["merge_sha"], cause))

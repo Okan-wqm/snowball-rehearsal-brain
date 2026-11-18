@@ -11,7 +11,9 @@ written by ``ledger.append`` (the cycle's writer) with rows of ``ledger.schema``
 - the reasons are all collected;
 - ``lint_before``: the merge's own cycle's last ratchet base before it; a planted merge's likewise (D8 writes
   its cycle's ratchet base before the plant row); none for another cycle's, a later one, a merge without a cycle start
-  or a planted merge whose cycle has none; a SHA no merge row names and an unreadable ledger answer nothing.
+  or a planted merge whose cycle has none; a SHA no merge row names and an unreadable ledger answer nothing;
+- ``observed``: none without an observation row, else the last one's base run hash in file order; an unreadable
+  ledger (a row of no known type, an observation without its ``fixable``) answers nothing.
 """
 
 from __future__ import annotations
@@ -163,6 +165,30 @@ class LintBefore(unittest.TestCase):
             self.assertEqual(ctx.exception.reasons, want)
         with self.assertRaises(SE.Unusable):
             SE.lint_before(ledger_with([row("x", "events", "nope", {})]), M1)
+
+def observation(row_id: str, sha: str) -> dict:
+    return row(row_id, "events", "observation", {"base_run_sha256": sha, "fixable": [
+        {"rule_id": "import/order", "path": "src/a.ts", "line": 3, "fix_range": [2, 4]}]})
+
+
+class Observed(unittest.TestCase):
+    """``observed``: the last observation row's base run hash, the one D6 compares with this cycle's."""
+
+    def test_the_last_observation_row(self):
+        b1, b2 = "a" * 64, "b" * 64
+        self.assertIsNone(SE.observed(ledger_with([START, merge("c1", M1)])))
+        self.assertEqual(SE.observed(ledger_with([START, observation("o1", b1)])), b1)
+        # the last one in file order, also when an earlier base comes back after another
+        self.assertEqual(SE.observed(ledger_with([START, observation("o1", b1), observation("o2", b2)])), b2)
+        self.assertEqual(SE.observed(ledger_with([START, observation("o1", b2), merge("c1", M1),
+                                                  observation("o2", b1)])), b1)
+
+    def test_an_unreadable_ledger_answers_nothing(self):
+        for rows in ([row("x", "events", "nope", {})],
+                     [row("o1", "events", "observation", {"base_run_sha256": "a" * 64})]):
+            with self.subTest(rows=rows), self.assertRaises(SE.Unusable):
+                SE.observed(ledger_with(rows))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,14 +3,15 @@
 
 Rules: tohum/26 (the ledger row; ``cause`` from its closed set on a failed or reverted event: a reject, a revert),
 tohum/26d (a merge is an ``events`` row of ``kind: merge``, its payload free), tohum/26f (``sentinel`` and ``revert``
-payloads), ``ledger.schema`` (``events`` ``cycle_start``, ``ratchet_base``, ``decision``, ``merge``, ``revert`` and
+payloads), ``ledger.schema`` (``events`` ``cycle_start``, ``ratchet_base``, ``observation``, ``decision``, ``merge``, ``revert`` and
 ``sentinel``: the shapes these rows must have; ``ledger.cycle`` checks them before anything is signed), asama-0/08 (a
 reject's reasons).
 
 ``row(cycle, suffix, kind, payload, cause, part)``: ``row_id`` ``<cycle_id>:<suffix>``, ``ts`` and ``snapshot_id``
 the cycle's, ``part`` ``events`` unless given, ``derivation`` ``tool``, ``trust`` ``verified``, no evidence refs; ``cause`` only when
-given. ``ratchet_base(cycle, base_run_sha256, counts)`` (row suffix ``ratchet``) and ``revert(cycle, merge_sha,
-cause)`` (suffix ``revert``, with the cause), ``sentinel(cycle, merge_sha, verdict, flaky)`` (suffix ``sentinel``, no
+given. ``ratchet_base(cycle, base_run_sha256, counts)`` (row suffix ``ratchet``), ``observation(cycle,
+base_run_sha256, fixable)`` (suffix ``observation``) and ``revert(cycle, merge_sha, cause)`` (suffix ``revert``, with
+the cause), ``sentinel(cycle, merge_sha, verdict, flaky)`` (suffix ``sentinel``, no
 cause; 26f's ``{merge_sha, verdict, red: [], flaky}``). ``drill(cycle, kind, payload)``: D8's row, part ``drill`` (suffix ``drill``; the payload
 ``harness.revert_drill``'s). ``decided(cycle, cid, reasons, merged)``, the rows of one candidate's decision: a reject
 is one ``decision`` row (``{decision: reject, candidate, reasons}``, suffix ``c:<cid>``) with ``cause(reasons)``; a
@@ -83,6 +84,14 @@ def ratchet_base(cycle: dict, base_run_sha256: str, counts: dict) -> dict:
     """The lint totals of the base the cycle judged (``activate``'s step 2; D6 in a cycle that merges): a later
     revert's lint before (``ledger.serial.lint_before``)."""
     return row(cycle, "ratchet", "ratchet_base", {"base_run_sha256": base_run_sha256, "counts": counts})
+
+
+def observation(cycle: dict, base_run_sha256: str, fixable: list[dict]) -> dict:
+    """The base's published tool output (asama-0/08 rows 1 and 6, "gözlem: araç çıktısı ve ``fix`` aralıkları
+    ``events``'e"): the run file's hash and ``gate.check.fixable`` of its first record, the fields of a ready
+    candidate's ``finding.json`` (tohum/26c). Written by ``activate`` beside the ratchet base and by D6 in a cycle
+    whose base run no earlier observation published (``ledger.serial.observed``)."""
+    return row(cycle, "observation", "observation", {"base_run_sha256": base_run_sha256, "fixable": fixable})
 
 
 def revert(cycle: dict, merge_sha: str, cause: str) -> dict:

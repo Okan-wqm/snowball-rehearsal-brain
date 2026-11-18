@@ -35,9 +35,10 @@ written after the candidate's ``decision`` merge row (``{decision: merge, candid
 this brain's ``conditions`` and ``not_checked``, which 26d allows) is ``harness.pass_row``'s, as is ``copy_gate``
 (``{conditions}``, the conditions of the copy's genesis gate judged open on the toy, D6's; this brain's shape,
 seed-048); and ``cycle_start``,
-``integration_cut``, ``ratchet_base`` and ``decision``
-(``payload.decision`` is the field 29n reads) are ``activate``'s (MF18; D6 writes ``cycle_start``, ``ratchet_base``
-and ``decision`` with the same builders, ``ledger.events``). Kinds no writer here produces (``rival``,
+``integration_cut``, ``ratchet_base``, ``observation`` (``{base_run_sha256, fixable}``, ``fixable`` a list of
+``FIXABLE``, ``gate.check.fixable``'s ``{rule_id, path, line, fix_range}``) and ``decision``
+(``payload.decision`` is the field 29n reads) are ``activate``'s (MF18; D6 writes ``cycle_start``, ``ratchet_base``,
+``observation`` and ``decision`` with the same builders, ``ledger.events``). Kinds no writer here produces (``rival``,
 ``accept``, ``freeze``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
 writer and its shape are added. The founder row is a session's, not the loop's: its shape and writer are
 ``ledger.founder``'s, built on ``ROW_FIELDS`` below.
@@ -263,6 +264,15 @@ DECISION = tagged("decision", {
 
 
 # asama-0/08's coverage record on a merge row (``ledger.events.hunk_covered``): stage 0 writes only unmeasured
+def _fix_range(value: Any, where: str) -> list[str]:
+    """``[first, last]``: two positive integers, ``first <= last`` (``gate.check``'s ``fix`` in base lines)."""
+    if not (isinstance(value, list) and len(value) == 2 and all(type(x) is int and x >= 1 for x in value)
+            and value[0] <= value[1]):
+        return _bad(where, "not [first, last] base lines")
+    return []
+
+
+FIXABLE = shape({"rule_id": text, "path": text, "line": positive, "fix_range": _fix_range})  # gate.check.fixable
 HUNK_COVERED = list_of(shape({"path": text, "old_start": count, "old_count": count, "new_start": count,
                               "new_count": count, "covered": one_of("unmeasured"), "reason": one_of("no_coverage_tool")}))
 MERGE = shape({"candidate": text, "path": text, "pull": positive, "head_sha": hex40, "merge_sha": hex40,
@@ -288,6 +298,7 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
     ("events", "cycle_start"): (shape({"cycle_id": text}), False),
     ("events", "integration_cut"): (shape({"branch": one_of(INTEGRATION), "base_sha": hex40}), False),
     ("events", "ratchet_base"): (shape({"base_run_sha256": hex64, "counts": map_of(count)}), False),
+    ("events", "observation"): (shape({"base_run_sha256": hex64, "fixable": list_of(FIXABLE)}), False),
     ("events", "decision"): (DECISION, _rejected),
     ("events", "revert"): (shape({"merge_sha": hex40}), True),
     ("events", "merge"): (lambda p, where: MERGE(p, where) or _hunk_paths(p, where), False),

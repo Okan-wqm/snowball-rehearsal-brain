@@ -374,7 +374,7 @@ class Activation(unittest.TestCase):
         self.assertEqual([(r["kind"], r["row_id"]) for r in rows], [
             ("genesis", AW.CYCLE + ":genesis"), ("cycle_start", AW.CYCLE + ":start"),
             ("integration_cut", AW.CYCLE + ":cut"), ("ratchet_base", AW.CYCLE + ":ratchet"),
-            ("decision", AW.CYCLE + ":c:bad-path"), ("decision", AW.CYCLE + ":c:bad-ratchet"),
+            ("observation", AW.CYCLE + ":observation"), ("decision", AW.CYCLE + ":c:bad-path"), ("decision", AW.CYCLE + ":c:bad-ratchet"),
             ("decision", AW.CYCLE + ":c:bad-scope"), ("decision", AW.CYCLE + ":c:bad-test"),
             ("decision", AW.CYCLE + ":c:good"), ("merge", AW.CYCLE + ":m:good"), ("cost", "cagir-41-1"),
             ("status", AW.CYCLE + ":status")])
@@ -382,22 +382,27 @@ class Activation(unittest.TestCase):
         self.assertEqual(rows[1]["payload"], {"cycle_id": AW.CYCLE})
         self.assertEqual(rows[2]["payload"], {"branch": "brain/integration", "base_sha": w.main})
         self.assertEqual(rows[3]["payload"], {"base_run_sha256": sha(AW.BASE_RUN), "counts": {"eslint": 2}})
+        # the published tool output: each finding of the base's first record with its fix range, the fields of a
+        # ready candidate's finding.json (tohum/26c), and the run file's hash beside them
+        self.assertEqual(rows[4]["payload"], {"base_run_sha256": sha(AW.BASE_RUN), "fixable": [
+            {"rule_id": "no-var", "path": "src/a.js", "line": 2, "fix_range": [2, 2]},
+            {"rule_id": "no-var", "path": "src/a.js", "line": 3, "fix_range": [3, 3]}]})
         self.assertEqual({(r["ts"], r["snapshot_id"]) for r in rows if r["part"] == "events"}, {(AW.TS, w.main)})
-        for r in rows[4:8]:
+        for r in rows[5:9]:
             cid = r["payload"]["candidate"]
             self.assertEqual(r["payload"], {"decision": "reject", "candidate": cid,
                                             "reasons": [AW.EXPECTED_REJECTS[cid][0]]})
             self.assertEqual(r["cause"], AW.EXPECTED_REJECTS[cid][1], r["row_id"])
         # the merge: its decision row, then tohum/26d's merge row with target.land's answer and asama-0/08's
         # coverage record of the good candidate's one hunk (@@ -2 +2 @@ of src/a.js), unmeasured at stage 0
-        self.assertEqual(rows[8]["payload"], {"decision": "merge", "candidate": "good"})
-        self.assertEqual((rows[9]["part"], rows[9]["payload"]), ("events", dict(out["merge"], hunk_covered=[
+        self.assertEqual(rows[9]["payload"], {"decision": "merge", "candidate": "good"})
+        self.assertEqual((rows[10]["part"], rows[10]["payload"]), ("events", dict(out["merge"], hunk_covered=[
             {"path": "src/a.js", "old_start": 2, "old_count": 1, "new_start": 2, "new_count": 1,
              "covered": "unmeasured", "reason": "no_coverage_tool"}])))
         self.assertEqual(out["merge"]["path"], "src/a.js")
-        self.assertNotIn("cause", rows[8])
         self.assertNotIn("cause", rows[9])
-        self.assertEqual(rows[10]["payload"], w.cost[0]["payload"])  # the canary's cost row as it is
+        self.assertNotIn("cause", rows[10])
+        self.assertEqual(rows[11]["payload"], w.cost[0]["payload"])  # the canary's cost row as it is
         self.assertEqual([r["row_hash"] for r in rows], out["row_hashes"])
         self.assertEqual(out["rows"], len(rows))
         # the signed root verifies as the next D1 reads it
@@ -421,8 +426,8 @@ class Activation(unittest.TestCase):
         self.assertEqual(sorted(set(w.wr.written)), ["refs/heads/brain/integration", "refs/heads/brain/state"])
         rows = rows_of(w.gh.read_file("brain/state", ".brain/ledger.jsonl"))
         self.assertEqual([r["kind"] for r in rows], ["genesis", "cycle_start", "integration_cut", "ratchet_base",
-                                                     "decision", "status"])
-        self.assertEqual(rows[4]["payload"], {"decision": "reject", "candidate": "good", "reasons": ["merge_paused"]})
+                                                     "observation", "decision", "status"])
+        self.assertEqual(rows[5]["payload"], {"decision": "reject", "candidate": "good", "reasons": ["merge_paused"]})
         self.assertIn('- Last decision: "reject"\n', w.gh.read_file("brain/state", ".brain/status.md").decode())
 
     def test_the_ratchet_base_is_the_referees_run(self):

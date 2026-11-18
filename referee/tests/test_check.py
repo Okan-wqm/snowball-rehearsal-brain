@@ -642,6 +642,38 @@ class Decision(unittest.TestCase):
                 c.decide()
 
 
+class BaseRun(unittest.TestCase):
+    """``base_counts``: one reading of a base run file for the ratchet base and the observation; ``fixable`` lists
+    the first record's findings that carry a fix, in record order, as tohum/26c's ``finding.json`` fields."""
+
+    REC = {"tool": "eslint", "violations": [
+        {"rule_id": "import/order", "path": "src/b.ts", "line": 4, "fix": [3, 5]},
+        {"rule_id": "no-unsafe-call", "path": "src/b.ts", "line": 9, "fix": None},
+        {"rule_id": "no-var", "path": "src/a.js", "line": 1, "fix": [1, 1]},
+        {"rule_id": "import/order", "path": "src/b.ts", "line": 4, "fix": [3, 5]}]}  # a suppressed copy counts too
+
+    def file(self, *records: dict) -> bytes:
+        return b"".join(json.dumps(r).encode() + b"\n" for r in records)
+
+    def test_counts_and_the_findings_with_a_fix(self):
+        raw = self.file(self.REC, self.REC, self.REC)
+        got = C.base_counts(raw, hashlib.sha256(raw).hexdigest())
+        self.assertEqual(got, {"reasons": [], "counts": {"eslint": 4}, "fixable": [
+            {"rule_id": "import/order", "path": "src/b.ts", "line": 4, "fix_range": [3, 5]},
+            {"rule_id": "no-var", "path": "src/a.js", "line": 1, "fix_range": [1, 1]},
+            {"rule_id": "import/order", "path": "src/b.ts", "line": 4, "fix_range": [3, 5]}]})
+        none = self.file(*[{"tool": "eslint", "violations": [self.REC["violations"][1]]}] * 3)
+        self.assertEqual(C.base_counts(none, hashlib.sha256(none).hexdigest())["fixable"], [])
+
+    def test_no_findings_without_a_verified_file(self):
+        raw = self.file(self.REC, self.REC, self.REC)
+        self.assertEqual(C.base_counts(raw, "f" * 64),
+                         {"reasons": ["base_run_hash_mismatch"], "counts": None, "fixable": None})
+        other = self.file(self.REC, dict(self.REC, violations=[]), self.REC)
+        self.assertEqual(C.base_counts(other, hashlib.sha256(other).hexdigest()),
+                         {"reasons": ["tool_nondeterministic"], "counts": None, "fixable": None})
+
+
 class CommandLine(unittest.TestCase):
 
     def cli(self, case, stdin=None):

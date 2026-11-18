@@ -68,7 +68,8 @@ the cycle id and the time. In this order; nothing is written before step 5:
    another commit than ``targets[].base_sha``), so the cut, the ratchet base and D5's decisions are of one tree.
 2. The ratchet base (asama-0/10a #taban): ``base.jsonl`` (the referee's lint tool run three times on the base tree
    in ``koş``) must hash to ``base_run_sha256`` (``base_run_hash_mismatch``) and its three records be one
-   (``tool_nondeterministic``); ``counts`` is violations per tool in its first record (``gate.check``'s count).
+   (``tool_nondeterministic``); ``counts`` is violations per tool in its first record (``gate.check``'s count)
+   and ``fixable`` its findings with a fix (``gate.check.fixable``), the observation.
 3. Reads: ``brain/state`` must not exist (``already_activated``), ``brain/integration`` must not exist
    (``integration_exists``), the ``base_sha`` commit must read. Any reason: ``Refused``. D5's merge, if any, is
    applied to its base file in ``tree`` (``loop.write_cycle.merge_change``, the application D6 makes too; a reason
@@ -81,7 +82,8 @@ the cycle id and the time. In this order; nothing is written before step 5:
    ``brain/integration``, a ``success`` check named ``target.branches.CHECK``, the merge. A reject writes nothing on
    the target.
 7. The state, ``events`` rows in this order: ``genesis`` (the payload), ``cycle_start {cycle_id}``,
-   ``integration_cut {branch, base_sha}``, ``ratchet_base {base_run_sha256, counts}``, D5's decisions in code-point
+   ``integration_cut {branch, base_sha}``, ``ratchet_base {base_run_sha256, counts}``, ``observation
+   {base_run_sha256, fixable}`` (the base's published tool output, asama-0/08 rows 1 and 6), D5's decisions in code-point
    order of the candidate id (``loop.write_cycle.candidate_rows``: a merge's ``decision {decision: merge,
    candidate}`` and its ``merge {candidate, path, pull, head_sha, merge_sha, hunk_covered}`` row, tohum/26d; a reject's
    ``decision {decision: reject, candidate, reasons}`` with ``ledger.events.cause``), the response's cost rows as
@@ -89,7 +91,7 @@ the cycle id and the time. In this order; nothing is written before step 5:
    over an empty ledger and roots file chains them, signs the root and writes its row; its files (``ledger.jsonl``,
    ``chain/root.jsonl``, ``status.md`` and the root's Sigstore bundle, all under ``.brain/``, tohum/26d "Yer") go in
    one orphan commit that opens ``brain/state``. Row ids are
-   ``<cycle_id>:genesis``, ``:start``, ``:cut``, ``:ratchet``, ``:c:<cid>``, ``:m:<cid>``, ``:status`` and the root
+   ``<cycle_id>:genesis``, ``:start``, ``:cut``, ``:ratchet``, ``:observation``, ``:c:<cid>``, ``:m:<cid>``, ``:status`` and the root
    row's ``:root``; every ``events`` row's ``snapshot_id`` is the cut.
 
 A failure after step 5 raises ``HardStop`` carrying the refs already written (tohum/25a's failure rule leaves them
@@ -310,7 +312,7 @@ def genesis(transport: Any, files: dict[str, bytes], target_id: Any) -> dict:
 
 
 def ratchet_base(base_run: bytes, base_run_sha256: str) -> dict:
-    """``{reasons, counts}``: step 2 of the activation (``gate.check.base_counts``)."""
+    """``{reasons, counts, fixable}``: step 2 of the activation (``gate.check.base_counts``)."""
     try:
         return check.base_counts(base_run, base_run_sha256)
     except check.Unusable as exc:
@@ -359,7 +361,8 @@ def activate(writer: write.Writer, files: dict[str, bytes], art: pulled.Pulled, 
     def rows(merged: dict | None) -> list[dict]:
         return [events.row(cyc, "genesis", "genesis", gen["payload"]), events.start(cyc),
                 events.row(cyc, "cut", "integration_cut", {"branch": INTEGRATION, "base_sha": cut}),
-                events.ratchet_base(cyc, base_run_sha256, base["counts"])] \
+                events.ratchet_base(cyc, base_run_sha256, base["counts"]),
+                events.observation(cyc, base_run_sha256, base["fixable"])] \
             + write_cycle.candidate_rows(cyc, decided, merged, change) + list(cost)
 
     root_row_id = "%s:root" % cycle_id

@@ -205,17 +205,30 @@ def run_file(raw: bytes, name: str) -> tuple[dict, bool]:
 
 
 def base_counts(base_run: bytes, base_run_sha256: str) -> dict:
-    """``{reasons, counts}``: the lint totals of a base run file (``base.jsonl``) whose sha256 must be
+    """``{reasons, counts, fixable}``: the lint totals of a base run file (``base.jsonl``) whose sha256 must be
     ``base_run_sha256`` (``base_run_hash_mismatch``) and whose three records must be one (``tool_nondeterministic``);
-    ``counts`` is ``{tool: violations}`` of its first record (``_counts``, criterion 5's count), ``None`` with a
-    reason. A file ``run_file`` refuses raises ``Unusable``. One reading for ``activate``'s ratchet base and the
-    loop's (``loop.watch``: a merge's lint before, a sentinel's lint after)."""
+    ``counts`` is ``{tool: violations}`` of its first record (``_counts``, criterion 5's count) and ``fixable`` its
+    findings with a ``fix`` (``fixable``), both ``None`` with a reason. A file ``run_file`` refuses raises
+    ``Unusable``. One reading for ``activate``'s ratchet base and observation and the loop's (``loop.watch``: a
+    merge's lint before, a sentinel's lint after, the cycle's observation)."""
     if hashlib.sha256(base_run).hexdigest() != base_run_sha256:
-        return {"reasons": ["base_run_hash_mismatch"], "counts": None}
+        return {"reasons": ["base_run_hash_mismatch"], "counts": None, "fixable": None}
     run, same = run_file(base_run, "base.jsonl")
     if not same:
-        return {"reasons": ["tool_nondeterministic"], "counts": None}
-    return {"reasons": [], "counts": _counts(run)}
+        return {"reasons": ["tool_nondeterministic"], "counts": None, "fixable": None}
+    return {"reasons": [], "counts": _counts(run), "fixable": fixable(run)}
+
+
+def fixable(run: dict) -> list[dict]:
+    """The findings of a run record (``run_file``'s first line) that carry a ``fix``, in record order, each
+    ``{rule_id, path, line, fix_range}`` with ``fix_range`` the record's ``fix`` (``[first, last]`` base lines): the
+    fields of tohum/26c's ``finding.json`` a ready candidate takes from the referee's published tool output
+    (asama-0/08 rows 1 and 6, "gözlem"; the observation row, ``ledger.events.observation``), but for
+    ``tool_output_sha256``, the run file's hash the row carries beside them. A finding without a fix is not
+    listed: no candidate can stay inside a range it does not have (criterion 4). Whether a path is a security,
+    excluded or agent configuration path is not judged here; the gate judges a candidate's diff (criterion 1)."""
+    return [{"rule_id": v["rule_id"], "path": v["path"], "line": v["line"], "fix_range": list(v["fix"])}
+            for v in run["violations"] if v["fix"] is not None]
 
 
 def checks_file(raw: bytes) -> dict:

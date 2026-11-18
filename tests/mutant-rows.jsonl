@@ -1,3 +1,13 @@
+{"file": "referee/tests/mutants/observation.json", "fp": "714695f8601a4e65919ff90656906bd900d5033d03eabd2e4141ba117aa26434", "id": "obs_fixable_keeps_null_fix", "outcome": "killed"}
+{"file": "referee/tests/mutants/observation.json", "fp": "5caa91695159f6b59963791e391d3f92d8bc41e469bb5822a56cfc2c553a0555", "id": "obs_fixable_range_is_the_line", "outcome": "killed"}
+{"file": "referee/tests/mutants/observation.json", "fp": "d6b63ca6aceb044e7653f832bf748c3d0e4f5f2b87838224660ab1530b4d80c1", "id": "obs_fixable_on_mismatch", "outcome": "killed"}
+{"file": "referee/tests/mutants/observation.json", "fp": "9851832aaaa3382c4ebb409a8b68c4afb574eea98f649c6b2765aac9aa73e072", "id": "obs_watch_drops_fixable", "outcome": "killed"}
+{"file": "referee/tests/mutants/observation.json", "fp": "6db65150cc27958a429f6829bfece4e957b272038a3406d2e54b024cbf632558", "id": "obs_observed_first_not_last", "outcome": "killed"}
+{"file": "referee/tests/mutants/observation.json", "fp": "5fa5022f677cf1693f44aec7a81d909d5797d70313478050c10532b83fe24988", "id": "obs_cycle_always_publishes", "outcome": "killed"}
+{"file": "referee/tests/mutants/observation.json", "fp": "f65791e78a3009f276d632bfa72d2c4530aea8199bdb65f13631db8a1135b0a8", "id": "obs_cycle_never_publishes", "outcome": "killed"}
+{"file": "referee/tests/mutants/observation.json", "fp": "bf8a841af87e1690e578df73458d3dab14e847a81953c6b2d2e4615f4c6275fa", "id": "obs_genesis_without_observation", "outcome": "killed"}
+{"file": "referee/tests/mutants/observation.json", "fp": "d69918a2f28d2c2ade46378fe0cb28857aacddd44cdbe75e989255a35c46fb79", "id": "obs_schema_range_unchecked", "outcome": "killed"}
+{"file": "referee/tests/mutants/observation.json", "fp": "5b4fe610d42b53da1143ffeb749b0ba854558a48452da79e0879bafcc5002bb0", "id": "obs_schema_range_order", "outcome": "killed"}
 {"file": "referee/tests/mutants/not_staged.json", "fp": "2861bb7e3b3cdae16146a271b079ff87132bb3b14dacc7276a93422b0e5541a6", "id": "ns_children_by_the_derivation_rule", "outcome": "killed"}
 {"file": "referee/tests/mutants/not_staged.json", "fp": "98dfb87f286c946be94d49b632f7dcd0d5166e4d6a34ee83c066a0041e5cbcb4", "id": "ns_top_input_by_the_derivation_rule", "outcome": "killed"}
 {"file": "referee/tests/mutants/not_staged.json", "fp": "b91b690bae7c177d8ac511e0a7c5658e57f08a4eddae948efa157ede909e2112", "id": "ns_top_input_always_copied", "outcome": "killed"}

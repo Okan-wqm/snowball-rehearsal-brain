@@ -62,7 +62,8 @@ class Artifacts(unittest.TestCase):
 
     def test_activation_artifacts_conform(self):
         self.assertEqual({r["kind"] for r in self.rows},
-                         {"genesis", "cycle_start", "integration_cut", "ratchet_base", "decision", "merge", "status"})
+                         {"genesis", "cycle_start", "integration_cut", "ratchet_base", "observation", "decision", "merge",
+                          "status"})
         merges = [r for r in self.rows if r["kind"] == "merge"]
         decided = [r for r in self.rows if r["kind"] == "decision" and r["payload"]["decision"] == "merge"]
         self.assertEqual([r["payload"]["candidate"] for r in merges], [r["payload"]["candidate"] for r in decided])
@@ -280,6 +281,37 @@ class Artifacts(unittest.TestCase):
                               ({"conditions": ["#kok", "#genesis"]}, "payload.conditions"),
                               ({"conditions": ["#kok", "#kok"]}, "payload.conditions"),
                               ({"conditions": [1]}, "payload.conditions[0]")):
+            with self.subTest(fragment=fragment):
+                self.assert_reason(dict(row, payload=bad), fragment)
+
+    def test_observation_row_rules(self):
+        """The base's published tool output (``ledger.events.observation``): ``{base_run_sha256, fixable}``, each
+        finding ``{rule_id, path, line, fix_range}`` (``gate.check.fixable``), no cause; an empty list conforms (a base
+        without a fixable finding says so)."""
+        cyc = {"cycle_id": "46", "ts": AW.TS, "snapshot_id": AW.SNAP}
+        one = {"rule_id": "import/order", "path": "src/a.ts", "line": 3, "fix_range": [2, 4]}
+        for fixable in ([one], [], [one, dict(one, line=9, fix_range=[9, 9])]):
+            with self.subTest(fixable=fixable):
+                row = events.observation(cyc, "a" * 64, fixable)
+                self.assertEqual((row["row_id"], row["kind"], row["part"]), ("46:observation", "observation", "events"))
+                self.assertEqual(schema.row_reasons(stored(row)), [])
+        row = events.observation(cyc, "a" * 64, [one])
+        for bad, fragment in (({"fixable": []}, "payload.base_run_sha256: missing"),
+                              ({"base_run_sha256": "a" * 64}, "payload.fixable: missing"),
+                              ({"base_run_sha256": "A" * 64, "fixable": []}, "payload.base_run_sha256"),
+                              ({"base_run_sha256": "a" * 64, "fixable": [], "counts": {}}, "payload.counts: not a field"),
+                              ({"base_run_sha256": "a" * 64, "fixable": [dict(one, fix_range=[4, 2])]},
+                               "payload.fixable[0].fix_range"),
+                              ({"base_run_sha256": "a" * 64, "fixable": [dict(one, fix_range=[0, 2])]},
+                               "payload.fixable[0].fix_range"),
+                              ({"base_run_sha256": "a" * 64, "fixable": [dict(one, fix_range=[2])]},
+                               "payload.fixable[0].fix_range"),
+                              ({"base_run_sha256": "a" * 64, "fixable": [dict(one, fix_range=None)]},
+                               "payload.fixable[0].fix_range"),
+                              ({"base_run_sha256": "a" * 64, "fixable": [dict(one, line=0)]},
+                               "payload.fixable[0].line"),
+                              ({"base_run_sha256": "a" * 64, "fixable": [{k: v for k, v in one.items() if k != "path"}]},
+                               "payload.fixable[0].path: missing")):
             with self.subTest(fragment=fragment):
                 self.assert_reason(dict(row, payload=bad), fragment)
 

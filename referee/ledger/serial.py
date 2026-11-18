@@ -32,6 +32,10 @@ is the merge's first parent (``activate`` and D6 write that row before their dec
 cycle has no ratchet base row (a plant ``harness.revert_drill.run_drill`` wrote outside the loop has none).
 The same schema check as ``unfinished`` first; a SHA no merge row names is ``Unusable`` (``not_merged:<sha>``).
 
+**The last published base** (``observed``, read by D6 before it writes an ``events``/``observation`` row): the
+``base_run_sha256`` of the ledger's last ``events``/``observation`` row, ``None`` when it has none. The same schema
+check as ``unfinished`` first.
+
 Out of scope, stated: whether a finisher's verdict is true (D7 writes it from a sentinel ``loop.watch`` verified;
 this reader reads rows); whether a merge row's SHA is on ``brain/integration`` (D1's and D6's).
 """
@@ -47,6 +51,7 @@ MERGES = (("events", "merge"), ("drill", "plant"))
 FINISHERS = (("events", "revert"), ("events", "sentinel"))
 CYCLE_START = ("events", "cycle_start")
 RATCHET_BASE = ("events", "ratchet_base")
+OBSERVATION = ("events", "observation")
 
 
 class Unusable(ValueError):
@@ -65,7 +70,7 @@ def _is_merge(row: dict) -> bool:
 
 def _rows(ledger: bytes) -> list[dict]:
     """The rows of ``ledger`` once it conforms to ``ledger.schema`` (rule 1), else ``Unusable``: one reading for
-    ``unfinished`` and ``lint_before``."""
+    ``unfinished``, ``lint_before`` and ``observed``."""
     reasons = schema.ledger_reasons(ledger)
     if reasons:
         raise Unusable(reasons)
@@ -105,3 +110,12 @@ def lint_before(ledger: bytes, merge_sha: str) -> dict[str, int] | None:
         elif _is_merge(row) and row["payload"].get("merge_sha") == merge_sha:
             return counts
     raise Unusable(["not_merged:%s" % merge_sha])
+
+
+def observed(ledger: bytes) -> str | None:
+    """The base run hash of the last observation row of ``ledger``, or ``None``; see the module docstring."""
+    last = None
+    for row in _rows(ledger):
+        if _type(row) == OBSERVATION:
+            last = row["payload"]["base_run_sha256"]
+    return last

@@ -215,7 +215,8 @@ class D6(StateBase):
         self.assertEqual(SC.ledger_reasons(new), [])
         added = rows_of(new)[len(rows_of(old)):]
         self.assertEqual([(r["row_id"], r["kind"]) for r in added],
-                         [("9-1:start", "cycle_start"), ("9-1:ratchet", "ratchet_base"), ("9-1:c:breaks", "decision"),
+                         [("9-1:start", "cycle_start"), ("9-1:ratchet", "ratchet_base"),
+                          ("9-1:observation", "observation"), ("9-1:c:breaks", "decision"),
                           ("9-1:c:good", "decision"), ("9-1:m:good", "merge"), ("cagir-9-1", "cost"),
                           ("9-1:status", "status")])
         # the merge's lint before: the base kos ran, its sha256 and its first record's violations per tool
@@ -226,6 +227,13 @@ class D6(StateBase):
         self.assertEqual(added[1]["payload"], {"base_run_sha256": hashlib.sha256(base_run).hexdigest(), "counts": counts})
         self.assertEqual(counts, {first["tool"]: 2})  # pkg/a.js's var and pkg/b.js's
         self.assertEqual(SE.lint_before(new, merge["merge_sha"]), counts)
+        # the base's published tool output: the first record's findings with their fix ranges (gate.check.fixable)
+        self.assertEqual(added[2]["payload"], {"base_run_sha256": hashlib.sha256(base_run).hexdigest(), "fixable": [
+            {"rule_id": v["rule_id"], "path": v["path"], "line": v["line"], "fix_range": v["fix"]}
+            for v in first["violations"] if v["fix"] is not None]})
+        self.assertEqual([v["path"] for v in added[2]["payload"]["fixable"]], ["pkg/a.js", "pkg/b.js"])
+        self.assertEqual(SE.observed(new), added[2]["payload"]["base_run_sha256"])
+        del added[2]  # the decisions and the merge follow it
         self.assertEqual(added[2]["payload"], {"decision": "reject", "candidate": "breaks", "reasons": ["tests_red"]})
         self.assertEqual(added[2]["cause"], "test_regression")
         # the merge: its decision row, then tohum/26d's merge row carrying target.land's answer (ledger.events.decided)
@@ -238,7 +246,7 @@ class D6(StateBase):
         self.assertNotIn("cause", added[4])
         self.assertEqual({(r["ts"], r["snapshot_id"]) for r in added if r["part"] == "events"},
                          {(YW.TS, HEADS[B.INTEGRATION])})
-        self.assertEqual((written["rows"], written["revert"]), (7, None))
+        self.assertEqual((written["rows"], written["revert"]), (8, None))
         # the root of the new ledger, signed once, its row appended; status.md's block is the last status row's
         root = AN.root_of(AN.tips(new))
         self.assertEqual([hashlib.sha256(p).hexdigest() for p in self.signer.payloads], [root])
@@ -519,8 +527,11 @@ class D7(StateBase):
         self.assertEqual(SC.ledger_reasons(new), [])
         added = rows_of(new)[len(rows_of(old_ledger)):]
         self.assertEqual([(r["row_id"], r["kind"]) for r in added],
-                         [("10-1:start", "cycle_start"), ("10-1:revert", "revert"), ("cagir-10-1", "cost"),
-                          ("10-1:status", "status")])
+                         [("10-1:start", "cycle_start"), ("10-1:observation", "observation"),
+                          ("10-1:revert", "revert"), ("cagir-10-1", "cost"), ("10-1:status", "status")])
+        # the merged head is a new base run, published in the cycle that watched it though it merges nothing
+        self.assertNotEqual(added[1]["payload"]["base_run_sha256"], SE.observed(old_ledger))
+        del added[1]
         self.assertEqual((added[1]["payload"], added[1]["cause"]), ({"merge_sha": merge_sha}, "test_regression"))
         self.assertEqual(SE.unfinished(new), [])
         self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [heads[B.STATE]])
@@ -541,8 +552,9 @@ class D7(StateBase):
         self.assertEqual(SC.ledger_reasons(new), [])
         added = rows_of(new)[len(rows_of(old_ledger)):]
         self.assertEqual([(r["row_id"], r["kind"]) for r in added],
-                         [("10-1:start", "cycle_start"), ("10-1:sentinel", "sentinel"), ("cagir-10-1", "cost"),
-                          ("10-1:status", "status")])
+                         [("10-1:start", "cycle_start"), ("10-1:observation", "observation"),
+                          ("10-1:sentinel", "sentinel"), ("cagir-10-1", "cost"), ("10-1:status", "status")])
+        del added[1]  # the merged head's base run, published (as in the red case)
         self.assertEqual((added[1]["payload"], "cause" in added[1]),
                          ({"merge_sha": merge_sha, "verdict": "green", "red": [], "flaky": []}, False))  # tohum/26f
         self.assertEqual(SE.unfinished(new), [])
@@ -699,9 +711,11 @@ class D8(StateBase):
         self.assertNotIn(key["selection"], json.dumps(out))  # the key is not in the public line before the run
         added = self.added(old)
         self.assertEqual([(r["row_id"], r["part"], r["kind"]) for r in added],
-                         [("9-1:start", "events", "cycle_start"), ("9-1:drill", "drill", "commit"),
-                          ("cagir-9-1", "cost", "cost"), ("9-1:status", "events", "status")])
-        self.assertEqual(added[1]["payload"]["commitment_sha256"], RD.commitment(key))
+                         [("9-1:start", "events", "cycle_start"), ("9-1:observation", "events", "observation"),
+                          ("9-1:drill", "drill", "commit"), ("cagir-9-1", "cost", "cost"),
+                          ("9-1:status", "events", "status")])
+        self.assertEqual(added[2]["payload"]["commitment_sha256"], RD.commitment(key))
+        observed = added[1]["payload"]["base_run_sha256"]
         # 10-1: nothing unfinished, no candidate: the key's instance is planted as the cycle's one merge
         self.assertEqual(self.next_cycle({}, "10", units=SENTINEL_UNITS)["done"], ["D3"])
         old, base = self.state[B.STATE_LEDGER], self.gh.refs[B.INTEGRATION]
@@ -720,6 +734,9 @@ class D8(StateBase):
         self.assertEqual([(r["row_id"], r["kind"]) for r in added],
                          [("10-1:start", "cycle_start"), ("10-1:ratchet", "ratchet_base"), ("10-1:drill", "plant"),
                           ("cagir-10-1", "cost"), ("10-1:status", "status")])
+        # the same base as 9-1's (a commitment writes nothing on brain/integration): published once, not again
+        self.assertEqual((added[1]["payload"]["base_run_sha256"], SE.observed(self.state_file(B.STATE_LEDGER))),
+                         (observed, observed))
         self.assertEqual(added[2]["payload"], RD.plant_payload(instance_id, plant["merge_sha"]))
         self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [plant["merge_sha"]])
         # 11-1: kos watches the planted merge; yaz reverts it with gate.revert's cause; the drill waits
@@ -735,9 +752,14 @@ class D8(StateBase):
                          (plant["merge_sha"], out["sentinel"]["cause"]))
         self.assertEqual(self.gh.read_file(B.INTEGRATION, "pkg/a.js"), A_JS.encode())
         added = self.added(old)
+        # the planted head is published when kos's base run of it verifies (a planted parse error gives none)
+        lint = WT.base_lint(self.results())
         self.assertEqual([(r["kind"], r.get("cause")) for r in added],
-                         [("cycle_start", None), ("revert", out["written"]["revert"]["cause"]), ("cost", None),
-                          ("status", None)])
+                         [("cycle_start", None)] + ([("observation", None)] if lint else [])
+                         + [("revert", out["written"]["revert"]["cause"]), ("cost", None), ("status", None)])
+        if lint:
+            self.assertEqual(added[1]["payload"], {"base_run_sha256": lint["base_run_sha256"],
+                                                   "fixable": lint["fixable"]})
         # 12-1: the planted merge is finished: the key is revealed and judged, and the next drill committed
         self.next_cycle({}, "12", units=SENTINEL_UNITS)
         old = self.state[B.STATE_LEDGER]
@@ -745,7 +767,12 @@ class D8(StateBase):
         self.assertEqual(out["drill"]["judged"]["key"], key)
         self.assertEqual((out["drill"]["action"], out["drill"]["payload"]),
                          ("commit", RD.commit_payload(RD.key(seed, "12", doc))))
-        self.assertEqual([(r["row_id"], r["kind"]) for r in self.added(old)][1], ("12-1:drill", "commit"))
+        # the revert gave back 9-1's tree, so 9-1's base run: published again only when 11-1 published the planted
+        # head's (the last observation then differs); after a planted parse error the last one is 9-1's own
+        twelve = [(r["row_id"], r["kind"]) for r in self.added(old)]
+        self.assertEqual(twelve[1:3], [("12-1:observation", "observation"), ("12-1:drill", "commit")] if lint
+                         else [("12-1:drill", "commit"), ("cagir-12-1", "cost")])
+        self.assertEqual(SE.observed(self.state_file(B.STATE_LEDGER)), observed)
         return out, key
 
     def test_each_planted_cause_is_reverted_with_the_keys_cause_and_judged_pass(self):
@@ -1336,7 +1363,8 @@ class Genesis(StateBase):
         rows = rows_of(ledger)
         self.assertEqual([(r["row_id"], r["kind"]) for r in rows],
                          [("9-1:genesis", "genesis"), ("9-1:start", "cycle_start"), ("9-1:cut", "integration_cut"),
-                          ("9-1:ratchet", "ratchet_base"), ("9-1:c:breaks", "decision"), ("9-1:c:good", "decision"),
+                          ("9-1:ratchet", "ratchet_base"), ("9-1:observation", "observation"),
+                          ("9-1:c:breaks", "decision"), ("9-1:c:good", "decision"),
                           ("9-1:m:good", "merge"), ("cagir-9-1", "cost"), ("9-1:status", "status")])
         payload = rows[0]["payload"]
         self.assertEqual((payload["target"], payload["base_sha"]), ("t1", main))
@@ -1348,7 +1376,8 @@ class Genesis(StateBase):
         with open(self.results("base.jsonl"), "rb") as fh:
             base_run = fh.read()
         self.assertEqual(rows[3]["payload"]["base_run_sha256"], hashlib.sha256(base_run).hexdigest())
-        self.assertEqual(rows[4]["payload"], {"decision": "reject", "candidate": "breaks", "reasons": ["tests_red"]})
+        self.assertEqual(rows[4]["payload"]["base_run_sha256"], hashlib.sha256(base_run).hexdigest())
+        self.assertEqual(rows[5]["payload"], {"decision": "reject", "candidate": "breaks", "reasons": ["tests_red"]})
         self.assertEqual(SE.unfinished(ledger), [merge["merge_sha"]])
         self.assertEqual([hashlib.sha256(p).hexdigest() for p in self.signer.payloads], [AN.root_of(AN.tips(ledger))])
         # the next cycle: an ordinary one on the state the activation wrote; D7 ends the merge's green sentinel

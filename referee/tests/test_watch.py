@@ -169,7 +169,19 @@ class Read(Results):
 class BaseLint(Results):
     def test_the_counts_of_a_verified_base(self):
         base = (record("eslint", 2) + b"\n") * 3
-        self.assertEqual(WT.base_lint(self.results(base=base)), {"base_run_sha256": sha(base), "counts": {"eslint": 2}})
+        self.assertEqual(WT.base_lint(self.results(base=base)),
+                         {"base_run_sha256": sha(base), "counts": {"eslint": 2}, "fixable": []})
+
+    def test_the_findings_with_a_fix_of_a_verified_base(self):
+        rec = json.dumps({"tool": "eslint", "violations": [
+            {"rule_id": "import/order", "path": "src/b.ts", "line": 4, "fix": [3, 5]},
+            {"rule_id": "no-unsafe-call", "path": "src/b.ts", "line": 9, "fix": None},
+            {"rule_id": "no-var", "path": "src/a.js", "line": 1, "fix": [1, 1]}]}).encode()
+        base = (rec + b"\n") * 3
+        self.assertEqual(WT.base_lint(self.results(base=base)), {"base_run_sha256": sha(base), "counts": {"eslint": 3},
+                                                                 "fixable": [
+            {"rule_id": "import/order", "path": "src/b.ts", "line": 4, "fix_range": [3, 5]},
+            {"rule_id": "no-var", "path": "src/a.js", "line": 1, "fix_range": [1, 1]}]})
 
     def test_none_when_it_cannot_be_read(self):
         same = (record("eslint", 2) + b"\n") * 3
