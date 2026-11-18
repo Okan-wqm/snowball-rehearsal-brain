@@ -741,10 +741,10 @@
   {
    "id": "dn_bp_name",
    "file": "runner/deps_npm.py",
-   "old": "        if len(parts) < at + 1 + width or not NAME_RE.fullmatch(name):",
-   "new": "        if len(parts) < at + 1 + width:",
+   "old": "        if len(parts) < at + 1 + width:\n            break",
+   "new": "        if len(parts) < at + 1 + width or not NAME_RE.fullmatch(\"/\".join(parts[at + 1:at + 1 + width])):\n            break",
    "tests": [
-    "test_deps_npm.TestBundled.test_bundled_path"
+    "test_deps_npm.TestBundled.test_a_bundled_directory_is_judged_whatever_it_is_called"
    ]
   },
   {
@@ -813,8 +813,8 @@
   {
    "id": "dn_tb_dot",
    "file": "runner/deps_npm.py",
-   "old": "                parts = [p for p in member.name.split(\"/\") if p not in (\"\", \".\")]",
-   "new": "                parts = [p for p in member.name.split(\"/\") if p != \"\"]",
+   "old": "    return [p for p in name.split(\"/\") if p not in (\"\", \".\")]",
+   "new": "    return [p for p in name.split(\"/\") if p != \"\"]",
    "tests": [
     "test_deps_npm.TestTarball.test_dot_component_members_are_read"
    ]
@@ -1722,7 +1722,7 @@
   {
    "id": "dn_vt_dot",
    "file": "runner/deps_npm.py",
-   "old": "                name = \"/\".join(p for p in member.name.split(\"/\") if p not in (\"\", \".\"))",
+   "old": "                name = \"/\".join(member_parts(member.name))",
    "new": "                name = member.name",
    "tests": [
     "test_deps_npm.TestNpmlock.test_tarball_members_and_mirror_entries"
@@ -2518,6 +2518,78 @@
    "new": "",
    "tests": [
     "test_deps_npm.TestBundled.test_a_bundled_directory_where_the_lock_has_an_entry_is_refused"
+   ]
+  },
+  {
+   "id": "dn_bp_dot",
+   "file": "runner/deps_npm.py",
+   "old": "        if len(parts) < at + 1 + width:\n            break",
+   "new": "        if len(parts) < at + 1 + width or parts[at + 1].startswith(\".\"):\n            break",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_bundled_directory_is_judged_whatever_it_is_called"
+   ]
+  },
+  {
+   "id": "dn_bp_dot_npm",
+   "file": "runner/deps_npm.py",
+   "old": "        if len(parts) < at + 1 + width:\n            break",
+   "new": "        if len(parts) < at + 1 + width or re.match(r\"(@[^/]+/)?\\.\", \"/\".join(parts[at + 1:at + 1 + width])):\n            break",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_bundled_directory_is_judged_whatever_it_is_called"
+   ]
+  },
+  {
+   "id": "dn_bp_short",
+   "file": "runner/deps_npm.py",
+   "old": "        if len(parts) < at + 1 + width:\n            break",
+   "new": "        if len(parts) < at + width:\n            break",
+   "tests": [
+    "test_deps_npm.TestBundled.test_bundled_path"
+   ]
+  },
+  {
+   "id": "dn_bp_case",
+   "file": "runner/deps_npm.py",
+   "old": "    while at < len(parts) and parts[at] == \"node_modules\":",
+   "new": "    while at < len(parts) and parts[at].lower() == \"node_modules\":",
+   "tests": [
+    "test_deps_npm.TestBundled.test_bundled_path"
+   ]
+  },
+  {
+   "id": "dn_bp_once",
+   "file": "runner/deps_npm.py",
+   "old": "        at += 1 + width\n    return \"/\".join(parts[:at]), parts[at:]",
+   "new": "        at += 1 + width\n        break\n    return \"/\".join(parts[:at]), parts[at:]",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_bundled_directory_is_judged_whatever_it_is_called"
+   ]
+  },
+  {
+   "id": "dn_mp_empty",
+   "file": "runner/deps_npm.py",
+   "old": "    return [p for p in name.split(\"/\") if p not in (\"\", \".\")]",
+   "new": "    return [p for p in name.split(\"/\") if p != \".\"]",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_member_is_judged_by_the_path_it_is_unpacked_to"
+   ]
+  },
+  {
+   "id": "dn_tb_top",
+   "file": "runner/deps_npm.py",
+   "old": "                parts = member_parts(member.name)\n                chain, rest = bundled_path(parts[1:])",
+   "new": "                parts = member_parts(member.name)\n                chain, rest = bundled_path(parts[1:] if parts[:1] == [\"package\"] else [])",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_member_is_judged_by_the_path_it_is_unpacked_to"
+   ]
+  },
+  {
+   "id": "dn_uv_parts",
+   "file": "profile/unit_verify.py",
+   "old": "            parts = N.member_parts(member.name)",
+   "new": "            parts = member.name.split(\"/\")",
+   "tests": [
+    "test_deps_npm.TestBundled.test_a_member_is_judged_by_the_path_it_is_unpacked_to"
    ]
   }
  ]

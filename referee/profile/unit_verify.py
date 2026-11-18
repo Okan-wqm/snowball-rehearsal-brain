@@ -696,7 +696,7 @@ def unpack(data: bytes, root: str, dest: str, budget: int) -> tuple[int, int]:
         for member in tar:
             if member.name.startswith("/") or ".." in member.name.split("/"):
                 raise _Unsafe(member.name)
-            parts = [p for p in member.name.split("/") if p not in ("", ".")]
+            parts = N.member_parts(member.name)
             if len(parts) < 2:
                 continue
             rel = "/".join(parts[1:])

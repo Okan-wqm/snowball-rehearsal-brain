@@ -60,15 +60,22 @@ or a ``<top>/binding.gyp`` member (npm's implicit ``node-gyp rebuild``), needs t
 
 Bundled packages: a tarball may carry packages of its own below ``<top>/node_modules/`` (npm's
 ``bundleDependencies``). Their bytes are the tarball's, so the tarball's ``integrity`` covers them and they
-are stored with it; what is judged of each package directory there (``bundled_path``: a chain of
-``node_modules/<name>``, at any depth, holding at least one member) is what is judged of a package: its
+are stored with it; what is judged of each package directory there (``bundled_path``: a chain of steps
+``node_modules/<dir>`` or ``node_modules/<@dir>/<dir>``, at any depth, whatever the directories are called,
+holding at least one member) is what is judged of a package: its
 ``package.json``, when it has one, must be one regular member of at most 1 MiB holding a JSON object (the
 same reasons as above, under the tarball's key); an install script there (the three ``scripts`` keys, or a
 ``binding.gyp`` directly in the directory) needs the mark of the tarball's own package, the only package the
 lock names; its licenses are reported and, with ``--product``, gated under ``<key>/<chain>``. Not judged: a
 bundled package's ``name`` and ``version`` (nothing in the lock states them; they are reported as written,
-None when not a string), whether the bundling package's manifest lists it, and members under ``node_modules``
-outside every chain (``node_modules/.bin``). The artifact's manifest has no row for a bundled package. A
+None when not a string), whether the bundling package's manifest lists it, and a ``package.json`` or
+``binding.gyp`` that is not directly in a chain's directory (``node_modules/x/lib/package.json``,
+``lib/node_modules/x/package.json``, a file ``node_modules/package.json``). The chains are a wider set than the
+directories npm reads as packages there: npm lists each ``node_modules`` and leaves out the names that start
+with ``.`` (``tests/fixtures/npm-bundled.json``, npm's own tree loader asked by ``tests/capture_npm_bundled.py``;
+``test_npm_capture`` holds every directory npm loads to be a chain), so ``node_modules/.bin`` holding a member
+is judged as a package directory here though npm reads none there. The artifact's manifest has no row for a
+bundled package. A
 bundled package directory at a path the lock has an entry for (``<key>/<chain>`` is a key of ``packages``) is
 refused (``bundled_over_lock_entry:<key>/<chain>``): two tarballs would be unpacked into one directory, and
 which npm keeps is not measured here.
@@ -572,17 +579,25 @@ def integrity_matches(data: bytes, strong: list[tuple[str, bytes]]) -> bool:
     return bool(strong) and all(hashlib.new(alg, data).digest() == digest for alg, digest in strong)
 
 
+def member_parts(name: str) -> list[str]:
+    """A tar member's name as the path components it is read by here and unpacked by in
+    ``profile.unit_verify.unpack``: split at ``/``, empty and ``.`` components dropped. The first component is
+    the tarball's top directory, whatever its name. A ``..`` component stays one (``unpack`` refuses it)."""
+    return [p for p in name.split("/") if p not in ("", ".")]
+
+
 def bundled_path(parts: list[str]) -> tuple[str, list[str]]:
     """A tarball member's path below its top directory, split at the package directory it lies in:
-    ``(chain, rest)``. ``chain`` is the longest leading run of ``node_modules/<name>`` pairs with npm names
-    (``NAME_RE``; a scoped name takes two components), written as a lock key's tail, ``""`` when the path does
-    not start with one; ``rest`` the components after it. ``node_modules/.bin/x`` has no chain: ``.bin`` is no
-    npm name."""
+    ``(chain, rest)``. ``chain`` is the longest leading run of steps ``node_modules/<dir>``, or
+    ``node_modules/<@dir>/<dir>`` when the component after ``node_modules`` starts with ``@``, whatever the
+    directories are called (``.bin``, ``_x`` and ``x y`` are steps like any other; a step is not held to npm's
+    names, because npm reads these directories by listing them, not by a name rule); it is written as a lock
+    key's tail and is ``""`` when the path does not start with a step. ``rest`` is the components after it. A
+    ``node_modules`` with nothing after it, or ``node_modules/<@dir>`` with nothing after it, is no step."""
     at = 0
     while at < len(parts) and parts[at] == "node_modules":
         width = 2 if at + 1 < len(parts) and parts[at + 1].startswith("@") else 1
-        name = "/".join(parts[at + 1:at + 1 + width])
-        if len(parts) < at + 1 + width or not NAME_RE.fullmatch(name):
+        if len(parts) < at + 1 + width:
             break
         at += 1 + width
     return "/".join(parts[:at]), parts[at:]
@@ -613,12 +628,12 @@ def inspect_tarball(data: bytes) -> tuple[str | None, dict]:
     ``binding_gyp`` whether ``binding.gyp`` lies directly in it. A bundled ``package.json`` is read by the rules of
     the package's own (a regular file of at most 1 MiB holding a JSON object, else
     ``tarball_package_json_unreadable``; two members of one path, ``tarball_ambiguous_package_json``). A member
-    below ``<top>/node_modules/`` outside every chain (``node_modules/.bin/x``) is not read."""
+    that is not directly in a chain's directory is not read."""
     found, gyp, bundled = [], False, {}
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
             for member in tar:
-                parts = [p for p in member.name.split("/") if p not in ("", ".")]
+                parts = member_parts(member.name)
                 chain, rest = bundled_path(parts[1:])
                 if chain and rest:
                     pack = bundled.setdefault(chain, {"path": chain, "found": [], "binding_gyp": False})
@@ -1070,7 +1085,7 @@ def _vector_tarball(data: bytes, where: str) -> dict:
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
             for member in tar:
-                name = "/".join(p for p in member.name.split("/") if p not in ("", "."))
+                name = "/".join(member_parts(member.name))
                 if name == "package/binding.gyp":
                     gyp = True
                 elif name == "package/package.json":

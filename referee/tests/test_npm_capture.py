@@ -16,6 +16,12 @@ step (node-semver 7.7.4, loose) asked for every value of that file's two lists. 
 reading for each value of ``READ``; for a value of ``LEFT`` it gives the string with the prefix and the trim
 taken off and nothing else (None for a value that is no string), which is never the version npm reads there.
 
+``fixtures/npm-bundled.json`` is made by ``capture_npm_bundled.py``: arborist 8.0.5's ``loadActual`` and ``npm
+rebuild`` asked, for each layout of that file, which directories below a package's own ``node_modules`` are
+packages and in which a postinstall ran. Every such directory is a chain of ``bundled_path`` (the directories
+``inspect_tarball`` judges; ``test_deps_npm.TestBundled`` runs them through a tarball), and no directory the
+capture wrote outside every chain was loaded or ran.
+
 What this does not show: that another npm version answers the same (the fixture names its versions), and the
 libc npm finds itself on a linux machine (every linux environment of the table states its libc).
 """
@@ -31,6 +37,7 @@ REFEREE = os.path.dirname(HERE)
 sys.path.insert(0, REFEREE)
 sys.path.insert(0, HERE)
 
+import capture_npm_bundled as capture_bundled  # noqa: E402
 import capture_npm_platform as capture  # noqa: E402
 import capture_npm_version as capture_version  # noqa: E402
 from runner import deps_npm  # noqa: E402
@@ -87,6 +94,38 @@ class NpmCapture(unittest.TestCase):
         self.assertTrue(any(c["read"] and c["read"] != c["value"] for c in read))
         self.assertEqual(sorted({repr(c["read"]) for c in left if not c["read"]}), ["''", "None"])
         self.assertTrue(any(c["read"] for c in left))
+
+    def test_every_directory_npm_reads_as_a_bundled_package_is_a_chain(self):
+        with open(os.path.join(HERE, "fixtures", "npm-bundled.json"), encoding="utf-8") as fh:
+            got = json.load(fh)
+        self.assertEqual((got["npm"], got["npmcli_arborist"]), ("10.9.9", "8.0.5"))
+        self.assertEqual(got["dirs"], capture_bundled.DIRS)
+        self.assertEqual([(lay["id"], lay["bundle"]) for lay in got["layouts"]],
+                         [(lay["id"], lay["bundle"]) for lay in capture_bundled.LAYOUTS])
+
+        def chain(directory: str) -> bool:
+            return deps_npm.bundled_path(directory.split("/") + ["package.json"]) == (directory, ["package.json"])
+
+        for layout in got["layouts"]:
+            for directory in layout["loaded"] + layout["ran"]:
+                with self.subTest(layout=layout["id"], directory=directory):
+                    self.assertIn(directory, got["dirs"])
+                    self.assertTrue(chain(directory))
+            self.assertLessEqual(set(layout["ran"]), set(layout["loaded"]))
+        # the other way does not hold and is not claimed: a chain npm does not read (a name that starts with a dot),
+        # and a chain npm reads and runs nothing in (a package its bundler does not list)
+        everything = got["layouts"][0]
+        self.assertEqual(everything["id"], "all_listed")
+        unread = [d for d in got["dirs"] if chain(d) and d not in everything["loaded"]]
+        self.assertEqual(unread, ["node_modules/.h", "node_modules/@s/.z", "node_modules/a/node_modules/.c",
+                                  "node_modules/.h/node_modules/e"])
+        self.assertEqual([d for d in got["dirs"] if not chain(d)],
+                         ["node_modules/a/lib/node_modules/d", "node_modules/a/lib", "lib/node_modules/g", "lib"])
+        self.assertEqual(everything["ran"], everything["loaded"])
+        for name in ("node_modules/_x", "node_modules/x y", "node_modules/@/.r", "node_modules/a/node_modules/b"):
+            self.assertIn(name, everything["ran"])              # names no npm package has, and a nested one
+        self.assertEqual([lay["ran"] for lay in got["layouts"][2:]], [[], []])
+        self.assertLess(len(got["layouts"][1]["ran"]), len(got["layouts"][1]["loaded"]))
 
     def test_the_fixture_is_the_capture_s_tables_whole(self):
         got = table()

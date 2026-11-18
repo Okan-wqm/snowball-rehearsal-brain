@@ -48,6 +48,7 @@ import ssl
 import subprocess
 import sys
 import tarfile
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
@@ -56,6 +57,7 @@ from unittest import mock
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
+from profile import unit_verify as V  # noqa: E402
 from runner import deps_npm as N  # noqa: E402
 from http_wire import Wire, answer, chunked  # noqa: E402
 from profile_tree import writable_base  # noqa: E402
@@ -793,10 +795,19 @@ class TestBundled(Base):
                            ("node_modules/@s", ("", ["node_modules", "@s"])),
                            ("node_modules/@s/y", ("node_modules/@s/y", [])),
                            ("node_modules", ("", ["node_modules"])),
-                           ("node_modules/.bin/x", ("", ["node_modules", ".bin", "x"])),
-                           ("node_modules/x/node_modules/.bin/q", ("node_modules/x", ["node_modules", ".bin", "q"])),
-                           ("node_modules/x y/package.json", ("", ["node_modules", "x y", "package.json"])),
-                           ("node_modules/@s/@t/package.json", ("", ["node_modules", "@s", "@t", "package.json"])),
+                           # a step is a directory below node_modules, whatever it is called
+                           ("node_modules/.bin/x", ("node_modules/.bin", ["x"])),
+                           ("node_modules/x/node_modules/.bin/q", ("node_modules/x/node_modules/.bin", ["q"])),
+                           ("node_modules/x y/package.json", ("node_modules/x y", ["package.json"])),
+                           ("node_modules/_x/package.json", ("node_modules/_x", ["package.json"])),
+                           ("node_modules/@s/@t/package.json", ("node_modules/@s/@t", ["package.json"])),
+                           ("node_modules/@/.r/package.json", ("node_modules/@/.r", ["package.json"])),
+                           ("node_modules/@s/package.json", ("node_modules/@s/package.json", [])),
+                           ("node_modules/x/node_modules", ("node_modules/x", ["node_modules"])),
+                           ("node_modules/x/node_modules/@t", ("node_modules/x", ["node_modules", "@t"])),
+                           ("node_modules/node_modules/x", ("node_modules/node_modules", ["x"])),
+                           ("node_modules/x/lib/node_modules/y/z", ("node_modules/x", ["lib", "node_modules", "y", "z"])),
+                           ("Node_Modules/x/package.json", ("", ["Node_Modules", "x", "package.json"])),
                            ("lib/node_modules/x/package.json", ("", ["lib", "node_modules", "x", "package.json"])),
                            ("package.json", ("", ["package.json"])), ("", ("", []))):
             with self.subTest(path=path):
@@ -812,6 +823,7 @@ class TestBundled(Base):
                 if r["key"].startswith("node_modules/left-pad")]
         self.assertEqual(rows, [
             ("node_modules/left-pad", "left-pad", "1.3.0", ["MIT"], True),
+            ("node_modules/left-pad/node_modules/.bin", None, None, [], False),
             ("node_modules/left-pad/node_modules/@s/y", "@s/y", "2.0.0", ["ISC"], True),
             ("node_modules/left-pad/node_modules/w", None, None, [], False),
             ("node_modules/left-pad/node_modules/x", "x", "1.0.0", ["MIT"], True),
@@ -832,7 +844,8 @@ class TestBundled(Base):
                       {"node_modules/@s/y/package.json": script},
                       dict(BUNDLED, **{"node_modules/x/node_modules/z/package.json": script}),
                       dict(BUNDLED, **{"node_modules/x/binding.gyp": b"{}"}),
-                      {"node_modules/w/binding.gyp": b"{}"}):
+                      {"node_modules/w/binding.gyp": b"{}"},
+                      {"node_modules/.bin/binding.gyp": b"{}"}):
             self.setUp()
             self.assertEqual(self.bundle(files)["reasons"], ["install_script_not_marked:node_modules/left-pad"], files)
             self.assertEqual(self.fx.artifacts(), [])
@@ -848,9 +861,68 @@ class TestBundled(Base):
         for files in ({"node_modules/x/package.json": dict(script, scripts={"test": "t", "prepare": "p"})},
                       {"node_modules/x/package.json": dict(script, scripts=["postinstall"])},
                       dict(BUNDLED, **{"node_modules/x/src/binding.gyp": b"{}"}),
-                      {"node_modules/.bin/binding.gyp": b"{}"}):
+                      # not directly in a chain's directory: no package directory of npm's, not judged
+                      {"node_modules/x/lib/package.json": script},
+                      {"node_modules/x/lib/node_modules/y/package.json": script},
+                      {"lib/node_modules/y/package.json": script},
+                      {"node_modules/@s/package.json": script},
+                      {"Node_Modules/x/package.json": script}):
             self.setUp()
             self.assertTrue(self.bundle(files)["ok"], files)
+
+    def test_a_bundled_directory_is_judged_whatever_it_is_called(self):
+        """The directory names are not held to npm's package names (rejected push 64e359e: ``node_modules/_x``
+        carried a postinstall the fetch never saw)."""
+        script = {"name": "p", "version": "1.0.0", "license": "MIT", "scripts": {"postinstall": "node x.js"}}
+        for name in ("_x", ".h", "x y", "UP", "~t", "n!", "-d", "\u00fc", "@s/_w", "@s/.z", "@/q", "@/.r", "@s/@t",
+                     "node_modules", "a/node_modules/_b", "a/node_modules/.c", ".h/node_modules/e"):
+            for member in ("package.json", "binding.gyp"):
+                with self.subTest(name=name, member=member):
+                    self.setUp()
+                    files = {"node_modules/%s/%s" % (name, member): script if member == "package.json" else b"{}"}
+                    self.assertEqual(self.bundle(files)["reasons"],
+                                     ["install_script_not_marked:node_modules/left-pad"])
+                    self.assertEqual(self.fx.artifacts(), [])
+                    self.assertTrue(self.fx.fetch(marks=["left-pad@1.3.0"])[0]["ok"])
+
+    def test_every_directory_npm_runs_a_bundled_script_in_is_judged(self):
+        """``fixtures/npm-bundled.json`` (``capture_npm_bundled.py``): each directory npm's loader held as a package
+        and each directory ``npm rebuild`` ran a postinstall in, as a bundled directory of a tarball here."""
+        with open(os.path.join(REFEREE, "tests", "fixtures", "npm-bundled.json"), encoding="utf-8") as fh:
+            table = json.load(fh)
+        script = {"name": "p", "version": "1.0.0", "license": "MIT", "scripts": {"postinstall": "touch ran"}}
+        npm_s = sorted({d for layout in table["layouts"] for d in layout["loaded"] + layout["ran"]})
+        self.assertIn("node_modules/_x", npm_s)
+        for directory in npm_s:
+            with self.subTest(directory=directory):
+                self.setUp()
+                self.assertEqual(self.bundle({directory + "/package.json": script})["reasons"],
+                                 ["install_script_not_marked:node_modules/left-pad"])
+                bad, info = N.inspect_tarball(tgz({"package.json": {}, directory + "/package.json": script}))
+                self.assertEqual((bad, [p["path"] for p in info["bundled"]]), (None, [directory]))
+
+    def test_a_member_is_judged_by_the_path_it_is_unpacked_to(self):
+        """``member_parts``: the top directory whatever its name, empty and ``.`` components dropped; the same
+        function names the file ``profile.unit_verify.unpack`` writes."""
+        self.assertEqual(N.member_parts("package/./node_modules//_x/package.json/"),
+                         ["package", "node_modules", "_x", "package.json"])
+        self.assertEqual(N.member_parts("/a/../b"), ["a", "..", "b"])
+        script = {"scripts": {"install": "i"}}
+        for names in (["package/package.json", "package/node_modules/_x/package.json"],
+                      ["package/package.json", "other/node_modules/_x/package.json"],
+                      ["package/package.json", "./package/./node_modules//_x/./package.json"],
+                      ["package/package.json", "/package/node_modules/_x/package.json"]):
+            with self.subTest(names=names):
+                data = tgz({names[0]: {}, names[1]: script}, top="")
+                bad, info = N.inspect_tarball(data)
+                self.assertEqual((bad, [(p["path"], N.needs_script(p["manifest"], p["binding_gyp"]))
+                                        for p in info["bundled"]]), (None, [("node_modules/_x", True)]))
+                if ".." not in names[1] and not names[1].startswith("/"):
+                    with tempfile.TemporaryDirectory() as root:   # and that is where the unpack puts it
+                        os.mkdir(os.path.join(root, "p"))
+                        V.unpack(data, root, "p", 1 << 20)
+                        with open(os.path.join(root, "p", "node_modules", "_x", "package.json"), "rb") as fh:
+                            self.assertEqual(json.loads(fh.read()), script)
 
     def test_product_gates_a_bundled_license_under_its_own_path(self):
         self.assertTrue(self.bundle(BUNDLED, product=True)["ok"])
