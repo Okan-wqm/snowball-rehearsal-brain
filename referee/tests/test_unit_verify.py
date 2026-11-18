@@ -665,6 +665,10 @@ class Run(Base):
         self.assertTrue(all(r["exit"] == 1 for r in report["runs"]["lint"]))
         self.assertTrue(all(r["exit"] == 0 for r in report["runs"]["test"]))
         self.assertTrue(all(r["red_control_exit"] == 1 for r in report["runs"]["test"]))
+        for row in report["runs"]["lint"] + report["runs"]["test"]:     # a run's bytes stay out of the report
+            self.assertEqual(sorted(row), ["duration_s", "exit", "outputs_sha256", "reasons", "red_control_exit",
+                                           "status", "stdout_sha256", "valid"])
+        json.dumps(report)
         self.assertEqual(report["deps_address"], os.path.basename(self.deps))
         self.assertEqual(report["bin_links"], ["pkg/node_modules/.bin/left-pad"])
         self.assertEqual(report["recipe"], recipe())

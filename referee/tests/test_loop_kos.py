@@ -51,6 +51,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ledger import chain as CH  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
+from runner import kos as K  # noqa: E402
 from target import branches as B  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
 from loop_inputs_world import own_path  # noqa: E402
@@ -58,6 +59,7 @@ from profile_tree import writable_base, write_tree  # noqa: E402
 from test_revert_drill import ledger_with, reverted, row  # noqa: E402
 from test_serial import START, merge  # noqa: E402
 from test_kos import A_JS, BREAKS_TEST, FINDING, GOOD, LINT, RAISES, TESTS, operating, recipe  # noqa: E402
+from test_kos import diff as kos_diff  # noqa: E402
 
 TREE = {
     ".nvmrc": "v20.11.1\n",
@@ -541,6 +543,27 @@ class KosJob(Base):
         # every contained run had the job's red control: 3 base lint, 3 x (3 lint + 1 test)
         self.assertEqual(runner.red_seen, 15)
         self.assertEqual(len(runner.calls), 30)
+
+    def test_a_failed_lint_is_on_the_line_with_its_exit_code_and_stderr(self):
+        """What the live loop's line lacked (a base refused ``lint_failed:1..3``, no cause): the target's index on
+        the job's line carries ``runner.kos``'s ``lint_failed``. Measured here at the texts' bound: five candidates
+        whose every lint run fails with a stderr that grows sixfold under escaping give a line under the 16 KiB a
+        job's summary may have (tohum/29y); more candidates than that are not measured."""
+        err = b"\xff" * 4000
+        with open(os.path.join(self.src, "pkg", "stderr.bin"), "wb") as fh:
+            fh.write(err)
+        crash = kos_diff("pkg/a.js", ["var a = 1;"], ["LINTCRASH"])
+        self.write_pulled({"c%d" % n: candidate(crash) for n in range(5)})
+        out = self.run_kos()
+        t1 = self.one(out)
+        self.assertEqual(t1["index"]["base"], {"verdict": "verified", "reasons": []})
+        row = {"exit": 2, "stderr_bytes": 4000, "stderr_sha256": hashlib.sha256(err).hexdigest()}
+        for cid in ("c0", "c4"):
+            self.assertEqual(t1["index"]["candidates"][cid], {
+                "verdict": "refused", "reasons": ["lint_failed:1", "lint_failed:2", "lint_failed:3"],
+                K.FAILED_KEY: {"runs": [dict(row, run=n) for n in (1, 2, 3)],
+                               "stderr_head": ("\\ufffd" * 800)[:800], "stderr_tail": ("\\ufffd" * 800)[-800:]}})
+        self.assertLess(len(json.dumps(out, sort_keys=True).encode()), 16 * 1024)
 
     def test_an_image_the_host_cannot_get_is_on_the_line_and_on_stderr(self):
         """The row (B)'s live attempts gave had two faults and no cause; the fresh fake host of every test here

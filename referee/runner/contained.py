@@ -688,15 +688,21 @@ def _docker_env(home: str) -> dict:
     return {"PATH": os.environ.get("PATH", os.defpath), "HOME": home}
 
 
+def escaped(text: str) -> str:
+    """``text`` in printable ASCII: every other character, and the backslash, as its ``unicode_escape`` form (a
+    line feed is ``\\n``). The one rule by which bytes a process outside this code chose are shown as text
+    (``fault_text``; ``runner.kos``'s ``stderr_shown``)."""
+    return "".join(ch if " " <= ch <= "~" and ch != "\\" else ch.encode("unicode_escape").decode("ascii")
+                   for ch in text)
+
+
 def fault_text(stderr: bytes) -> str:
     """The lines ``ensure_image`` prints for a failed pull: the first ``FAULT_BYTES`` bytes of ``stderr``, each
-    non-empty line prefixed, characters outside printable ASCII (and the backslash) escaped."""
+    non-empty line prefixed, characters outside printable ASCII (and the backslash) escaped (``escaped``)."""
     lines = []
     for line in stderr[:FAULT_BYTES].decode("utf-8", "replace").split("\n"):
         if line.strip():
-            safe = "".join(ch if " " <= ch <= "~" and ch != "\\" else ch.encode("unicode_escape").decode("ascii")
-                           for ch in line)
-            lines.append(FAULT_PREFIX + safe + "\n")
+            lines.append(FAULT_PREFIX + escaped(line) + "\n")
     return "".join(lines)
 
 

@@ -891,7 +891,8 @@ class _Timed:
         start = time.monotonic()
         res = self.inner(argv, env, self.cap if capped else timeout)
         self.calls[C._flag_value(argv, "--name")] = {"duration_s": round(time.monotonic() - start, 3),
-                                                     "capped": capped and res.timed_out, "stdout": res.stdout}
+                                                     "capped": capped and res.timed_out, "stdout": res.stdout,
+                                                     "stderr": res.stderr}
         return res
 
 
@@ -910,11 +911,11 @@ def _one(job_cmd: list, red_cmd: list, image: str, staging: str, operating: dict
     return {"valid": report["valid"], "reasons": reasons, "exit": main["exit"], "status": main["status"],
             "stdout_sha256": main.get("stdout_sha256"), "outputs_sha256": main["outputs_sha256"],
             "duration_s": timing.get("duration_s"), "red_control_exit": report["red_control"]["exit"],
-            "run_root": main["run_root"], "stdout": timing.get("stdout")}
+            "run_root": main["run_root"], "stdout": timing.get("stdout"), "stderr": timing.get("stderr")}
 
 
 def _public(run: dict) -> dict:
-    return {k: v for k, v in run.items() if k not in ("run_root", "stdout")}
+    return {k: v for k, v in run.items() if k not in ("run_root", "stdout", "stderr")}
 
 
 def _discard(run: dict) -> None:

@@ -18,8 +18,8 @@ decide`` (MF8) and ``activate`` (MF18) read; it decides nothing.
     c/<cid>/checks.json                 {red_control: pass|fail, tests: [{id, status: pass|fail}]}
     c/<cid>/hashes.json                 {"base.jsonl", "cand.jsonl", "checks.json"}: sha256 of the bytes written
     sentinel.json                       {merge_sha, runs, verdict, red, flaky}: only when a merge is watched
-    index.json                          {base: {verdict, reasons, lint_stdout_extra?}, base_run_sha256,
-                                         candidates: {cid: {verdict, reasons, lint_stdout_extra?}},
+    index.json                          {base: {verdict, reasons, lint_stdout_extra?, lint_failed?}, base_run_sha256,
+                                         candidates: {cid: {verdict, reasons, lint_stdout_extra?, lint_failed?}},
                                          sentinel: null | {merge_sha, verdict, reasons, sha256}}
 
 Verdicts are ``unit_verify``'s classes: ``verified`` (the files are written and no reason holds), ``refused`` (a
@@ -42,6 +42,21 @@ its test run gave. Nothing reads the key to decide: it says a plugin printed bes
 case: a rule the tool skipped), so a reader of the ``kos`` line can tell a base or a candidate whose record may
 not hold every configured rule, and whether a candidate's runs printed other bytes than the base's. Without
 ``base.jsonl`` no candidate runs (``base_unavailable``).
+
+**A lint run that failed** (``lint_failed:<n>``: the contained run ended ``ok`` and the command's exit code
+is not 0 or 1). The reason alone does not say why (measured: a live base refused with the three reasons and
+nothing else in the ``kos`` line), so the entry of the base, and of a candidate, whose runs got the reason carries
+``lint_failed``: ``runs``, one ``{run, exit, stderr_bytes, stderr_sha256}`` per such run in run order (the
+command's exit code as docker gave it; the count and hash of the whole stderr), and ``stderr_head`` and
+``stderr_tail`` of the first such run (``stderr_shown``): the first 800 bytes of its stderr and the last 800 of
+the bytes after those (``""`` when there are none), each decoded as UTF-8 with replacement, every character
+outside printable ASCII and the backslash escaped (``contained.escaped``, the rule of ``fault_text``), then cut
+to 800 characters (the head keeps its start, the tail its end; a cut may fall inside an escape). An entry
+without such a run has no key. The texts are bytes the tree's own code wrote in a container without network and
+with ``unit_verify.ENV`` only: they are data for the reader of the ``kos`` line, nothing here or after reads the
+key to decide, and the verdict and reasons are the same as without it. Out of scope: the stderr of the other
+failed runs beyond its count and hash, the middle of a longer stderr, a failed run's stdout, and the stderr of
+runs that are not lint runs (the staging's install runs, the test and sentinel runs) or that did not end ``ok``.
 
 **A candidate** ``cid`` (a directory holding ``diff.patch``; only that file is read). ``cid`` is
 ``[A-Za-z0-9][A-Za-z0-9._-]{0,127}`` (else ``candidate_id_invalid``, nothing written for it). Its worktree is a
@@ -116,6 +131,8 @@ from runner import lint_record as R
 import cli
 
 LINT_RUNS = 3
+FAILED_KEY = "lint_failed"
+STDERR_SIDE = 800       # bytes read from each end of a failed lint run's stderr, and characters shown of each
 CANDIDATE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 TAP_LINE = re.compile(r"(not ok|ok) ([0-9]+)(?: - (.*))?\Z")
 SKIPPED = ("skip", "todo")
@@ -188,12 +205,35 @@ def checks(stdout: bytes, exit_code: int | None, red_control_green: bool) -> byt
 
 # ---------------------------------------------------------------- runs
 
+def stderr_shown(stderr: bytes) -> dict:
+    """``{stderr_head, stderr_tail}`` of a failed run's stderr (see the module docstring, "A lint run that
+    failed"): the first ``STDERR_SIDE`` bytes and the last ``STDERR_SIDE`` of the bytes after those, each decoded
+    as UTF-8 with replacement, escaped by ``contained.escaped`` and cut to ``STDERR_SIDE`` characters (the head
+    from its end, the tail from its start)."""
+    def text(part: bytes) -> str:
+        return C.escaped(part.decode("utf-8", "replace"))
+
+    return {"stderr_head": text(stderr[:STDERR_SIDE])[:STDERR_SIDE],
+            "stderr_tail": text(stderr[STDERR_SIDE:][-STDERR_SIDE:])[-STDERR_SIDE:]}
+
+
+def failed(rows: list[tuple[int, Any, bytes]]) -> dict:
+    """What an index entry carries of its lint runs that got ``lint_failed:<n>``, ``rows`` being ``(n, exit,
+    stderr)`` in run order: ``{FAILED_KEY: {runs: [{run, exit, stderr_bytes, stderr_sha256}], stderr_head,
+    stderr_tail}}``, the two texts of the first row's stderr (``stderr_shown``); ``{}`` without rows."""
+    if not rows:
+        return {}
+    return {FAILED_KEY: dict(stderr_shown(rows[0][2]),
+                             runs=[{"run": n, "exit": code, "stderr_bytes": len(err), "stderr_sha256": sha256(err)}
+                                   for n, code, err in rows])}
+
+
 def _lint(recipe: dict, red: list, worktree: str, operating: dict, runner: C.Runner,
           root: str) -> tuple[list, list, dict]:
     """Three lint runs: ``(reasons, records, extra)``; ``records`` only when no reason but ``red_control_green``,
-    ``extra`` what the index entry carries of the runs' stdout extra (``lint_record.carried``; ``{}`` without
-    records)."""
-    reasons, stdouts = [], []
+    ``extra`` what the index entry carries: of the runs' stdout extra with records (``lint_record.carried``), of
+    the runs that got ``lint_failed:<n>`` without them (``failed``), else ``{}``."""
+    reasons, stdouts, bad = [], [], []
     for n in range(1, LINT_RUNS + 1):
         run = U._one(recipe["lint_cmd"], red, recipe["env_image"], worktree, operating, runner, root)
         reasons += [r for r in run["reasons"] if r not in reasons]
@@ -201,9 +241,10 @@ def _lint(recipe: dict, red: list, worktree: str, operating: dict, runner: C.Run
             continue
         if run["exit"] not in U.LINT_OK_EXITS:
             reasons.append("lint_failed:%d" % n)
+            bad.append((n, run["exit"], run["stderr"] if isinstance(run["stderr"], bytes) else b""))
         stdouts.append(run["stdout"] if isinstance(run["stdout"], bytes) else b"")
     if [r for r in reasons if r != "red_control_green"] or len(stdouts) != LINT_RUNS:
-        return reasons, [], {}
+        return reasons, [], failed(bad)
     refused, records, extras = R.runs(stdouts, worktree)
     return reasons + refused, records, R.carried(extras)
 
@@ -292,7 +333,7 @@ def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx
             return _verdict(bad)
         reasons, records, extra = _lint(recipe, red, worktree, ctx["operating"], runner, work_root)
         if not records:
-            return _verdict(reasons)
+            return dict(_verdict(reasons), **extra)
         test = U._one(recipe["test_cmd"], red, recipe["env_image"], worktree, ctx["operating"], runner, work_root,
                       ctx["values"]["test_total_s"])
         reasons += [r for r in test["reasons"] if r not in reasons]

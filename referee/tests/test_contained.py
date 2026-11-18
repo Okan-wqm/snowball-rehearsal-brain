@@ -997,6 +997,12 @@ class ImageTest(Base):
         self.assertEqual(long, "docker pull: " + "a" * contained.FAULT_BYTES + "\n")
         self.assertEqual(text.encode("ascii").decode("ascii"), text)
 
+    def test_escaped_leaves_printable_ascii_and_escapes_the_rest(self):
+        plain = "".join(chr(c) for c in range(0x20, 0x7f) if chr(c) != "\\")
+        self.assertEqual(contained.escaped(plain), plain)
+        self.assertEqual(contained.escaped("a\nb\r\t\\ \x1b\x7f\xe9\u2028\U0001f600"),
+                         "a\\nb\\r\\t\\\\ \\x1b\\x7f\\xe9\\u2028\\U0001f600")
+
 
 if __name__ == "__main__":
     unittest.main()

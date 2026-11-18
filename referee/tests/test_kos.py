@@ -5,6 +5,9 @@ read by the gate (MF8) as they are written; with the fake runner (``fake_docker.
   no candidate runs;
 - bytes a lint run printed before its document: read past for the records, named in the index entry of the base
   and of a candidate whose lint runs converted (``lint_stdout_extra``), absent without them;
+- a lint run that failed: the entry of the base and of a candidate carries each such run's exit code and its
+  stderr's count and hash, and the bounded, escaped head and tail of the first one's stderr (``lint_failed``);
+  absent from every entry without such a run; verdicts and reasons unchanged;
 - a candidate: a fresh copy of the base worktree with its diff applied (refusals of a diff that does not apply
   in place, a path outside the worktree or behind a symlink, the runs' own directory), three lint runs and one
   test run, ``checks.json`` from the TAP, ``hashes.json`` of the bytes written; ``gate.check decide`` (MF8's own
@@ -69,6 +72,8 @@ for name in ("pkg/a.js", "pkg/b.js"):
                  "line": line, "column": 1}]
     out.append({"filePath": "/work/" + name, "messages": msgs, "suppressedMessages": []})
 if "LINTCRASH" in open("pkg/a.js").read():
+    if os.path.exists("pkg/stderr.bin"):
+        sys.stderr.buffer.write(open("pkg/stderr.bin", "rb").read())
     sys.exit(2)
 if "GARBAGE" in open("pkg/a.js").read():
     print("not json")
@@ -214,6 +219,90 @@ class TheBase(Base):
         self.assertFalse(os.path.exists(os.path.join(self.out, "base.jsonl")))
         self.assertEqual(index["candidates"]["good"], {"verdict": "no_verdict", "reasons": ["base_unavailable"]})
         self.assertEqual(len(docker.calls), 6)
+
+    def test_a_failing_lint_says_its_exit_code_and_what_it_wrote_on_stderr(self):
+        """What the live loop's base gave (``lint_failed:1..3`` and nothing else) now names each run's exit code
+        and its stderr's count and hash, and shows the first run's stderr; verdict and reasons as before."""
+        err = b"Oops! Something went wrong! :(\n\nError: Cannot find module 'x'\n    at load (loader.js:1:1)\n"
+        write_tree(self.tree, {"pkg/a.js": "LINTCRASH\n"})
+        with open(os.path.join(self.tree, "pkg", "stderr.bin"), "wb") as fh:
+            fh.write(err)
+        index = self.results({})
+        row = {"exit": 2, "stderr_bytes": len(err), "stderr_sha256": sha(err)}
+        self.assertEqual(index["base"], {
+            "verdict": "refused", "reasons": ["lint_failed:1", "lint_failed:2", "lint_failed:3"],
+            K.FAILED_KEY: {"runs": [dict(row, run=n) for n in (1, 2, 3)],
+                           "stderr_head": "Oops! Something went wrong! :(\\n\\nError: Cannot find module 'x'\\n"
+                                          "    at load (loader.js:1:1)\\n",
+                           "stderr_tail": ""}})
+        self.assertEqual(json.loads(read(os.path.join(self.out, "index.json"))), index)
+
+    def test_only_the_runs_that_failed_are_named(self):
+        """One run of three exits outside 0 and 1 (the second, here by the runner): the entry names that run alone,
+        with its own exit code and stderr; the two runs that ended 0 or 1 are not rows."""
+        inner, seen = FakeDocker(), []
+
+        def runner(argv, env, timeout):
+            res = inner(argv, env, timeout)
+            if "pkg/lint.py" in argv:
+                seen.append(res)
+                if len(seen) == 2:
+                    return C.RunnerResult(134, res.stdout, b"FATAL ERROR: heap\n", False)
+            return res
+
+        index = self.results({}, runner=runner)
+        self.assertEqual(index["base"], {
+            "verdict": "refused", "reasons": ["lint_failed:2"],
+            K.FAILED_KEY: {"runs": [{"run": 2, "exit": 134, "stderr_bytes": 18,
+                                     "stderr_sha256": sha(b"FATAL ERROR: heap\n")}],
+                           "stderr_head": "FATAL ERROR: heap\\n", "stderr_tail": ""}})
+        self.assertEqual([res.exit for res in seen], [1, 1, 1])
+
+    def test_a_failing_lint_without_stderr_still_says_its_exit_code(self):
+        write_tree(self.tree, {"pkg/a.js": "LINTCRASH\n"})
+        index = self.results({})
+        row = {"exit": 2, "stderr_bytes": 0, "stderr_sha256": sha(b"")}
+        self.assertEqual(index["base"][K.FAILED_KEY],
+                         {"runs": [dict(row, run=n) for n in (1, 2, 3)], "stderr_head": "", "stderr_tail": ""})
+
+    def test_a_long_stderr_is_shown_by_its_two_ends_escaped_and_bounded(self):
+        """Through the contained run: 800 bytes from the start, the last 800 of the rest, the middle only counted
+        and hashed; bytes that are not printable ASCII arrive escaped and each text stays within 800 characters,
+        so the three runs of a base and of five candidates stay far under the 16 KiB a job's summary may have."""
+        err = b"first line\n" + b"h" * 789 + b"M" * 5000 + b"t" * 780 + b"\x1b[31m::warning::\xff\\ end\n"
+        write_tree(self.tree, {"pkg/a.js": "LINTCRASH\n"})
+        with open(os.path.join(self.tree, "pkg", "stderr.bin"), "wb") as fh:
+            fh.write(err)
+        got = self.results({})["base"][K.FAILED_KEY]
+        self.assertEqual(got["runs"][0], {"run": 1, "exit": 2, "stderr_bytes": len(err), "stderr_sha256": sha(err)})
+        self.assertEqual(got["stderr_head"], ("first line\\n" + "h" * 789)[:K.STDERR_SIDE])
+        self.assertEqual(got["stderr_tail"], ("t" * 780 + "\\x1b[31m::warning::\\ufffd\\\\ end\\n")[-K.STDERR_SIDE:])
+        self.assertNotIn("M", got["stderr_head"] + got["stderr_tail"])
+        for text in (got["stderr_head"], got["stderr_tail"]):
+            self.assertLessEqual(len(text), K.STDERR_SIDE)
+            self.assertTrue(all(" " <= ch <= "~" for ch in text))
+        self.assertLess(len(json.dumps(got)) * 6, 16 * 1024)
+
+    def test_stderr_shown_reads_each_byte_once_and_cuts_after_escaping(self):
+        side = K.STDERR_SIDE
+        self.assertEqual(K.stderr_shown(b""), {"stderr_head": "", "stderr_tail": ""})
+        self.assertEqual(K.stderr_shown(b"a" * side), {"stderr_head": "a" * side, "stderr_tail": ""})
+        self.assertEqual(K.stderr_shown(b"a" * side + b"b"), {"stderr_head": "a" * side, "stderr_tail": "b"},
+                         "a byte past the head is the tail's, none is shown twice")
+        self.assertEqual(K.stderr_shown(b"a" * side + b"b" * side + b"c"),
+                         {"stderr_head": "a" * side, "stderr_tail": "b" * (side - 1) + "c"})
+        # every byte grows under escaping: the head keeps its start, the tail its end
+        got = K.stderr_shown(b"A\n" * (side // 2) + b"\n" * side + b"Z")
+        self.assertEqual(got["stderr_head"], "A\\n" * (side // 3) + "A\\n"[:side % 3])
+        self.assertEqual(got["stderr_tail"], ("\\n" * side + "Z")[-side:])
+
+    def test_failed_names_only_the_failed_runs_and_shows_the_first(self):
+        self.assertEqual(K.failed([]), {})
+        got = K.failed([(2, 134, b"heap\n"), (3, 2, b"other")])
+        self.assertEqual(got, {K.FAILED_KEY: {
+            "runs": [{"run": 2, "exit": 134, "stderr_bytes": 5, "stderr_sha256": sha(b"heap\n")},
+                     {"run": 3, "exit": 2, "stderr_bytes": 5, "stderr_sha256": sha(b"other")}],
+            "stderr_head": "heap\\n", "stderr_tail": ""}})
 
     def test_an_image_the_host_cannot_get_gives_no_base_and_nothing_runs(self):
         """What a fresh runner without a pull gave on the live loop twice (two faults in 3 s, every candidate
@@ -388,6 +477,20 @@ class Candidates(Base):
         self.assertEqual(index["candidates"]["bad"]["verdict"], "refused")
         self.assertEqual(index["candidates"]["bad"]["reasons"], ["lint_failed:1", "lint_failed:2", "lint_failed:3"])
         self.assertFalse(os.path.exists(os.path.join(self.out, "c", "bad")))
+
+    def test_a_candidate_whose_lint_fails_says_how_and_the_others_do_not(self):
+        """The candidate's own entry carries its failed runs (its tree's stderr, not the base's); the base and a
+        candidate whose lint ran have no such key."""
+        with open(os.path.join(self.tree, "pkg", "stderr.bin"), "wb") as fh:
+            fh.write(b"TypeError: boom\n")
+        index = self.results({"bad": diff("pkg/a.js", ["var a = 1;"], ["LINTCRASH"]), "good": GOOD})
+        row = {"exit": 2, "stderr_bytes": 16, "stderr_sha256": sha(b"TypeError: boom\n")}
+        self.assertEqual(index["candidates"]["bad"], {
+            "verdict": "refused", "reasons": ["lint_failed:1", "lint_failed:2", "lint_failed:3"],
+            K.FAILED_KEY: {"runs": [dict(row, run=n) for n in (1, 2, 3)], "stderr_head": "TypeError: boom\\n",
+                           "stderr_tail": ""}})
+        self.assertEqual(index["base"], {"verdict": "verified", "reasons": []})
+        self.assertEqual(index["candidates"]["good"], {"verdict": "verified", "reasons": []})
 
     def test_diffs_that_do_not_apply_in_place_are_refused_before_any_run(self):
         os.symlink("a.js", os.path.join(self.tree, "pkg", "link.js"))
