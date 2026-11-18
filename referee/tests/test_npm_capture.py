@@ -11,6 +11,11 @@ values. Here, without node or npm:
   order, every flag value, and each of the three outcomes is there (a table cut short or of one outcome would
   pass the two comparisons above and prove less than it says).
 
+``fixtures/npm-version.json`` is made by ``capture_npm_version.py``: ``@npmcli/package-json`` 6.2.0's version
+step (node-semver 7.7.4, loose) asked for every value of that file's two lists. ``manifest_version`` gives npm's
+reading for each value of ``READ``; for a value of ``LEFT`` it gives the string with the prefix and the trim
+taken off and nothing else (None for a value that is no string), which is never the version npm reads there.
+
 What this does not show: that another npm version answers the same (the fixture names its versions), and the
 libc npm finds itself on a linux machine (every linux environment of the table states its libc).
 """
@@ -27,6 +32,7 @@ sys.path.insert(0, REFEREE)
 sys.path.insert(0, HERE)
 
 import capture_npm_platform as capture  # noqa: E402
+import capture_npm_version as capture_version  # noqa: E402
 from runner import deps_npm  # noqa: E402
 
 FIXTURE = os.path.join(HERE, "fixtures", "npm-platform.json")
@@ -34,6 +40,11 @@ FIXTURE = os.path.join(HERE, "fixtures", "npm-platform.json")
 
 def table() -> dict:
     with open(FIXTURE, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def versions() -> dict:
+    with open(os.path.join(HERE, "fixtures", "npm-version.json"), encoding="utf-8") as fh:
         return json.load(fh)
 
 
@@ -52,6 +63,30 @@ class NpmCapture(unittest.TestCase):
         for case in table()["truth"]:
             with self.subTest(value=case["value"]):
                 self.assertIs(deps_npm.js_true(case["value"]), case["true"])
+
+    def test_a_manifest_version_is_read_as_npm_reads_it_or_left_as_written(self):
+        got = versions()
+        cases = got["versions"]
+        self.assertEqual([case["value"] for case in cases], capture_version.READ + capture_version.LEFT)
+        self.assertEqual((got["npm"], got["npmcli_package_json"], got["semver"]), ("10.9.9", "6.2.0", "7.7.4"))
+        read, left = cases[:len(capture_version.READ)], cases[len(capture_version.READ):]
+        for case in read:
+            with self.subTest(value=case["value"]):
+                self.assertTrue(case["read"])                    # npm reads a version here, and it is this one
+                self.assertEqual(deps_npm.manifest_version(case["value"]), case["read"])
+        for case in left:
+            with self.subTest(value=case["value"]):
+                mine = deps_npm.manifest_version(case["value"])
+                if case["read"]:                                 # npm reads a version: this function does not
+                    self.assertNotEqual(mine, case["read"])
+                if isinstance(case["value"], str):               # nothing but the prefix and the trim is taken
+                    self.assertEqual(mine, case["value"].strip(" \t\n\x0b\x0c\r").lstrip("v= \t\n\x0b\x0c\r"))
+                else:
+                    self.assertIsNone(mine)
+        # each kind of answer is in the table: a cleaned version, an unreadable one, and an absent one read as ""
+        self.assertTrue(any(c["read"] and c["read"] != c["value"] for c in read))
+        self.assertEqual(sorted({repr(c["read"]) for c in left if not c["read"]}), ["''", "None"])
+        self.assertTrue(any(c["read"] for c in left))
 
     def test_the_fixture_is_the_capture_s_tables_whole(self):
         got = table()

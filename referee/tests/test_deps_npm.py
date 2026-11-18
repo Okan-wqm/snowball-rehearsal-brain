@@ -693,9 +693,24 @@ class TestTarball(Base):
             ({"package.json": b" " * (N.PACKAGE_JSON_MAX + 1)}, "package", "tarball_package_json_unreadable"),
             ({"package/package.json": manifest, "other/package.json": manifest}, "", "tarball_ambiguous_package_json"),
             ({"package.json": {"name": "left-pad", "version": "1.3.1"}}, "package", "tarball_manifest_mismatch"),
-            ({"package.json": manifest, "node_modules/x/package.json": {"name": "x", "version": "1.0.0",
-                                                                        "scripts": {"postinstall": "x"}}},
-             "package", "bundled_dependency"),
+            ({"package.json": {"name": "left-pad", "version": "1.3.0+b"}}, "package", "tarball_manifest_mismatch"),
+            ({"package.json": {"name": "left-pad", "version": "01.3.0"}}, "package", "tarball_manifest_mismatch"),
+            ({"package.json": {"name": "left-pad", "version": "V1.3.0"}}, "package", "tarball_manifest_mismatch"),
+            ({"package.json": {"name": "left-pad", "version": "\xa01.3.0"}}, "package", "tarball_manifest_mismatch"),
+            ({"package.json": {"name": "left-pad", "version": 1.3}}, "package", "tarball_manifest_mismatch"),
+            ({"package.json": {"name": "left-pad"}}, "package", "tarball_manifest_mismatch"),
+            ({"package.json": {"name": "vleft-pad", "version": "1.3.0"}}, "package", "tarball_manifest_mismatch"),
+            ({"package.json": {"name": " left-pad", "version": "1.3.0"}}, "package", "tarball_manifest_mismatch"),
+            ({"package.json": manifest, "node_modules/x/package.json": ("symlink", "/etc/passwd")},
+             "package", "tarball_package_json_unreadable"),
+            ({"package.json": manifest, "node_modules/x/package.json": b"[1]"},
+             "package", "tarball_package_json_unreadable"),
+            ({"package.json": manifest, "node_modules/x/package.json": b"{not json"},
+             "package", "tarball_package_json_unreadable"),
+            ({"package.json": manifest, "node_modules/x/node_modules/@s/y/package.json":
+              b" " * (N.PACKAGE_JSON_MAX + 1)}, "package", "tarball_package_json_unreadable"),
+            ({"package.json": manifest, "node_modules/x/package.json": {"name": "x"},
+              "node_modules/x/./package.json": {"name": "x"}}, "package", "tarball_ambiguous_package_json"),
             ({"package.json": {"name": "right-pad", "version": "1.3.0"}}, "package", "tarball_manifest_mismatch"),
         ):
             self.setUp()
@@ -734,6 +749,130 @@ class TestTarball(Base):
         self.fx.put(url("left-pad", "1.3.0"), data)
         self.fx.lock["packages"]["node_modules/left-pad"]["integrity"] = sri(data)
         self.assertTrue(self.fx.fetch()[0]["ok"])
+
+
+class TestManifestVersion(Base):
+    def test_a_version_npm_cleans_to_the_lock_s_is_the_lock_s(self):
+        for written in ("v1.3.0", "=1.3.0", " 1.3.0\n", "=v 1.3.0", "1.3.0"):
+            self.setUp()
+            self.fx.add("left-pad", "1.3.0", manifest={"name": "left-pad", "version": written, "license": "MIT"})
+            report = self.fx.fetch()[0]
+            self.assertTrue(report["ok"], (written, report))
+            with open(os.path.join(self.fx.out, report["address"], "manifest.json"), encoding="ascii") as fh:
+                rows = {r["key"]: r["version"] for r in json.load(fh)["packages"]}
+            self.assertEqual(rows["node_modules/left-pad"], "1.3.0")     # the lock's, never the tarball's spelling
+
+
+BUNDLED = {"node_modules/x/package.json": {"name": "x", "version": "1.0.0", "license": "MIT"},
+           "node_modules/x/index.js": b"x",
+           "node_modules/@s/y/package.json": {"name": "@s/y", "version": "2.0.0", "license": "ISC"},
+           "node_modules/x/node_modules/z/package.json": {"name": "z", "version": "3.0.0", "license": "MIT"}}
+
+
+class TestBundled(Base):
+    """A tarball that carries packages below its own ``node_modules`` (npm's bundled dependencies)."""
+
+    def bundle(self, files: dict, **kw):
+        self.fx.add("left-pad", "1.3.0", extra=files)
+        return self.fx.fetch(**kw)[0]
+
+    def test_bundled_path(self):
+        for path, want in (("node_modules/x/package.json", ("node_modules/x", ["package.json"])),
+                           ("node_modules/@s/y/a/b.js", ("node_modules/@s/y", ["a", "b.js"])),
+                           ("node_modules/x/node_modules/@s/y/z", ("node_modules/x/node_modules/@s/y", ["z"])),
+                           ("node_modules/x", ("node_modules/x", [])),
+                           ("node_modules/@s", ("", ["node_modules", "@s"])),
+                           ("node_modules/@s/y", ("node_modules/@s/y", [])),
+                           ("node_modules", ("", ["node_modules"])),
+                           ("node_modules/.bin/x", ("", ["node_modules", ".bin", "x"])),
+                           ("node_modules/x/node_modules/.bin/q", ("node_modules/x", ["node_modules", ".bin", "q"])),
+                           ("node_modules/x y/package.json", ("", ["node_modules", "x y", "package.json"])),
+                           ("node_modules/@s/@t/package.json", ("", ["node_modules", "@s", "@t", "package.json"])),
+                           ("lib/node_modules/x/package.json", ("", ["lib", "node_modules", "x", "package.json"])),
+                           ("package.json", ("", ["package.json"])), ("", ("", []))):
+            with self.subTest(path=path):
+                self.assertEqual(N.bundled_path([p for p in path.split("/") if p]), want)
+
+    def test_bundled_packages_are_fetched_with_their_tarball_and_listed(self):
+        files = dict(BUNDLED, **{"node_modules/.bin/q": b"#!", "node_modules/w/index.js": b"w",
+                                 "node_modules/x/lib/package.json": b"{not json", "lib/node_modules/v/package.json": b"["})
+        report = self.bundle(files)
+        self.assertTrue(report["ok"], report)
+        rows = [(r["key"], r["name"], r["version"], r["license"], r["allowed"]) for r in report["licenses"]
+                if r["key"].startswith("node_modules/left-pad")]
+        self.assertEqual(rows, [
+            ("node_modules/left-pad", "left-pad", "1.3.0", ["MIT"], True),
+            ("node_modules/left-pad/node_modules/@s/y", "@s/y", "2.0.0", ["ISC"], True),
+            ("node_modules/left-pad/node_modules/w", None, None, [], False),
+            ("node_modules/left-pad/node_modules/x", "x", "1.0.0", ["MIT"], True),
+            ("node_modules/left-pad/node_modules/x/node_modules/z", "z", "3.0.0", ["MIT"], True),
+            ("node_modules/left-pad/node_modules/inner", "inner", "0.1.0", ["ISC"], True)])
+        with open(os.path.join(self.fx.out, report["address"], "manifest.json"), encoding="ascii") as fh:
+            packages = json.load(fh)["packages"]
+        # the artifact's rows are the lock's packages: a bundled package is inside its tarball, no row of its own
+        self.assertEqual(sorted(r["key"] for r in packages), sorted(k for k in self.fx.lock["packages"] if k))
+        self.assertFalse(any(r["install_script"] for r in packages))
+        self.assertEqual(N.verify(os.path.join(self.fx.out, report["address"]))["ok"], True)
+
+    def test_a_bundled_install_script_needs_the_tarball_s_mark(self):
+        script = {"name": "x", "version": "1.0.0", "license": "MIT", "scripts": {"postinstall": "node x.js"}}
+        for files in ({"node_modules/x/package.json": script},
+                      {"node_modules/x/package.json": dict(script, scripts={"preinstall": "p"})},
+                      {"node_modules/x/package.json": dict(script, scripts={"install": "i"})},
+                      {"node_modules/@s/y/package.json": script},
+                      dict(BUNDLED, **{"node_modules/x/node_modules/z/package.json": script}),
+                      dict(BUNDLED, **{"node_modules/x/binding.gyp": b"{}"}),
+                      {"node_modules/w/binding.gyp": b"{}"}):
+            self.setUp()
+            self.assertEqual(self.bundle(files)["reasons"], ["install_script_not_marked:node_modules/left-pad"], files)
+            self.assertEqual(self.fx.artifacts(), [])
+            for mark in ("left-pad@1.3.0", "node_modules/left-pad"):
+                report = self.fx.fetch(marks=[mark])[0]
+                self.assertTrue(report["ok"], (files, report))
+                with open(os.path.join(self.fx.out, report["address"], "manifest.json"), encoding="ascii") as fh:
+                    flags = {r["key"]: r["install_script"] for r in json.load(fh)["packages"]}
+                self.assertEqual([k for k, v in flags.items() if v], ["node_modules/left-pad"])
+            # the bundled package's own name marks nothing: the lock holds no such package
+            self.assertEqual(self.fx.fetch(marks=["x@1.0.0"])[0]["reasons"],
+                             ["install_script_not_marked:node_modules/left-pad"])
+        for files in ({"node_modules/x/package.json": dict(script, scripts={"test": "t", "prepare": "p"})},
+                      {"node_modules/x/package.json": dict(script, scripts=["postinstall"])},
+                      dict(BUNDLED, **{"node_modules/x/src/binding.gyp": b"{}"}),
+                      {"node_modules/.bin/binding.gyp": b"{}"}):
+            self.setUp()
+            self.assertTrue(self.bundle(files)["ok"], files)
+
+    def test_product_gates_a_bundled_license_under_its_own_path(self):
+        self.assertTrue(self.bundle(BUNDLED, product=True)["ok"])
+        gpl = {"name": "z", "version": "3.0.0", "license": "GPL-3.0-only"}
+        for files, reasons in (
+            (dict(BUNDLED, **{"node_modules/x/node_modules/z/package.json": gpl}),
+             ["license_not_allowed:node_modules/left-pad/node_modules/x/node_modules/z"]),
+            (dict(BUNDLED, **{"node_modules/@s/y/package.json": {"name": "@s/y", "version": "2.0.0"}}),
+             ["license_not_found:node_modules/left-pad/node_modules/@s/y"]),
+            (dict(BUNDLED, **{"node_modules/w/index.js": b"w"}),
+             ["license_not_found:node_modules/left-pad/node_modules/w"]),
+            (dict(BUNDLED, **{"node_modules/x/package.json": gpl, "node_modules/w/index.js": b"w"}),
+             ["license_not_found:node_modules/left-pad/node_modules/w",
+              "license_not_allowed:node_modules/left-pad/node_modules/x"]),
+        ):
+            self.setUp()
+            self.assertEqual(self.bundle(files, product=True)["reasons"], reasons, files)
+            self.assertEqual(self.fx.artifacts(), [])
+            self.assertTrue(self.fx.fetch()[0]["ok"])           # reported, not gated, without --product
+
+    def test_a_license_exception_is_the_lock_s_package_alone(self):
+        files = dict(BUNDLED, **{"node_modules/x/node_modules/z/package.json": {"name": "z", "version": "3.0.0"}})
+        policy = {"constitutional": {"license_exceptions": {
+            "left-pad==1.3.0": {"expression": "MIT", "evidence": "reviewed"},
+            "z==3.0.0": {"expression": "MIT", "evidence": "reviewed"}}}}
+        self.assertEqual(self.bundle(files, product=True, policy=policy)["reasons"],
+                         ["license_not_found:node_modules/left-pad/node_modules/x/node_modules/z"])
+
+    def test_a_bundled_name_or_version_of_another_type_is_reported_as_none(self):
+        report = self.bundle({"node_modules/x/package.json": {"name": ["x"], "version": 1, "license": "MIT"}})
+        row = [r for r in report["licenses"] if r["key"] == "node_modules/left-pad/node_modules/x"][0]
+        self.assertEqual((row["name"], row["version"], row["license"]), (None, None, ["MIT"]))
 
 
 class TestLicense(Base):

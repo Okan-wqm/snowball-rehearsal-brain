@@ -199,6 +199,7 @@ GIT_PREFIXES = ("git+", "git:", "git@", "github:", "gitlab:", "bitbucket:", "gis
 INSTALL_SCRIPTS = ("preinstall", "install", "postinstall")
 STRONG = {"sha256": 32, "sha384": 48, "sha512": 64}
 PACKAGE_JSON_MAX = 1 << 20
+MANIFEST_SPACE = " \t\n\x0b\x0c\r"
 SCHEMA = "snowball-deps-npm/1"
 
 _SEG = r"[A-Za-z0-9~-][A-Za-z0-9._~-]*"
@@ -552,15 +553,63 @@ def integrity_matches(data: bytes, strong: list[tuple[str, bytes]]) -> bool:
     return bool(strong) and all(hashlib.new(alg, data).digest() == digest for alg, digest in strong)
 
 
+def bundled_path(parts: list[str]) -> tuple[str, list[str]]:
+    """A tarball member's path below its top directory, split at the package directory it lies in:
+    ``(chain, rest)``. ``chain`` is the longest leading run of ``node_modules/<name>`` pairs with npm names
+    (``NAME_RE``; a scoped name takes two components), written as a lock key's tail, ``""`` when the path does
+    not start with one; ``rest`` the components after it. ``node_modules/.bin/x`` has no chain: ``.bin`` is no
+    npm name."""
+    at = 0
+    while at < len(parts) and parts[at] == "node_modules":
+        width = 2 if at + 1 < len(parts) and parts[at + 1].startswith("@") else 1
+        name = "/".join(parts[at + 1:at + 1 + width])
+        if len(parts) < at + 1 + width or not NAME_RE.fullmatch(name):
+            break
+        at += 1 + width
+    return "/".join(parts[:at]), parts[at:]
+
+
+def manifest_version(value: Any) -> str | None:
+    """A ``package.json``'s ``version`` with what npm drops before it reads the version taken off: surrounding
+    whitespace, then a leading run of ``v``, ``=`` and whitespace (``MANIFEST_SPACE``: space, tab, line feed,
+    vertical tab, form feed, carriage return). None when the value is no string. npm reads a manifest's version
+    through node-semver's loose ``clean`` (``@npmcli/package-json``'s normalize), so a tarball published with
+    ``"version": "v1.8.8"`` is version ``1.8.8`` to the registry, to the lock and to npm's install. Of that
+    reading this is the prefix and the trim alone. What npm also reads and this leaves as written, so that it
+    stays a mismatch with the lock: a prerelease without its hyphen (``1.2.3beta``), leading zeros (``01.2.3``),
+    build metadata (npm drops ``+build``), and whitespace outside ``MANIFEST_SPACE`` (JavaScript trims a no-break
+    space and a byte order mark too). ``tests/test_npm_capture.py`` holds this against npm's own answers."""
+    if not isinstance(value, str):
+        return None
+    return value.strip(MANIFEST_SPACE).lstrip("v=" + MANIFEST_SPACE)
+
+
 def inspect_tarball(data: bytes) -> tuple[str | None, dict]:
-    """``(reason or None, {manifest, binding_gyp})``, read in memory, nothing extracted."""
-    found, gyp = [], False
+    """``(reason or None, {manifest, binding_gyp, bundled})``, read in memory, nothing extracted.
+
+    ``manifest`` and ``binding_gyp`` are the package's own (``<top>/package.json``, ``<top>/binding.gyp``).
+    ``bundled`` lists the package directories the tarball carries below ``<top>/node_modules/`` (bundled
+    dependencies: ``bundled_path``'s chains that hold at least one member), sorted by ``path``, each ``{path,
+    manifest, binding_gyp}``: ``path`` the chain, ``manifest`` its ``package.json`` (None when it has none),
+    ``binding_gyp`` whether ``binding.gyp`` lies directly in it. A bundled ``package.json`` is read by the rules of
+    the package's own (a regular file of at most 1 MiB holding a JSON object, else
+    ``tarball_package_json_unreadable``; two members of one path, ``tarball_ambiguous_package_json``). A member
+    below ``<top>/node_modules/`` outside every chain (``node_modules/.bin/x``) is not read."""
+    found, gyp, bundled = [], False, {}
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
             for member in tar:
                 parts = [p for p in member.name.split("/") if p not in ("", ".")]
-                if len(parts) >= 2 and parts[1] == "node_modules":
-                    return "bundled_dependency", {}
+                chain, rest = bundled_path(parts[1:])
+                if chain and rest:
+                    pack = bundled.setdefault(chain, {"path": chain, "found": [], "binding_gyp": False})
+                    if rest == ["binding.gyp"]:
+                        pack["binding_gyp"] = True
+                    if rest == ["package.json"]:
+                        if not member.isfile() or member.size > PACKAGE_JSON_MAX:
+                            return "tarball_package_json_unreadable", {}
+                        fh = tar.extractfile(member)
+                        pack["found"].append(fh.read(PACKAGE_JSON_MAX + 1) if fh else b"")
                 if len(parts) != 2:
                     continue
                 if parts[1] == "binding.gyp":
@@ -576,15 +625,29 @@ def inspect_tarball(data: bytes) -> tuple[str | None, dict]:
         return "tarball_unreadable", {}
     if not found:
         return "tarball_no_package_json", {}
-    if len(found) > 1:
+    if len(found) > 1 or any(len(pack["found"]) > 1 for pack in bundled.values()):
         return "tarball_ambiguous_package_json", {}
-    try:
-        manifest = cli.loads(found[0].decode("utf-8"))
-    except ValueError:  # cli.TooDeep included
-        return "tarball_package_json_unreadable", {}
-    if not isinstance(manifest, dict):
-        return "tarball_package_json_unreadable", {}
-    return None, {"manifest": manifest, "binding_gyp": gyp}
+    packs = []
+    for raw in [found[0]] + [pack["found"][0] for _, pack in sorted(bundled.items()) if pack["found"]]:
+        try:
+            manifest = cli.loads(raw.decode("utf-8"))
+        except ValueError:  # cli.TooDeep included
+            return "tarball_package_json_unreadable", {}
+        if not isinstance(manifest, dict):
+            return "tarball_package_json_unreadable", {}
+        packs.append(manifest)
+    inner = iter(packs[1:])
+    return None, {"manifest": packs[0], "binding_gyp": gyp,
+                  "bundled": [{"path": path, "manifest": next(inner) if pack["found"] else None,
+                               "binding_gyp": pack["binding_gyp"]} for path, pack in sorted(bundled.items())]}
+
+
+def needs_script(manifest: Any, binding_gyp: bool) -> bool:
+    """Whether a package directory of a tarball asks npm for an install script: a ``preinstall``, ``install`` or
+    ``postinstall`` key in its ``package.json``'s ``scripts``, or a ``binding.gyp`` (npm's implicit ``node-gyp
+    rebuild``)."""
+    scripts = manifest.get("scripts") if isinstance(manifest, dict) else None
+    return binding_gyp or (isinstance(scripts, dict) and any(s in scripts for s in INSTALL_SCRIPTS))
 
 
 def licenses_of(manifest: dict) -> list[str]:
@@ -784,22 +847,27 @@ def fetch(lock_path: str, out: str, fetcher: Callable[[str, int | None], bytes],
             reasons.append("%s:%s" % (bad, key))
             continue
         manifest = info["manifest"]
-        if manifest.get("name") != item["name"] or manifest.get("version") != entry["version"]:
+        if manifest.get("name") != item["name"] or manifest_version(manifest.get("version")) != entry["version"]:
             reasons.append("tarball_manifest_mismatch:%s" % key)
             continue
-        scripts = manifest.get("scripts")
-        script = info["binding_gyp"] or entry.get("hasInstallScript") is True or (
-            isinstance(scripts, dict) and any(s in scripts for s in INSTALL_SCRIPTS))
+        script = entry.get("hasInstallScript") is True or needs_script(manifest, info["binding_gyp"]) or any(
+            needs_script(pack["manifest"], pack["binding_gyp"]) for pack in info["bundled"])
         if script and not report["marks"].marked(key, item["name"], entry["version"]):
             reasons.append("install_script_not_marked:%s" % key)
         found = licenses_of(manifest)
         pinned = "%s==%s" % (item["name"], entry["version"])
-        values = [exceptions[pinned]["expression"]] if pinned in exceptions else found
-        ok = licenses_allowed(values, allow)
-        licenses.append({"key": key, "name": item["name"], "version": entry["version"], "license": values,
-                         "allowed": ok})
-        if product and not ok:
-            reasons.append("%s:%s" % ("license_not_allowed" if values else "license_not_found", key))
+        listed = [(key, item["name"], entry["version"],
+                   [exceptions[pinned]["expression"]] if pinned in exceptions else found)]
+        for pack in info["bundled"]:
+            inner = pack["manifest"] or {}
+            listed.append((key + "/" + pack["path"], *(v if isinstance(v, str) else None for v in
+                                                         (inner.get("name"), inner.get("version"))),
+                           licenses_of(inner)))
+        for where, name_, version_, values in listed:
+            ok = licenses_allowed(values, allow)
+            licenses.append({"key": where, "name": name_, "version": version_, "license": values, "allowed": ok})
+            if product and not ok:
+                reasons.append("%s:%s" % ("license_not_allowed" if values else "license_not_found", where))
         rows.append({"key": key, "name": item["name"], "version": entry["version"], "resolved": entry["resolved"],
                      "integrity": entry["integrity"], "sha512": hashlib.sha512(data).hexdigest(),
                      "bytes": len(data), "license": found, "install_script": bool(script)})
