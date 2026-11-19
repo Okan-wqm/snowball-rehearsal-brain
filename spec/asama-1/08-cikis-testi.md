@@ -37,6 +37,7 @@ operatörün çıkış partisini aktarması (§1.13); (B) aktarılmış hakemin 
 | Durum | `status.md` her döngü; dondurma, fren ve insan dokunuşu bloğunu hakem yazmış |
 | #lock Kilit | (A) istek `stage: 1`, son kabul edilmiş SHA ve donmuş `spec/asama-1` hash'iyle aynı; açılış (B)'nin PASS satırıyla `stage-open` (`tohum/02`) |
 | #lint Spec denetimi | (A) tohumun spec denetimi `spec/asama-1`'de temiz, `required_exit_rows` dahil; çıkış partisinin `spec.lint`'i aynı listeyi (B)'de verir |
+| #durustluk #spec Aşama 0'dan taşınan koşullar | (A) Aşama 0'ın sahip istisnasıyla taşınan her koşul ölçülmüş; ikinci istisna yok (`tohum/02` "Sahip istisnası") |
 
 Verdict `PASS`, `FAIL` ya da `UNMEASURABLE`; PASS makine doğrulamalıdır, imza yoktur. PASS
 satırını hakem yazar; `asama-1/` altındaki rapor onun kopyasıdır.

@@ -16,12 +16,13 @@ başlangıç fren değerlerini verir. USD liste fiyatı tahminidir (`tohum/06`).
 | Sonnet düzeltmesi | Bulgu başına 0,50 USD ve 5 dk; sınırı `llm.call`'ın çağrı başı tavanı uygular (iç kullanımda `claude` CLI'sinin `--max-budget-usd`'si) |
 | Çalışma-zamanı LLM, aşama toplamı | 50 USD |
 | İnşa-zamanı LLM: Kurucu | aşama toplamı 150 USD; oturum başına `session_cap_usd` |
-| İnşa-zamanı LLM: tohum rakibi | 15 USD |
+| İnşa-zamanı LLM: tohum rakibi | `stage_budgets.asama_1.rival_usd`: 1000 USD (sahibin 2026-11-05 kararı, `tohum/18a`); harcama kilidin açılışından sayılır (`tohum/26e`) |
+| Güvenlik avcısı (P2) | `stage_budgets.asama_1.security_hunter_usd`, çağrı başı `--max-budget-usd`; değerini operatör yazar, yazılmamışsa avcı koşmaz (`tohum/18a`, `tohum/30f`) |
 | Actions dakikası | Döngü başına `cycle_caps`; döngü sıklığı aylık anayasal tavandan türetilir (`policy.json`) |
 | Operatör emeği | Parti ve çıkış aktarımları, `stage-open`; her biri sayılır |
 
 **Ölçüm, kapı değil.** Kurucu oturum sayısı, USD toplamları ve takvim (tahmin: yaklaşık 12 oturum, artı
-partiler ve hayatta kalma penceresi) ölçüdür; çıkış koşulu değildir, Kurucu'yu durdurmaz. Frene takılmak
+partiler ve hayatta kalma penceresi; Aşama 0'da ~22 oturum tahminine karşı ölçüm 203 Kurucu oturumudur) ölçüdür; çıkış koşulu değildir, Kurucu'yu durdurmaz. Frene takılmak
 operatör uyarısıdır, ret değil; olağan işse operatör değeri yükseltir.
 
 **Gerçek sınır abonelik penceresidir.** 5 saatlik ya da haftalık kotaya takılmak (HTTP 429) operatör

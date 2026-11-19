@@ -38,9 +38,9 @@ yasaları ve tüm tohum sayfaları geçerlidir.
 | `05-dongu-adim-adim.md` | Döngü, adım adım | 40 |
 | `06-sirali-mikro-ozellikler.md` | Sıralı mikro özellikler | 31 |
 | `07-harness-olcumu.md` | Harness ölçümü | 21 |
-| `08-cikis-testi.md` | Çıkış testi (hepsi birlikte PASS) | 51 |
+| `08-cikis-testi.md` | Çıkış testi (hepsi birlikte PASS) | 52 |
 | `09-yasaklar.md` | Yasaklar | 22 |
-| `10-butce.md` | Bütçe (kaçak freni) | 28 |
+| `10-butce.md` | Bütçe (kaçak freni) | 29 |
 | `11-sonuc-ne-soyler.md` | Sonuç ne söyler | 21 |
 | `12-teslim-listesi.md` | Teslim listesi ve bilerek olmayanlar | 41 |
 | `13-aktarim-partileri.md` | Aktarım partileri | 55 |
