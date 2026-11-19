@@ -1,0 +1,283 @@
+{
+ "mutants": [
+  {
+   "id": "id_not_checked",
+   "file": "runner/organs.py",
+   "old": "organ_id not in accepted:",
+   "new": "organ_id not in accepted and False:",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "mismatch_not_checked",
+   "file": "runner/organs.py",
+   "old": "if definition_sha256(definition) != accepted[organ_id]:",
+   "new": "if definition_sha256(definition) != accepted[organ_id] and False:",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "any_accepted_hash",
+   "file": "runner/organs.py",
+   "old": "if definition_sha256(definition) != accepted[organ_id]:",
+   "new": "if definition_sha256(definition) not in accepted.values():",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "shape_not_checked_at_call",
+   "file": "runner/organs.py",
+   "old": "    if not _shape_ok(definition):\n        return INVALID",
+   "new": "    if not isinstance(definition, dict):\n        return INVALID",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "hash_without_entry",
+   "file": "runner/organs.py",
+   "old": "doc = {\"entry\": definition[\"entry\"],",
+   "new": "doc = {\"entry\": [],",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "hash_without_entry_order",
+   "file": "runner/organs.py",
+   "old": "doc = {\"entry\": definition[\"entry\"],",
+   "new": "doc = {\"entry\": sorted(definition[\"entry\"]),",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "hash_without_content",
+   "file": "runner/organs.py",
+   "old": "\"files\": {p: hashlib.sha256(d).hexdigest() for p, d in definition[\"files\"].items()}}",
+   "new": "\"files\": {p: \"\" for p, d in definition[\"files\"].items()}}",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "hash_without_paths",
+   "file": "runner/organs.py",
+   "old": "\"files\": {p: hashlib.sha256(d).hexdigest() for p, d in definition[\"files\"].items()}}",
+   "new": "\"files\": sorted(hashlib.sha256(d).hexdigest() for p, d in definition[\"files\"].items())}",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "hash_keys_unsorted",
+   "file": "runner/organs.py",
+   "old": "json.dumps(doc, sort_keys=True, separators=(\",\", \":\"))",
+   "new": "json.dumps(doc, separators=(\",\", \":\"))",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "hash_other_separators",
+   "file": "runner/organs.py",
+   "old": "json.dumps(doc, sort_keys=True, separators=(\",\", \":\"))",
+   "new": "json.dumps(doc, sort_keys=True)",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "refusal_ignored",
+   "file": "runner/organs.py",
+   "old": "    if reason:\n        return {\"organ_id\"",
+   "new": "    if reason == INVALID:\n        return {\"organ_id\"",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "refusal_after_staging",
+   "file": "runner/organs.py",
+   "old": "    reason = refusal(accepted, organ_id, definition)\n    if reason:",
+   "new": "    reason = refusal(accepted, organ_id, definition)\n    tempfile.mkdtemp(prefix=\"snowball-organ-\", dir=base)\n    if reason:",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "entry_appended",
+   "file": "runner/organs.py",
+   "old": "cmd=list(definition[\"entry\"]), artifacts=staged)",
+   "new": "cmd=list(definition[\"entry\"]) + [\"x\"], artifacts=staged)",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "files_not_mounted",
+   "file": "runner/organs.py",
+   "old": "cmd=list(definition[\"entry\"]), artifacts=staged)",
+   "new": "cmd=list(definition[\"entry\"]))",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "control_sees_organ",
+   "file": "runner/organs.py",
+   "old": "dict(shared, image=job[\"image\"], cmd=red_cmd)",
+   "new": "dict(shared, image=job[\"image\"], cmd=red_cmd, artifacts=staged)",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "control_is_entry",
+   "file": "runner/organs.py",
+   "old": "dict(shared, image=job[\"image\"], cmd=red_cmd)",
+   "new": "dict(shared, image=job[\"image\"], cmd=list(definition[\"entry\"]))",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "staged_kept",
+   "file": "runner/organs.py",
+   "old": "    finally:\n        shutil.rmtree(staged, ignore_errors=True)",
+   "new": "    finally:\n        pass",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "tree_dropped",
+   "file": "runner/organs.py",
+   "old": "for k in (\"tree\", \"env\") if k in job}",
+   "new": "for k in (\"env\",) if k in job}",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "env_dropped",
+   "file": "runner/organs.py",
+   "old": "for k in (\"tree\", \"env\") if k in job}",
+   "new": "for k in (\"tree\",) if k in job}",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "accepted_hash_prefix",
+   "file": "runner/organs.py",
+   "old": "HEX64 = re.compile(r\"[0-9a-f]{64}\\Z\")",
+   "new": "HEX64 = re.compile(r\"[0-9a-f]{64}\")",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "accepted_hash_any_case",
+   "file": "runner/organs.py",
+   "old": "HEX64 = re.compile(r\"[0-9a-f]{64}\\Z\")",
+   "new": "HEX64 = re.compile(r\"[0-9a-fA-F]{64}\\Z\")",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "accepted_empty_id",
+   "file": "runner/organs.py",
+   "old": "isinstance(k, str) and k and isinstance(v, str)",
+   "new": "isinstance(k, str) and isinstance(v, str)",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "accepted_first_entry_only",
+   "file": "runner/organs.py",
+   "old": "            and all(isinstance(k, str)",
+   "new": "            and any(isinstance(k, str)",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "extra_key_allowed",
+   "file": "runner/organs.py",
+   "old": "set(definition) == {\"entry\", \"files\"}",
+   "new": "set(definition) >= {\"entry\", \"files\"}",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "empty_entry_allowed",
+   "file": "runner/organs.py",
+   "old": "isinstance(entry, list) and entry and all(",
+   "new": "isinstance(entry, list) and all(",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "empty_argument_allowed",
+   "file": "runner/organs.py",
+   "old": "all(isinstance(a, str) and a for a in entry)",
+   "new": "all(isinstance(a, str) for a in entry)",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "text_content_allowed",
+   "file": "runner/organs.py",
+   "old": "all(isinstance(d, bytes) for d in files.values())",
+   "new": "all(isinstance(d, (bytes, str)) for d in files.values())",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "path_dot_allowed",
+   "file": "runner/organs.py",
+   "old": "D.norm_path(p) == p and p != \".\" for p in files",
+   "new": "D.norm_path(p) == p for p in files",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "path_not_normal_allowed",
+   "file": "runner/organs.py",
+   "old": "D.norm_path(p) == p and p != \".\" for p in files",
+   "new": "D.norm_path(p) is not None and p != \".\" for p in files",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "file_under_file_allowed",
+   "file": "runner/organs.py",
+   "old": "    return not any(q.startswith(p + \"/\") for p in files for q in files)",
+   "new": "    return True",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "answer_states_given_hash",
+   "file": "runner/organs.py",
+   "old": "definition_sha256=accepted[organ_id])",
+   "new": "definition_sha256=\"\")",
+   "tests": [
+    "test_organs.py"
+   ]
+  }
+ ]
+}
