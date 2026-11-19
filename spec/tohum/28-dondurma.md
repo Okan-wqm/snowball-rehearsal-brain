@@ -32,13 +32,13 @@ yerde, burada yazılır; başka sayfa buraya atıf yapar.
 
 **Sert duruş.**
 
-- **Tetik:** bir pencerede `policy.json`'daki sayıdan fazla yumuşak dondurma; kurulum kayması
-  (`drift.check`, `01b`); zincir kırığı (`13`); Rekor'a ya da attestation'a yazılamaması;
-  etkinleştirme ya da aktarım hatası (`25a`); beyan dışı bir aktörün `brain/*` ref değişikliği;
-  kill switch. Kill switch'in yolları `25` 9'dadır: `control.json` bayrağı, `gh run cancel`,
-  `gh workflow disable`, belirteç sırrını silmek, sağlayıcı tavanı, App askıya alma. Her iş bayrağı
-  `main`'den canlı okur; bayrak açıkken iş başlamaz, koşan koşuda `yaz` kabul etmeyen ve harcamayı
-  yazan bir `stopped` sonucu imzalar; iptal edilen koşu hiçbir şey imzalamaz.
+- **Tetik:** bir pencerede `policy.json`'daki sayıdan fazla yumuşak dondurma; kurulum kayması (`drift.check`, `01b`);
+  zincir kırığı (`13`); Rekor'a (`13`: bir `yaz` işinde üç çağrının hiçbiri başarmadıysa) ya da attestation'a
+  yazılamaması; etkinleştirme ya da aktarım hatası (`25a`); beyan dışı bir aktörün `brain/*` ref değişikliği; kill
+  switch. Kill switch'in yolları `25` 9'dadır: `control.json` bayrağı, `gh run cancel`, `gh workflow disable`,
+  belirteç sırrını silmek, sağlayıcı tavanı, App askıya alma. Her iş bayrağı `main`'den canlı okur; bayrak açıkken iş
+  başlamaz, koşan koşuda `yaz` kabul etmeyen ve harcamayı yazan bir `stopped` sonucu imzalar; iptal edilen koşu hiçbir
+  şey imzalamaz.
 - **Kapsam:** hiçbir oyuncu koşusu ve hiçbir yazım yapılmaz; yalnız hakem okuma işleri ve
   raporlama sürer.
 - **Kalkış:** döngü dışı bir operatör işidir; sistem ondan onay beklemez, durur. `status.md`

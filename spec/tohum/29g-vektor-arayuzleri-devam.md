@@ -27,7 +27,14 @@ yazılmaz. Paket başına ilk tutmayan denetim nedendir, bu sırayla: `git_depen
 üzerinde, `/` dahil); `tarball_missing` (aynada dosya yok); `integrity_mismatch` (ham `.tgz` baytlarının base64
 sha512'si kilitteki sha512 `integrity`'den farklı); `install_script_unmarked` (tarball'ın `package/package.json`
 `scripts`'inde `preinstall`, `install` ya da `postinstall` var, ya da `package/binding.gyp` var, ya da kilit girdisi
-`hasInstallScript: true` diyor; ve ne kilit yolu ne tarball'daki `ad@sürüm` `install_scripts_required`'da var). Çıktı:
+`hasInstallScript: true` diyor; ve ne kilit yolu ne tarball'daki `ad@sürüm` `install_scripts_required`'da var).
+**Gömülü paketler** (seed-069, E639): kayıt defteri tarball'ının `package/node_modules/` altındaki paket dizinleri
+(yayımlayanın `bundleDependencies`'i; her derinlikte `node_modules/<ad>` ya da `node_modules/@<kapsam>/<ad>`) o
+tarball'ın parçasıdır: bütünlüğü onları kapsar, ayrı girdi değildirler, getirilmezler. Böyle bir dizindeki kurulum
+betiği (`package.json` `scripts`'inde `preinstall`, `install` ya da `postinstall`, ya da dizinde `binding.gyp`) gömen
+tarball'ınkidir: gömen işaretli değilse `install_script_unmarked:<gömenin kilit yolu>`. `inBundle: true` taşıyan kilit
+girdisinin `resolved`'ı yoktur; bugün her girdi gibi `registry_not_allowed` ile reddedilir, kabulü ona ihtiyaç duyan
+bir hedef kilidini bekler (kopyanın üç kilidinde böyle satır yok, 2026-11-18; E640). Çıktı:
 `ok` (hiçbir paket reddedilmedi); `rejected` (sıralı `<neden>:<kilit yolu>`, tamamsa `[]`); `artefact`: getirilen her
 paketin `{"integrity": <kilitteki>, "path": <kilit yolu>}` nesnesinden, yola göre sıralı dizinin RFC 8785 kanonik
 JSON'unun sha256'sı, `sha256:` ve küçük onaltılık; `licenses`: yola göre sıralı `{path, name, version, license}`, ad,
@@ -50,7 +57,9 @@ yerinde kilitte olmayan bir kilit yolu isteği kullanılamaz yapar; `registry_no
 `same_lock_same_address` aynı kilit başka biçimde yazılınca (sıkışık, anahtarlar başka sırada) aynı içerik adresini
 verir; `workspaces_lock` bağ ve adlandırdığı dizin getirilmez, iç içe ve kökteki paketler kilit yollarıyla getirilir;
 `workspace_folder_needs_its_link` `link` işareti kalkınca bağ da dizin de denetlenir; `nested_registry_not_allowed`
-iç içe paketin kayıt defteri izinsizse ret.
+iç içe paketin kayıt defteri izinsizse ret; `bundled_install_script_unmarked` gömülü paketin işaretsiz `postinstall`'ı
+gömenin kilit yoluyla ret; `bundled_install_script_marked` gömen işaretliyse geçer, içerik adresi yalnız gömenindir,
+gömülü paketin kendi `ad@sürüm`'ü gömeni işaretlemez.
 
 ## `recipe` (MF6, `profile/unit_verify.py`)
 

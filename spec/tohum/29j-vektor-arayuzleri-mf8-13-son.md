@@ -27,7 +27,7 @@ kökü yük olarak imzalar, girdinin uuid'i, hash ve kimlik döner; `unsignable_
 geçmez; `verify_good` defterin kökü son kayıttaki kök ve adlandırılan girdi onu pinli kimlikle imzalar;
 `verify_tip_moved` çapadan sonra uç ilerlemiş; `verify_identity_pin` girdiyi pinli olmayan bir iş akışı kimliği yapmış;
 `verify_entry_other_root` kayıt doğru kökle başka kökü imzalayan girdiyi adlandırır; `verify_entry_missing` defterde
-olmayan girdi: çapalanmamış kök denetlenmemiş değil, geçersiz.
+olmayan girdi: çapalanmamış kök denetlenmemiş değil, geçersiz; `verify_second_entry_same_root` ikinci girdi kırık değil.
 
 ## `flaky` (MF12, `gate/sentinel.py`)
 

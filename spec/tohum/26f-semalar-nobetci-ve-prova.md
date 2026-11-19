@@ -65,3 +65,12 @@ doğrulanmış defterinden okur ve ancak o zaman iki başı da olmayan kopyayı 
 sunar (`29s`). Yük yalnız koşul etiketlerini taşır, prova tohumundan ya da fikstürlerden türeyen hiçbir değeri taşımaz
 (defter açıktır); `stage` ile `verdict: "PASS"`'i birlikte taşımaz (`stage-open` PASS satırını bu ikiliyle sayar, `26d`
 kural 3). `stage-open` kapı satırını okumaz.
+
+**Taahhüdün kataloğu** (bağımsız inceleme ekibi kararı, sahibin onayı, 2026-11-18, E641). Bir taahhüdün seçimi
+(`29m`) bütün katalogdan değil, en az ekilmiş nedenlerin örneklerinden çekilir: bir nedenin sayısı, son genesis'ten
+sonra ve taahhüt satırının önündeki ekme satırlarından (`part: drill`, `kind: plant`, `payload.drill: revert`)
+`instance_id`'si katalogda o nedene eşlenenlerin sayısıdır; katalog dışı kimlik hiçbir şey saymaz. Hiç ekim yoksa
+her sayı sıfırdır ve çekiliş bugünkü gibidir. `commit` ve `reveal`'e verilen bu indirgenmiş katalogdur; anahtarın
+alanları, taahhüt ve `judge` değişmez. Uygun küme her yeniden türetmede (ekme adımı, açılım ve yargı, #geri-alma
+kapısı) o taahhüt satırından önceki satırlardan kurulur, güncel defterden asla. Kural çekilişi yönlendirir, kapıyı
+değil: #geri-alma yine her neden için PASS bir prova ister (`asama-0/10a`).

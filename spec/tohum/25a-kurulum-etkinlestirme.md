@@ -41,9 +41,12 @@ genesis varsa `stage-open` son genesis'i okur (`26d`).
 **Dış kesinti** (sahip kararı, 2026-11-17, E633). Canlı bir (B) döngü koşusu yalnız adı konmuş bir dış kesinti
 yüzünden kırmızıysa (döngünün çağırdığı dış bir hizmetten HTTP 5xx ya da bağlantı hatası: Rekor/Sigstore, npm kayıt
 deposu, GitHub API'si ya da Actions erişilemez; kırmızı işin kendi çıktısında görünür), operatör o devir için koşuyu
-Başarısızlık'tan önce bir kez yeniden tetikleyebilir. Yeniden tetik bir insan dokunuşudur ve kaydedilir
+Başarısızlık'tan önce bir kez yeniden tetikleyebilir. Yeniden tetik yalnız kırmızı koşu hiçbir hedef ref'i yazmadıysa
+uygulanır (sahip kararı, 2026-11-18, E638): yazılmış ref'leri adlandıran bir `yaz` sert duruşu, yani hedefe yazdıktan
+sonra kırmızı olan koşu, yeniden tetiklenmez; Başarısızlık uygulanır. Yeniden tetik bir insan dokunuşudur ve kaydedilir
 (`pilot-log.md`, iki koşunun kimliği). Yeniden tetiklenen koşu yine kırmızıysa ya da kırmızı beynin kendi mantığından
-geliyorsa (bir ret, kullanılamaz girdi, böyle bir kesinti olmayan sert duruş), Başarısızlık bugünkü gibi uygulanır.
+geliyorsa (bir ret, kesintiden gelmeyen kullanılamaz girdi, böyle bir kesinti olmayan sert duruş; E635), Başarısızlık
+bugünkü gibi uygulanır.
 
 **Her yeni hedef.** Satır 3–7 her yeni yazma modu hedefinde tekrar edilir; satır 6 P1 aktarımından sonra
 `drift.check` ile her döngü yeniden doğrulanır (`21`), ondan önce yalnız genesis'te; satır 5 P1'le gelir.

@@ -23,11 +23,10 @@ Discover → Plan → Execute → Approve → Learn → Cheapen → Discover aga
 
 Bu son durumdur, başlangıç değil.
 
-**Öğrenmenin amacı.** Sistem hata yapmamak için öğrenir: doğruyu yanlıştan ayırmak, daha iyi ve
-daha profesyonel olanı seçmek için. Repoyu haritalamak, neyin neye bağlı olduğunu çıkarmak, ders
-tutmak, başka repolardan ve modelin kendi bilgisinden yararlanmak bunun araçlarıdır; ölçüsü düşen
-hata oranıdır (Y5). Bir repodan öğrenilen kalıp kopyalanmaz: modelin kendi bilgisinden gelen bir
-alternatifle çekiştirilir ve kazananı yürütme seçer (`10`, `21`).
+**Öğrenmenin amacı.** Sistem hata yapmamak için öğrenir: doğruyu yanlıştan ayırmak, daha iyi ve daha profesyonel olanı
+seçmek için. Repoyu haritalamak, neyin neye bağlı olduğunu çıkarmak, ders tutmak, başka repolardan ve modelin kendi
+bilgisinden yararlanmak bunun araçlarıdır; ölçüsü düşen hata oranıdır (Y5). Bir repodan öğrenilen kalıp kopyalanmaz:
+modelin kendi bilgisinden gelen bir alternatifle çekiştirilir ve kazananı yürütme seçer (`10`, `21`).
 
 **Sahibin hedefi (sahip kararı, 2026-11-17).** Amaç belirli bir model değil, kabul edilmiş sağlam değişiklik başına
 en düşük maliyettir; doğruluk ve güvenlik önce gelir (Y12). Sistemin bilgisi bir modelde değil repodadır: defterin
@@ -44,19 +43,26 @@ araçlar) ölçülür ve raporlanır; yerini ölçülmüş bir ihtiyaçla hak et
 mekanizma yalnız ölçülmüş bir ihtiyaçtan doğar, "lazım olabilir" diye doğmaz. Kaçınılan uyarı işaretleri: aşırı
 karmaşıklık, aşılamayan kilitler, biçimi doğruluk sanmak, değer yerine canlılığı ölçmek.
 
-**En basit döngü.** Döngü en basit hâliyle başlar. Aşama 0'da Kurucu yürüyen iskeleti kurar: hazır
-bir adayı kapıdan geçirip merge eden, izleyen ve geri alan ilk canlı döngü, önce oyuncak hedefte, sonra
-gerçek hedefin kopyasında tek birimde. Aşama 1'de canlı olan yalnız şudur: profildeki lint aracını saran tek adapter, aracın `fix` aralığını
-uygulayan düzeltici, aracın kendisi olan oracle, adayı çekip yeniden koşturan ve merge eden hakem
-kapısı, her merge'den sonra nöbetçi, zincirli tek defter. Keşifte LLM yoktur; LLM yalnız aracın
-düzeltemediği bulguyu düzeltmek için, araçsız tek bir çağrı olarak girer. Harita, itibar, dersler
-ve genesis kuyruğu, okuyucularının bir kararı değiştirebildiği aşamada açılır (Y4). Sonraki her
-özellik bir mikro görevdir: tek canlı koşuda test edilebilecek kadar küçük, hemen ölçülür, sonra
-bir sonraki. Binlerce satırlık bir parça tek seferde gelmez.
+**Geçici yapılar (sahip kararı, 2026-11-18).** Kurucu ve ajanları bir iş için geçici olarak kurduklarını (karalama
+dizinleri, indirilen araçlar ve kurulumlar, konteynerler ve imajlar, geçici dallar ve çalışma ağaçları, ara dosyalar)
+iş bittiğinde siler. İş, kabul edildiğinde, bırakıldığında ya da yerine başka bir yol seçildiğinde bitmiş sayılır.
+Geriye yalnız repoya kaydedilmiş bilgi kalır. Süren bir işin dalı iş bitene kadar durur. Bırakılan bir dal, gerekçesi
+defterde kayıtlı olduktan sonra silinir. Kanıt ve arşiv (defter satırları, `arsiv/` etiketleri, hakem sonuçları) ve
+başkasının işi geçici yapı değildir, silinmez. Kalıntılar sistemin ölçülen boyutuna sayılır.
 
-**Amaç.** Bağlandığı repodaki her modülü altı boyutta profesyonel hâle getirmek ve orada tutmak.
-Modülün notu en zayıf boyutudur, ortalaması değil. Boyutlar alan bağımsızdır; ölçüleri profilden
-gelir.
+**Sahibin ipucu** (2026-11-18, E643): Kurucu'nun tekrar eden işleri ajanlarına vermesi üzerine; `00b`'dedir.
+
+**En basit döngü.** Döngü en basit hâliyle başlar. Aşama 0'da Kurucu yürüyen iskeleti kurar: hazır bir adayı kapıdan
+geçirip merge eden, izleyen ve geri alan ilk canlı döngü, önce oyuncak hedefte, sonra gerçek hedefin kopyasında tek
+birimde. Aşama 1'de canlı olan yalnız şudur: profildeki lint aracını saran tek adapter, aracın `fix` aralığını
+uygulayan düzeltici, aracın kendisi olan oracle, adayı çekip yeniden koşturan ve merge eden hakem kapısı, her
+merge'den sonra nöbetçi, zincirli tek defter. Keşifte LLM yoktur; LLM yalnız aracın düzeltemediği bulguyu düzeltmek
+için, araçsız tek bir çağrı olarak girer. Harita, itibar, dersler ve genesis kuyruğu, okuyucularının bir kararı
+değiştirebildiği aşamada açılır (Y4). Sonraki her özellik bir mikro görevdir: tek canlı koşuda test edilebilecek kadar
+küçük, hemen ölçülür, sonra bir sonraki. Binlerce satırlık bir parça tek seferde gelmez.
+
+**Amaç.** Bağlandığı repodaki her modülü altı boyutta profesyonel hâle getirmek ve orada tutmak. Modülün notu en zayıf
+boyutudur, ortalaması değil. Boyutlar alan bağımsızdır; ölçüleri profilden gelir.
 
 | Boyut | Ölçüsü |
 |---|---|
@@ -67,11 +73,8 @@ gelir.
 | Dokümante | Doküman var olanı anlatır, her iddiası koda çapalıdır, bayatlaması bir kapıyı kırmızıya boyar; sistem onu kodla birlikte yazar |
 | Doğru | Sözleşmelerin iki ucu tutarlı, uçtan uca zincir kanıtlı |
 
-**Alan doğruluğu hedef değildir.** Sistem bir iş kuralının ya da formülün "doğrusunu" yargılamaz;
-yalnız reponun kendi kendisiyle tutarlı olup olmadığını sorar: aynı kavram bir yerde tanımlı öbür
-yerde tanımsız mı, iki tanım birbirini tutuyor mu, test ve doküman kodla uyuşuyor mu. Öğrendiği
-ve repolar arasında taşıdığı şey alan bilgisi değil mühendisliktir: güvenlik, kimlik doğrulama,
-kiracı izolasyonu, altyapı, test düzeni, mimari kalıplar (`21`).
-
-Beyin bu repoyu değil, herhangi bir repoyu hedefler; repoya özgü her şey `21-cok-repo.md`'deki
-kurala tabidir.
+**Alan doğruluğu hedef değildir.** Sistem bir iş kuralının ya da formülün "doğrusunu" yargılamaz; yalnız reponun kendi
+kendisiyle tutarlı olup olmadığını sorar: aynı kavram bir yerde tanımlı öbür yerde tanımsız mı, iki tanım birbirini
+tutuyor mu, test ve doküman kodla uyuşuyor mu. Öğrendiği ve repolar arasında taşıdığı şey alan bilgisi değil
+mühendisliktir: güvenlik, kimlik doğrulama, kiracı izolasyonu, altyapı, test düzeni, mimari kalıplar (`21`). Beyin bu
+repoyu değil, herhangi bir repoyu hedefler; repoya özgü her şey `21-cok-repo.md`'deki kurala tabidir.

@@ -53,9 +53,15 @@ ilk satırın `prev_hash`'i 64 sıfırdır. Uygulama tohum vektörleri V1–V3'�
   `root` satırıdır. Rekor kaydı herkese açıktır; yalnız hash ve iş akışı kimliği taşır. Açık hedefte
   `brain/state` ayrıca ruleset ile korunur (`deletion`, `non_fast_forward`, bypass yok); özel hedefte ve
   eğitim deposunda bütünlüğün dış güvencesi Rekor'dur.
-- **Zincir kırığı sert duruştur.** Hash uyuşmazlığı, Rekor'daki kökle uyuşmayan dal ucu ya da
-  Rekor'a yazılamama kurcalama kanıtıdır: Gözcü sert duruş yazar (`28`), defter salt okunur olur,
-  kırığın satırı ve commit'i raporlanır. Kırık düzeltilmez; kırığın kendisi yeni bir satırdır.
+- **Zincir kırığı sert duruştur.** Hash uyuşmazlığı, Rekor'daki kökle uyuşmayan dal ucu, son imzalı durum satırının
+  adlandırdığı commit'ten (merge ya da geri alma) başka bir `brain/integration` başı (E637) ya da Rekor'a yazılamama
+  kurcalama kanıtıdır: Gözcü sert duruş yazar (`28`), defter salt okunur olur, kırığın satırı ve commit'i raporlanır.
+  Kırık düzeltilmez; kırığın kendisi yeni bir satırdır; bu kırığı (B)'de yalnız `25a` Başarısızlık onarır.
+- **Rekor'a yazılamama** (sahip kararı, 2026-11-18, E636). İmzalama programının başarısız tek çağrısı henüz yazılamama
+  değildir: bir `yaz` işinde döngü onu en çok 3 kez çağırabilir, her çağrının sonucu `yaz`'ın çıktısında adlandırılır.
+  Rekor hatasından sonraki tekrar aynı köke aynı kimlikle ikinci bir Rekor girdisi bırakabilir; bu zincir kırığı
+  değildir: satırın `rekor_uuid`'si kullanılan girdiyi adlandırır, `29j` `verify` yalnız adlandırılan girdiyi okur.
+  Hiçbir çağrı başarmazsa Rekor'a yazılamamadır ve sert duruştur.
 - **Geçmişe sorgu.** `chain.asof <tarih|sha>` herhangi bir an için görünümleri kurar: kabul
   edilmiş organlar, itibarları, kapsama, açık property'ler, değer / USD, eşikler. Araç ilk
   okuyucusu doğunca açılır (`status.md`'nin "geçen yıl bugün" bölümü ya da bir eşik yeniden
