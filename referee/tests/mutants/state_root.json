@@ -1,0 +1,49 @@
+{
+ "mutants": [
+  {
+   "id": "ledger_outside_the_state_root",
+   "file": "target/branches.py",
+   "old": "STATE_LEDGER = STATE_ROOT + \"/ledger.jsonl\"\n",
+   "new": "STATE_LEDGER = \"ledger.jsonl\"\n",
+   "tests": [
+    "test_state_root.py"
+   ]
+  },
+  {
+   "id": "bundles_outside_the_state_root",
+   "file": "target/branches.py",
+   "old": "    return \"%s/chain/%s.sigstore.json\" % (STATE_ROOT, root)",
+   "new": "    return \"chain/%s.sigstore.json\" % root",
+   "tests": [
+    "test_state_root.py"
+   ]
+  },
+  {
+   "id": "offline_reading_not_on_the_line",
+   "file": "loop/job.py",
+   "old": "                    offline={\"modules\": offline[\"modules\"]})",
+   "new": "                    offline={\"modules\": 0})",
+   "tests": [
+    "test_state_root.py"
+   ]
+  },
+  {
+   "id": "harness_report_not_on_the_line",
+   "file": "loop/job.py",
+   "old": "cases=cases, harness=harness,\n",
+   "new": "cases=cases, harness={},\n",
+   "tests": [
+    "test_state_root.py"
+   ]
+  },
+  {
+   "id": "loop_reads_another_root",
+   "file": "loop/job.py",
+   "old": "    return OF.check(CODE_ROOT)",
+   "new": "    return OF.check(os.path.dirname(CODE_ROOT))",
+   "tests": [
+    "test_state_root.py"
+   ]
+  }
+ ]
+}

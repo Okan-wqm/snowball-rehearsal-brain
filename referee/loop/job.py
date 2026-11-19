@@ -169,6 +169,12 @@ refused tree is ``pulled_invalid``). Then:
   cycle's findings are none (``FINDINGS``) until an organ's output is kept, so every case of a cycle is a miss
   today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``min_groups`` and ``window``
   are not given (``policy.json`` holds none of their keys, reports/seed-076), so ``recall_lb`` is ``null``.
+  The harness reaches no model (P1 MF5, ``harness.offline``): before anything of the target is read, ``yaz_offline``
+  reads the import statements of the running code's harness (``CODE_ROOT``), and a reason there refuses the target
+  (``harness_online`` with the reasons, exit 1); the report above, the copy's genesis gate, the PASS judgement and
+  D8's judgement (``loop.drill``) run inside ``harness.offline.run``, and a socket or a child process one of them
+  asks for refuses the target the same way (reasons ``event:<audit event>``) before D6 writes ``brain/state``; a
+  target's line otherwise has ``offline`` (``{modules}``, how many modules the reading reached).
   Nothing reads ``cases`` or ``harness`` to decide and nothing is written from them: no merge, row or exit code
   depends on a case or a report (``<state_root>/cases/`` is not written yet, reports/seed-075). Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
   ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it), read
@@ -318,6 +324,7 @@ from typing import Any, NamedTuple
 from cases import build as CB
 from dispatcher import llm_call as LL
 from gate import revert as RV
+from harness import offline as OF
 from harness import pass_row as PR
 from harness import score as HS
 from ledger import anchor as AN
@@ -778,12 +785,22 @@ def yaz_cases(environ: dict[str, str], tid: str, art: Any) -> dict[str, Any]:
 FINDINGS: list = []   # the cycle's findings: none, until an organ's output is kept (stage 1's ``lint.discover``)
 
 
+CODE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))    # the directory ``loop/`` is in
+
+
+def yaz_offline() -> dict[str, Any]:
+    """The static reading of the running harness (P1 MF5, ``harness.offline.check`` of ``CODE_ROOT``, the code this
+    process runs): ``{roots, modules, reasons}``; see the module docstring."""
+    return OF.check(CODE_ROOT)
+
+
 def yaz_harness(art: Any, tree: str, cases: dict[str, Any]) -> dict[str, Any]:
     """The harness report of the cycle (P1 MF4; see the module docstring): ``harness.score.report`` of
     ``FINDINGS`` against the dev cases ``yaz_cases`` built, on ``pulled``'s snapshot document and the extracted
     tree; ``{reason: "harness_refused", reasons}`` when it refuses them."""
     try:
-        return HS.report(list(FINDINGS), cases["cases"], art.snapshot, lambda path: D._read_regular(tree, path))
+        return OF.run(lambda: HS.report(list(FINDINGS), cases["cases"], art.snapshot,
+                                        lambda path: D._read_regular(tree, path)))
     except HS.Unusable as exc:
         return {"reason": "harness_refused", "reasons": exc.reasons}
 
@@ -875,7 +892,7 @@ def yaz_gate(environ: dict[str, str], art: Any) -> dict[str, Any] | None:
         return None
     drill, imports = _judge_inputs(environ)
     try:
-        got = PR.gate(_state(art), _expectations(art), drill, imports)
+        got = OF.run(lambda: PR.gate(_state(art), _expectations(art), drill, imports))
     except JUDGE_UNUSABLE as exc:
         return {"verdict": "closed", "conditions": {}, "unusable": cli.cause(exc)}
     return {"verdict": got["verdict"], "conditions": {c: r for c, r in got["conditions"].items() if r}}
@@ -911,8 +928,8 @@ def yaz_pass(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any
         return {"verdict": "FAIL", "conditions": {}, "unusable": cli.cause(exc)}, None
     result = _workspace_file(environ, path)
     try:
-        got = PR.judge(_state(art), _state(copies[0]), _expectations(art), _expectations(copies[0]), drill, imports,
-                       result)
+        got = OF.run(lambda: PR.judge(_state(art), _state(copies[0]), _expectations(art), _expectations(copies[0]),
+                                      drill, imports, result))
     except JUDGE_UNUSABLE as exc:
         return {"verdict": "FAIL", "conditions": {}, "unusable": cli.cause(exc)}, None
     line = {"verdict": got["verdict"], "conditions": {c: r for c, r in got["conditions"].items() if r}}
@@ -1350,12 +1367,19 @@ def _cagir(environ: dict[str, str], tid: str, now: Any = None, **_: Any) -> dict
 
 def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any = None, now: Any = None,
          **_: Any) -> dict[str, Any]:
-    d5, art, tree = yaz_d5(environ, tid)
-    if "reason" in d5:
-        return dict(d5, ok=False)
-    cases = yaz_cases(environ, tid, art)
-    return dict(_yaz_written(environ, tid, d5, art, tree, transport, signer, now), cases=cases,
-                harness=yaz_harness(art, tree, cases))
+    offline = yaz_offline()
+    if offline["reasons"]:
+        return {"ok": False, "reason": "harness_online", "reasons": offline["reasons"]}
+    try:
+        d5, art, tree = yaz_d5(environ, tid)
+        if "reason" in d5:
+            return dict(d5, ok=False)
+        cases = yaz_cases(environ, tid, art)
+        harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten
+        return dict(_yaz_written(environ, tid, d5, art, tree, transport, signer, now), cases=cases, harness=harness,
+                    offline={"modules": offline["modules"]})
+    except OF.Online as exc:
+        return {"ok": False, "reason": "harness_online", "reasons": exc.reasons}
 
 
 def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any, tree: str, transport: Any,

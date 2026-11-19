@@ -74,6 +74,7 @@ import hashlib
 import re
 from typing import Any
 
+from harness import offline as OF
 from harness import revert_drill as RD
 from ledger import chain
 from loop import accepted as AC
@@ -203,7 +204,7 @@ def _step(inp: dict | None, ledger: bytes, unfinished: list[str], merging: bool,
         commits = [i for i in drills if rows[i]["kind"] == "commit"]
         if commits:
             answer = RD.key(inp["seed"], committed_by(rows, commits[-1]), inp["catalog"])
-            out["judged"] = dict(RD.judge(ledger, answer), key=answer)
+            out["judged"] = dict(OF.run(lambda: RD.judge(ledger, answer)), key=answer)
     misfits = sorted(i for i, patch in inp["patches"].items() if land.applied(tree, patch)["reasons"])
     if misfits:
         return dict(out, action="none", why="patch_does_not_apply", instances=misfits)

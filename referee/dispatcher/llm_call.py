@@ -95,7 +95,7 @@ import time
 from typing import Any
 
 from gate import secrets
-from ledger import append, chain
+from ledger import append, chain, cost
 from policy import reads as P
 import cli
 
@@ -111,16 +111,14 @@ REASONS = ("secret_in_prompt", "stage_brake")
 TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 ARGS = ("-p", "--output-format", "json", "--tools", "", "--setting-sources", "", "--strict-mcp-config",
         "--disable-slash-commands", "--no-session-persistence")
-PART = KIND = "cost"
-OUTCOMES = ("ok", "outage", "request_rejected", "unresolved", "secret", "brake")
+PART, KIND, OUTCOMES = cost.PART, cost.KIND, cost.OUTCOMES   # the cost section's facts are ``ledger.cost``'s
 OUTAGE_STATUS = {429: "quota", 401: "identity", 403: "identity"}
 REJECTED_STATUS = (400, 404, 413, 422)
 API_STATUS = re.compile(r"API Error: (\d{3})\b")
 HEX = set("0123456789abcdef")
 
 
-class Unusable(ValueError):
-    pass
+Unusable = cost.Unusable    # one class: a reader of the section catches the same exception without this module
 
 
 # ---------------------------------------------------------------- types, the template, the prompt
@@ -272,24 +270,12 @@ def to_micros(text: str) -> int | None:
     return micros if micros <= chain.MAX_SAFE_INT else None
 
 
-def _micros(value: Any, what: str, positive: bool = False) -> int:
-    if type(value) is not int or value < (1 if positive else 0) or value > chain.MAX_SAFE_INT:
-        raise Unusable("%s must be an integer %s" % (what, "> 0" if positive else ">= 0"))
-    return value
+_micros = cost.micros
 
 
 # ---------------------------------------------------------------- the book and the brake
 
-def spent_micros(rows: list[dict]) -> int:
-    """The stage's spend: the sum of ``payload.usd_micros`` over every ``part: cost`` row (``Unusable`` when one
-    has no integer ``usd_micros`` >= 0). One rule for this module's brake and ``status.block``'s."""
-    total = 0
-    for row in rows:
-        if row.get("part") == PART:
-            payload = row.get("payload")
-            total += _micros(payload.get("usd_micros") if isinstance(payload, dict) else None,
-                             "cost row %r usd_micros" % row.get("row_id"))
-    return total
+spent_micros = cost.spent_micros
 
 
 class CostBook:

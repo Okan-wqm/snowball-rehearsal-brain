@@ -15,7 +15,7 @@ cycle's one ``brain/state`` commit through ``ledger.cycle`` (which chains them w
   ``events`` row of another kind does not replace it;
 - ``base_age_s``: ts(the last ``cycle_start``) - ts(the first ``events`` row of kind ``genesis``) in seconds, ts
   ``YYYY-MM-DDTHH:MM:SSZ`` (UTC); null when either row is missing; a negative difference is written as it is;
-- ``brake``: ``{spent_usd_micros, cap_usd_micros, engaged}``: spent is ``dispatcher.llm_call.spent_micros`` (the sum
+- ``brake``: ``{spent_usd_micros, cap_usd_micros, engaged}``: spent is ``ledger.cost.spent_micros`` (the sum
   of ``payload.usd_micros`` over every ``part: cost`` row, the one rule ``llm.call``'s brake uses), cap the stage's
   canary cap given on stdin, ``engaged`` iff spent >= cap;
 - ``human_touches``: the number of ``imports.jsonl`` rows; every row is one touch, a transfer or not.
@@ -68,8 +68,7 @@ import sys
 import time
 from typing import Any
 
-from dispatcher import llm_call
-from ledger import append, chain
+from ledger import append, chain, cost
 from target import branches
 import cli
 
@@ -138,8 +137,8 @@ def fields(rows: list[dict], imports: list[dict], cap: Any) -> dict:
         age = seconds(start.get("ts"), "the last cycle_start row's ts") - seconds(
             origins[0].get("ts"), "the first genesis row's ts")
     try:
-        spent = llm_call.spent_micros(rows)
-    except llm_call.Unusable as exc:
+        spent = cost.spent_micros(rows)
+    except cost.Unusable as exc:
         raise Unusable(cli.cause(exc)) from None
     return {"cycle_id": _payload(start, "cycle_id"),
             "last_decision": _payload(decisions[-1], "decision") if decisions else None,

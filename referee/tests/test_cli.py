@@ -776,6 +776,7 @@ def _inject_argv(f: str, d: str) -> dict:
         "gate.revert": [["cause"]],
         "gate.secrets": [["scan", "diff", f], ["scan", "row", f], ["scan", "prompt", f], ["scan", "--kind", "diff", f]],
         "gate.sentinel": [["decide"]],
+        "harness.offline": [[d], []],
         "harness.revert_drill": [["commit", f, f], ["reveal", f, f], ["judge", f, f]],
         "harness.pass_row": [["judge", d, d, d, d, f, f], ["judge", d, d, d, d, f, f, f, f]],
         "harness.score": [[f, f], [f, f, "--snapshot", f, "--tree", d]],

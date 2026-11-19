@@ -63,8 +63,7 @@ import re
 from typing import Any, Callable
 
 import cli
-from dispatcher import llm_call
-from ledger import chain
+from ledger import chain, cost
 from target import branches
 
 PARTS = ("founder", "events", "cost", "drill", "freeze", "rival", "accept", "security", "looks")
@@ -308,7 +307,7 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
     ("events", "status_edited"): (shape({"found_sha256": nullable(hex64), "recorded_sha256": nullable(hex64)}),
                                   False),
     ("cost", "cost"): (shape({"tool": one_of("llm.call"), "template_sha256": hex64, "model_requested": text,
-                              "models_served": list_of(text), "outcome": one_of(*llm_call.OUTCOMES),
+                              "models_served": list_of(text), "outcome": one_of(*cost.OUTCOMES),
                               "reason": nullable(text), "usd_micros": count, "cost_source": text,
                               "cap_usd_micros": count, "prompt_sha256": hex64, "duration_ms": count}), False),
     ("events", "pass"): (shape({"stage": exactly(0), "verdict": one_of("PASS"), "import_line_sha256": hex64,

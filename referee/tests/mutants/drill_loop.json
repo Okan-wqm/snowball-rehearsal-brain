@@ -3,7 +3,7 @@
   {
    "id": "never_judged",
    "file": "loop/drill.py",
-   "old": "            out[\"judged\"] = dict(RD.judge(ledger, answer), key=answer)",
+   "old": "            out[\"judged\"] = dict(OF.run(lambda: RD.judge(ledger, answer)), key=answer)",
    "new": "            pass",
    "tests": [
     "test_loop_write.py"

@@ -1,0 +1,238 @@
+{
+ "mutants": [
+  {
+   "id": "closure_not_followed",
+   "file": "harness/offline.py",
+   "old": "        stack.extend(pygraph.with_packages(imported - clients, modules))",
+   "new": "        stack.extend(())",
+   "tests": [
+    "test_offline.Static"
+   ]
+  },
+  {
+   "id": "package_init_not_followed",
+   "file": "harness/offline.py",
+   "old": "        stack.extend(pygraph.with_packages(imported - clients, modules))",
+   "new": "        stack.extend(imported - clients)",
+   "tests": [
+    "test_offline.Static"
+   ]
+  },
+  {
+   "id": "client_read_as_any_module",
+   "file": "harness/offline.py",
+   "old": "        clients = {target for target in imported if _in(target, CLIENTS)}",
+   "new": "        clients = set()",
+   "tests": [
+    "test_offline.Static"
+   ]
+  },
+  {
+   "id": "foreign_not_judged",
+   "file": "harness/offline.py",
+   "old": "for o in outside - set(sys.stdlib_module_names))",
+   "new": "for o in ())",
+   "tests": [
+    "test_offline.Static"
+   ]
+  },
+  {
+   "id": "stdlib_is_foreign",
+   "file": "harness/offline.py",
+   "old": "for o in outside - set(sys.stdlib_module_names))",
+   "new": "for o in outside)",
+   "tests": [
+    "test_offline.Static"
+   ]
+  },
+  {
+   "id": "dunder_import_not_seen",
+   "file": "harness/offline.py",
+   "old": "        found.add(\"__import__\")",
+   "new": "        pass",
+   "tests": [
+    "test_offline.Static"
+   ]
+  },
+  {
+   "id": "dynamic_modules_not_seen",
+   "file": "harness/offline.py",
+   "old": "if not level and name.split(\".\")[0] in DYNAMIC}",
+   "new": "if False}",
+   "tests": [
+    "test_offline.Static"
+   ]
+  },
+  {
+   "id": "unparsed_is_silent",
+   "file": "harness/offline.py",
+   "old": "            reasons.add(\"unparsed:%s\" % rel)",
+   "new": "            pass",
+   "tests": [
+    "test_offline.Static"
+   ]
+  },
+  {
+   "id": "no_harness_is_clean",
+   "file": "harness/offline.py",
+   "old": "\"reasons\": [\"no_harness_module\"]}",
+   "new": "\"reasons\": []}",
+   "tests": [
+    "test_offline.Static"
+   ]
+  },
+  {
+   "id": "sockets_not_refused",
+   "file": "harness/offline.py",
+   "old": "if _open and (event in REFUSED or event.startswith(REFUSED_PREFIX)):",
+   "new": "if _open and event in REFUSED:",
+   "tests": [
+    "test_offline.Guard"
+   ]
+  },
+  {
+   "id": "processes_not_refused",
+   "file": "harness/offline.py",
+   "old": "if _open and (event in REFUSED or event.startswith(REFUSED_PREFIX)):",
+   "new": "if _open and event.startswith(REFUSED_PREFIX):",
+   "tests": [
+    "test_offline.Guard"
+   ]
+  },
+  {
+   "id": "swallowed_event_forgotten",
+   "file": "harness/offline.py",
+   "old": "    if seen:\n        raise Online(sorted(set(seen)))",
+   "new": "    if False:\n        raise Online(sorted(set(seen)))",
+   "tests": [
+    "test_offline.Guard"
+   ]
+  },
+  {
+   "id": "inner_event_not_the_outers",
+   "file": "harness/offline.py",
+   "old": "        for seen in _open:\n            seen.append(event)",
+   "new": "        _open[-1].append(event)",
+   "tests": [
+    "test_offline.Guard"
+   ]
+  },
+  {
+   "id": "guard_left_on",
+   "file": "harness/offline.py",
+   "old": "    finally:\n        _open.pop()\n",
+   "new": "    finally:\n        pass\n",
+   "tests": [
+    "test_offline.Guard"
+   ]
+  },
+  {
+   "id": "guard_on_outside_a_run",
+   "file": "harness/offline.py",
+   "old": "    if _open and (event in REFUSED",
+   "new": "    if (event in REFUSED",
+   "tests": [
+    "test_offline.Guard"
+   ]
+  },
+  {
+   "id": "fork_allowed",
+   "file": "harness/offline.py",
+   "old": "\"os.fork\", ",
+   "new": "",
+   "tests": [
+    "test_offline.Guard"
+   ]
+  },
+  {
+   "id": "exit_0_with_reasons",
+   "file": "harness/offline.py",
+   "old": "    return 1 if got[\"reasons\"] else 0",
+   "new": "    return 0",
+   "tests": [
+    "test_offline.Command"
+   ]
+  },
+  {
+   "id": "yaz_ignores_the_static_reading",
+   "file": "loop/job.py",
+   "old": "    if offline[\"reasons\"]:\n",
+   "new": "    if False:\n",
+   "tests": [
+    "test_offline.Live.test_a_harness_that_imports_the_client_refuses_the_target_before_it_is_read"
+   ]
+  },
+  {
+   "id": "yaz_reads_the_target_first",
+   "file": "loop/job.py",
+   "old": "    offline = yaz_offline()\n    if offline[\"reasons\"]:\n        return {\"ok\": False, \"reason\": \"harness_online\", \"reasons\": offline[\"reasons\"]}\n    try:\n        d5, art, tree = yaz_d5(environ, tid)\n",
+   "new": "    offline = yaz_offline()\n    try:\n        d5, art, tree = yaz_d5(environ, tid)\n        if offline[\"reasons\"]:\n            return {\"ok\": False, \"reason\": \"harness_online\", \"reasons\": offline[\"reasons\"]}\n",
+   "tests": [
+    "test_offline.Live.test_a_harness_that_imports_the_client_refuses_the_target_before_it_is_read"
+   ]
+  },
+  {
+   "id": "scorer_unguarded",
+   "file": "loop/job.py",
+   "old": "        return OF.run(lambda: HS.report(list(FINDINGS), cases[\"cases\"], art.snapshot,\n                                        lambda path: D._read_regular(tree, path)))",
+   "new": "        return (lambda: HS.report(list(FINDINGS), cases[\"cases\"], art.snapshot,\n                                        lambda path: D._read_regular(tree, path)))()",
+   "tests": [
+    "test_offline.Live.test_the_scorer_going_online_stops_the_genesis"
+   ]
+  },
+  {
+   "id": "gate_unguarded",
+   "file": "loop/job.py",
+   "old": "        got = OF.run(lambda: PR.gate(_state(art), _expectations(art), drill, imports))",
+   "new": "        got = PR.gate(_state(art), _expectations(art), drill, imports)",
+   "tests": [
+    "test_offline.Live.test_the_copys_gate_going_online_stops_the_cycle"
+   ]
+  },
+  {
+   "id": "pass_judge_unguarded",
+   "file": "loop/job.py",
+   "old": "        got = OF.run(lambda: PR.judge(",
+   "new": "        got = (lambda call: call())(lambda: PR.judge(",
+   "tests": [
+    "test_offline.Live.test_the_pass_rows_judge_going_online_stops_the_cycle"
+   ]
+  },
+  {
+   "id": "drill_judge_unguarded",
+   "file": "loop/drill.py",
+   "old": "dict(OF.run(lambda: RD.judge(ledger, answer)), key=answer)",
+   "new": "dict(RD.judge(ledger, answer), key=answer)",
+   "tests": [
+    "test_offline.Live.test_the_drills_judge_going_online_stops_the_cycle"
+   ]
+  },
+  {
+   "id": "scorer_after_the_write",
+   "file": "loop/job.py",
+   "old": "        harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten\n        return dict(_yaz_written(environ, tid, d5, art, tree, transport, signer, now), cases=cases, harness=harness,\n",
+   "new": "        written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now)\n        harness = yaz_harness(art, tree, cases)\n        return dict(written, cases=cases, harness=harness,\n",
+   "tests": [
+    "test_offline.Live.test_the_scorer_going_online_stops_the_genesis"
+   ]
+  },
+  {
+   "id": "loop_reads_another_root",
+   "file": "loop/job.py",
+   "old": "    return OF.check(CODE_ROOT)",
+   "new": "    return OF.check(os.path.dirname(CODE_ROOT))",
+   "tests": [
+    "test_offline.Live.test_the_loop_reads_the_code_it_runs"
+   ]
+  },
+  {
+   "id": "schema_names_the_client",
+   "file": "ledger/schema.py",
+   "old": "from ledger import chain, cost\nfrom target import branches\n",
+   "new": "from ledger import chain, cost\nfrom dispatcher import llm_call  # noqa\nfrom target import branches\n",
+   "tests": [
+    "test_offline.Static.test_the_brains_own_harness_is_clean"
+   ]
+  }
+ ]
+}
