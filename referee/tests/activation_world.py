@@ -195,7 +195,7 @@ class World:
         summary = json.loads(self.files["summary.json"])
         return pulled.Pulled(summary["targets"][0], {"units": [json.loads(self.recipe)]}, json.loads(POLICY), "",
                              {c["id"]: {k: v for k, v in c.items() if k != "id"} for c in self.candidates},
-                             dict(self.heads), {p: b"" for p in branches.STATE_CHAINS}, POLICY, None)
+                             dict(self.heads), {p: b"" for p in branches.STATE_CHAINS}, POLICY, None, {}, {})
 
     def base_tree(self) -> str:
         """A new directory holding the base commit's tree (D1's checkout), not ``main``'s head; removed when the

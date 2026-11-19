@@ -84,8 +84,8 @@
   {
    "id": "watch_not_passed",
    "file": "loop/job.py",
-   "old": "deps, art.target, runner, base=root, watch=watch)",
-   "new": "deps, art.target, runner, base=root)",
+   "old": "deps, art.target, runner, base=root, watch=watch,",
+   "new": "deps, art.target, runner, base=root,",
    "tests": [
     "test_loop_kos.py"
    ]
