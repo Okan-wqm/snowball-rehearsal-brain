@@ -1,0 +1,211 @@
+{
+ "mutants": [
+  {
+   "id": "tip_first_row_wins",
+   "file": "ledger/serial.py",
+   "old": "            tip = {\"row_id\": row[\"row_id\"], \"kind\": \"merge\", \"sha\": row[\"payload\"][\"merge_sha\"]}\n        elif _type(row) == REVERT:",
+   "new": "            tip = tip or {\"row_id\": row[\"row_id\"], \"kind\": \"merge\", \"sha\": row[\"payload\"][\"merge_sha\"]}\n        elif _type(row) == REVERT:",
+   "tests": [
+    "test_serial.py"
+   ]
+  },
+  {
+   "id": "tip_revert_not_a_naming_row",
+   "file": "ledger/serial.py",
+   "old": "        elif _type(row) == REVERT:\n            tip =",
+   "new": "        elif _type(row) == (\"events\", \"none\"):\n            tip =",
+   "tests": [
+    "test_serial.py"
+   ]
+  },
+  {
+   "id": "tip_revert_reads_as_merge",
+   "file": "ledger/serial.py",
+   "old": "\"kind\": \"revert\", \"sha\"",
+   "new": "\"kind\": \"merge\", \"sha\"",
+   "tests": [
+    "test_serial.py"
+   ]
+  },
+  {
+   "id": "tip_cut_not_a_naming_row",
+   "file": "ledger/serial.py",
+   "old": "        if _type(row) == CUT:",
+   "new": "        if _type(row) == (\"events\", \"none\"):",
+   "tests": [
+    "test_serial.py"
+   ]
+  },
+  {
+   "id": "unnamed_is_no_refusal",
+   "file": "loop/integration.py",
+   "old": "    if tip is None:\n        raise PulledError([\"integration_unnamed\"])",
+   "new": "    if tip is None:\n        return {\"row_id\": \"\", \"kind\": \"cut\", \"sha\": \"\"}",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "head_not_compared",
+   "file": "loop/integration.py",
+   "old": "return [] if head == tip[\"sha\"] else [\"head_not_named\"]",
+   "new": "return []",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "revert_row_names_merge_as_head",
+   "file": "loop/integration.py",
+   "old": "    if tip[\"kind\"] != \"revert\":\n        return",
+   "new": "    if tip[\"kind\"] != \"revert\" or head == tip[\"sha\"]:\n        return",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "head_parent_count_free",
+   "file": "loop/integration.py",
+   "old": "if len(found) != 2 or found[0] != tip[\"sha\"]:",
+   "new": "if len(found) < 2 or found[0] != tip[\"sha\"]:",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "head_first_parent_free",
+   "file": "loop/integration.py",
+   "old": "if len(found) != 2 or found[0] != tip[\"sha\"]:",
+   "new": "if len(found) != 2 or tip[\"sha\"] not in found:",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "reverted_need_not_be_merge",
+   "file": "loop/integration.py",
+   "old": "        if len(merged) != 2:",
+   "new": "        if len(merged) < 1:",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "revert_commit_parents_free",
+   "file": "loop/integration.py",
+   "old": "if G.parents(history, found[1]) != [tip[\"sha\"]]:",
+   "new": "if tip[\"sha\"] not in G.parents(history, found[1]) and False:",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "revert_commit_may_be_a_merge",
+   "file": "loop/integration.py",
+   "old": "if G.parents(history, found[1]) != [tip[\"sha\"]]:",
+   "new": "if G.parents(history, found[1])[:1] != [tip[\"sha\"]]:",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "revert_commit_tree_free",
+   "file": "loop/integration.py",
+   "old": "both = G.tree_of(history, found[1]) == before and G.tree_of(history, head) == before",
+   "new": "both = G.tree_of(history, head) == before",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "head_tree_free",
+   "file": "loop/integration.py",
+   "old": "both = G.tree_of(history, found[1]) == before and G.tree_of(history, head) == before",
+   "new": "both = G.tree_of(history, found[1]) == before",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "tree_before_is_the_merges",
+   "file": "loop/integration.py",
+   "old": "before = G.tree_of(history, merged[0])",
+   "new": "before = G.tree_of(history, merged[1])",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "object_reason_swallowed",
+   "file": "loop/integration.py",
+   "old": "        return [\"integration:%s\" % r for r in exc.reasons]",
+   "new": "        return []",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "cek_does_not_judge_integration",
+   "file": "loop/job.py",
+   "old": "        if \"reason\" in named:\n            return dict(named, heads=heads, state=state, root=anchored)",
+   "new": "        if \"reason\" in named and False:\n            return dict(named, heads=heads, state=state, root=anchored)",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_head_the_ledger_does_not_name_is_a_chain_break"
+   ]
+  },
+  {
+   "id": "cek_judges_another_head",
+   "file": "loop/job.py",
+   "old": "named = _cek_integration(url, commit, chains[B.STATE_LEDGER], root, git, environ)",
+   "new": "named = _cek_integration(url, heads[B.STATE], chains[B.STATE_LEDGER], root, git, environ)",
+   "tests": [
+    "test_loop_cek.CekJob.test_the_job_runs_d1_and_hands_pulled_to_the_upload"
+   ]
+  },
+  {
+   "id": "cek_refusal_without_the_row",
+   "file": "loop/job.py",
+   "old": "return {\"reason\": \"integration_refused\", \"reasons\": reasons, \"integration\": tip} if reasons else tip",
+   "new": "return {\"reason\": \"integration_refused\", \"reasons\": reasons} if reasons else tip",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_head_the_ledger_does_not_name_is_a_chain_break"
+   ]
+  },
+  {
+   "id": "cek_revert_judged_without_history",
+   "file": "loop/job.py",
+   "old": "    if tip[\"kind\"] != \"revert\":\n        reasons = IG.reasons(tip, head)\n    else:",
+   "new": "    if True:\n        reasons = [] if tip[\"kind\"] == \"revert\" else IG.reasons(tip, head)\n    else:",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_head_that_is_not_the_revert_of_the_named_merge"
+   ]
+  },
+  {
+   "id": "cek_history_with_trees",
+   "file": "loop/job.py",
+   "old": "F.fetch(history_dir, url, head, git=git, environ=environ, history=True)",
+   "new": "F.fetch(history_dir, url, head, git=git, environ=environ)",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_revert_row_names_the_head_by_the_reverts_shape"
+   ]
+  },
+  {
+   "id": "cek_history_fetch_failure_swallowed",
+   "file": "loop/job.py",
+   "old": "            raise Unusable(\"cek: integration history fetch: %s\" % \", \".join(exc.reasons)) from None",
+   "new": "            return tip",
+   "tests": [
+    "test_loop_cek.CekJob.test_an_integration_history_fetch_that_fails_is_no_verdict"
+   ]
+  },
+  {
+   "id": "cek_integration_not_on_the_line",
+   "file": "loop/job.py",
+   "old": "return dict({\"heads\": heads, \"state\": state, \"root\": anchored, \"integration\": named, \"assembled\": assembled,",
+   "new": "return dict({\"heads\": heads, \"state\": state, \"root\": anchored, \"assembled\": assembled,",
+   "tests": [
+    "test_loop_cek.CekJob.test_the_job_runs_d1_and_hands_pulled_to_the_upload"
+   ]
+  }
+ ]
+}

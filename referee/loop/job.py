@@ -259,18 +259,25 @@ refused tree is ``pulled_invalid``). Then:
   state's, against ``loop.yml`` on ``$GITHUB_REPOSITORY``'s ``main``, ``loop.accepted.workflow_identity``); a
   refusal is ``root_refused`` with those reasons, or ``root_unreadable`` when the ledger or the last root row is
   not of the form ``ledger.anchor`` reads, and carries ``heads`` and ``state``; Rekor unreadable, or an answer that
-  is not the entry asked for, is unusable. Then ``pulled_refused`` with
+  is not the entry asked for, is unusable. Then tohum/13's chain break of ``brain/integration`` (E637), still
+  before the target's tree is fetched: the listed head against the commit the anchored ledger names
+  (``loop.integration``; ``_cek_integration``): for a ``cut`` or ``merge`` row the head must be that commit and
+  nothing is fetched; for a ``revert`` row the head's ancestry is fetched without trees into
+  ``cek-*/integration-history.git`` (a failed fetch is unusable) and the head judged by its parents and tree id; a
+  refusal is ``integration_refused`` with ``loop.integration``'s reasons and carries ``heads``, ``state``, ``root``
+  and, when the ledger names one, ``integration`` (the row and the commit it names: the break's row; the head is
+  in ``heads``). Then ``pulled_refused`` with
   ``assemble``'s reasons. Then MF4's judgement: the
   assembled artifact is read back as the other jobs read their download (``loop.pulled.read``, exactly one entry of
   ``units``, else ``units_not_one``; the tree extracted by ``loop.pulled.extract_tree`` into ``cek-*/tree``, a tree
   it refuses is ``pulled_invalid``) and the unit gets the static check ``getir`` runs
   (``profile.unit_verify.check_recipe`` with the artifact's policy and ``targets[]`` entry: MF6's recipe rules and,
   on the tree, ``profile.derive check`` of the recipe against the referee's own derivation of that tree; a reason
-  is ``recipe_refused`` with the reasons). A refusal after the assembly carries ``heads``, ``state``, ``root``
+  is ``recipe_refused`` with the reasons). A refusal after the assembly carries ``heads``, ``state``, ``root``, ``integration``
   and ``assembled``. When all of it holds, the line's ``accepted`` has ``brain_sha`` (the accepted commit: ``candidates/`` and ``targets/`` are read there),
   ``transfer_sha`` (the transfer row's commit) and ``referee_tree_sha256`` (the ``referee/`` hash of
   ``transfer_sha``, equal to the row's), ``result_sha256``, ``artifact_id``; each target's line has ``heads`` (branch to commit), ``state`` (``head``, ``previous``, ``rows``),
-  ``root`` (``root``, ``rekor_uuid``), ``assembled`` (``target``, ``commit``, ``candidates``, ``organs``: the ids of the organs carried, ``loop.cek`` "Organs", ``snapshot_id``: the clean snapshot's, ``snapshot.make``, and ``mutations``: the ids ``cases.build`` proposed), ``profile``
+  ``root`` (``root``, ``rekor_uuid``), ``integration`` (``row_id``, ``kind``, ``sha``: the row of the ledger that names ``brain/integration``'s commit; ``None`` in a genesis cycle), ``assembled`` (``target``, ``commit``, ``candidates``, ``organs``: the ids of the organs carried, ``loop.cek`` "Organs", ``snapshot_id``: the clean snapshot's, ``snapshot.make``, and ``mutations``: the ids ``cases.build`` proposed), ``profile``
   (``unit_id``); the job's ``checked`` is ``CEK_CHECKED``: every check of D1's row has run. When every target
   holds, each served target's assembled directory, the bytes MF4 judged, is moved to ``$RUNNER_TEMP/out/pulled/<id>``
   and ``served.json`` written (``_hand_over``; ``out/pulled`` must not exist before, else exit 2), the line has ``ok`` true and ``done`` ``["D1"]``, exit 0, so the upload step runs and ``getir``, ``kos``,
@@ -340,6 +347,7 @@ from loop import drill as DR
 from loop import fetch as F
 from loop import gitobj as G
 from loop import inputs as IN
+from loop import integration as IG
 from loop import program as PG
 from loop import pulled as P
 from loop import rekor as RK
@@ -455,7 +463,7 @@ CEK_FILES = (IMPORTS, "setup/summary.json", "policy.json")
 TARGET_REFS = {b: "refs/heads/" + b for b in (B.STATE, B.INTEGRATION)}
 MAIN_REF = "refs/heads/main"  # the toy's genesis cycle reads its tree here (tohum/07: brain/integration is cut from main)
 # What cek's line lists as checked when D1 holds: every check of asama-0/01's D1 row.
-CEK_CHECKED = ("accepted_sha", "referee_tree", "heads", "state_previous", "root", "assembled", "profile")
+CEK_CHECKED = ("accepted_sha", "referee_tree", "heads", "state_previous", "root", "integration", "assembled", "profile")
 
 SECRET_ENV = tuple(sorted({name for job in JOBS.values() for name in job.secrets} | {"GITHUB_TOKEN"}))
 
@@ -1217,7 +1225,7 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
         commit = target.get("base_sha")
         if SC.hex40(commit, "base_sha"):
             return dict(_refused(["base_sha_invalid"]), heads=heads)
-        state = anchored = status = None
+        state = anchored = status = named = None
         chains = {p: b"" for p in B.STATE_CHAINS}
     elif len(missing) == len(heads):  # a toy with neither head: its genesis cycle, on its main (loop.pulled)
         try:
@@ -1226,7 +1234,7 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
             raise Unusable("cek: target heads: %s" % ", ".join(exc.reasons)) from None
         if commit is None:
             return dict(_refused(missing + ["head_missing:main"]), heads=heads)
-        state = anchored = status = None
+        state = anchored = status = named = None
         chains = {p: b"" for p in B.STATE_CHAINS}
     elif missing:
         return dict(_refused(missing), heads=heads)
@@ -1238,6 +1246,9 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
         if "reason" in anchored:
             return dict(anchored, heads=heads, state=state)
         commit = heads[B.INTEGRATION]
+        named = _cek_integration(url, commit, chains[B.STATE_LEDGER], root, git, environ)
+        if "reason" in named:
+            return dict(named, heads=heads, state=state, root=anchored)
     target_dir = os.path.join(root, "target.git")
     try:
         F.fetch(target_dir, url, commit, git=git, environ=environ)
@@ -1264,8 +1275,8 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
     if not refused:
         refused = _extract(art, tree) or _recipe_refused(art, unit, tree, "cek")
     if refused:
-        return dict(refused, heads=heads, state=state, root=anchored, assembled=assembled)
-    return dict({"heads": heads, "state": state, "root": anchored, "assembled": assembled,
+        return dict(refused, heads=heads, state=state, root=anchored, integration=named, assembled=assembled)
+    return dict({"heads": heads, "state": state, "root": anchored, "integration": named, "assembled": assembled,
                  "profile": {"unit_id": unit["unit_id"]}}, **({"genesis": True} if state is None else {}))
 
 
@@ -1302,6 +1313,30 @@ def _cek_root(chains: dict[str, bytes | None], entries: Any) -> dict[str, Any]:
     if not found["valid"]:
         return {"reason": "root_refused", "reasons": found["reasons"]}
     return {"root": found["root"], "rekor_uuid": found["rekor_uuid"]}
+
+
+def _cek_integration(url: str, head: str, ledger: bytes, root: str, git: str,
+                     environ: dict[str, str]) -> dict[str, Any]:
+    """tohum/13's chain break of ``brain/integration`` (E637, ``loop.integration``) on the verified and anchored
+    ledger: the row and commit it names, ``{row_id, kind, sha}``, or ``{reason: integration_refused, reasons,
+    integration?}`` (``integration`` the named row and commit, when the ledger names one). Only for a ``revert`` row
+    is anything fetched: the head's ancestry without trees (``loop.fetch`` ``history``) into
+    ``cek-*/integration-history.git``."""
+    try:
+        tip = IG.named(ledger)
+    except P.PulledError as exc:
+        return {"reason": "integration_refused", "reasons": exc.reasons}
+    if tip["kind"] != "revert":
+        reasons = IG.reasons(tip, head)
+    else:
+        history_dir = os.path.join(root, "integration-history.git")
+        try:
+            F.fetch(history_dir, url, head, git=git, environ=environ, history=True)
+        except P.PulledError as exc:
+            raise Unusable("cek: integration history fetch: %s" % ", ".join(exc.reasons)) from None
+        with G.GitBatch(history_dir, git=git, environ=environ) as history:
+            reasons = IG.reasons(tip, head, history)
+    return {"reason": "integration_refused", "reasons": reasons, "integration": tip} if reasons else tip
 
 
 def _fetch_state(git_dir: str, url: str, sha: str, git: str, environ: dict[str, str]) -> None:

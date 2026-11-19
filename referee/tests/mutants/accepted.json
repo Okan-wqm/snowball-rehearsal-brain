@@ -1038,8 +1038,8 @@
   {
    "id": "ac_job_history_shallow",
    "file": "loop/job.py",
-   "old": "git=git, environ=environ, history=True)",
-   "new": "git=git, environ=environ)",
+   "old": "brain_url, sha, git=git, environ=environ, history=True)",
+   "new": "brain_url, sha, git=git, environ=environ)",
    "tests": [
     "test_loop_cek.CekJob.test_a_main_ahead_of_the_transfer_runs_on_the_transferred_tree"
    ]

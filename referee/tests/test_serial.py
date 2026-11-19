@@ -13,7 +13,11 @@ written by ``ledger.append`` (the cycle's writer) with rows of ``ledger.schema``
   its cycle's ratchet base before the plant row); none for another cycle's, a later one, a merge without a cycle start
   or a planted merge whose cycle has none; a SHA no merge row names and an unreadable ledger answer nothing;
 - ``observed``: none without an observation row, else the last one's base run hash in file order; an unreadable
-  ledger (a row of no known type, an observation without its ``fixable``) answers nothing.
+  ledger (a row of no known type, an observation without its ``fixable``) answers nothing;
+- ``integration_tip`` (tohum/13:56-58): the last row in file order that records a write on ``brain/integration``
+  and the commit it names: the cut row's base, a gate merge's and a planted merge's merge commit, a revert row's
+  reverted merge; none in a ledger without such a row (a decision, a sentinel end, a ratchet base name none); an
+  unreadable ledger answers nothing.
 """
 
 from __future__ import annotations
@@ -188,6 +192,47 @@ class Observed(unittest.TestCase):
                      [row("o1", "events", "observation", {"base_run_sha256": "a" * 64})]):
             with self.subTest(rows=rows), self.assertRaises(SE.Unusable):
                 SE.observed(ledger_with(rows))
+
+
+def cut(row_id: str, sha: str) -> dict:
+    return row(row_id, "events", "integration_cut", {"branch": "brain/integration", "base_sha": sha})
+
+
+class IntegrationTip(unittest.TestCase):
+    """``integration_tip``: which row names ``brain/integration``'s commit (``loop.integration`` judges the head)."""
+
+    def tip(self, *rows: dict) -> dict | None:
+        return SE.integration_tip(ledger_with(list(rows)))
+
+    def test_each_naming_row_and_the_commit_it_names(self):
+        self.assertEqual(self.tip(START, cut("k", M1)), {"row_id": "k", "kind": "cut", "sha": M1})
+        self.assertEqual(self.tip(START, cut("k", M1), merge("c1", M2)), {"row_id": "c1", "kind": "merge", "sha": M2})
+        self.assertEqual(self.tip(START, cut("k", M1), plant("p1", "i1", M3)),
+                         {"row_id": "p1", "kind": "merge", "sha": M3})
+        # a revert row names the merge it reverted, not its own commit (tohum/26f, reports/seed-078)
+        self.assertEqual(self.tip(START, cut("k", M1), merge("c1", M2), reverted("r1", M2, "test_regression")),
+                         {"row_id": "r1", "kind": "revert", "sha": M2})
+
+    def test_the_last_one_in_file_order(self):
+        rows = [START, cut("k", M1), merge("c1", M2), reverted("r1", M2, "test_regression"), merge("c2", M3)]
+        self.assertEqual(self.tip(*rows), {"row_id": "c2", "kind": "merge", "sha": M3})
+        self.assertEqual(self.tip(*rows[:4])["row_id"], "r1")
+        self.assertEqual(self.tip(*rows[:3])["row_id"], "c1")
+        # a later cut (another genesis of the target) names the commit again
+        self.assertEqual(self.tip(*rows, ended("e", M3), cut("k2", M1)), {"row_id": "k2", "kind": "cut", "sha": M1})
+
+    def test_rows_that_name_none(self):
+        self.assertIsNone(self.tip(START))
+        self.assertIsNone(self.tip(START, decided_merge("c1"), reject("c2"), observation("o1", "a" * 64)))
+        # a sentinel end after a merge writes nothing on the branch: the merge row stays the one
+        self.assertEqual(self.tip(START, cut("k", M1), merge("c1", M2), ended("e1", M2), decided_merge("c3"),
+                                  reject("c4"))["row_id"], "c1")
+
+    def test_an_unreadable_ledger_answers_nothing(self):
+        for ledger in (ledger_with([cut("k", M1), row("x", "events", "nope", {})]), b"not a chain\n",
+                       ledger_with([row("k", "events", "integration_cut", {"branch": "brain/integration"})])):
+            with self.subTest(ledger=ledger[:40]), self.assertRaises(SE.Unusable):
+                SE.integration_tip(ledger)
 
 
 if __name__ == "__main__":

@@ -36,8 +36,18 @@ The same schema check as ``unfinished`` first; a SHA no merge row names is ``Unu
 ``base_run_sha256`` of the ledger's last ``events``/``observation`` row, ``None`` when it has none. The same schema
 check as ``unfinished`` first.
 
+**The commit the ledger names for ``brain/integration``** (``integration_tip``, read by D1's ``loop.integration``;
+tohum/13 "Zincir kırığı", E637): the last row, in file order, of the three kinds that record a write on
+``brain/integration``: ``events``/``integration_cut`` (``activate``'s cut, naming ``base_sha``), a merge of rule 2
+(naming ``merge_sha``, the head after it) and ``events``/``revert`` (naming the ``merge_sha`` it reverted: tohum/26f
+gives the row no field for the revert's own commit, reports/seed-078). Answer ``{row_id, kind: cut|merge|revert,
+sha}``, or ``None`` for a ledger with no such row. The same schema check as ``unfinished`` first. No other rule is
+applied here: whether a revert names the merge that was the tip before it is not judged (``loop.integration``
+judges the head's own parents instead).
+
 Out of scope, stated: whether a finisher's verdict is true (D7 writes it from a sentinel ``loop.watch`` verified;
-this reader reads rows); whether a merge row's SHA is on ``brain/integration`` (D1's and D6's).
+this reader reads rows); whether a merge row's SHA is on ``brain/integration`` (D1's ``loop.integration`` for the
+ledger's last one, D6's for the one it writes).
 """
 
 from __future__ import annotations
@@ -52,6 +62,8 @@ FINISHERS = (("events", "revert"), ("events", "sentinel"))
 CYCLE_START = ("events", "cycle_start")
 RATCHET_BASE = ("events", "ratchet_base")
 OBSERVATION = ("events", "observation")
+CUT = ("events", "integration_cut")
+REVERT = ("events", "revert")
 
 
 class Unusable(ValueError):
@@ -119,3 +131,17 @@ def observed(ledger: bytes) -> str | None:
         if _type(row) == OBSERVATION:
             last = row["payload"]["base_run_sha256"]
     return last
+
+
+def integration_tip(ledger: bytes) -> dict[str, str] | None:
+    """The last row of ``ledger`` that records a write on ``brain/integration`` and the commit it names, or
+    ``None``; see the module docstring."""
+    tip = None
+    for row in _rows(ledger):
+        if _type(row) == CUT:
+            tip = {"row_id": row["row_id"], "kind": "cut", "sha": row["payload"]["base_sha"]}
+        elif _is_merge(row):
+            tip = {"row_id": row["row_id"], "kind": "merge", "sha": row["payload"]["merge_sha"]}
+        elif _type(row) == REVERT:
+            tip = {"row_id": row["row_id"], "kind": "revert", "sha": row["payload"]["merge_sha"]}
+    return tip

@@ -28,10 +28,19 @@
   with a fake Rekor (``FakeRekor``; ``loop.rekor``'s own rules are ``test_rekor.py``'s) and the same fake verifier:
   the root row anchoring the head's ledger and its entry verified against ``loop.yml``'s identity; a ledger row no
   root anchors, no entry, another root's entry, an entry the verifier refuses and a last root row without a root
-  are ``root_refused`` before the target is fetched, Rekor unreadable is unusable; ``brain/integration``'s head
+  are ``root_refused`` before the target is fetched, Rekor unreadable is unusable; then tohum/13:56-58 (E637,
+  ``loop.integration``; its own rules are ``test_loop_integration.py``'s): the fixture ledger's cut row names the
+  listed ``brain/integration`` head; a head other than the commit the last naming row (cut, merge, plant) names is
+  ``integration_refused`` (``head_not_named``) with ``integration`` (the row and its commit) before the target is
+  fetched, a ledger naming none is ``integration_unnamed``, a ledger of another shape is refused; after a revert
+  row the head's ancestry is fetched without trees into ``integration-history.git`` and the gate's revert of the
+  named merge passes, a head still at the merge, a commit after the revert and a head keeping the merge's content
+  are refused, a commit the history lacks is a named reason, a failed history fetch is unusable; a genesis cycle
+  has ``integration`` ``None``; ``brain/integration``'s head
   fetched and ``loop.cek.assemble`` run on both repositories' objects, then MF4's judgement of the read-back
   artifact: agreeing hashes and a recipe the check accepts end ``ok`` with ``done`` ``["D1"]``, ``accepted`` and
-  ``targets``, one line per target with ``heads``, ``state``, ``root``, ``assembled`` and ``profile``; each
+  ``targets``, one line per target with ``heads``, ``state``, ``root``, ``integration``, ``assembled`` and
+  ``profile``; each
   artifact moved from the job's work directory to ``out/pulled/<id>`` (``loop.pulled.read`` takes it there, with
   its own ``targets[]`` entry) next to ``served.json`` listing the served ids in the summary's order (reversing
   the summary reverses it; ``loop.pulled.served`` reads it), and getir, kos, cagir and yaz, each on its own copy of
@@ -92,16 +101,25 @@ from profile_tree import writable_base, write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, operating, recipe  # noqa: E402
 import test_loop_kos as LK  # noqa: E402
 from test_loop_kos import HEADS, TREE, RedAs, candidate, state_files  # noqa: E402
-from test_revert_drill import row  # noqa: E402
+from test_revert_drill import plant, reverted, row  # noqa: E402
 
 # What ``cases.build.propose`` proposes for this world's target tree (test_kos's ``pkg``: one ``const`` line in
 # each of two files), pinned; tests/test_cases.py reads the proposal itself.
 MUTATION_IDS = ["no-var-5006bf2ab10fe7b6", "prefer-const-332fb56a7732f46b"]
 
 
-def state_rows(n: int) -> list[dict]:
-    """The first ``n`` rows of the fixture ``brain/state`` ledgers: ``cycle_start`` rows of ``ledger.schema``, no merge."""
-    return [row("l%d" % i, "events", "cycle_start", {"cycle_id": str(i)}) for i in range(n)]
+def cut_row(base: str, row_id: str = "l1") -> dict:
+    """``activate``'s ``integration_cut`` row naming ``base``: the row ``loop.integration`` reads the commit from."""
+    return row(row_id, "events", "integration_cut", {"branch": "brain/integration", "base_sha": base})
+
+
+def state_rows(n: int, cut: str | None = None) -> list[dict]:
+    """The first ``n`` rows of the fixture ``brain/state`` ledgers: ``cycle_start`` rows of ``ledger.schema``, no
+    merge; with ``cut``, row 1 (a row of the genesis commit too) is the ``integration_cut`` row naming it."""
+    rows = [row("l%d" % i, "events", "cycle_start", {"cycle_id": str(i)}) for i in range(n)]
+    if cut is not None:
+        rows[1] = cut_row(cut)
+    return rows
 
 
 SUMMARY = {"targets": [{"id": "t1", "kind": "toy", "excluded_paths": [], "unit_candidates": []},
@@ -429,12 +447,21 @@ class CekJob(unittest.TestCase):
         self.state_head = self.state_commit({p: n[1] for p, n in self.STATE.items()}, (self.state_genesis,),
                                             {".brain/status.md": self.STATUS_MD})
 
-    ledger_rows: list | None = None  # the fixture ledger's rows, ``state_rows`` unless a test gives its own
+    ledger_rows: list | None = None  # the fixture ledger's rows, ``rows()`` unless a test gives its own
+
+    def rows(self) -> list[dict]:
+        """The fixture ledger: its cut row names the commit ``run_cek`` lists as ``brain/integration``'s head."""
+        return state_rows(max(self.ANCHORED), S.store(self.TARGET)[1])
+
+    def retarget(self, files: dict) -> None:
+        """Another target tree, and the ``brain/state`` whose ledger names its commit."""
+        self.TARGET = files
+        self.setUp_state()
 
     def state_commit(self, counts: dict, parents: tuple, extra: dict | None = None) -> str:
         """A ``brain/state`` commit whose chained files hold ``counts`` rows (``loop.state``'s rules); root row ``i``
         anchors the ledger's first ``ANCHORED[i]`` rows, its entry in the fake Rekor (``ledger.anchor``'s rules)."""
-        ledger = self.ledger_rows or state_rows(max(self.ANCHORED))
+        ledger = self.ledger_rows or self.rows()
         content = {}
         if ".brain/ledger.jsonl" in counts:
             content[".brain/ledger.jsonl"] = self.TA.chained(ledger[:counts[".brain/ledger.jsonl"]])
@@ -560,10 +587,13 @@ class CekJob(unittest.TestCase):
         out, commit, tree = self.run_cek()
         self.assertNotIn("reason", out)
         self.assertEqual((out["ok"], out["done"], out["checked"]),
-                         (True, ["D1"], ["accepted_sha", "referee_tree", "heads", "state_previous", "root", "assembled",
-                                  "profile"]))
+                         (True, ["D1"], ["accepted_sha", "referee_tree", "heads", "state_previous", "root", "integration",
+                                  "assembled", "profile"]))
         line = self.one(out)
-        self.assertEqual(sorted(line), ["assembled", "heads", "profile", "root", "state", "target"])
+        self.assertEqual(sorted(line), ["assembled", "heads", "integration", "profile", "root", "state", "target"])
+        # tohum/13:56-58: the commit the ledger's last naming row names, the listed brain/integration head
+        self.assertEqual(line["integration"], {"row_id": "l1", "kind": "cut", "sha": self.target_commit})
+        self.assertEqual(line["heads"]["brain/integration"], self.target_commit)
         self.assertEqual(line["state"], {"head": self.state_head, "previous": self.state_genesis,
                                          "rows": {".brain/ledger.jsonl": 5, ".brain/chain/root.jsonl": 2}})
         self.assertEqual(line["profile"], {"unit_id": "pkg"})
@@ -572,7 +602,7 @@ class CekJob(unittest.TestCase):
         self.assertEqual(out["accepted"]["artifact_id"], 11)
         self.assertIn("https://github.com/o/referee/.github/workflows/bootstrap.yml@refs/heads/main", self.verified[0])
         # MF11: the head's root (its ledger's, the last root row's) and its Rekor entry, verified against loop.yml
-        root = AN.root_of(AN.tips(self.TA.chained(state_rows(5))))
+        root = AN.root_of(AN.tips(self.TA.chained(self.rows()[:5])))
         uuid = entry_for(root)[0]
         self.assertEqual((line["root"], self.rekor.calls), ({"root": root, "rekor_uuid": uuid}, [uuid]))
         self.assertEqual(len(self.verified), 2)
@@ -883,8 +913,8 @@ class CekJob(unittest.TestCase):
         out, _, _ = self.run_cek(listing=b"%s\trefs/heads/main\n" % main.encode())
         self.assertEqual((out["ok"], out["done"]), (True, ["D1"]), out)
         line = self.one(out)
-        self.assertEqual((line["genesis"], line["state"], line["root"], line["heads"]),
-                         (True, None, None, {"brain/state": None, "brain/integration": None}))
+        self.assertEqual((line["genesis"], line["state"], line["root"], line["integration"], line["heads"]),
+                         (True, None, None, None, {"brain/state": None, "brain/integration": None}))
         self.assertEqual(line["assembled"]["commit"], main)
         art = P.read(os.path.join(self.temp, "out", "pulled", "t1"))
         self.assertTrue(P.genesis(art))
@@ -969,6 +999,148 @@ class CekJob(unittest.TestCase):
         with self.assertRaisesRegex(J.Unusable, "rekor unreadable"):
             self.run_cek(rekor=Down())
 
+    # ---- tohum/13:56-58 (E637): brain/integration's head against the commit the anchored ledger names
+
+    def renamed(self, *rows: dict) -> None:
+        """The fixture ``brain/state`` with ``rows`` as the head's rows 2.. (the genesis commit holds rows 0-1)."""
+        ledger = self.rows()
+        ledger[2:2 + len(rows)] = rows
+        self.ledger_rows = ledger
+        self.setUp_state()
+
+    def integration_refused(self, reasons: list[str], named: dict | None, **kw) -> dict:
+        self.clean()
+        out, _, _ = self.run_cek(**kw)
+        self.assertEqual((out["ok"], out["reason"], out["reasons"]), (False, "integration_refused", reasons))
+        line = self.stopped(out)
+        # the break's row and commit (the row and the commit it names) and the head found, with what was verified
+        self.assertEqual(line.get("integration"), named)
+        self.assertEqual((line["state"]["head"], sorted(line["root"])), (self.state_head, ["rekor_uuid", "root"]))
+        self.assertNotIn("checked", out)
+        self.assertNotIn("assembled", line)
+        self.assertEqual(self.assembled(), [])
+        return line
+
+    def test_a_head_the_ledger_does_not_name_is_a_chain_break(self):
+        import test_serial as TS
+        _, listed = S.store(self.TARGET)
+        other = "6" * 40
+        for name, rows, named in (
+                ("the cut names another commit", [cut_row(other, "l2")], {"row_id": "l2", "kind": "cut", "sha": other}),
+                # a merge the state branch did not record: the head is ahead of the last signed row
+                ("a later merge names another", [TS.merge("l2", other)], {"row_id": "l2", "kind": "merge", "sha": other}),
+                ("a later plant does", [plant("l2", "i1", other)], {"row_id": "l2", "kind": "merge", "sha": other}),
+                # the head went back to the commit an earlier row named
+                ("an earlier row named the head", [cut_row(listed, "l2"), TS.merge("l3", other)],
+                 {"row_id": "l3", "kind": "merge", "sha": other})):
+            with self.subTest(name):
+                self.renamed(*rows)
+                line = self.integration_refused(["head_not_named"], named)
+                self.assertEqual(line["heads"]["brain/integration"], listed)
+                # refused before anything of the target's tree is fetched: the brain, the state head and its parent
+                self.assertEqual(len(self.fetched()), 3)
+                self.assertFalse(self.target_fetched())
+
+    def test_the_last_naming_row_names_the_head(self):
+        import test_serial as TS
+        _, listed = S.store(self.TARGET)
+        for name, rows, named in (
+                ("a merge after the cut", [TS.merge("l2", listed)], {"row_id": "l2", "kind": "merge", "sha": listed}),
+                ("a plant after a merge", [TS.merge("l2", "6" * 40), plant("l3", "i1", listed)],
+                 {"row_id": "l3", "kind": "merge", "sha": listed})):
+            with self.subTest(name):
+                self.ledger_rows = state_rows(max(self.ANCHORED), "7" * 40)
+                rows = list(rows)
+                self.ledger_rows[2:2 + len(rows)] = rows
+                self.setUp_state()
+                self.clean()
+                out, _, _ = self.run_cek()
+                self.assertEqual((out["ok"], self.one(out)["integration"]), (True, named))
+                self.assertEqual(len(self.fetched()), 4)  # no fetch for the comparison
+
+    def test_a_ledger_that_names_no_integration_commit(self):
+        self.ledger_rows = state_rows(max(self.ANCHORED))
+        self.setUp_state()
+        self.integration_refused(["integration_unnamed"], None)
+        self.assertFalse(self.target_fetched())
+
+    def test_a_ledger_of_another_shape_is_refused_with_ledger_serials_reasons(self):
+        self.renamed(row("l2", "events", "nope", {}))
+        self.clean()
+        out, _, _ = self.run_cek()
+        self.assertEqual((out["ok"], out["reason"]), (False, "integration_refused"))
+        self.assertTrue(out["reasons"])
+        self.assertNotIn("integration", self.stopped(out))
+        self.assertFalse(self.target_fetched())
+
+    def reverted_target(self, head_tree: dict | None = None) -> tuple[dict, str, str]:
+        """The target's objects after the gate's revert: a base holding ``TARGET``, a candidate, their merge ``M``,
+        the revert commit on ``M`` and its merge, the head (holding ``head_tree``, by default ``TARGET`` again);
+        ``(objects, M, head)``."""
+        objects: dict = {}
+        before = S.store_tree(self.TARGET, objects)
+        after = S.store_tree(dict(self.TARGET, **{"pkg/new.js": b"1\n"}), objects)
+        base = S.commit(objects, before, b"base\n")
+        merged = S.commit(objects, after, b"merge\n", (base, S.commit(objects, after, b"candidate\n", (base,))))
+        revert = S.commit(objects, before, b"revert\n", (merged,))
+        tree = before if head_tree is None else S.store_tree(head_tree, objects)
+        return objects, merged, S.commit(objects, tree, b"merge of the revert\n", (merged, revert))
+
+    def test_a_revert_row_names_the_head_by_the_reverts_shape(self):
+        import test_serial as TS
+        objects, merged, head = self.reverted_target()
+        self.renamed(TS.merge("l2", merged), reverted("l3", merged, "test_regression"))
+        self.clean()
+        out, _, _ = self.run_cek(target=objects, listing=self.listing(head))
+        self.assertTrue(out["ok"], out)
+        line = self.one(out)
+        self.assertEqual(line["integration"], {"row_id": "l3", "kind": "revert", "sha": merged})
+        self.assertEqual((line["heads"]["brain/integration"], line["assembled"]["commit"]), (head, head))
+        # the head's ancestry without trees, into its own directory, before the head's tree
+        argvs = [c["argv"] for c in S.calls(self.bin) if "fetch" in c["argv"]]
+        self.assertEqual([("--filter=tree:0" in a, a[-1]) for a in argvs[3:]],
+                         [(True, "%s:refs/pulled" % head), (False, "%s:refs/pulled" % head)])
+        self.assertEqual(argvs[3][-2], argvs[4][-2])  # the target's repository
+        dirs = [next(x.split("=", 1)[1] for x in a if x.startswith("--git-dir=")) for a in argvs[3:]]
+        self.assertEqual(dirs[0], os.path.join(self.target_dir(), "integration-history.git"))
+        self.assertNotEqual(dirs[0], dirs[1])
+
+    def test_a_head_that_is_not_the_revert_of_the_named_merge(self):
+        import test_serial as TS
+        objects, merged, head = self.reverted_target()
+        named = {"row_id": "l3", "kind": "revert", "sha": merged}
+        self.renamed(TS.merge("l2", merged), reverted("l3", merged, "test_regression"))
+        kept, _, with_content = self.reverted_target(dict(self.TARGET, **{"pkg/new.js": b"1\n"}))
+        objects.update(kept)
+        later = S.commit(objects, S.store_tree(self.TARGET, objects), b"later\n", (head,))
+        for name, listed, reasons in (("still the merge", merged, ["revert_head_parents"]),
+                                      ("a commit after the revert", later, ["revert_head_parents"]),
+                                      ("the merge's content kept", with_content, ["revert_head_tree"])):
+            with self.subTest(name):
+                line = self.integration_refused(reasons, named, target=objects, listing=self.listing(listed))
+                self.assertEqual(line["heads"]["brain/integration"], listed)
+                self.assertEqual([a[-1] for a in (c["argv"] for c in S.calls(self.bin))
+                                  if "fetch" in a and "--depth=1" in a and a[-1] == "%s:refs/pulled" % listed], [])
+        # a commit the history fetch did not bring is a reason of the same refusal, named
+        lacking = {k: v for k, v in objects.items() if k != merged}
+        self.integration_refused(["integration:object_missing:%s" % merged], named, target=lacking,
+                                 listing=self.listing(head))
+
+    def test_an_integration_history_fetch_that_fails_is_no_verdict(self):
+        import test_serial as TS
+        objects, merged, head = self.reverted_target()
+        self.renamed(TS.merge("l2", merged), reverted("l3", merged, "test_regression"))
+
+        def wrap(git):
+            path = os.path.join(self.bin, "git-failing")
+            with open(path, "w") as fh:
+                fh.write('#!/bin/sh\ncase " $* " in *" fetch "*--filter=tree:0*) exit 128;; esac\nexec "%s" "$@"\n' % git)
+            os.chmod(path, 0o755)
+            return path
+        with self.assertRaisesRegex(J.Unusable, "cek: integration history fetch: fetch_failed:fetch:128"):
+            self.run_cek(target=objects, listing=self.listing(head), wrap=wrap)
+        self.assertFalse(os.path.lexists(os.path.join(self.temp, "out", "pulled")))
+
     def test_a_state_commit_the_fetch_did_not_bring_is_no_verdict(self):
         everything = dict(self.state_objects)
         for missing in (self.state_head, self.state_genesis):  # the head, then its parent
@@ -1041,7 +1213,8 @@ class CekJob(unittest.TestCase):
                 self.assertEqual((out["ok"], out["done"]), (True, ["D1"]))
                 self.assertEqual([t["target"] for t in out["targets"]], list(order))
                 for line in out["targets"]:
-                    self.assertEqual(sorted(line), ["assembled", "heads", "profile", "root", "state", "target"])
+                    self.assertEqual(sorted(line), ["assembled", "heads", "integration", "profile", "root", "state",
+                                                    "target"])
                     self.assertEqual(line["assembled"], {"target": line["target"], "commit": self.target_commit,
                                                          "candidates": cands[line["target"]], "organs": [],
                                                          "snapshot_id": self.snapshot_id,
@@ -1091,7 +1264,7 @@ class CekJob(unittest.TestCase):
     def gated(self, gate: dict | None = None) -> None:
         """The toy's ``brain/state`` (genesis and head) with a genesis first and, in the head, ``gate`` as row 3."""
         import test_pass_row as TP
-        rows = state_rows(max(self.ANCHORED))
+        rows = self.rows()
         rows[0] = row("l0", "events", "genesis", TP.genesis_payload("t1"))
         if gate is not None:
             rows[3] = gate
@@ -1321,7 +1494,7 @@ class CekJob(unittest.TestCase):
                  "profile:units[0]:input_excluded:.claude"),
                 ({}, {"units": [recipe(inputs=["pkg", "shared"])]}, "profile:units[0]:input_missing:shared")):
             with self.subTest(reason=reason):
-                self.TARGET = {p: d for p, d in dict(CekJob.TARGET, **change).items() if d is not None}
+                self.retarget({p: d for p, d in dict(CekJob.TARGET, **change).items() if d is not None})
                 self.BRAIN = CekJob.BRAIN
                 if units is not None:
                     self.with_units(units)
@@ -1340,7 +1513,7 @@ class CekJob(unittest.TestCase):
         self.assertEqual(out["reasons"], ["services_not_empty"])
 
     def test_a_tree_the_extraction_refuses(self):
-        self.TARGET = dict(CekJob.TARGET, **{"pkg/out": ("120000", b"../../../../etc")})
+        self.retarget(dict(CekJob.TARGET, **{"pkg/out": ("120000", b"../../../../etc")}))
         out = self.refused_after_assembly("pulled_invalid")
         self.assertEqual(out["reasons"], ["tree_unsafe"])
 
