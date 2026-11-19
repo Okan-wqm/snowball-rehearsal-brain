@@ -10,7 +10,7 @@ read by the gate (MF8) as they are written; with the fake runner (``fake_docker.
   one's stderr, a candidate's no text; absent from every entry without such a run; verdicts and reasons unchanged;
 - a candidate: a fresh copy of the base worktree with its diff applied (refusals of a diff that does not apply
   in place, a path outside the worktree or behind a symlink, the runs' own directory), three lint runs and one
-  test run, ``checks.json`` from the TAP, ``hashes.json`` of the bytes written; ``gate.check decide`` (MF8's own
+  test run, ``checks.json`` from the test run's stdout, ``hashes.json`` of the bytes written; ``gate.check decide`` (MF8's own
   command) then merges the good candidate and rejects a test-breaking, a ratchet-raising, a non-deterministic and
   a red-control-passing one for their own reasons;
 - the sentinel (D7, ``watch``): only with a watched merge; the recipe's ``affected_test_cmd`` at the base worktree,
@@ -19,7 +19,8 @@ read by the gate (MF8) as they are written; with the fake runner (``fake_docker.
   no file for a base that did not stage, a run that tells nothing (a green red control, a time limit; the runs stop
   there) or runs of the wrong shape; a base lint that fails does not stop it; what the base's lint says of the head's
   build, read by ``loop.watch.base_build`` (a parse error ESLint reports is no build);
-- the TAP reader on ``node --test``'s real output (the toy's captured run) and on its edge cases;
+- a jest run (``--json``): ``checks.json`` and the sentinel's runs hold the document's tests; a jest run without
+  the document is ``zero_tests`` at the gate (the readers' own rules: ``test_test_results.py``);
 - the command line: exit 0 / 1 / 2, never a traceback.
 """
 
@@ -100,6 +101,25 @@ print("ok 3 - not run yet # SKIP")
 print("1..3")
 sys.exit(0 if ok else 1)
 '''
+# jest with --json: the tested code's own line on stdout, then the document as one line, last; the reporters'
+# text on stderr. REPORTER stands for a jest run without --json (nothing on stdout), NOCOMPILE for a test file
+# jest could not compile (failed, no assertion).
+JEST = r'''import json, sys
+src = open("pkg/a.js").read()
+sys.stderr.write("PASS pkg/a.spec.js\n")
+if "REPORTER" in src:
+    sys.exit(0)
+ok = "BROKEN" not in src and "NOCOMPILE" not in src
+tests = [] if "NOCOMPILE" in src else [
+    {"ancestorTitles": ["a"], "title": "loads", "status": "passed"},
+    {"ancestorTitles": ["a"], "title": "is not broken", "status": "passed" if ok else "failed"},
+    {"ancestorTitles": ["a"], "title": "not run yet", "status": "pending"}]
+sys.stdout.write("[Nest] 7  - LOG started\n")
+sys.stdout.write(json.dumps({"numTotalTests": len(tests), "success": ok, "testResults": [
+    {"name": "/work/pkg/a.spec.js", "status": "passed" if ok else "failed", "assertionResults": tests}]}) + "\n")
+sys.exit(0 if ok else 1)
+'''
+JEST_CMD = ["python", "pkg/jest.py"]
 A_JS = "var a = 1;\nconst b = 2;\n"
 
 
@@ -473,6 +493,30 @@ class Candidates(Base):
         self.assertEqual(checks["tests"], [{"id": "test_cmd exit 7", "status": "fail"}])
         self.assertEqual(self.decide("crash", crash)["reasons"], ["tests_red"])
 
+    def test_a_jest_run_is_read_from_its_document(self):
+        write_tree(self.tree, {"pkg/jest.py": JEST})
+        nocompile = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // NOCOMPILE"])
+        self.results({"good": GOOD, "breaks": BREAKS_TEST, "nocompile": nocompile}, rec=recipe(test_cmd=JEST_CMD))
+        tests = {cid: json.loads(read(os.path.join(self.out, "c", cid, "checks.json")))["tests"]
+                 for cid in ("good", "breaks", "nocompile")}
+        self.assertEqual(tests, {
+            "good": [{"id": "pkg/a.spec.js > a > loads", "status": "pass"},
+                     {"id": "pkg/a.spec.js > a > is not broken", "status": "pass"}],
+            "breaks": [{"id": "pkg/a.spec.js > a > loads", "status": "pass"},
+                       {"id": "pkg/a.spec.js > a > is not broken", "status": "fail"}],
+            "nocompile": [{"id": "pkg/a.spec.js", "status": "fail"}]})
+        self.assertEqual(self.decide("good", GOOD), {"decision": "merge", "reasons": []})
+        self.assertEqual(self.decide("breaks", BREAKS_TEST)["reasons"], ["tests_red"])
+        self.assertEqual(self.decide("nocompile", nocompile)["reasons"], ["tests_red"])
+
+    def test_a_jest_run_without_its_document_is_zero_tests_at_the_gate(self):
+        # the live case this reader was written for: jest's default reporter writes to stderr, exit 0
+        write_tree(self.tree, {"pkg/jest.py": JEST})
+        quiet = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // REPORTER"])
+        self.results({"quiet": quiet}, rec=recipe(test_cmd=JEST_CMD))
+        self.assertEqual(json.loads(read(os.path.join(self.out, "c", "quiet", "checks.json")))["tests"], [])
+        self.assertEqual(self.decide("quiet", quiet)["reasons"], ["zero_tests"])
+
     def test_a_candidate_whose_lint_fails_has_no_files(self):
         bad = diff("pkg/a.js", ["var a = 1;"], ["LINTCRASH"])
         index = self.results({"bad": bad})
@@ -597,6 +641,18 @@ class Sentinel(Base):
         self.assertEqual({k: v for k, v in self.mf12(got["runs"]).items()},
                          {"verdict": "red", "red": ["a is not broken"], "flaky": [], "revert": True})
 
+    def test_a_jest_run_is_judged_by_its_document(self):
+        write_tree(self.tree, {"pkg/jest.py": JEST})
+        index = self.watch(rec=recipe(affected_test_cmd=JEST_CMD))
+        self.assertEqual((index["sentinel"]["verdict"], self.file()["runs"]), ("green", [{"results": [
+            {"id": "pkg/a.spec.js > a > loads", "status": "pass"},
+            {"id": "pkg/a.spec.js > a > is not broken", "status": "pass"}]}]))
+        shutil.rmtree(self.out)
+        index = self.watch("var a = 1; // BROKEN\n", rec=recipe(affected_test_cmd=JEST_CMD))
+        got = self.file()
+        self.assertEqual((index["sentinel"]["verdict"], got["red"], len(got["runs"])),
+                         ("red", ["pkg/a.spec.js > a > is not broken"], 4))
+
     def test_flaky_when_a_rerun_passes(self):
         docker = FakeDocker()
         seen = {"n": 0}
@@ -699,29 +755,6 @@ class Sentinel(Base):
             with self.subTest(bad=bad), self.assertRaises(K.KosError):
                 K.results(recipe(), self.tree, {"operating": operating()}, RED, {}, self.out, runner=FakeDocker(),
                           base=self.runs, watch=bad)
-
-
-class Tap(unittest.TestCase):
-    def test_node_test_real_output(self):
-        with open(os.path.join(BRAIN, "tests", "fixtures", "toy-candidates", "bad-test.json")) as fh:
-            got = json.load(fh)
-        tests = K.tap_tests(got["test_stdout"].encode(), got["test_exit"])
-        self.assertEqual(len(tests), 8)
-        self.assertEqual([t["id"] for t in tests if t["status"] == "fail"],
-                         ["slugify lowers, joins words with dashes and trims dashes"])
-
-    def test_edges(self):
-        out = ("ok 1 - a\n  ok 1 - sub\nnot ok 2 - b # TODO later\nok 3 - c # skip\nok 4\n"
-               "ok 5 - x \\# y \\\\ z\nnot ok 6 - d # some other directive\nok 7 - e\r\n").encode()
-        self.assertEqual(K.tap_tests(out, 1), [
-            {"id": "a", "status": "pass"}, {"id": "4", "status": "pass"}, {"id": "x # y \\ z", "status": "pass"},
-            {"id": "d", "status": "fail"}, {"id": "e", "status": "pass"}])
-
-    def test_exit_code_without_a_failing_line_is_a_failure(self):
-        self.assertEqual(K.tap_tests(b"ok 1 - a\nBail out!\n", 1)[-1], {"id": "test_cmd exit 1", "status": "fail"})
-        self.assertEqual(K.tap_tests(b"", None), [{"id": "test_cmd exit None", "status": "fail"}])
-        self.assertEqual(K.tap_tests(b"", 0), [])
-        self.assertEqual(K.tap_tests(b"ok 1 - a # SKIP\n", 0), [])
 
 
 class CommandLine(Base):

@@ -3,8 +3,8 @@
   {
    "id": "ls_whole_json_cut_too",
    "file": "runner/lint_record.py",
-   "old": "    if not whole:\n        body =",
-   "new": "    if True:\n        body =",
+   "old": "    if whole:\n        return b\"\", doc\n",
+   "new": "",
    "tests": [
     "test_lint_record.StdoutNotOnlyTheDocument.test_rule_1_a_whole_json_stdout_has_no_extra"
    ]
@@ -12,8 +12,8 @@
   {
    "id": "ls_final_newline_kept",
    "file": "runner/lint_record.py",
-   "old": "        body = output[:-1] if output.endswith(b\"\\n\") else output\n",
-   "new": "        body = output\n",
+   "old": "    body = output[:-1] if output.endswith(b\"\\n\") else output\n",
+   "new": "    body = output\n",
    "tests": [
     "test_lint_record.StdoutNotOnlyTheDocument.test_rule_2_one_final_newline_or_none_and_extra_is_not_decoded"
    ]
@@ -21,8 +21,8 @@
   {
    "id": "ls_every_final_newline_dropped",
    "file": "runner/lint_record.py",
-   "old": "        body = output[:-1] if output.endswith(b\"\\n\") else output\n",
-   "new": "        body = output.rstrip(b\"\\n\")\n",
+   "old": "    body = output[:-1] if output.endswith(b\"\\n\") else output\n",
+   "new": "    body = output.rstrip(b\"\\n\")\n",
    "tests": [
     "test_lint_record.StdoutNotOnlyTheDocument.test_rule_3_only_the_last_line_is_tried"
    ]
@@ -30,8 +30,8 @@
   {
    "id": "ls_first_newline_cuts",
    "file": "runner/lint_record.py",
-   "old": "        cut = body.rfind(b\"\\n\") + 1\n",
-   "new": "        cut = body.find(b\"\\n\") + 1\n",
+   "old": "    cut = body.rfind(b\"\\n\") + 1\n",
+   "new": "    cut = body.find(b\"\\n\") + 1\n",
    "tests": [
     "test_lint_record.StdoutNotOnlyTheDocument.test_real_output_the_document_is_the_last_line_and_the_rest_is_extra"
    ]
@@ -39,7 +39,7 @@
   {
    "id": "ls_several_documents_pass",
    "file": "runner/lint_record.py",
-   "old": "        if is_json and _shaped(value):\n",
+   "old": "        if is_json and shaped(value):\n",
    "new": "        if False:\n",
    "tests": [
     "test_lint_record.StdoutNotOnlyTheDocument.test_rule_4_an_earlier_line_that_is_a_document_is_refused"
@@ -48,8 +48,8 @@
   {
    "id": "ls_empty_earlier_document_passes",
    "file": "runner/lint_record.py",
-   "old": "        if is_json and _shaped(value):\n",
-   "new": "        if is_json and _shaped(value) and value:\n",
+   "old": "        if is_json and shaped(value):\n",
+   "new": "        if is_json and shaped(value) and value:\n",
    "tests": [
     "test_lint_record.StdoutNotOnlyTheDocument.test_rule_4_an_earlier_line_that_is_a_document_is_refused"
    ]
@@ -57,8 +57,8 @@
   {
    "id": "ls_extra_decoded",
    "file": "runner/lint_record.py",
-   "old": "        extra = body[:cut]\n",
-   "new": "        extra = body[:cut].decode(\"utf-8\").encode(\"utf-8\")\n",
+   "old": "    return body[:cut], _json(body[cut:])[1]\n",
+   "new": "    return body[:cut].decode(\"utf-8\").encode(\"utf-8\"), _json(body[cut:])[1]\n",
    "tests": [
     "test_lint_record.StdoutNotOnlyTheDocument.test_rule_2_one_final_newline_or_none_and_extra_is_not_decoded"
    ]

@@ -74,29 +74,23 @@ exited 0 or 1 and converts, the three files are written; ``red_control`` is ``pa
 passed (the gate's criterion 7 rejects it; the index says ``red_control_green``). Any other reason of a contained
 run (a limit, ``red_control_fault``, ``runner_fault``, ``breach:``, ``unreadable_output``) writes no file.
 
-**The tests** (``tap_tests``): the TAP the test command prints on stdout (``node --test``'s default reporter when
-stdout is not a terminal; the recipe's ``test_cmd``). A test is a top-level line ``ok N`` or ``not ok N``,
-optionally `` - description``, at column 0; indented lines are subtests and are not counted, as ``node --test``
-indents them. Its ``id`` is the description with TAP's ``\\#`` and ``\\\\`` escapes undone (the number when there
-is none); a line whose directive (after the first unescaped `` # ``) starts with ``SKIP`` or ``TODO`` (any case)
-is left out: a skipped test did not run and a failing TODO test does not fail the run. When the command exits
-non-zero and no listed test failed, one entry ``{id: "test_cmd exit <code>", status: fail}`` is added, so a
-crash or a ``Bail out!`` is red, not zero tests. Out of scope: other reporters and test runners (they give no
-TAP line, so ``tests`` is empty and the gate's ``zero_tests`` rejects: closed, not open), and duplicate
-descriptions (each line is its own entry).
+**The tests**: ``runner.test_results.read`` of the test run's stdout and exit code: jest's ``--json`` document
+when stdout ends with one, else the top-level TAP lines; a non-zero exit with no failed test listed adds
+``{id: "test_cmd exit <code>", status: fail}``. The formats, their rules and what is out of scope are stated
+there; a runner that prints neither gives an empty ``tests`` (the gate's ``zero_tests``: closed, not open).
 
 **The sentinel** (D7, MF12; ``watch``, a merge SHA, given by the caller: the merge whose sentinel has not finished,
 which must be the tree's own commit). With no ``watch`` the index's ``sentinel`` is ``null`` and nothing more runs.
 With one, after the base's lint runs and whatever they gave, the recipe's ``affected_test_cmd`` (stage 0's affected
 set is the unit's whole service-free test set, asama-0/08 item 6) runs at the staged base worktree, each run its
 own contained run with the red control, its wall clock capped by ``test_total_s``; each run's ``results`` is
-``tap_tests`` of its stdout and exit (the TAP rules above). ``gate.sentinel.watch`` asks for the runs: one when the
+``test_results.read`` of its stdout and exit (the rules above). ``gate.sentinel.watch`` asks for the runs: one when the
 first is green, four (run 1 and three reruns) otherwise. ``sentinel.json`` holds the merge SHA, every run used and
 ``gate.sentinel``'s verdict (``green``, ``flaky`` or ``red``) with its ``red`` and ``flaky`` ids; the index carries
 the verdict, ``reasons`` ``[]`` and the file's sha256. No verdict (``verdict`` and ``sha256`` null, no file) when the
 base did not stage (the staging's reasons), when a run tells nothing (any reason of the contained run,
 ``red_control_green`` included: a sandbox a known bad command passed judges no test), or when the runs are not
-``gate.sentinel``'s shape (``sentinel_unusable``: two top-level TAP lines with one description); the runs stop at
+``gate.sentinel``'s shape (``sentinel_unusable``: one test id twice in a run); the runs stop at
 the first run that tells nothing. Who reads the verdict is ``yaz``'s half of D7 (``loop.watch``: the revert on red,
 the ``events``/``sentinel`` end row on green or flaky, ``loop.write_cycle``), not this module.
 
@@ -131,14 +125,13 @@ from profile import derive as D
 from profile import unit_verify as U
 from runner import contained as C
 from runner import lint_record as R
+from runner import test_results as T
 import cli
 
 LINT_RUNS = 3
 FAILED_KEY = "lint_failed"
 STDERR_SIDE = 800       # bytes read from each end of a failed lint run's stderr, and characters shown of each
 CANDIDATE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
-TAP_LINE = re.compile(r"(not ok|ok) ([0-9]+)(?: - (.*))?\Z")
-SKIPPED = ("skip", "todo")
 INDEX = "index.json"
 SENTINEL = "sentinel.json"
 BASE = "base.jsonl"
@@ -168,42 +161,9 @@ def _dump(obj: Any) -> bytes:
 
 # ---------------------------------------------------------------- tests
 
-def _split_directive(text: str) -> tuple[str, str | None]:
-    """``(description, directive)``: the directive follows the first `` #`` not escaped by a backslash."""
-    i = 0
-    while i < len(text):
-        if text[i] == "\\":
-            i += 2
-            continue
-        if text[i] == "#" and i > 0 and text[i - 1] == " ":
-            return text[:i - 1], text[i + 1:].strip()
-        i += 1
-    return text, None
-
-
-def _unescape(text: str) -> str:
-    return re.sub(r"\\([\\#])", r"\1", text)
-
-
-def tap_tests(stdout: bytes, exit_code: int | None) -> list[dict]:
-    """The ``tests`` list of ``checks.json`` from one test run; see the module docstring."""
-    tests = []
-    for raw in stdout.decode("utf-8", "replace").split("\n"):
-        m = TAP_LINE.fullmatch(raw.rstrip("\r"))
-        if not m:
-            continue
-        desc, directive = _split_directive(m.group(3) or "")
-        if directive is not None and directive.lower().startswith(SKIPPED):
-            continue
-        tests.append({"id": _unescape(desc) or m.group(2), "status": "pass" if m.group(1) == "ok" else "fail"})
-    if exit_code != 0 and not any(t["status"] == "fail" for t in tests):
-        tests.append({"id": "test_cmd exit %s" % exit_code, "status": "fail"})
-    return tests
-
-
 def checks(stdout: bytes, exit_code: int | None, red_control_green: bool) -> bytes:
     """``checks.json``'s bytes (``gate.check``'s shape)."""
-    return _dump({"red_control": "pass" if red_control_green else "fail", "tests": tap_tests(stdout, exit_code)})
+    return _dump({"red_control": "pass" if red_control_green else "fail", "tests": T.read(stdout, exit_code)})
 
 
 # ---------------------------------------------------------------- runs
@@ -271,7 +231,7 @@ def _sentinel(watch: str, recipe: dict, red: list, staging: str, ctx: dict, runn
         if test["reasons"]:  # a run whose status is not ok has its status among them (contained)
             raise _NoRun(test["reasons"])
         stdout = test["stdout"] if isinstance(test["stdout"], bytes) else b""
-        return {"results": tap_tests(stdout, test["exit"])}
+        return {"results": T.read(stdout, test["exit"])}
 
     entry = {"merge_sha": watch, "verdict": None, "reasons": [], "sha256": None}
     try:

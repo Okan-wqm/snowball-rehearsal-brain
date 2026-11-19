@@ -36,10 +36,12 @@ is refused (``pattern_option``). The flat config file joins the recipe's inputs.
 
 **test** (``@nx/jest:jest``, options ``jestConfig`` only, required: ``option_missing:jestConfig``): the command is::
 
-    env TS_NODE_COMPILER_OPTIONS=<the executor's value> node_modules/.bin/jest --config <jestConfig>
+    env TS_NODE_COMPILER_OPTIONS=<the executor's value> node_modules/.bin/jest --config <jestConfig> --json
 
 the executor's ``runCLI`` with the one config (``NODE_ENV`` is ``test`` in both, the jest binary setting it when
-unset). ``jestConfig`` starting with ``-`` is refused (``pattern_option``); it joins the inputs when it is a
+unset) and jest's ``--json`` (``JEST_JSON``): the run's results as one document on stdout, the reporters'
+text on stderr, the tests run and the exit code as without it (``@jest/core`` 30.5.2), which is what
+``runner.test_results`` reads; without it no reader of this brain reads a jest run. ``jestConfig`` starting with ``-`` is refused (``pattern_option``); it joins the inputs when it is a
 relative path inside the tree.
 
 **lint inferred** (``inferred_lint``, ``@nx/eslint/plugin``'s ``createNodes``, when ``project.json`` has no ``lint``
@@ -112,6 +114,7 @@ TARGET_KEYS = ("executor", "options", "inputs", "outputs", "cache", "configurati
 DEFAULTS_KEYS = ("inputs", "outputs", "cache")
 TS_NODE = json.dumps({"moduleResolution": "Node10", "module": "commonjs", "customConditions": None},
                      separators=(",", ":"))
+JEST_JSON = "--json"  # the document ``runner.test_results.jest`` reads
 REPLACEMENT = re.compile(r"{([\s\S]+?)}")
 
 
@@ -396,5 +399,5 @@ def test(tree: str, path: str) -> tuple[list[str], list[str]]:
     if config.startswith("-"):
         raise NotComposed("pattern_option")
     norm = D.norm_path(config)
-    return (["env", "TS_NODE_COMPILER_OPTIONS=" + TS_NODE, "node_modules/.bin/jest", "--config", config],
+    return (["env", "TS_NODE_COMPILER_OPTIONS=" + TS_NODE, "node_modules/.bin/jest", "--config", config, JEST_JSON],
             [norm] if norm else [])

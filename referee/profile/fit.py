@@ -61,8 +61,10 @@ candidates, in the operator's order when ``targets[]`` names them, else every di
   and every directory above it on ``PATH``, writes nothing of its own to stdout with ``--silent`` and exits with
   the script's code (npm 10.9.9, measured). ``check_recipe`` judges such a command's script and programs
   (``script_missing``, ``script_not_installed``). Not judged here: whether the lint tool is ESLint and takes
-  ``--format json`` (``verify``'s ``lint_output:`` shows it), whether the tests need services, and anything
-  else only a run shows.
+  ``--format json`` (``verify``'s ``lint_output:`` shows it), whether the test script prints what
+  ``runner.test_results`` reads (TAP, or jest's ``--json`` document: the npm form adds no option to the owner's
+  script, and a run that prints neither is ``zero_tests`` at the gate), whether the tests need services, and
+  anything else only a run shows.
 - When the ``lint`` script of ``path/package.json`` has the program ``eslint`` (one of
   ``unit_verify.script_programs``: the word itself, so not ``npx eslint``, a path to its binary or a wrapper that
   starts it), the flat config ESLint's own lookup finds joins ``inputs`` and is followed like the Nx files:

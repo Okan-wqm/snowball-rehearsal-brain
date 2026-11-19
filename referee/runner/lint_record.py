@@ -96,7 +96,7 @@ import hashlib
 import json
 import os
 import sys
-from typing import Any
+from typing import Any, Callable
 
 from profile import derive as D
 import cli
@@ -166,7 +166,9 @@ def _int(v: Any) -> bool:
     return type(v) is int and v >= 1
 
 
-def _relative(file_path: Any, root: str) -> str | None:
+def relative(file_path: Any, root: str) -> str | None:
+    """``file_path`` relative to ``root`` (the ``path`` rule of the module docstring), ``None`` when it is not a
+    string under ``root`` with plain components."""
     prefix = root.rstrip("/") + "/"
     if not isinstance(file_path, str) or not file_path.startswith(prefix) or "\\" in file_path:
         return None
@@ -194,21 +196,35 @@ def _shaped(doc: Any) -> bool:
         for r in doc)
 
 
-def _split(output: bytes) -> tuple[bytes, list[dict]]:
-    """``(extra, results)`` of one run's stdout by the module docstring's rules 1-4; raises ``RecordError``."""
+def last_document(output: bytes) -> tuple[bytes, Any]:
+    """Rules 1 and 2 of the module docstring for a tool that writes one JSON document on stdout, as one line and
+    last (ESLint's ``json`` formatter; ``runner.test_results`` reads jest's ``--json`` by the same two rules):
+    ``(extra, value)``, ``value`` being ``None`` when the bytes read as the document are not UTF-8 JSON. The
+    caller judges the value's shape."""
     whole, doc = _json(output)
-    extra = b""
-    if not whole:
-        body = output[:-1] if output.endswith(b"\n") else output
-        cut = body.rfind(b"\n") + 1
-        extra = body[:cut]
-        doc = _json(body[cut:])[1]
-    if not _shaped(doc):
-        raise RecordError(["not_eslint_json"])
+    if whole:
+        return b"", doc
+    body = output[:-1] if output.endswith(b"\n") else output
+    cut = body.rfind(b"\n") + 1
+    return body[:cut], _json(body[cut:])[1]
+
+
+def earlier_document(extra: bytes, shaped: Callable[[Any], bool]) -> bool:
+    """Rule 4: whether a line of ``extra`` is itself JSON that ``shaped`` takes."""
     for earlier in extra.split(b"\n"):
         is_json, value = _json(earlier)
-        if is_json and _shaped(value):
-            raise RecordError(["several_documents"])
+        if is_json and shaped(value):
+            return True
+    return False
+
+
+def _split(output: bytes) -> tuple[bytes, list[dict]]:
+    """``(extra, results)`` of one run's stdout by the module docstring's rules 1-4; raises ``RecordError``."""
+    extra, doc = last_document(output)
+    if not _shaped(doc):
+        raise RecordError(["not_eslint_json"])
+    if earlier_document(extra, _shaped):
+        raise RecordError(["several_documents"])
     return extra, doc
 
 
@@ -252,7 +268,7 @@ def convert(output: bytes, tree: str, root: str = CONTAINER_ROOT) -> tuple[dict,
     violations: list[dict] = []
     extra, results = _split(output)
     for result in results:
-        rel = _relative(result["filePath"], root)
+        rel = relative(result["filePath"], root)
         if rel is None:
             reasons.append("path_outside_root:%s" % result["filePath"])
             continue

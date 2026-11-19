@@ -23,6 +23,11 @@ What is proven here, for every candidate directory:
 - the bad candidate's change is confined to its target line and removes that line's assertion, so its rule
   cannot report the same assertion there (the gate's ``not_distinguished``).
 
+And for the recipe (``targets/copy/units.json``): its ``test_cmd`` and ``affected_test_cmd`` are the command
+``profile.nx`` composes for an ``@nx/jest:jest`` target with the unit's jest config, so they carry jest's
+``--json``, the one jest output ``runner.test_results`` reads (the copy's first cycle rejected the good candidate
+with ``zero_tests``: the recipe then ran jest without it and ``koş`` read no test; run 44473678747).
+
 Not proven here, and why: that ``koş``'s contained runs give the decisions of ``expect.json`` (the gate's
 ``tests_red``, ``ratchet_increase``, ``not_distinguished`` and ``zero_tests`` read ``koş``'s results, and the
 copy's lint configuration and tests are the target's code, which runs only in ``koş``, asama-0/08); the bad
@@ -50,7 +55,9 @@ from gate import check as C  # noqa: E402
 from gate import diffguard  # noqa: E402
 from gate import secrets  # noqa: E402
 from ledger import chain  # noqa: E402
+from profile import nx as X  # noqa: E402
 from profile import unit_verify as V  # noqa: E402
+from runner import test_results as T  # noqa: E402
 
 CANDIDATES = os.path.join(ROOT, "candidates", "copy")
 FIXTURES = os.path.join(ROOT, "tests", "fixtures", "copy-candidates")
@@ -166,6 +173,43 @@ class Fixtures(unittest.TestCase):
         data = raw(STATE_LEDGER).replace(b'"line":300', b'"line":301', 1)
         self.assertNotEqual(data, raw(STATE_LEDGER))
         self.assertFalse(chain.verify_bytes(data)["valid"])
+
+
+class Recipe(unittest.TestCase):
+    def composed(self) -> list[str]:
+        unit = recipe()
+        tree = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
+        os.makedirs(os.path.join(tree, unit["path"]))
+        files = {"nx.json": {}, "package-lock.json": {"lockfileVersion": 3, "packages": {}},
+                 unit["path"] + "/project.json": {"name": "outbox", "targets": {"test": {
+                     "executor": "@nx/jest:jest", "options": {"jestConfig": unit["path"] + "/jest.config.json"}}}}}
+        for name, content in files.items():
+            with open(os.path.join(tree, name), "w", encoding="utf-8") as fh:
+                json.dump(content, fh)
+        return X.test(tree, unit["path"])[0]
+
+    def test_the_test_commands_are_the_composers_and_ask_for_the_document(self):
+        unit, composed = recipe(), self.composed()
+        self.assertEqual((unit["test_cmd"], unit["affected_test_cmd"]), (composed, composed))
+        self.assertEqual((composed[-1], X.JEST_JSON), ("--json", "--json"))
+
+    def test_a_recipe_without_the_option_is_caught(self):
+        self.assertNotEqual([w for w in recipe()["test_cmd"] if w != X.JEST_JSON], self.composed())
+
+    def test_what_the_reader_gives_for_a_run_of_each_kind(self):
+        # the three stdouts a jest run of this recipe can end with, by the reader the loop uses: the document
+        # (tests), nothing (the first cycle's zero tests), and a failed file without assertions (the bad
+        # candidate's expected red: a spec file that does not compile)
+        spec = "/work/%s/src/outbox-module.spec.ts" % recipe()["path"]
+        doc = {"numTotalTests": 1, "testResults": [{"name": spec, "status": "passed", "assertionResults": [
+            {"ancestorTitles": ["OutboxModule"], "title": "compiles", "status": "passed"}]}]}
+        self.assertEqual(T.read(json.dumps(doc).encode() + b"\n", 0), [
+            {"id": "platform/libs/outbox/src/outbox-module.spec.ts > OutboxModule > compiles", "status": "pass"}])
+        self.assertEqual(T.read(b"", 0), [])
+        doc["testResults"][0].update(status="failed", assertionResults=[])
+        self.assertEqual(T.read(json.dumps(doc).encode() + b"\n", 1), [
+            {"id": "platform/libs/outbox/src/outbox-module.spec.ts", "status": "fail"}])
 
 
 class Candidates(unittest.TestCase):

@@ -192,13 +192,13 @@ class Lint(Base):
 class Test(Base):
     def test_the_command_and_its_config_input(self):
         self.assertEqual(X.test(self.tree, "libs/a"),
-                         (["env", TS, "node_modules/.bin/jest", "--config", "libs/a/jest.config.ts"],
+                         (["env", TS, "node_modules/.bin/jest", "--config", "libs/a/jest.config.ts", "--json"],
                           ["libs/a/jest.config.ts"]))
         self.project(test=dict(JEST, options={"jestConfig": "{projectRoot}/jest.config.cts"}))
-        self.assertEqual(X.test(self.tree, "libs/a")[0][-1], "libs/a/jest.config.cts")
+        self.assertEqual(X.test(self.tree, "libs/a")[0][-2:], ["libs/a/jest.config.cts", X.JEST_JSON])
         self.project(test=dict(JEST, options={"jestConfig": "/abs/jest.config.js"}))
         self.assertEqual(X.test(self.tree, "libs/a"),
-                         (["env", TS, "node_modules/.bin/jest", "--config", "/abs/jest.config.js"], []))
+                         (["env", TS, "node_modules/.bin/jest", "--config", "/abs/jest.config.js", "--json"], []))
 
     def test_refused(self):
         for options, reason in [({}, "option_missing:jestConfig"), ({"jestConfig": ""}, "option:jestConfig"),
@@ -332,8 +332,8 @@ class Fit(Base):
         recipe = F.compose(self.tree, "libs/a", IMAGES)
         self.assertEqual((recipe["lint_cmd"], recipe["test_cmd"], recipe["affected_test_cmd"], recipe["inputs"]),
                          (eslint_cmd("eslint.config.mjs", "libs/a"),
-                          ["env", TS, "node_modules/.bin/jest", "--config", "libs/a/jest.config.ts"],
-                          ["env", TS, "node_modules/.bin/jest", "--config", "libs/a/jest.config.ts"],
+                          ["env", TS, "node_modules/.bin/jest", "--config", "libs/a/jest.config.ts", "--json"],
+                          ["env", TS, "node_modules/.bin/jest", "--config", "libs/a/jest.config.ts", "--json"],
                           [".nvmrc", "eslint.config.mjs", "libs/a", "package-lock.json", "package.json"]))
         row = {r["path"]: r for r in F.fit(self.tree, None, None, IMAGES)["rows"]}["libs/a"]
         self.assertEqual((row["reasons"], row["sources"]), ([], {"lint": "nx_target", "test": "nx_target"}))
