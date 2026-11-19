@@ -31,8 +31,10 @@ it needs did not answer); any other exit (its argument error's 2, a program that
 once. Nothing after step 1 is run again: once ``sign`` exits 0 an entry may be in Rekor's log, and another run
 would make another. A run that exits 1 after its entry was logged is not told apart from one that logged nothing:
 the next run then logs a second entry for the same root, and the one answered is the last run's (the next D1
-reads the entry by the uuid in the root row; the other stays in the log, named by no row). 3, 2 and 4 are this
-module's choice: no page of the spec gives a count or a pause (``reports/seed-068``).
+reads the entry by the uuid in the root row; the other stays in the log, named by no row). 3 is tohum/13's count
+("Rekor'a yazılamama": at most 3 calls), read here as 3 for each root signed (one ``sign`` of this signer), not 3
+for a ``yaz`` job of several targets (``reports/seed-079``); the pauses 2 and 4 are this module's choice (no page
+gives a pause).
 
 A ``sign`` that exits non-zero on its last run is ``ledger.anchor.Unsignable`` ``sigstore sign failed (runs <n>;
 exit <code>; <signs>)``: ``<n>`` the runs made, ``<code>`` the last run's exit code and ``<signs>`` what
@@ -44,6 +46,14 @@ entry, a body of another kind, version or digest, and a non-zero exit or a progr
 ``tests/fixtures/rekor-entry.json`` ``published`` is a real bundle of ``sigstore sign`` and
 ``tests/fixtures/sigstore-signed-payload`` the file it signed; real ``sigstore`` 4.5.1's exits on them are recorded
 in ``tests/test_sign.py``.
+
+**Every run named** (``calls``; tohum/13 "Rekor'a yazılamama": each call's result is named in ``yaz``'s output).
+Each run of step 1 this signer made, in the order made and over every ``sign`` of the same signer object, is one
+entry of ``calls``: ``{exit, signs, result}``, ``exit`` the run's exit code, ``signs`` what ``loop.program`` names
+of its output (empty when ``run`` answers a plain ``int``), ``result`` ``signed`` (the run exited 0 and steps 2 to
+4 answered), ``exit`` (it exited non-zero, whether or not another run followed) or the fixed message of the
+``Unsignable`` step 2 or 3 raised on its bundle. The entry is appended when the run returns; the runs of step 3
+are not entries (they sign nothing). ``loop.job`` puts the list in ``yaz``'s line (``sign_calls``).
 
 The program is the caller's ``sigstore`` argv prefix: in ``yaz``, the one the ``sigstore`` step installs
 (``loop.inputs.sigstore``, tohum/29s: ``sigstore==4.5.0``). The recorded exits above are 4.5.1's, the version the
@@ -74,6 +84,7 @@ from loop import rekor as R
 RUNS = 3
 PAUSES = (2, 4)
 AGAIN = 1
+SIGNED, EXIT = "signed", "exit"
 PAYLOAD = "root"
 BUNDLE = "root.sigstore.json"
 
@@ -105,13 +116,15 @@ def _bundle_body(path: str, digest: str) -> tuple[bytes, str]:
 
 class SigstoreSigner:
     """``sign(payload) -> {uuid, identity, bundle}`` by the rules above; ``run(argv) -> exit code`` (with ``signs``
-    when it is ``loop.program``'s), ``sleep(seconds)`` the pause between two runs of ``sign``."""
+    when it is ``loop.program``'s), ``sleep(seconds)`` the pause between two runs of ``sign``; ``calls`` every run
+    of ``sign`` made so far."""
 
     def __init__(self, pin: str, sigstore: Sequence[str], run: Callable[[list[str]], int] = PG.run,
                  sleep: Callable[[float], None] = time.sleep):
         if not isinstance(pin, str) or not pin:
             raise ValueError("identity pin must be a non-empty string")
         self.pin, self.sigstore, self.run, self.sleep = pin, sigstore, run, sleep
+        self.calls: list[dict] = []
 
     def _answer(self, bundle: str, path: str, digest: str) -> dict:
         """Steps 2 to 4 on the bundle a ``sign`` that exited 0 wrote."""
@@ -128,8 +141,16 @@ class SigstoreSigner:
                 with open(path, "wb") as fh:
                     fh.write(payload)
                 code = self.run(sign_argv(self.sigstore, bundle, path))
+                call = {"exit": int(code), "signs": list(getattr(code, "signs", ())), "result": EXIT}
+                self.calls.append(call)
                 if code == 0:
-                    return self._answer(bundle, path, digest)
+                    try:
+                        answer = self._answer(bundle, path, digest)
+                    except Unsignable as exc:
+                        call["result"] = cli.cause(exc)
+                        raise
+                    call["result"] = SIGNED
+                    return answer
             if code != AGAIN or made == RUNS:
                 break
             self.sleep(PAUSES[made - 1])

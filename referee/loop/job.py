@@ -204,7 +204,10 @@ refused tree is ``pulled_invalid``). Then:
   if D5 chose one, or the revert of D7's red, or the end row of its green or flaky, and the cycle's one ``brain/state`` commit. Its refusals before any write
   (``head_moved:<branch>``, ``state_unwritable: ...``) are ``write_refused`` with the reasons; a hard stop
   (``target.land.HardStop``: a chain break, a root that cannot be signed, a write that failed after the first) is
-  ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. On success the line
+  ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. A hard stop's line
+  and a written cycle's (the genesis cycle's too) carry ``sign_calls``: every run of the signing program made for
+  this target's root, each ``{exit, signs, result}`` (``loop.sign`` "Every run named"; tohum/13: at most 3, the
+  signer's ``RUNS``). On success the line
   carries ``written`` (``loop.write_cycle``'s answer), ``drill`` (D8's step without the planted file's content) and
   ``done``: ``D5`` and ``D6``, ``D7`` when a sentinel was ended, ``D8`` unless the drill is off; ``ok`` is true (exit
   0), except when D8 judged a drill ``FAIL`` (``drill_fail``, exit 1, after the writes: the cycle's state is written,
@@ -960,13 +963,15 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
         return got
     writer, signer, imports, cost, cycle_id, ts = (got[k] for k in ("writer", "signer", "imports", "cost", "cycle_id",
                                                                     "ts"))
+    seen = len(_sign_calls(signer))
     try:
         return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill,
-                                    gate, passed)}
+                                    gate, passed), "sign_calls": _sign_calls(signer, seen)}
     except WC.Refused as exc:
         return {"reason": "write_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
-        return {"reason": "hard_stop", "reasons": [cli.cause(exc)], "written": sorted(set(writer.written))}
+        return {"reason": "hard_stop", "reasons": [cli.cause(exc)], "written": sorted(set(writer.written)),
+                "sign_calls": _sign_calls(signer, seen)}
     except (WC.Unusable, W.ApiError, W.Refused) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
@@ -1054,16 +1059,26 @@ def yaz_genesis(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict
              "recipe.json": json.dumps(art.units["units"][0], sort_keys=True).encode("utf-8"),
              "base.jsonl": given[0]}
     writer = got["writer"]
+    seen = len(_sign_calls(got["signer"]))
     try:
         done = AC.activate(writer, files, art, tree, d5, given[1], got["cost"], got["signer"], got["cycle_id"],
                            got["ts"])
     except AC.Refused as exc:
         return {"reason": "activation_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
-        return {"reason": "hard_stop", "reasons": [cli.cause(exc)], "written": sorted(set(writer.written))}
+        return {"reason": "hard_stop", "reasons": [cli.cause(exc)], "written": sorted(set(writer.written)),
+                "sign_calls": _sign_calls(got["signer"], seen)}
     except (AC.Unusable, W.ApiError, W.Unusable) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
-    return {"written": dict({k: done[k] for k in GENESIS_WRITTEN}, genesis=True)}
+    return {"written": dict({k: done[k] for k in GENESIS_WRITTEN}, genesis=True),
+            "sign_calls": _sign_calls(got["signer"], seen)}
+
+
+def _sign_calls(signer: Any, seen: int = 0) -> list[dict]:
+    """``sign_calls`` of a target's line: the signer's ``calls`` after its first ``seen`` (those made before this
+    target's D6 wrote, when one signer object serves several targets), each ``{exit, signs, result}``
+    (``loop.sign`` "Every run named"); ``[]`` for a signer that keeps none."""
+    return [dict(call) for call in list(getattr(signer, "calls", ()))[seen:]]
 
 
 def _signer(environ: dict[str, str]) -> SG.SigstoreSigner:

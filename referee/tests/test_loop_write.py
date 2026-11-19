@@ -15,6 +15,10 @@ served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line ch
 - nothing is written when a head moved (a rerun of the same cycle included), when the response is not this cycle's,
   when a row carries a secret, or when the roots file is no chain (a hard stop); a root that cannot be signed after
   the merge is a hard stop naming the refs written; a block edited by hand is regenerated and recorded;
+- ``sign_calls`` (tohum/13 "Rekor'a yazılamama"), with ``loop.sign.SigstoreSigner`` over a fake program: the written
+  cycle's line and the hard stop's name every run of the signing program in order (the genesis cycle's too), a
+  signer that keeps none gives ``[]``, a refusal before signing has no such key, and one signer object serving two
+  targets gives each line its own target's runs;
 - ``ledger.events.cause``: each rule by name, ``kos:`` reasons and look-alikes are ``unknown``; every reason
   ``gate.diffguard.path_reasons`` gives is in ``PATH_REASONS``;
 - D7's red (``loop.watch``, ``target.land.revert``): a cycle merges a candidate whose affected test fails; the next
@@ -112,6 +116,9 @@ from test_kos import BREAKS_TEST, FINDING, GOOD, diff, recipe  # noqa: E402
 from test_loop_kos import A_JS, HEADS, TARGET, RedAs, candidate  # noqa: E402
 from test_loop_yaz import OPEN, YazBase  # noqa: E402
 from test_pass_row import RD_BUILD, RD_LINT, RD_TEST  # noqa: E402
+from test_rekor import REAL  # noqa: E402
+from test_sign import Rooted  # noqa: E402
+from loop import program as PG  # noqa: E402
 import activation_world as AW  # noqa: E402
 import yaz_world as YW  # noqa: E402
 
@@ -371,6 +378,47 @@ class D6(StateBase):
         self.assertEqual(out["written"], ["refs/heads/brain/c/good", "refs/heads/brain/integration"])  # the merge
         self.assertIn("Unsignable", out["reasons"][0])
         self.assertEqual(self.gh.refs[B.STATE], HEADS[B.STATE])  # brain/state untouched
+
+    def test_the_line_names_every_run_of_the_signing_program(self):
+        # tohum/13 "Rekor'a yazılamama": a failed run, then the run that signs; both are in the written cycle's line
+        self.signer = Rooted(REAL["published"], sign_exit=[PG.Exit(1, ("network",)), 0]).signer(pin=YW.IDENTITY)
+        out = self.cycle({"good": candidate(GOOD)})
+        self.assertEqual((out["ok"], out["done"]), (True, ["D5", "D6"]), out)
+        self.assertEqual(out["sign_calls"], [{"exit": 1, "signs": ["network"], "result": "exit"},
+                                             {"exit": 0, "signs": [], "result": "signed"}])
+        self.assertEqual(out["sign_calls"], self.signer.calls)
+        self.assertEqual(rows_of(self.state_file(B.STATE_ROOTS))[-1]["rekor_uuid"], out["written"]["rekor_uuid"])
+
+    def test_a_hard_stop_s_line_names_the_three_runs_that_failed(self):
+        self.signer = Rooted(None, sign_exit=[1, PG.Exit(1, ("tuf_refresh",)), 1, 0]).signer(pin=YW.IDENTITY)
+        out = self.cycle({"good": candidate(GOOD)})
+        self.assertEqual((out["ok"], out["reason"], out["done"]), (False, "hard_stop", ["D5"]))
+        self.assertEqual(out["written"], ["refs/heads/brain/c/good", "refs/heads/brain/integration"])
+        [reason] = out["reasons"]
+        self.assertTrue(reason.startswith("Unsignable: sigstore sign failed (runs 3; exit 1; no sign)"), reason)
+        self.assertEqual(out["sign_calls"], [{"exit": 1, "signs": [], "result": "exit"},
+                                             {"exit": 1, "signs": ["tuf_refresh"], "result": "exit"},
+                                             {"exit": 1, "signs": [], "result": "exit"}])
+        self.assertEqual(self.gh.refs[B.STATE], HEADS[B.STATE])
+
+    def test_a_signer_that_keeps_no_calls_and_a_refusal_before_signing(self):
+        out = self.cycle({"good": candidate(GOOD)})  # the stand-in signer: it runs no program
+        self.assertEqual((out["ok"], out["sign_calls"]), (True, []))
+        self.signer = Rooted(REAL["published"]).signer(pin=YW.IDENTITY)
+        out = self.run_yaz()  # the same cycle again: the heads moved, nothing is signed
+        self.assertEqual((out["reason"], "sign_calls" in out, self.signer.calls), ("write_refused", False, []))
+
+    def test_one_signer_serving_two_targets_names_each_target_s_runs_in_its_line(self):
+        ghs = self.two_targets({"good": candidate(GOOD)})
+        for tid in ("t1", "t2"):
+            YW.write_response(self.temp, tid, HEADS, [YW.cost_row(snapshot=HEADS[B.INTEGRATION])], at=tid)
+        signer = Rooted(REAL["published"], sign_exit=[1, 0, 0]).signer(pin=YW.IDENTITY)
+        out = J.run("yaz", YW.env(self.temp, self.workspace), transport=Router(ghs), signer=signer,
+                    now=lambda: YW.NOW)
+        self.assertTrue(out["ok"], out)
+        self.assertEqual([[c["result"] for c in t["sign_calls"]] for t in out["targets"]],
+                         [["exit", "signed"], ["signed"]])
+        self.assertEqual(len(signer.calls), 3)
 
     def test_a_block_edited_by_hand_is_regenerated_and_recorded(self):
         status = self.state[B.STATE_STATUS]
@@ -1391,6 +1439,22 @@ class Genesis(StateBase):
         self.assertTrue(CH.verify_bytes(new, ledger)["valid"])
         self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [written["state_sha"]])
         self.assertEqual(SE.unfinished(new), [])
+
+    def test_the_genesis_line_names_every_run_of_the_signing_program(self):
+        self.main_at()
+        self.signer = Rooted(REAL["published"], sign_exit=[1, 0]).signer(pin=YW.IDENTITY)
+        out = self.cycle({"good": candidate(GOOD)})
+        self.assertEqual((out["ok"], out["done"]), (True, ["D5", "D6"]), out)
+        self.assertEqual(out["sign_calls"], [{"exit": 1, "signs": [], "result": "exit"},
+                                             {"exit": 0, "signs": [], "result": "signed"}])
+
+    def test_a_genesis_hard_stop_names_the_runs(self):
+        self.main_at()
+        self.signer = Rooted(REAL["published"], sign_exit=2).signer(pin=YW.IDENTITY)
+        out = self.cycle({"good": candidate(GOOD)})
+        self.assertEqual((out["ok"], out["reason"]), (False, "hard_stop"), out)
+        self.assertEqual(out["sign_calls"], [{"exit": 2, "signs": [], "result": "exit"}])
+        self.assertNotIn(B.STATE, self.gh.refs)
 
     def test_nothing_is_written_when_the_activation_refuses(self):
         self.main_at()

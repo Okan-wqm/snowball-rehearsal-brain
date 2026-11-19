@@ -12,6 +12,10 @@
   (a bundle a failed run left is not the next run's); the first run that exits 0 is the one answered and verified;
   exit 2 and 127 are final at once; the message names the runs, the last exit code and the last run's signs
   (``loop.program``'s; ``no sign`` for none and for a runner answering a plain ``int``);
+- every run named (``Calls``): ``calls`` holds one ``{exit, signs, result}`` per run of ``sign``, in order, appended
+  when the run returns: the failed runs before the one that signs, all three when none signs, one for a final
+  exit, the refusal's fixed message for a run that exited 0 and was refused at step 2 or 3, and the runs of two
+  ``sign`` calls of one signer; the verify run is no entry;
 - round trip: ``ledger.anchor.anchor`` with this signer gives the entry that ``loop.rekor.entry_reasons`` (the next
   D1) finds and accepts for the same root, and a root of another ledger is refused there;
 - the default runner on a real process: a fake ``sigstore`` program on disk; one that cannot start is unsignable
@@ -207,6 +211,90 @@ class Refusals(unittest.TestCase):
     def test_verifier_refuses_the_pin(self):
         self.assertEqual(self.refused(Program(REAL["published"], verify_exit=1), runs=2),
                          "the bundle is not verified for the pinned identity")
+
+
+class Rooted(Program):
+    """A ``Program`` whose ``sign`` writes the published bundle rewritten to record the payload file's own sha256
+    (any payload is signed; ``bundle`` None still writes nothing)."""
+
+    def __call__(self, argv):
+        if "sign" in argv and self.bundle is not None:
+            with open(argv[-1], "rb") as fh:
+                self.bundle = bundle_for(digest=hashlib.sha256(fh.read()).hexdigest())
+        return super().__call__(argv)
+
+
+class Calls(unittest.TestCase):
+    """tohum/13 "Rekor'a yazılamama": every run of ``sign`` is named, ``{exit, signs, result}``, in order."""
+
+    def test_one_run_that_signs(self):
+        run = Program(REAL["published"])
+        signer = run.signer()
+        self.assertEqual(signer.calls, [])
+        signer.sign(SIGNED)
+        self.assertEqual(signer.calls, [{"exit": 0, "signs": [], "result": "signed"}])
+        self.assertEqual(len(run.argvs), 2)  # the verify run is no entry
+
+    def test_failed_runs_before_the_one_that_signs_keep_their_exit_and_signs(self):
+        run = Program(REAL["published"], sign_exit=[PG.Exit(1, ("network",)), 1, PG.Exit(0)])
+        signer = run.signer()
+        signer.sign(SIGNED)
+        self.assertEqual(signer.calls, [{"exit": 1, "signs": ["network"], "result": "exit"},
+                                        {"exit": 1, "signs": [], "result": "exit"},
+                                        {"exit": 0, "signs": [], "result": "signed"}])
+        self.assertTrue(all(type(c["exit"]) is int and type(c["signs"]) is list for c in signer.calls))
+        json.dumps(signer.calls)
+
+    def test_no_run_signs(self):
+        exits = [PG.Exit(1, ("network",)), PG.Exit(1, ()), PG.Exit(1, ("tuf_refresh", "raised:a.BError"))]
+        signer = Program(None, sign_exit=exits).signer()
+        with self.assertRaises(AN.Unsignable):
+            signer.sign(SIGNED)
+        self.assertEqual(signer.calls, [{"exit": 1, "signs": ["network"], "result": "exit"},
+                                        {"exit": 1, "signs": [], "result": "exit"},
+                                        {"exit": 1, "signs": ["tuf_refresh", "raised:a.BError"], "result": "exit"}])
+        self.assertEqual(len(signer.calls), S.RUNS)
+
+    def test_a_final_exit_is_one_entry(self):
+        signer = Program(REAL["published"], sign_exit=[2, 0]).signer()
+        with self.assertRaises(AN.Unsignable):
+            signer.sign(SIGNED)
+        self.assertEqual(signer.calls, [{"exit": 2, "signs": [], "result": "exit"}])
+
+    def test_a_run_that_exits_0_and_is_refused_names_the_refusal(self):
+        for run, message in ((Program(None), "sigstore wrote no bundle"),
+                             (Program(b"{"), "bundle unreadable"),
+                             (Program(bundle_for(digest="0" * 64)),
+                              "bundle records no hashedrekord 0.0.1 of the payload"),
+                             (Program(REAL["published"], verify_exit=1),
+                              "the bundle is not verified for the pinned identity")):
+            with self.subTest(message=message):
+                signer = run.signer()
+                with self.assertRaises(AN.Unsignable) as ctx:
+                    signer.sign(SIGNED)
+                self.assertEqual(str(ctx.exception), message)
+                self.assertEqual(signer.calls, [{"exit": 0, "signs": [], "result": message}])
+
+    def test_the_entry_is_there_when_the_run_returns(self):
+        seen = []
+
+        class Watching(Program):
+            def __call__(self, argv):
+                seen.append(len(signer.calls))
+                return super().__call__(argv)
+        signer = Watching(REAL["published"], sign_exit=[1, 0]).signer()
+        signer.sign(SIGNED)
+        self.assertEqual(seen, [0, 1, 2])  # sign, sign, verify
+
+    def test_two_signs_of_one_signer_are_kept_in_order(self):
+        signer = Rooted(REAL["published"], sign_exit=[1, 0, 2]).signer()
+        signer.sign(SIGNED)
+        with self.assertRaises(AN.Unsignable):
+            signer.sign(SIGNED + b"more")
+        self.assertEqual([(c["exit"], c["result"]) for c in signer.calls], [(1, "exit"), (0, "signed"), (2, "exit")])
+        other = Rooted(REAL["published"]).signer()
+        other.sign(SIGNED + b"more")  # a rewritten bundle for another payload is signed too
+        self.assertEqual(other.calls, [{"exit": 0, "signs": [], "result": "signed"}])
 
 
 class RoundTrip(unittest.TestCase):

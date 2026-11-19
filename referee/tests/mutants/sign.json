@@ -296,6 +296,114 @@
    "tests": [
     "test_program.py"
    ]
+  },
+  {
+   "id": "calls_not_kept",
+   "file": "loop/sign.py",
+   "old": "                self.calls.append(call)\n",
+   "new": "",
+   "tests": [
+    "test_sign.Calls"
+   ]
+  },
+  {
+   "id": "calls_failed_named_signed",
+   "file": "loop/sign.py",
+   "old": "\"result\": EXIT}\n",
+   "new": "\"result\": SIGNED}\n",
+   "tests": [
+    "test_sign.Calls"
+   ]
+  },
+  {
+   "id": "calls_refusal_not_named",
+   "file": "loop/sign.py",
+   "old": "                        call[\"result\"] = cli.cause(exc)\n",
+   "new": "                        call[\"result\"] = EXIT\n",
+   "tests": [
+    "test_sign.Calls"
+   ]
+  },
+  {
+   "id": "calls_signs_dropped",
+   "file": "loop/sign.py",
+   "old": "call = {\"exit\": int(code), \"signs\": list(getattr(code, \"signs\", ())),",
+   "new": "call = {\"exit\": int(code), \"signs\": [],",
+   "tests": [
+    "test_sign.Calls"
+   ]
+  },
+  {
+   "id": "calls_exit_last_only",
+   "file": "loop/sign.py",
+   "old": "                self.calls.append(call)\n",
+   "new": "                self.calls[:] = [call]\n",
+   "tests": [
+    "test_sign.Calls"
+   ]
+  },
+  {
+   "id": "calls_appended_after_answer",
+   "file": "loop/sign.py",
+   "old": "                self.calls.append(call)\n                if code == 0:\n",
+   "new": "                if code == 0:\n                    self.calls.append(call)\n",
+   "tests": [
+    "test_sign.Calls"
+   ]
+  },
+  {
+   "id": "yaz_written_calls_dropped",
+   "file": "loop/job.py",
+   "old": "gate, passed), \"sign_calls\": _sign_calls(signer, seen)}",
+   "new": "gate, passed), \"sign_calls\": []}",
+   "tests": [
+    "test_loop_write.D6.test_the_line_names_every_run_of_the_signing_program"
+   ]
+  },
+  {
+   "id": "yaz_hard_stop_calls_dropped",
+   "file": "loop/job.py",
+   "old": "\"written\": sorted(set(writer.written)),\n                \"sign_calls\": _sign_calls(signer, seen)}",
+   "new": "\"written\": sorted(set(writer.written)),\n                \"sign_calls\": []}",
+   "tests": [
+    "test_loop_write.D6.test_a_hard_stop_s_line_names_the_three_runs_that_failed"
+   ]
+  },
+  {
+   "id": "yaz_genesis_calls_dropped",
+   "file": "loop/job.py",
+   "old": "genesis=True),\n            \"sign_calls\": _sign_calls(got[\"signer\"], seen)}",
+   "new": "genesis=True),\n            \"sign_calls\": []}",
+   "tests": [
+    "test_loop_write.Genesis.test_the_genesis_line_names_every_run_of_the_signing_program"
+   ]
+  },
+  {
+   "id": "yaz_genesis_hard_stop_calls_dropped",
+   "file": "loop/job.py",
+   "old": "\"written\": sorted(set(writer.written)),\n                \"sign_calls\": _sign_calls(got[\"signer\"], seen)}",
+   "new": "\"written\": sorted(set(writer.written)),\n                \"sign_calls\": []}",
+   "tests": [
+    "test_loop_write.Genesis.test_a_genesis_hard_stop_names_the_runs"
+   ]
+  },
+  {
+   "id": "yaz_calls_of_earlier_targets",
+   "file": "loop/job.py",
+   "old": "list(getattr(signer, \"calls\", ()))[seen:]]",
+   "new": "list(getattr(signer, \"calls\", ()))]",
+   "tests": [
+    "test_loop_write.D6.test_one_signer_serving_two_targets_names_each_target_s_runs_in_its_line"
+   ]
+  },
+  {
+   "id": "yaz_calls_on_a_refusal",
+   "file": "loop/job.py",
+   "old": "        return {\"reason\": \"write_refused\", \"reasons\": exc.reasons}",
+   "new": "        return {\"reason\": \"write_refused\", \"reasons\": exc.reasons, \"sign_calls\": []}",
+   "tests": [
+    "test_loop_write.D6.test_a_signer_that_keeps_no_calls_and_a_refusal_before_signing"
+   ]
   }
  ]
 }
