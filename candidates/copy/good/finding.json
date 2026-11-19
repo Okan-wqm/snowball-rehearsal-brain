@@ -1,0 +1,10 @@
+{
+ "fix_range": [
+  300,
+  300
+ ],
+ "line": 300,
+ "path": "platform/libs/outbox/src/outbox-notify-listener.service.ts",
+ "rule_id": "@typescript-eslint/no-unnecessary-type-assertion",
+ "tool_output_sha256": "507ca3e6e33438306abeb922dfc58446251097083507d51d229232d6382d3c20"
+}

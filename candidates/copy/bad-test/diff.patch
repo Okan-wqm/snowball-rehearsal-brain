@@ -1,0 +1,13 @@
+diff --git a/platform/libs/outbox/src/outbox-notify-listener.service.ts b/platform/libs/outbox/src/outbox-notify-listener.service.ts
+index 34d1f33..d5dafe9 100644
+--- a/platform/libs/outbox/src/outbox-notify-listener.service.ts
++++ b/platform/libs/outbox/src/outbox-notify-listener.service.ts
+@@ -289,7 +289,7 @@ export class OutboxNotifyListener implements OnModuleInit, OnModuleDestroy {
+     // Narrow to the Postgres-specific options type. TypeORM's union
+     // type is widened to DataSourceOptions here; the type guard
+     // above satisfies the narrowing.
+-    const pgOptions = options as PostgresConnectionOptions;
++    const pgOptions: PostgresConnectionOptions = this.dataSource.options;
+ 
+     const config: ClientConfig = {
+       host: pgOptions.host,

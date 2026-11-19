@@ -1,0 +1,13 @@
+diff --git a/platform/libs/outbox/src/outbox-notify-listener.service.ts b/platform/libs/outbox/src/outbox-notify-listener.service.ts
+index 34d1f33..a10b56c 100644
+--- a/platform/libs/outbox/src/outbox-notify-listener.service.ts
++++ b/platform/libs/outbox/src/outbox-notify-listener.service.ts
+@@ -297,7 +297,7 @@ export class OutboxNotifyListener implements OnModuleInit, OnModuleDestroy {
+       user: pgOptions.username,
+       password:
+         typeof pgOptions.password === 'string' ? pgOptions.password : undefined,
+-      database: pgOptions.database as string | undefined,
++      database: pgOptions.database,
+     };
+ 
+     // Propagate SSL settings if present — the shared bootstrap
