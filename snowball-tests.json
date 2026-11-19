@@ -22,8 +22,10 @@
     {"id": "T45", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_activate.py' && python -m unittest discover -s tests -p 'test_pass_row.py' && python -m unittest discover -s tests -p 'test_exit_b.py' && python -m unittest discover -s tests -p 'test_rehearsal.py' && cd .. && python -m unittest discover -s tests -p 'test_toy_candidates.py' && python -m unittest discover -s tests -p 'test_copy_candidates.py'", "stage": 0},
     {"id": "T14", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_schema.py' && cd .. && python -m unittest discover -s tests -p 'test_founder_ledger.py' && python -m unittest discover -s tests -p 'test_run_like_referee.py' && python -m unittest discover -s tests -p 'test_prepush.py' && python -m unittest discover -s tests -p 'test_vec_compare.py' && python -m unittest discover -s tests -p 'test_push_size.py' && python -m unittest discover -s tests -p 'test_generality.py'", "stage": 0},
     {"id": "T51", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_organs.py'", "stage": 1},
-    {"id": "T8", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_snapshot.py'", "stage": 1}
+    {"id": "T8", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_snapshot.py'", "stage": 1},
+    {"id": "T2", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_cases.py'", "stage": 1},
+    {"id": "T4", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_cases.py'", "stage": 1}
   ],
-  "done_mf": [1, 2],
+  "done_mf": [1, 2, 3],
   "lockfiles": []
 }

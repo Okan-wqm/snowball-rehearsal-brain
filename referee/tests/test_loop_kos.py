@@ -159,7 +159,8 @@ class Base(unittest.TestCase):
         self.pulled = os.path.join(self.temp, "in", "pulled", TARGET["id"])
 
     def write_pulled(self, cands=None, units=None, tree_tar=None, policy=None, target=None, heads=None,
-                     state=None, status=None, accepted=None, organs=None, snapshot=OWN_SNAPSHOT) -> dict:
+                     state=None, status=None, accepted=None, organs=None, snapshot=OWN_SNAPSHOT,
+                     mutations=None) -> dict:
         served = os.path.dirname(self.pulled)
         if not os.path.exists(os.path.join(served, P.SERVED)):
             os.makedirs(served, exist_ok=True)
@@ -169,7 +170,8 @@ class Base(unittest.TestCase):
                        policy if isinstance(policy, bytes) else json.dumps(policy or {"operating": operating()}).encode(),
                        cands if cands is not None else {}, HEADS if heads is None else heads,
                        state_files() if state is None else state, status, accepted, organs,
-                       snapshot_of(self.src, target or TARGET) if snapshot is OWN_SNAPSHOT else snapshot)
+                       snapshot_of(self.src, target or TARGET) if snapshot is OWN_SNAPSHOT else snapshot,
+                       mutations)
 
     def write_pulled_as(self, tid: str, **kw) -> dict:
         """``write_pulled`` into ``in/pulled/<tid>`` with the target id ``tid`` (unless ``target`` is given); the
@@ -202,7 +204,7 @@ class Layout(Base):
         self.assertEqual(got.units, {"units": [recipe()]})
         self.assertEqual(got.candidates, {"good": candidate(GOOD)})
         self.assertEqual(sorted(manifest["files"]), ["candidates/good/diff.patch", "candidates/good/expect.json",
-                                                     "candidates/good/finding.json", "organs.json",
+                                                     "candidates/good/finding.json", "mutations.json", "organs.json",
                                                      "policy.json", "snapshot.json", "state/chain/root.jsonl", "state/heads.json",
                                                      "state/ledger.jsonl", "tree.tar", "units.json"])
         with open(got.tree_tar, "rb") as fh:

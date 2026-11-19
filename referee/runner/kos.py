@@ -17,11 +17,14 @@ decide`` (MF8) and ``activate`` (MF18) read; it decides nothing.
     c/<cid>/cand.jsonl                  three lint runs of the candidate's worktree
     c/<cid>/checks.json                 {red_control: pass|fail, tests: [{id, status: pass|fail}]}
     c/<cid>/hashes.json                 {"base.jsonl", "cand.jsonl", "checks.json"}: sha256 of the bytes written
+    m/<mid>/mut.jsonl                   three lint runs of the base worktree with mutation <mid> applied
     sentinel.json                       {merge_sha, runs, verdict, red, flaky}: only when a merge is watched
     index.json                          {base: {verdict, reasons, lint_stdout_extra?, lint_failed?}, base_run_sha256,
                                          candidates: {cid: {verdict, reasons, lint_stdout_extra?, lint_failed?}},
                                          sentinel: null | {merge_sha, verdict, reasons, sha256},
-                                         organs: {oid: {called, reasons, ...}}}
+                                         organs: {oid: {called, reasons, ...}},
+                                         mutations: {mid: {verdict, reasons, run_sha256, lint_stdout_extra?,
+                                                           lint_failed?}}}
 
 Verdicts are ``unit_verify``'s classes: ``verified`` (the files are written and no reason holds), ``refused`` (a
 reason about the tree: the candidate's or the base's), ``no_verdict`` (a run that tells nothing: a limit, an
@@ -97,6 +100,19 @@ exited 0 or 1 and converts, the three files are written; ``red_control`` is ``pa
 passed (the gate's criterion 7 rejects it; the index says ``red_control_green``). Any other reason of a contained
 run (a limit, ``red_control_fault``, ``runner_fault``, ``breach:``, ``unreadable_output``) writes no file.
 
+**A mutation** ``mid`` (asama-1/13a: the tool runs on the tree with the mutation, in ``koş``; ``mutations``:
+``{mid: diff bytes}``, ``cases.build``'s proposal as ``loop.job``'s ``kos`` reads it from ``pulled``). After the
+candidates, in the order of the ids, each is treated as a candidate's diff up to its lint runs, by the same
+code: ``mid`` is a candidate id (``candidate_id_invalid``), without ``base.jsonl`` nothing runs
+(``base_unavailable``), the worktree is a fresh copy of the base worktree, the diff must apply in place (the
+candidate's reasons above), then ``lint_cmd`` three times, each in its own contained run. No test runs: a
+mutation is judged by the tool's output alone (13a). When every run ended ``ok``, exited 0 or 1 and converted and
+no red control passed, ``m/<mid>/mut.jsonl`` holds the three records and the index entry its sha256
+(``run_sha256``); with any reason (``red_control_green`` included: a sandbox a known bad command passed gives no
+case) no file is written and ``run_sha256`` is ``null``. The entry carries ``lint_stdout_extra`` and
+``lint_failed`` as a candidate's does. This module records; whether the mutation is a case is
+``cases.build``'s judgement in ``yaz``.
+
 **The tests**: ``runner.test_results.read`` of the test run's stdout and exit code: jest's ``--json`` document
 when stdout ends with one, else the top-level TAP lines; a non-zero exit with no failed test listed adds
 ``{id: "test_cmd exit <code>", status: fail}``. The formats, their rules and what is out of scope are stated
@@ -120,7 +136,7 @@ the ``events``/``sentinel`` end row on green or flaky, ``loop.write_cycle``), no
 Caller: ``loop.job``'s ``kos`` (D3, D7), which reads the ``pulled`` artifact (``loop.pulled``) and passes the one
 ``deps`` artifact directory under the download (``runner.deps_npm.artifact_in``), and ``watch`` from
 ``brain/state``'s ledger, and ``organs`` from ``pulled``'s accepted set and carried organs with the snapshot
-directory it wrote (the command line below passes none). Not done here, stated: the drill of the ``kos`` job (D8), and how ``yaz`` treats a
+directory it wrote, and ``mutations`` from ``pulled``'s proposal (the command line below passes neither). Not done here, stated: the drill of the ``kos`` job (D8), and how ``yaz`` treats a
 candidate without files (the gate reads a missing file as ``artefact_hash_mismatch``). The hashes are taken by this
 process after every container ended, from the bytes it wrote, not from anything a container wrote.
 
@@ -160,6 +176,7 @@ CANDIDATE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 INDEX = "index.json"
 SENTINEL = "sentinel.json"
 BASE = "base.jsonl"
+MUTATION_RUN = "mut.jsonl"
 MERGE_SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 
@@ -326,8 +343,12 @@ def _patch(worktree: str, diff: bytes) -> list[str]:
     return []
 
 
-def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx: dict, runner: C.Runner,
-               root: str, out: str, base_run: bytes) -> dict:
+def _changed(diff: bytes, recipe: dict, red: list, staging: str, ctx: dict, runner: C.Runner,
+             root: str, then: Any) -> dict:
+    """The index entry of one diff on the base worktree, a candidate's or a mutation's: a fresh copy of
+    ``staging``, the diff applied in place, three lint runs; without records the entry is the reasons' verdict with
+    what the runs carry, with them it is ``then(reasons, records, extra, worktree, work_root)``'s. The copy is
+    removed at the end."""
     work_root = tempfile.mkdtemp(prefix="cand-", dir=root)
     worktree = os.path.join(work_root, "work")
     shutil.copytree(staging, worktree, symlinks=True)
@@ -338,6 +359,28 @@ def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx
         reasons, records, extra = _lint(recipe, red, worktree, ctx["operating"], runner, work_root, False)
         if not records:
             return dict(_verdict(reasons), **extra)
+        return then(reasons, records, extra, worktree, work_root)
+    finally:
+        shutil.rmtree(work_root, ignore_errors=True)
+
+
+def _mutation(mid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx: dict, runner: C.Runner,
+              root: str, out: str) -> dict:
+    def then(reasons: list, records: list, extra: dict, worktree: str, work_root: str) -> dict:
+        if reasons:     # red_control_green: the runs converted in a sandbox that judges nothing
+            return dict(_verdict(reasons), run_sha256=None, **extra)
+        data = R.run_file(records)
+        os.makedirs(os.path.join(out, "m", mid))
+        with open(os.path.join(out, "m", mid, MUTATION_RUN), "xb") as fh:
+            fh.write(data)
+        return dict(_verdict([]), run_sha256=sha256(data), **extra)
+
+    return dict({"run_sha256": None}, **_changed(diff, recipe, red, staging, ctx, runner, root, then))
+
+
+def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx: dict, runner: C.Runner,
+               root: str, out: str, base_run: bytes) -> dict:
+    def then(reasons: list, records: list, extra: dict, worktree: str, work_root: str) -> dict:
         test = U._one(recipe["test_cmd"], red, recipe["env_image"], worktree, ctx["operating"], runner, work_root,
                       ctx["values"]["test_total_s"])
         reasons += [r for r in test["reasons"] if r not in reasons]
@@ -354,22 +397,27 @@ def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx
             with open(os.path.join(directory, name), "xb") as fh:
                 fh.write(data)
         return dict(_verdict(reasons), **extra)
-    finally:
-        shutil.rmtree(work_root, ignore_errors=True)
+
+    return _changed(diff, recipe, red, staging, ctx, runner, root, then)
 
 
 def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: dict[str, bytes], out: str,
             deps: str | None = None, target: Any = None, runner: C.Runner | None = None,
-            base: str | None = None, watch: str | None = None, organs: Any = None) -> dict:
+            base: str | None = None, watch: str | None = None, organs: Any = None,
+            mutations: dict[str, bytes] | None = None) -> dict:
     """Write OUT (see the module docstring) and return the index. ``candidates``: ``{cid: diff.patch bytes}``;
     ``watch``: the merge SHA whose sentinel runs, or ``None``; ``organs``: ``{accepted, definitions, tree}`` or
-    ``None``."""
+    ``None``; ``mutations``: ``{mid: diff bytes}`` or ``None`` (none)."""
     runner = runner or C.docker_runner
     if watch is not None and not (isinstance(watch, str) and MERGE_SHA.match(watch)):
         raise KosError("watch must be a merge SHA, 40 lowercase hex")
     if not isinstance(candidates, dict) or not all(isinstance(k, str) and isinstance(v, bytes)
                                                    for k, v in candidates.items()):
         raise KosError("candidates must map ids to diff bytes")
+    mutations = {} if mutations is None else mutations
+    if not isinstance(mutations, dict) or not all(isinstance(k, str) and isinstance(v, bytes)
+                                                  for k, v in mutations.items()):
+        raise KosError("mutations must map ids to diff bytes")
     organs = {"accepted": {}, "definitions": {}, "tree": None} if organs is None else organs
     if not (isinstance(organs, dict) and set(organs) == {"accepted", "definitions", "tree"}
             and isinstance(organs["definitions"], dict)):
@@ -408,6 +456,16 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
                 got = _candidate(cid, candidates[cid], recipe, red_control["cmd"], ctx["staging"], ctx, runner,
                                  root, out, base_run)
             index["candidates"][cid] = got
+        index["mutations"] = {}
+        for mid in sorted(mutations):
+            if not CANDIDATE_ID.fullmatch(mid):
+                got = dict(_verdict(["candidate_id_invalid"]), run_sha256=None)
+            elif index["base_run_sha256"] is None:
+                got = dict(_verdict(["base_unavailable"]), run_sha256=None)
+            else:
+                got = _mutation(mid, mutations[mid], recipe, red_control["cmd"], ctx["staging"], ctx, runner,
+                                root, out)
+            index["mutations"][mid] = got
         with open(os.path.join(out, INDEX), "xb") as fh:
             fh.write(_dump(index))
         return index

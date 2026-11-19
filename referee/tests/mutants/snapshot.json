@@ -363,8 +363,8 @@
   {
    "id": "cek_no_operator_paths",
    "file": "loop/cek.py",
-   "old": "SM.make(objects, commit, [], \"clean\", target).document",
-   "new": "SM.make(objects, commit, [], \"clean\", None).document",
+   "old": "SM.make(objects, commit, [], \"clean\", target)",
+   "new": "SM.make(objects, commit, [], \"clean\", None)",
    "tests": [
     "test_snapshot.py"
    ]
@@ -372,8 +372,8 @@
   {
    "id": "cek_carries_no_snapshot",
    "file": "loop/cek.py",
-   "old": "organs.items()}, organs, snapshot)",
-   "new": "organs.items()}, organs, None)",
+   "old": "organs.items()}, organs, snapshot,",
+   "new": "organs.items()}, organs, None,",
    "tests": [
     "test_snapshot.py"
    ]
@@ -435,8 +435,8 @@
   {
    "id": "pulled_snapshot_not_required",
    "file": "loop/pulled.py",
-   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT) + STATE_FILES",
-   "new": "TOP = (TREE, UNITS, POLICY, ACCEPTED) + STATE_FILES",
+   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT, MUTATIONS) + STATE_FILES",
+   "new": "TOP = (TREE, UNITS, POLICY, ACCEPTED, MUTATIONS) + STATE_FILES",
    "tests": [
     "test_snapshot.py"
    ]

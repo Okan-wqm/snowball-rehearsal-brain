@@ -1,0 +1,581 @@
+{
+ "mutants": [
+  {
+   "id": "hit_k0_any_line_of_the_file",
+   "file": "cases/build.py",
+   "old": "            and any(_inside(r, t, 0) for r, t in pairs)",
+   "new": "            and bool(pairs)",
+   "tests": [
+    "test_cases.Hit",
+    "test_cases.Oracle"
+   ]
+  },
+  {
+   "id": "hit_k0_rule_not_compared",
+   "file": "cases/build.py",
+   "old": "for k in (\"tool\", \"rule_id\")) \\",
+   "new": "for k in (\"tool\",)) \\",
+   "tests": [
+    "test_cases.Hit",
+    "test_cases.Oracle"
+   ]
+  },
+  {
+   "id": "hit_k0_tool_not_compared",
+   "file": "cases/build.py",
+   "old": "for k in (\"tool\", \"rule_id\")) \\",
+   "new": "for k in (\"rule_id\",)) \\",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k0_ref_overlap_is_enough",
+   "file": "cases/build.py",
+   "old": "    return any(h[\"start\"] - widen <= ref[\"line_start\"] and ref[\"line_end\"] <= h[\"end\"] + widen",
+   "new": "    return any(h[\"start\"] - widen <= ref[\"line_end\"] and ref[\"line_start\"] <= h[\"end\"] + widen",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k0_window_widens",
+   "file": "cases/build.py",
+   "old": "            and any(_inside(r, t, 0) for r, t in pairs)",
+   "new": "            and any(_inside(r, t, window or 0) for r, t in pairs)",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k1_k2_not_deterministic",
+   "file": "cases/build.py",
+   "old": "DETERMINISTIC = (\"K0\", \"K1\", \"K2\")",
+   "new": "DETERMINISTIC = (\"K0\",)",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k3_any_ref_in_the_file",
+   "file": "cases/build.py",
+   "old": "               or (type(window) is int and window >= 0 and _inside(r, t, window)) for r, t in pairs)",
+   "new": "               or True for r, t in pairs)",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k3_symbol_ignored",
+   "file": "cases/build.py",
+   "old": "    return any((isinstance(symbol, str) and t.get(\"symbol\") == symbol)\n               or ",
+   "new": "    return any(",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k3_symbol_none_equals_none",
+   "file": "cases/build.py",
+   "old": "    return any((isinstance(symbol, str) and t.get(\"symbol\") == symbol)",
+   "new": "    return any((t.get(\"symbol\") == symbol)",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k3_property_not_compared",
+   "file": "cases/build.py",
+   "old": "    if not (isinstance(case.get(\"property\"), str) and finding.get(\"property\") == case[\"property\"]\n            and isinstance(change, list) and change):",
+   "new": "    if not (isinstance(change, list) and change):",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k3_required_change_may_be_empty",
+   "file": "cases/build.py",
+   "old": "            and isinstance(change, list) and change):",
+   "new": "            and isinstance(change, list)):",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k3_window_true_is_one",
+   "file": "cases/build.py",
+   "old": "(type(window) is int and window >= 0 and",
+   "new": "(isinstance(window, int) and window >= 0 and",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k3_negative_window",
+   "file": "cases/build.py",
+   "old": "(type(window) is int and window >= 0 and",
+   "new": "(type(window) is int and",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_ref_of_another_path",
+   "file": "cases/build.py",
+   "old": "for t in _touched(case) if r[\"path\"] == t[\"path\"]]",
+   "new": "for t in _touched(case)]",
+   "tests": [
+    "test_cases.Hit",
+    "test_cases.Oracle"
+   ]
+  },
+  {
+   "id": "hit_reversed_ref_kept",
+   "file": "cases/build.py",
+   "old": "\n            and r[\"line_start\"] <= r[\"line_end\"]]",
+   "new": "]",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "judge_base_lines_not_mapped",
+   "file": "cases/build.py",
+   "old": "        mapped = GC.map_line([block], v[\"path\"], v[\"line\"])",
+   "new": "        mapped = [v[\"line\"], v[\"line\"]]",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_every_violation_new",
+   "file": "cases/build.py",
+   "old": "        if mapped:\n",
+   "new": "        if False:\n",
+   "tests": [
+    "test_cases.Judgement",
+    "test_cases.Oracle"
+   ]
+  },
+  {
+   "id": "judge_carried_by_any_rule",
+   "file": "cases/build.py",
+   "old": "for first, last in carried.get((v[\"rule_id\"], v[\"path\"]), []))})",
+   "new": "for key in carried if key[1] == v[\"path\"] for first, last in carried[key])})",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_many_allowed",
+   "file": "cases/build.py",
+   "old": "    elif len(inside) > 1:",
+   "new": "    elif False:",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_outside_region_allowed",
+   "file": "cases/build.py",
+   "old": "    if len(new) > len(inside):",
+   "new": "    if False:",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_region_is_the_file",
+   "file": "cases/build.py",
+   "old": "              if path == mutation[\"path\"] and any(h[\"start\"] <= line <= h[\"end\"] for h in region)]",
+   "new": "              if path == mutation[\"path\"]]",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_region_in_any_file",
+   "file": "cases/build.py",
+   "old": "              if path == mutation[\"path\"] and any(",
+   "new": "              if any(",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_any_rule",
+   "file": "cases/build.py",
+   "old": "    if len(inside) == 1 and inside[0][0] != mutation[\"rule_id\"]:",
+   "new": "    if False:",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_nondeterministic_base_allowed",
+   "file": "cases/build.py",
+   "old": "    if not (base_same and mut_same):",
+   "new": "    if not mut_same:",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_nondeterministic_run_allowed",
+   "file": "cases/build.py",
+   "old": "    if not (base_same and mut_same):",
+   "new": "    if not base_same:",
+   "tests": [
+    "test_cases.Judgement",
+    "test_cases.KosRuns"
+   ]
+  },
+  {
+   "id": "judge_tool_not_compared",
+   "file": "cases/build.py",
+   "old": "    if base[\"tool\"] != mutation[\"tool\"] or mutated[\"tool\"] != mutation[\"tool\"]:",
+   "new": "    if False:",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_deletion_hunk_allowed",
+   "file": "cases/build.py",
+   "old": " or not block[\"hunks\"] or not all(h[\"new_count\"] for h in block[\"hunks\"]):",
+   "new": " or not block[\"hunks\"]:",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_diff_of_another_path",
+   "file": "cases/build.py",
+   "old": "or block[\"old\"] != mutation[\"path\"] \\",
+   "new": "\\",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_line_any_type",
+   "file": "cases/build.py",
+   "old": "            and type(mutation[\"line\"]) is int):",
+   "new": "            ):",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "judge_extra_keys_allowed",
+   "file": "cases/build.py",
+   "old": "set(mutation) == set(MUTATION_KEYS)",
+   "new": "set(mutation) >= set(MUTATION_KEYS)",
+   "tests": [
+    "test_cases.Judgement"
+   ]
+  },
+  {
+   "id": "propose_no_limit",
+   "file": "cases/build.py",
+   "old": "and len(out) < limit:",
+   "new": "and True:",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_seed_ignored",
+   "file": "cases/build.py",
+   "old": "key=lambda p: _sha(seed, op_id,",
+   "new": "key=lambda p: _sha(\"\", op_id,",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_operator_by_operator",
+   "file": "cases/build.py",
+   "old": "    for rank in range(max([len(found) for found in places.values()] + [0])):\n        for op in CATALOG:\n            if rank",
+   "new": "    for op in CATALOG:\n        for rank in range(len(places[op[\"id\"]])):\n            if rank",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_inputs_ignored",
+   "file": "cases/build.py",
+   "old": "and any(i == \".\" or path == i or path.startswith(i + \"/\") for i in inputs)):",
+   "new": "):",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_input_prefix_not_directory",
+   "file": "cases/build.py",
+   "old": "path.startswith(i + \"/\")",
+   "new": "path.startswith(i)",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_any_suffix",
+   "file": "cases/build.py",
+   "old": "        if not (path.endswith(SUFFIXES) and PLAIN_PATH.match(path)",
+   "new": "        if not (PLAIN_PATH.match(path)",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_any_path",
+   "file": "cases/build.py",
+   "old": "        if not (path.endswith(SUFFIXES) and PLAIN_PATH.match(path)",
+   "new": "        if not (path.endswith(SUFFIXES)",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_last_line_without_newline",
+   "file": "cases/build.py",
+   "old": "                if end >= 0 and \"\\r\" not in text",
+   "new": "                if \"\\r\" not in text",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_carriage_return_kept",
+   "file": "cases/build.py",
+   "old": "                if end >= 0 and \"\\r\" not in text[text.rfind(\"\\n\", 0, at) + 1:end]:",
+   "new": "                if end >= 0:",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_id_without_the_files_bytes",
+   "file": "cases/build.py",
+   "old": "_sha(op[\"id\"], path, str(line), hashlib.sha256(data).hexdigest())[:16]",
+   "new": "_sha(op[\"id\"], path, str(line))[:16]",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_every_match_of_the_line",
+   "file": "cases/build.py",
+   "old": "new = _MATCH[op[\"id\"]].sub(op[\"replace\"], old, count=1)",
+   "new": "new = _MATCH[op[\"id\"]].sub(op[\"replace\"], old)",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "build_kos_refusal_ignored",
+   "file": "cases/build.py",
+   "old": "    reasons = _kos_reasons(entry)\n    if reasons:\n        return reasons, None, None\n",
+   "new": "    if not isinstance(entry, dict):\n        return [\"kos:missing\"], None, None\n",
+   "tests": [
+    "test_cases.Built",
+    "test_cases.KosRuns"
+   ]
+  },
+  {
+   "id": "build_run_hash_not_checked",
+   "file": "cases/build.py",
+   "old": "    if data is None or not isinstance(want, str) or hashlib.sha256(data).hexdigest() != want:",
+   "new": "    if data is None:",
+   "tests": [
+    "test_cases.Built",
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "build_base_read_without_its_hash",
+   "file": "cases/build.py",
+   "old": "    base_run = _under_hash(read, GC.RUN_FILES[0], index.get(\"base_run_sha256\"))",
+   "new": "    base_run = read(GC.RUN_FILES[0])",
+   "tests": [
+    "test_cases.Built"
+   ]
+  },
+  {
+   "id": "build_group_is_the_path",
+   "file": "cases/build.py",
+   "old": "\"group\": posixpath.dirname(path) or \".\"}",
+   "new": "\"group\": path}",
+   "tests": [
+    "test_cases.Built"
+   ]
+  },
+  {
+   "id": "build_oracle_at_the_proposed_line_plus_one",
+   "file": "cases/build.py",
+   "old": "\"line_start\": found[\"line\"], \"line_end\": found[\"line\"]}",
+   "new": "\"line_start\": found[\"line\"] + 1, \"line_end\": found[\"line\"] + 1}",
+   "tests": [
+    "test_cases.Oracle"
+   ]
+  },
+  {
+   "id": "build_hunk_is_the_whole_file",
+   "file": "cases/build.py",
+   "old": "            \"touched_paths\": [{\"path\": path, \"hunks\": [found[\"hunk\"]]}],",
+   "new": "            \"touched_paths\": [{\"path\": path, \"hunks\": [{\"start\": 1, \"end\": 10 ** 9}]}],",
+   "tests": [
+    "test_cases.Oracle",
+    "test_cases.Built"
+   ]
+  },
+  {
+   "id": "kos_mutations_not_run",
+   "file": "runner/kos.py",
+   "old": "        for mid in sorted(mutations):",
+   "new": "        for mid in []:",
+   "tests": [
+    "test_cases.KosRuns",
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "kos_mutation_id_not_checked",
+   "file": "runner/kos.py",
+   "old": "                got = dict(_verdict([\"candidate_id_invalid\"]), run_sha256=None)\n            elif",
+   "new": "                got = dict(_verdict([]), run_sha256=None)\n            elif",
+   "tests": [
+    "test_cases.KosRuns"
+   ]
+  },
+  {
+   "id": "kos_mutation_without_base",
+   "file": "runner/kos.py",
+   "old": "            elif index[\"base_run_sha256\"] is None:\n                got = dict(_verdict([\"base_unavailable\"]), run_sha256=None)\n            else:\n                got = _mutation(",
+   "new": "            else:\n                got = _mutation(",
+   "tests": [
+    "test_cases.KosRuns"
+   ]
+  },
+  {
+   "id": "kos_mutation_green_red_control_written",
+   "file": "runner/kos.py",
+   "old": "        if reasons:     # red_control_green: the runs converted in a sandbox that judges nothing",
+   "new": "        if False:",
+   "tests": [
+    "test_cases.KosRuns"
+   ]
+  },
+  {
+   "id": "kos_mutation_patches_the_staging",
+   "file": "runner/kos.py",
+   "old": "        bad = _patch(worktree, diff)\n        if bad:\n            return _verdict(bad)\n        reasons, records, extra = _lint(recipe, red, worktree,",
+   "new": "        bad = _patch(staging, diff)\n        if bad:\n            return _verdict(bad)\n        reasons, records, extra = _lint(recipe, red, staging,",
+   "tests": [
+    "test_cases.KosRuns"
+   ]
+  },
+  {
+   "id": "kos_mutations_any_value",
+   "file": "runner/kos.py",
+   "old": "    if not isinstance(mutations, dict) or not all(isinstance(k, str) and isinstance(v, bytes)\n                                                  for k, v in mutations.items()):\n        raise KosError(\"mutations must map ids to diff bytes\")\n",
+   "new": "",
+   "tests": [
+    "test_cases.KosRuns"
+   ]
+  },
+  {
+   "id": "job_kos_passes_no_mutation",
+   "file": "loop/job.py",
+   "old": "                                     for mid, m in art.mutations.items()",
+   "new": "                                     for mid, m in {}.items()",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "job_yaz_builds_no_case",
+   "file": "loop/job.py",
+   "old": "    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read)",
+   "new": "    return CB.build(art.heads[B.INTEGRATION], {}, index, read)",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "job_yaz_base_sha_is_the_state_s",
+   "file": "loop/job.py",
+   "old": "    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read)",
+   "new": "    return CB.build(art.heads[B.STATE], art.mutations, index, read)",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "cek_proposes_nothing",
+   "file": "loop/cek.py",
+   "old": "        mutations = CB.propose(made.files, _inputs(units), commit)",
+   "new": "        mutations = {}",
+   "tests": [
+    "test_cases.LivePath",
+    "test_loop_cek.py"
+   ]
+  },
+  {
+   "id": "cek_proposes_over_the_whole_tree",
+   "file": "loop/cek.py",
+   "old": "        mutations = CB.propose(made.files, _inputs(units), commit)",
+   "new": "        mutations = CB.propose(made.files, [\".\"], commit)",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "cek_seed_is_not_the_commit",
+   "file": "loop/cek.py",
+   "old": "        mutations = CB.propose(made.files, _inputs(units), commit)",
+   "new": "        mutations = CB.propose(made.files, _inputs(units), \"\")",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "pulled_mutations_any_json",
+   "file": "loop/pulled.py",
+   "old": "        reasons.append(\"mutations_invalid\")",
+   "new": "        pass",
+   "tests": [
+    "test_cases.Carried"
+   ]
+  },
+  {
+   "id": "pulled_write_any_mutations",
+   "file": "loop/pulled.py",
+   "old": "        if not isinstance({} if mutations is None else mutations, dict):\n            raise TypeError(\"mutations\")\n",
+   "new": "",
+   "tests": [
+    "test_cases.Carried"
+   ]
+  },
+  {
+   "id": "propose_blank_is_any_whitespace",
+   "file": "cases/build.py",
+   "old": "\"match\": r\"^([ \\t]*)(?:const|let)([ \\t]+[A-Za-z_$\\[{])\"",
+   "new": "\"match\": r\"^(\\s*)(?:const|let)(\\s+[A-Za-z_$\\[{])\"",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_line_not_counted",
+   "file": "cases/build.py",
+   "old": "                line += text.count(\"\\n\", at, found.start())",
+   "new": "                line += text.count(\"\\n\", at, found.start()) and 1",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  }
+ ]
+}

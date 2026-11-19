@@ -62,6 +62,12 @@ for the tree is the commit the tree was read from. Nothing here reads the networ
   tree reader's own reasons are the tree's above and are not listed twice. The commit is walked a second time for
   it (measured on the 15134-file target: 8.0 s for the walk and 0.7 s for the snapshot, whose document
   is 2.0 MB for 14911 files; 223 files are left out).
+- **The mutations** (asama-1/13a, tohum/26a: ``cases.build``, job ``çek``): ``cases.build.propose`` over that
+  snapshot's files (the clean files of the commit), the ``inputs`` of the units ``units.json`` names, each as
+  ``profile.derive.norm_path`` writes it (a
+  ``units.json`` of another shape names none, and ``loop.pulled.read`` or the jobs after refuse it) and the
+  commit's id as the seed; the proposal is the artifact's ``mutations.json`` (``loop.pulled``, "Mutations"),
+  which ``kos`` runs and ``yaz`` judges (``cases.build``).
 - ``state_incomplete``: ``state`` does not map exactly the paths of ``STATE_CHAINS`` to bytes;
   ``heads_invalid``: ``state_head`` or ``commit`` is not 40 lowercase hex, ``state_head`` ``None`` (the genesis
   cycle) only with both chains empty and no ``status`` (``loop.pulled.write``'s rules).
@@ -85,6 +91,7 @@ import shutil
 from typing import Any
 
 import cli
+from cases import build as CB
 from loop import gitobj as G
 from loop import pulled as P
 from runner import kos as K
@@ -214,6 +221,20 @@ def _units(brain: G.Source, commit: str, target_id: str) -> bytes | None:
     return G.read(brain, found[1], "blob") if found is not None and found[0] == "file" else None
 
 
+def _inputs(units: bytes | None) -> list[str]:
+    """The ``inputs`` paths of every unit ``units.json``'s bytes name; ``[]`` for a document of another shape."""
+    try:
+        doc = cli.loads(units.decode("utf-8")) if units is not None else None
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return []
+    listed = doc.get("units") if isinstance(doc, dict) else None
+    out: list[str] = []
+    for unit in listed if isinstance(listed, list) else []:
+        inputs = unit.get("inputs") if isinstance(unit, dict) else None
+        out += [i for i in inputs if isinstance(i, str)] if isinstance(inputs, list) else []
+    return [p for p in map(D.norm_path, out) if p is not None]
+
+
 def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, target_id: str,
              objects: G.Source, commit: str, state_head: str, state: dict[str, bytes], status: bytes | None,
              out: str) -> dict[str, Any]:
@@ -238,10 +259,12 @@ def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, 
         reasons += bad
     except P.PulledError as exc:
         reasons += ["brain:%s" % r for r in exc.reasons]
-    snapshot = None
+    snapshot, mutations = None, {}
     try:
         tree = G.tree_tar(objects, commit)
-        snapshot = SM.make(objects, commit, [], "clean", target).document
+        made = SM.make(objects, commit, [], "clean", target)
+        snapshot = made.document
+        mutations = CB.propose(made.files, _inputs(units), commit)
     except P.PulledError as exc:
         reasons += exc.reasons
     except D.DeriveError:
@@ -249,7 +272,8 @@ def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, 
     if reasons:
         raise P.PulledError(list(dict.fromkeys(reasons)))
     manifest = P.write(out, target, tree, units, policy, candidates, {B.STATE: state_head, B.INTEGRATION: commit},
-                       state, status, {oid: O.definition_sha256(d) for oid, d in organs.items()}, organs, snapshot)
+                       state, status, {oid: O.definition_sha256(d) for oid, d in organs.items()}, organs, snapshot,
+                       mutations)
     try:
         P.read(out)
     except P.PulledError:

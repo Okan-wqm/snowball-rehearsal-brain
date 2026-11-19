@@ -48,8 +48,8 @@
   {
    "id": "cek_accepts_nothing",
    "file": "loop/cek.py",
-   "old": "{oid: O.definition_sha256(d) for oid, d in organs.items()}, organs, snapshot)",
-   "new": "{}, organs, snapshot)",
+   "old": "{oid: O.definition_sha256(d) for oid, d in organs.items()}, organs, snapshot,",
+   "new": "{}, organs, snapshot,",
    "tests": [
     "test_organs.py"
    ]
@@ -102,8 +102,8 @@
   {
    "id": "pulled_accepted_not_required",
    "file": "loop/pulled.py",
-   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT) + STATE_FILES",
-   "new": "TOP = (TREE, UNITS, POLICY, SNAPSHOT) + STATE_FILES",
+   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT, MUTATIONS) + STATE_FILES",
+   "new": "TOP = (TREE, UNITS, POLICY, SNAPSHOT, MUTATIONS) + STATE_FILES",
    "tests": [
     "test_loop_kos.py"
    ]

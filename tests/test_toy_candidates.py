@@ -142,7 +142,7 @@ def d5(cands: list[dict]) -> dict:
                 with open(os.path.join(results, "c", c["id"], name), "wb") as fh:
                     fh.write(c[name])
         art = P.Pulled(None, {"units": [recipe()]}, None, "", {c["id"]: brain_files(c) for c in cands}, {}, {}, b"",
-                       None, {}, {}, None)
+                       None, {}, {}, None, {})
         return E.decide(art, recipe(), TOY, results, CONTROL, [])
     finally:
         shutil.rmtree(results)

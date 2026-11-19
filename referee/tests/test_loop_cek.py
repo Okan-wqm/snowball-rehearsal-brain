@@ -94,6 +94,10 @@ import test_loop_kos as LK  # noqa: E402
 from test_loop_kos import HEADS, TREE, RedAs, candidate, state_files  # noqa: E402
 from test_revert_drill import row  # noqa: E402
 
+# What ``cases.build.propose`` proposes for this world's target tree (test_kos's ``pkg``: one ``const`` line in
+# each of two files), pinned; tests/test_cases.py reads the proposal itself.
+MUTATION_IDS = ["no-var-5006bf2ab10fe7b6", "prefer-const-332fb56a7732f46b"]
+
 
 def state_rows(n: int) -> list[dict]:
     """The first ``n`` rows of the fixture ``brain/state`` ledgers: ``cycle_start`` rows of ``ledger.schema``, no merge."""
@@ -598,7 +602,8 @@ class CekJob(unittest.TestCase):
                                             "refs/heads/brain/integration"])
         self.assertEqual(line["heads"], {"brain/state": self.state_head, "brain/integration": self.target_commit})
         self.assertEqual(line["assembled"], {"target": "t1", "commit": self.target_commit, "candidates": ["good"],
-                                             "organs": [], "snapshot_id": self.snapshot_id})
+                                             "organs": [], "snapshot_id": self.snapshot_id,
+                                             "mutations": MUTATION_IDS})
         # the artifact assembled in the job's work directory is moved, not copied, to out/pulled/t1, next to
         # served.json naming it, and loop.pulled reads it there: the target's tree at brain/integration's head, the
         # brain's units.json and candidate at the accepted commit
@@ -1039,7 +1044,8 @@ class CekJob(unittest.TestCase):
                     self.assertEqual(sorted(line), ["assembled", "heads", "profile", "root", "state", "target"])
                     self.assertEqual(line["assembled"], {"target": line["target"], "commit": self.target_commit,
                                                          "candidates": cands[line["target"]], "organs": [],
-                                                         "snapshot_id": self.snapshot_id})
+                                                         "snapshot_id": self.snapshot_id,
+                                                         "mutations": MUTATION_IDS})
                 # served.json lists them in that order, each in its own directory, read by loop.pulled as its own
                 self.assertEqual(self.served(), list(order))
                 self.assertEqual(sorted(os.listdir(os.path.join(self.temp, "out", "pulled"))),

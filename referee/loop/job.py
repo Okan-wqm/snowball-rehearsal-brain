@@ -136,7 +136,11 @@ refused tree is ``pulled_invalid``). Then:
   snapshot directory), writing ``$RUNNER_TEMP/out/results``. The snapshot (P1 MF2): before ``runner.kos.results``,
   ``snapshot.make.write`` writes ``pulled``'s ``snapshot.json`` document out from the extracted tree into
   ``kos-*/snapshot``; a document or a tree it refuses is ``snapshot_refused`` with its reasons and nothing runs;
-  the target's line has ``snapshot`` (``snapshot_id`` and the counts of ``files`` and ``links``). The image is fetched in this step, on the host, by
+  the target's line has ``snapshot`` (``snapshot_id`` and the counts of ``files`` and ``links``). The mutations
+  (P1 MF3, asama-1/13a: the tool runs in ``koş``): every entry of ``pulled``'s ``mutations.json`` that is an
+  object with a string ``diff`` is given to ``runner.kos.results`` (``mutations``, "A mutation" there: three lint
+  runs of the base worktree with the diff applied, ``m/<mid>/mut.jsonl``, the index's ``mutations``); an entry
+  of another shape is not run (``yaz`` refuses it). The image is fetched in this step, on the host, by
   ``runner.kos.results`` itself before its first contained run (tohum/08 item 2; ``runner.contained.ensure_image``:
   the workflow has no pull step of its own, and a pull that fails prints docker's reason on this step's stderr and
   gives the base ``no_verdict`` ``image_unavailable``). Before the tree is extracted it reads ``pulled``'s
@@ -154,7 +158,12 @@ refused tree is ``pulled_invalid``). Then:
   (``$RUNNER_TEMP/control/control.json``; unreadable is unusable, exit 2), ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
   (the same refusals, the same one unit), extracts the tree under ``$RUNNER_TEMP/work`` and calls ``loop.decide`` on
   ``$RUNNER_TEMP/in/results``: ``decisions`` (every candidate's ``decision`` and ``reasons``) and ``merge`` are in the
-  output and ``done`` is ``["D5"]``. Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
+  output and ``done`` is ``["D5"]``. Once D5 has decided, the dev cases (P1 MF3, ``yaz_cases``): ``cases.build.build``
+  judges ``pulled``'s ``mutations.json`` against the results (``index.json``'s ``mutations`` and ``base_run_sha256``,
+  ``base.jsonl`` and each ``m/<mid>/mut.jsonl`` read under its hash) with ``brain/integration``'s head as
+  ``base_sha``; the target's line has ``cases`` (``{cases, oracle, refused}``, "The case" there) whatever the
+  steps after D5 gave. Nothing reads it to decide and nothing is written from it: no merge, row or exit code
+  depends on a case (``<state_root>/cases/`` is not written yet, reports/seed-075). Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
   ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it), read
   before the tree is judged; a ledger it cannot read is ``state_refused`` with its reasons (exit 1), nothing decided. A
   merge is unfinished until its revert row: the end of a green sentinel has no row until D7 writes one, so after the
@@ -248,7 +257,7 @@ refused tree is ``pulled_invalid``). Then:
   and ``assembled``. When all of it holds, the line's ``accepted`` has ``brain_sha`` (the accepted commit: ``candidates/`` and ``targets/`` are read there),
   ``transfer_sha`` (the transfer row's commit) and ``referee_tree_sha256`` (the ``referee/`` hash of
   ``transfer_sha``, equal to the row's), ``result_sha256``, ``artifact_id``; each target's line has ``heads`` (branch to commit), ``state`` (``head``, ``previous``, ``rows``),
-  ``root`` (``root``, ``rekor_uuid``), ``assembled`` (``target``, ``commit``, ``candidates``, ``organs``: the ids of the organs carried, ``loop.cek`` "Organs", and ``snapshot_id``: the clean snapshot's, ``snapshot.make``), ``profile``
+  ``root`` (``root``, ``rekor_uuid``), ``assembled`` (``target``, ``commit``, ``candidates``, ``organs``: the ids of the organs carried, ``loop.cek`` "Organs", ``snapshot_id``: the clean snapshot's, ``snapshot.make``, and ``mutations``: the ids ``cases.build`` proposed), ``profile``
   (``unit_id``); the job's ``checked`` is ``CEK_CHECKED``: every check of D1's row has run. When every target
   holds, each served target's assembled directory, the bytes MF4 judged, is moved to ``$RUNNER_TEMP/out/pulled/<id>``
   and ``served.json`` written (``_hand_over``; ``out/pulled`` must not exist before, else exit 2), the line has ``ok`` true and ``done`` ``["D1"]``, exit 0, so the upload step runs and ``getir``, ``kos``,
@@ -299,6 +308,7 @@ import sys
 import tempfile
 from typing import Any, NamedTuple
 
+from cases import build as CB
 from dispatcher import llm_call as LL
 from gate import revert as RV
 from harness import pass_row as PR
@@ -706,6 +716,9 @@ def kos_d3(environ: dict[str, str], tid: str, runner: Any = None,
     try:
         index = K.results(unit, tree, art.policy, red_control or RED_CONTROL, diffs, _dir(environ, "out", "results", tid),
                           deps, art.target, runner, base=root, watch=watch,
+                          mutations={mid: m["diff"].encode("utf-8", "surrogateescape")
+                                     for mid, m in art.mutations.items()
+                                     if isinstance(m, dict) and isinstance(m.get("diff"), str)},
                           organs={"accepted": art.accepted, "definitions": art.organs, "tree": snapshot})
     except K.UNUSABLE as exc:
         raise Unusable("kos: %s" % cli.cause(exc)) from None
@@ -735,6 +748,23 @@ def yaz_d5(environ: dict[str, str], tid: str) -> tuple[dict[str, Any], Any, str 
         return E.decide(art, unit, tree, _dir(environ, "in", "results", tid), control, unfinished), art, tree
     except (E.Unusable, D.DeriveError) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
+
+
+def yaz_cases(environ: dict[str, str], tid: str, art: Any) -> dict[str, Any]:
+    """The dev cases of target ``tid``'s cycle (P1 MF3; see the module docstring): ``cases.build.build`` of
+    ``pulled``'s mutations on ``$RUNNER_TEMP/in/results/<tid>``, each file a regular file with no link on its way
+    (else absent); an index that is absent or not JSON is an empty one (every mutation ``kos:missing``)."""
+    results = _dir(environ, "in", "results", tid)
+
+    def read(path: str) -> bytes | None:
+        return D._read_regular(results, path)
+
+    raw = read(K.INDEX)
+    try:
+        index = cli.loads(raw.decode("utf-8")) if raw is not None else None
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        index = None
+    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read)
 
 
 def yaz_d7(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any], dict | None, dict | None]:
@@ -1187,7 +1217,8 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
     assembled = {"target": target_id, "commit": commit,
                  "candidates": sorted({p.split("/")[1] for p in manifest["files"] if p.startswith(P.CANDIDATES + "/")}),
                  "organs": sorted({p.split("/")[1] for p in manifest["files"] if p.startswith(P.ORGANS + "/")}),
-                 "snapshot_id": P.read(out).snapshot["snapshot_id"]}
+                 "snapshot_id": P.read(out).snapshot["snapshot_id"],
+                 "mutations": sorted(P.read(out).mutations)}
     # MF4's judgement (D1): the brain's proposal (units.json, its one unit) against the referee's own derivation
     # from the assembled tree, read back the way getir, kos and yaz read their download
     tree = os.path.join(root, "tree")
@@ -1301,6 +1332,12 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
     d5, art, tree = yaz_d5(environ, tid)
     if "reason" in d5:
         return dict(d5, ok=False)
+    return dict(_yaz_written(environ, tid, d5, art, tree, transport, signer, now), cases=yaz_cases(environ, tid, art))
+
+
+def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any, tree: str, transport: Any,
+                 signer: Any, now: Any) -> dict[str, Any]:
+    """``yaz``'s line after D5 decided: D7's half, the genesis cycle or D8, the gate, the pass row and D6."""
     d7, end, lint = yaz_d7(environ, tid, art)
     if "reason" in d7:
         return dict(ok=False, done=["D5"], **d5, **d7)
