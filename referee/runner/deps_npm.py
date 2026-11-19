@@ -28,7 +28,8 @@ The lock (``check``, before anything is fetched; every reason listed as ``<reaso
   ``gitlab:``, ``bitbucket:`` or ``gist:`` (casefolded) is a git dependency (``git_dependency``); a bundled
   entry (``inBundle: true``) is refused (``bundled_dependency``): tohum/29g fetches every entry of the lock
   by its own ``resolved``, and such an entry has none (its bytes come inside another tarball, where the
-  fetch below does read them; a lock that also lists them is ``reports/seed-069``).
+  fetch below does read them; tohum/29g "Gömülü paketler" leaves a lock that also lists them refused until a
+  target's lock needs it, the answer to ``reports/seed-069``).
 - Otherwise ``resolved`` must be exactly ``https://<host><prefix><name>/-/<bare>-<version>.tgz`` for an
   allowed registry (scheme ``https``; a host of ``[A-Za-z0-9.-]`` as written, so no user, port or a character
   that only lowercases into ASCII such as the Kelvin sign, equal to the registry's after lowercasing; no query
@@ -154,8 +155,15 @@ in this order:
 - ``integrity_mismatch``: the lock's ``integrity`` has no ``sha512-`` token, or one differs from
   ``sha512-`` + base64 of the sha512 of the raw ``.tgz`` bytes (other tokens are not read);
 - ``install_script_unmarked``: ``package/package.json`` has ``preinstall``, ``install`` or ``postinstall``
-  in ``scripts``, or ``package/binding.gyp`` exists, or the lock entry has ``hasInstallScript: true``; and
-  neither the lock path nor the tarball's ``name@version`` is in ``install_scripts_required``.
+  in ``scripts``, or ``package/binding.gyp`` exists, or the lock entry has ``hasInstallScript: true``, or a
+  bundled package directory of the tarball has such a ``scripts`` key in its ``package.json`` or a
+  ``binding.gyp`` directly in it; and neither the lock path nor the tarball's ``name@version`` (the name and
+  version of ``package/package.json``) is in ``install_scripts_required``. The bundled package directories are
+  the ones the artifact fetch reads (``bundled_path``'s chains below ``package/node_modules/``, "Bundled
+  packages" above, the same reader ``inspect_tarball`` and the same rule ``asks_script``): a bundled package
+  is part of its tarball, so it has no row in ``artefact`` or ``licenses``, the reason is written under the
+  bundling entry's lock path, and its own ``name@version`` marks nothing of the bundling entry. Not judged
+  here: ``bundled_over_lock_entry`` (the artifact fetch's reason; tohum/29g names no such reason).
 
 The tarball is read in memory. Out: ``{ok, rejected, artefact, licenses}``; ``rejected`` the sorted
 ``<reason>:<lock path>``; ``artefact`` ``sha256:`` + the hex sha256 of the canonical JSON (RFC 8785 for
@@ -165,7 +173,10 @@ lock writes it, so a lock written another way gives the same address; ``licenses
 no gate). With a refusal ``artefact`` and ``licenses`` are ``null``. Exit 2 (nothing fetched): a lock or
 stdin that is not as above (an element of ``install_scripts_required`` that is not a mark included), a
 mirror that is not a readable directory, a mirror file that cannot be read, and a tarball that passes
-``integrity`` but is not gzip tar with exactly one ``package/package.json`` JSON object.
+``integrity`` but is not gzip tar with exactly one ``package/package.json`` JSON object, or that holds a
+bundled package directory whose ``package.json`` is not one regular member of at most 1 MiB holding a JSON
+object (whether it asks for a script cannot be read, so there is no verdict). A member whose first path
+component is not ``package`` is not read.
 
 Command line, run from ``referee/`` (one JSON line on stdout; exit 0 fine, 1 refused, 2 no verdict). Exit
 1 comes only from a report with ``ok`` false; every other failure is exit 2 with an ``{ok: false, error}`` line:
@@ -618,9 +629,14 @@ def manifest_version(value: Any) -> str | None:
     return value.strip(MANIFEST_SPACE).lstrip("v=" + MANIFEST_SPACE)
 
 
-def inspect_tarball(data: bytes) -> tuple[str | None, dict]:
-    """``(reason or None, {manifest, binding_gyp, bundled})``, read in memory, nothing extracted.
+def inspect_tarball(data: bytes, top: str | None = None) -> tuple[str | None, dict]:
+    """``(reason or None, {manifest, binding_gyp, bundled})``, read in memory, nothing extracted. The one reader
+    of a package tarball here: the artifact fetch (``fetch``) and the vector interface (``npmlock``) both judge
+    what it returns.
 
+    ``<top>`` is a member's first path component (``member_parts``): any, when ``top`` is None (the artifact
+    fetch); with ``top`` given, only the members whose first component is exactly that are read and every other
+    member is as if absent (the vector interface reads ``package/``, tohum/29g).
     ``manifest`` and ``binding_gyp`` are the package's own (``<top>/package.json``, ``<top>/binding.gyp``).
     ``bundled`` lists the package directories the tarball carries below ``<top>/node_modules/`` (bundled
     dependencies: ``bundled_path``'s chains that hold at least one member), sorted by ``path``, each ``{path,
@@ -634,6 +650,8 @@ def inspect_tarball(data: bytes) -> tuple[str | None, dict]:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
             for member in tar:
                 parts = member_parts(member.name)
+                if top is not None and parts[:1] != [top]:
+                    continue
                 chain, rest = bundled_path(parts[1:])
                 if chain and rest:
                     pack = bundled.setdefault(chain, {"path": chain, "found": [], "binding_gyp": False})
@@ -682,6 +700,15 @@ def needs_script(manifest: Any, binding_gyp: bool) -> bool:
     rebuild``)."""
     scripts = manifest.get("scripts") if isinstance(manifest, dict) else None
     return binding_gyp or (isinstance(scripts, dict) and any(s in scripts for s in INSTALL_SCRIPTS))
+
+
+def asks_script(entry: dict, info: dict) -> bool:
+    """Whether a lock entry and its tarball (``inspect_tarball``'s ``info``) need the entry's install-script mark:
+    the lock says ``hasInstallScript: true``, or the tarball's own package directory or one of its bundled
+    package directories ``needs_script``. A bundled directory's script is the bundling tarball's (tohum/29g
+    "Gömülü paketler"): there is one answer per lock entry, and the only mark that satisfies it is that entry's."""
+    return (entry.get("hasInstallScript") is True or needs_script(info["manifest"], info["binding_gyp"])
+            or any(needs_script(pack["manifest"], pack["binding_gyp"]) for pack in info["bundled"]))
 
 
 def licenses_of(manifest: dict) -> list[str]:
@@ -884,8 +911,7 @@ def fetch(lock_path: str, out: str, fetcher: Callable[[str, int | None], bytes],
         if manifest.get("name") != item["name"] or manifest_version(manifest.get("version")) != entry["version"]:
             reasons.append("tarball_manifest_mismatch:%s" % key)
             continue
-        script = entry.get("hasInstallScript") is True or needs_script(manifest, info["binding_gyp"]) or any(
-            needs_script(pack["manifest"], pack["binding_gyp"]) for pack in info["bundled"])
+        script = asks_script(entry, info)
         if script and not report["marks"].marked(key, item["name"], entry["version"]):
             reasons.append("install_script_not_marked:%s" % key)
         found = licenses_of(manifest)
@@ -1023,6 +1049,7 @@ def verify(directory: str, address: str | None = None) -> dict:
 # ---------------------------------------------------------------- npmlock (the vector interface)
 
 VECTOR_GIT = ("git+", "git:", "github:", "git@")
+VECTOR_TOP = "package"
 VECTOR_REASONS = ("git_dependency", "file_dependency", "registry_not_allowed", "tarball_missing",
                   "integrity_mismatch", "install_script_unmarked")
 _REGISTRY_RE = re.compile(r"https://[^/\s]+/\S*")
@@ -1080,27 +1107,12 @@ def _sha512_tokens(integrity: Any) -> list[str]:
 
 
 def _vector_tarball(data: bytes, where: str) -> dict:
-    """``package/package.json`` (an object) and whether ``package/binding.gyp`` exists; else no verdict."""
-    found, gyp = [], False
-    try:
-        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-            for member in tar:
-                name = "/".join(member_parts(member.name))
-                if name == "package/binding.gyp":
-                    gyp = True
-                elif name == "package/package.json":
-                    if not member.isfile() or member.size > PACKAGE_JSON_MAX:
-                        raise DepsError("%s: package/package.json not a readable file" % where)
-                    fh = tar.extractfile(member)
-                    found.append(fh.read() if fh else b"")
-    except cli.ARCHIVE_ERRORS as exc:
-        raise DepsError("%s: tarball unreadable: %s" % (where, cli.cause(exc))) from None
-    if len(found) != 1:
-        raise DepsError("%s: %d package/package.json members" % (where, len(found)))
-    manifest = _parse(found[0], where + ":package/package.json")
-    if not isinstance(manifest, dict):
-        raise DepsError("%s: package/package.json is not an object" % where)
-    return {"manifest": manifest, "binding_gyp": gyp}
+    """``inspect_tarball``'s reading of the members below ``package/``; any reason it gives is no verdict here
+    (``DepsError``, exit 2), a bundled ``package.json`` that cannot be read included."""
+    bad, info = inspect_tarball(data, VECTOR_TOP)
+    if bad:
+        raise DepsError("%s: %s" % (where, bad))
+    return info
 
 
 def npmlock(lock_path: str, mirror: str, registries: list[str], marks: list[str]) -> dict:
@@ -1147,10 +1159,7 @@ def npmlock(lock_path: str, mirror: str, registries: list[str], marks: list[str]
                     info = _vector_tarball(data, path)
                     manifest = info["manifest"]
                     name, version = manifest.get("name"), manifest.get("version")
-                    scripts = manifest.get("scripts")
-                    script = (info["binding_gyp"] or entry.get("hasInstallScript") is True
-                              or (isinstance(scripts, dict) and any(s in scripts for s in INSTALL_SCRIPTS)))
-                    if script and not found.marked(path, name, version):
+                    if asks_script(entry, info) and not found.marked(path, name, version):
                         reason = "install_script_unmarked"
                     else:
                         rows.append({"integrity": entry["integrity"], "path": path})

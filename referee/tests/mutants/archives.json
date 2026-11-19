@@ -100,15 +100,6 @@
    ]
   },
   {
-   "id": "ar_deps_vector_zlib",
-   "file": "runner/deps_npm.py",
-   "old": "    except cli.ARCHIVE_ERRORS as exc:",
-   "new": "    except cli.ARCHIVE_ERRORS[:2] + cli.ARCHIVE_ERRORS[3:] as exc:",
-   "tests": [
-    "test_archives.Corpus.test_deps_npm_tarballs"
-   ]
-  },
-  {
    "id": "ar_pulled_oserror",
    "file": "loop/pulled.py",
    "old": "    except (*cli.ARCHIVE_ERRORS, OSError):",

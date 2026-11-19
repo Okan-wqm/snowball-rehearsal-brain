@@ -1633,6 +1633,73 @@ class TestNpmlock(unittest.TestCase):
                          ["install_script_unmarked:node_modules/%s" % n
                           for n in ("flag", "gyp", "gyp-thing", "inst", "post", "pre")])
 
+    def test_bundled_install_script(self):
+        """tohum/29g "Gömülü paketler": a script in a bundled package directory is the bundling tarball's."""
+        post = {"name": "d", "version": "1.0.0", "license": "ISC", "scripts": {"postinstall": "node x.js"}}
+        scripted = {
+            "post": {"node_modules/d/package.json": post},
+            "pre": {"node_modules/d/package.json": {"name": "d", "version": "1.0.0", "scripts": {"preinstall": "x"}}},
+            "inst": {"node_modules/d/package.json": {"name": "d", "version": "1.0.0", "scripts": {"install": "x"}}},
+            "scoped": {"node_modules/@s/d/package.json": post},
+            "deep": {"node_modules/a/package.json": {"name": "a", "version": "1.0.0"},
+                     "node_modules/a/node_modules/d/package.json": post},
+            "gyp": {"node_modules/d/binding.gyp": b"{}"},
+        }
+        plain = {
+            "testonly": {"node_modules/d/package.json": {"name": "d", "version": "1.0.0", "scripts": {"test": "x"}}},
+            "indirect": {"node_modules/d/lib/package.json": post, "node_modules/d/lib/binding.gyp": b"{}",
+                         "lib/node_modules/d/package.json": post, "node_modules/package.json": post},
+        }
+        for name, extra in {**scripted, **plain}.items():
+            self.add("node_modules/b-" + name, "b-" + name, "1.0.0", {"license": "MIT"}, extra=extra)
+        keys = ["node_modules/b-" + n for n in sorted(scripted)]
+        base = self.stdin["install_scripts_required"]
+        code, out = self.run_fetch()
+        self.assertEqual((code, out), (1, {"ok": False, "artefact": None, "licenses": None,
+                                           "rejected": ["install_script_unmarked:" + k for k in keys]}))
+        # the bundled package's own name@version is a mark of nothing here: no exit 2, the bundler stays unmarked
+        code, out = self.run_fetch(stdin=dict(self.stdin, install_scripts_required=base + ["d@1.0.0", "a@1.0.0"]))
+        self.assertEqual((code, out["rejected"]), (1, ["install_script_unmarked:" + k for k in keys]))
+        # each bundler's lock path, or its own name@version, is the mark; one mark lifts one reason
+        by_path = base + keys[:3]
+        code, out = self.run_fetch(stdin=dict(self.stdin, install_scripts_required=by_path))
+        self.assertEqual((code, out["rejected"]), (1, ["install_script_unmarked:" + k for k in keys[3:]]))
+        marks = by_path + [k.rsplit("/", 1)[1] + "@1.0.0" for k in keys[3:]]
+        code, out = self.run_fetch(stdin=dict(self.stdin, install_scripts_required=marks))
+        self.assertEqual((code, out["rejected"]), (0, []))
+        # a bundled package is part of its tarball: no row of its own in the address or in the license report
+        self.assertEqual(out["artefact"], expected_address(self.good_rows()))
+        self.assertEqual([r["path"] for r in out["licenses"]], sorted(k for k in self.packages if k))
+        self.assertEqual({r["path"]: r["license"] for r in out["licenses"]}["node_modules/b-post"], "MIT")
+
+    def test_only_members_below_package_are_read(self):
+        post = {"name": "d", "version": "1.0.0", "scripts": {"postinstall": "node x.js"}}
+        own = ("package/package.json", {"name": "side", "version": "1.0.0"})
+        self.add("node_modules/side", "side", "1.0.0", {}, data=vtgz(
+            [own, ("other/binding.gyp", b"{}"), ("other/node_modules/d/package.json", post),
+             ("other/package.json", post)], top=""))
+        self.assertEqual(self.run_fetch()[0], 0)
+        self.add("node_modules/side", "side", "1.0.0", {}, data=vtgz(
+            [own, ("./package/node_modules/d/package.json", post)], top=""))
+        self.assertEqual(self.run_fetch()[1]["rejected"], ["install_script_unmarked:node_modules/side"])
+
+    def test_a_bundled_manifest_that_cannot_be_read_is_exit_2(self):
+        body = json.dumps({"name": "d", "version": "1.0.0"}).encode()
+        inner = "node_modules/d/package.json"
+        for name, files in (("badjson", [(inner, b"{")]), ("array", [(inner, b"[1]")]),
+                            ("big", [(inner, body + b" " * ((1 << 20) + 1 - len(body)))]),
+                            ("link", [(inner, ("symlink", "/etc/passwd"))]),
+                            ("two", [(inner, body), (inner, body)])):
+            self.packages = {"": {}}
+            self.add("node_modules/" + name, name, "1.0.0", {}, data=vtgz(
+                [("package.json", {"name": name, "version": "1.0.0"})] + files))
+            code, out = self.run_fetch(stdin=dict(self.stdin, install_scripts_required=[name + "@1.0.0"]))
+            self.assertEqual((code, out), (2, {"ok": False, "error": out["error"]}), (name, out))
+        self.packages = {"": {}}
+        self.add("node_modules/edge", "edge", "1.0.0", {}, data=vtgz(
+            [("package.json", {"name": "edge", "version": "1.0.0"}), (inner, body + b" " * ((1 << 20) - len(body)))]))
+        self.assertEqual(self.run_fetch()[0], 0)
+
     def test_registry_not_allowed(self):
         for i, host in enumerate(("registry.npmjs.org.evil.com", "registry.npmjs.orgx")):
             self.add("node_modules/look%d" % i, "look%d" % i, "1.0.0", {},
