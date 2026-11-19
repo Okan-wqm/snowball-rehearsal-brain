@@ -19,7 +19,11 @@ Reasons, sorted, each once:
   module of the standard library (``sys.stdlib_module_names`` of the running Python): ``referee/`` has no third-party
   import, and a model's SDK would be one.
 - ``dynamic_import:<module>:<name>``: a module reached imports one of ``DYNAMIC`` (``importlib``, ``runpy``,
-  ``pkgutil``, ``zipimport``, ``imp``) or names ``__import__``: what it then loads is not in its import statements.
+  ``pkgutil``, ``zipimport``, ``imp``), or its syntax tree holds the name of the builtin import function
+  (``IMPORT_NAME``, two underscores before and after ``import``) as an identifier in any place (a bare name, an
+  attribute as in ``builtins.<it>``, a name imported or bound, a keyword, a parameter; identifiers as Python reads
+  them, NFKC-folded) or as a whole ``str`` or ``bytes`` literal (as in ``getattr(builtins, "<it>")``; a literal that
+  only contains it, a docstring's prose, is not one): what the module then loads is not in its import statements.
 - ``unparsed:<path>``: a module reached does not parse or is not UTF-8; what it imports is unknown.
 - ``no_harness_module``: the root holds no module of the package (a wrong root says nothing about the harness).
 
@@ -43,8 +47,11 @@ of a target and refuses the target with ``harness_online`` and the reasons; its 
 and ``event:<name>`` reasons before that run writes ``brain/state`` (what the steps before the judgement did on
 the target's other branches is not undone and not claimed).
 
-Out of scope, stated: an import by a name built at run time in a module that names none of ``DYNAMIC`` (``exec``,
-``eval``, ``sys.modules``); a module started as a program; a model reached without one of the listed audit events
+Out of scope, stated: the static reading is of import statements and of the names above, nothing else. Code
+loaded any other way gives no reason: ``exec``, ``eval`` and ``compile``; ``sys.modules``; a loader object
+(``__loader__``, ``__spec__``); the import function's name put together at run time (from pieces, a ``strip``, an
+f-string, a decode of other bytes) or reached without being named (a lookup over ``vars(builtins)``). Also out of
+scope: a module started as a program; a model reached without one of the listed audit events
 (an extension module or ``ctypes`` calling the system directly, a file or pipe opened to a process that is already
 running); other threads (the hook is the process's: while a ``run`` is open, a listed event of any thread is
 refused and counted); the network of the machine (``run`` closes nothing outside this process: the referee's
@@ -66,6 +73,7 @@ from status import pygraph
 PACKAGE = "harness"
 CLIENTS = ("dispatcher",)
 DYNAMIC = ("imp", "importlib", "pkgutil", "runpy", "zipimport")
+IMPORT_NAME = "__%s__" % "import"   # in two pieces: the whole literal is a reason, and this module is read too
 REFUSED = ("subprocess.Popen", "os.exec", "os.fork", "os.forkpty", "os.posix_spawn", "os.spawn", "os.system",
            "os.startfile", "pty.spawn")
 REFUSED_PREFIX = "socket."
@@ -87,12 +95,25 @@ def _in(name: str, packages: tuple[str, ...]) -> bool:
     return name.split(".")[0] in packages
 
 
+def _names_import(tree: ast.AST) -> bool:
+    """Whether a field of a node of ``tree`` is ``IMPORT_NAME``: every identifier of the tree is a ``str`` field
+    or an item of a list field (``Name.id``, ``Attribute.attr``, ``alias.name``, ``Global.names``, ...), a literal
+    is ``Constant.value``; so no list of node types is kept here."""
+    spelt = (IMPORT_NAME, IMPORT_NAME.encode())
+    for node in ast.walk(tree):
+        for _, value in ast.iter_fields(node):
+            for item in value if isinstance(value, list) else (value,):
+                if isinstance(item, (str, bytes)) and item in spelt:
+                    return True
+    return False
+
+
 def _dynamic(source: str) -> set[str]:
     tree = ast.parse(source)
     found = {name.split(".")[0] for level, name, _ in pygraph.tree_import_statements(tree)
              if not level and name.split(".")[0] in DYNAMIC}
-    if any(isinstance(node, ast.Name) and node.id == "__import__" for node in ast.walk(tree)):
-        found.add("__import__")
+    if _names_import(tree):
+        found.add(IMPORT_NAME)
     return found
 
 

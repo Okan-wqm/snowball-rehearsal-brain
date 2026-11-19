@@ -133,6 +133,48 @@ class Static(Trees):
                            ("load = __import__\n", "__import__")):
             self.assertEqual(self.reasons(ledger__chain=line), ["dynamic_import:ledger.chain:%s" % name], line)
 
+    def test_the_import_function_named_in_any_place(self):
+        """An identifier wherever the grammar has one, and a whole ``str`` or ``bytes`` literal (the referee's
+        refutation of 9b7db67 was the second line: an attribute was not read)."""
+        for source in ('c = __import__("dispatcher.llm_call")\n',
+                       'import builtins\nc = builtins.__import__("dispatcher.llm_call")\n',
+                       'c = __builtins__.__import__("dispatcher.llm_call")\n',
+                       "from builtins import __import__ as load\n",
+                       "from builtins import __import__\n",
+                       'import builtins\nc = getattr(builtins, "__import__")("dispatcher.llm_call")\n',
+                       'import builtins\nc = getattr(builtins, b"__import__".decode())\n',
+                       'c = __builtins__["__import__"]\n',
+                       'import builtins\nc = vars(builtins).get(\'__import__\')\n',
+                       'import operator, builtins\nc = operator.attrgetter("""__import__""")(builtins)\n',
+                       'import builtins\nc = builtins.__\uff49mport__("dispatcher.llm_call")\n',   # NFKC: i
+                       "def f():\n    global __import__\n",
+                       "def f(__import__):\n    return 1\n",
+                       "f = dict(__import__=1)\n",
+                       "import builtins\nmatch builtins:\n    case object(__import__=load):\n        pass\n",
+                       "class C:\n    def m(self):\n        return [x.__import__ for x in ()]\n"):
+            self.assertEqual(self.reasons(ledger__chain=source), ["dynamic_import:ledger.chain:__import__"], source)
+            self.assertEqual(self.reasons(harness__stats=source), ["dynamic_import:harness.stats:__import__"],
+                             source)
+
+    def test_the_import_functions_name_inside_a_longer_literal_or_a_comment_is_not_a_reason(self):
+        """The rule's other edge, stated in the module: only a whole literal, never prose that mentions it."""
+        for source in ('"""This module never calls ``__import__``."""\n', "x = 1  # not __import__\n",
+                       'x = "see __import__"\n', 'x = b" __import__"\n', "x = '__import__ '\n",
+                       "__imports__ = 1\n", "x = '__IMPORT__'\n"):
+            self.assertEqual(self.reasons(ledger__chain=source), [], source)
+
+    def test_the_referees_reproducer_on_9b7db67(self):
+        """The tree of the refutation, through the command: exit 1, ``ok`` false, the one reason."""
+        root = write_tree(os.path.join(self.base, "ofl"), {
+            "harness/__init__.py": "", "dispatcher/__init__.py": "", "dispatcher/llm_call.py": "import subprocess\n",
+            "harness/score.py": 'import builtins\nc = builtins.__import__("dispatcher.llm_call")\n',
+        }) or os.path.join(self.base, "ofl")
+        got = subprocess.run([sys.executable, "-m", "harness.offline", root], cwd=REFEREE, capture_output=True,
+                             text=True, timeout=60)
+        self.assertEqual((got.returncode, got.stderr), (1, ""))
+        self.assertEqual(json.loads(got.stdout), {"modules": 2, "ok": False, "roots": ["harness", "harness.score"],
+                                                  "reasons": ["dynamic_import:harness.score:__import__"]})
+
     def test_a_module_that_cannot_be_read_as_python(self):
         for data in ("def (:\n", b"x = '\xff'\n", "x = 1\0\n"):
             self.assertEqual(self.reasons(ledger__chain=data), ["unparsed:ledger/chain.py"], data)
