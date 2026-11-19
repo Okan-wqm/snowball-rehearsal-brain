@@ -93,8 +93,8 @@
   {
    "id": "state_not_required",
    "file": "loop/pulled.py",
-   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED) + STATE_FILES",
-   "new": "TOP = (TREE, UNITS, POLICY, ACCEPTED)",
+   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT) + STATE_FILES",
+   "new": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT)",
    "tests": [
     "test_loop_kos.py"
    ]

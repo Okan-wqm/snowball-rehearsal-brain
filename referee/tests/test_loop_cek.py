@@ -82,6 +82,7 @@ from harness import pass_row as PR  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from loop import treehash as T  # noqa: E402
+from snapshot import make as SM  # noqa: E402
 import git_store as S  # noqa: E402
 from ledger import anchor as AN  # noqa: E402
 from loop import accepted as A  # noqa: E402
@@ -465,6 +466,7 @@ class CekJob(unittest.TestCase):
         objects, commit = S.store(self.BRAIN if brain is None else brain, objects=objects,
                                   parents=(self.transfer_commit,) if transfer is not None and related else ())
         tobjects, self.target_commit = S.store(self.TARGET)
+        self.snapshot_id = SM.make(tobjects.__getitem__, self.target_commit, [], "clean").document["snapshot_id"]
         if target is not None:
             tobjects = target
         answers = {sha: S.batch_record(sha, kind, data)
@@ -596,7 +598,7 @@ class CekJob(unittest.TestCase):
                                             "refs/heads/brain/integration"])
         self.assertEqual(line["heads"], {"brain/state": self.state_head, "brain/integration": self.target_commit})
         self.assertEqual(line["assembled"], {"target": "t1", "commit": self.target_commit, "candidates": ["good"],
-                                             "organs": []})
+                                             "organs": [], "snapshot_id": self.snapshot_id})
         # the artifact assembled in the job's work directory is moved, not copied, to out/pulled/t1, next to
         # served.json naming it, and loop.pulled reads it there: the target's tree at brain/integration's head, the
         # brain's units.json and candidate at the accepted commit
@@ -1036,7 +1038,8 @@ class CekJob(unittest.TestCase):
                 for line in out["targets"]:
                     self.assertEqual(sorted(line), ["assembled", "heads", "profile", "root", "state", "target"])
                     self.assertEqual(line["assembled"], {"target": line["target"], "commit": self.target_commit,
-                                                         "candidates": cands[line["target"]], "organs": []})
+                                                         "candidates": cands[line["target"]], "organs": [],
+                                                         "snapshot_id": self.snapshot_id})
                 # served.json lists them in that order, each in its own directory, read by loop.pulled as its own
                 self.assertEqual(self.served(), list(order))
                 self.assertEqual(sorted(os.listdir(os.path.join(self.temp, "out", "pulled"))),

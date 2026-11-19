@@ -54,6 +54,14 @@ for the tree is the commit the tree was read from. Nothing here reads the networ
   recomputed, so ``.gitattributes`` (``export-ignore``, ``export-subst``, filters) has no effect; its reasons
   (``object_missing:<sha>``, ``tree_submodule:<path>``, ...) are listed with the others. What the tree may hold
   (links leaving it, devices) is ``loop.pulled.extract_tree``'s rule in ``kos``, not repeated here.
+- **The snapshot** (asama-1/13c, tohum/26a: ``snapshot.make``, job ``çek``): ``snapshot.make.make(objects,
+  commit, [], "clean", target)``, the clean snapshot of the same commit, with the ``targets[]`` entry's
+  ``excluded_paths``; its document is the artifact's ``snapshot.json`` (``loop.pulled``, "Snapshot"), which
+  ``kos`` writes out from the tree and runs the organs on. ``snapshot:target_invalid``: the entry's lists are
+  not ones ``profile.derive`` takes (``DeriveError``: e.g. ``excluded_paths`` that is no list of patterns); the
+  tree reader's own reasons are the tree's above and are not listed twice. The commit is walked a second time for
+  it (measured on the 15134-file target: 8.0 s for the walk and 0.7 s for the snapshot, whose document
+  is 2.0 MB for 14911 files; 223 files are left out).
 - ``state_incomplete``: ``state`` does not map exactly the paths of ``STATE_CHAINS`` to bytes;
   ``heads_invalid``: ``state_head`` or ``commit`` is not 40 lowercase hex, ``state_head`` ``None`` (the genesis
   cycle) only with both chains empty and no ``status`` (``loop.pulled.write``'s rules).
@@ -80,7 +88,9 @@ import cli
 from loop import gitobj as G
 from loop import pulled as P
 from runner import kos as K
+from profile import derive as D
 from runner import organs as O
+from snapshot import make as SM
 from target import branches as B
 
 KINDS = ("toy", "copy")  # 26c: targets[].kind
@@ -228,14 +238,18 @@ def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, 
         reasons += bad
     except P.PulledError as exc:
         reasons += ["brain:%s" % r for r in exc.reasons]
+    snapshot = None
     try:
         tree = G.tree_tar(objects, commit)
+        snapshot = SM.make(objects, commit, [], "clean", target).document
     except P.PulledError as exc:
         reasons += exc.reasons
+    except D.DeriveError:
+        reasons.append("snapshot:target_invalid")
     if reasons:
         raise P.PulledError(list(dict.fromkeys(reasons)))
     manifest = P.write(out, target, tree, units, policy, candidates, {B.STATE: state_head, B.INTEGRATION: commit},
-                       state, status, {oid: O.definition_sha256(d) for oid, d in organs.items()}, organs)
+                       state, status, {oid: O.definition_sha256(d) for oid, d in organs.items()}, organs, snapshot)
     try:
         P.read(out)
     except P.PulledError:

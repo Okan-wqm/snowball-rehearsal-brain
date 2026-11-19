@@ -1,0 +1,454 @@
+{
+ "mutants": [
+  {
+   "id": "state_root_kept",
+   "file": "snapshot/make.py",
+   "old": "    if path == B.STATE_ROOT or path.startswith(B.STATE_ROOT + \"/\"):",
+   "new": "    if False:",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "state_root_any_prefix",
+   "file": "snapshot/make.py",
+   "old": "path.startswith(B.STATE_ROOT + \"/\"):",
+   "new": "path.startswith(B.STATE_ROOT):",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "state_root_at_any_depth",
+   "file": "snapshot/make.py",
+   "old": "    if path == B.STATE_ROOT or path.startswith(B.STATE_ROOT + \"/\"):",
+   "new": "    if B.STATE_ROOT in path.split(\"/\"):",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "profile_exclusions_dropped",
+   "file": "snapshot/make.py",
+   "old": "    return D.excluded(patterns, path)",
+   "new": "    return None",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "operator_patterns_dropped",
+   "file": "snapshot/make.py",
+   "old": "patterns = {\"excluded_paths\": D._target(target)[0]}",
+   "new": "patterns = {\"excluded_paths\": []}",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "left_out_link_kept",
+   "file": "snapshot/make.py",
+   "old": "        if why:\n            out[why] = out.get(why, 0) + 1\n        elif e.kind == \"link\":",
+   "new": "        if e.kind == \"link\":\n            links[e.path] = e.data.decode(\"utf-8\")\n        elif why:\n            out[why] = out.get(why, 0) + 1\n        elif e.kind == \"link\":",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "identifiers_not_replaced",
+   "file": "snapshot/make.py",
+   "old": "        files[path] = found.sub(PLACEHOLDER, files[path])\n        if found.search(files[path]):\n            reasons.append(\"sanitize_incomplete:%s\" % path)",
+   "new": "        pass",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "only_touched_files_cleaned",
+   "file": "snapshot/make.py",
+   "old": "    for path in sorted(files):\n        files[path] = found.sub",
+   "new": "    for path in sorted(p for case in cases for p in case[\"paths\"]):\n        files[path] = found.sub",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "leftover_not_checked",
+   "file": "snapshot/make.py",
+   "old": "        if found.search(files[path]):",
+   "new": "        if False:",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "shortest_identifier_first",
+   "file": "snapshot/make.py",
+   "old": "key=lambda b: (-len(b), b))",
+   "new": "key=lambda b: (len(b), b))",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "planted_content_not_laid",
+   "file": "snapshot/make.py",
+   "old": "        files.update(case[\"replace\"])",
+   "new": "        pass",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "planted_content_laid_after_cleaning",
+   "file": "snapshot/make.py",
+   "old": "    return reasons + [\"identifier_in_path:%s\" % p for p in named]",
+   "new": "    for case in cases:\n        files.update(case[\"replace\"])\n    return reasons + [\"identifier_in_path:%s\" % p for p in named]",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "identifier_in_path_passes",
+   "file": "snapshot/make.py",
+   "old": "    return reasons + [\"identifier_in_path:%s\" % p for p in named]",
+   "new": "    return reasons",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "link_target_not_searched",
+   "file": "snapshot/make.py",
+   "old": " or found.search(links.get(p, \"\").encode(\"utf-8\"))",
+   "new": "",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "placeholder_identifier_passes",
+   "file": "snapshot/make.py",
+   "old": "        reasons.append(\"identifier_invalid\")",
+   "new": "        pass",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "clean_takes_cases",
+   "file": "snapshot/make.py",
+   "old": "        return [\"clean_has_cases\"] if cases else []",
+   "new": "        return []",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "planted_without_cases",
+   "file": "snapshot/make.py",
+   "old": "        reasons.append(\"planted_no_cases\")",
+   "new": "        pass",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "no_case_limit",
+   "file": "snapshot/make.py",
+   "old": "        reasons.append(\"cases_over_max\")",
+   "new": "        pass",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "limit_not_required",
+   "file": "snapshot/make.py",
+   "old": "        reasons.append(\"max_cases_invalid\")",
+   "new": "        pass",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "mixed_properties_pass",
+   "file": "snapshot/make.py",
+   "old": "        reasons.append(\"cases_mixed_property\")",
+   "new": "        pass",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "overlapping_cases_pass",
+   "file": "snapshot/make.py",
+   "old": "touched.count(p) > 1})]",
+   "new": "touched.count(p) > 2})]",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "missing_path_passes",
+   "file": "snapshot/make.py",
+   "old": "for p in sorted(set(touched)) if p not in files]",
+   "new": "for p in []]",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "unknown_kind_is_planted",
+   "file": "snapshot/make.py",
+   "old": "    if kind not in KINDS:\n        return [\"kind_unknown\"]",
+   "new": "    if False:\n        return [\"kind_unknown\"]",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "case_shape_unchecked",
+   "file": "snapshot/make.py",
+   "old": "    if not (isinstance(case, dict) and set(case) == CASE_KEYS):\n        return False",
+   "new": "    if not (isinstance(case, dict) and set(case) >= CASE_KEYS):\n        return False",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "replace_outside_paths",
+   "file": "snapshot/make.py",
+   "old": "all(p in paths and isinstance(d, bytes)",
+   "new": "all(isinstance(d, bytes)",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "id_without_exec",
+   "file": "snapshot/make.py",
+   "old": "json.dumps({\"exec\": execs, \"files\": files, \"links\": links}",
+   "new": "json.dumps({\"exec\": [], \"files\": files, \"links\": links}",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "id_without_links",
+   "file": "snapshot/make.py",
+   "old": "json.dumps({\"exec\": execs, \"files\": files, \"links\": links}",
+   "new": "json.dumps({\"exec\": execs, \"files\": files, \"links\": {}}",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "id_of_paths_only",
+   "file": "snapshot/make.py",
+   "old": "json.dumps({\"exec\": execs, \"files\": files, \"links\": links}",
+   "new": "json.dumps({\"exec\": execs, \"files\": sorted(files), \"links\": links}",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "document_names_the_kind",
+   "file": "snapshot/make.py",
+   "old": "\"links\": links, \"exec\": execs}\n    return Snapshot",
+   "new": "\"links\": links, \"exec\": execs, \"kind\": kind}\n    return Snapshot",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "exec_bit_dropped",
+   "file": "snapshot/make.py",
+   "old": "            if e.mode & 0o100:\n                execs.append(e.path)",
+   "new": "",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "write_skips_the_id",
+   "file": "snapshot/make.py",
+   "old": "    if snapshot_id(files, links, execs) != document[\"snapshot_id\"]:",
+   "new": "    if False:",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "write_skips_the_hash",
+   "file": "snapshot/make.py",
+   "old": "        if _sha(data) != want:",
+   "new": "        if False:",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "write_keeps_a_refused_directory",
+   "file": "snapshot/make.py",
+   "old": "    if reasons:\n        shutil.rmtree(dest)\n        raise SnapshotError(reasons)",
+   "new": "    if reasons:\n        raise SnapshotError(reasons)",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "write_into_an_existing_directory",
+   "file": "snapshot/make.py",
+   "old": "    if os.path.lexists(dest):\n        raise SnapshotError([\"dest_exists\"])\n    os.makedirs(dest)",
+   "new": "    os.makedirs(dest, exist_ok=True)",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "write_any_path",
+   "file": "snapshot/make.py",
+   "old": "        and all(part not in (\"\", \".\", \"..\") for part in path.split(\"/\"))",
+   "new": "        and all(part not in (\"\", \".\") for part in path.split(\"/\"))",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "write_absolute_path",
+   "file": "snapshot/make.py",
+   "old": "\"\\x00\" not in path and not path.startswith(\"/\") \\\n        and all(part not in (\"\", \".\", \"..\")",
+   "new": "\"\\x00\" not in path \\\n        and all(part not in (\"..\",)",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "write_under_a_link",
+   "file": "snapshot/make.py",
+   "old": "    if any(\"/\".join(p.split(\"/\")[:n]) in held for p in paths for n in range(1, p.count(\"/\") + 1)):",
+   "new": "    if False:",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "write_no_exec_bit",
+   "file": "snapshot/make.py",
+   "old": "os.chmod(full, 0o755 if path in execs else 0o644)",
+   "new": "os.chmod(full, 0o644)",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "write_exec_unchecked",
+   "file": "snapshot/make.py",
+   "old": "            and execs == sorted(set(execs))):",
+   "new": "            ):",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "write_no_links",
+   "file": "snapshot/make.py",
+   "old": "        os.symlink(target, full)",
+   "new": "        pass",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "cek_no_operator_paths",
+   "file": "loop/cek.py",
+   "old": "SM.make(objects, commit, [], \"clean\", target).document",
+   "new": "SM.make(objects, commit, [], \"clean\", None).document",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "cek_carries_no_snapshot",
+   "file": "loop/cek.py",
+   "old": "organs.items()}, organs, snapshot)",
+   "new": "organs.items()}, organs, None)",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "cek_bad_entry_passes",
+   "file": "loop/cek.py",
+   "old": "        reasons.append(\"snapshot:target_invalid\")",
+   "new": "        pass",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "kos_organs_on_the_pulled_tree",
+   "file": "loop/job.py",
+   "old": "\"definitions\": art.organs, \"tree\": snapshot})",
+   "new": "\"definitions\": art.organs, \"tree\": tree})",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "kos_copies_the_tree_unchecked",
+   "file": "loop/job.py",
+   "old": "        SM.write(art.snapshot, snapshot, lambda path: D._read_regular(tree, path))",
+   "new": "        SM.check(art.snapshot)\n        shutil.copytree(tree, snapshot, symlinks=True)",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "kos_runs_past_a_refused_snapshot",
+   "file": "loop/job.py",
+   "old": "        return {\"reason\": \"snapshot_refused\", \"reasons\": exc.reasons}",
+   "new": "        os.makedirs(snapshot, exist_ok=True)",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "kos_organs_on_the_staged_worktree",
+   "file": "runner/kos.py",
+   "old": "{\"image\": recipe[\"env_image\"], \"tree\": organs[\"tree\"], \"env\": dict(U.ENV)}",
+   "new": "{\"image\": recipe[\"env_image\"], \"tree\": os.path.join(root, \"tree\"), \"env\": dict(U.ENV)}",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "kos_organs_tree_unchecked",
+   "file": "runner/kos.py",
+   "old": "        raise KosError(\"organs.tree must be the directory the organs read\")",
+   "new": "        pass",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "pulled_snapshot_not_required",
+   "file": "loop/pulled.py",
+   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT) + STATE_FILES",
+   "new": "TOP = (TREE, UNITS, POLICY, ACCEPTED) + STATE_FILES",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  },
+  {
+   "id": "pulled_snapshot_unwritable_passes",
+   "file": "loop/pulled.py",
+   "old": "        raise PulledError([\"snapshot_invalid\"]) from None",
+   "new": "        files[SNAPSHOT] = b\"null\\n\"",
+   "tests": [
+    "test_snapshot.py"
+   ]
+  }
+ ]
+}

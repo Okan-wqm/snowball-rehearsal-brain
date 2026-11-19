@@ -63,21 +63,26 @@ longer stderr, a failed run's stdout, and the stderr of runs that are not lint r
 runs, the test and sentinel runs) or that did not end ``ok``.
 
 **The organs** (asama-1/05 step 2, asama-1/13 P1 row 1; ``organs``: ``{accepted, definitions: {oid:
-definition}}``, ``runner.organs``' accepted set and one definition per organ given, or ``None``: none). An
-accepted set of another shape is unusable input, before anything is written or run. After the base's lint runs
+definition}, tree}``, ``runner.organs``' accepted set, one definition per organ given and the directory the
+organs read, or ``None``: none). An accepted set of another shape, or a definition given without ``tree`` being
+a directory that is no link, is unusable input, before anything is written or run. After the base's lint runs
 and whatever they gave, every organ given is called, in the order of the ids, through ``runner.organs.call`` and
 by no other way: the entry point starts only when ``runner.organs`` finds the organ accepted and its bytes the
-accepted ones. The run is contained like every run here: the recipe's ``env_image``, the staged base worktree
-as its tree (the snapshot the adapter reads), ``unit_verify.ENV``, the definition's files read-only under
+accepted ones. The run is contained like every run here: the recipe's ``env_image``, ``tree`` as its tree
+(``loop.job``'s ``kos`` gives the snapshot ``snapshot.make.write`` wrote: asama-1/05 step 2, the adapter runs
+on the snapshot; so not the unit's worktree: no installed dependency is in it, and the directories
+``unit_verify.ENV`` names are not made in it), ``unit_verify.ENV``, the definition's files read-only under
 ``/in``, the job's red control beside it. The index's ``organs`` has one entry per organ given: ``{called:
 false, reasons: [<runner.organs' reason>]}`` for one refused (no container started for it); ``{called: false,
-reasons: <the staging's>}`` for every organ when the base did not stage (none is called); else ``{called: true,
+reasons: <the staging's>}`` for every organ when the base did not stage (none is called: the staging makes the
+host hold the image and gives the limits); else ``{called: true,
 definition_sha256, valid, reasons, status, exit, stdout_sha256, outputs_sha256}``, the contained run's own
 (``valid`` false with ``red_control_green`` or the run's status among the reasons). Nothing here or after reads
 an entry to decide, and an organ's output is not kept: what ``koş`` does with an adapter's output comes with
 its first organ (stage 1's ``lint.discover``); until the brain holds an organ, ``organs`` is ``{}``. The
 image is a choice made here (the organ runs in the unit's toolchain image); no seed page fixes it
-(reports/seed-073).
+(reports/seed-073), nor how an adapter gets its tool when the snapshot has no installed directory
+(reports/seed-074).
 
 **A candidate** ``cid`` (a directory holding ``diff.patch``; only that file is read). ``cid`` is
 ``[A-Za-z0-9][A-Za-z0-9._-]{0,127}`` (else ``candidate_id_invalid``, nothing written for it). Its worktree is a
@@ -114,8 +119,8 @@ the ``events``/``sentinel`` end row on green or flaky, ``loop.write_cycle``), no
 
 Caller: ``loop.job``'s ``kos`` (D3, D7), which reads the ``pulled`` artifact (``loop.pulled``) and passes the one
 ``deps`` artifact directory under the download (``runner.deps_npm.artifact_in``), and ``watch`` from
-``brain/state``'s ledger, and ``organs`` from ``pulled``'s accepted set and carried organs (the command line below
-passes none). Not done here, stated: the drill of the ``kos`` job (D8), and how ``yaz`` treats a
+``brain/state``'s ledger, and ``organs`` from ``pulled``'s accepted set and carried organs with the snapshot
+directory it wrote (the command line below passes none). Not done here, stated: the drill of the ``kos`` job (D8), and how ``yaz`` treats a
 candidate without files (the gate reads a missing file as ``artefact_hash_mismatch``). The hashes are taken by this
 process after every container ended, from the bytes it wrote, not from anything a container wrote.
 
@@ -267,11 +272,11 @@ def _sentinel(watch: str, recipe: dict, red: list, staging: str, ctx: dict, runn
     return dict(entry, verdict=got["verdict"], sha256=sha256(data))
 
 
-def _organ(oid: Any, organs: dict, recipe: dict, red: list, staging: str, operating: dict, runner: C.Runner,
+def _organ(oid: Any, organs: dict, recipe: dict, red: list, operating: dict, runner: C.Runner,
            root: str) -> dict:
     """One organ's call through ``runner.organs`` and its index entry (see the module docstring, "The organs")."""
     got = O.call(organs["accepted"], oid, organs["definitions"][oid],
-                 {"image": recipe["env_image"], "tree": staging, "env": dict(U.ENV)}, red, operating, runner, root)
+                 {"image": recipe["env_image"], "tree": organs["tree"], "env": dict(U.ENV)}, red, operating, runner, root)
     if not got["called"]:
         return {"called": False, "reasons": got["reasons"]}
     main = got["result"]
@@ -357,17 +362,21 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
             deps: str | None = None, target: Any = None, runner: C.Runner | None = None,
             base: str | None = None, watch: str | None = None, organs: Any = None) -> dict:
     """Write OUT (see the module docstring) and return the index. ``candidates``: ``{cid: diff.patch bytes}``;
-    ``watch``: the merge SHA whose sentinel runs, or ``None``; ``organs``: ``{accepted, definitions}`` or ``None``."""
+    ``watch``: the merge SHA whose sentinel runs, or ``None``; ``organs``: ``{accepted, definitions, tree}`` or
+    ``None``."""
     runner = runner or C.docker_runner
     if watch is not None and not (isinstance(watch, str) and MERGE_SHA.match(watch)):
         raise KosError("watch must be a merge SHA, 40 lowercase hex")
     if not isinstance(candidates, dict) or not all(isinstance(k, str) and isinstance(v, bytes)
                                                    for k, v in candidates.items()):
         raise KosError("candidates must map ids to diff bytes")
-    organs = {"accepted": {}, "definitions": {}} if organs is None else organs
-    if not (isinstance(organs, dict) and set(organs) == {"accepted", "definitions"}
+    organs = {"accepted": {}, "definitions": {}, "tree": None} if organs is None else organs
+    if not (isinstance(organs, dict) and set(organs) == {"accepted", "definitions", "tree"}
             and isinstance(organs["definitions"], dict)):
-        raise KosError("organs must be {accepted, definitions: {oid: definition}}")
+        raise KosError("organs must be {accepted, definitions: {oid: definition}, tree}")
+    if organs["definitions"] and not (isinstance(organs["tree"], str) and os.path.isdir(organs["tree"])
+                                      and not os.path.islink(organs["tree"])):
+        raise KosError("organs.tree must be the directory the organs read")
     O.check_accepted(organs["accepted"])
     if os.path.lexists(out):
         raise KosError("OUT exists: the results directory is written fresh")
@@ -385,7 +394,7 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
             index["base_run_sha256"] = sha256(base_run)
         index["base"] = dict(_verdict(reasons), **extra)
         index["organs"] = {oid: {"called": False, "reasons": bad} if bad else
-                           _organ(oid, organs, recipe, red_control["cmd"], ctx["staging"], ctx["operating"], runner, root)
+                           _organ(oid, organs, recipe, red_control["cmd"], ctx["operating"], runner, root)
                            for oid in sorted(organs["definitions"])}
         if watch is not None:
             index["sentinel"] = ({"merge_sha": watch, "verdict": None, "reasons": bad, "sha256": None} if bad else

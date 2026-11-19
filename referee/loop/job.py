@@ -132,8 +132,11 @@ refused tree is ``pulled_invalid``). Then:
   download of ``getir``'s ``out/deps``; a root that is not exactly one ``<address>/`` directory is ``deps_invalid``,
   nothing run; ``None`` when ``in/deps`` is absent or empty: ``unit_verify`` then accepts only a lock without
   packages), and ``pulled``'s organs (``organs``: its ``organs.json`` as the accepted set and every organ it
-  carries; ``runner.kos.results`` calls each through ``runner.organs`` only, "The organs" there), writing
-  ``$RUNNER_TEMP/out/results``. The image is fetched in this step, on the host, by
+  carries; ``runner.kos.results`` calls each through ``runner.organs`` only, "The organs" there, on the
+  snapshot directory), writing ``$RUNNER_TEMP/out/results``. The snapshot (P1 MF2): before ``runner.kos.results``,
+  ``snapshot.make.write`` writes ``pulled``'s ``snapshot.json`` document out from the extracted tree into
+  ``kos-*/snapshot``; a document or a tree it refuses is ``snapshot_refused`` with its reasons and nothing runs;
+  the target's line has ``snapshot`` (``snapshot_id`` and the counts of ``files`` and ``links``). The image is fetched in this step, on the host, by
   ``runner.kos.results`` itself before its first contained run (tohum/08 item 2; ``runner.contained.ensure_image``:
   the workflow has no pull step of its own, and a pull that fails prints docker's reason on this step's stderr and
   gives the base ``no_verdict`` ``image_unavailable``). Before the tree is extracted it reads ``pulled``'s
@@ -245,7 +248,7 @@ refused tree is ``pulled_invalid``). Then:
   and ``assembled``. When all of it holds, the line's ``accepted`` has ``brain_sha`` (the accepted commit: ``candidates/`` and ``targets/`` are read there),
   ``transfer_sha`` (the transfer row's commit) and ``referee_tree_sha256`` (the ``referee/`` hash of
   ``transfer_sha``, equal to the row's), ``result_sha256``, ``artifact_id``; each target's line has ``heads`` (branch to commit), ``state`` (``head``, ``previous``, ``rows``),
-  ``root`` (``root``, ``rekor_uuid``), ``assembled`` (``target``, ``commit``, ``candidates``, and ``organs``: the ids of the organs carried, ``loop.cek`` "Organs"), ``profile``
+  ``root`` (``root``, ``rekor_uuid``), ``assembled`` (``target``, ``commit``, ``candidates``, ``organs``: the ids of the organs carried, ``loop.cek`` "Organs", and ``snapshot_id``: the clean snapshot's, ``snapshot.make``), ``profile``
   (``unit_id``); the job's ``checked`` is ``CEK_CHECKED``: every check of D1's row has run. When every target
   holds, each served target's assembled directory, the bytes MF4 judged, is moved to ``$RUNNER_TEMP/out/pulled/<id>``
   and ``served.json`` written (``_hand_over``; ``out/pulled`` must not exist before, else exit 2), the line has ``ok`` true and ``done`` ``["D1"]``, exit 0, so the upload step runs and ``getir``, ``kos``,
@@ -323,6 +326,7 @@ from profile import derive as D
 from profile import unit_verify as U
 from runner import deps_npm as N
 from runner import kos as K
+from snapshot import make as SM
 from target import app_jwt as AJ
 from target import branches as B
 from target import land as LN
@@ -672,7 +676,7 @@ def getir_d2(environ: dict[str, str], tid: str, fetcher: Any = None) -> dict[str
 def kos_d3(environ: dict[str, str], tid: str, runner: Any = None,
            red_control: dict | None = None) -> dict[str, Any]:
     """D3 of ``kos`` for target ``tid``, with D7's sentinel when a merge is watched (see the module docstring):
-    ``{reason, reasons?}`` or ``{index, done}``."""
+    ``{reason, reasons?}`` or ``{index, done, snapshot}``."""
     art, unit, refused = _pulled_unit(environ, tid)
     if refused:
         return refused
@@ -693,14 +697,21 @@ def kos_d3(environ: dict[str, str], tid: str, runner: Any = None,
     root, tree, refused = _pulled_tree(environ, art, "kos")
     if refused:
         return refused
+    snapshot = os.path.join(root, "snapshot")
+    try:
+        SM.write(art.snapshot, snapshot, lambda path: D._read_regular(tree, path))
+    except SM.SnapshotError as exc:
+        return {"reason": "snapshot_refused", "reasons": exc.reasons}
     diffs = {cid: files["diff.patch"] for cid, files in art.candidates.items()}
     try:
         index = K.results(unit, tree, art.policy, red_control or RED_CONTROL, diffs, _dir(environ, "out", "results", tid),
                           deps, art.target, runner, base=root, watch=watch,
-                          organs={"accepted": art.accepted, "definitions": art.organs})
+                          organs={"accepted": art.accepted, "definitions": art.organs, "tree": snapshot})
     except K.UNUSABLE as exc:
         raise Unusable("kos: %s" % cli.cause(exc)) from None
-    return {"index": index, "done": ["D3", "D7"] if watch else ["D3"]}
+    return {"index": index, "done": ["D3", "D7"] if watch else ["D3"],
+            "snapshot": {"snapshot_id": art.snapshot["snapshot_id"], "files": len(art.snapshot["files"]),
+                         "links": len(art.snapshot["links"])}}
 
 
 def yaz_d5(environ: dict[str, str], tid: str) -> tuple[dict[str, Any], Any, str | None]:
@@ -1175,7 +1186,8 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
         return dict({"reason": "pulled_refused", "reasons": exc.reasons}, heads=heads)
     assembled = {"target": target_id, "commit": commit,
                  "candidates": sorted({p.split("/")[1] for p in manifest["files"] if p.startswith(P.CANDIDATES + "/")}),
-                 "organs": sorted({p.split("/")[1] for p in manifest["files"] if p.startswith(P.ORGANS + "/")})}
+                 "organs": sorted({p.split("/")[1] for p in manifest["files"] if p.startswith(P.ORGANS + "/")}),
+                 "snapshot_id": P.read(out).snapshot["snapshot_id"]}
     # MF4's judgement (D1): the brain's proposal (units.json, its one unit) against the referee's own derivation
     # from the assembled tree, read back the way getir, kos and yaz read their download
     tree = os.path.join(root, "tree")

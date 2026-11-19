@@ -50,7 +50,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ledger import chain as CH  # noqa: E402
 from loop import job as J  # noqa: E402
+from loop import gitobj as G  # noqa: E402
 from loop import pulled as P  # noqa: E402
+from snapshot import make as SM  # noqa: E402
 from runner import kos as K  # noqa: E402
 from target import branches as B  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
@@ -97,6 +99,31 @@ def tar_of(root: str) -> bytes:
     return buf.getvalue()
 
 
+def entries_of(root: str) -> list:
+    """The directory ``root`` as ``loop.gitobj`` entries (files with their execute bit, links), sorted by path."""
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in dirnames + filenames:
+            full = os.path.join(dirpath, name)
+            path = os.path.relpath(full, root).replace(os.sep, "/")
+            if os.path.islink(full):
+                out.append(G.Entry(path, "link", 0o777, os.readlink(full).encode()))
+            elif os.path.isdir(full):
+                out.append(G.Entry(path, "dir", 0o755, b""))
+            else:
+                with open(full, "rb") as fh:
+                    out.append(G.Entry(path, "file", 0o755 if os.stat(full).st_mode & 0o100 else 0o644, fh.read()))
+    return sorted(out, key=lambda e: e.path)
+
+
+def snapshot_of(root: str, target: dict | None = None) -> dict:
+    """The clean ``snapshot.make`` document of the directory ``root``, as ``cek`` writes the commit's."""
+    return SM.build(entries_of(root), [], "clean", target).document
+
+
+OWN_SNAPSHOT = object()     # write_pulled's default: the snapshot of the tree it writes
+
+
 def candidate(diff: bytes) -> dict:
     return {"diff.patch": diff, "finding.json": json.dumps(FINDING).encode(),
             "expect.json": b'{"decision": "merge"}\n'}
@@ -132,7 +159,7 @@ class Base(unittest.TestCase):
         self.pulled = os.path.join(self.temp, "in", "pulled", TARGET["id"])
 
     def write_pulled(self, cands=None, units=None, tree_tar=None, policy=None, target=None, heads=None,
-                     state=None, status=None, accepted=None, organs=None) -> dict:
+                     state=None, status=None, accepted=None, organs=None, snapshot=OWN_SNAPSHOT) -> dict:
         served = os.path.dirname(self.pulled)
         if not os.path.exists(os.path.join(served, P.SERVED)):
             os.makedirs(served, exist_ok=True)
@@ -141,7 +168,8 @@ class Base(unittest.TestCase):
                        json.dumps(units if units is not None else {"units": [recipe()]}).encode(),
                        policy if isinstance(policy, bytes) else json.dumps(policy or {"operating": operating()}).encode(),
                        cands if cands is not None else {}, HEADS if heads is None else heads,
-                       state_files() if state is None else state, status, accepted, organs)
+                       state_files() if state is None else state, status, accepted, organs,
+                       snapshot_of(self.src, target or TARGET) if snapshot is OWN_SNAPSHOT else snapshot)
 
     def write_pulled_as(self, tid: str, **kw) -> dict:
         """``write_pulled`` into ``in/pulled/<tid>`` with the target id ``tid`` (unless ``target`` is given); the
@@ -175,7 +203,7 @@ class Layout(Base):
         self.assertEqual(got.candidates, {"good": candidate(GOOD)})
         self.assertEqual(sorted(manifest["files"]), ["candidates/good/diff.patch", "candidates/good/expect.json",
                                                      "candidates/good/finding.json", "organs.json",
-                                                     "policy.json", "state/chain/root.jsonl", "state/heads.json",
+                                                     "policy.json", "snapshot.json", "state/chain/root.jsonl", "state/heads.json",
                                                      "state/ledger.jsonl", "tree.tar", "units.json"])
         with open(got.tree_tar, "rb") as fh:
             self.assertEqual(fh.read(), tar_of(self.src))

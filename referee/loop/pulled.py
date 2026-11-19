@@ -22,6 +22,7 @@ another job's output only by artifact and hash; the workflow's download checks t
     organs.json                 {organ_id: definition_sha256}: the accepted organs ("Organs" below)
     organs/<oid>/entry.json     one carried organ's entry point, a JSON document
     organs/<oid>/files/<path>   that organ's files, each under the path its definition names
+    snapshot.json               the ``snapshot.make`` document of the tree's clean snapshot ("Snapshot" below)
 
 **Organs** (asama-1/05 step 2, asama-1/13 P1 row 1: ``koş`` calls only accepted organs, through
 ``runner.organs``). ``organs.json`` is what ``çek`` found accepted: the ``runner.organs`` hash of each organ
@@ -33,6 +34,12 @@ the manifest; it does not judge an organ: whether ``organs.json`` has the accept
 organ is a key of it, whether its bytes have the accepted hash and whether its entry is an entry are judged at
 the call by ``runner.organs`` (``runner.kos``), so an artifact that carries an organ ``organs.json`` does not
 name is read here and that organ is refused there.
+
+**Snapshot** (asama-1/13c, tohum/26a: ``snapshot.make`` is ``çek``'s). ``snapshot.json`` is always listed and
+must be JSON; ``çek`` writes there the document of the clean snapshot of the commit ``tree.tar`` was read from
+(``loop.cek``). This module carries it: whether it is a snapshot document, and whether its files are the
+tree's, is judged where the snapshot is written out (``snapshot.make.write``, in ``kos``), so an artifact with
+another document is read here and refused there.
 
 **Served** (tohum/29s "Hedefler": a run serves every ``targets[]`` entry, in the array's order). The uploaded
 artifact is a directory holding ``served.json`` ``{schema: "snowball-served/1", targets: [id, ...]}``, the ids of the
@@ -59,10 +66,10 @@ combination is ``heads_invalid`` (``write`` refuses it the same way). Every othe
 regular file holding a JSON object with exactly those three keys (``manifest_unreadable``), the schema
 (``schema_unknown``), the target (``target_invalid``); ``files`` maps each path to 64 lowercase hex
 (``files_invalid``); every path is one of the layout's (``path_not_in_layout:<path>``); ``tree.tar``,
-``units.json``, ``policy.json``, ``organs.json`` and the ``state/`` files but ``state/status.md`` are listed (``missing:<path>``) and every listed candidate has its three files
+``units.json``, ``policy.json``, ``organs.json``, ``snapshot.json`` and the ``state/`` files but ``state/status.md`` are listed (``missing:<path>``) and every listed candidate has its three files
 (``candidate_incomplete:<cid>``) and every listed organ its ``entry.json`` (``organ_incomplete:<oid>``); every listed file is a regular file, no symlink on its way, with the listed
 sha256 (``file_missing:<path>``, ``hash_mismatch:<path>``); no other file or directory is in the artifact
-(``unlisted:<path>``). ``units.json``, ``policy.json``, ``organs.json``, ``state/heads.json`` and every ``entry.json`` must be JSON
+(``unlisted:<path>``). ``units.json``, ``policy.json``, ``organs.json``, ``snapshot.json``, ``state/heads.json`` and every ``entry.json`` must be JSON
 (``json_unreadable:<path>``), and ``state/heads.json`` an object of exactly ``brain/state`` and ``brain/integration``, each 40 lowercase hex,
 ``brain/state`` ``null`` only in the genesis cycle's form above (``heads_invalid``). The chained files are not judged here: their reader verifies what it uses (the stage brake's
 ``llm_call.CostBook`` verifies the ledger as a chain).
@@ -111,7 +118,8 @@ STATE_FILES = (HEADS,) + tuple(_carried(p) for p in B.STATE_CHAINS)
 STATUS = _carried(B.STATE_STATUS)
 HEAD_BRANCHES = (B.STATE, B.INTEGRATION)
 ACCEPTED = "organs.json"
-TOP = (TREE, UNITS, POLICY, ACCEPTED) + STATE_FILES   # always listed
+SNAPSHOT = "snapshot.json"
+TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT) + STATE_FILES   # always listed
 LAYOUT = TOP + (STATUS,)                     # STATUS listed when the head has a status.md
 SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 CANDIDATES = "candidates"
@@ -144,6 +152,7 @@ class Pulled(NamedTuple):
     status: bytes | None                    # brain/state's status.md, None when the head has none
     accepted: Any                           # organs.json parsed: {organ_id: definition_sha256}
     organs: dict[str, dict]                 # oid -> {"entry": entry.json parsed, "files": {path: bytes}}
+    snapshot: Any                           # snapshot.json parsed: the snapshot.make document
 
 
 def _sha(data: bytes) -> str:
@@ -183,12 +192,14 @@ def _in_layout(path: str) -> bool:
 
 def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
           candidates: dict[str, dict[str, bytes]], heads: dict[str, str], state: dict[str, bytes],
-          status: bytes | None, accepted: Any = None, organs: dict[str, dict] | None = None) -> dict:
+          status: bytes | None, accepted: Any = None, organs: dict[str, dict] | None = None,
+          snapshot: Any = None) -> dict:
     """Write the layout into ``out`` (which must not exist); returns the manifest. ``state`` maps each path of
     ``STATE_CHAINS`` to its bytes; ``status`` is ``status.md``'s bytes or ``None`` (not written); ``accepted`` is
     ``organs.json``'s document (``None``: ``{}``) and ``organs`` maps each carried organ's id to ``{entry, files:
     {path: bytes}}`` (``None``: none; another form, or a path that is a directory on the way of another, is
-    ``organ_invalid:<oid>``, an id or a path outside the layout ``path_not_in_layout:<path>``)."""
+    ``organ_invalid:<oid>``, an id or a path outside the layout ``path_not_in_layout:<path>``); ``snapshot`` is
+    ``snapshot.json``'s document, written as given (one json cannot write is ``snapshot_invalid``)."""
     if sorted(state) != sorted(B.STATE_CHAINS) or not all(isinstance(d, bytes) for d in state.values()) \
             or not (status is None or isinstance(status, bytes)):
         raise PulledError(["state_incomplete"])
@@ -203,6 +214,10 @@ def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
             raise PulledError(["candidate_incomplete:%s" % cid])
         for name, data in content.items():
             files["%s/%s/%s" % (CANDIDATES, cid, name)] = data
+    try:
+        files[SNAPSHOT] = _dump(snapshot)
+    except (TypeError, ValueError, RecursionError):
+        raise PulledError(["snapshot_invalid"]) from None
     try:
         files[ACCEPTED] = _dump({} if accepted is None else accepted)
         for oid, organ in (organs or {}).items():
@@ -344,7 +359,7 @@ def read(root: str) -> Pulled:
     reasons += ["unlisted:%s" % p for p in sorted(_present(root)) if p != MANIFEST and p not in files]
     parsed = {}
     contents.update({"%s/%s/%s" % (ORGANS, o, ORGAN_ENTRY): d for o, d in entries.items()})
-    for path in (UNITS, POLICY, ACCEPTED, HEADS) + tuple("%s/%s/%s" % (ORGANS, o, ORGAN_ENTRY) for o in sorted(entries)):
+    for path in (UNITS, POLICY, ACCEPTED, SNAPSHOT, HEADS) + tuple("%s/%s/%s" % (ORGANS, o, ORGAN_ENTRY) for o in sorted(entries)):
         if path in contents:
             try:
                 parsed[path] = cli.loads(contents[path].decode("utf-8"))
@@ -358,7 +373,7 @@ def read(root: str) -> Pulled:
     organs = {o: {"entry": parsed["%s/%s/%s" % (ORGANS, o, ORGAN_ENTRY)], "files": organ_files.get(o, {})}
               for o in listed_oids}
     return Pulled(target, parsed[UNITS], parsed[POLICY], os.path.join(root, TREE), candidates, parsed[HEADS], state,
-                  contents[POLICY], contents.get(STATUS), parsed[ACCEPTED], organs)
+                  contents[POLICY], contents.get(STATUS), parsed[ACCEPTED], organs, parsed[SNAPSHOT])
 
 
 def extract_tree(tar_path: str, dest: str) -> None:

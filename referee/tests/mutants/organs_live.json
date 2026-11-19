@@ -3,7 +3,7 @@
   {
    "id": "kos_passes_no_organs",
    "file": "loop/job.py",
-   "old": "organs={\"accepted\": art.accepted, \"definitions\": art.organs})",
+   "old": "organs={\"accepted\": art.accepted, \"definitions\": art.organs, \"tree\": snapshot})",
    "new": "organs=None)",
    "tests": [
     "test_organs.py"
@@ -22,7 +22,7 @@
    "id": "kos_calls_without_the_runner",
    "file": "runner/kos.py",
    "old": "    if not got[\"called\"]:\n        return {\"called\": False, \"reasons\": got[\"reasons\"]}\n    main = got[\"result\"]",
-   "new": "    if not got[\"called\"]:\n        got = dict(C.run_with_red_control({\"image\": recipe[\"env_image\"], \"tree\": staging, \"cmd\": organs[\"definitions\"][oid][\"entry\"]}, red, operating, runner, root), definition_sha256=\"\")\n    main = got[\"result\"]",
+   "new": "    if not got[\"called\"]:\n        got = dict(C.run_with_red_control({\"image\": recipe[\"env_image\"], \"tree\": organs[\"tree\"], \"cmd\": organs[\"definitions\"][oid][\"entry\"]}, red, operating, runner, root), definition_sha256=\"\")\n    main = got[\"result\"]",
    "tests": [
     "test_organs.py"
    ]
@@ -48,8 +48,8 @@
   {
    "id": "cek_accepts_nothing",
    "file": "loop/cek.py",
-   "old": "{oid: O.definition_sha256(d) for oid, d in organs.items()}, organs)",
-   "new": "{}, organs)",
+   "old": "{oid: O.definition_sha256(d) for oid, d in organs.items()}, organs, snapshot)",
+   "new": "{}, organs, snapshot)",
    "tests": [
     "test_organs.py"
    ]
@@ -102,8 +102,8 @@
   {
    "id": "pulled_accepted_not_required",
    "file": "loop/pulled.py",
-   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED) + STATE_FILES",
-   "new": "TOP = (TREE, UNITS, POLICY) + STATE_FILES",
+   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT) + STATE_FILES",
+   "new": "TOP = (TREE, UNITS, POLICY, SNAPSHOT) + STATE_FILES",
    "tests": [
     "test_loop_kos.py"
    ]
