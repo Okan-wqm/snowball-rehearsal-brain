@@ -1,0 +1,130 @@
+{
+ "mutants": [
+  {
+   "id": "kos_passes_no_organs",
+   "file": "loop/job.py",
+   "old": "organs={\"accepted\": art.accepted, \"definitions\": art.organs})",
+   "new": "organs=None)",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "kos_accepts_what_it_carries",
+   "file": "runner/kos.py",
+   "old": "got = O.call(organs[\"accepted\"], oid,",
+   "new": "got = O.call({oid: O.definition_sha256(organs[\"definitions\"][oid])}, oid,",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "kos_calls_without_the_runner",
+   "file": "runner/kos.py",
+   "old": "    if not got[\"called\"]:\n        return {\"called\": False, \"reasons\": got[\"reasons\"]}\n    main = got[\"result\"]",
+   "new": "    if not got[\"called\"]:\n        got = dict(C.run_with_red_control({\"image\": recipe[\"env_image\"], \"tree\": staging, \"cmd\": organs[\"definitions\"][oid][\"entry\"]}, red, operating, runner, root), definition_sha256=\"\")\n    main = got[\"result\"]",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "kos_accepted_shape_checked_late",
+   "file": "runner/kos.py",
+   "old": "    O.check_accepted(organs[\"accepted\"])\n",
+   "new": "",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "kos_calls_on_unstaged_base",
+   "file": "runner/kos.py",
+   "old": "{\"called\": False, \"reasons\": bad} if bad else",
+   "new": "{\"called\": False, \"reasons\": bad} if False else",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "cek_accepts_nothing",
+   "file": "loop/cek.py",
+   "old": "{oid: O.definition_sha256(d) for oid, d in organs.items()}, organs)",
+   "new": "{}, organs)",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "cek_skips_an_invalid_organ",
+   "file": "loop/cek.py",
+   "old": "            reasons.append(\"organ_invalid:%s\" % name)",
+   "new": "            pass",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "cek_follows_a_non_file",
+   "file": "loop/cek.py",
+   "old": "if found is None or found[0] != \"file\":",
+   "new": "if found is None:",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "cek_takes_any_name",
+   "file": "loop/cek.py",
+   "old": "and name.endswith(ORGAN_SUFFIX) and K.CANDIDATE_ID.fullmatch(oid) else None",
+   "new": "else None",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "cek_organs_not_a_tree",
+   "file": "loop/cek.py",
+   "old": "        return {}, [\"organs_not_directory\"]",
+   "new": "        return {}, []",
+   "tests": [
+    "test_organs.py"
+   ]
+  },
+  {
+   "id": "pulled_organ_without_entry",
+   "file": "loop/pulled.py",
+   "old": "reasons += [\"organ_incomplete:%s\" % o for o in listed_oids",
+   "new": "reasons += [\"organ_incomplete:%s\" % o for o in []",
+   "tests": [
+    "test_loop_kos.py"
+   ]
+  },
+  {
+   "id": "pulled_accepted_not_required",
+   "file": "loop/pulled.py",
+   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED) + STATE_FILES",
+   "new": "TOP = (TREE, UNITS, POLICY) + STATE_FILES",
+   "tests": [
+    "test_loop_kos.py"
+   ]
+  },
+  {
+   "id": "pulled_organ_path_any",
+   "file": "loop/pulled.py",
+   "old": "rest and rest != \".\" and D.norm_path(rest) == rest",
+   "new": "rest",
+   "tests": [
+    "test_loop_kos.py"
+   ]
+  },
+  {
+   "id": "pulled_organ_form_unchecked",
+   "file": "loop/pulled.py",
+   "old": "                raise PulledError([\"organ_invalid:%s\" % (oid,)])",
+   "new": "                pass",
+   "tests": [
+    "test_loop_kos.py"
+   ]
+  }
+ ]
+}

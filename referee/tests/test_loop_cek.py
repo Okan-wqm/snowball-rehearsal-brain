@@ -595,7 +595,8 @@ class CekJob(unittest.TestCase):
         self.assertEqual(listings[0][-4:], ["--", "https://github.com/o/target", "refs/heads/brain/state",
                                             "refs/heads/brain/integration"])
         self.assertEqual(line["heads"], {"brain/state": self.state_head, "brain/integration": self.target_commit})
-        self.assertEqual(line["assembled"], {"target": "t1", "commit": self.target_commit, "candidates": ["good"]})
+        self.assertEqual(line["assembled"], {"target": "t1", "commit": self.target_commit, "candidates": ["good"],
+                                             "organs": []})
         # the artifact assembled in the job's work directory is moved, not copied, to out/pulled/t1, next to
         # served.json naming it, and loop.pulled reads it there: the target's tree at brain/integration's head, the
         # brain's units.json and candidate at the accepted commit
@@ -1035,7 +1036,7 @@ class CekJob(unittest.TestCase):
                 for line in out["targets"]:
                     self.assertEqual(sorted(line), ["assembled", "heads", "profile", "root", "state", "target"])
                     self.assertEqual(line["assembled"], {"target": line["target"], "commit": self.target_commit,
-                                                         "candidates": cands[line["target"]]})
+                                                         "candidates": cands[line["target"]], "organs": []})
                 # served.json lists them in that order, each in its own directory, read by loop.pulled as its own
                 self.assertEqual(self.served(), list(order))
                 self.assertEqual(sorted(os.listdir(os.path.join(self.temp, "out", "pulled"))),

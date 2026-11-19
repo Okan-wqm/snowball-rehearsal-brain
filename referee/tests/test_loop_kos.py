@@ -132,7 +132,7 @@ class Base(unittest.TestCase):
         self.pulled = os.path.join(self.temp, "in", "pulled", TARGET["id"])
 
     def write_pulled(self, cands=None, units=None, tree_tar=None, policy=None, target=None, heads=None,
-                     state=None, status=None) -> dict:
+                     state=None, status=None, accepted=None, organs=None) -> dict:
         served = os.path.dirname(self.pulled)
         if not os.path.exists(os.path.join(served, P.SERVED)):
             os.makedirs(served, exist_ok=True)
@@ -141,7 +141,7 @@ class Base(unittest.TestCase):
                        json.dumps(units if units is not None else {"units": [recipe()]}).encode(),
                        policy if isinstance(policy, bytes) else json.dumps(policy or {"operating": operating()}).encode(),
                        cands if cands is not None else {}, HEADS if heads is None else heads,
-                       state_files() if state is None else state, status)
+                       state_files() if state is None else state, status, accepted, organs)
 
     def write_pulled_as(self, tid: str, **kw) -> dict:
         """``write_pulled`` into ``in/pulled/<tid>`` with the target id ``tid`` (unless ``target`` is given); the
@@ -174,12 +174,97 @@ class Layout(Base):
         self.assertEqual(got.units, {"units": [recipe()]})
         self.assertEqual(got.candidates, {"good": candidate(GOOD)})
         self.assertEqual(sorted(manifest["files"]), ["candidates/good/diff.patch", "candidates/good/expect.json",
-                                                     "candidates/good/finding.json", "policy.json",
-                                                     "state/chain/root.jsonl", "state/heads.json",
+                                                     "candidates/good/finding.json", "organs.json",
+                                                     "policy.json", "state/chain/root.jsonl", "state/heads.json",
                                                      "state/ledger.jsonl", "tree.tar", "units.json"])
         with open(got.tree_tar, "rb") as fh:
             self.assertEqual(fh.read(), tar_of(self.src))
         self.assertEqual((got.heads, got.state), (HEADS, state_files()))
+        # no organ given: organs.json is there and says none
+        with open(os.path.join(self.pulled, "organs.json"), "rb") as fh:
+            self.assertEqual(json.load(fh), {})
+        self.assertEqual((got.accepted, got.organs), ({}, {}))
+
+    def test_organs_are_carried_as_given(self):
+        """The accepted set and each organ's entry and files come back as written, under the layout's paths; an
+        organ the accepted set does not name is carried too (``runner.organs`` judges, not this module)."""
+        organs = {"lint.discover": {"entry": ["python3", "/in/adapters/l/main.py"],
+                                    "files": {"adapters/l/main.py": b"print(1)\n", "adapters/l/lib/w.txt": b"\xff\x00"}},
+                  "bare": {"entry": {"not": "an entry"}, "files": {}}}
+        accepted = {"lint.discover": "a" * 64, "elsewhere": "b" * 64}
+        manifest = self.write_pulled(accepted=accepted, organs=organs)
+        self.assertEqual(sorted(p for p in manifest["files"] if p.startswith("organs")),
+                         ["organs.json", "organs/bare/entry.json", "organs/lint.discover/entry.json",
+                          "organs/lint.discover/files/adapters/l/lib/w.txt",
+                          "organs/lint.discover/files/adapters/l/main.py"])
+        with open(os.path.join(self.pulled, "organs/lint.discover/files/adapters/l/lib/w.txt"), "rb") as fh:
+            self.assertEqual(fh.read(), b"\xff\x00")
+        got = P.read(self.pulled)
+        self.assertEqual((got.accepted, got.organs), (accepted, organs))
+
+    def test_an_organ_the_layout_cannot_hold_is_not_written(self):
+        files = {"a/main.py": b"x"}
+        for name, organs, want in (
+                ("no entry", {"o": {"files": files}}, ["organ_invalid:o"]),
+                ("a third key", {"o": {"entry": ["x"], "files": files, "more": 1}}, ["organ_invalid:o"]),
+                ("files a list", {"o": {"entry": ["x"], "files": ["a/main.py"]}}, ["organ_invalid:o"]),
+                ("text for bytes", {"o": {"entry": ["x"], "files": {"a/main.py": "x"}}}, ["organ_invalid:o"]),
+                ("a file on the way of another", {"o": {"entry": ["x"], "files": {"a": b"x", "a/b": b"y"}}},
+                 ["organ_invalid:o"]),
+                ("not an organ", {"o": ["x"]}, ["organ_invalid:o"]),
+                ("an entry json cannot write", {"o": {"entry": [b"x"], "files": files}}, ["organ_invalid"]),
+                ("an id of two components", {"a/b": {"entry": ["x"], "files": {}}},
+                 ["path_not_in_layout:organs/a/b/entry.json"]),
+                ("a path that climbs", {"o": {"entry": ["x"], "files": {"../x": b"x"}}},
+                 ["path_not_in_layout:organs/o/files/../x"]),
+                ("a path not normal", {"o": {"entry": ["x"], "files": {"a//b": b"x"}}},
+                 ["path_not_in_layout:organs/o/files/a//b"])):
+            with self.subTest(name):
+                with self.assertRaises(P.PulledError) as ctx:
+                    self.write_pulled(organs=organs)
+                self.assertEqual(ctx.exception.reasons, want)
+                self.assertFalse(os.path.lexists(self.pulled))
+        with self.assertRaises(P.PulledError) as ctx:
+            self.write_pulled(accepted={"o": b"x"})
+        self.assertEqual(ctx.exception.reasons, ["organ_invalid"])
+
+    def test_the_organ_files_are_checked_like_every_file(self):
+        organs = {"o": {"entry": ["python3", "/in/a/main.py"], "files": {"a/main.py": b"x"}}}
+
+        def fresh() -> dict:
+            shutil.rmtree(self.pulled, ignore_errors=True)
+            self.write_pulled(accepted={"o": "a" * 64}, organs=organs)
+            return self.manifest()
+
+        def put(path: str, data: bytes, m: dict) -> None:
+            with open(os.path.join(self.pulled, path), "wb") as fh:
+                fh.write(data)
+            m["files"][path] = P._sha(data)
+            self.set_manifest(m)
+
+        fresh()
+        with open(os.path.join(self.pulled, "organs/o/files/a/main.py"), "ab") as fh:
+            fh.write(b" ")
+        self.assertEqual(self.reasons(), ["hash_mismatch:organs/o/files/a/main.py"])
+        m = fresh()                                     # a file with no entry.json listed beside it
+        del m["files"]["organs/o/entry.json"]
+        os.remove(os.path.join(self.pulled, "organs/o/entry.json"))
+        self.set_manifest(m)
+        self.assertEqual(self.reasons(), ["organ_incomplete:o"])
+        m = fresh()                                     # organs.json is always listed
+        del m["files"]["organs.json"]
+        os.remove(os.path.join(self.pulled, "organs.json"))
+        self.set_manifest(m)
+        self.assertEqual(self.reasons(), ["missing:organs.json"])
+        put("organs.json", b"{", fresh())
+        self.assertEqual(self.reasons(), ["json_unreadable:organs.json"])
+        put("organs/o/entry.json", b"\xff", fresh())
+        self.assertEqual(self.reasons(), ["json_unreadable:organs/o/entry.json"])
+        m = fresh()                                     # under organs/<oid>/ only entry.json and files/<path>
+        write_tree(self.pulled, {"organs/o/notes.md": "n"})
+        m["files"]["organs/o/notes.md"] = P._sha(b"n")
+        self.set_manifest(m)
+        self.assertEqual(self.reasons(), ["path_not_in_layout:organs/o/notes.md"])
 
     def test_the_state_files_are_required_and_the_heads_are_two_commits(self):
         self.write_pulled()

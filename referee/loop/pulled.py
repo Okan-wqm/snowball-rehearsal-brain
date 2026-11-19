@@ -19,6 +19,20 @@ another job's output only by artifact and hash; the workflow's download checks t
                                   the commit's ``.brain/`` is not repeated; MF1's verify --previous, MF11's root)
     state/status.md             brain/state's ``status.md`` at that head, as read; absent when the head has none
     candidates/<cid>/finding.json, diff.patch, expect.json
+    organs.json                 {organ_id: definition_sha256}: the accepted organs ("Organs" below)
+    organs/<oid>/entry.json     one carried organ's entry point, a JSON document
+    organs/<oid>/files/<path>   that organ's files, each under the path its definition names
+
+**Organs** (asama-1/05 step 2, asama-1/13 P1 row 1: ``koş`` calls only accepted organs, through
+``runner.organs``). ``organs.json`` is what ``çek`` found accepted: the ``runner.organs`` hash of each organ
+definition of the brain commit it read (``loop.cek``, "Organs"); it is always listed, ``{}`` when that commit has
+no organ. ``<oid>`` is one path component, ``runner.kos``'s candidate id pattern; ``<path>`` is relative and
+normal (``profile.derive.norm_path`` leaves it as written). A carried organ is read as a ``runner.organs``
+definition ``{entry: <entry.json parsed>, files: {path: bytes}}``. This module carries and checks bytes against
+the manifest; it does not judge an organ: whether ``organs.json`` has the accepted shape, whether a carried
+organ is a key of it, whether its bytes have the accepted hash and whether its entry is an entry are judged at
+the call by ``runner.organs`` (``runner.kos``), so an artifact that carries an organ ``organs.json`` does not
+name is read here and that organ is refused there.
 
 **Served** (tohum/29s "Hedefler": a run serves every ``targets[]`` entry, in the array's order). The uploaded
 artifact is a directory holding ``served.json`` ``{schema: "snowball-served/1", targets: [id, ...]}``, the ids of the
@@ -45,10 +59,10 @@ combination is ``heads_invalid`` (``write`` refuses it the same way). Every othe
 regular file holding a JSON object with exactly those three keys (``manifest_unreadable``), the schema
 (``schema_unknown``), the target (``target_invalid``); ``files`` maps each path to 64 lowercase hex
 (``files_invalid``); every path is one of the layout's (``path_not_in_layout:<path>``); ``tree.tar``,
-``units.json``, ``policy.json`` and the ``state/`` files but ``state/status.md`` are listed (``missing:<path>``) and every listed candidate has its three files
-(``candidate_incomplete:<cid>``); every listed file is a regular file, no symlink on its way, with the listed
+``units.json``, ``policy.json``, ``organs.json`` and the ``state/`` files but ``state/status.md`` are listed (``missing:<path>``) and every listed candidate has its three files
+(``candidate_incomplete:<cid>``) and every listed organ its ``entry.json`` (``organ_incomplete:<oid>``); every listed file is a regular file, no symlink on its way, with the listed
 sha256 (``file_missing:<path>``, ``hash_mismatch:<path>``); no other file or directory is in the artifact
-(``unlisted:<path>``). ``units.json``, ``policy.json`` and ``state/heads.json`` must be JSON
+(``unlisted:<path>``). ``units.json``, ``policy.json``, ``organs.json``, ``state/heads.json`` and every ``entry.json`` must be JSON
 (``json_unreadable:<path>``), and ``state/heads.json`` an object of exactly ``brain/state`` and ``brain/integration``, each 40 lowercase hex,
 ``brain/state`` ``null`` only in the genesis cycle's form above (``heads_invalid``). The chained files are not judged here: their reader verifies what it uses (the stage brake's
 ``llm_call.CostBook`` verifies the ledger as a chain).
@@ -96,11 +110,15 @@ def _carried(path: str) -> str:
 STATE_FILES = (HEADS,) + tuple(_carried(p) for p in B.STATE_CHAINS)
 STATUS = _carried(B.STATE_STATUS)
 HEAD_BRANCHES = (B.STATE, B.INTEGRATION)
-TOP = (TREE, UNITS, POLICY) + STATE_FILES   # always listed
+ACCEPTED = "organs.json"
+TOP = (TREE, UNITS, POLICY, ACCEPTED) + STATE_FILES   # always listed
 LAYOUT = TOP + (STATUS,)                     # STATUS listed when the head has a status.md
 SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 CANDIDATES = "candidates"
 CANDIDATE_FILES = ("diff.patch", "expect.json", "finding.json")
+ORGANS = "organs"
+ORGAN_ENTRY = "entry.json"
+ORGAN_FILES = "files"
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 SERVED = "served.json"
 SERVED_SCHEMA = "snowball-served/1"
@@ -124,6 +142,8 @@ class Pulled(NamedTuple):
     state: dict[str, bytes]                 # target.branches.STATE_CHAINS path -> bytes
     policy_bytes: bytes                     # policy.json as carried (``policy`` is it parsed)
     status: bytes | None                    # brain/state's status.md, None when the head has none
+    accepted: Any                           # organs.json parsed: {organ_id: definition_sha256}
+    organs: dict[str, dict]                 # oid -> {"entry": entry.json parsed, "files": {path: bytes}}
 
 
 def _sha(data: bytes) -> str:
@@ -143,11 +163,32 @@ def _candidate_of(path: str) -> str | None:
     return None
 
 
+def _organ_of(path: str) -> tuple[str, str | None] | None:
+    """``(oid, None)`` for an organ's ``entry.json`` in the layout, ``(oid, <path>)`` for one of its files, else
+    None."""
+    parts = path.split("/")
+    if len(parts) < 3 or parts[0] != ORGANS or not K.CANDIDATE_ID.fullmatch(parts[1]):
+        return None
+    if parts[2:] == [ORGAN_ENTRY]:
+        return parts[1], None
+    rest = "/".join(parts[3:])
+    if parts[2] == ORGAN_FILES and rest and rest != "." and D.norm_path(rest) == rest:
+        return parts[1], rest
+    return None
+
+
+def _in_layout(path: str) -> bool:
+    return path in LAYOUT or _candidate_of(path) is not None or _organ_of(path) is not None
+
+
 def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
           candidates: dict[str, dict[str, bytes]], heads: dict[str, str], state: dict[str, bytes],
-          status: bytes | None) -> dict:
+          status: bytes | None, accepted: Any = None, organs: dict[str, dict] | None = None) -> dict:
     """Write the layout into ``out`` (which must not exist); returns the manifest. ``state`` maps each path of
-    ``STATE_CHAINS`` to its bytes; ``status`` is ``status.md``'s bytes or ``None`` (not written)."""
+    ``STATE_CHAINS`` to its bytes; ``status`` is ``status.md``'s bytes or ``None`` (not written); ``accepted`` is
+    ``organs.json``'s document (``None``: ``{}``) and ``organs`` maps each carried organ's id to ``{entry, files:
+    {path: bytes}}`` (``None``: none; another form, or a path that is a directory on the way of another, is
+    ``organ_invalid:<oid>``, an id or a path outside the layout ``path_not_in_layout:<path>``)."""
     if sorted(state) != sorted(B.STATE_CHAINS) or not all(isinstance(d, bytes) for d in state.values()) \
             or not (status is None or isinstance(status, bytes)):
         raise PulledError(["state_incomplete"])
@@ -162,7 +203,22 @@ def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
             raise PulledError(["candidate_incomplete:%s" % cid])
         for name, data in content.items():
             files["%s/%s/%s" % (CANDIDATES, cid, name)] = data
-    bad = [p for p in files if p not in LAYOUT and _candidate_of(p) is None]
+    try:
+        files[ACCEPTED] = _dump({} if accepted is None else accepted)
+        for oid, organ in (organs or {}).items():
+            if not (isinstance(oid, str) and isinstance(organ, dict) and set(organ) == {"entry", "files"}
+                    and isinstance(organ["files"], dict)
+                    and all(isinstance(p, str) and isinstance(d, bytes) for p, d in organ["files"].items())
+                    and not any(q.startswith(p + "/") for p in organ["files"] for q in organ["files"])):
+                raise PulledError(["organ_invalid:%s" % (oid,)])
+            files["%s/%s/%s" % (ORGANS, oid, ORGAN_ENTRY)] = _dump(organ["entry"])
+            for path, data in organ["files"].items():
+                files["%s/%s/%s/%s" % (ORGANS, oid, ORGAN_FILES, path)] = data
+    except PulledError:
+        raise
+    except (TypeError, ValueError, RecursionError):   # a document json cannot write
+        raise PulledError(["organ_invalid"]) from None
+    bad = [p for p in files if not _in_layout(p)]
     if bad:
         raise PulledError(["path_not_in_layout:%s" % p for p in sorted(bad)])
     os.makedirs(out)
@@ -258,9 +314,11 @@ def read(root: str) -> Pulled:
         raise PulledError(reasons + ["files_invalid"])
     candidates: dict[str, dict[str, bytes]] = {}
     contents: dict[str, bytes] = {}
+    organ_files: dict[str, dict[str, bytes]] = {}
+    entries: dict[str, bytes] = {}
     for path in sorted(files):
         cid = _candidate_of(path)
-        if path not in LAYOUT and cid is None:
+        if not _in_layout(path):
             reasons.append("path_not_in_layout:%s" % path)
             continue
         data = D._read_regular(root, path)
@@ -268,17 +326,25 @@ def read(root: str) -> Pulled:
             reasons.append("file_missing:%s" % path)
         elif _sha(data) != files[path]:
             reasons.append("hash_mismatch:%s" % path)
-        elif cid is None:
-            contents[path] = data
-        else:
+        elif cid is not None:
             candidates.setdefault(cid, {})[path.rsplit("/", 1)[1]] = data
+        elif _organ_of(path) is None:
+            contents[path] = data
+        elif _organ_of(path)[1] is None:
+            entries[_organ_of(path)[0]] = data
+        else:
+            organ_files.setdefault(_organ_of(path)[0], {})[_organ_of(path)[1]] = data
     reasons += ["missing:%s" % p for p in TOP if p not in files]
     listed_cids = sorted({c for c in map(_candidate_of, files) if c is not None})
     reasons += ["candidate_incomplete:%s" % c for c in listed_cids
                 if sorted(p.rsplit("/", 1)[1] for p in files if _candidate_of(p) == c) != sorted(CANDIDATE_FILES)]
+    listed_oids = sorted({o[0] for o in map(_organ_of, files) if o is not None})
+    reasons += ["organ_incomplete:%s" % o for o in listed_oids
+                if "%s/%s/%s" % (ORGANS, o, ORGAN_ENTRY) not in files]
     reasons += ["unlisted:%s" % p for p in sorted(_present(root)) if p != MANIFEST and p not in files]
     parsed = {}
-    for path in (UNITS, POLICY, HEADS):
+    contents.update({"%s/%s/%s" % (ORGANS, o, ORGAN_ENTRY): d for o, d in entries.items()})
+    for path in (UNITS, POLICY, ACCEPTED, HEADS) + tuple("%s/%s/%s" % (ORGANS, o, ORGAN_ENTRY) for o in sorted(entries)):
         if path in contents:
             try:
                 parsed[path] = cli.loads(contents[path].decode("utf-8"))
@@ -289,8 +355,10 @@ def read(root: str) -> Pulled:
         reasons.append("heads_invalid")
     if reasons:
         raise PulledError(reasons)
+    organs = {o: {"entry": parsed["%s/%s/%s" % (ORGANS, o, ORGAN_ENTRY)], "files": organ_files.get(o, {})}
+              for o in listed_oids}
     return Pulled(target, parsed[UNITS], parsed[POLICY], os.path.join(root, TREE), candidates, parsed[HEADS], state,
-                  contents[POLICY], contents.get(STATUS))
+                  contents[POLICY], contents.get(STATUS), parsed[ACCEPTED], organs)
 
 
 def extract_tree(tar_path: str, dest: str) -> None:

@@ -38,14 +38,16 @@ its own copy under its ``run_root``). The answer is ``{organ_id, called: true, d
 result, red_control}``, the last four ``run_with_red_control``'s; a green red control or an invalid run is that
 module's verdict, carried as it is.
 
-Caller: none yet (``status/off_live.json``). ``koş`` (``runner.kos``, ``loop.job``'s ``kos``) gets its first organ
-call with stage 1's ``lint.discover``, and ``çek`` does not carry the accepted SHA's organs in ``pulled`` yet; no
-page fixes where the brain keeps an organ's entry and files (reports/seed-073). Out of scope, stated: what the
-entry point does inside the container; an organ's ``state`` (tohum/26b: a ``RETIRED`` organ is not told from an
-``ACTIVE`` one here); the gate's allowlist of ``accept`` rows (asama-1/06 item 6, written by ``yaz``: another
-reader, of candidates, not of calls); whether the host holds the image (the caller's
-``runner.contained.ensure_image``); and code under ``koş`` that would start an organ's files without this module
-(nothing does today because nothing carries them; no test here forbids it).
+Caller: ``runner.kos.results`` (``koş``; ``loop.job``'s ``kos`` passes ``pulled``'s organs to it), which calls
+every organ ``pulled`` carries through ``call`` and starts an organ's files by no other way. ``accepted`` and the
+definitions are ``pulled``'s (``loop.pulled``, "Organs"): ``çek`` (``loop.cek``) reads them from the git objects
+of the brain SHA the bootstrap referee accepted. Where the brain keeps a definition and which image the entry
+runs in are choices of ``loop.cek`` and ``runner.kos``, stated there; no seed page fixes them (reports/seed-073).
+Out of scope, stated: what the entry point does inside the container; an organ's ``state`` (tohum/26b: a
+``RETIRED`` organ is not told from an ``ACTIVE`` one here); the gate's allowlist of ``accept`` rows (asama-1/06
+item 6, written by ``yaz``: another reader, of candidates, not of calls); whether the host holds the image (the
+caller's ``runner.contained.ensure_image``); and code under ``koş`` that would start an organ's files without
+this module (``runner.kos`` does not; no test forbids a later caller that would).
 """
 
 from __future__ import annotations
@@ -93,11 +95,16 @@ def definition_sha256(definition: Any) -> str:
     return hashlib.sha256(json.dumps(doc, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def refusal(accepted: Any, organ_id: Any, definition: Any) -> str | None:
-    """Why ``organ_id``'s entry point may not start with ``definition``, or ``None`` (see "A call")."""
+def check_accepted(accepted: Any) -> None:
+    """``OrganError`` unless ``accepted`` is of the shape above ("The accepted")."""
     if not (isinstance(accepted, dict)
             and all(isinstance(k, str) and k and isinstance(v, str) and HEX64.match(v) for k, v in accepted.items())):
         raise OrganError("accepted must map organ ids to definition hashes, 64 lowercase hex")
+
+
+def refusal(accepted: Any, organ_id: Any, definition: Any) -> str | None:
+    """Why ``organ_id``'s entry point may not start with ``definition``, or ``None`` (see "A call")."""
+    check_accepted(accepted)
     if not isinstance(organ_id, str) or organ_id not in accepted:
         return NOT_ACCEPTED
     if not _shape_ok(definition):
