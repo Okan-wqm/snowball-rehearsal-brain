@@ -162,8 +162,15 @@ refused tree is ``pulled_invalid``). Then:
   judges ``pulled``'s ``mutations.json`` against the results (``index.json``'s ``mutations`` and ``base_run_sha256``,
   ``base.jsonl`` and each ``m/<mid>/mut.jsonl`` read under its hash) with ``brain/integration``'s head as
   ``base_sha``; the target's line has ``cases`` (``{cases, oracle, refused}``, "The case" there) whatever the
-  steps after D5 gave. Nothing reads it to decide and nothing is written from it: no merge, row or exit code
-  depends on a case (``<state_root>/cases/`` is not written yet, reports/seed-075). Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
+  steps after D5 gave. Then the harness report (P1 MF4, ``yaz_harness``): ``harness.score.report`` scores the
+  cycle's findings against those cases on ``pulled``'s ``snapshot.json`` document and the extracted tree, and the
+  target's line has ``harness`` (``{report, hits, matched, missed_rules, refused, counts, verdict_reason}``, "The
+  report" there; ``{reason: "harness_refused", reasons}`` when the scorer refuses the document or the cases). The
+  cycle's findings are none (``FINDINGS``) until an organ's output is kept, so every case of a cycle is a miss
+  today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``min_groups`` and ``window``
+  are not given (``policy.json`` holds none of their keys, reports/seed-076), so ``recall_lb`` is ``null``.
+  Nothing reads ``cases`` or ``harness`` to decide and nothing is written from them: no merge, row or exit code
+  depends on a case or a report (``<state_root>/cases/`` is not written yet, reports/seed-075). Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
   ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it), read
   before the tree is judged; a ledger it cannot read is ``state_refused`` with its reasons (exit 1), nothing decided. A
   merge is unfinished until its revert row: the end of a green sentinel has no row until D7 writes one, so after the
@@ -312,6 +319,7 @@ from cases import build as CB
 from dispatcher import llm_call as LL
 from gate import revert as RV
 from harness import pass_row as PR
+from harness import score as HS
 from ledger import anchor as AN
 from ledger import append as LA
 from ledger import schema as SC
@@ -765,6 +773,19 @@ def yaz_cases(environ: dict[str, str], tid: str, art: Any) -> dict[str, Any]:
     except (UnicodeDecodeError, ValueError, RecursionError):
         index = None
     return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read)
+
+
+FINDINGS: list = []   # the cycle's findings: none, until an organ's output is kept (stage 1's ``lint.discover``)
+
+
+def yaz_harness(art: Any, tree: str, cases: dict[str, Any]) -> dict[str, Any]:
+    """The harness report of the cycle (P1 MF4; see the module docstring): ``harness.score.report`` of
+    ``FINDINGS`` against the dev cases ``yaz_cases`` built, on ``pulled``'s snapshot document and the extracted
+    tree; ``{reason: "harness_refused", reasons}`` when it refuses them."""
+    try:
+        return HS.report(list(FINDINGS), cases["cases"], art.snapshot, lambda path: D._read_regular(tree, path))
+    except HS.Unusable as exc:
+        return {"reason": "harness_refused", "reasons": exc.reasons}
 
 
 def yaz_d7(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any], dict | None, dict | None]:
@@ -1332,7 +1353,9 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
     d5, art, tree = yaz_d5(environ, tid)
     if "reason" in d5:
         return dict(d5, ok=False)
-    return dict(_yaz_written(environ, tid, d5, art, tree, transport, signer, now), cases=yaz_cases(environ, tid, art))
+    cases = yaz_cases(environ, tid, art)
+    return dict(_yaz_written(environ, tid, d5, art, tree, transport, signer, now), cases=cases,
+                harness=yaz_harness(art, tree, cases))
 
 
 def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any, tree: str, transport: Any,

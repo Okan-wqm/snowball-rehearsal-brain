@@ -24,8 +24,13 @@
     {"id": "T51", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_organs.py'", "stage": 1},
     {"id": "T8", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_snapshot.py'", "stage": 1},
     {"id": "T2", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_cases.py'", "stage": 1},
-    {"id": "T4", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_cases.py'", "stage": 1}
+    {"id": "T4", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_cases.py'", "stage": 1},
+    {"id": "T1", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_score.py'", "stage": 1},
+    {"id": "T6", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_score.py'", "stage": 1},
+    {"id": "T7", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_score.py'", "stage": 1},
+    {"id": "T12", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_score.py'", "stage": 1},
+    {"id": "T28", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_score.py'", "stage": 1}
   ],
-  "done_mf": [1, 2, 3],
+  "done_mf": [1, 2, 3, 4],
   "lockfiles": []
 }

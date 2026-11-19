@@ -1,0 +1,241 @@
+{
+ "mutants": [
+  {
+   "id": "ref_outside_manifest_not_judged",
+   "file": "harness/score.py",
+   "old": "        if want is None:\n",
+   "new": "        if False:\n",
+   "tests": [
+    "test_score.Refs"
+   ]
+  },
+  {
+   "id": "ref_hash_not_compared",
+   "file": "harness/score.py",
+   "old": "        if data is None or hashlib.sha256(data).hexdigest() != want:",
+   "new": "        if data is None:",
+   "tests": [
+    "test_score.Refs"
+   ]
+  },
+  {
+   "id": "ref_absent_file_passes",
+   "file": "harness/score.py",
+   "old": "        if data is None or hashlib.sha256(data).hexdigest() != want:",
+   "new": "        if data is not None and hashlib.sha256(data).hexdigest() != want:",
+   "tests": [
+    "test_score.Refs"
+   ]
+  },
+  {
+   "id": "snapshot_id_not_compared",
+   "file": "harness/score.py",
+   "old": "    if finding.get(\"snapshot_id\") != snapshot[\"snapshot_id\"]:",
+   "new": "    if False:",
+   "tests": [
+    "test_score.Refs"
+   ]
+  },
+  {
+   "id": "ref_line_not_judged",
+   "file": "harness/score.py",
+   "old": "        elif ref[\"line_end\"] > _lines(data):",
+   "new": "        elif False:",
+   "tests": [
+    "test_score.Refs"
+   ]
+  },
+  {
+   "id": "last_line_without_newline_not_counted",
+   "file": "harness/score.py",
+   "old": " + (1 if data and not data.endswith(b\"\\n\") else 0)",
+   "new": "",
+   "tests": [
+    "test_score.Refs"
+   ]
+  },
+  {
+   "id": "refused_finding_still_hits",
+   "file": "harness/score.py",
+   "old": "        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n        elif earlier",
+   "new": "        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n            accepted.append(finding)\n        elif earlier",
+   "tests": [
+    "test_score.Refs"
+   ]
+  },
+  {
+   "id": "reobservation_counted_again",
+   "file": "harness/score.py",
+   "old": "        elif earlier is not None:\n            reobserved += 1",
+   "new": "        elif False:\n            reobserved += 1",
+   "tests": [
+    "test_score.Fingerprint"
+   ]
+  },
+  {
+   "id": "fingerprint_conflict_folded",
+   "file": "harness/score.py",
+   "old": "        if earlier is not None and any(finding.get(k) != earlier.get(k) for k in IDENTITY_FIELDS):",
+   "new": "        if False:",
+   "tests": [
+    "test_score.Fingerprint"
+   ]
+  },
+  {
+   "id": "matching_greedy",
+   "file": "harness/score.py",
+   "old": "                queue.append(taken[c])",
+   "new": "                pass",
+   "tests": [
+    "test_score.Match"
+   ]
+  },
+  {
+   "id": "finding_takes_every_case_it_hits",
+   "file": "harness/score.py",
+   "old": "    matched = match(accepted, ordered, window)",
+   "new": "    matched = {c[\"case_id\"]: f for f, x in enumerate(accepted) for c in ordered if CB.hit(x, c, window)}",
+   "tests": [
+    "test_score.Match",
+    "test_score.Vectors"
+   ]
+  },
+  {
+   "id": "cases_in_the_given_order",
+   "file": "harness/score.py",
+   "old": "    return sorted(cases, key=lambda case: case[\"case_id\"])",
+   "new": "    return list(cases)",
+   "tests": [
+    "test_score.Match"
+   ]
+  },
+  {
+   "id": "clean_count_drops_the_refused",
+   "file": "harness/score.py",
+   "old": "        out[\"clean_findings\"] = len(accepted) + len(refused)",
+   "new": "        out[\"clean_findings\"] = len(accepted)",
+   "tests": [
+    "test_score.Refs",
+    "test_score.Fingerprint"
+   ]
+  },
+  {
+   "id": "x_eff_over_the_cases",
+   "file": "harness/score.py",
+   "old": "        x_eff = recall * groups",
+   "new": "        x_eff = recall * n",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "bound_of_the_rounded_x_eff",
+   "file": "harness/score.py",
+   "old": "stats.fixed6(stats.cp_lower(x_eff, groups, alpha))",
+   "new": "stats.fixed6(stats.cp_lower(Fraction(stats.fixed6(x_eff)), groups, alpha))",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "misses_counted_by_rule",
+   "file": "harness/score.py",
+   "old": "\"misses\": n - hits}",
+   "new": "\"misses\": len(missed)}",
+   "tests": [
+    "test_score.Empty"
+   ]
+  },
+  {
+   "id": "covered_rule_with_a_miss",
+   "file": "harness/score.py",
+   "old": "\"rules_covered\": len(rules - missed)",
+   "new": "\"rules_covered\": len({(c[\"tool\"], c[\"rule_id\"]) for c in ordered if c[\"case_id\"] in matched})",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "pass_below_the_floor",
+   "file": "harness/score.py",
+   "old": "            elif groups < min_groups:",
+   "new": "            elif False:",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "pass_without_a_floor",
+   "file": "harness/score.py",
+   "old": "            elif min_groups is None:\n                verdict, why = \"UNMEASURABLE\", \"min_groups_unknown\"",
+   "new": "            elif min_groups is None:\n                verdict, why = \"PASS\", None",
+   "tests": [
+    "test_score.Report",
+    "test_score.Live"
+   ]
+  },
+  {
+   "id": "mixed_classes_scored",
+   "file": "harness/score.py",
+   "old": "    if not reasons and len({case[\"class_level\"] for case in cases}) > 1:",
+   "new": "    if False:",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "mcnemar_tail_without_c",
+   "file": "harness/stats.py",
+   "old": "range(c, n + 1)",
+   "new": "range(c + 1, n + 1)",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "mcnemar_tail_of_b",
+   "file": "harness/stats.py",
+   "old": "range(c, n + 1)",
+   "new": "range(b, n + 1)",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "cp_second_parameter_without_one",
+   "file": "harness/stats.py",
+   "old": "float(n - x + 1)",
+   "new": "float(n - x) + 0.5",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "fixed6_truncates",
+   "file": "harness/stats.py",
+   "old": "divmod(round(value * 10 ** 6), 10 ** 6)",
+   "new": "divmod(int(value * 10 ** 6), 10 ** 6)",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "yaz_scores_no_case",
+   "file": "loop/job.py",
+   "old": "HS.report(list(FINDINGS), cases[\"cases\"], art.snapshot,",
+   "new": "HS.report(list(FINDINGS), [], art.snapshot,",
+   "tests": [
+    "test_score.Live"
+   ]
+  },
+  {
+   "id": "yaz_line_without_the_report",
+   "file": "loop/job.py",
+   "old": "                harness=yaz_harness(art, tree, cases))",
+   "new": "                harness=None)",
+   "tests": [
+    "test_score.Live"
+   ]
+  }
+ ]
+}

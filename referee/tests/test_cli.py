@@ -778,6 +778,8 @@ def _inject_argv(f: str, d: str) -> dict:
         "gate.sentinel": [["decide"]],
         "harness.revert_drill": [["commit", f, f], ["reveal", f, f], ["judge", f, f]],
         "harness.pass_row": [["judge", d, d, d, d, f, f], ["judge", d, d, d, d, f, f, f, f]],
+        "harness.score": [[f, f], [f, f, "--snapshot", f, "--tree", d]],
+        "harness.stats": [["cp_lower", "1", "1", "0.1"], ["mcnemar", "1", "1"]],
         "ledger.anchor": [["root", f], ["anchor", f], ["verify", f, f, f]],
         "ledger.append": [["cycle", f, f]],
         "ledger.chain": [["hash"], ["verify", f], ["verify", f, "--previous", f]],

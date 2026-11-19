@@ -84,13 +84,12 @@ violation's line. Output ``{cases: [case], oracle: {case_id: finding}, refused: 
   ``stage_params.match_window_lines``; ``None`` leaves the symbol alone to decide).
 
 Anything of another shape is no hit. That a finding takes at most one case and a case counts once in a run is
-the scorer's rule (``harness.score``, P1 row 4), not this function's; the scorer is also this function's first
-caller in the loop: until it comes, tests 2 and 4 call it and ``build`` does not.
+the scorer's rule (``harness.score.match``), not this function's; the scorer is this function's caller in the
+loop (``yaz``, on the cases ``build`` gave), ``build`` itself does not call it.
 
 Out of scope, stated: writing the dev set to ``<state_root>/cases/`` (13a). No page gives that directory's
-layout, its file format or how an append-only set is carried between cycles (tohum/01b), and its first reader
-is ``harness.score`` (P1 row 4); until then the cases are on ``yaz``'s line and rebuilt each cycle
-(reports/seed-075). Also: 13a's first source (history, ``human_fix``); a mutation of more than one line or of a
+layout, its file format or how an append-only set is carried between cycles (tohum/01b); ``harness.score``
+reads the cases from ``yaz``'s line, where they are rebuilt each cycle (reports/seed-075). Also: 13a's first source (history, ``human_fix``); a mutation of more than one line or of a
 file that is not UTF-8; tools other than ESLint; the exit sample (``exit.sample``).
 """
 
