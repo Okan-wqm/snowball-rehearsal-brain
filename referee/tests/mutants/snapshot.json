@@ -363,8 +363,8 @@
   {
    "id": "cek_no_operator_paths",
    "file": "loop/cek.py",
-   "old": "SM.make(objects, commit, [], \"clean\", target)",
-   "new": "SM.make(objects, commit, [], \"clean\", None)",
+   "old": "SM.make(objects, commit, [], \"clean\", target, _planted_max(policy))",
+   "new": "SM.make(objects, commit, [], \"clean\", None, _planted_max(policy))",
    "tests": [
     "test_snapshot.py"
    ]

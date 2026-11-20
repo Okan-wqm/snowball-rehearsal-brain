@@ -192,8 +192,8 @@ class Static(Trees):
     def test_the_brains_own_harness_is_clean(self):
         got = OF.check(REFEREE)
         self.assertEqual(got["reasons"], [])
-        self.assertEqual(got["roots"], ["harness", "harness.offline", "harness.pass_row", "harness.revert_drill",
-                                        "harness.score", "harness.stats"])
+        self.assertEqual(got["roots"], ["harness", "harness.offline", "harness.params", "harness.pass_row",
+                                        "harness.revert_drill", "harness.score", "harness.stats"])
         self.assertGreater(got["modules"], len(got["roots"]))
 
     def test_the_brains_own_tree_with_the_client_named_again(self):
