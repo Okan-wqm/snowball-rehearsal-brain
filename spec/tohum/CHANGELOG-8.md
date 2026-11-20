@@ -4,6 +4,13 @@ Tarih: 2026-11-18 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-19, E647–E650; sahip kararı ve sahibin ipuçları): E647, ölçüm aynası: başlatıcı her oturumdan önce
+  `/work/logs/mirror.json`'u yazar, kendi kayıtlarından ve hakem arşivinden sayılan olgular, öğüt yok (sayfa
+  değişmedi; `seed/founder/prompt.md` "Ölçüm aynası"). Sahibin ipucu (E648; ipucu olarak işaretli): `00b`, gerçek
+  ürün reposundan önce kapılar saldırgan bir test setinden (prompt injection, diff denetiminden kaçış, gizlenmiş
+  secret'lar) kanıtla geçer; seti hakem koşar, tasarım Kurucu'nundur. Yeni `00c` (`00b` 80 satırı doldurdu): sahibin
+  ipuçları E649 (öğrenme: ders bulunabilir olsun, eski kodu da kapsasın) ve E650 (önleme ve yapı). 41 mutant, CI 99
+  parça.
 - 2.2 (2026-11-17, E609–E611; sahip kararı, 2026-11-17): yeni `26g`. `founder` bölümüne `lesson` türü,
   `26g` (E609, E610): yükü `{summary, refs[], recheck}`; iddia tek cümle ve kendi başına anlaşılır,
   `refs[]` kanıttır, `recheck` beyin kökünden yazıldığı gibi koşan komut ya da `none: <neden>`. Yürürlükten

@@ -58,3 +58,14 @@ istisnasıdır; ölçüm ipucuyla bulunanı Kurucu'nun kendi bulduğundan ayır�
 - İpucu: `çek` aktarılan beyin SHA'sının sonucunu okusun; o sonucun parmak izi aktarım satırında (`result_sha256`,
   `26c`) zaten var. Böylece (B) sırasındaki push'lar döngüyü bozmaz, `STOP` gerekmez, Kurucu (B) sürerken çalışabilir.
 - Tasarım Kurucu'nundur ve hakemin denetimini gevşetmez: çalışan kod yine yalnız kabul edilmiş ve aktarılmış koddur.
+
+**Sahibin ipucu (2026-11-19, E648; ipucu, reçete değil).**
+- Olgu: hedefin dosyaları modele giden metne girer; bir dosyanın içine yazılmış bir talimat (prompt injection)
+  modeli yönlendirmeye çalışabilir. Tohumun güvenlik kataloğu (`30a`) hedefin kendi enjeksiyon açıklarını anlatır,
+  modele yöneleni anlatmaz.
+- Sahip şartı: Snowball gerçek ürün reposunda çalışmadan önce, kapılar saldırgan bir test setinden kanıtla
+  geçmelidir. Set üç şeyi kapsar: hedef dosyalara gömülü prompt injection, diff denetiminden kaçmaya çalışan
+  değişiklikler, gizlenmiş ya da kodlanmış secret'lar. Seti hakem koşar.
+- Tasarım Kurucu'nundur.
+
+Sahibin 2026-11-19 tarihli öteki ipuçları (E649 öğrenme, E650 önleme ve yapı) `00c`'dedir.
