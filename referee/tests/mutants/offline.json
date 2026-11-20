@@ -255,8 +255,8 @@
   {
    "id": "scorer_after_the_write",
    "file": "loop/job.py",
-   "old": "        harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten\n        return dict(_yaz_written(environ, tid, d5, art, tree, transport, signer, now), cases=cases, harness=harness,\n",
-   "new": "        written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now)\n        harness = yaz_harness(art, tree, cases)\n        return dict(written, cases=cases, harness=harness,\n",
+   "old": "        harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten\n        written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)\n",
+   "new": "        written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)\n        harness = yaz_harness(art, tree, cases)\n",
    "tests": [
     "test_offline.Live.test_the_scorer_going_online_stops_the_genesis"
    ]

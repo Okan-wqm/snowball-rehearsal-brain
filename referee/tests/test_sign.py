@@ -16,6 +16,10 @@
   when the run returns: the failed runs before the one that signs, all three when none signs, one for a final
   exit, the refusal's fixed message for a run that exited 0 and was refused at step 2 or 3, and the runs of two
   ``sign`` calls of one signer; the verify run is no entry;
+- the job's count (``JobCount``; tohum/13: at most 3 calls in one ``yaz`` job): the runs are counted in ``calls``
+  over every ``sign`` of one signer and over signers given one list, the runs that signed too: a ``sign`` left one
+  run makes one and does not pause after it, a ``sign`` left none makes none and says so; signers with lists of
+  their own are counted apart; ``rooted_program`` is the same count's fake program on disk (``test_loop_write``);
 - round trip: ``ledger.anchor.anchor`` with this signer gives the entry that ``loop.rekor.entry_reasons`` (the next
   D1) finds and accepts for the same root, and a root of another ledger is refused there;
 - the default runner on a real process: a fake ``sigstore`` program on disk; one that cannot start is unsignable
@@ -295,6 +299,89 @@ class Calls(unittest.TestCase):
         other = Rooted(REAL["published"]).signer()
         other.sign(SIGNED + b"more")  # a rewritten bundle for another payload is signed too
         self.assertEqual(other.calls, [{"exit": 0, "signs": [], "result": "signed"}])
+
+
+class JobCount(unittest.TestCase):
+    """tohum/13 "Rekor'a yazılamama": at most ``RUNS`` runs of ``sign`` in the list the signer counts in."""
+
+    def test_a_second_sign_has_the_runs_the_first_left(self):
+        run = Rooted(REAL["published"], sign_exit=[1, 0, 1, 0])
+        signer = run.signer()
+        signer.sign(SIGNED)
+        with self.assertRaises(AN.Unsignable) as ctx:
+            signer.sign(SIGNED + b"second")
+        self.assertEqual(str(ctx.exception), "sigstore sign failed (runs 1; exit 1; no sign)")
+        self.assertEqual([c["result"] for c in signer.calls], ["exit", "signed", "exit"])
+        self.assertEqual(([argv[1] for argv in run.argvs], run.pauses), (["sign", "sign", "verify", "sign"], [2]))
+
+    def test_a_sign_after_the_third_run_runs_nothing(self):
+        run = Rooted(REAL["published"], sign_exit=[1, 1, 0, 0])
+        signer = run.signer()
+        signer.sign(SIGNED)
+        before = (list(run.argvs), list(signer.calls), list(run.pauses))
+        for _ in range(2):
+            with self.assertRaises(AN.Unsignable) as ctx:
+                signer.sign(SIGNED + b"second")
+            self.assertEqual(str(ctx.exception), "sigstore sign not run (the job's 3 runs are made)")
+        self.assertEqual((run.argvs, signer.calls, run.pauses), before)
+        self.assertEqual(len(signer.calls), S.RUNS)
+
+    def test_three_runs_that_sign_are_the_count_too(self):
+        run = Rooted(REAL["published"])
+        signer = run.signer()
+        for n in range(S.RUNS):
+            signer.sign(SIGNED + bytes([n]))
+        with self.assertRaises(AN.Unsignable):
+            signer.sign(SIGNED + b"fourth")
+        self.assertEqual(([c["result"] for c in signer.calls], run.pauses), (["signed"] * 3, []))
+
+    def test_the_pause_is_by_the_runs_of_this_sign(self):
+        run = Rooted(REAL["published"], sign_exit=[0, 1, 0])
+        signer = run.signer()
+        signer.sign(SIGNED)
+        signer.sign(SIGNED + b"second")
+        self.assertEqual((run.pauses, len(signer.calls)), ([2], 3))  # 2 before a sign's second run, not 4
+
+    def test_signers_given_one_list_count_together_and_others_apart(self):
+        calls = []
+        run = Rooted(REAL["published"], sign_exit=[1, 0, 0, 0])
+        first, second = (S.SigstoreSigner(PIN, ("sigstore",), run, run.sleep, calls=calls) for _ in range(2))
+        self.assertIs(first.calls, calls)
+        first.sign(SIGNED)
+        second.sign(SIGNED + b"second")
+        self.assertEqual([c["result"] for c in calls], ["exit", "signed", "signed"])
+        with self.assertRaises(AN.Unsignable) as ctx:
+            first.sign(SIGNED + b"third")
+        self.assertEqual(str(ctx.exception), "sigstore sign not run (the job's 3 runs are made)")
+        apart = S.SigstoreSigner(PIN, ("sigstore",), run, run.sleep)
+        apart.sign(SIGNED + b"third")
+        self.assertEqual((len(calls), apart.calls), (3, [{"exit": 0, "signs": [], "result": "signed"}]))
+
+
+def rooted_program(path: str, exits: list[int]) -> str:
+    """A fake ``sigstore`` on disk at ``path`` (run as ``<path> [-m sigstore] sign|verify ...``): its n-th ``sign``
+    writes the published bundle rewritten to record the payload file's sha256 and exits ``exits[n]`` (the last
+    entry for every later run); ``verify`` exits 0. Returns the file whose size is the number of ``sign`` runs."""
+    source, count = path + ".bundle.json", path + ".count"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(source, "w") as fh:
+        json.dump(REAL["published"], fh)
+    with open(path, "w") as fh:
+        fh.write("#!%s\nimport base64, hashlib, json, os, sys\nargv = sys.argv[1:]\n"
+                 "if 'sign' not in argv:\n    sys.exit(0)\n"
+                 "seen = os.path.getsize(%r) if os.path.exists(%r) else 0\n"
+                 "open(%r, 'a').write('x')\n"
+                 "exits = %r\n"
+                 "made = json.load(open(%r))\n"
+                 "entry = made['verificationMaterial']['tlogEntries'][0]\n"
+                 "body = json.loads(base64.b64decode(entry['canonicalizedBody']))\n"
+                 "body['spec']['data']['hash']['value'] = hashlib.sha256(open(argv[-1], 'rb').read()).hexdigest()\n"
+                 "entry['canonicalizedBody'] = base64.b64encode(json.dumps(body).encode()).decode()\n"
+                 "json.dump(made, open(argv[argv.index('--bundle') + 1], 'w'))\n"
+                 "sys.exit(exits[min(seen, len(exits) - 1)])\n"
+                 % (sys.executable, count, count, count, list(exits), source))
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
+    return count
 
 
 class RoundTrip(unittest.TestCase):

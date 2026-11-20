@@ -111,8 +111,8 @@
   {
    "id": "signer_sigstore_on_path",
    "file": "loop/job.py",
-   "old": "                                 IN.sigstore(environ))\n",
-   "new": "                                 (\"sigstore\",))\n",
+   "old": "                                 IN.sigstore(environ), calls=calls)\n",
+   "new": "                                 (\"sigstore\",), calls=calls)\n",
    "tests": [
     "test_loop_yaz.py"
    ]

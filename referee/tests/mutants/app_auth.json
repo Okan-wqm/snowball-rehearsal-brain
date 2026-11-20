@@ -285,8 +285,8 @@
   {
    "id": "genesis_without_app",
    "file": "loop/job.py",
-   "old": "got = _yaz_inputs(environ, tid, art, transport, signer, now, app=True)",
-   "new": "got = _yaz_inputs(environ, tid, art, transport, signer, now)",
+   "old": "got = _yaz_inputs(environ, tid, art, transport, signer, now, app=True, job_calls=job_calls)",
+   "new": "got = _yaz_inputs(environ, tid, art, transport, signer, now, job_calls=job_calls)",
    "tests": [
     "test_app_auth.Job"
    ]

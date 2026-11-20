@@ -206,8 +206,10 @@ refused tree is ``pulled_invalid``). Then:
   (``target.land.HardStop``: a chain break, a root that cannot be signed, a write that failed after the first) is
   ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. A hard stop's line
   and a written cycle's (the genesis cycle's too) carry ``sign_calls``: every run of the signing program made for
-  this target's root, each ``{exit, signs, result}`` (``loop.sign`` "Every run named"; tohum/13: at most 3, the
-  signer's ``RUNS``). On success the line
+  this target's root, each ``{exit, signs, result}`` (``loop.sign`` "Every run named"). tohum/13's count, at most 3
+  runs in one ``yaz`` job, is the job's: ``run`` keeps one list of the job's runs and every signer ``_signer``
+  makes in the job counts in it (``loop.sign`` "The job's count"), so the ``sign_calls`` of a job's target lines
+  hold at most ``loop.sign.RUNS`` entries between them; a signer passed in counts in its own list. On success the line
   carries ``written`` (``loop.write_cycle``'s answer), ``drill`` (D8's step without the planted file's content) and
   ``done``: ``D5`` and ``D6``, ``D7`` when a sentinel was ended, ``D8`` unless the drill is off; ``ok`` is true (exit
   0), except when D8 judged a drill ``FAIL`` (``drill_fail``, exit 1, after the writes: the cycle's state is written,
@@ -950,15 +952,15 @@ def yaz_pass(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any
 def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
            signer: Any = None, now: Any = None, base_lint: dict | None = None,
            end: dict | None = None, drill: dict | None = None, gate: dict | None = None,
-           passed: dict | None = None) -> dict[str, Any]:
+           passed: dict | None = None, job_calls: list | None = None) -> dict[str, Any]:
     """D6 of ``yaz``, with D7's ``end``, D8's step, the gate's and the PASS row (see the module docstring): ``{reason,
     reasons,
     written?}`` or
     ``{written}``. ``transport``
     is the target's API (``target.write.HttpTransport`` with ``WRITER_TOKEN`` when ``None``), ``signer`` the root's
-    (``loop.sign.SigstoreSigner`` pinned to ``loop.yml`` on ``$GITHUB_REPOSITORY`` when ``None``), ``now`` the
-    clock."""
-    got = _yaz_inputs(environ, tid, art, transport, signer, now)
+    (``loop.sign.SigstoreSigner`` pinned to ``loop.yml`` on ``$GITHUB_REPOSITORY`` when ``None``, counting its runs
+    in ``job_calls``, the job's list, or in its own when that is ``None`` too), ``now`` the clock."""
+    got = _yaz_inputs(environ, tid, art, transport, signer, now, job_calls=job_calls)
     if "reason" in got:
         return got
     writer, signer, imports, cost, cycle_id, ts = (got[k] for k in ("writer", "signer", "imports", "cost", "cycle_id",
@@ -991,7 +993,7 @@ def _workspace_file(environ: dict[str, str], path: str) -> bytes:
 
 
 def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, signer: Any,
-                now: Any, app: bool = False) -> dict[str, Any]:
+                now: Any, app: bool = False, job_calls: list | None = None) -> dict[str, Any]:
     """What D6 writes with, in every cycle (the genesis cycle's too): ``{writer, signer, imports, cost, cycle_id,
     ts}``, or ``{reason, reasons?}`` (``response_invalid``, ``target_repo_unsafe``) before anything is written."""
     for name in YAZ_ENV:
@@ -1008,7 +1010,7 @@ def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, sig
         return {"reason": "target_repo_unsafe"}
     now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
     return {"writer": W.Writer(repo, transport or writer_transport(environ, now, app)),
-            "signer": signer or _signer(environ), "imports": imports, "cost": cost,
+            "signer": signer or _signer(environ, job_calls), "imports": imports, "cost": cost,
             "cycle_id": "%s-%s" % (environ["GITHUB_RUN_ID"], environ["GITHUB_RUN_ATTEMPT"]),
             "ts": now().strftime("%Y-%m-%dT%H:%M:%SZ")}
 
@@ -1043,12 +1045,12 @@ SECURITY_LEDGER = "setup/security-ledger.jsonl"  # tohum/26c, 29o, 29s: the seed
 
 
 def yaz_genesis(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
-                signer: Any = None, now: Any = None) -> dict[str, Any]:
+                signer: Any = None, now: Any = None, job_calls: list | None = None) -> dict[str, Any]:
     """D6 of the genesis cycle (``loop.pulled.genesis``; see the module docstring): ``activate.activate`` with this
     cycle's D5 and D3 and the checkout's files: ``{reason, reasons, written?}`` or ``{written}``. Its own
     transport (``transport`` ``None``) is ``writer_transport`` with the App's credential, for genesis'
-    ``GET /app``."""
-    got = _yaz_inputs(environ, tid, art, transport, signer, now, app=True)
+    ``GET /app``; its own signer (``signer`` ``None``) counts its runs in ``job_calls`` as ``yaz_d6``'s does."""
+    got = _yaz_inputs(environ, tid, art, transport, signer, now, app=True, job_calls=job_calls)
     if "reason" in got:
         return got
     given = WT.base_run(_dir(environ, "in", "results", tid))
@@ -1076,17 +1078,18 @@ def yaz_genesis(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict
 
 def _sign_calls(signer: Any, seen: int = 0) -> list[dict]:
     """``sign_calls`` of a target's line: the signer's ``calls`` after its first ``seen`` (those made before this
-    target's D6 wrote, when one signer object serves several targets), each ``{exit, signs, result}``
-    (``loop.sign`` "Every run named"); ``[]`` for a signer that keeps none."""
+    target's D6 wrote, when the list serves several targets: the job's, or a passed signer's), each
+    ``{exit, signs, result}`` (``loop.sign`` "Every run named"); ``[]`` for a signer that keeps none."""
     return [dict(call) for call in list(getattr(signer, "calls", ()))[seen:]]
 
 
-def _signer(environ: dict[str, str]) -> SG.SigstoreSigner:
+def _signer(environ: dict[str, str], calls: list | None = None) -> SG.SigstoreSigner:
     """``yaz``'s root signer: ``loop.sign.SigstoreSigner`` with the ``sigstore`` step's program, pinned to ``loop.yml``
-    on ``$GITHUB_REPOSITORY``'s ``main``."""
+    on ``$GITHUB_REPOSITORY``'s ``main``, counting and naming its runs in ``calls`` (the job's list; its own when
+    ``None``)."""
     try:
         return SG.SigstoreSigner(A.workflow_identity(environ["GITHUB_REPOSITORY"], A.LOOP_WORKFLOW),
-                                 IN.sigstore(environ))
+                                 IN.sigstore(environ), calls=calls)
     except (A.StateError, IN.InputError) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
@@ -1367,7 +1370,8 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         signer: Any = None) -> dict[str, Any]:
     """The job's line: ``{job, steps, mfs, ok, targets?, reason?, reasons?, target?}``. ``targets`` holds one line
     per target in the order served, each ``{target, ok, ...}``; the first target refused stops the job (no later
-    target is served) and its ``reason``, ``reasons`` and id (``target``) are the job's."""
+    target is served) and its ``reason``, ``reasons`` and id (``target``) are the job's. ``job_calls``, one list
+    made here, is where every root signer the job makes itself counts its runs (``loop.sign`` "The job's count")."""
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
     job = JOBS[name]
@@ -1388,10 +1392,11 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
     except P.PulledError as exc:
         return dict(result, reason="pulled_invalid", reasons=exc.reasons)
     lines: list[dict[str, Any]] = []
+    job_calls: list[dict] = []
     for tid in served:
         line = dict({"target": tid}, **TARGET_JOBS[name](environ, tid, runner=runner, red_control=red_control,
                                                          fetcher=fetcher, now=now, transport=transport,
-                                                         signer=signer))
+                                                         signer=signer, job_calls=job_calls))
         lines.append(line)
         if not line["ok"]:
             stop = {k: line[k] for k in ("reason", "reasons") if k in line}
@@ -1416,7 +1421,7 @@ def _cagir(environ: dict[str, str], tid: str, now: Any = None, **_: Any) -> dict
 
 
 def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any = None, now: Any = None,
-         **_: Any) -> dict[str, Any]:
+         job_calls: list | None = None, **_: Any) -> dict[str, Any]:
     offline = yaz_offline()
     if offline["reasons"]:
         return {"ok": False, "reason": "harness_online", "reasons": offline["reasons"]}
@@ -1426,20 +1431,21 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
             return dict(d5, ok=False)
         cases = yaz_cases(environ, tid, art)
         harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten
-        return dict(_yaz_written(environ, tid, d5, art, tree, transport, signer, now), cases=cases, harness=harness,
+        written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)
+        return dict(written, cases=cases, harness=harness,
                     offline={"modules": offline["modules"]})
     except OF.Online as exc:
         return {"ok": False, "reason": "harness_online", "reasons": exc.reasons}
 
 
 def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any, tree: str, transport: Any,
-                 signer: Any, now: Any) -> dict[str, Any]:
+                 signer: Any, now: Any, job_calls: list | None = None) -> dict[str, Any]:
     """``yaz``'s line after D5 decided: D7's half, the genesis cycle or D8, the gate, the pass row and D6."""
     d7, end, lint = yaz_d7(environ, tid, art)
     if "reason" in d7:
         return dict(ok=False, done=["D5"], **d5, **d7)
     if P.genesis(art):  # the activation writes this cycle; D7 watched nothing, D8 starts in the next cycle
-        d6 = yaz_genesis(environ, tid, art, tree, d5, transport, signer, now)
+        d6 = yaz_genesis(environ, tid, art, tree, d5, transport, signer, now, job_calls)
         if "reason" in d6:
             return dict(ok=False, done=["D5"], **d5, **d7, **d6)
         return dict(ok=True, done=["D5", "D6"], drill=GENESIS_DRILL, **d5, **d7, **d6)
@@ -1447,7 +1453,7 @@ def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any
     gate = yaz_gate(environ, art)
     opened = PR.gate_payload() if gate is not None and gate["verdict"] == "open" else None
     judged, passed = yaz_pass(environ, tid, art)
-    d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened, passed)
+    d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened, passed, job_calls)
     shown = dict({} if gate is None else {"gate": gate}, **({} if judged is None else {"pass": judged}))
     if "reason" in d6:
         return dict(ok=False, done=["D5"], **d5, **d7, **d6, **shown)

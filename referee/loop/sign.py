@@ -24,36 +24,47 @@ bundle is kept in ``brain/state``'s commit beside the root row: ``ledger.cycle``
    as ``sigstore`` wrote them}``: the bytes step 2 read and step 3 verified, read once.
 
 **Step 1 again** (``RUNS``, ``PAUSES``). When ``sigstore sign`` exits 1, step 1 runs again, in another fresh
-directory (``sigstore`` refuses to write over a bundle), after a pause of ``PAUSES`` seconds (2, then 4), at most
-``RUNS`` (3) runs in all; the first run that exits 0 goes on to step 2. Exit 1 is what ``sigstore`` 4.5.0's
+directory (``sigstore`` refuses to write over a bundle), after a pause of ``PAUSES`` seconds (2 before this
+``sign``'s second run, 4 before its third), while the job's count allows a run ("The job's count" below); the first
+run that exits 0 goes on to step 2. Exit 1 is what ``sigstore`` 4.5.0's
 ``sign`` exits with in each of the four real failures of ``tests/fixtures/sigstore-sign-failures.json`` (a party
 it needs did not answer); any other exit (its argument error's 2, a program that cannot start: 127) is final at
 once. Nothing after step 1 is run again: once ``sign`` exits 0 an entry may be in Rekor's log, and another run
 would make another. A run that exits 1 after its entry was logged is not told apart from one that logged nothing:
 the next run then logs a second entry for the same root, and the one answered is the last run's (the next D1
-reads the entry by the uuid in the root row; the other stays in the log, named by no row). 3 is tohum/13's count
-("Rekor'a yazılamama": at most 3 calls), read here as 3 for each root signed (one ``sign`` of this signer), not 3
-for a ``yaz`` job of several targets (``reports/seed-079``); the pauses 2 and 4 are this module's choice (no page
-gives a pause).
+reads the entry by the uuid in the root row; the other stays in the log, named by no row). The pauses 2 and 4 are
+this module's choice (no page gives a pause).
+
+**The job's count** (``RUNS``, ``calls``; tohum/13 "Rekor'a yazılamama": in one ``yaz`` job the loop may call the
+signing program at most 3 times). The count is the length of ``calls``, the one list that also names the runs: a
+run of step 1 is made only while ``calls`` holds fewer than ``RUNS`` (3) entries, and every run made adds one. The
+list is the signer's own when none is given, so one signer object makes at most 3 runs over all of its ``sign``
+calls; signers given the same list (``loop.job`` gives every signer it makes in one job the job's list) make at
+most 3 runs between them. The runs of ``sign`` that succeed count too: a job's first root signed on its third run
+leaves no run for its second, which is then unsignable with no run made, and a job of more than 3 roots cannot
+sign them all (``reports/seed-079``: the page gives no other count for such a job). The count is of the list
+given, nothing else: two signers with lists of their own, or two processes, are counted apart.
 
 A ``sign`` that exits non-zero on its last run is ``ledger.anchor.Unsignable`` ``sigstore sign failed (runs <n>;
-exit <code>; <signs>)``: ``<n>`` the runs made, ``<code>`` the last run's exit code and ``<signs>`` what
-``loop.program`` names of the last run's output, joined by ``, `` (``no sign`` when it names nothing, or when
-``run`` answers a plain ``int``). A missing, oversized or unreadable bundle, a bundle without exactly one tlog
-entry, a body of another kind, version or digest, and a non-zero exit or a program that cannot start at 3 are
-``Unsignable`` too, each with its own fixed message (a hard stop: no ``brain/state`` row is written; what
+exit <code>; <signs>)``: ``<n>`` the runs this ``sign`` made, ``<code>`` the last run's exit code and ``<signs>``
+what ``loop.program`` names of the last run's output, joined by ``, `` (``no sign`` when it names nothing, or when
+``run`` answers a plain ``int``). A ``sign`` that finds the count already used makes no run and is ``Unsignable``
+``sigstore sign not run (the job's 3 runs are made)``. A missing, oversized or unreadable bundle, a bundle without
+exactly one tlog entry, a body of another kind, version or digest, and a non-zero exit or a program that cannot
+start at 3 are ``Unsignable`` too, each with its own fixed message (a hard stop: no ``brain/state`` row is written; what
 ``yaz`` already wrote to the target before signing stays written, ``loop.write_cycle``).
 ``tests/fixtures/rekor-entry.json`` ``published`` is a real bundle of ``sigstore sign`` and
 ``tests/fixtures/sigstore-signed-payload`` the file it signed; real ``sigstore`` 4.5.1's exits on them are recorded
 in ``tests/test_sign.py``.
 
 **Every run named** (``calls``; tohum/13 "Rekor'a yazılamama": each call's result is named in ``yaz``'s output).
-Each run of step 1 this signer made, in the order made and over every ``sign`` of the same signer object, is one
-entry of ``calls``: ``{exit, signs, result}``, ``exit`` the run's exit code, ``signs`` what ``loop.program`` names
-of its output (empty when ``run`` answers a plain ``int``), ``result`` ``signed`` (the run exited 0 and steps 2 to
-4 answered), ``exit`` (it exited non-zero, whether or not another run followed) or the fixed message of the
-``Unsignable`` step 2 or 3 raised on its bundle. The entry is appended when the run returns; the runs of step 3
-are not entries (they sign nothing). ``loop.job`` puts the list in ``yaz``'s line (``sign_calls``).
+Each run of step 1 made by this signer, or by another signer given the same list, in the order made and over
+every ``sign``, is one entry of ``calls``: ``{exit, signs, result}``, ``exit`` the run's exit code, ``signs`` what
+``loop.program`` names of its output (empty when ``run`` answers a plain ``int``), ``result`` ``signed`` (the run
+exited 0 and steps 2 to 4 answered), ``exit`` (it exited non-zero, whether or not another run followed) or the
+fixed message of the ``Unsignable`` step 2 or 3 raised on its bundle. The entry is appended when the run returns;
+the runs of step 3 are not entries (they sign nothing). ``loop.job`` puts each target's part of the list in that
+target's line of ``yaz`` (``sign_calls``).
 
 The program is the caller's ``sigstore`` argv prefix: in ``yaz``, the one the ``sigstore`` step installs
 (``loop.inputs.sigstore``, tohum/29s: ``sigstore==4.5.0``). The recorded exits above are 4.5.1's, the version the
@@ -64,7 +75,7 @@ in Rekor's log beyond what ``sigstore verify identity`` checks of the bundle (th
 the pin's source (``loop.accepted.workflow_identity`` of the referee repository's ``loop.yml``, the caller's);
 why a run failed (the signs are ``loop.program``'s reading of its output, not a cause shown); whether a failure
 that exits 1 would pass on a later run (an expired or missing identity exits 1 too and is run again); a failure
-that outlasts the three runs (a hard stop, as before); the target left written when the root is not signed.
+that outlasts the runs the count allows (a hard stop, as before); the target left written when the root is not signed.
 """
 
 from __future__ import annotations
@@ -116,15 +127,15 @@ def _bundle_body(path: str, digest: str) -> tuple[bytes, str]:
 
 class SigstoreSigner:
     """``sign(payload) -> {uuid, identity, bundle}`` by the rules above; ``run(argv) -> exit code`` (with ``signs``
-    when it is ``loop.program``'s), ``sleep(seconds)`` the pause between two runs of ``sign``; ``calls`` every run
-    of ``sign`` made so far."""
+    when it is ``loop.program``'s), ``sleep(seconds)`` the pause between two runs of ``sign``; ``calls`` the list
+    the runs of ``sign`` are counted and named in (the signer's own when ``None``)."""
 
     def __init__(self, pin: str, sigstore: Sequence[str], run: Callable[[list[str]], int] = PG.run,
-                 sleep: Callable[[float], None] = time.sleep):
+                 sleep: Callable[[float], None] = time.sleep, calls: list[dict] | None = None):
         if not isinstance(pin, str) or not pin:
             raise ValueError("identity pin must be a non-empty string")
         self.pin, self.sigstore, self.run, self.sleep = pin, sigstore, run, sleep
-        self.calls: list[dict] = []
+        self.calls: list[dict] = [] if calls is None else calls
 
     def _answer(self, bundle: str, path: str, digest: str) -> dict:
         """Steps 2 to 4 on the bundle a ``sign`` that exited 0 wrote."""
@@ -135,12 +146,18 @@ class SigstoreSigner:
 
     def sign(self, payload: bytes) -> dict:
         digest = hashlib.sha256(payload).hexdigest()
-        for made in range(1, RUNS + 1):
+        made = 0
+        for _ in range(RUNS):
+            if len(self.calls) >= RUNS:
+                break
+            if made:
+                self.sleep(PAUSES[made - 1])
             with tempfile.TemporaryDirectory(prefix="root-sign-") as tmp:
                 path, bundle = os.path.join(tmp, PAYLOAD), os.path.join(tmp, BUNDLE)
                 with open(path, "wb") as fh:
                     fh.write(payload)
                 code = self.run(sign_argv(self.sigstore, bundle, path))
+                made += 1
                 call = {"exit": int(code), "signs": list(getattr(code, "signs", ())), "result": EXIT}
                 self.calls.append(call)
                 if code == 0:
@@ -151,8 +168,9 @@ class SigstoreSigner:
                         raise
                     call["result"] = SIGNED
                     return answer
-            if code != AGAIN or made == RUNS:
+            if code != AGAIN:
                 break
-            self.sleep(PAUSES[made - 1])
+        if not made:
+            raise Unsignable("sigstore sign not run (the job's %d runs are made)" % RUNS)
         signs = ", ".join(getattr(code, "signs", ())) or "no sign"
         raise Unsignable("sigstore sign failed (runs %d; exit %d; %s)" % (made, code, signs))

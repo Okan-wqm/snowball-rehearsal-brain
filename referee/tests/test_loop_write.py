@@ -18,7 +18,10 @@ served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line ch
 - ``sign_calls`` (tohum/13 "Rekor'a yazılamama"), with ``loop.sign.SigstoreSigner`` over a fake program: the written
   cycle's line and the hard stop's name every run of the signing program in order (the genesis cycle's too), a
   signer that keeps none gives ``[]``, a refusal before signing has no such key, and one signer object serving two
-  targets gives each line its own target's runs;
+  targets gives each line its own target's runs; the job's count (tohum/13:60-61, at most 3 runs of the program
+  in one ``yaz`` job): with one signer passed in and with the job's own signers over a fake program on disk, a
+  second target is given only the runs the first left, is a hard stop with no ``brain/state`` commit when they do
+  not sign it, and the lines of one job name 3 runs between them;
 - ``ledger.events.cause``: each rule by name, ``kos:`` reasons and look-alikes are ``unknown``; every reason
   ``gate.diffguard.path_reasons`` gives is in ``PATH_REASONS``;
 - D7's red (``loop.watch``, ``target.land.revert``): a cycle merges a candidate whose affected test fails; the next
@@ -117,7 +120,7 @@ from test_loop_kos import A_JS, HEADS, TARGET, RedAs, candidate  # noqa: E402
 from test_loop_yaz import OPEN, YazBase  # noqa: E402
 from test_pass_row import RD_BUILD, RD_LINT, RD_TEST  # noqa: E402
 from test_rekor import REAL  # noqa: E402
-from test_sign import Rooted  # noqa: E402
+from test_sign import Rooted, rooted_program  # noqa: E402
 from loop import program as PG  # noqa: E402
 import activation_world as AW  # noqa: E402
 import yaz_world as YW  # noqa: E402
@@ -419,6 +422,64 @@ class D6(StateBase):
         self.assertEqual([[c["result"] for c in t["sign_calls"]] for t in out["targets"]],
                          [["exit", "signed"], ["signed"]])
         self.assertEqual(len(signer.calls), 3)
+
+    def signed_job(self, exits: list, own: bool = False) -> tuple[dict, dict, int, list]:
+        """A ``yaz`` job of two targets whose signing program's n-th ``sign`` exits ``exits[n]``: with ``own`` the
+        job's own signers (``_signer``, one per target) over that program on disk, else one signer passed in.
+        Returns the job's line, the targets' GitHubs, the ``sign`` runs made and the pauses of the job's own."""
+        ghs = self.two_targets({"good": candidate(GOOD)})
+        for tid in ("t1", "t2"):
+            YW.write_response(self.temp, tid, HEADS, [YW.cost_row(snapshot=HEADS[B.INTEGRATION])], at=tid)
+        environ, pauses = YW.env(self.temp, self.workspace), []
+        if own:
+            count = rooted_program(os.path.join(self.temp, "sig", "bin", "python"), exits)
+            made = J._signer
+
+            def unpaused(*args):  # the job's own signer, as the job makes it, told not to wait
+                signer = made(*args)
+                signer.sleep = pauses.append
+                return signer
+            with mock.patch.object(J, "_signer", unpaused):
+                out = J.run("yaz", environ, transport=Router(ghs), now=lambda: YW.NOW)
+            return out, ghs, os.path.getsize(count), pauses
+        program = Rooted(REAL["published"], sign_exit=list(exits))
+        out = J.run("yaz", environ, transport=Router(ghs), signer=program.signer(pin=YW.IDENTITY), now=lambda: YW.NOW)
+        return out, ghs, sum(1 for argv in program.argvs if "sign" in argv), pauses
+
+    def second_stopped(self, got: tuple, second: list, message: str) -> None:
+        out, ghs, runs, _ = got
+        t1, t2 = out["targets"]
+        self.assertEqual((out["ok"], out["target"], out["reason"], t1["ok"]), (False, "t2", "hard_stop", True), out)
+        self.assertEqual([c["result"] for c in t2["sign_calls"]], second)
+        self.assertTrue(t2["reasons"][0].startswith("Unsignable: " + message), t2["reasons"])
+        self.assertEqual((len(t1["sign_calls"]) + len(t2["sign_calls"]), runs), (3, 3))
+        self.assertEqual(ghs["t2"].refs[B.STATE], HEADS[B.STATE])  # no state commit for the unsigned root
+        self.assertNotEqual(ghs["t1"].refs[B.STATE], HEADS[B.STATE])
+
+    # tohum/13:60-61: at most 3 calls of the signing program in one yaz job, whatever the number of targets
+    def test_a_job_s_second_target_is_not_signed_after_three_runs_for_the_first(self):
+        self.second_stopped(self.signed_job([1, 1, 0, 0]), [], "sigstore sign not run (the job's 3 runs are made)")
+
+    def test_a_job_s_second_target_has_the_one_run_its_first_left(self):
+        self.second_stopped(self.signed_job([1, 0, 1, 0]), ["exit"], "sigstore sign failed (runs 1; exit 1; no sign)")
+
+    # no signer passed: loop.job makes one per target (_signer) with the sigstore step's program, a real process
+    def test_the_job_s_own_signers_sign_two_targets_in_three_runs(self):
+        out, _, runs, pauses = self.signed_job([1, 0, 0], own=True)
+        self.assertTrue(out["ok"], out)
+        self.assertEqual([[c["result"] for c in t["sign_calls"]] for t in out["targets"]],
+                         [["exit", "signed"], ["signed"]])
+        self.assertEqual((runs, pauses), (3, [2]))
+
+    def test_the_job_s_own_signers_count_in_one_list(self):
+        got = self.signed_job([1, 1, 0, 0], own=True)
+        self.second_stopped(got, [], "sigstore sign not run (the job's 3 runs are made)")
+        self.assertEqual(got[3], [2, 4])
+
+    def test_the_job_s_own_second_signer_has_the_runs_the_first_left(self):
+        got = self.signed_job([0, 1, 1, 0], own=True)
+        self.second_stopped(got, ["exit", "exit"], "sigstore sign failed (runs 2; exit 1; no sign)")
+        self.assertEqual(got[3], [2])
 
     def test_a_block_edited_by_hand_is_regenerated_and_recorded(self):
         status = self.state[B.STATE_STATUS]
@@ -1454,6 +1515,32 @@ class Genesis(StateBase):
         out = self.cycle({"good": candidate(GOOD)})
         self.assertEqual((out["ok"], out["reason"]), (False, "hard_stop"), out)
         self.assertEqual(out["sign_calls"], [{"exit": 2, "signs": [], "result": "exit"}])
+        self.assertNotIn(B.STATE, self.gh.refs)
+
+    def own_signer_job(self, made_before: int) -> tuple[dict, list, str]:
+        """The genesis target's line from ``J._yaz`` with no signer passed (the job's own, over a fake program on
+        disk whose ``sign`` exits 0) and a job list already holding ``made_before`` runs; the list; the program's
+        count file."""
+        self.main_at()
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        self.github()
+        count = rooted_program(os.path.join(self.temp, "sig", "bin", "python"), [0])
+        job_calls = [{"exit": 1, "signs": [], "result": "exit"} for _ in range(made_before)]
+        out = J._yaz(YW.env(self.temp, self.workspace), "t1", transport=self.gh, now=lambda: YW.NOW,
+                     job_calls=job_calls)
+        return out, job_calls, count
+
+    def test_the_genesis_cycle_s_own_signer_counts_in_the_job_s_list(self):
+        out, job_calls, count = self.own_signer_job(2)
+        self.assertEqual((out["ok"], out["sign_calls"]), (True, [{"exit": 0, "signs": [], "result": "signed"}]), out)
+        self.assertEqual((len(job_calls), job_calls[-1], os.path.getsize(count)), (3, out["sign_calls"][0], 1))
+
+    def test_the_genesis_cycle_is_not_signed_when_the_job_s_three_runs_are_made(self):
+        out, job_calls, count = self.own_signer_job(3)
+        self.assertEqual((out["ok"], out["reason"], out["sign_calls"]), (False, "hard_stop", []), out)
+        self.assertTrue(out["reasons"][0].startswith("Unsignable: sigstore sign not run (the job's 3 runs are made)"))
+        self.assertEqual((len(job_calls), os.path.exists(count)), (3, False))
         self.assertNotIn(B.STATE, self.gh.refs)
 
     def test_nothing_is_written_when_the_activation_refuses(self):

@@ -93,7 +93,7 @@
   {
    "id": "sign_not_run_again",
    "file": "loop/sign.py",
-   "old": "            if code != AGAIN or made == RUNS:\n",
+   "old": "            if code != AGAIN:\n",
    "new": "            if True:\n",
    "tests": [
     "test_sign.py"
@@ -102,8 +102,8 @@
   {
    "id": "sign_any_exit_again",
    "file": "loop/sign.py",
-   "old": "            if code != AGAIN or made == RUNS:\n",
-   "new": "            if made == RUNS:\n",
+   "old": "            if code != AGAIN:\n",
+   "new": "            if False:\n",
    "tests": [
     "test_sign.py"
    ]
@@ -403,6 +403,116 @@
    "new": "        return {\"reason\": \"write_refused\", \"reasons\": exc.reasons, \"sign_calls\": []}",
    "tests": [
     "test_loop_write.D6.test_a_signer_that_keeps_no_calls_and_a_refusal_before_signing"
+   ]
+  },
+  {
+   "id": "count_per_sign",
+   "file": "loop/sign.py",
+   "old": "            if len(self.calls) >= RUNS:\n                break\n",
+   "new": "",
+   "tests": [
+    "test_sign.JobCount"
+   ]
+  },
+  {
+   "id": "count_one_more",
+   "file": "loop/sign.py",
+   "old": "            if len(self.calls) >= RUNS:\n",
+   "new": "            if len(self.calls) > RUNS:\n",
+   "tests": [
+    "test_sign.JobCount"
+   ]
+  },
+  {
+   "id": "count_failed_runs_only",
+   "file": "loop/sign.py",
+   "old": "            if len(self.calls) >= RUNS:\n",
+   "new": "            if sum(1 for c in self.calls if c[\"result\"] != SIGNED) >= RUNS:\n",
+   "tests": [
+    "test_sign.JobCount.test_three_runs_that_sign_are_the_count_too"
+   ]
+  },
+  {
+   "id": "pause_by_the_job_s_count",
+   "file": "loop/sign.py",
+   "old": "                self.sleep(PAUSES[made - 1])\n",
+   "new": "                self.sleep(PAUSES[len(self.calls) - 1])\n",
+   "tests": [
+    "test_sign.JobCount.test_the_pause_is_by_the_runs_of_this_sign"
+   ]
+  },
+  {
+   "id": "given_list_not_used",
+   "file": "loop/sign.py",
+   "old": "        self.calls: list[dict] = [] if calls is None else calls\n",
+   "new": "        self.calls: list[dict] = []\n",
+   "tests": [
+    "test_sign.JobCount.test_signers_given_one_list_count_together_and_others_apart"
+   ]
+  },
+  {
+   "id": "given_list_copied",
+   "file": "loop/sign.py",
+   "old": "        self.calls: list[dict] = [] if calls is None else calls\n",
+   "new": "        self.calls: list[dict] = list(calls or [])\n",
+   "tests": [
+    "test_sign.JobCount.test_signers_given_one_list_count_together_and_others_apart"
+   ]
+  },
+  {
+   "id": "no_run_said_as_a_failed_run",
+   "file": "loop/sign.py",
+   "old": "        if not made:\n            raise Unsignable(\"sigstore sign not run (the job's %d runs are made)\" % RUNS)\n",
+   "new": "        if not made:\n            raise Unsignable(\"sigstore sign failed (runs 0; exit 1; no sign)\")\n",
+   "tests": [
+    "test_sign.JobCount.test_a_sign_after_the_third_run_runs_nothing"
+   ]
+  },
+  {
+   "id": "job_list_per_target",
+   "file": "loop/job.py",
+   "old": "signer=signer, job_calls=job_calls))",
+   "new": "signer=signer, job_calls=[]))",
+   "tests": [
+    "test_loop_write.D6.test_the_job_s_own_signers_count_in_one_list",
+    "test_loop_write.D6.test_the_job_s_own_second_signer_has_the_runs_the_first_left"
+   ]
+  },
+  {
+   "id": "job_list_not_given_to_the_signer",
+   "file": "loop/job.py",
+   "old": "            \"signer\": signer or _signer(environ, job_calls), \"imports\"",
+   "new": "            \"signer\": signer or _signer(environ), \"imports\"",
+   "tests": [
+    "test_loop_write.D6.test_the_job_s_own_signers_count_in_one_list"
+   ]
+  },
+  {
+   "id": "job_list_not_given_to_d6",
+   "file": "loop/job.py",
+   "old": "lint, end, d8, opened, passed, job_calls)",
+   "new": "lint, end, d8, opened, passed)",
+   "tests": [
+    "test_loop_write.D6.test_the_job_s_own_signers_count_in_one_list"
+   ]
+  },
+  {
+   "id": "job_list_not_given_to_genesis",
+   "file": "loop/job.py",
+   "old": "        d6 = yaz_genesis(environ, tid, art, tree, d5, transport, signer, now, job_calls)",
+   "new": "        d6 = yaz_genesis(environ, tid, art, tree, d5, transport, signer, now)",
+   "tests": [
+    "test_loop_write.Genesis.test_the_genesis_cycle_is_not_signed_when_the_job_s_three_runs_are_made"
+   ]
+  },
+  {
+   "id": "job_list_not_given_by_the_signer_maker",
+   "file": "loop/job.py",
+   "old": "                                 IN.sigstore(environ), calls=calls)\n",
+   "new": "                                 IN.sigstore(environ))\n",
+   "tests": [
+    "test_loop_write.D6.test_the_job_s_own_signers_count_in_one_list",
+    "test_loop_write.Genesis.test_the_genesis_cycle_s_own_signer_counts_in_the_job_s_list"
    ]
   }
  ]

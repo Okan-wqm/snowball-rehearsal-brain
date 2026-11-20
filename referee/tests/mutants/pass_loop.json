@@ -57,8 +57,8 @@
   {
    "id": "pass_payload_dropped",
    "file": "loop/job.py",
-   "old": "lint, end, d8, opened, passed)",
-   "new": "lint, end, d8, opened, None)",
+   "old": "lint, end, d8, opened, passed, job_calls)",
+   "new": "lint, end, d8, opened, None, job_calls)",
    "tests": [
     "test_loop_write.Pass"
    ]
