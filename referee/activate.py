@@ -16,28 +16,18 @@ D5's ``loop.decide``, whose answer it takes.
 ``setup/imports.jsonl`` rows, the referee policy, ``setup/security-ledger.jsonl`` (tohum/26c) and the verified recipe, as bytes,
 and the target id.
 
-The reads, exactly these, each once (``reads``): ``GET /app``, ``GET /installation/repositories``, ``GET
+The reads, exactly these, each once (``drift.check``'s ``Reads``; all but the toy's ``main`` are its own): ``GET /app``, ``GET /installation/repositories``, ``GET
 /repos/{repo}/rules/branches/{brain/state, brain/integration, main}``, then ``GET /repos/{repo}/rulesets/{id}`` for
 each ``ruleset_id`` of those three answers (in first-seen order); for a ``toy`` ``GET
 /repos/{repo}/git/ref/heads/main`` and ``GET /repos/{repo}/actions/workflows``; for a ``copy`` ``GET
 /repos/{repo}/actions/permissions``. A read answered other than 200, or a body not of the form read, is unusable:
 the list is a ceiling, nothing else is read.
 
-Reasons, sorted; any reason is a hard stop and no payload:
+Reasons, sorted; any reason is a hard stop and no payload: ``drift.check``'s eight (``app_scope``,
+``state_rules_missing``, ``integration_rules_missing``, ``integration_check_not_writer``, ``rules_bypassable``,
+``main_writable``, ``toy_workflows``, ``copy_actions_enabled``: the rules are written there once, and every later
+cycle's ``yaz`` reads them again through it), and genesis' own:
 
-- ``app_scope``: the set of ``repositories[].full_name`` is not the set of ``targets[].repo``;
-- ``state_rules_missing``: ``brain/state`` has no ``deletion`` or no ``non_fast_forward`` rule;
-- ``integration_rules_missing``: ``brain/integration`` lacks one of ``deletion``, ``non_fast_forward``,
-  ``pull_request``, ``required_status_checks``;
-- ``integration_check_not_writer``: a ``required_status_checks`` rule of ``brain/integration`` whose
-  ``strict_required_status_checks_policy`` is not ``true``, that lists no check, or one of whose checks has an
-  ``integration_id`` other than ``/app``'s ``id`` (no such rule: only the reason above);
-- ``rules_bypassable``: a ruleset a rule of ``brain/state`` or ``brain/integration`` comes from has
-  ``current_user_can_bypass`` other than ``never`` (``exempt`` and ``pull_requests_only`` included);
-- ``main_writable``: a ruleset a rule of ``main`` comes from is bypassable so, or ``main`` has neither an
-  ``update`` rule nor a ``pull_request`` rule whose ``required_approving_review_count`` is an integer >= 1;
-- ``toy_workflows``: the toy's ``workflows`` list is not empty;
-- ``copy_actions_enabled``: the copy's ``enabled`` is not ``false``;
 - ``security_ledger_broken``: the seed security ledger is empty or not a valid chain (``ledger.chain``).
 
 The payload, twelve keys: ``target`` (the id); ``base_sha`` (``toy``: ``object.sha`` of the API's ``main``, the
@@ -123,6 +113,7 @@ import json
 import sys
 from typing import Any
 
+from drift import check as drift
 from gate import check
 from ledger import append, chain, cycle, events, schema
 from loop import accepted, pulled, write_cycle
@@ -131,17 +122,12 @@ import cli
 
 STATE = branches.STATE
 INTEGRATION = branches.INTEGRATION
-MAIN = "main"
 FILES = ("summary.json", "imports.jsonl", "policy.json", "security-ledger.jsonl", "recipe.json", "base.jsonl")
 GENESIS_FILES = FILES[:5]
-KINDS = ("toy", "copy")
-BRANCHES = (STATE, INTEGRATION, MAIN)
-INTEGRATION_RULES = ("deletion", "non_fast_forward", "pull_request", "required_status_checks")
 Refused = write.Refused
 
 
-class Unusable(ValueError):
-    pass
+Unusable = drift.Unusable  # one class: a read ``drift.check`` cannot use is genesis' own unusable
 
 
 HardStop = land.HardStop  # activation failed after its first write; ``written`` names the refs already written
@@ -151,13 +137,7 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _json(data: bytes, name: str) -> Any:
-    """JSON with no duplicate key and no NaN or Infinity (``ledger.chain``'s reading)."""
-    try:
-        return cli.loads(data.decode("utf-8"), object_pairs_hook=chain._no_duplicates,
-                          parse_constant=chain._no_constant)
-    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
-        raise Unusable("%s is not JSON: %s" % (name, cli.cause(exc))) from None
+_json = drift.read_json
 
 
 def _chain_rows(data: bytes) -> list[dict] | None:
@@ -177,56 +157,14 @@ def _canonical_sha(value: Any, name: str) -> str:
 
 # ---------------------------------------------------------------- genesis
 
-class Reads:
-    """The genesis reads through a transport: each a 200 answer, recorded as ``{"GET <path>": body}``."""
-
-    def __init__(self, transport: Any):
-        self.transport = transport
-        self.facts: dict[str, Any] = {}
-
-    def get(self, path: str, kind: type) -> Any:
-        key = "GET " + path
-        if key not in self.facts:
-            status, body = self.transport("GET", path, None)
-            if status != 200:
-                raise Unusable("%s answered %s" % (key, status))
-            self.facts[key] = body
-        body = self.facts[key]
-        if not isinstance(body, kind):
-            raise Unusable("%s: the body is not a JSON %s" % (key, "object" if kind is dict else "array"))
-        return body
-
-
-def _rules(body: list, where: str) -> list[dict]:
-    for rule in body:
-        if not isinstance(rule, dict) or not isinstance(rule.get("type"), str) or \
-                type(rule.get("ruleset_id")) is not int:
-            raise Unusable("%s: a rule without a type and an integer ruleset_id" % where)
-    return body
-
-
-def _bypassable(reads: Reads, repo: str, rules: list[dict]) -> bool:
-    out = False
-    for ruleset_id in dict.fromkeys(rule["ruleset_id"] for rule in rules):
-        ruleset = reads.get("/repos/%s/rulesets/%d" % (repo, ruleset_id), dict)
-        out = out or ruleset.get("current_user_can_bypass") != "never"
-    return out
+Reads = drift.Reads
 
 
 def _target(summary: Any, target_id: Any) -> dict:
-    if not isinstance(summary, dict) or not isinstance(summary.get("targets"), list) \
-            or not isinstance(summary.get("seed_epochs"), list) or not summary["seed_epochs"]:
+    """``drift.check``'s reading of the entry, and the ``seed_epochs[]`` only genesis reads."""
+    if not isinstance(summary, dict) or not isinstance(summary.get("seed_epochs"), list) or not summary["seed_epochs"]:
         raise Unusable("summary.json must carry targets[] and a non-empty seed_epochs[]")
-    found = [t for t in summary["targets"] if isinstance(t, dict) and t.get("id") == target_id]
-    if not isinstance(target_id, str) or len(found) != 1:
-        raise Unusable("target %r is not exactly once in targets[]" % (target_id,))
-    target = found[0]
-    if target.get("kind") not in KINDS or not isinstance(target.get("repo"), str):
-        raise Unusable("target %r: kind toy or copy and a repo" % target_id)
-    # The toy's ``base_sha`` is not read: setup leaves it empty and the base is the API's ``main`` (tohum/29o:45-46).
-    if target["kind"] == "copy" and schema.hex40(target.get("base_sha"), "base_sha"):
-        raise Unusable("target %r: a copy's base_sha must be 40 lowercase hex" % target_id)
-    return target
+    return drift.target(summary, target_id)
 
 
 def genesis(transport: Any, files: dict[str, bytes], target_id: Any) -> dict:
@@ -243,49 +181,16 @@ def genesis(transport: Any, files: dict[str, bytes], target_id: Any) -> dict:
     except accepted.StateError as exc:
         raise Unusable("imports.jsonl: %s" % cli.cause(exc)) from None
 
-    repo, reads, reasons = target["repo"], Reads(transport), set()
-    app = reads.get("/app", dict)
-    installed = reads.get("/installation/repositories", dict).get("repositories")
-    if not isinstance(installed, list) or not all(isinstance(r, dict) and isinstance(r.get("full_name"), str)
-                                                  for r in installed):
-        raise Unusable("GET /installation/repositories: repositories[] of {full_name}")
-    rules = {b: _rules(reads.get("/repos/%s/rules/branches/%s" % (repo, b), list), b) for b in BRANCHES}
-    if {r["full_name"] for r in installed} != {t.get("repo") for t in summary["targets"] if isinstance(t, dict)}:
-        reasons.add("app_scope")
-    types = {b: {rule["type"] for rule in rules[b]} for b in BRANCHES}
-    if not {"deletion", "non_fast_forward"} <= types[STATE]:
-        reasons.add("state_rules_missing")
-    if not set(INTEGRATION_RULES) <= types[INTEGRATION]:
-        reasons.add("integration_rules_missing")
-    for rule in rules[INTEGRATION]:
-        if rule["type"] == "required_status_checks":
-            params = rule.get("parameters") if isinstance(rule.get("parameters"), dict) else {}
-            checks = params.get("required_status_checks")
-            if params.get("strict_required_status_checks_policy") is not True or not isinstance(checks, list) \
-                    or not checks or any(not isinstance(c, dict) or c.get("integration_id") != app.get("id")
-                                         for c in checks):
-                reasons.add("integration_check_not_writer")
-    if _bypassable(reads, repo, rules[STATE] + rules[INTEGRATION]):
-        reasons.add("rules_bypassable")
-    reviewed = any(rule["type"] == "pull_request" and isinstance(rule.get("parameters"), dict)
-                   and type(rule["parameters"].get("required_approving_review_count")) is int
-                   and rule["parameters"]["required_approving_review_count"] >= 1 for rule in rules[MAIN])
-    if _bypassable(reads, repo, rules[MAIN]) or not ("update" in types[MAIN] or reviewed):
-        reasons.add("main_writable")
+    repo, reads = target["repo"], Reads(transport)
+    reasons = drift.rules(reads, summary, target)
     if target["kind"] == "toy":
         ref = reads.get("/repos/%s/git/ref/heads/main" % repo, dict).get("object")
         base_sha = ref.get("sha") if isinstance(ref, dict) else None
         if schema.hex40(base_sha, "main"):
             raise Unusable("GET main: object.sha is not 40 lowercase hex")
-        workflows = reads.get("/repos/%s/actions/workflows" % repo, dict).get("workflows")
-        if not isinstance(workflows, list):
-            raise Unusable("GET actions/workflows: workflows[] missing")
-        if workflows:
-            reasons.add("toy_workflows")
     else:
         base_sha = target["base_sha"]
-        if reads.get("/repos/%s/actions/permissions" % repo, dict).get("enabled") is not False:
-            reasons.add("copy_actions_enabled")
+    reasons |= drift.actions(reads, target)
     security = _chain_rows(files["security-ledger.jsonl"])
     if security is None:
         reasons.add("security_ledger_broken")

@@ -174,17 +174,17 @@
   },
   {
    "id": "toy_summary_base_read",
-   "file": "activate.py",
-   "old": "    if target[\"kind\"] == \"copy\" and schema.hex40(target.get(\"base_sha\"), \"base_sha\"):\n",
-   "new": "    if schema.hex40(target.get(\"base_sha\"), \"base_sha\"):\n",
+   "file": "drift/check.py",
+   "old": "    if entry[\"kind\"] == \"copy\" and schema.hex40(entry.get(\"base_sha\"), \"base_sha\"):\n",
+   "new": "    if schema.hex40(entry.get(\"base_sha\"), \"base_sha\"):\n",
    "tests": [
     "test_activate.Genesis.test_bases"
    ]
   },
   {
    "id": "copy_summary_base_unchecked",
-   "file": "activate.py",
-   "old": "    if target[\"kind\"] == \"copy\" and schema.hex40(target.get(\"base_sha\"), \"base_sha\"):\n",
+   "file": "drift/check.py",
+   "old": "    if entry[\"kind\"] == \"copy\" and schema.hex40(entry.get(\"base_sha\"), \"base_sha\"):\n",
    "new": "    if False:\n",
    "tests": [
     "test_activate.Genesis.test_bases"

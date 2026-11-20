@@ -506,6 +506,7 @@ class D6(StateBase):
         self.assertEqual((kos["ok"], [t["target"] for t in kos["targets"]]), (True, ["t1", "t2"]), kos)
         shutil.move(os.path.join(self.temp, "out", "results"), os.path.join(self.temp, "in", "results"))
         self.control(OPEN)
+        YW.write_summary(self.workspace, [YW.entry("t1"), YW.entry("t2")])
         return {tid: YW.github_at(HEADS, YW.files_of(self.src), self.state, repo="acme/" + tid) for tid in ("t1", "t2")}
 
     def test_two_served_targets_are_written_in_order_with_one_cycle_id(self):
@@ -1271,8 +1272,10 @@ class Pass(StateBase):
         for tid, _ in kinds:
             YW.write_response(self.temp, tid, HEADS, [YW.cost_row("cagir-%s-%s" % (run, tid), HEADS[B.INTEGRATION])],
                               at=tid)
-        return {tid: YW.github_at(HEADS, YW.files_of(self.src), states.get(tid, states["t2"]), repo="acme/" + tid)
-                for tid, _ in kinds}
+        YW.write_summary(self.workspace, [YW.entry(tid, kind) for tid, kind in kinds])
+        return {tid: YW.github_at(HEADS, YW.files_of(self.src), states.get(tid, states["t2"]), repo="acme/" + tid,
+                                  kind=kind)
+                for tid, kind in kinds}
 
     def run_both(self, ghs: dict, run="300", **env) -> dict:
         return J.run("yaz", YW.env(self.temp, self.workspace, GITHUB_RUN_ID=run, **env), transport=Router(ghs),
@@ -1591,6 +1594,10 @@ class Router:
         self.calls: list[tuple[str, str]] = []
 
     def __call__(self, method: str, path: str, body):
+        if path == "/installation/repositories":  # the App's own: installed on every target behind this transport
+            return 200, {"repositories": [{"full_name": p[len("/repos/"):-1]} for p in self.ghs]}
+        if path == "/app":
+            return next(iter(self.ghs.values()))(method, path, body)
         [prefix] = [p for p in self.ghs if path.startswith(p)]
         self.calls.append((prefix[len("/repos/"):-1], path))
         return self.ghs[prefix](method, path, body)

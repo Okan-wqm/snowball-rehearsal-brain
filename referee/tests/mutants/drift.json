@@ -1,0 +1,229 @@
+{
+ "mutants": [
+  {
+   "id": "dc_scope_superset_only",
+   "file": "drift/check.py",
+   "old": "for r in installed} != {t.get(\"repo\")",
+   "new": "for r in installed} > {t.get(\"repo\")",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_scope_missing_only",
+   "file": "drift/check.py",
+   "old": "for r in installed} != {t.get(\"repo\")",
+   "new": "for r in installed} < {t.get(\"repo\")",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_state_rules_one",
+   "file": "drift/check.py",
+   "old": "STATE_RULES = (\"deletion\", \"non_fast_forward\")",
+   "new": "STATE_RULES = (\"deletion\",)",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_integration_no_pull_request",
+   "file": "drift/check.py",
+   "old": "INTEGRATION_RULES = (\"deletion\", \"non_fast_forward\", \"pull_request\", \"required_status_checks\")",
+   "new": "INTEGRATION_RULES = (\"deletion\", \"non_fast_forward\", \"required_status_checks\")",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_check_any_app",
+   "file": "drift/check.py",
+   "old": "c.get(\"integration_id\") != app.get(\"id\")",
+   "new": "c.get(\"integration_id\") is None",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_check_strict_unread",
+   "file": "drift/check.py",
+   "old": "if params.get(\"strict_required_status_checks_policy\") is not True or not isinstance(checks, list)",
+   "new": "if not isinstance(checks, list)",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_check_empty_allowed",
+   "file": "drift/check.py",
+   "old": "                    or not checks or any(",
+   "new": "                    or any(",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_bypass_only_always",
+   "file": "drift/check.py",
+   "old": "ruleset.get(\"current_user_can_bypass\") != \"never\"",
+   "new": "ruleset.get(\"current_user_can_bypass\") == \"always\"",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_state_bypass_unread",
+   "file": "drift/check.py",
+   "old": "    if _bypassable(reads, repo, found[STATE] + found[INTEGRATION]):",
+   "new": "    if _bypassable(reads, repo, found[INTEGRATION]):",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_main_bypass_unread",
+   "file": "drift/check.py",
+   "old": "    if _bypassable(reads, repo, found[MAIN]) or not (",
+   "new": "    if not (",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_main_review_zero",
+   "file": "drift/check.py",
+   "old": "[\"required_approving_review_count\"] >= 1 for rule",
+   "new": "[\"required_approving_review_count\"] >= 0 for rule",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_toy_workflows_allowed",
+   "file": "drift/check.py",
+   "old": "        return {\"toy_workflows\"} if workflows else set()",
+   "new": "        return set()",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_copy_enabled_only_true",
+   "file": "drift/check.py",
+   "old": ".get(\"enabled\") is not False:",
+   "new": ".get(\"enabled\") is True:",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_actions_unread",
+   "file": "drift/check.py",
+   "old": "    reasons = sorted(rules(reads, doc, entry) | actions(reads, entry))",
+   "new": "    reasons = sorted(rules(reads, doc, entry))",
+   "tests": [
+    "test_drift.Check.test_each_changed_fact_is_its_reason"
+   ]
+  },
+  {
+   "id": "dc_repo_mismatch_unread",
+   "file": "drift/check.py",
+   "old": "    if repo is not None and repo != entry[\"repo\"]:",
+   "new": "    if False:",
+   "tests": [
+    "test_drift.Check.test_a_caller_writing_to_another_repository_is_refused_before_any_read"
+   ]
+  },
+  {
+   "id": "dc_status_any",
+   "file": "drift/check.py",
+   "old": "            if status != 200:",
+   "new": "            if status >= 500:",
+   "tests": [
+    "test_drift.Check.test_a_read_that_fails_or_is_malformed_is_unusable"
+   ]
+  },
+  {
+   "id": "dc_cli_stop_exit_0",
+   "file": "drift/check.py",
+   "old": "        return 1 if out[\"hard_stop\"] else 0",
+   "new": "        return 0",
+   "tests": [
+    "test_drift.Cli"
+   ]
+  },
+  {
+   "id": "genesis_actions_unread",
+   "file": "activate.py",
+   "old": "    reasons |= drift.actions(reads, target)\n",
+   "new": "",
+   "tests": [
+    "test_drift.Genesis.test_genesis_gives_the_same_reason_for_every_case"
+   ]
+  },
+  {
+   "id": "genesis_rules_unread",
+   "file": "activate.py",
+   "old": "    reasons = drift.rules(reads, summary, target)\n",
+   "new": "    reasons = set()\n",
+   "tests": [
+    "test_drift.Genesis.test_genesis_gives_the_same_reason_for_every_case"
+   ]
+  },
+  {
+   "id": "yaz_drift_not_run",
+   "file": "loop/job.py",
+   "old": "    drifted = yaz_drift(environ, art, writer.repo, transport, now)",
+   "new": "    drifted = {}",
+   "tests": [
+    "test_drift.Yaz.test_a_drifted_target_is_not_written_and_a_clean_one_is"
+   ]
+  },
+  {
+   "id": "yaz_drift_ignored",
+   "file": "loop/job.py",
+   "old": "    if \"reason\" in drifted:\n        return drifted\n",
+   "new": "",
+   "tests": [
+    "test_drift.Yaz.test_a_drifted_target_is_not_written_and_a_clean_one_is"
+   ]
+  },
+  {
+   "id": "yaz_drift_after_the_write",
+   "file": "loop/job.py",
+   "old": "    if \"reason\" in drifted:\n        return drifted\n    seen = len(_sign_calls(signer))\n    try:\n        return {\"written\": WC.write(",
+   "new": "    seen = len(_sign_calls(signer))\n    try:\n        WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill, gate, passed)\n        if \"reason\" in drifted:\n            return drifted\n        return {\"written\": WC.write(",
+   "tests": [
+    "test_drift.Yaz.test_a_drifted_target_is_not_written_and_a_clean_one_is"
+   ]
+  },
+  {
+   "id": "yaz_drift_repo_unchecked",
+   "file": "loop/job.py",
+   "old": "summary, art.target.get(\"id\"), repo)",
+   "new": "summary, art.target.get(\"id\"))",
+   "tests": [
+    "test_drift.Yaz.test_the_check_is_of_the_repository_d6_writes_to"
+   ]
+  },
+  {
+   "id": "yaz_drift_without_app_credential",
+   "file": "loop/job.py",
+   "old": "        out = DC.check(transport or writer_transport(environ, now, app=True)",
+   "new": "        out = DC.check(transport or writer_transport(environ, now, app=False)",
+   "tests": [
+    "test_app_auth.Job"
+   ]
+  },
+  {
+   "id": "yaz_drift_hard_stop_only_unusable",
+   "file": "loop/job.py",
+   "old": "    return {\"reason\": \"drift\", \"reasons\": out[\"reasons\"]} if out[\"hard_stop\"] else {}",
+   "new": "    return {}",
+   "tests": [
+    "test_drift.Yaz.test_a_drifted_target_is_not_written_and_a_clean_one_is"
+   ]
+  }
+ ]
+}

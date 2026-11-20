@@ -14,6 +14,7 @@ from fake_github import FakeGitHub, sha_of
 from ledger import anchor, chain
 from loop import cagir as CG
 from target import branches as B
+import activation_world as AW
 
 REPO = "acme/t1"
 NOW = datetime.datetime(2026, 11, 1, 17, 0, 0, tzinfo=datetime.timezone.utc)
@@ -65,10 +66,12 @@ def cost_row(row_id: str = "cagir-9-1", snapshot: str = "b" * 40, usd: int = 123
 
 
 def github_at(heads: dict[str, str], integration_files: dict[str, bytes], state_files: dict[str, bytes] | None = None,
-              repo: str = REPO) -> FakeGitHub:
+              repo: str = REPO, kind: str = "toy") -> FakeGitHub:
     """The fake GitHub with ``brain/state`` and ``brain/integration`` at ``heads`` (commits made up under those ids,
-    each without parent), the integration commit holding ``integration_files``."""
+    each without parent), the integration commit holding ``integration_files``, and the setup facts of a ``kind``
+    target as setup leaves them (``activation_world.facts``: what ``drift.check`` reads before D6 writes)."""
     gh = FakeGitHub(repo, required_check=B.CHECK)
+    gh.overrides.update(AW.facts(kind, repo))
     for branch, files in ((B.STATE, state_files or {}), (B.INTEGRATION, integration_files)):
         tree = sha_of(["tree", branch])
         gh.trees[tree] = {path: gh._blob(data) for path, data in files.items()}
@@ -101,10 +104,28 @@ def write_response(temp: str, target_id: str, heads: dict[str, str], rows: list[
     return root
 
 
+def entry(tid: str = "t1", kind: str = "toy", repo: str | None = None) -> dict:
+    """A ``targets[]`` entry as setup writes one (``acme/<tid>`` when no ``repo``)."""
+    return {"id": tid, "repo": repo or "acme/" + tid, "kind": kind, "base_sha": AW.summary_base(kind, "c" * 40),
+            "identifiers": [], "excluded_paths": [], "unit_candidates": []}
+
+
+def summary(targets: list[dict] | None = None) -> bytes:
+    """``setup/summary.json`` with ``targets`` (one toy ``t1`` at ``REPO`` when ``None``)."""
+    return json.dumps({"seed_epochs": [AW.seed_epoch()],
+                       "targets": [entry()] if targets is None else targets}).encode()
+
+
+def write_summary(workspace: str, targets: list[dict] | None = None) -> None:
+    with open(os.path.join(workspace, "setup", "summary.json"), "wb") as fh:
+        fh.write(summary(targets))
+
+
 def write_workspace(base: str) -> str:
-    """The checkout (``$GITHUB_WORKSPACE``) with ``setup/imports.jsonl``."""
+    """The checkout (``$GITHUB_WORKSPACE``) with ``setup/imports.jsonl`` and ``setup/summary.json`` (``summary``)."""
     root = os.path.join(base, "workspace")
     os.makedirs(os.path.join(root, "setup"), exist_ok=True)
+    write_summary(root)
     with open(os.path.join(root, "setup", "imports.jsonl"), "wb") as fh:
         fh.write(chained(IMPORTS_ROWS))
     return root

@@ -354,8 +354,8 @@
   {
    "id": "yaz_written_calls_dropped",
    "file": "loop/job.py",
-   "old": "gate, passed), \"sign_calls\": _sign_calls(signer, seen)}",
-   "new": "gate, passed), \"sign_calls\": []}",
+   "old": "gate, passed), \"sign_calls\": _sign_calls(signer, seen), \"drift\": DRIFT_CLEAN}",
+   "new": "gate, passed), \"sign_calls\": [], \"drift\": DRIFT_CLEAN}",
    "tests": [
     "test_loop_write.D6.test_the_line_names_every_run_of_the_signing_program"
    ]

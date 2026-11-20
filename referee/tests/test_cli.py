@@ -771,6 +771,7 @@ def _inject_argv(f: str, d: str) -> dict:
     return {
         "activate": [["genesis", f, f, f, f, f, f]],
         "dispatcher.llm_call": [["plan", f]],
+        "drift.check": [["check", f, f]],
         "gate.check": [["map", f, "a", "1"], ["decide", d, f, d, f]],
         "gate.diffguard": [["check", f, f, f]],
         "gate.revert": [["cause"]],

@@ -69,7 +69,7 @@ unit as the recipe: the genesis row, the cut at that commit, D5's merge, the rat
 ``brain/state`` commit. Its API is ``writer_transport`` with the App's own credential (``WRITER_APP_ID`` and
 ``WRITER_APP_PRIVATE_KEY``, in the ``yaz`` step's ``env`` beside the token; unset is unusable): genesis' first read,
 ``GET /app``, is answered only to the App's JWT (``target.app_jwt``; spec/tohum/CHANGELOG.md 2026-11-15), every other
-request goes with the token, and an ordinary cycle's transport is given neither secret. Its refusals before any
+request goes with the token, and an ordinary cycle's writer is given neither secret (its ``drift.check`` is: below). Its refusals before any
 write (``activate``'s reasons, ``base_moved`` among them) are
 ``activation_refused`` with the reasons; a hard stop after the cut is ``hard_stop`` with ``written``. The line has
 ``done`` ``["D5", "D6"]``, ``drill`` ``{action: off, why: genesis}`` (D8 starts in the next cycle) and ``written``
@@ -201,7 +201,15 @@ refused tree is ``pulled_invalid``). Then:
   ``sigstore`` step's program (``_signer``; none installed is unusable), pinned to ``loop.yml`` on
   ``$GITHUB_REPOSITORY``'s ``main`` (``loop.accepted.workflow_identity``, the identity the next cycle's
   D1 verifies the root against), the cycle id ``<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`` and the clock's time: the merge,
-  if D5 chose one, or the revert of D7's red, or the end row of its green or flaky, and the cycle's one ``brain/state`` commit. Its refusals before any write
+  if D5 chose one, or the revert of D7's red, or the end row of its green or flaky, and the cycle's one ``brain/state`` commit.
+  Between D6's inputs and that call, stage 1's MF6 (``yaz_drift``, tohum/01b:57-65: before the cycle's first write):
+  ``drift.check`` of the checkout's ``setup/summary.json`` for ``pulled``'s target id and the writer's repository,
+  through the transport given or, the job's own, ``writer_transport`` with the App's credential (``GET /app``; a
+  second transport: D6's writer keeps none); a reason (a rule, the App's scope, a workflow: ``drift.check``'s list,
+  or ``target_repo_mismatch``) is ``drift`` with the reasons, exit 1, ``done`` ``["D5"]``, nothing written on the
+  target; a read it cannot use, an unreadable summary or a secret unset is unusable (exit 2). A written
+  cycle's line carries ``drift: clean``. The genesis cycle does not run it: ``activate.genesis`` reads the same facts by the same
+  rules. Its refusals before any write
   (``head_moved:<branch>``, ``state_unwritable: ...``) are ``write_refused`` with the reasons; a hard stop
   (``target.land.HardStop``: a chain break, a root that cannot be signed, a write that failed after the first) is
   ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. A hard stop's line
@@ -335,6 +343,7 @@ from typing import Any, NamedTuple
 
 from cases import build as CB
 from dispatcher import llm_call as LL
+from drift import check as DC
 from gate import revert as RV
 from harness import offline as OF
 from harness import pass_row as PR
@@ -965,10 +974,13 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
         return got
     writer, signer, imports, cost, cycle_id, ts = (got[k] for k in ("writer", "signer", "imports", "cost", "cycle_id",
                                                                     "ts"))
+    drifted = yaz_drift(environ, art, writer.repo, transport, now)  # after D6's own inputs, before its first write
+    if "reason" in drifted:
+        return drifted
     seen = len(_sign_calls(signer))
     try:
         return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill,
-                                    gate, passed), "sign_calls": _sign_calls(signer, seen)}
+                                    gate, passed), "sign_calls": _sign_calls(signer, seen), "drift": DRIFT_CLEAN}
     except WC.Refused as exc:
         return {"reason": "write_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
@@ -990,6 +1002,25 @@ def _workspace_file(environ: dict[str, str], path: str) -> bytes:
             return fh.read()
     except OSError as exc:
         raise Unusable("yaz: %s: %s" % (path, cli.cause(exc))) from None
+
+
+SUMMARY = "setup/summary.json"
+DRIFT_CLEAN = "clean"  # in an ordinary cycle's written line: ``drift.check`` ran before the writes, no reason
+
+
+def yaz_drift(environ: dict[str, str], art: Any, repo: str, transport: Any = None,
+              now: Any = None) -> dict[str, Any]:
+    """MF6 of stage 1 in an ordinary cycle, D6's last step before its first write (see the module docstring):
+    ``drift.check`` of the checkout's ``setup/summary.json`` for ``pulled``'s target and ``repo``, the repository
+    D6's writer writes to: ``{}`` or ``{reason: drift, reasons}``. Its own transport (``transport`` ``None``) is
+    ``writer_transport`` with the App's credential, for ``GET /app``."""
+    summary = _workspace_file(environ, SUMMARY)
+    now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
+    try:
+        out = DC.check(transport or writer_transport(environ, now, app=True), summary, art.target.get("id"), repo)
+    except (DC.Unusable, W.ApiError, W.Unusable) as exc:
+        raise Unusable("yaz: drift: %s" % cli.cause(exc)) from None
+    return {"reason": "drift", "reasons": out["reasons"]} if out["hard_stop"] else {}
 
 
 def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, signer: Any,
@@ -1017,7 +1048,8 @@ def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, sig
 
 def writer_transport(environ: dict[str, str], now: Any, app: bool = False, handlers: tuple = ()) -> W.HttpTransport:
     """``yaz``'s API: ``target.write.HttpTransport`` with ``WRITER_TOKEN``, the installation token. ``app`` (the
-    genesis cycle, whose first read is ``GET /app``) adds the App's own credential: a JWT of ``WRITER_APP_ID`` and
+    genesis cycle and an ordinary cycle's ``drift.check``, whose first read is ``GET /app``) adds the App's own
+    credential: a JWT of ``WRITER_APP_ID`` and
     ``WRITER_APP_PRIVATE_KEY`` (``target.app_jwt.token``) made at the clock's time when that read is sent. The two
     secrets are the ones the ``writer token`` step gave the token action in the same job, and each is read here
     as that action reads its input (``action_input``): the installation token in ``WRITER_TOKEN`` was made from
@@ -1056,7 +1088,7 @@ def yaz_genesis(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict
     given = WT.base_run(_dir(environ, "in", "results", tid))
     if given is None:
         return {"reason": "activation_refused", "reasons": ["base_run_missing"]}
-    files = {"summary.json": _workspace_file(environ, "setup/summary.json"), "imports.jsonl": got["imports"],
+    files = {"summary.json": _workspace_file(environ, SUMMARY), "imports.jsonl": got["imports"],
              "policy.json": art.policy_bytes, "security-ledger.jsonl": _workspace_file(environ, SECURITY_LEDGER),
              "recipe.json": json.dumps(art.units["units"][0], sort_keys=True).encode("utf-8"),
              "base.jsonl": given[0]}

@@ -499,7 +499,7 @@ class Job(TLW.Genesis):
             return self.line(J.run("yaz", YW.env(self.temp, self.workspace, **env), signer=self.signer,
                                    now=lambda: YW.NOW))
 
-    def test_the_genesis_cycle_reads_as_the_app_and_the_next_cycle_holds_no_app_credential(self):
+    def test_the_genesis_cycle_reads_as_the_app_and_the_next_cycle_s_writer_holds_no_app_credential(self):
         TLW.write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})
         self.main_at()
         self.kos({"good": TLW.candidate(TLW.GOOD)})
@@ -526,10 +526,20 @@ class Job(TLW.Genesis):
         self.next_cycle({"good": other}, "10")
         out = self.own(GITHUB_RUN_ID="10")
         self.assertEqual((out["ok"], out["done"]), (True, ["D5", "D6", "D7"]), out)
-        self.assertEqual(self.apps, [False])
+        # D6's writer is made without the App's credential; ``drift.check``'s transport, made after it, has it for
+        # its one ``GET /app`` (stage 1 MF6), sent before any write, and every other request goes with the token
+        self.assertEqual(self.apps, [False, True])
         later = self.auth.seen[sent:]
-        self.assertTrue(later)
-        self.assertEqual([s for s in later if s[2] != "token" or s[3] in (401, 403)], [])
+        self.assertEqual([s for s in later if s[3] in (401, 403) or (s[2] == "jwt") != (s[1] == "/app")], [])
+        self.assertEqual([s[:3] for s in later if s[2] == "jwt"], [("GET", "/app", "jwt")])
+        first_write = next(i for i, s in enumerate(later) if s[0] != "GET")
+        self.assertLess(later.index(("GET", "/app", "jwt", 200)), first_write)
+        # without the key the ordinary cycle is unusable at the check, before any write
+        sent = len(self.auth.seen)
+        self.next_cycle({}, "11")
+        with self.assertRaisesRegex(J.Unusable, "yaz: %s is not set" % J.APP_KEY_ENV):
+            self.own(GITHUB_RUN_ID="11", **{J.APP_KEY_ENV: ""})
+        self.assertEqual([s for s in self.auth.seen[sent:] if s[0] != "GET"], [])
 
 
 def load_tests(loader, standard, pattern):
