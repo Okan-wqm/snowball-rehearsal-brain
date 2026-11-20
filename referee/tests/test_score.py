@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -29,6 +30,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 from fractions import Fraction
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -329,6 +331,7 @@ class Fingerprint(Base):
 
 CP_TABLE = (("60", 60, "0.9624"), ("45", 45, "0.9501"), ("44", 44, "0.9490"), ("25", 25, "0.9120"),
             ("10", 10, "0.7943"), ("8", 10, "0.5504"), ("7.5", 10, "0.4982"), ("8.0", 10, "0.5504"))
+ANSWER_S = 20   # a harness.stats command of these tests answers inside this many seconds or its test is red
 MCNEMAR_TABLE = ((0, 3, "0.1250"), (0, 4, "0.0625"), (1, 7, "0.0352"), (0, 8, "0.0039"), (2, 8, "0.0547"))
 
 
@@ -341,7 +344,9 @@ class Statistics(Base):
     """Test 28."""
 
     def stats(self, *argv: str) -> tuple[int, str]:
-        done = subprocess.run([sys.executable, "-m", "harness.stats", *argv], cwd=REFEREE, capture_output=True, text=True)
+        # an answer later than ANSWER_S is this test's red (subprocess.TimeoutExpired), not a wait
+        done = subprocess.run([sys.executable, "-m", "harness.stats", *argv], cwd=REFEREE, capture_output=True, text=True,
+                              timeout=ANSWER_S)
         return done.returncode, done.stdout
 
     def test_the_clopper_pearson_table(self):
@@ -381,6 +386,53 @@ class Statistics(Base):
         self.assertEqual(ST.mcnemar(1, 1), Fraction(3, 4))
         self.assertEqual(ST.mcnemar(7, 1), Fraction(255, 256))   # not symmetric: b favours the old
         self.assertEqual(ST.mcnemar(1, 7), Fraction(9, 256))
+
+    def test_mcnemar_is_the_summed_row_for_every_small_pair(self):
+        # the definition, term by term, beside the function's shorter-side sum: both sides of b + 1 <= c
+        for b in range(0, 34):
+            for c in range(0, 34):
+                n = b + c
+                self.assertEqual(ST.mcnemar(b, c), Fraction(sum(math.comb(n, k) for k in range(c, n + 1)), 2 ** n), (b, c))
+
+    def test_mcnemar_sums_the_shorter_side_of_the_row(self):
+        # the work the bound is measured for: min(b + 1, c) terms, never the longer side
+        asked = []
+        whole = ST._row_head
+        with mock.patch.object(ST, "_row_head", lambda n, terms: asked.append((n, terms)) or whole(n, terms)):
+            for b, c in ((5, 100), (100, 5), (7, 8), (8, 8), (0, 0), (0, 9), (9, 0)):
+                ST.mcnemar(b, c)
+        self.assertEqual(asked, [(105, 6), (105, 5), (15, 8), (16, 8), (0, 0), (9, 1), (9, 0)])
+        self.assertEqual([whole(6, terms) for terms in range(8)], [0, 1, 7, 22, 42, 57, 63, 64])
+
+    def test_mcnemar_at_larger_counts_by_two_identities(self):
+        # an even split: half of what the middle term leaves, plus the middle term
+        for half in (1, 100, 1000):
+            self.assertEqual(ST.mcnemar(half, half), Fraction(1, 2) + Fraction(math.comb(2 * half, half), 2 ** (2 * half + 1)))
+        # the two tails cover the row and share the term at c
+        for b, c in ((700, 900), (900, 700), (1, 1500), (1500, 1)):
+            self.assertEqual(ST.mcnemar(b, c) + ST.mcnemar(c - 1, b + 1), 1, (b, c))
+            # and one step of c is one term of the row
+            self.assertEqual(ST.mcnemar(b, c) - ST.mcnemar(b - 1, c + 1), Fraction(math.comb(b + c, c), 2 ** (b + c)), (b, c))
+
+    def test_mcnemar_refuses_more_pairs_than_its_bound_and_answers_at_it(self):
+        top = ST.MAX_PAIRS
+        self.assertEqual(top, 20000)
+        self.assertEqual(ST.mcnemar(top, 0), 1)
+        self.assertEqual(ST.mcnemar(0, top), Fraction(1, 2 ** top))
+        # no subTest: the first count that is not refused ends the test, before the counts no machine can sum
+        for b, c in ((top + 1, 0), (0, top + 1), (top // 2 + 1, top // 2), (1, top), (10 ** 30, 10 ** 30)):
+            with self.assertRaises(ValueError, msg=(b, c)):
+                ST.mcnemar(b, c)
+        # the command: the costliest counts inside the bound answer (inside ANSWER_S), with the even split's value;
+        half = top // 2
+        want = ST.fixed6(Fraction(1, 2) + Fraction(math.comb(top, half), 2 ** (top + 1)))
+        self.assertEqual(self.stats("mcnemar", str(half), str(half)), (0, '{"p": "%s"}\n' % want))
+        # one pair more, and the counts of founder ledger f1639 (no answer in 20 s before the bound), are refused
+        for argv in (["mcnemar", str(half + 1), str(half)], ["mcnemar", "200000", "200000"],
+                     ["mcnemar", "9" * 12, "9" * 12]):
+            with self.subTest(argv=argv):
+                code, text = self.stats(*argv)
+                self.assertEqual((code, json.loads(text)["ok"]), (2, False))
 
     def test_fixed6(self):
         self.assertEqual([ST.fixed6(Fraction(*q)) for q in ((0, 1), (1, 1), (2, 3), (1, 2000000), (3, 2000000), (15, 2))],

@@ -13,9 +13,17 @@ float in a report: a number with decimals is a string of six decimals).
    ``alpha ** (1 / n)``.
 2. ``mcnemar(b, c)``: with ``b`` discordant pairs favouring the old and ``c`` favouring the new, the probability
    of ``c`` or more of ``b + c`` at one half each, ``P(X >= c | Bin(b + c, 1/2))``, an exact ``Fraction`` (1 when
-   both are 0). ``b`` and ``c`` are non-negative integers, else ``ValueError``.
+   both are 0). ``b`` and ``c`` are non-negative integers with ``b + c <= MAX_PAIRS``, else ``ValueError``: the
+   exact value costs work that grows with the square of ``b + c`` (``min(b + 1, c)`` terms of the binomial row,
+   each a number of up to ``b + c`` bits, one from the one before), so the function refuses counts above the
+   bound instead of running without one. No count of pairs the seed names is near it (tohum/19: 8 discordant
+   pairs, 45 paired cases).
 3. ``fixed6(value)``: a non-negative ``Fraction`` rounded to six decimals, half to even, or a float as ``%.6f``,
    as a string.
+
+Work, stated: ``cp_lower`` runs ``HALVINGS`` halvings of at most ``LENTZ_STEPS`` steps each, whatever its
+arguments; ``mcnemar`` is bounded by ``MAX_PAIRS`` (rule 2). Measured on the machine this was written on, not
+promised for another: ``mcnemar(10000, 10000)`` 0.07 s, the command with those counts under 1 s.
 
 Out of scope, stated: how accurate ``cp_lower`` is beyond what the tables show (four decimals at the rows of 29a;
 no bound is claimed for other arguments, e.g. ``n`` in the thousands); two-sided bounds; the paired comparison's
@@ -44,7 +52,9 @@ FAULT_LINE = {"ok": False, "error": "internal error"}
 DECIMAL = re.compile(r"[0-9]+(\.[0-9]+)?\Z", re.ASCII)
 INTEGER = re.compile(r"[0-9]+\Z", re.ASCII)
 MAX_DIGITS = 12   # of an argument of the command line: no table needs more, and a count is no big number
+MAX_PAIRS = 20000   # mcnemar's b + c (rule 2)
 HALVINGS = 200
+LENTZ_STEPS = 10000
 
 
 def fixed6(value: "Fraction | float") -> str:
@@ -62,7 +72,7 @@ def _fraction_of_tail(a: float, b: float, p: float) -> float:
     c, d = 1.0, 1.0 - (a + b) * p / (a + 1.0)
     d = 1.0 / (d if abs(d) > tiny else tiny)
     h = d
-    for m in range(1, 10000):
+    for m in range(1, LENTZ_STEPS):
         for num in (m * (b - m) * p / ((a + 2 * m - 1) * (a + 2 * m)),
                     -(a + m) * (a + b + m) * p / ((a + 2 * m) * (a + 2 * m + 1))):
             d = 1.0 + num * d
@@ -110,7 +120,20 @@ def mcnemar(b: int, c: int) -> Fraction:
     if not (type(b) is int and type(c) is int and b >= 0 and c >= 0):
         raise ValueError("mcnemar: two non-negative integers")
     n = b + c
-    return Fraction(sum(math.comb(n, k) for k in range(c, n + 1)), 2 ** n)
+    if n > MAX_PAIRS:
+        raise ValueError("mcnemar: b + c is at most %d" % MAX_PAIRS)
+    # the tail k = c..n has b + 1 terms, the head k = 0..c-1 has c: the shorter one is summed
+    tail = _row_head(n, b + 1) if b + 1 <= c else 2 ** n - _row_head(n, c)
+    return Fraction(tail, 2 ** n)
+
+
+def _row_head(n: int, terms: int) -> int:
+    """``C(n, 0) + ... + C(n, terms - 1)``, ``0 <= terms <= n + 1``; the row is symmetric, so this is its tail too."""
+    total, term = 0, 1
+    for k in range(terms):
+        total += term
+        term = term * (n - k) // (k + 1)
+    return total
 
 
 def _refuse(message: str) -> int:
@@ -125,7 +148,7 @@ def _number(text: str, shape: "re.Pattern[str]") -> Fraction:
 
 
 def main(argv: list[str]) -> int:
-    usage = "usage: harness.stats cp_lower <x> <n> <alpha> | mcnemar <b> <c>"
+    usage = "usage: harness.stats cp_lower <x> <n> <alpha> | mcnemar <b> <c> (b + c <= %d)" % MAX_PAIRS
     try:
         if len(argv) == 4 and argv[0] == "cp_lower":
             bound = cp_lower(_number(argv[1], DECIMAL), int(_number(argv[2], INTEGER)), _number(argv[3], DECIMAL))

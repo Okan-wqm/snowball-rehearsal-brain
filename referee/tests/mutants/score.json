@@ -186,8 +186,17 @@
   {
    "id": "mcnemar_tail_without_c",
    "file": "harness/stats.py",
-   "old": "range(c, n + 1)",
-   "new": "range(c + 1, n + 1)",
+   "old": "_row_head(n, b + 1) if",
+   "new": "_row_head(n, b) if",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "mcnemar_head_with_c",
+   "file": "harness/stats.py",
+   "old": "2 ** n - _row_head(n, c)",
+   "new": "2 ** n - _row_head(n, c + 1)",
    "tests": [
     "test_score.Statistics"
    ]
@@ -195,10 +204,55 @@
   {
    "id": "mcnemar_tail_of_b",
    "file": "harness/stats.py",
-   "old": "range(c, n + 1)",
-   "new": "range(b, n + 1)",
+   "old": "_row_head(n, b + 1) if b + 1 <= c else 2 ** n - _row_head(n, c)",
+   "new": "_row_head(n, c + 1) if c + 1 <= b else 2 ** n - _row_head(n, b)",
    "tests": [
     "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "mcnemar_row_term_one_short",
+   "file": "harness/stats.py",
+   "old": "term = term * (n - k) // (k + 1)",
+   "new": "term = term * (n - k - 1) // (k + 1)",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "mcnemar_without_its_bound",
+   "file": "harness/stats.py",
+   "old": "    if n > MAX_PAIRS:",
+   "new": "    if False:",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "mcnemar_bound_one_pair_low",
+   "file": "harness/stats.py",
+   "old": "    if n > MAX_PAIRS:",
+   "new": "    if n >= MAX_PAIRS:",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "mcnemar_bound_on_one_count",
+   "file": "harness/stats.py",
+   "old": "    if n > MAX_PAIRS:",
+   "new": "    if max(b, c) > MAX_PAIRS:",
+   "tests": [
+    "test_score.Statistics"
+   ]
+  },
+  {
+   "id": "mcnemar_sums_the_whole_tail",
+   "file": "harness/stats.py",
+   "old": "_row_head(n, b + 1) if b + 1 <= c else 2 ** n - _row_head(n, c)",
+   "new": "sum(math.comb(n, k) for k in range(c, n + 1))",
+   "tests": [
+    "test_score.Statistics.test_mcnemar_sums_the_shorter_side_of_the_row"
    ]
   },
   {
