@@ -166,7 +166,8 @@ class Flow:
             self.hubs[repo] = hub
             targets.append({"id": tid, "kind": kind, "repo": repo, "excluded_paths": [], "unit_candidates": [],
                             "base_sha": AW.summary_base(kind, hub.refs["main"]), "identifiers": []})
-        summary = {"seed_epochs": [AW.seed_epoch()], "targets": targets}
+        summary = {"seed_epochs": [AW.seed_epoch()], "targets": targets,
+                   "drift": AW.baseline({tid: (kind, repo) for tid, kind, repo in TARGETS})}
         tree = T.digest([(p, "file", d) for p, d in self.brain.items()])
         # (A)'s result, which the import names and copies (tohum/26c, 29s), with the owner's two exceptions of
         # stage 0 (tohum/02 "Sahip istisnası": the form (A) writes them in, 26d:45-47)

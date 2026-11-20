@@ -208,11 +208,15 @@ refused tree is ``pulled_invalid``). Then:
   ``setup/summary.json`` for each served target, in the order served, against the repository its ``pulled`` names
   (the one D6, or the activation of a genesis cycle, writes to), through the transport given or, the job's own,
   ``writer_transport`` with the App's credential (``GET /app``; a transport of its own: D6's writer keeps none).
-  The job's line carries ``drift`` ``{checked, drifted}``: the ids checked and ``{id: reasons}`` of those with a
-  reason (a rule, the App's scope, a workflow: ``drift.check``'s list, or ``target_repo_mismatch``). Any reason on
+  The job's line carries ``drift`` ``{checked, drifted, stale}``: the ids checked, ``{id: reasons}`` of those with a
+  reason (a rule, the App's scope, a workflow, a difference from the summary's ``drift`` baseline of tohum/01c:
+  ``drift.check``'s list, or ``target_repo_mismatch``) and whether the baseline's ``operator_checked_at`` is more
+  than 7 days before the job's clock. Any reason on
   any target ends the job there: ``reason`` ``drift`` with the reasons and id of the first drifted target served,
-  ``targets`` ``[]``, exit 1, no target served and nothing written on any; a read it cannot use, an unreadable
-  summary or a secret unset is unusable (exit 2). Not checked, stated: a served target whose ``pulled`` is refused
+  ``targets`` ``[]``, exit 1, no target served and nothing written on any; with no reason on any target, a stale
+  operator check ends it as cleanly, no hard stop: ``reason`` ``operator_check_stale``, no ``target``, ``targets``
+  ``[]``, exit 1, nothing written; a read it cannot use, an unreadable
+  summary, a summary without the ``drift`` baseline or a secret unset is unusable (exit 2). Not checked, stated: a served target whose ``pulled`` is refused
   or names no repository (``pulled_invalid``, ``units_not_one``, ``target_repo_unsafe``: its own step refuses it
   before any request to it; the targets served before it were checked and are written), and a target of the
   summary the job does not serve (a copy waiting for its gate). A genesis cycle's target is checked here like
@@ -1018,10 +1022,11 @@ def yaz_drift(environ: dict[str, str], served: list[str], transport: Any = None,
     """MF6 of stage 1, ``yaz``'s step after ``yaz_offline`` and before any target is served (see the module docstring):
     ``drift.check`` of the checkout's ``setup/summary.json`` for every target of ``served`` whose ``pulled`` is
     read and names a repository, against that repository (the one D6 or the activation would write to):
-    ``{checked, drifted}``, the ids checked in the order served and ``{id: reasons}`` of those with a reason. Its
+    ``{checked, drifted, stale}``, the ids checked in the order served, ``{id: reasons}`` of those with a reason and
+    whether the summary's operator check is stale at ``now`` (tohum/01c). Its
     own transport (``transport`` ``None``) is ``writer_transport`` with the App's credential, for ``GET /app``."""
     now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
-    out: dict[str, Any] = {"checked": [], "drifted": {}}
+    out: dict[str, Any] = {"checked": [], "drifted": {}, "stale": False}
     summary = None
     for tid in served:
         art, _, refused = _pulled_unit(environ, tid)
@@ -1036,12 +1041,13 @@ def yaz_drift(environ: dict[str, str], served: list[str], transport: Any = None,
             summary = _workspace_file(environ, SUMMARY)
         transport = transport or writer_transport(environ, now, app=True)
         try:
-            got = DC.check(transport, summary, tid, repo)
+            got = DC.check(transport, summary, tid, now().strftime("%Y-%m-%dT%H:%M:%SZ"), repo)
         except (DC.Unusable, W.ApiError, W.Unusable) as exc:
             raise Unusable("yaz: drift: %s" % cli.cause(exc)) from None
         out["checked"].append(tid)
         if got["hard_stop"]:
             out["drifted"][tid] = got["reasons"]
+        out["stale"] = out["stale"] or got["stale"]
     return out
 
 
@@ -1463,6 +1469,8 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         if drift["drifted"]:
             first = next(iter(drift["drifted"]))
             return dict(result, reason="drift", reasons=drift["drifted"][first], target=first, targets=[])
+        if drift["stale"]:  # tohum/01c: a clean stop, after every target's reads so that it hides no hard stop
+            return dict(result, reason="operator_check_stale", targets=[])
     lines: list[dict[str, Any]] = []
     job_calls: list[dict] = []
     for tid in served:

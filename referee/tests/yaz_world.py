@@ -110,10 +110,19 @@ def entry(tid: str = "t1", kind: str = "toy", repo: str | None = None) -> dict:
             "identifiers": [], "excluded_paths": [], "unit_candidates": []}
 
 
-def summary(targets: list[dict] | None = None) -> bytes:
-    """``setup/summary.json`` with ``targets`` (one toy ``t1`` at ``REPO`` when ``None``)."""
-    return json.dumps({"seed_epochs": [AW.seed_epoch()],
-                       "targets": [entry()] if targets is None else targets}).encode()
+def with_baseline(doc: dict, **drift) -> dict:
+    """A summary with the ``drift`` baseline setup records for its ``targets`` (``activation_world.baseline``;
+    ``drift`` replaces fields of it)."""
+    known = {t["id"]: (t["kind"], t["repo"]) for t in doc["targets"]
+             if t.get("kind") in ("toy", "copy") and t.get("repo")}
+    return dict(doc, drift=AW.baseline(known, **drift))
+
+
+def summary(targets: list[dict] | None = None, **drift) -> bytes:
+    """``setup/summary.json`` with ``targets`` (one toy ``t1`` at ``REPO`` when ``None``) and their ``drift``
+    baseline (``with_baseline``)."""
+    doc = {"seed_epochs": [AW.seed_epoch()], "targets": [entry()] if targets is None else targets}
+    return json.dumps(with_baseline(doc, **drift)).encode()
 
 
 def write_summary(workspace: str, targets: list[dict] | None = None) -> None:

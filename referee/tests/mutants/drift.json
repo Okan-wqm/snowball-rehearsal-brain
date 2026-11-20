@@ -120,8 +120,8 @@
   {
    "id": "dc_actions_unread",
    "file": "drift/check.py",
-   "old": "    reasons = sorted(rules(reads, doc, entry) | actions(reads, entry))",
-   "new": "    reasons = sorted(rules(reads, doc, entry))",
+   "old": "rules(reads, doc, entry) | actions(reads, entry) | recorded(",
+   "new": "rules(reads, doc, entry) | recorded(",
    "tests": [
     "test_drift.Check.test_each_changed_fact_is_its_reason"
    ]
@@ -147,7 +147,7 @@
   {
    "id": "dc_cli_stop_exit_0",
    "file": "drift/check.py",
-   "old": "        return 1 if out[\"hard_stop\"] else 0",
+   "old": "        return 0 if out[\"ok\"] else 1",
    "new": "        return 0",
    "tests": [
     "test_drift.Cli"
@@ -175,7 +175,7 @@
    "id": "yaz_drift_not_run",
    "file": "loop/job.py",
    "old": "        drift = yaz_drift(environ, served, transport, now)",
-   "new": "        drift = {\"checked\": [], \"drifted\": {}}",
+   "new": "        drift = {\"checked\": [], \"drifted\": {}, \"stale\": False}",
    "tests": [
     "test_drift.Yaz.test_a_drifted_target_is_not_written_and_a_clean_one_is"
    ]
@@ -202,8 +202,8 @@
   {
    "id": "yaz_drift_repo_unchecked",
    "file": "loop/job.py",
-   "old": "DC.check(transport, summary, tid, repo)",
-   "new": "DC.check(transport, summary, tid)",
+   "old": "DC.check(transport, summary, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"), repo)",
+   "new": "DC.check(transport, summary, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"))",
    "tests": [
     "test_drift.Yaz.test_the_check_is_of_the_repository_d6_writes_to"
    ]
@@ -251,6 +251,321 @@
    "new": "first = list(drift[\"drifted\"])[-1]",
    "tests": [
     "test_drift.Yaz.test_a_drift_on_a_later_target_leaves_the_earlier_one_unwritten"
+   ]
+  },
+  {
+   "id": "dc_baseline_absent_allowed",
+   "file": "drift/check.py",
+   "old": "    if \"drift\" not in summary:",
+   "new": "    if \"drift\" not in summary and \"targets\" not in summary:",
+   "tests": [
+    "test_drift.Baseline.test_a_summary_without_the_baseline_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_inside_targets_allowed",
+   "file": "drift/check.py",
+   "old": "    if any(isinstance(t, dict) and \"drift\" in t for t in summary[\"targets\"]):",
+   "new": "    if False:",
+   "tests": [
+    "test_drift.Baseline.test_a_summary_without_the_baseline_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_form_unread",
+   "file": "drift/check.py",
+   "old": "    if faults:\n        raise Unusable(\"summary.json: %s\"",
+   "new": "    if False:\n        raise Unusable(\"summary.json: %s\"",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_target_optional",
+   "file": "drift/check.py",
+   "old": "    if target_id not in summary[\"drift\"][\"targets\"]:",
+   "new": "    if False:",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_without_the_target_is_unusable"
+   ]
+  },
+  {
+   "id": "dc_baseline_integer_any",
+   "file": "drift/check.py",
+   "old": "    \"writer_app_id\": _integer,",
+   "new": "    \"writer_app_id\": schema.any_value,",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_integer_boolean",
+   "file": "drift/check.py",
+   "old": "    return [] if type(value) is int else [\"%s: not an integer\" % where]",
+   "new": "    return [] if isinstance(value, int) else [\"%s: not an integer\" % where]",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_date_unchecked",
+   "file": "drift/check.py",
+   "old": "        return schema.timestamp(value, where) or (moment(value) and [])",
+   "new": "        return schema.timestamp(value, where)",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_branch_key_unchecked",
+   "file": "drift/check.py",
+   "old": "    return out or [\"%s: key %r is not a branch name\" % (where, b) for b in value if not write.branch_syntax(b)]",
+   "new": "    return out",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_visibility_any",
+   "file": "drift/check.py",
+   "old": "    \"visibility\": schema.map_of(schema.one_of(\"public\", \"private\")),",
+   "new": "    \"visibility\": schema.map_of(schema.text),",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_hashes_any_object",
+   "file": "drift/check.py",
+   "old": "    \"hashes\": schema.shape({\"constitutional_sha256\": schema.hex64, \"vectors_sha256\": schema.hex64,\n                            \"seats_sha256\": schema.hex64}),",
+   "new": "    \"hashes\": schema.any_object,",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_recorded_unread",
+   "file": "drift/check.py",
+   "old": " | actions(reads, entry) | recorded(reads, drift, entry))",
+   "new": " | actions(reads, entry))",
+   "tests": [
+    "test_drift.Baseline.test_a_writer_app_of_another_id_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_app_id_unread",
+   "file": "drift/check.py",
+   "old": "    if type(app_id) is not int or app_id != drift[\"writer_app_id\"]:",
+   "new": "    if False:",
+   "tests": [
+    "test_drift.Baseline.test_a_writer_app_of_another_id_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_app_id_type_unread",
+   "file": "drift/check.py",
+   "old": "    if type(app_id) is not int or app_id != drift[\"writer_app_id\"]:",
+   "new": "    if app_id != drift[\"writer_app_id\"]:",
+   "tests": [
+    "test_drift.Baseline.test_a_writer_app_of_another_id_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_rules_hash_unread",
+   "file": "drift/check.py",
+   "old": "        if rules_hash(found) != digest:",
+   "new": "        if False:",
+   "tests": [
+    "test_drift.Baseline.test_a_rule_whose_content_differs_from_the_recorded_hash_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_rules_hash_unsorted",
+   "file": "drift/check.py",
+   "old": "chain.canonical(sorted(items, key=chain.canonical))",
+   "new": "chain.canonical(items)",
+   "tests": [
+    "test_drift.Baseline.test_what_is_not_rule_content_changes_nothing"
+   ]
+  },
+  {
+   "id": "dc_rules_hash_sorted_by_type",
+   "file": "drift/check.py",
+   "old": "chain.canonical(sorted(items, key=chain.canonical))",
+   "new": "chain.canonical(sorted(items, key=lambda item: item[\"type\"]))",
+   "tests": [
+    "test_drift.Baseline.test_the_hash_is_the_page_s_recipe"
+   ]
+  },
+  {
+   "id": "dc_rules_hash_whole_item",
+   "file": "drift/check.py",
+   "old": "        items = [{\"type\": rule[\"type\"], \"parameters\": rule.get(\"parameters\", {})} for rule in body]",
+   "new": "        items = [dict(rule) for rule in body]",
+   "tests": [
+    "test_drift.Baseline.test_what_is_not_rule_content_changes_nothing"
+   ]
+  },
+  {
+   "id": "dc_rules_hash_without_parameters",
+   "file": "drift/check.py",
+   "old": "\"parameters\": rule.get(\"parameters\", {})} for rule in body]",
+   "new": "\"parameters\": {}} for rule in body]",
+   "tests": [
+    "test_drift.Baseline.test_a_rule_whose_content_differs_from_the_recorded_hash_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_rules_hash_null_parameters_absent",
+   "file": "drift/check.py",
+   "old": "\"parameters\": rule.get(\"parameters\", {})} for rule in body]",
+   "new": "\"parameters\": rule.get(\"parameters\") or {}} for rule in body]",
+   "tests": [
+    "test_drift.Baseline.test_what_is_not_rule_content_changes_nothing"
+   ]
+  },
+  {
+   "id": "dc_rules_hash_float_crashes",
+   "file": "drift/check.py",
+   "old": "    except chain.ChainError as exc:\n        raise Unusable(\"a rule's content",
+   "new": "    except KeyError as exc:\n        raise Unusable(\"a rule's content",
+   "tests": [
+    "test_drift.Baseline.test_the_hash_is_the_page_s_recipe"
+   ]
+  },
+  {
+   "id": "dc_rules_of_another_target",
+   "file": "drift/check.py",
+   "old": "    for branch, digest in sorted(drift[\"targets\"][entry[\"id\"]][\"rules\"].items()):",
+   "new": "    for branch, digest in sorted((b, h) for t in drift[\"targets\"].values() for b, h in t[\"rules\"].items()):",
+   "tests": [
+    "test_drift.Baseline.test_every_branch_the_baseline_names_is_read_and_compared"
+   ]
+  },
+  {
+   "id": "dc_stale_at_seven_days",
+   "file": "drift/check.py",
+   "old": "moment(drift[\"operator_checked_at\"]) > STALE_AFTER",
+   "new": "moment(drift[\"operator_checked_at\"]) >= STALE_AFTER",
+   "tests": [
+    "test_drift.Baseline.test_an_operator_check_older_than_seven_days_is_stale_and_no_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_stale_after_eight_days",
+   "file": "drift/check.py",
+   "old": "STALE_AFTER = datetime.timedelta(days=7)",
+   "new": "STALE_AFTER = datetime.timedelta(days=8)",
+   "tests": [
+    "test_drift.Baseline.test_an_operator_check_older_than_seven_days_is_stale_and_no_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_stale_never",
+   "file": "drift/check.py",
+   "old": "    stale = moment(now) - moment(drift[\"operator_checked_at\"]) > STALE_AFTER",
+   "new": "    stale = False",
+   "tests": [
+    "test_drift.Baseline.test_an_operator_check_older_than_seven_days_is_stale_and_no_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_stale_a_hard_stop",
+   "file": "drift/check.py",
+   "old": "\"hard_stop\": bool(reasons), \"reasons\": reasons, \"stale\": stale}",
+   "new": "\"hard_stop\": bool(reasons) or stale, \"reasons\": reasons, \"stale\": stale}",
+   "tests": [
+    "test_drift.Baseline.test_an_operator_check_older_than_seven_days_is_stale_and_no_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_stale_ok",
+   "file": "drift/check.py",
+   "old": "    return {\"ok\": not reasons and not stale,",
+   "new": "    return {\"ok\": not reasons,",
+   "tests": [
+    "test_drift.Baseline.test_an_operator_check_older_than_seven_days_is_stale_and_no_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_stale_skips_the_reads",
+   "file": "drift/check.py",
+   "old": "    reads = Reads(transport)\n    reasons = sorted(",
+   "new": "    reads = Reads((lambda m, p, b: (500, None)) if stale else transport)\n    reasons = sorted(",
+   "tests": [
+    "test_drift.Baseline.test_an_operator_check_older_than_seven_days_is_stale_and_no_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_now_any_text",
+   "file": "drift/check.py",
+   "old": "    if _instant(now, \"now\"):",
+   "new": "    if not isinstance(now, str):",
+   "tests": [
+    "test_drift.Baseline.test_a_clock_that_is_no_time_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_cli_stale_exit_0",
+   "file": "drift/check.py",
+   "old": "        return 0 if out[\"ok\"] else 1",
+   "new": "        return 1 if out[\"hard_stop\"] else 0",
+   "tests": [
+    "test_drift.Cli"
+   ]
+  },
+  {
+   "id": "yaz_stale_ignored",
+   "file": "loop/job.py",
+   "old": "        if drift[\"stale\"]:  #",
+   "new": "        if False:  #",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_operator_check_ends_the_job_cleanly_with_nothing_written"
+   ]
+  },
+  {
+   "id": "yaz_stale_before_the_drift",
+   "file": "loop/job.py",
+   "old": "        if drift[\"drifted\"]:\n",
+   "new": "        if drift[\"drifted\"] and not drift[\"stale\"]:\n",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_operator_check_ends_the_job_cleanly_with_nothing_written"
+   ]
+  },
+  {
+   "id": "yaz_stale_unrecorded",
+   "file": "loop/job.py",
+   "old": "        out[\"stale\"] = out[\"stale\"] or got[\"stale\"]",
+   "new": "        out[\"stale\"] = False",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_operator_check_ends_the_job_cleanly_with_nothing_written"
+   ]
+  },
+  {
+   "id": "yaz_drift_clock_not_the_job_s",
+   "file": "loop/job.py",
+   "old": "DC.check(transport, summary, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"), repo)",
+   "new": "DC.check(transport, summary, tid, \"2026-10-30T00:00:00Z\", repo)",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_operator_check_ends_the_job_cleanly_with_nothing_written"
+   ]
+  },
+  {
+   "id": "yaz_stale_names_a_target",
+   "file": "loop/job.py",
+   "old": "            return dict(result, reason=\"operator_check_stale\", targets=[])",
+   "new": "            return dict(result, reason=\"operator_check_stale\", target=served[0], targets=[])",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_check_stops_every_target_after_all_were_read"
+   ]
+  },
+  {
+   "id": "drift_order_class_unlisted",
+   "file": "tests/test_drift.py",
+   "old": "LISTED = (Check, Baseline, Genesis, Cli, Yaz, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Genesis, Cli, Yaz, YazGenesis, Listed)",
+   "tests": [
+    "test_drift.py"
    ]
   }
  ]

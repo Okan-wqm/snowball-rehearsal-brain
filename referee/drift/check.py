@@ -8,14 +8,35 @@ the copy), tohum/29o (the reads and the reasons, which genesis verified once), t
 
 **One source.** The facts are the ones ``activate.genesis`` verifies before the first cycle; their reads and reasons
 are here only, and genesis calls ``rules`` and ``actions`` below. So what a later cycle compares the live target with
-is what genesis held it to: the baseline is the rule set of tohum/25a as tohum/29o reads it, with the targets of
-``setup/summary.json`` (tohum/26c gives the summary no field for a ruleset, an App or a hash; see "Out of scope").
+is what genesis held it to, and, since tohum/01c, the baseline setup recorded: the top-level ``drift`` object of
+``setup/summary.json`` (see "The baseline").
 
 The reads, each once, through a transport (``target.write``'s): ``GET /app``, ``GET /installation/repositories``,
 ``GET /repos/{repo}/rules/branches/{brain/state, brain/integration, main}``, ``GET /repos/{repo}/rulesets/{id}`` for
 each ``ruleset_id`` of those three answers; for a ``toy`` ``GET /repos/{repo}/actions/workflows``; for a ``copy``
-``GET /repos/{repo}/actions/permissions``. A read answered other than 200, or a body not of the form read, is
+``GET /repos/{repo}/actions/permissions``; then ``GET /repos/{repo}/rules/branches/{branch}`` for each branch the
+baseline names that is not one of those three. A read answered other than 200, or a body not of the form read, is
 ``Unusable``: no verdict.
+
+**The baseline** (tohum/01c). A summary without a top-level ``drift`` object is ``Unusable`` (the reasons below are
+never a fallback for it), and so is one whose ``drift`` is not exactly of 01c's form: ``writer_app_id`` an integer;
+``targets`` ``{id: {rulesets: [integer], rules: {branch: 64 lowercase hex}}}`` with an entry for the target checked
+and every ``rules`` key a branch name; ``activity`` ``{operator_logins: [string], not_before}``; ``hashes``
+``{constitutional_sha256, vectors_sha256, seats_sha256}``, each 64 lowercase hex; ``visibility``
+``{repo: "public"|"private"}``; ``operator_checked_at``; no other key at any of these levels; the two times
+``YYYY-MM-DDTHH:MM:SSZ`` of a real date (the one ISO-8601 UTC form read). A ``targets[]`` entry that carries a
+``drift`` key is ``Unusable`` too (01c: never inside ``targets[]``). Compared with it, after the reasons of today:
+
+- ``writer_app_changed``: ``GET /app``'s ``id`` is not the integer ``drift.writer_app_id``;
+- ``rules_changed:<branch>``: for each key of ``drift.targets.<id>.rules``, the hash of that branch's rules as read
+  now is not the recorded one. The hash is 01c's: each item of the answer reduced to ``{type, parameters}``
+  (``parameters`` absent: ``{}``), the items ordered by the bytes of their RFC 8785 form (``ledger.chain.canonical``),
+  sha256 of the RFC 8785 form of that array, lowercase hex. A rule content the canonical form cannot hold (a float)
+  is ``Unusable``.
+
+**The operator's check** (tohum/01c): ``stale`` is true when ``drift.operator_checked_at`` is more than 7 days
+(604800 s) before ``now``, the caller's clock (exactly 7 days is not stale). It is no reason and no hard stop: the
+caller ends cleanly ("operator check stale"). The reads are made all the same, so a hard stop is not hidden by it.
 
 Reasons (``rules``, then ``actions``):
 
@@ -40,34 +61,40 @@ Reasons (``rules``, then ``actions``):
 One more, of the caller, before any read: ``target_repo_mismatch``: the repository the caller writes to (``check``'s
 ``repo``, when given) is not the summary entry's ``repo``; the facts read would be another repository's.
 
-``check`` answers ``{ok, hard_stop, reasons}``: ``reasons`` sorted, ``hard_stop`` true when there is one. It reads
-only; the stop itself is the caller's (``loop.job``'s ``yaz`` runs it for every target it serves before it
-serves the first, writes nothing on any target when one has a reason, and ends the job).
+``check`` answers ``{ok, hard_stop, reasons, stale}``: ``reasons`` sorted, ``hard_stop`` true when there is one,
+``ok`` true when there is none and the operator's check is not stale. It reads only; the stop itself is the caller's
+(``loop.job``'s ``yaz`` runs it for every target it serves before it serves the first, writes nothing on any target
+when one has a reason or the check is stale, and ends the job).
 
-Out of scope, stated (reported as seed-080; none of these is read, so none is promised):
+Out of scope, stated (none of these is read, so none is promised; the questions that keep them open are seed-082):
 
-- a diff against values recorded at setup: tohum/26c's ``setup/summary.json`` carries no ruleset, no declared App
-  or actor list (tohum/25a row 5), no workflow permission and no hash of the seed tree, the constitutional policy or
-  the vector file (tohum/01b:59-65, 25:59-64 name them in prose only);
-- Apps other than the writer App installed on a target, and the actors of ``brain/*`` ref changes in the activity
-  API (tohum/01b:61): no declared list to compare with;
-- the referee repository's workflow permission and its Apps (tohum/01b:62): ``yaz`` holds no credential that reads
-  them;
-- a target that is neither ``toy`` nor ``copy`` (``Unusable``), and so the triggers and secrets of a target's
-  workflows (tohum/01b:63): for the two kinds setup knows, no workflow may run at all;
-- ``bypass_actors`` and the writer App's own permissions (``GET /app``'s ``permissions`` is not compared).
+- of the baseline, validated in form but compared with nothing: ``targets.<id>.rulesets`` (01c names no read for
+  "the ruleset list"), ``hashes`` (the constitutional policy holds floats the canonical form refuses; the trees are
+  hashed "over the git archive"), ``visibility`` (01c names no read) and ``activity`` (the activity API's actors,
+  its window and the bot's identity);
+- a branch the baseline's ``rules`` does not name: only the branches named are hashed (an empty ``rules`` compares
+  none), and no branch is required to be named;
+- an ``operator_checked_at`` later than ``now`` (not stale), and whatever the operator's check covers: other Apps
+  installed on a target, the referee repository's workflow permission, ``bypass_actors`` (tohum/01c: the
+  operator's, recorded only as that time);
+- the writer App's own permissions (``GET /app``'s ``permissions``: the baseline has no field for them);
+- a target that is neither ``toy`` nor ``copy`` (``Unusable``, tohum/01c), and so the triggers and secrets of a
+  target's workflows: for the two kinds setup knows, no workflow may run at all.
 
 Command line, run from ``referee/``, one JSON line on stdout, the cause on stderr::
 
-    python -m drift.check check API SUMMARY   stdin {"target": id}
-        -> {ok, hard_stop, reasons}
-        exit 0 no drift; 1 hard stop; 2 unusable ({"ok": false, "hard_stop": true, "reasons": null})
+    python -m drift.check check API SUMMARY   stdin {"target": id, "now": "YYYY-MM-DDTHH:MM:SSZ"}
+        -> {ok, hard_stop, reasons, stale}
+        exit 0 no drift; 1 a hard stop or a stale operator check (the line says which);
+        2 unusable ({"ok": false, "hard_stop": true, "reasons": null, "stale": null})
 
 ``API`` is a recorded API (``target.write.Replay``: ``{"GET <path>": body}``), ``SUMMARY`` the summary file.
 """
 
 from __future__ import annotations
 
+import datetime
+import hashlib
 import json
 import sys
 from typing import Any
@@ -84,7 +111,8 @@ BRANCHES = (STATE, INTEGRATION, MAIN)
 STATE_RULES = ("deletion", "non_fast_forward")
 INTEGRATION_RULES = ("deletion", "non_fast_forward", "pull_request", "required_status_checks")
 USAGE = "usage: python -m drift.check check API SUMMARY"
-FAULT_LINE = {"ok": False, "hard_stop": True, "reasons": None}
+FAULT_LINE = {"ok": False, "hard_stop": True, "reasons": None, "stale": None}
+STALE_AFTER = datetime.timedelta(days=7)  # tohum/01c: an operator check older than this ends the cycle cleanly
 
 
 class Unusable(ValueError):
@@ -153,6 +181,75 @@ def target(summary: Any, target_id: Any) -> dict:
     return entry
 
 
+def _integer(value: Any, where: str) -> list[str]:
+    return [] if type(value) is int else ["%s: not an integer" % where]
+
+
+def _instant(value: Any, where: str) -> list[str]:
+    try:
+        return schema.timestamp(value, where) or (moment(value) and [])
+    except ValueError:
+        return ["%s: not a date" % where]
+
+
+def _branch_hashes(value: Any, where: str) -> list[str]:
+    out = schema.map_of(schema.hex64)(value, where)
+    return out or ["%s: key %r is not a branch name" % (where, b) for b in value if not write.branch_syntax(b)]
+
+
+BASELINE = schema.shape({
+    "writer_app_id": _integer,
+    "targets": schema.map_of(schema.shape({"rulesets": schema.list_of(_integer), "rules": _branch_hashes})),
+    "activity": schema.shape({"operator_logins": schema.list_of(schema.text), "not_before": _instant}),
+    "hashes": schema.shape({"constitutional_sha256": schema.hex64, "vectors_sha256": schema.hex64,
+                            "seats_sha256": schema.hex64}),
+    "visibility": schema.map_of(schema.one_of("public", "private")),
+    "operator_checked_at": _instant})
+
+
+def moment(ts: str) -> datetime.datetime:
+    """The instant of a ``YYYY-MM-DDTHH:MM:SSZ``; ``ValueError`` when it is no date."""
+    return datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def baseline(summary: dict, target_id: str) -> dict:
+    """The summary's ``drift`` object (tohum/01c); ``Unusable`` unless it is there, at the top level only, of the
+    form and with an entry for ``target_id``."""
+    if "drift" not in summary:
+        raise Unusable("summary.json carries no drift baseline")
+    if any(isinstance(t, dict) and "drift" in t for t in summary["targets"]):
+        raise Unusable("summary.json: drift inside targets[]")
+    faults = BASELINE(summary["drift"], "drift")
+    if faults:
+        raise Unusable("summary.json: %s" % "; ".join(faults))
+    if target_id not in summary["drift"]["targets"]:
+        raise Unusable("summary.json: drift.targets has no %r" % target_id)
+    return summary["drift"]
+
+
+def rules_hash(body: list[dict]) -> str:
+    """tohum/01c's hash of a branch's effective rules (``_rules`` read them)."""
+    try:
+        items = [{"type": rule["type"], "parameters": rule.get("parameters", {})} for rule in body]
+        return hashlib.sha256(chain.canonical(sorted(items, key=chain.canonical))).hexdigest()
+    except chain.ChainError as exc:
+        raise Unusable("a rule's content has no canonical form: %s" % cli.cause(exc)) from None
+
+
+def recorded(reads: Reads, drift: dict, entry: dict) -> set[str]:
+    """The reasons against the baseline: the writer App's id and the hash of each branch ``drift`` names for the
+    target (``drift`` as ``baseline`` read it)."""
+    reasons = set()
+    app_id = reads.get("/app", dict).get("id")
+    if type(app_id) is not int or app_id != drift["writer_app_id"]:
+        reasons.add("writer_app_changed")
+    for branch, digest in sorted(drift["targets"][entry["id"]]["rules"].items()):
+        found = _rules(reads.get("/repos/%s/rules/branches/%s" % (entry["repo"], branch), list), branch)
+        if rules_hash(found) != digest:
+            reasons.add("rules_changed:%s" % branch)
+    return reasons
+
+
 def rules(reads: Reads, summary: dict, entry: dict) -> set[str]:
     """The reasons of the App's scope and of the three branches' rules (``summary`` and ``entry`` as ``target``
     read them)."""
@@ -201,16 +298,21 @@ def actions(reads: Reads, entry: dict) -> set[str]:
     return set()
 
 
-def check(transport: Any, summary: bytes, target_id: Any, repo: Any = None) -> dict:
-    """``{ok, hard_stop, reasons}`` (see the module docstring); reads only, writes nothing. ``repo``, when given,
-    is the repository the caller is about to write to."""
+def check(transport: Any, summary: bytes, target_id: Any, now: Any, repo: Any = None) -> dict:
+    """``{ok, hard_stop, reasons, stale}`` (see the module docstring); reads only, writes nothing. ``now`` is the
+    caller's clock, ``YYYY-MM-DDTHH:MM:SSZ``; ``repo``, when given, is the repository the caller is about to write
+    to."""
     doc = read_json(summary, "summary.json")
     entry = target(doc, target_id)
+    drift = baseline(doc, target_id)
+    if _instant(now, "now"):
+        raise Unusable("now must be YYYY-MM-DDTHH:MM:SSZ")
+    stale = moment(now) - moment(drift["operator_checked_at"]) > STALE_AFTER
     if repo is not None and repo != entry["repo"]:
-        return {"ok": False, "hard_stop": True, "reasons": ["target_repo_mismatch"]}
+        return {"ok": False, "hard_stop": True, "reasons": ["target_repo_mismatch"], "stale": stale}
     reads = Reads(transport)
-    reasons = sorted(rules(reads, doc, entry) | actions(reads, entry))
-    return {"ok": not reasons, "hard_stop": bool(reasons), "reasons": reasons}
+    reasons = sorted(rules(reads, doc, entry) | actions(reads, entry) | recorded(reads, drift, entry))
+    return {"ok": not reasons and not stale, "hard_stop": bool(reasons), "reasons": reasons, "stale": stale}
 
 
 def _read(path: str) -> bytes:
@@ -228,11 +330,11 @@ def main(argv: list[str]) -> int:
         api = write.Replay(read_json(_read(argv[1]), "the recorded API"))
         summary = _read(argv[2])
         request = read_json(sys.stdin.buffer.read(), "stdin")
-        if not isinstance(request, dict) or set(request) != {"target"}:
-            raise Unusable('stdin must be {"target"} and nothing else')
-        out = check(api, summary, request["target"])
+        if not isinstance(request, dict) or set(request) != {"target", "now"}:
+            raise Unusable('stdin must be {"target", "now"} and nothing else')
+        out = check(api, summary, request["target"], request["now"])
         sys.stdout.write(json.dumps(out, sort_keys=True) + "\n")
-        return 1 if out["hard_stop"] else 0
+        return 0 if out["ok"] else 1
     except (Unusable, write.Unusable) as exc:
         cause = "unusable input: %s" % cli.cause(exc)
     sys.stdout.write(json.dumps(FAULT_LINE, sort_keys=True) + "\n")

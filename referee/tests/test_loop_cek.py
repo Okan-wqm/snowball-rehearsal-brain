@@ -515,7 +515,11 @@ class CekJob(unittest.TestCase):
         if wrap is not None:
             git = wrap(git)
         with open(os.path.join(self.work, "setup", "summary.json"), "wb") as fh:
-            fh.write(json.dumps(self.summary if summary is None else summary).encode())
+            doc = self.summary if summary is None else summary
+            if isinstance(doc, dict) and isinstance(doc.get("targets"), list) and \
+                    all(isinstance(t, dict) for t in doc["targets"]):  # a summary of the form: setup's baseline with it
+                doc = YW.with_baseline(doc)
+            fh.write(json.dumps(doc).encode())
         write_bootstrap(self.work, bootstrap)
         if sigstore:
             install_sigstore(self.temp)
