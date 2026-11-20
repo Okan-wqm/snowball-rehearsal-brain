@@ -224,6 +224,127 @@ WIDE, NARROW = finding("wide", 2, 3), finding("narrow", 2)
 TWO = [case("c1", 2), case("c2", 3)]
 
 
+def span(fingerprint: str, *spans: tuple, **over) -> dict:
+    """``finding`` whose references are the ``(line_start, line_end)`` pairs."""
+    made = finding(fingerprint, *[first for first, _ in spans], **over)
+    for ref, (_, last) in zip(made["evidence_refs"], spans):
+        ref["line_end"] = last
+    return made
+
+
+class RefLength(Base):
+    """``ref_over_max_lines``: every reference of the finding spans more lines than ``ref_max_lines``."""
+
+    def test_the_bound_is_the_number_of_lines_spanned(self):
+        cases = [case("c1", 1, end=5)]
+        at_bound = self.report([span("x", (2, 4))], cases, ref_max_lines=3)
+        self.assertEqual((at_bound["hits"], at_bound["refused"]), (1, []))
+        over = self.report([span("x", (2, 5))], cases, ref_max_lines=3)
+        self.assertEqual((over["hits"], over["refused"]), (0, [{"index": 0, "reasons": ["ref_over_max_lines"]}]))
+        self.assertEqual(over["counts"], {"given": 1, "distinct": 0, "reobserved": 0, "refused": 1})
+        one_line = self.report([span("x", (2, 2))], cases, ref_max_lines=1)
+        self.assertEqual((one_line["hits"], one_line["refused"]), (1, []))
+
+    def test_one_reference_within_the_bound_keeps_the_finding(self):
+        cases = [case("c1", 1, end=5)]
+        for spans in (((1, 5), (2, 2)), ((2, 2), (1, 5)), ((1, 4), (1, 5), (2, 3))):
+            with self.subTest(spans=spans):
+                self.assertEqual(self.report([span("x", *spans)], cases, ref_max_lines=2)["refused"], [])
+        every = self.report([span("x", (1, 3), (2, 5))], cases, ref_max_lines=2)
+        self.assertEqual(every["refused"], [{"index": 0, "reasons": ["ref_over_max_lines"]}])
+
+    def test_without_the_bound_no_length_is_judged(self):
+        out = self.report([span("x", (2, 5))], [case("c1", 1, end=5)])
+        self.assertEqual((out["hits"], out["refused"]), (1, []))
+        self.assertEqual(HS.sift([span("x", (1, 500))])[1], [])
+
+    def test_its_place_among_the_reasons(self):
+        long_missing = span("y", (1, 9), path="pkg/none.js")
+        twin = dict(span("x", (1, 5)), rule_id="other")
+        out = self.report([finding("x", 2), twin, long_missing], [case("c1", 1, end=5)], ref_max_lines=2)
+        self.assertEqual(out["refused"], [{"index": 1, "reasons": ["fingerprint_conflict", "ref_over_max_lines"]},
+                                          {"index": 2, "reasons": ["ref_over_max_lines", "ref_outside_manifest"]}])
+
+    def test_without_a_snapshot_too(self):
+        accepted, refused, _ = HS.sift([span("x", (1, 5)), span("y", (1, 2))], ref_max_lines=2)
+        self.assertEqual(([f["fingerprint"] for f in accepted], refused),
+                         (["y"], [{"index": 0, "reasons": ["ref_over_max_lines"]}]))
+
+    def test_a_bound_that_is_no_positive_integer_is_unusable(self):
+        for bad in (0, -1, True, 2.0, "2"):
+            with self.subTest(bad=bad), self.assertRaises(HS.Unusable) as ctx:
+                self.report([finding("x", 2)], [case("c1", 1, end=5)], ref_max_lines=bad)
+            self.assertEqual(ctx.exception.reasons, ["ref_max_lines_invalid"])
+
+    def test_the_command_s_option_in_both_forms(self):
+        found, cases = self.file("f.json", self.stamped([span("x", (2, 4))])), self.file("c.json", [case("c1", 1, end=5)])
+        refused = [{"index": 0, "reasons": ["ref_over_max_lines"]}]
+        self.assertEqual(self.command(found, cases, "--ref-max-lines", "3"), (0, '{"hits": 1}\n'))
+        code, text = self.command(found, cases, "--ref-max-lines", "2")
+        self.assertEqual((code, json.loads(text)), (0, {"hits": 0, "refused": refused}))
+        snapshot = self.file("s.json", self.snapshot)
+        code, text = self.command(found, cases, "--snapshot", snapshot, "--tree", self.tree, "--ref-max-lines", "2")
+        self.assertEqual((code, json.loads(text)["refused"]), (0, refused))
+        code, text = self.command(found, cases, "--snapshot", snapshot, "--tree", self.tree, "--ref-max-lines", "3")
+        self.assertEqual((code, json.loads(text)["hits"]), (0, 1))
+        for bad in ("0", "x", "-1", "1.5"):
+            code, text = self.command(found, cases, "--ref-max-lines", bad)
+            self.assertEqual((code, json.loads(text)["ok"]), (2, False), bad)
+
+
+class FromPolicy(Base):
+    """``loop.job.yaz_harness`` gives the scorer ``harness.params.score`` of the artifact's policy."""
+
+    K3 = {"class_level": "K3", "property": "p"}
+
+    def harness(self, policy, findings: list, cases: list) -> dict:
+        art = types.SimpleNamespace(snapshot=self.snapshot, policy=policy)
+        with mock.patch.object(J, "FINDINGS", self.stamped(findings)):
+            return J.yaz_harness(art, self.tree, {"cases": cases})
+
+    def policy(self, level=0.9, **params) -> dict:
+        return {"constitutional": {"confidence_level": level, "stage_params": params}}
+
+    def test_each_value_reaches_the_report(self):
+        cases, findings = [case("c1", 2), case("c2", 3, group="lib")], [finding("x", 2), finding("y", 3)]
+        bare = self.harness({}, findings, cases)
+        self.assertEqual(bare, self.report(findings, cases))
+        self.assertEqual((bare["report"]["recall_lb"], bare["verdict_reason"]), (None, "min_groups_unknown"))
+        got = self.harness(self.policy(census_min_groups=2), findings, cases)
+        self.assertEqual(got, self.report(findings, cases, alpha=TENTH, min_groups=2))
+        self.assertEqual((got["report"]["recall_lb"], got["report"]["verdict"]),
+                         (ST.fixed6(ST.cp_lower(Fraction(2), 2, TENTH)), "PASS"))
+        self.assertEqual(self.harness(self.policy(census_min_groups=3), findings, cases)["verdict_reason"],
+                         "groups_below_min")
+        other = self.harness(self.policy(level=0.5, census_min_groups=2), findings, cases)
+        self.assertEqual(other["report"]["recall_lb"], ST.fixed6(ST.cp_lower(Fraction(2), 2, Fraction(1, 2))))
+        self.assertNotEqual(other["report"]["recall_lb"], got["report"]["recall_lb"])
+
+    def test_the_window_and_the_reference_bound(self):
+        cases = [dict(case("c1", 2), **self.K3)]
+        near = dict(finding("x", 4), property="p", required_change=[{"file": "a", "op": "e"}])
+        self.assertEqual(self.harness(self.policy(), [near], cases)["hits"], 0)
+        self.assertEqual(self.harness(self.policy(match_window_lines=1), [near], cases)["hits"], 0)
+        self.assertEqual(self.harness(self.policy(match_window_lines=2), [near], cases)["hits"], 1)
+        long = [span("x", (2, 4))]
+        self.assertEqual(self.harness(self.policy(evidence_ref_max_lines=3), long, [case("c1", 1, end=5)])["refused"], [])
+        self.assertEqual(self.harness(self.policy(evidence_ref_max_lines=2), long, [case("c1", 1, end=5)])["refused"],
+                         [{"index": 0, "reasons": ["ref_over_max_lines"]}])
+
+    def test_a_value_elsewhere_in_the_policy_is_not_read(self):
+        policy = {"confidence_level": 0.9, "stage_params": {"census_min_groups": 1, "match_window_lines": 9},
+                  "performance": self.policy(census_min_groups=1)["constitutional"], "census_min_groups": 1}
+        cases, findings = [case("c1", 2)], [finding("x", 2)]
+        self.assertEqual(self.harness(policy, findings, cases), self.report(findings, cases))
+
+    def test_an_invalid_value_refuses_the_report(self):
+        got = self.harness(self.policy(level=2, match_window_lines=0), [], [case("c1", 2)])
+        self.assertEqual(got, {"reason": "harness_refused",
+                               "reasons": ["policy_invalid:constitutional.confidence_level",
+                                           "policy_invalid:constitutional.stage_params.match_window_lines"]})
+        self.assertEqual(self.harness([], [], [])["reason"], "harness_refused")
+
+
 class Match(Base):
     def test_a_finding_takes_one_case(self):
         self.assertEqual(self.report([WIDE], TWO)["hits"], 1)
@@ -664,7 +785,7 @@ class Live(LY.YazBase):
                           yaz["harness"]["report"]["clean_findings"]), ("UNMEASURABLE", "no_cases", 0))
 
     def test_what_the_scorer_refuses_is_on_the_line(self):
-        art = types.SimpleNamespace(snapshot={"schema": "other"})
+        art = types.SimpleNamespace(snapshot={"schema": "other"}, policy={})
         self.assertEqual(J.yaz_harness(art, self.src, {"cases": []}),
                          {"reason": "harness_refused", "reasons": ["snapshot:document_invalid"]})
 

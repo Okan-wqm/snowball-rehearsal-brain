@@ -9,8 +9,9 @@ modules read through ``at`` and ``operating``, and the command prints ``at`` ove
 Rules (each bound by a test in ``tests/test_policy_reads.py``):
 
 1. ``PATHS``: the full path, section first (tohum/29v "Yol"), of every value read through this module: the four
-   ``constitutional`` paths below and ``("operating", name)`` for each of ``OPERATING_NAMES``. No path key holds a
-   ``.``, so the dotted names of the command are distinct.
+   ``constitutional`` paths of stage 0 below, the harness's five of stage 1 (``HARNESS_PATHS``) and
+   ``("operating", name)`` for each of ``OPERATING_NAMES``. No path key holds a ``.``, so the dotted names of the
+   command are distinct.
 2. ``at(policy, path)``: the value at ``path`` walked from the root, one key at a time; ``ABSENT`` when a key on the
    way is not there. Nothing else is looked at: a key of the same name at the root or in another section is not
    read (tohum/29v: it is not that key). ``Malformed`` when ``policy``, or a value on the way before the last
@@ -22,7 +23,10 @@ Rules (each bound by a test in ``tests/test_policy_reads.py``):
 4. The readers: ``runner.deps_npm`` (``LICENSE_ALLOWLIST``, ``LICENSE_EXCEPTIONS``, ``("operating",
    "deps_bytes")``), ``profile.derive`` (``SECURITY_KEYWORDS``), ``profile.unit_verify`` (``operating``; from it
    ``runner.contained`` and ``runner.kos`` get their limits), ``dispatcher.llm_call.policy_usd`` (the path its
-   caller names; ``loop.cagir`` and ``loop.write_cycle`` name ``CANARY_USD``). ``tests/test_policy_reads.py``'s
+   caller names; ``loop.cagir`` and ``loop.write_cycle`` name ``CANARY_USD``), ``harness.params`` (``HARNESS_PATHS``:
+   ``score`` for ``loop.job.yaz_harness``, ``planted_max_cases`` for ``loop.cek.assemble``, which hands it to
+   ``snapshot.make``; the snapshot ``çek`` makes is a clean one, and a clean snapshot's rules do not use the
+   number). ``tests/test_policy_reads.py``'s
    ``Readers`` runs each of these functions on a policy that records every key looked up in it and finds no
    lookup off ``PATHS``; and its register finds the section names as string constants in no other source file.
 
@@ -57,10 +61,17 @@ LICENSE_ALLOWLIST = (CONSTITUTIONAL, "license_allowlist")
 LICENSE_EXCEPTIONS = (CONSTITUTIONAL, "license_exceptions")
 SECURITY_KEYWORDS = (CONSTITUTIONAL, "security_keywords")
 CANARY_USD = (CONSTITUTIONAL, "stage_budgets", "asama_0", "canary_usd")
+CONFIDENCE_LEVEL = (CONSTITUTIONAL, "confidence_level")
+STAGE_PARAMS = "stage_params"
+CENSUS_MIN_GROUPS = (CONSTITUTIONAL, STAGE_PARAMS, "census_min_groups")
+PLANTED_MAX_CASES = (CONSTITUTIONAL, STAGE_PARAMS, "planted_max_cases")
+EVIDENCE_REF_MAX_LINES = (CONSTITUTIONAL, STAGE_PARAMS, "evidence_ref_max_lines")
+MATCH_WINDOW_LINES = (CONSTITUTIONAL, STAGE_PARAMS, "match_window_lines")
+HARNESS_PATHS = (CONFIDENCE_LEVEL, CENSUS_MIN_GROUPS, PLANTED_MAX_CASES, EVIDENCE_REF_MAX_LINES, MATCH_WINDOW_LINES)
 OPERATING = "operating"
 OPERATING_NAMES = ("unit_inputs_bytes", "deps_bytes", "worktree_bytes", "container_mem_bytes", "kos_wall_s",
                    "test_total_s", "output_bytes")
-PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS, CANARY_USD) + tuple(
+PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + tuple(
     (OPERATING, name) for name in OPERATING_NAMES)
 
 

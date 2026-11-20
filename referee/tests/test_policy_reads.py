@@ -29,7 +29,10 @@ import unittest
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
+from fractions import Fraction  # noqa: E402
+
 from dispatcher import llm_call as L  # noqa: E402
+from harness import params as HP  # noqa: E402
 from policy import reads as P  # noqa: E402
 from profile import derive as D  # noqa: E402
 from profile import unit_verify as U  # noqa: E402
@@ -50,11 +53,15 @@ def sectioned() -> dict:
             "license_exceptions": {"a==1.0.0": {"expression": "MIT", "evidence": "e"}},
             "security_keywords": ["auth", "secret"],
             "stage_budgets": {"asama_0": {"canary_usd": 7, "other_usd": 70}, "asama_1": {"canary_usd": 700}},
+            "confidence_level": 0.8,
+            "stage_params": {"census_min_groups": 41, "planted_max_cases": 4, "evidence_ref_max_lines": 31,
+                             "match_window_lines": 16, "unread_lines": 99},
             "unread": 1,
         },
         "operating": dict({name: entry(100 + i) for i, name in enumerate(P.OPERATING_NAMES)},
                           unnamed_bytes=entry(999)),
-        "performance": {"kos_wall_s": entry(555), "license_allowlist": ["PERF"]},
+        "performance": {"kos_wall_s": entry(555), "license_allowlist": ["PERF"], "confidence_level": 0.5,
+                        "stage_params": {"census_min_groups": 2, "match_window_lines": 3}},
         "schema": 1,
     }
 
@@ -70,6 +77,7 @@ def hoisted() -> dict:
         value = node.pop(path[-1])
         policy[path[-1]] = value
     policy["stage_budgets"] = {"asama_0": {"canary_usd": 7}}
+    policy["stage_params"] = {P.dotted(path[2:]): 77 for path in P.HARNESS_PATHS if len(path) == 3}
     return policy
 
 
@@ -181,6 +189,23 @@ class Command(unittest.TestCase):
             self.assertEqual(out[P.dotted(path)], node, path)
         for name in out:  # tohum/29v: every name starts with a section
             self.assertIn(name.split(".")[0], ("constitutional", "operating", "performance"))
+
+    def test_the_stage_1_paths_are_named_by_their_literal_names(self):
+        """Not through ``PATHS``: the names tohum/29v requires of stage 1, written out, each with the file's value."""
+        policy = {"constitutional": {"confidence_level": 0.91, "stage_params": {
+            "census_min_groups": 47, "planted_max_cases": 6, "evidence_ref_max_lines": 31, "match_window_lines": 16}}}
+        code, out, _ = self.run_cmd(self.write(policy))
+        self.assertEqual(code, 0)
+        self.assertEqual({name: value for name, value in out.items() if value is not None},
+                         {"constitutional.confidence_level": 0.91,
+                          "constitutional.stage_params.census_min_groups": 47,
+                          "constitutional.stage_params.planted_max_cases": 6,
+                          "constitutional.stage_params.evidence_ref_max_lines": 31,
+                          "constitutional.stage_params.match_window_lines": 16})
+        root = dict(policy["constitutional"]["stage_params"], confidence_level=0.91,
+                    stage_params=policy["constitutional"]["stage_params"])
+        code, out, _ = self.run_cmd(self.write(root))
+        self.assertEqual((code, [v for v in out.values() if v is not None]), (0, []))
 
     def test_a_hoisted_policy_prints_null_for_every_path(self):
         code, out, text = self.run_cmd(self.write(hoisted()))
@@ -402,6 +427,87 @@ class Readers(unittest.TestCase):
         from loop import cagir
         self.assertIs(cagir.CANARY_USD, P.CANARY_USD)
         self.assertIs(U.OPERATING_NAMES, P.OPERATING_NAMES)
+
+
+class Harness(unittest.TestCase):
+    """``harness.params``' rules 1-4 and its two readers in the loop."""
+
+    def test_the_stage_1_paths_are_the_five_of_tohum_29v(self):
+        self.assertEqual(sorted(P.dotted(p) for p in P.HARNESS_PATHS),
+                         ["constitutional.confidence_level", "constitutional.stage_params.census_min_groups",
+                          "constitutional.stage_params.evidence_ref_max_lines",
+                          "constitutional.stage_params.match_window_lines",
+                          "constitutional.stage_params.planted_max_cases"])
+        for path in P.HARNESS_PATHS:
+            self.assertIn(path, P.PATHS)
+
+    def test_score_reads_its_four_paths_and_nothing_else(self):
+        log: list = []
+        got = HP.score(wrap(sectioned(), (), log))
+        self.assertEqual(got, {"alpha": Fraction(1, 5), "min_groups": 41, "window": 16, "ref_max_lines": 31})
+        self.assertIs(type(got["alpha"]), Fraction)
+        self.assertEqual(off_paths(log), [])
+        for path in (P.CONFIDENCE_LEVEL, P.CENSUS_MIN_GROUPS, P.MATCH_WINDOW_LINES, P.EVIDENCE_REF_MAX_LINES):
+            self.assertIn(path, log)
+        self.assertNotIn(P.PLANTED_MAX_CASES, log)
+
+    def test_planted_max_cases_reads_its_path(self):
+        log: list = []
+        self.assertEqual(HP.planted_max_cases(wrap(sectioned(), (), log)), 4)
+        self.assertEqual(off_paths(log), [])
+        self.assertEqual({seen for seen in log if len(seen) == 3}, {P.PLANTED_MAX_CASES})
+
+    def test_a_hoisted_policy_gives_no_value(self):
+        for policy in (hoisted(), {}, {"constitutional": {}}, {"constitutional": {"stage_params": {}}},
+                       {"performance": sectioned()["constitutional"]}, sectioned()["constitutional"]):
+            with self.subTest(policy=policy):
+                self.assertEqual(HP.score(policy), {"alpha": None, "min_groups": None, "window": None,
+                                                    "ref_max_lines": None})
+                self.assertIsNone(HP.planted_max_cases(policy))
+
+    def test_alpha_is_one_minus_the_level_exactly(self):
+        for level, alpha in ((0.9, Fraction(1, 10)), (0.95, Fraction(1, 20)), (0.5, Fraction(1, 2)),
+                             (1e-05, Fraction(99999, 100000)), (0.999, Fraction(1, 1000))):
+            self.assertEqual(HP.alpha({"constitutional": {"confidence_level": level}}), alpha)
+
+    def test_a_level_that_is_no_fraction_between_0_and_1_is_invalid(self):
+        for level in (0, 1, 0.0, 1.0, 1.5, -0.1, True, False, None, "0.9", [0.9], {"value": 0.9}, 90):
+            with self.subTest(level=level), self.assertRaises(HP.Invalid) as ctx:
+                HP.alpha({"constitutional": {"confidence_level": level}})
+            self.assertEqual(ctx.exception.reasons, ["policy_invalid:constitutional.confidence_level"])
+
+    def test_a_count_that_is_no_positive_integer_is_invalid(self):
+        for path in P.HARNESS_PATHS[1:]:
+            self.assertEqual(HP.count({path[0]: {path[1]: {path[2]: 1}}}, path), 1)
+            for value in (0, -1, 1.0, 30.5, True, False, None, "30", [30], {"value": 30}):
+                with self.subTest(path=path, value=value), self.assertRaises(HP.Invalid) as ctx:
+                    HP.count({path[0]: {path[1]: {path[2]: value}}}, path)
+                self.assertEqual(ctx.exception.reasons, ["policy_invalid:%s" % P.dotted(path)])
+
+    def test_no_object_on_the_way_is_invalid(self):
+        for policy in ([], None, {"constitutional": []}, {"constitutional": {"stage_params": 5}}):
+            with self.subTest(policy=policy), self.assertRaises(HP.Invalid) as ctx:
+                HP.planted_max_cases(policy)
+            self.assertEqual(ctx.exception.reasons, ["policy_invalid:constitutional.stage_params.planted_max_cases"])
+
+    def test_score_lists_every_invalid_path_in_order(self):
+        policy = sectioned()
+        policy["constitutional"]["confidence_level"] = 1
+        policy["constitutional"]["stage_params"].update(census_min_groups=0, evidence_ref_max_lines="30")
+        with self.assertRaises(HP.Invalid) as ctx:
+            HP.score(policy)
+        self.assertEqual(ctx.exception.reasons, ["policy_invalid:constitutional.confidence_level",
+                                                 "policy_invalid:constitutional.stage_params.census_min_groups",
+                                                 "policy_invalid:constitutional.stage_params.evidence_ref_max_lines"])
+
+    def test_the_loop_s_two_readers_call_this_module(self):
+        from loop import cek, job
+        self.assertIs(job.HP, HP)
+        self.assertIs(cek.HP, HP)
+        self.assertEqual(cek._planted_max(json.dumps(sectioned()).encode()), 4)
+        self.assertIsNone(cek._planted_max(json.dumps(hoisted()).encode()))
+        self.assertIsNone(cek._planted_max(b"\xff"))
+        self.assertIsNone(cek._planted_max(b"{"))
 
 
 def sources() -> list[str]:

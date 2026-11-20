@@ -290,6 +290,78 @@
    "tests": [
     "test_score.Live"
    ]
+  },
+  {
+   "id": "ref_length_any_reference",
+   "file": "harness/score.py",
+   "old": "        if ref_max_lines is not None and all(r[\"line_end\"]",
+   "new": "        if ref_max_lines is not None and any(r[\"line_end\"]",
+   "tests": [
+    "test_score.RefLength.test_one_reference_within_the_bound_keeps_the_finding"
+   ]
+  },
+  {
+   "id": "ref_length_off_by_one",
+   "file": "harness/score.py",
+   "old": "r[\"line_start\"] + 1 > ref_max_lines",
+   "new": "r[\"line_start\"] > ref_max_lines",
+   "tests": [
+    "test_score.RefLength.test_the_bound_is_the_number_of_lines_spanned"
+   ]
+  },
+  {
+   "id": "ref_length_not_given_to_sift",
+   "file": "harness/score.py",
+   "old": "sift(findings, snapshot, read, ref_max_lines)",
+   "new": "sift(findings, snapshot, read)",
+   "tests": [
+    "test_score.RefLength"
+   ]
+  },
+  {
+   "id": "ref_length_invalid_bound_ignored",
+   "file": "harness/score.py",
+   "old": "        raise Unusable([\"ref_max_lines_invalid\"])",
+   "new": "        ref_max_lines = None",
+   "tests": [
+    "test_score.RefLength.test_a_bound_that_is_no_positive_integer_is_unusable"
+   ]
+  },
+  {
+   "id": "ref_length_cli_option_dropped",
+   "file": "harness/score.py",
+   "old": "            accepted, refused, _ = sift(findings, ref_max_lines=longest)",
+   "new": "            accepted, refused, _ = sift(findings)",
+   "tests": [
+    "test_score.RefLength.test_the_command_s_option_in_both_forms"
+   ]
+  },
+  {
+   "id": "ref_length_cli_report_dropped",
+   "file": "harness/score.py",
+   "old": "alpha, floor, window,\n                          ref_max_lines=longest)",
+   "new": "alpha, floor, window)",
+   "tests": [
+    "test_score.RefLength.test_the_command_s_option_in_both_forms"
+   ]
+  },
+  {
+   "id": "yaz_params_not_given",
+   "file": "loop/job.py",
+   "old": "lambda path: D._read_regular(tree, path), **params))",
+   "new": "lambda path: D._read_regular(tree, path)))",
+   "tests": [
+    "test_score.FromPolicy"
+   ]
+  },
+  {
+   "id": "yaz_invalid_policy_not_refused",
+   "file": "loop/job.py",
+   "old": "        params = HP.score(art.policy)\n",
+   "new": "        try:\n            params = HP.score(art.policy)\n        except HP.Invalid:\n            params = {}\n",
+   "tests": [
+    "test_score.FromPolicy.test_an_invalid_value_refuses_the_report"
+   ]
   }
  ]
 }

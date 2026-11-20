@@ -93,8 +93,8 @@
   {
    "id": "pr_path_dropped",
    "file": "policy/reads.py",
-   "old": "PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS, CANARY_USD) + tuple(",
-   "new": "PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS) + tuple(",
+   "old": "PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + tuple(",
+   "new": "PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS) + HARNESS_PATHS + tuple(",
    "tests": [
     "test_policy_reads.Readers"
    ]
@@ -187,6 +187,141 @@
    "new": "SECTIONS_ONLY_HERE = ()",
    "tests": [
     "test_policy_reads.Register.test_the_register_sees_each_form"
+   ]
+  },
+  {
+   "id": "hp_count_takes_a_boolean",
+   "file": "harness/params.py",
+   "old": "    if type(value) is not int or value < 1:",
+   "new": "    if not isinstance(value, int) or value < 1:",
+   "tests": [
+    "test_policy_reads.Harness.test_a_count_that_is_no_positive_integer_is_invalid"
+   ]
+  },
+  {
+   "id": "hp_count_takes_zero",
+   "file": "harness/params.py",
+   "old": "    if type(value) is not int or value < 1:",
+   "new": "    if type(value) is not int or value < 0:",
+   "tests": [
+    "test_policy_reads.Harness.test_a_count_that_is_no_positive_integer_is_invalid"
+   ]
+  },
+  {
+   "id": "hp_alpha_is_the_level",
+   "file": "harness/params.py",
+   "old": "    return 1 - Fraction(repr(level))",
+   "new": "    return Fraction(repr(level))",
+   "tests": [
+    "test_policy_reads.Harness"
+   ]
+  },
+  {
+   "id": "hp_alpha_of_the_binary_float",
+   "file": "harness/params.py",
+   "old": "    return 1 - Fraction(repr(level))",
+   "new": "    return Fraction(1 - level)",
+   "tests": [
+    "test_policy_reads.Harness.test_alpha_is_one_minus_the_level_exactly"
+   ]
+  },
+  {
+   "id": "hp_alpha_takes_an_integer",
+   "file": "harness/params.py",
+   "old": "    if type(level) is not float or not 0 < level < 1:",
+   "new": "    if isinstance(level, bool) or not isinstance(level, (int, float)) or not 0 < level <= 1:",
+   "tests": [
+    "test_policy_reads.Harness.test_a_level_that_is_no_fraction_between_0_and_1_is_invalid"
+   ]
+  },
+  {
+   "id": "hp_malformed_is_absent",
+   "file": "harness/params.py",
+   "old": "        raise Invalid([_reason(path)]) from None\n\n\ndef count",
+   "new": "        return R.ABSENT\n\n\ndef count",
+   "tests": [
+    "test_policy_reads.Harness.test_no_object_on_the_way_is_invalid"
+   ]
+  },
+  {
+   "id": "hp_root_fallback",
+   "file": "harness/params.py",
+   "old": "        return R.at(policy, path)\n",
+   "new": "        got = R.at(policy, path)\n        return policy.get(path[-1], got) if got is R.ABSENT and isinstance(policy, dict) else got\n",
+   "tests": [
+    "test_policy_reads.Harness.test_a_hoisted_policy_gives_no_value"
+   ]
+  },
+  {
+   "id": "hp_root_fallback_in_yaz",
+   "file": "harness/params.py",
+   "old": "        return R.at(policy, path)\n",
+   "new": "        got = R.at(policy, path)\n        return policy.get(path[-1], got) if got is R.ABSENT and isinstance(policy, dict) else got\n",
+   "tests": [
+    "test_score.FromPolicy.test_a_value_elsewhere_in_the_policy_is_not_read"
+   ]
+  },
+  {
+   "id": "hp_floor_and_window_swapped",
+   "file": "harness/params.py",
+   "old": "SCORE = ((\"min_groups\", R.CENSUS_MIN_GROUPS), (\"window\", R.MATCH_WINDOW_LINES),",
+   "new": "SCORE = ((\"min_groups\", R.MATCH_WINDOW_LINES), (\"window\", R.CENSUS_MIN_GROUPS),",
+   "tests": [
+    "test_policy_reads.Harness.test_score_reads_its_four_paths_and_nothing_else"
+   ]
+  },
+  {
+   "id": "hp_first_invalid_only",
+   "file": "harness/params.py",
+   "old": "            reasons += exc.reasons\n    if reasons:",
+   "new": "            reasons = reasons or exc.reasons\n    if reasons:",
+   "tests": [
+    "test_policy_reads.Harness.test_score_lists_every_invalid_path_in_order"
+   ]
+  },
+  {
+   "id": "pr_harness_paths_unnamed",
+   "file": "policy/reads.py",
+   "old": "SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + tuple(",
+   "new": "SECURITY_KEYWORDS, CANARY_USD) + tuple(",
+   "tests": [
+    "test_policy_reads.Harness.test_the_stage_1_paths_are_the_five_of_tohum_29v"
+   ]
+  },
+  {
+   "id": "pr_harness_paths_unnamed_cli",
+   "file": "policy/reads.py",
+   "old": "SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + tuple(",
+   "new": "SECURITY_KEYWORDS, CANARY_USD) + tuple(",
+   "tests": [
+    "test_policy_reads.Command.test_the_stage_1_paths_are_named_by_their_literal_names"
+   ]
+  },
+  {
+   "id": "pr_planted_path_at_the_root_of_the_section",
+   "file": "policy/reads.py",
+   "old": "PLANTED_MAX_CASES = (CONSTITUTIONAL, STAGE_PARAMS, \"planted_max_cases\")",
+   "new": "PLANTED_MAX_CASES = (CONSTITUTIONAL, \"planted_max_cases\")",
+   "tests": [
+    "test_policy_reads.Harness.test_the_stage_1_paths_are_the_five_of_tohum_29v"
+   ]
+  },
+  {
+   "id": "cek_planted_max_not_given",
+   "file": "loop/cek.py",
+   "old": "\"clean\", target, _planted_max(policy))",
+   "new": "\"clean\", target)",
+   "tests": [
+    "test_loop_cek.Brain.test_the_snapshot_is_made_with_the_policy_s_planted_max_cases"
+   ]
+  },
+  {
+   "id": "cek_planted_max_invalid_passed_over",
+   "file": "loop/cek.py",
+   "old": "    return HP.planted_max_cases(parsed)",
+   "new": "    try:\n        return HP.planted_max_cases(parsed)\n    except HP.Invalid:\n        return None",
+   "tests": [
+    "test_loop_cek.Brain.test_the_snapshot_is_made_with_the_policy_s_planted_max_cases"
    ]
   }
  ]

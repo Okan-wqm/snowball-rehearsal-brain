@@ -77,6 +77,7 @@ import shutil
 import sys
 import tarfile
 import unittest
+from unittest import mock
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
@@ -304,6 +305,34 @@ class Brain(unittest.TestCase):
         self.brain["targets/t1/units.json"] = b"not json"
         self.assertEqual(self.refused(), ["json_unreadable:units.json"])
         self.assertEqual(self.refused(policy=b"\xff"), ["json_unreadable:units.json", "json_unreadable:policy.json"])
+
+    def test_the_snapshot_is_made_with_the_policy_s_planted_max_cases(self):
+        def with_params(**params) -> bytes:
+            policy = json.loads(POLICY)
+            policy["constitutional"]["stage_params"] = params
+            return json.dumps(policy).encode()
+
+        seen = []
+        real = C.SM.make
+
+        def spy(*args):
+            seen.append(args[5])
+            return real(*args)
+
+        with mock.patch.object(C.SM, "make", spy):
+            self.assemble(policy=with_params(planted_max_cases=4))
+            shutil.rmtree(self.out)
+            self.assemble()
+            shutil.rmtree(self.out)
+            hoisted = json.loads(with_params())
+            hoisted.update(planted_max_cases=9, stage_params={"planted_max_cases": 9})
+            self.assemble(policy=json.dumps(hoisted).encode())
+            shutil.rmtree(self.out)
+        self.assertEqual(seen, [4, None, None])
+        for bad in (0, "5", True, 2.5, None):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.refused(policy=with_params(planted_max_cases=bad)),
+                                 ["policy_invalid:constitutional.stage_params.planted_max_cases"])
 
     def test_out_must_not_exist(self):
         os.makedirs(self.out)

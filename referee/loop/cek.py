@@ -55,8 +55,10 @@ for the tree is the commit the tree was read from. Nothing here reads the networ
   (``object_missing:<sha>``, ``tree_submodule:<path>``, ...) are listed with the others. What the tree may hold
   (links leaving it, devices) is ``loop.pulled.extract_tree``'s rule in ``kos``, not repeated here.
 - **The snapshot** (asama-1/13c, tohum/26a: ``snapshot.make``, job ``çek``): ``snapshot.make.make(objects,
-  commit, [], "clean", target)``, the clean snapshot of the same commit, with the ``targets[]`` entry's
-  ``excluded_paths``; its document is the artifact's ``snapshot.json`` (``loop.pulled``, "Snapshot"), which
+  commit, [], "clean", target, max_cases)``, the clean snapshot of the same commit, with the ``targets[]`` entry's
+  ``excluded_paths`` and ``max_cases`` ``harness.params.planted_max_cases`` of the policy (tohum/29v; a value that
+  is there and is no positive integer refuses the pull, ``policy_invalid:<path>``; a clean snapshot has no case,
+  so the number limits nothing here: it is the argument a planted snapshot is judged by, and ``çek`` makes none); its document is the artifact's ``snapshot.json`` (``loop.pulled``, "Snapshot"), which
   ``kos`` writes out from the tree and runs the organs on. ``snapshot:target_invalid``: the entry's lists are
   not ones ``profile.derive`` takes (``DeriveError``: e.g. ``excluded_paths`` that is no list of patterns); the
   tree reader's own reasons are the tree's above and are not listed twice. The commit is walked a second time for
@@ -92,6 +94,7 @@ from typing import Any
 
 import cli
 from cases import build as CB
+from harness import params as HP
 from loop import gitobj as G
 from loop import pulled as P
 from runner import kos as K
@@ -235,6 +238,17 @@ def _inputs(units: bytes | None) -> list[str]:
     return [p for p in map(D.norm_path, out) if p is not None]
 
 
+def _planted_max(policy: bytes) -> int | None:
+    """``snapshot.make``'s ``max_cases``: ``harness.params.planted_max_cases`` of the policy (``Invalid`` when the
+    value is there and is no positive integer). ``None`` for bytes that are no JSON: ``pulled.read`` refuses those
+    below (``json_unreadable:policy.json``), so nothing is passed over here."""
+    try:
+        parsed = cli.loads(policy.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return None
+    return HP.planted_max_cases(parsed)
+
+
 def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, target_id: str,
              objects: G.Source, commit: str, state_head: str, state: dict[str, bytes], status: bytes | None,
              out: str) -> dict[str, Any]:
@@ -262,13 +276,15 @@ def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, 
     snapshot, mutations = None, {}
     try:
         tree = G.tree_tar(objects, commit)
-        made = SM.make(objects, commit, [], "clean", target)
+        made = SM.make(objects, commit, [], "clean", target, _planted_max(policy))
         snapshot = made.document
         mutations = CB.propose(made.files, _inputs(units), commit)
     except P.PulledError as exc:
         reasons += exc.reasons
     except D.DeriveError:
         reasons.append("snapshot:target_invalid")
+    except HP.Invalid as exc:
+        reasons += exc.reasons
     if reasons:
         raise P.PulledError(list(dict.fromkeys(reasons)))
     manifest = P.write(out, target, tree, units, policy, candidates, {B.STATE: state_head, B.INTEGRATION: commit},

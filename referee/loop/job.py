@@ -167,8 +167,10 @@ refused tree is ``pulled_invalid``). Then:
   target's line has ``harness`` (``{report, hits, matched, missed_rules, refused, counts, verdict_reason}``, "The
   report" there; ``{reason: "harness_refused", reasons}`` when the scorer refuses the document or the cases). The
   cycle's findings are none (``FINDINGS``) until an organ's output is kept, so every case of a cycle is a miss
-  today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``min_groups`` and ``window``
-  are not given (``policy.json`` holds none of their keys, reports/seed-076), so ``recall_lb`` is ``null``.
+  today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``min_groups``, ``window``
+  and ``ref_max_lines`` are ``harness.params.score`` of ``pulled``'s policy (tohum/29v's paths of stage 1; an
+  absent key leaves its argument out, so without ``confidence_level`` ``recall_lb`` is ``null``; an invalid value
+  is ``harness_refused`` with ``policy_invalid:<path>``).
   The harness reaches no model (P1 MF5, ``harness.offline``): the job's first step, before ``pulled`` is opened
   and before MF6's reads below (``run``), is ``yaz_offline``, which reads the import statements of the running
   code's harness (``CODE_ROOT``); a reason there refuses the job, not a target (``harness_online`` with the
@@ -359,6 +361,7 @@ from dispatcher import llm_call as LL
 from drift import check as DC
 from gate import revert as RV
 from harness import offline as OF
+from harness import params as HP
 from harness import pass_row as PR
 from harness import score as HS
 from ledger import anchor as AN
@@ -832,11 +835,14 @@ def yaz_offline() -> dict[str, Any]:
 def yaz_harness(art: Any, tree: str, cases: dict[str, Any]) -> dict[str, Any]:
     """The harness report of the cycle (P1 MF4; see the module docstring): ``harness.score.report`` of
     ``FINDINGS`` against the dev cases ``yaz_cases`` built, on ``pulled``'s snapshot document and the extracted
-    tree; ``{reason: "harness_refused", reasons}`` when it refuses them."""
+    tree, with ``harness.params.score`` of ``pulled``'s policy (``alpha``, ``min_groups``, ``window``,
+    ``ref_max_lines``); ``{reason: "harness_refused", reasons}`` when the scorer refuses them or a value of the
+    policy is invalid (``policy_invalid:<path>``)."""
     try:
+        params = HP.score(art.policy)
         return OF.run(lambda: HS.report(list(FINDINGS), cases["cases"], art.snapshot,
-                                        lambda path: D._read_regular(tree, path)))
-    except HS.Unusable as exc:
+                                        lambda path: D._read_regular(tree, path), **params))
+    except (HS.Unusable, HP.Invalid) as exc:
         return {"reason": "harness_refused", "reasons": exc.reasons}
 
 
