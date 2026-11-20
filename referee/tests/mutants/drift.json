@@ -174,8 +174,8 @@
   {
    "id": "yaz_drift_not_run",
    "file": "loop/job.py",
-   "old": "    drifted = yaz_drift(environ, art, writer.repo, transport, now)",
-   "new": "    drifted = {}",
+   "old": "        drift = yaz_drift(environ, served, transport, now)",
+   "new": "        drift = {\"checked\": [], \"drifted\": {}}",
    "tests": [
     "test_drift.Yaz.test_a_drifted_target_is_not_written_and_a_clean_one_is"
    ]
@@ -183,26 +183,27 @@
   {
    "id": "yaz_drift_ignored",
    "file": "loop/job.py",
-   "old": "    if \"reason\" in drifted:\n        return drifted\n",
-   "new": "",
+   "old": "        if drift[\"drifted\"]:\n",
+   "new": "        if False:\n",
    "tests": [
     "test_drift.Yaz.test_a_drifted_target_is_not_written_and_a_clean_one_is"
    ]
   },
   {
-   "id": "yaz_drift_after_the_write",
+   "id": "yaz_drift_first_target_only",
    "file": "loop/job.py",
-   "old": "    if \"reason\" in drifted:\n        return drifted\n    seen = len(_sign_calls(signer))\n    try:\n        return {\"written\": WC.write(",
-   "new": "    seen = len(_sign_calls(signer))\n    try:\n        WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill, gate, passed)\n        if \"reason\" in drifted:\n            return drifted\n        return {\"written\": WC.write(",
+   "old": "    for tid in served:\n        art, _, refused = _pulled_unit(environ, tid)\n        try:\n            repo = None if refused",
+   "new": "    for tid in served[:1]:\n        art, _, refused = _pulled_unit(environ, tid)\n        try:\n            repo = None if refused",
    "tests": [
-    "test_drift.Yaz.test_a_drifted_target_is_not_written_and_a_clean_one_is"
+    "test_drift.Yaz.test_a_drift_on_a_later_target_leaves_the_earlier_one_unwritten",
+    "test_drift.Yaz.test_every_served_target_is_read_before_the_first_write_to_any"
    ]
   },
   {
    "id": "yaz_drift_repo_unchecked",
    "file": "loop/job.py",
-   "old": "summary, art.target.get(\"id\"), repo)",
-   "new": "summary, art.target.get(\"id\"))",
+   "old": "DC.check(transport, summary, tid, repo)",
+   "new": "DC.check(transport, summary, tid)",
    "tests": [
     "test_drift.Yaz.test_the_check_is_of_the_repository_d6_writes_to"
    ]
@@ -210,8 +211,8 @@
   {
    "id": "yaz_drift_without_app_credential",
    "file": "loop/job.py",
-   "old": "        out = DC.check(transport or writer_transport(environ, now, app=True)",
-   "new": "        out = DC.check(transport or writer_transport(environ, now, app=False)",
+   "old": "        transport = transport or writer_transport(environ, now, app=True)",
+   "new": "        transport = transport or writer_transport(environ, now, app=False)",
    "tests": [
     "test_app_auth.Job"
    ]
@@ -219,10 +220,37 @@
   {
    "id": "yaz_drift_hard_stop_only_unusable",
    "file": "loop/job.py",
-   "old": "    return {\"reason\": \"drift\", \"reasons\": out[\"reasons\"]} if out[\"hard_stop\"] else {}",
-   "new": "    return {}",
+   "old": "        if got[\"hard_stop\"]:\n",
+   "new": "        if False:\n",
    "tests": [
     "test_drift.Yaz.test_a_drifted_target_is_not_written_and_a_clean_one_is"
+   ]
+  },
+  {
+   "id": "yaz_drift_refused_pulled_read",
+   "file": "loop/job.py",
+   "old": "        if repo is None:  # the target's own step refuses it",
+   "new": "        if False:  # the target's own step refuses it",
+   "tests": [
+    "test_drift.Yaz.test_a_target_refused_for_its_pulled_is_not_read"
+   ]
+  },
+  {
+   "id": "yaz_drift_without_the_writer_env",
+   "file": "loop/job.py",
+   "old": "            _yaz_env(environ)\n            summary = _workspace_file(environ, SUMMARY)",
+   "new": "            summary = _workspace_file(environ, SUMMARY)",
+   "tests": [
+    "test_drift.Yaz.test_a_fact_that_cannot_be_read_is_unusable_and_nothing_is_written"
+   ]
+  },
+  {
+   "id": "yaz_drift_job_reasons_of_the_last",
+   "file": "loop/job.py",
+   "old": "first = next(iter(drift[\"drifted\"]))",
+   "new": "first = list(drift[\"drifted\"])[-1]",
+   "tests": [
+    "test_drift.Yaz.test_a_drift_on_a_later_target_leaves_the_earlier_one_unwritten"
    ]
   }
  ]

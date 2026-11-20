@@ -41,7 +41,8 @@ One more, of the caller, before any read: ``target_repo_mismatch``: the reposito
 ``repo``, when given) is not the summary entry's ``repo``; the facts read would be another repository's.
 
 ``check`` answers ``{ok, hard_stop, reasons}``: ``reasons`` sorted, ``hard_stop`` true when there is one. It reads
-only; the stop itself is the caller's (``loop.job``'s ``yaz`` writes nothing on the target and ends the job).
+only; the stop itself is the caller's (``loop.job``'s ``yaz`` runs it for every target it serves before it
+serves the first, writes nothing on any target when one has a reason, and ends the job).
 
 Out of scope, stated (reported as seed-080; none of these is read, so none is promised):
 

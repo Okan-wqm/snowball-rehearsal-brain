@@ -515,7 +515,9 @@ class Job(TLW.Genesis):
         self.auth.mint(J.APP_INPUTS, pasted, [YW.REPO])
         out = self.own(**pasted)
         self.assertEqual((out["ok"], out["done"], out["merge"]), (True, ["D5", "D6"], "good"), out)
-        self.assertEqual(self.apps, [True])
+        # the job's first step (``drift.check`` of every served target, stage 1 MF6) and then the activation: each
+        # its own transport with the App's credential
+        self.assertEqual(self.apps, [True, True])
         self.assertEqual(self.auth.seen[0], ("GET", "/app", "jwt", 200))
         self.assertEqual([s for s in self.auth.seen if s[3] in (401, 403) or (s[2] == "jwt") != (s[1] == "/app")], [])
         self.assertIn(B.STATE, self.gh.refs)
@@ -526,9 +528,10 @@ class Job(TLW.Genesis):
         self.next_cycle({"good": other}, "10")
         out = self.own(GITHUB_RUN_ID="10")
         self.assertEqual((out["ok"], out["done"]), (True, ["D5", "D6", "D7"]), out)
-        # D6's writer is made without the App's credential; ``drift.check``'s transport, made after it, has it for
-        # its one ``GET /app`` (stage 1 MF6), sent before any write, and every other request goes with the token
-        self.assertEqual(self.apps, [False, True])
+        # ``drift.check``'s transport, the job's first, has the App's credential for its one ``GET /app`` (stage 1
+        # MF6), sent before any write; D6's writer, made after it, is made without, and every other request goes
+        # with the token
+        self.assertEqual(self.apps, [True, False])
         later = self.auth.seen[sent:]
         self.assertEqual([s for s in later if s[3] in (401, 403) or (s[2] == "jwt") != (s[1] == "/app")], [])
         self.assertEqual([s[:3] for s in later if s[2] == "jwt"], [("GET", "/app", "jwt")])

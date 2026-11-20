@@ -1,4 +1,4 @@
-"""Test 24 (asama-0/09), stage 1 MF6: ``drift.check`` and its place in ``yaz`` (``loop.job.yaz_drift``).
+"""Test 24 (asama-0/09), stage 1 MF6: ``drift.check`` and its place in ``yaz`` (``loop.job.yaz_drift``, the job's first step).
 
 - ``Check``: on the facts setup leaves (``activation_world.facts``, a toy and a copy) there is no reason and exactly
   the reads the module names are sent, each once, all ``GET``; each change of one fact gives its one reason
@@ -9,9 +9,14 @@
   summary without the target, are unusable;
 - ``Genesis``: ``activate.genesis`` gives the same reasons for every case (the facts have one reader);
 - ``Cli``: the command's three exits and lines;
-- ``Yaz``: an ordinary cycle of ``loop.job run yaz`` on a drifted target writes nothing and ends ``drift`` with the
-  reasons (one case of each of test 24's three kinds), a clean one is written with ``drift: clean`` after every
-  drift read, and a fact that cannot be read or a checkout without the summary is unusable with nothing written.
+- ``Yaz``: ``loop.job run yaz`` with one fact of its target changed serves no target, writes nothing and ends
+  ``drift`` with the reasons (five cases over test 24's three kinds); on the facts setup left it is written after
+  every one of the check's reads. With two targets served: a drift on the second leaves the first unwritten too,
+  both targets' reads precede the first write to either, both drifted name each one's reasons with the job's the
+  first served's; a target whose ``pulled`` is refused is sent no request. The check is of the repository D6
+  writes to; a fact that cannot be read, a checkout without the summary, a summary without the target and a
+  missing writer token are unusable with nothing written;
+- ``YazGenesis``: a genesis cycle's target with a fact changed stops the job the same way, nothing written.
 
 Not tested, because not built (``drift.check`` "Out of scope"): a diff against values recorded in the summary, other
 Apps' installations, the activity API's actors, the referee repository's own settings, workflow triggers.
@@ -264,23 +269,43 @@ class Cli(unittest.TestCase):
             self.assertTrue(got[2].startswith("unusable input: "), got[2])
 
 
-class Yaz(TLW.StateBase):
-    """An ordinary cycle of ``yaz`` (``test_loop_write.StateBase``'s world: t1, a toy at ``yaz_world.REPO``)."""
+class Recorded:
+    """A transport that names every request it passes on, in order: ``sent`` is ``(method, path)``."""
+
+    def __init__(self, transport) -> None:
+        self.transport, self.sent = transport, []
+
+    def __call__(self, method: str, path: str, body):
+        self.sent.append((method, path))
+        return self.transport(method, path, body)
+
+
+def reads_of(repo: str, kind: str = "toy") -> list[tuple]:
+    """The check's reads that name ``repo`` (all but ``/app`` and the installation's list)."""
+    return [("GET", path.replace(AW.REPO, repo)) for path in READS[kind] if AW.REPO in path]
+
+
+class Yaz(TLW.D6):
+    """``yaz``'s first step (``test_loop_write.D6``'s worlds: t1, a toy at ``yaz_world.REPO``, or t1 and t2)."""
 
     def ready(self) -> None:
         self.kos({"good": TLW.candidate(TLW.GOOD)})
         self.control(TLW.OPEN)
         self.github()
 
+    def job(self, **env) -> dict:
+        """The job's line (``run_yaz`` of the base is its one target line)."""
+        return TLW.YazBase.run_yaz(self, **env)
+
     def drifted(self, path: str, how, reasons: list) -> None:
-        """``yaz`` with one fact changed: the line, nothing written; the fact is put back."""
+        """``yaz`` with one fact changed: the job's line, no target served, nothing written; the fact is put back."""
         kept = self.gh.overrides[("GET", path)]
         change(self.gh, path, how)
         refs = dict(self.gh.refs)
-        out = self.run_yaz()
-        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["done"], "written" in out),
-                         (False, "drift", reasons, ["D5"], False), out)
-        self.assertEqual((self.writes(), self.gh.refs), ([], refs))
+        out = self.job()
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"], out["drift"]),
+                         (False, "drift", reasons, "t1", [], {"checked": ["t1"], "drifted": {"t1": reasons}}), out)
+        self.assertEqual((self.writes(), self.gh.refs, self.signer.payloads), ([], refs, []))
         self.gh.overrides[("GET", path)] = kept
 
     def test_a_drifted_target_is_not_written_and_a_clean_one_is(self):
@@ -297,54 +322,118 @@ class Yaz(TLW.StateBase):
                      ["integration_check_not_writer"])
         self.drifted(p + "/actions/workflows", lambda body: dict(body, workflows=[SECRET_WORKFLOW]),
                      ["toy_workflows"])
-        # the job's line is the target's refusal, exit 1's
-        change(self.gh, p + "/actions/workflows", lambda body: dict(body, workflows=[SECRET_WORKFLOW]))
-        job = TLW.YazBase.run_yaz(self)
-        self.assertEqual((job["ok"], job["reason"], job["reasons"], job["target"]),
-                         (False, "drift", ["toy_workflows"], "t1"))
-        change(self.gh, p + "/actions/workflows", lambda body: dict(body, workflows=[]))
-        self.assertEqual(self.writes(), [])
         # the same cycle on the facts setup left: written, after every one of the check's reads
         del self.gh.requests[:]
-        out = self.run_yaz()
-        self.assertEqual((out["ok"], out["done"], out["merge"], out["drift"]), (True, ["D5", "D6"], "good", "clean"),
-                         out)
+        job = self.job()
+        out = self.line(job)
+        self.assertEqual((out["ok"], out["done"], out["merge"], job["drift"]),
+                         (True, ["D5", "D6"], "good", {"checked": ["t1"], "drifted": {}}), job)
         sent = [(m, path) for m, path, _ in self.gh.requests]
         first_write = next(i for i, (m, _) in enumerate(sent) if m != "GET")
         reads = [("GET", path.replace(AW.REPO, YW.REPO)) for path in READS["toy"]]
         self.assertEqual([s for s in sent[:first_write] if s in reads], reads)
         self.assertEqual([s for s in sent[first_write:] if s in reads], [])
 
+    def two(self) -> dict:
+        """t1 then t2 served (``two_targets``), both responses written: the targets' GitHubs."""
+        ghs = self.two_targets({"good": TLW.candidate(TLW.GOOD)})
+        for tid in ("t1", "t2"):
+            YW.write_response(self.temp, tid, TLW.HEADS, [YW.cost_row(snapshot=TLW.HEADS[B.INTEGRATION])], at=tid)
+        return ghs
+
+    def run_two(self, ghs: dict) -> tuple[dict, list]:
+        transport = Recorded(TLW.Router(ghs))
+        out = J.run("yaz", YW.env(self.temp, self.workspace), transport=transport, signer=self.signer,
+                    now=lambda: YW.NOW)
+        return out, transport.sent
+
+    # tohum/01b:57-58: before the cycle's first write, whichever target the drift is on
+    def test_a_drift_on_a_later_target_leaves_the_earlier_one_unwritten(self):
+        ghs = self.two()
+        workflows = "/repos/acme/t2/actions/workflows"
+        change(ghs["t2"], workflows, lambda body: dict(body, workflows=[SECRET_WORKFLOW]))
+        out, sent = self.run_two(ghs)
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"]),
+                         (False, "drift", ["toy_workflows"], "t2", []), out)
+        self.assertEqual(out["drift"], {"checked": ["t1", "t2"], "drifted": {"t2": ["toy_workflows"]}})
+        self.assertEqual(([s for s in sent if s[0] != "GET"], self.signer.payloads), ([], []))
+        for gh in ghs.values():
+            self.assertEqual((gh.refs[B.STATE], gh.refs[B.INTEGRATION]), (TLW.HEADS[B.STATE], TLW.HEADS[B.INTEGRATION]))
+        # both drifted: every target's reasons are named, the job's are the first served's
+        change(ghs["t1"], "/repos/acme/t1/rulesets/1", bypass("always"))
+        out, sent = self.run_two(ghs)
+        self.assertEqual((out["reason"], out["reasons"], out["target"], out["targets"]),
+                         ("drift", ["rules_bypassable"], "t1", []), out)
+        self.assertEqual(out["drift"]["drifted"], {"t1": ["rules_bypassable"], "t2": ["toy_workflows"]})
+        self.assertEqual([s for s in sent if s[0] != "GET"], [])
+
+    def test_every_served_target_is_read_before_the_first_write_to_any(self):
+        ghs = self.two()
+        out, sent = self.run_two(ghs)
+        self.assertEqual((out["ok"], out["drift"]), (True, {"checked": ["t1", "t2"], "drifted": {}}), out)
+        first_write = next(i for i, (m, _) in enumerate(sent) if m != "GET")
+        reads = reads_of("acme/t1") + reads_of("acme/t2")
+        self.assertEqual([s for s in sent[:first_write] if s in reads], reads)
+        self.assertEqual([s for s in sent[first_write:] if s in reads], [])
+        self.assertEqual({p.split("/")[3] for m, p in sent[first_write:] if m != "GET"}, {"t1", "t2"})
+
+    def test_a_target_refused_for_its_pulled_is_not_read(self):
+        ghs = self.two()
+        os.remove(os.path.join(self.temp, "in", "pulled", "t2", "units.json"))
+        out, sent = self.run_two(ghs)
+        self.assertEqual((out["ok"], out["target"], out["reason"], [t["ok"] for t in out["targets"]]),
+                         (False, "t2", "pulled_invalid", [True, False]), out)
+        self.assertEqual(out["drift"], {"checked": ["t1"], "drifted": {}})
+        self.assertEqual(ghs["t2"].requests, [])
+
     def test_the_check_is_of_the_repository_d6_writes_to(self):
         self.ready()
         entry = json.loads(YW.summary())["targets"][0]
         TLW.write_tree(self.workspace, {J.SUMMARY: YW.summary([dict(entry, repo="acme/elsewhere")]).decode()})
-        out = self.run_yaz()
-        self.assertEqual((out["ok"], out["reason"], out["reasons"]), (False, "drift", ["target_repo_mismatch"]))
+        out = self.job()
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["targets"]),
+                         (False, "drift", ["target_repo_mismatch"], []))
         self.assertEqual(self.gh.requests, [])
 
     def test_a_fact_that_cannot_be_read_is_unusable_and_nothing_is_written(self):
         self.ready()
         self.gh.overrides[("GET", "/app")] = (401, {"message": "Bad credentials"})
         with self.assertRaisesRegex(J.Unusable, r"\Ayaz: drift: GET /app answered 401\Z"):
-            self.run_yaz()
+            self.job()
         self.gh.overrides.update(AW.facts("toy", YW.REPO))
         os.remove(os.path.join(self.workspace, "setup", "summary.json"))
         with self.assertRaisesRegex(J.Unusable, r"\Ayaz: setup/summary.json: "):
-            self.run_yaz()
+            self.job()
         TLW.write_tree(self.workspace, {J.SUMMARY: YW.summary([]).decode()})
         with self.assertRaisesRegex(J.Unusable, r"\Ayaz: drift: target 't1' is not exactly once in targets\[\]\Z"):
-            self.run_yaz()
+            self.job()
         self.assertEqual(self.writes(), [])
         # without the writer's token the check is not started
+        del self.gh.requests[:]
         with self.assertRaisesRegex(J.Unusable, r"\Ayaz: WRITER_TOKEN is not set\Z"):
-            self.run_yaz(WRITER_TOKEN="")
+            self.job(WRITER_TOKEN="")
+        self.assertEqual(self.gh.requests, [])
+
+
+class YazGenesis(TLW.Genesis):
+    """A genesis cycle's target is read with the others, before the job serves any."""
+
+    def test_a_genesis_target_s_drift_stops_the_job_before_its_activation(self):
+        self.main_at()
+        self.kos({"good": TLW.candidate(TLW.GOOD)})
+        self.control(TLW.OPEN)
+        self.github()
+        change(self.gh, "/repos/%s/rulesets/1" % YW.REPO, bypass("always"))
+        out = TLW.YazBase.run_yaz(self)
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"]),
+                         (False, "drift", ["rules_bypassable"], "t1", []), out)
+        self.assertEqual(self.writes(), [])
 
 
 def load_tests(loader, standard, pattern):
     """This module's own tests: ``Yaz`` inherits ``test_loop_write.StateBase``'s world, not its bases' tests."""
     suite = unittest.TestSuite()
-    for case in (Check, Genesis, Cli, Yaz):
+    for case in (Check, Genesis, Cli, Yaz, YazGenesis):
         names = [n for n in loader.getTestCaseNames(case) if n in vars(case)]
         suite.addTests(case(n) for n in names)
     return suite

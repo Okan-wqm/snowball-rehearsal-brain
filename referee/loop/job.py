@@ -69,7 +69,7 @@ unit as the recipe: the genesis row, the cut at that commit, D5's merge, the rat
 ``brain/state`` commit. Its API is ``writer_transport`` with the App's own credential (``WRITER_APP_ID`` and
 ``WRITER_APP_PRIVATE_KEY``, in the ``yaz`` step's ``env`` beside the token; unset is unusable): genesis' first read,
 ``GET /app``, is answered only to the App's JWT (``target.app_jwt``; spec/tohum/CHANGELOG.md 2026-11-15), every other
-request goes with the token, and an ordinary cycle's writer is given neither secret (its ``drift.check`` is: below). Its refusals before any
+request goes with the token, and an ordinary cycle's writer is given neither secret (the job's ``drift.check`` is: below). Its refusals before any
 write (``activate``'s reasons, ``base_moved`` among them) are
 ``activation_refused`` with the reasons; a hard stop after the cut is ``hard_stop`` with ``written``. The line has
 ``done`` ``["D5", "D6"]``, ``drill`` ``{action: off, why: genesis}`` (D8 starts in the next cycle) and ``written``
@@ -202,14 +202,22 @@ refused tree is ``pulled_invalid``). Then:
   ``$GITHUB_REPOSITORY``'s ``main`` (``loop.accepted.workflow_identity``, the identity the next cycle's
   D1 verifies the root against), the cycle id ``<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`` and the clock's time: the merge,
   if D5 chose one, or the revert of D7's red, or the end row of its green or flaky, and the cycle's one ``brain/state`` commit.
-  Between D6's inputs and that call, stage 1's MF6 (``yaz_drift``, tohum/01b:57-65: before the cycle's first write):
-  ``drift.check`` of the checkout's ``setup/summary.json`` for ``pulled``'s target id and the writer's repository,
-  through the transport given or, the job's own, ``writer_transport`` with the App's credential (``GET /app``; a
-  second transport: D6's writer keeps none); a reason (a rule, the App's scope, a workflow: ``drift.check``'s list,
-  or ``target_repo_mismatch``) is ``drift`` with the reasons, exit 1, ``done`` ``["D5"]``, nothing written on the
-  target; a read it cannot use, an unreadable summary or a secret unset is unusable (exit 2). A written
-  cycle's line carries ``drift: clean``. The genesis cycle does not run it: ``activate.genesis`` reads the same facts by the same
-  rules. Its refusals before any write
+  Before the job serves its first target, stage 1's MF6 (``yaz_drift``, tohum/01b:57-65: before the cycle's first
+  write, and a ``yaz`` job writes to every target it serves): ``drift.check`` of the checkout's
+  ``setup/summary.json`` for each served target, in the order served, against the repository its ``pulled`` names
+  (the one D6, or the activation of a genesis cycle, writes to), through the transport given or, the job's own,
+  ``writer_transport`` with the App's credential (``GET /app``; a transport of its own: D6's writer keeps none).
+  The job's line carries ``drift`` ``{checked, drifted}``: the ids checked and ``{id: reasons}`` of those with a
+  reason (a rule, the App's scope, a workflow: ``drift.check``'s list, or ``target_repo_mismatch``). Any reason on
+  any target ends the job there: ``reason`` ``drift`` with the reasons and id of the first drifted target served,
+  ``targets`` ``[]``, exit 1, no target served and nothing written on any; a read it cannot use, an unreadable
+  summary or a secret unset is unusable (exit 2). Not checked, stated: a served target whose ``pulled`` is refused
+  or names no repository (``pulled_invalid``, ``units_not_one``, ``target_repo_unsafe``: its own step refuses it
+  before any request to it; the targets served before it were checked and are written), and a target of the
+  summary the job does not serve (a copy waiting for its gate). A genesis cycle's target is checked here like
+  any other, and ``activate.genesis`` reads the same facts again by the same rules. The stop lasts as long as the
+  drift does: nothing is recorded, the next job reads the facts anew (a record that outlives the drift, tohum/28's
+  restart by the operator, is not built here). D6's refusals before any write
   (``head_moved:<branch>``, ``state_unwritable: ...``) are ``write_refused`` with the reasons; a hard stop
   (``target.land.HardStop``: a chain break, a root that cannot be signed, a write that failed after the first) is
   ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. A hard stop's line
@@ -974,13 +982,10 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
         return got
     writer, signer, imports, cost, cycle_id, ts = (got[k] for k in ("writer", "signer", "imports", "cost", "cycle_id",
                                                                     "ts"))
-    drifted = yaz_drift(environ, art, writer.repo, transport, now)  # after D6's own inputs, before its first write
-    if "reason" in drifted:
-        return drifted
     seen = len(_sign_calls(signer))
     try:
         return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill,
-                                    gate, passed), "sign_calls": _sign_calls(signer, seen), "drift": DRIFT_CLEAN}
+                                    gate, passed), "sign_calls": _sign_calls(signer, seen)}
     except WC.Refused as exc:
         return {"reason": "write_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
@@ -1005,31 +1010,51 @@ def _workspace_file(environ: dict[str, str], path: str) -> bytes:
 
 
 SUMMARY = "setup/summary.json"
-DRIFT_CLEAN = "clean"  # in an ordinary cycle's written line: ``drift.check`` ran before the writes, no reason
 
 
-def yaz_drift(environ: dict[str, str], art: Any, repo: str, transport: Any = None,
+def yaz_drift(environ: dict[str, str], served: list[str], transport: Any = None,
               now: Any = None) -> dict[str, Any]:
-    """MF6 of stage 1 in an ordinary cycle, D6's last step before its first write (see the module docstring):
-    ``drift.check`` of the checkout's ``setup/summary.json`` for ``pulled``'s target and ``repo``, the repository
-    D6's writer writes to: ``{}`` or ``{reason: drift, reasons}``. Its own transport (``transport`` ``None``) is
-    ``writer_transport`` with the App's credential, for ``GET /app``."""
-    summary = _workspace_file(environ, SUMMARY)
+    """MF6 of stage 1, ``yaz``'s first step, before any target is served (see the module docstring):
+    ``drift.check`` of the checkout's ``setup/summary.json`` for every target of ``served`` whose ``pulled`` is
+    read and names a repository, against that repository (the one D6 or the activation would write to):
+    ``{checked, drifted}``, the ids checked in the order served and ``{id: reasons}`` of those with a reason. Its
+    own transport (``transport`` ``None``) is ``writer_transport`` with the App's credential, for ``GET /app``."""
     now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
-    try:
-        out = DC.check(transport or writer_transport(environ, now, app=True), summary, art.target.get("id"), repo)
-    except (DC.Unusable, W.ApiError, W.Unusable) as exc:
-        raise Unusable("yaz: drift: %s" % cli.cause(exc)) from None
-    return {"reason": "drift", "reasons": out["reasons"]} if out["hard_stop"] else {}
+    out: dict[str, Any] = {"checked": [], "drifted": {}}
+    summary = None
+    for tid in served:
+        art, _, refused = _pulled_unit(environ, tid)
+        try:
+            repo = None if refused else A.repo_name(art.target.get("repo"))
+        except A.StateError:
+            repo = None
+        if repo is None:  # the target's own step refuses it (pulled_invalid, target_repo_unsafe): no request to it
+            continue
+        if summary is None:  # the first target read: what the reads need, as ``_yaz_inputs`` asks it of D6
+            _yaz_env(environ)
+            summary = _workspace_file(environ, SUMMARY)
+        transport = transport or writer_transport(environ, now, app=True)
+        try:
+            got = DC.check(transport, summary, tid, repo)
+        except (DC.Unusable, W.ApiError, W.Unusable) as exc:
+            raise Unusable("yaz: drift: %s" % cli.cause(exc)) from None
+        out["checked"].append(tid)
+        if got["hard_stop"]:
+            out["drifted"][tid] = got["reasons"]
+    return out
+
+
+def _yaz_env(environ: dict[str, str]) -> None:
+    for name in YAZ_ENV:
+        if not environ.get(name):
+            raise Unusable("yaz: %s is not set" % name)
 
 
 def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, signer: Any,
                 now: Any, app: bool = False, job_calls: list | None = None) -> dict[str, Any]:
     """What D6 writes with, in every cycle (the genesis cycle's too): ``{writer, signer, imports, cost, cycle_id,
     ts}``, or ``{reason, reasons?}`` (``response_invalid``, ``target_repo_unsafe``) before anything is written."""
-    for name in YAZ_ENV:
-        if not environ.get(name):
-            raise Unusable("yaz: %s is not set" % name)
+    _yaz_env(environ)
     try:
         cost = CG.read_response(_dir(environ, "in", "response", tid), art)
     except CG.ResponseError as exc:
@@ -1048,7 +1073,7 @@ def _yaz_inputs(environ: dict[str, str], tid: str, art: Any, transport: Any, sig
 
 def writer_transport(environ: dict[str, str], now: Any, app: bool = False, handlers: tuple = ()) -> W.HttpTransport:
     """``yaz``'s API: ``target.write.HttpTransport`` with ``WRITER_TOKEN``, the installation token. ``app`` (the
-    genesis cycle and an ordinary cycle's ``drift.check``, whose first read is ``GET /app``) adds the App's own
+    genesis cycle's activation and the job's ``drift.check``, whose first read is ``GET /app``) adds the App's own
     credential: a JWT of ``WRITER_APP_ID`` and
     ``WRITER_APP_PRIVATE_KEY`` (``target.app_jwt.token``) made at the clock's time when that read is sent. The two
     secrets are the ones the ``writer token`` step gave the token action in the same job, and each is read here
@@ -1402,7 +1427,9 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         signer: Any = None) -> dict[str, Any]:
     """The job's line: ``{job, steps, mfs, ok, targets?, reason?, reasons?, target?}``. ``targets`` holds one line
     per target in the order served, each ``{target, ok, ...}``; the first target refused stops the job (no later
-    target is served) and its ``reason``, ``reasons`` and id (``target``) are the job's. ``job_calls``, one list
+    target is served) and its ``reason``, ``reasons`` and id (``target``) are the job's. ``yaz`` first runs
+    ``yaz_drift`` on every served target and its line carries ``drift``; a drifted target stops the job with no
+    target served (``targets`` ``[]``). ``job_calls``, one list
     made here, is where every root signer the job makes itself counts its runs (``loop.sign`` "The job's count")."""
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
@@ -1423,6 +1450,12 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         served = P.served(_dir(environ, "in", "pulled"))
     except P.PulledError as exc:
         return dict(result, reason="pulled_invalid", reasons=exc.reasons)
+    if name == "yaz":  # MF6 of stage 1: every target's setup facts before the first target is served
+        drift = yaz_drift(environ, served, transport, now)
+        result["drift"] = drift
+        if drift["drifted"]:
+            first = next(iter(drift["drifted"]))
+            return dict(result, reason="drift", reasons=drift["drifted"][first], target=first, targets=[])
     lines: list[dict[str, Any]] = []
     job_calls: list[dict] = []
     for tid in served:

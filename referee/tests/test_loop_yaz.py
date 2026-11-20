@@ -323,8 +323,10 @@ class YazJob(YazBase):
                            ([{"row_id": "g1", "part": "genesis"}], None)):
             with self.subTest(want=want):
                 self.with_ledger(rows)
-                out = self.refused(J.run("yaz", {"RUNNER_TEMP": self.temp}))
+                # a pulled that is read: the job's first step reads the target's setup facts (stage 1 MF6)
+                out = self.refused(self.run_yaz())
                 self.assertEqual((out["ok"], out["reason"]), (False, "state_refused"))
+                self.assertEqual([m for m, _, _ in self.gh.requests if m != "GET"], [])
                 self.assertNotIn("decisions", out)
                 if want:
                     self.assertEqual(out["reasons"], want)

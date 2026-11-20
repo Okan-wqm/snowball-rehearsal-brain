@@ -105,6 +105,7 @@ from ledger import serial as SE  # noqa: E402
 from harness import pass_row as PR  # noqa: E402
 from harness import revert_drill as RD  # noqa: E402
 from loop import accepted as AC  # noqa: E402
+from drift import check as DC  # noqa: E402
 from loop import drill as DR  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
@@ -336,13 +337,18 @@ class D6(StateBase):
             (lambda: write_tree(response, {"response.json": {"schema": 1}, "other.json": "x"}),
              ["unlisted:other.json", "response_unreadable"]),
         )
+        # the job's first step has read the setup facts (stage 1 MF6); the refused target adds no request to them
+        with open(os.path.join(self.workspace, *J.SUMMARY.split("/")), "rb") as fh:
+            DC.check(self.gh, fh.read(), "t1", YW.REPO)
+        reads = self.gh.requests[:]
         for make, want in cases:
             with self.subTest(want=want):
                 shutil.rmtree(response, ignore_errors=True)
                 make()
+                del self.gh.requests[:]
                 out = self.run_yaz()
                 self.assertEqual((out["reason"], out["reasons"]), ("response_invalid", want))
-                self.assertEqual(self.gh.requests, [])
+                self.assertEqual(self.gh.requests, reads)
 
     def test_a_secret_in_a_row_is_refused_before_any_write(self):
         self.kos({"good": candidate(GOOD)})
@@ -509,11 +515,22 @@ class D6(StateBase):
         YW.write_summary(self.workspace, [YW.entry("t1"), YW.entry("t2")])
         return {tid: YW.github_at(HEADS, YW.files_of(self.src), self.state, repo="acme/" + tid) for tid in ("t1", "t2")}
 
+    def check_calls(self, ghs: dict) -> list[tuple[str, str]]:
+        """``Router.calls`` of ``drift.check`` for each of ``two_targets``' targets in order: what the job's first
+        step (stage 1 MF6) sends before it serves t1. The fakes' own request lists are left as they were."""
+        probe, before = Router(ghs), {tid: gh.requests[:] for tid, gh in ghs.items()}
+        with open(os.path.join(self.workspace, *J.SUMMARY.split("/")), "rb") as fh:
+            summary = fh.read()
+        for tid in ghs:
+            self.assertEqual(DC.check(probe, summary, tid, "acme/" + tid)["reasons"], [])
+            ghs[tid].requests[:] = before[tid]
+        return probe.calls
+
     def test_two_served_targets_are_written_in_order_with_one_cycle_id(self):
         ghs = self.two_targets({"good": candidate(GOOD)})
         for tid in ("t1", "t2"):
             YW.write_response(self.temp, tid, HEADS, [YW.cost_row(snapshot=HEADS[B.INTEGRATION])], at=tid)
-        router = Router(ghs)
+        router, checks = Router(ghs), self.check_calls(ghs)
         out = J.run("yaz", YW.env(self.temp, self.workspace), transport=router, signer=self.signer,
                     now=lambda: YW.NOW)
         self.assertEqual((out["ok"], "reason" in out, "target" in out), (True, False, False), out)
@@ -532,8 +549,10 @@ class D6(StateBase):
                 self.assertEqual(added[0]["payload"]["cycle_id"], CYCLE)
                 self.assertEqual(rows_of(gh.read_file(B.STATE, B.STATE_ROOTS))[-1]["row_id"], "9-1:root")
                 roots.append(AN.root_of(AN.tips(new)))
-        # served.json's order: every request to t1 before the first to t2, each root signed in that order
-        repos = [repo for repo, _ in router.calls]
+        # the setup facts of both first, then served.json's order: every request to t1 before the first to t2,
+        # each root signed in that order
+        self.assertEqual(router.calls[:len(checks)], checks)
+        repos = [repo for repo, _ in router.calls[len(checks):]]
         self.assertEqual(repos, sorted(repos))
         self.assertEqual(set(repos), {"acme/t1", "acme/t2"})
         self.assertEqual([hashlib.sha256(p).hexdigest() for p in self.signer.payloads], roots)
@@ -542,7 +561,7 @@ class D6(StateBase):
         ghs = self.two_targets({"good": candidate(GOOD)})
         # t1's response is missing (cagir's artifact without its directory), t2's is right
         YW.write_response(self.temp, "t2", HEADS, [YW.cost_row(snapshot=HEADS[B.INTEGRATION])], at="t2")
-        router = Router(ghs)
+        router, checks = Router(ghs), self.check_calls(ghs)
         out = J.run("yaz", YW.env(self.temp, self.workspace), transport=router, signer=self.signer,
                     now=lambda: YW.NOW)
         [line] = out["targets"]  # t2 is not served
@@ -550,7 +569,9 @@ class D6(StateBase):
                          ("t1", False, "response_invalid", ["response_missing"], ["D5"]))
         self.assertEqual((out["ok"], out["target"], out["reason"], out["reasons"]),
                          (False, "t1", "response_invalid", ["response_missing"]))
-        self.assertEqual((router.calls, ghs["t1"].requests, ghs["t2"].requests, self.signer.payloads), ([], [], [], []))
+        # the setup facts of both were read (the job's first step) and nothing else is sent to either
+        self.assertEqual((router.calls, self.signer.payloads), (checks, []))
+        self.assertEqual([r for gh in ghs.values() for r in gh.requests if r[0] != "GET"], [])
 
     def test_the_environment_and_the_target_repository(self):
         self.kos({"good": candidate(GOOD)})
@@ -1550,13 +1571,27 @@ class Genesis(StateBase):
 
     def test_nothing_is_written_when_the_activation_refuses(self):
         self.main_at()
-        self.gh.overrides[("GET", "/repos/%s/actions/workflows" % YW.REPO)] = (200, {"workflows": [{"id": 1}]})
-        out = self.cycle({"good": candidate(GOOD)})
+        # a setup fact that changes after the job's first step read it (stage 1 MF6: ``test_drift.YazGenesis`` is the
+        # fact wrong from the start) is the activation's to refuse: the second answer to the read is the workflow
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        self.github()
+        path, real, asked = "/repos/%s/actions/workflows" % YW.REPO, self.gh, []
+
+        def moving(method, at, body):
+            if (method, at) == ("GET", path):
+                asked.append(at)
+                if len(asked) > 1:
+                    return 200, {"workflows": [{"id": 1}]}
+            return real(method, at, body)
+
+        self.gh = moving
+        out = self.run_yaz()
+        self.gh = real
         self.assertEqual((out["ok"], out["reason"], out["reasons"], out["done"]),
                          (False, "activation_refused", ["toy_workflows"], ["D5"]))
-        self.assertEqual(self.writes(), [])
+        self.assertEqual((len(asked), self.writes()), (2, []))
         # main moved after D1 read it: base_moved
-        self.gh.overrides[("GET", "/repos/%s/actions/workflows" % YW.REPO)] = (200, {"workflows": []})
         self.gh.refs["main"] = self.gh.seed_commit("toy-main-2", [self.gh.refs["main"]], files={"x": b"y"})
         self.assertEqual(self.run_yaz()["reasons"], ["base_moved"])
         self.assertEqual(self.writes(), [])
