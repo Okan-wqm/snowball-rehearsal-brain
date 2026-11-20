@@ -265,12 +265,15 @@ class Flow:
         return out
 
 
-def seed_choosing(catalog: dict, chosen: dict[str, str]) -> str:
-    """A ``DRILL_SEED`` whose key selects ``chosen[run id]`` for each run id (searched, so no selection is written
-    here)."""
+def seed_choosing(catalog: dict, chosen: dict[str, tuple]) -> str:
+    """A ``DRILL_SEED`` whose key for each run id selects the first of ``chosen[run id]`` from the catalog's
+    instances named in it (searched, so no selection is written here). The instances named are those the run's
+    commitment draws from, written out by hand in the caller (tohum/26f "Taahhüdün kataloğu")."""
+    part = {run: {"instances": [i for i in catalog["instances"] if i["id"] in ids]} for run, ids in chosen.items()}
+    assert all(len(part[run]["instances"]) == len(ids) for run, ids in chosen.items())
     for n in range(100000):
         seed = "rehearsal-seed-%d" % n
-        if all(RD.key({"seed": seed}, run, catalog)["instance_id"] == i for run, i in chosen.items()):
+        if all(RD.key({"seed": seed}, run, part[run])["instance_id"] == ids[0] for run, ids in chosen.items()):
             return seed
     raise AssertionError("no seed selects %s" % chosen)
 
@@ -337,13 +340,20 @@ def ended(record: dict) -> bool:
                                            for t, _, _ in TARGETS)
 
 
+# The run ids of the flow's four commitments, each with the instance it plants first and then the others it is
+# drawn from: every instance while no cause is planted more than another (runs 2 and 11), else the instances of
+# the causes planted least (run 5 after RD_TEST, run 8 after RD_TEST and RD_LINT: one instance, whatever the seed).
+DRAWS = {"2": (RD_TEST, RD_LINT, RD_BUILD), "5": (RD_LINT, RD_BUILD), "8": (RD_BUILD,),
+         "11": (RD_LINT, RD_TEST, RD_BUILD)}
+
+
 def without_fixtures(base: str) -> Flow:
     return Flow(base)
 
 
 def with_fixtures(base: str) -> Flow:
     return Flow(base, drill=DRILL_CAUSES,
-                seed=seed_choosing(drill_catalog(DRILL_CAUSES), {"2": RD_TEST, "5": RD_LINT, "8": RD_BUILD}))
+                seed=seed_choosing(drill_catalog(DRILL_CAUSES), DRAWS))
 
 
 def stale_patches(base: str) -> Flow:

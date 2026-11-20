@@ -1,0 +1,175 @@
+{
+ "mutants": [
+  {
+   "id": "least_is_zero",
+   "file": "harness/revert_drill.py",
+   "old": "    least = min(counts.values())",
+   "new": "    least = 0",
+   "tests": [
+    "test_drill_draw.Eligible.test_the_least_count_wins"
+   ]
+  },
+  {
+   "id": "plants_before_genesis_counted",
+   "file": "harness/revert_drill.py",
+   "old": "    for row in rows[0 if since is None else since + 1:]:",
+   "new": "    for row in rows:",
+   "tests": [
+    "test_drill_draw.Eligible.test_only_the_rows_after_the_last_genesis_count"
+   ]
+  },
+  {
+   "id": "first_genesis_not_last",
+   "file": "harness/revert_drill.py",
+   "old": "    return found[-1] if found else None",
+   "new": "    return found[0] if found else None",
+   "tests": [
+    "test_drill_draw.Eligible.test_only_the_rows_after_the_last_genesis_count"
+   ]
+  },
+  {
+   "id": "genesis_of_any_part",
+   "file": "harness/revert_drill.py",
+   "old": "    found = [i for i, row in enumerate(rows) if _is(row, \"events\", \"genesis\")]",
+   "new": "    found = [i for i, row in enumerate(rows) if row.get(\"kind\") == \"genesis\"]",
+   "tests": [
+    "test_drill_draw.Eligible.test_only_the_rows_after_the_last_genesis_count"
+   ]
+  },
+  {
+   "id": "any_drill_plant_counted",
+   "file": "harness/revert_drill.py",
+   "old": "        planted = row[\"payload\"].get(\"instance_id\") if is_drill(row, \"plant\") else None",
+   "new": "        planted = row[\"payload\"].get(\"instance_id\") if _is(row, \"drill\", \"plant\") else None",
+   "tests": [
+    "test_drill_draw.Eligible.test_rows_that_count_nothing"
+   ]
+  },
+  {
+   "id": "any_row_naming_instance_counted",
+   "file": "harness/revert_drill.py",
+   "old": "        planted = row[\"payload\"].get(\"instance_id\") if is_drill(row, \"plant\") else None",
+   "new": "        planted = row[\"payload\"].get(\"instance_id\") if row.get(\"part\") == \"drill\" else None",
+   "tests": [
+    "test_drill_draw.Eligible.test_rows_that_count_nothing"
+   ]
+  },
+  {
+   "id": "any_part_plant_counted",
+   "file": "harness/revert_drill.py",
+   "old": "        planted = row[\"payload\"].get(\"instance_id\") if is_drill(row, \"plant\") else None",
+   "new": "        planted = row[\"payload\"].get(\"instance_id\") if row.get(\"kind\") == \"plant\" and row[\"payload\"].get(\"drill\") == DRILL else None",
+   "tests": [
+    "test_drill_draw.Eligible.test_rows_that_count_nothing"
+   ]
+  },
+  {
+   "id": "planted_id_not_text",
+   "file": "harness/revert_drill.py",
+   "old": "        if isinstance(planted, str) and planted in cause_of:",
+   "new": "        if planted in cause_of:",
+   "tests": [
+    "test_drill_draw.Eligible.test_rows_that_count_nothing"
+   ]
+  },
+  {
+   "id": "plants_not_summed",
+   "file": "harness/revert_drill.py",
+   "old": "            counts[cause_of[planted]] += 1",
+   "new": "            counts[cause_of[planted]] = 1",
+   "tests": [
+    "test_drill_draw.Eligible.test_the_least_count_wins"
+   ]
+  },
+  {
+   "id": "most_planted_drawn",
+   "file": "harness/revert_drill.py",
+   "old": "    least = min(counts.values())",
+   "new": "    least = max(counts.values())",
+   "tests": [
+    "test_drill_draw.Eligible.test_a_planted_cause_leaves_with_all_its_instances"
+   ]
+  },
+  {
+   "id": "eligible_sorted",
+   "file": "harness/revert_drill.py",
+   "old": "    return {\"instances\": [item for item in catalog[\"instances\"] if counts[item[\"cause\"]] == least]}",
+   "new": "    return {\"instances\": [item for item in items if counts[item[\"cause\"]] == least]}",
+   "tests": [
+    "test_drill_draw.Eligible.test_without_a_plant_every_instance_as_given"
+   ]
+  },
+  {
+   "id": "drawn_from_whole_catalog",
+   "file": "loop/drill.py",
+   "old": "RD.eligible(inp[\"catalog\"], rows[:at]))",
+   "new": "inp[\"catalog\"])",
+   "tests": [
+    "test_drill_draw.Step.test_the_commitment_after_a_drill_is_drawn_from_the_other_causes"
+   ]
+  },
+  {
+   "id": "drawn_from_current_ledger",
+   "file": "loop/drill.py",
+   "old": "RD.eligible(inp[\"catalog\"], rows[:at]))",
+   "new": "RD.eligible(inp[\"catalog\"], rows))",
+   "tests": [
+    "test_drill_draw.Step.test_the_judged_key_is_drawn_from_the_rows_before_its_commitment"
+   ]
+  },
+  {
+   "id": "drawn_from_current_ledger_gate",
+   "file": "loop/drill.py",
+   "old": "RD.eligible(inp[\"catalog\"], rows[:at]))",
+   "new": "RD.eligible(inp[\"catalog\"], rows))",
+   "tests": [
+    "test_pass_row.Passes"
+   ]
+  },
+  {
+   "id": "drawn_from_current_ledger_yaz",
+   "file": "loop/drill.py",
+   "old": "RD.eligible(inp[\"catalog\"], rows[:at]))",
+   "new": "RD.eligible(inp[\"catalog\"], rows))",
+   "tests": [
+    "test_loop_write.py"
+   ]
+  },
+  {
+   "id": "whole_catalog_commitment_kept",
+   "file": "loop/drill.py",
+   "old": "        answer = drawn(inp, rows, drills[-1])",
+   "new": "        answer = RD.key(inp[\"seed\"], committed_by(rows, drills[-1]), inp[\"catalog\"])",
+   "tests": [
+    "test_drill_draw.Step.test_a_commitment_drawn_from_the_whole_catalog_where_the_rule_narrows_is_replaced"
+   ]
+  },
+  {
+   "id": "new_commitment_from_whole_catalog",
+   "file": "loop/drill.py",
+   "old": "    answer = drawn(inp, rows, len(rows), this_run)",
+   "new": "    answer = RD.key(inp[\"seed\"], RD.cycle(this_run), inp[\"catalog\"])",
+   "tests": [
+    "test_drill_draw.Step.test_three_drills_in_a_row_plant_three_causes_whatever_the_seed"
+   ]
+  },
+  {
+   "id": "judged_from_whole_catalog",
+   "file": "loop/drill.py",
+   "old": "            answer = drawn(inp, rows, commits[-1])",
+   "new": "            answer = RD.key(inp[\"seed\"], committed_by(rows, commits[-1]), inp[\"catalog\"])",
+   "tests": [
+    "test_drill_draw.Step.test_the_judged_key_is_drawn_from_the_rows_before_its_commitment"
+   ]
+  },
+  {
+   "id": "gate_draws_from_whole_catalog",
+   "file": "harness/pass_row.py",
+   "old": "            answer = DR.drawn(drill, rows, commits[-1])",
+   "new": "            answer = RD.key(drill[\"seed\"], DR.committed_by(rows, commits[-1]), drill[\"catalog\"])",
+   "tests": [
+    "test_pass_row.Fails.test_a_commitment_not_drawn_from_the_least_planted_causes"
+   ]
+  }
+ ]
+}

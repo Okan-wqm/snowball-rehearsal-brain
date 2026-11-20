@@ -17,6 +17,21 @@ code point order (the file's order does not matter). The key is exactly ``{cycle
 cause}``; the commitment (``commitment``) is the sha256 of its RFC 8785 bytes (``ledger.chain.canonical``). The
 secret ``selection`` is inside the key, so the public commitment cannot be found by trying each instance.
 
+**The catalog a commitment draws from** (``eligible``; tohum/26f "Taahhüdün kataloğu", E641). Given the catalog and
+the ledger rows before the commitment row, in file order:
+
+1. the rows read are those after the last ``events``/``genesis`` row among them (all of them when there is none);
+2. a cause's count is the number of those rows that are revert-drill plants (``is_drill(row, "plant")``) whose
+   ``payload.instance_id`` is the id of a catalog instance of that cause; a plant naming an id outside the catalog
+   (or no string) counts for no cause, and a cause with no plant counts zero;
+3. the answer is ``{instances: [...]}``, the catalog's instances whose cause has the least count, in the catalog's
+   order, each object as given. With no counted plant (and whenever the counts are equal) it is every instance.
+
+``key``, ``commitment``, ``judge`` and the command line do not call it and are unchanged: its caller hands its
+answer to ``key`` in the catalog's place (``loop.drill.drawn``, the one caller), for a commitment being written and
+for every later derivation of that commitment's key, always from the rows before that commitment row. The rule
+steers the draw only; it judges nothing.
+
 **Rows** (tohum/29m; the words are its choice): the commitment ``part: drill, kind: commit, payload {drill:
 revert, family: revert, commitment_sha256}`` (``commit_payload``, written by cycle N's ``yaz``; the key itself is
 never written or printed before the run); the plant ``part: drill, kind: plant, payload {drill: revert, family:
@@ -180,6 +195,27 @@ def chain_rows(ledger: bytes) -> list[dict] | None:
     if not chain.verify_bytes(ledger)["valid"]:
         return None
     return [chain.parse_row(line.decode("utf-8")) for line in chain._lines(ledger)]
+
+
+def last_genesis(rows: list[dict]) -> int | None:
+    """The index of the last ``events``/``genesis`` row of ``rows``, None when there is none."""
+    found = [i for i, row in enumerate(rows) if _is(row, "events", "genesis")]
+    return found[-1] if found else None
+
+
+def eligible(catalog: Any, rows: list[dict]) -> dict:
+    """The catalog a commitment written after ``rows`` draws from: the instances of the least-planted causes (see
+    the module docstring); ``Unusable`` for a catalog ``instances`` refuses."""
+    items = instances(catalog)
+    cause_of = {item["id"]: item["cause"] for item in items}
+    counts = dict.fromkeys(cause_of.values(), 0)
+    since = last_genesis(rows)
+    for row in rows[0 if since is None else since + 1:]:
+        planted = row["payload"].get("instance_id") if is_drill(row, "plant") else None
+        if isinstance(planted, str) and planted in cause_of:
+            counts[cause_of[planted]] += 1
+    least = min(counts.values())
+    return {"instances": [item for item in catalog["instances"] if counts[item["cause"]] == least]}
 
 
 # ---------------------------------------------------------------- judge

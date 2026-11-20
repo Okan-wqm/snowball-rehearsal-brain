@@ -66,7 +66,8 @@ diff no longer applies, so later rows are not its verdict):
   for green) and not by a ``revert`` (``reverted:<sha>``);
 - ``#geri-alma``, the toy only: without ``drill``, ``drill_inputs_missing``. Each ``plant`` row is judged by
   ``harness.revert_drill.judge`` over the ledger's lines up to the next plant (the judge reads the last plant of
-  what it is given), with the key of the last ``commit`` before it (its run id: ``loop.drill.committed_by``):
+  what it is given), with the key of the last ``commit`` before it (``loop.drill.drawn``: its run id, and the
+  catalog's instances eligible at that commitment row, tohum/26f "Taahhüdün kataloğu"):
   no commitment before it is ``drill_uncommitted:<instance>``, a ``FAIL`` is ``drill_fail:<instance>:<reason>``
   for each reason (a plant whose merge is not yet reverted included: ``not_reverted``); each cause of
   ``DRILL_CAUSES`` needs a ``PASS`` drill whose key has it (``cause_unshown:<cause>``);
@@ -205,8 +206,7 @@ def _first_decisions(rows: list[dict]) -> dict[str, dict]:
 
 def _last_genesis(rows: list[dict]) -> int:
     """The index of the ledger's last ``genesis`` row (tohum/26d: (B) runs on it), 0 when there is none."""
-    found = [i for i, row in enumerate(rows) if _is(row, "events", "genesis")]
-    return found[-1] if found else 0
+    return RD.last_genesis(rows) or 0
 
 
 def _genesis(rows: list[dict], imported: dict) -> list[str]:
@@ -276,7 +276,7 @@ def _drills(ledger: bytes, rows: list[dict], drill: dict | None) -> list[str]:
             out.append("drill_uncommitted:" + instance)
             continue
         try:
-            answer = RD.key(drill["seed"], DR.committed_by(rows, commits[-1]), drill["catalog"])
+            answer = DR.drawn(drill, rows, commits[-1])
         except (DR.Unusable, RD.Unusable) as exc:
             raise Unusable("drill: %s" % cli.cause(exc)) from None
         end = plants[n + 1] if n + 1 < len(plants) else len(lines)

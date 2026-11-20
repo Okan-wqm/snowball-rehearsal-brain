@@ -41,12 +41,24 @@ by the first ``yaz`` after the planted merge is finished.
 
 **The step** (``step``), from ``brain/state``'s ledger as D1 verified it, its unfinished merges
 (``ledger.serial.unfinished``), whether D5 merges a candidate this cycle, the tree of ``brain/integration``'s head and
-this run's id. Let D be the ledger's revert-drill ``commit`` and ``plant`` rows (``harness.revert_drill``'s reading):
+this run's id.
+
+**A commitment's key** (``drawn``; tohum/26f "Taahhüdün kataloğu", E641): ``harness.revert_drill.key`` of the seed,
+the run id of the commitment's cycle (``committed_by``: the last ``cycle_start`` before the row, ``<digits>-<digits>``,
+else ``commitment_unplaced``) and, in the catalog's place, the catalog's instances of the least-planted causes as
+counted over the rows before the commitment row (``harness.revert_drill.eligible``, the one rule). Every derivation
+below and ``harness.pass_row``'s ``#geri-alma`` go through it, so a key is always derived from the rows before its
+own commitment row, whatever the ledger holds after it. A commitment this cycle writes is drawn over the ledger as
+the step read it: the cycle's rows before its ``commit`` row hold no plant and no genesis (``loop.write_cycle``
+writes one drill row per cycle, and the genesis cycle's drill is off), so the count is the same at the row.
+
+The rules of ``step``. Let D be the ledger's revert-drill ``commit`` and ``plant`` rows (``harness.revert_drill``'s
+reading):
 
 1. no inputs: ``{action: off}``; inputs ``{off: why}``: ``{action: off, why}`` (``yaz``'s line shows it);
-2. D's last row is a commitment C. Its cycle's run id is read (``commitment_unplaced`` when no ``cycle_start`` with a
-   ``<digits>-<digits>`` id precedes it) and its key derived; a key whose commitment is not C's (the seed or the
-   catalog changed since) abandons C: this cycle commits again (rule 4, ``replaces: commitment_mismatch``). Else, with
+2. D's last row is a commitment C. Its key is derived (``drawn``); a key whose commitment is not C's (the seed or the
+   catalog changed since, or C was not drawn by this rule) abandons C: this cycle commits again (rule 4,
+   ``replaces: commitment_mismatch``). Else, with
    an unfinished merge or a candidate D5 merges, ``{action: wait, why: merge_unfinished|candidate_merges}`` (one merge
    at a time, the candidate first). Else the key's instance's patch is applied to the tree: a patch that no longer
    applies abandons C (rule 4, ``replaces: patch_does_not_apply``); one that applies is ``{action: plant,
@@ -55,7 +67,8 @@ this run's id. Let D be the ledger's revert-drill ``commit`` and ``plant`` rows 
 4. otherwise (no drill yet, or P finished, or C abandoned): when P exists and C is kept, ``judged`` is P's drill
    revealed: ``{key, verdict, reasons}`` of ``harness.revert_drill.judge`` over the ledger with the key of the
    commitment before P (a red the loop reverted with the key's cause is ``PASS``; a merge ended green, or reverted
-   with another cause, is ``FAIL``). Then a new commitment is written for this run's id when every instance's patch
+   with another cause, is ``FAIL``). Then a new commitment is written for this run's id (drawn over the whole ledger
+   read) when every instance's patch, of the whole catalog and not only of the instances drawn from,
    applies to the tree (``{action: commit, payload}``), else ``{action: none, why: patch_does_not_apply, instances}``
    (the catalog does not fit this target's head: nothing is committed that could not be planted).
 
@@ -169,6 +182,14 @@ def committed_by(rows: list[dict], at: int) -> str:
     return run_id(starts[-1]["payload"].get("cycle_id"))
 
 
+def drawn(inp: dict, rows: list[dict], at: int, run: str | None = None) -> dict:
+    """The key of the commitment at ``rows[at]`` (tohum/26f "Taahhüdün kataloğu"): drawn for the run id of its cycle
+    from the catalog's instances eligible at the rows before it (``harness.revert_drill.eligible``). With ``run``,
+    the key of the commitment that run would write after ``rows[:at]``."""
+    cycle_id = committed_by(rows, at) if run is None else RD.cycle(run)
+    return RD.key(inp["seed"], cycle_id, RD.eligible(inp["catalog"], rows[:at]))
+
+
 def step(inp: dict | None, ledger: bytes, unfinished: list[str], merging: bool, tree: str, this_run: str) -> dict:
     """D8's action this cycle (see the module docstring); ``Unusable`` for a run id that is not decimal digits."""
     try:
@@ -187,7 +208,7 @@ def _step(inp: dict | None, ledger: bytes, unfinished: list[str], merging: bool,
     last = rows[drills[-1]] if drills else None
     out: dict[str, Any] = {}
     if last is not None and last["kind"] == "commit":
-        answer = RD.key(inp["seed"], committed_by(rows, drills[-1]), inp["catalog"])
+        answer = drawn(inp, rows, drills[-1])
         if RD.commit_payload(answer) != last["payload"]:
             out["replaces"] = "commitment_mismatch"
         elif unfinished or merging:
@@ -203,12 +224,12 @@ def _step(inp: dict | None, ledger: bytes, unfinished: list[str], merging: bool,
             return {"action": "wait", "why": "drill_unfinished"}
         commits = [i for i in drills if rows[i]["kind"] == "commit"]
         if commits:
-            answer = RD.key(inp["seed"], committed_by(rows, commits[-1]), inp["catalog"])
+            answer = drawn(inp, rows, commits[-1])
             out["judged"] = dict(OF.run(lambda: RD.judge(ledger, answer)), key=answer)
     misfits = sorted(i for i, patch in inp["patches"].items() if land.applied(tree, patch)["reasons"])
     if misfits:
         return dict(out, action="none", why="patch_does_not_apply", instances=misfits)
-    answer = RD.key(inp["seed"], RD.cycle(this_run), inp["catalog"])
+    answer = drawn(inp, rows, len(rows), this_run)
     return dict(out, action="commit", payload=RD.commit_payload(answer))
 
 

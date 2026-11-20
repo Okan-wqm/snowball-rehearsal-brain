@@ -94,10 +94,21 @@ def genesis_payload(target: str, counter: dict = COUNTER) -> dict:
             "seed_security_last_row_hash": h(12, 64), "recipe_sha256": h(13, 64), "facts_sha256": h(14, 64)}
 
 
-def run_for(instance_id: str, after: int) -> str:
-    """The first run id above ``after`` whose key under ``SEED`` selects ``instance_id``."""
+def drawable(ledger: bytes) -> dict:
+    """``CATALOG``'s instances a commitment written after ``ledger`` draws from (tohum/26f "Taahhüdün kataloğu"),
+    counted here by hand for this catalog of one instance per cause: those planted the fewest times since the last
+    genesis row."""
+    rows = [json.loads(line) for line in ledger.splitlines()]
+    last = max((i for i, r in enumerate(rows) if r["kind"] == "genesis"), default=-1)
+    planted = [r["payload"]["instance_id"] for r in rows[last + 1:] if r["kind"] == "plant"]
+    least = min(planted.count(i["id"]) for i in CATALOG["instances"])
+    return {"instances": [i for i in CATALOG["instances"] if planted.count(i["id"]) == least]}
+
+
+def run_for(instance_id: str, after: int, catalog: dict = CATALOG) -> str:
+    """The first run id above ``after`` whose key under ``SEED`` selects ``instance_id`` from ``catalog``."""
     for n in range(after + 1, after + 1000):
-        if RD.key(SEED, str(n), CATALOG)["instance_id"] == instance_id:
+        if RD.key(SEED, str(n), catalog)["instance_id"] == instance_id:
             return str(n)
     raise AssertionError("no run selects %s" % instance_id)
 
@@ -150,8 +161,9 @@ def genesis_cycle(state: State, decisions, genesis: bool | dict = True) -> None:
 def drill(state: State, instance_id: str, cause: str, merge_sha: str, revert_cause: str | None = None,
           reverted: bool = True) -> None:
     """Three cycles: the commitment, the plant (with its ratchet base), the revert with ``revert_cause``."""
-    run = run_for(instance_id, state.run)
-    key = RD.key(SEED, run, CATALOG)
+    catalog = drawable(state.ledger)
+    run = run_for(instance_id, state.run, catalog)
+    key = RD.key(SEED, run, catalog)
     assert key["cause"] == cause
     state.cycle(lambda c: EV.drill(c, "commit", RD.commit_payload(key)), cost, run=run)
     state.cycle(lambda c: EV.ratchet_base(c, h(21, 64), {"no-unused-vars": 0}),
@@ -326,6 +338,24 @@ class Fails(unittest.TestCase):
         self.assertEqual(self.reasons(judge(toy), "#geri-alma"), ["toy:drill_fail:%s:not_reverted" % RD_LINT,
                                                                   "toy:cause_unshown:lint_regression"])
 
+    def test_a_commitment_not_drawn_from_the_least_planted_causes(self):
+        """The second drill committed in a run whose draw from the whole catalog is rd-build and whose draw from the
+        two causes not yet planted is rd-lint (tohum/26f "Taahhüdün kataloğu"): planting rd-build is not the key's."""
+        toy = toy_world(drills=[(RD_TEST, "test_regression")])
+        rest = {"instances": [i for i in CATALOG["instances"] if i["id"] != RD_TEST]}
+        self.assertEqual(len(rest["instances"]), 2)
+        run = next(str(n) for n in range(toy.run + 1, toy.run + 1000)
+                   if RD.key(SEED, str(n), CATALOG)["instance_id"] == RD_BUILD
+                   and RD.key(SEED, str(n), rest)["instance_id"] == RD_LINT)
+        toy.cycle(lambda c: EV.drill(c, "commit", RD.commit_payload(RD.key(SEED, run, CATALOG))), cost, run=run)
+        toy.cycle(lambda c: EV.drill(c, "plant", RD.plant_payload(RD_BUILD, h(0xd1))), cost)
+        toy.cycle(lambda c: EV.revert(c, h(0xd1), "build_break"), cost)
+        self.assertEqual(self.reasons(judge(toy), "#geri-alma"),
+                         ["toy:drill_fail:%s:cause_mismatch" % RD_BUILD,
+                          "toy:drill_fail:%s:commitment_mismatch" % RD_BUILD,
+                          "toy:drill_fail:%s:instance_mismatch" % RD_BUILD,
+                          "toy:cause_unshown:build_break", "toy:cause_unshown:lint_regression"])
+
     def test_a_plant_without_commitment(self):
         toy = toy_world()
         toy.cycle(lambda c: EV.drill(c, "plant", RD.plant_payload(RD_TEST, h(0xe1))), cost)
@@ -445,8 +475,8 @@ class Regenesis(unittest.TestCase):
 
     def test_a_plant_and_its_commitment_count_only_in_the_run(self):
         toy = toy_world(drills=[(RD_TEST, "test_regression")])
-        run = run_for(RD_BUILD, toy.run)
-        key = RD.key(SEED, run, CATALOG)
+        run = run_for(RD_BUILD, toy.run, drawable(toy.ledger))
+        key = RD.key(SEED, run, drawable(toy.ledger))
         toy.cycle(lambda c: EV.drill(c, "commit", RD.commit_payload(key)), cost, run=run)  # before the new genesis
         toy_world(toy, drills=[])
         toy.cycle(lambda c: EV.ratchet_base(c, h(21, 64), {"no-unused-vars": 0}),

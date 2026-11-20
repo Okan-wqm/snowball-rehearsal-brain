@@ -2,9 +2,9 @@
  "mutants": [
   {
    "id": "last_genesis_ignored",
-   "file": "harness/pass_row.py",
-   "old": "    return found[-1] if found else 0",
-   "new": "    return 0",
+   "file": "harness/revert_drill.py",
+   "old": "    return found[-1] if found else None",
+   "new": "    return 0 if found else None",
    "tests": [
     "test_pass_row.py"
    ]

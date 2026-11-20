@@ -874,8 +874,10 @@ class D8(StateBase):
         old = self.state[B.STATE_LEDGER]
         out = self.yaz("12", seed)
         self.assertEqual(out["drill"]["judged"]["key"], key)
-        self.assertEqual((out["drill"]["action"], out["drill"]["payload"]),
-                         ("commit", RD.commit_payload(RD.key(seed, "12", doc))))
+        # drawn from the causes not planted yet (tohum/26f "Taahhüdün kataloğu"): the catalog without 10-1's instance
+        rest = {"instances": [i for i in doc["instances"] if i["id"] != instance_id]}
+        self.assertEqual((len(rest["instances"]), out["drill"]["action"], out["drill"]["payload"]),
+                         (2, "commit", RD.commit_payload(RD.key(seed, "12", rest))))
         # the revert gave back 9-1's tree, so 9-1's base run: published again only when 11-1 published the planted
         # head's (the last observation then differs); after a planted parse error the last one is 9-1's own
         twelve = [(r["row_id"], r["kind"]) for r in self.added(old)]
