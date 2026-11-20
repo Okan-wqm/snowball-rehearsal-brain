@@ -65,12 +65,18 @@ from profile_tree import writable_base  # noqa: E402
 REG = "https://registry.npmjs.org/"
 
 
-def tgz(files: dict, top: str = "package") -> bytes:
-    """``files``: name -> bytes | dict (JSON) | ("symlink", target); placed under ``top/``."""
+def tgz(files, top: str = "package", gz_mtime: int = 0) -> bytes:
+    """The one builder of this suite's gzip tarballs. ``files``: name -> bytes | dict (JSON) | ("symlink", target),
+    as a dict or as a list of pairs (repeated names); each member is placed under ``top`` (a ``/`` is added to a
+    ``top`` that is not empty and does not end in one). The bytes are a function of the arguments alone: member
+    times are 0 and the gzip header's MTIME is ``gz_mtime``, never the clock. (``tarfile``'s ``w:gz`` stamps the
+    header with ``time.time()``: two builds of one content differed whenever a second boundary fell between
+    them, and 23a1086 was rejected for a test that compared them; ``Deterministic`` binds this.)"""
+    prefix = top + "/" if top and not top.endswith("/") else top
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz", format=tarfile.USTAR_FORMAT) as tar:
-        for name, content in files.items():
-            info = tarfile.TarInfo("%s/%s" % (top, name) if top else name)
+    with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+        for name, content in (files.items() if isinstance(files, dict) else files):
+            info = tarfile.TarInfo(prefix + name)
             info.mtime = 0
             if isinstance(content, tuple):
                 info.type, info.linkname = tarfile.SYMTYPE, content[1]
@@ -79,7 +85,7 @@ def tgz(files: dict, top: str = "package") -> bytes:
             data = json.dumps(content).encode() if isinstance(content, dict) else content
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
-    return buf.getvalue()
+    return gzip.compress(buf.getvalue(), mtime=gz_mtime)
 
 
 def sri(data: bytes, alg: str = "sha512") -> str:
@@ -1496,21 +1502,8 @@ class TestCli(Base):
 
 
 def vtgz(files, gz_mtime: int = 0, top: str = "package/") -> bytes:
-    """A gzip tar with a fixed gzip header (``mtime``), members under ``top`` (``files`` a dict, or a list of
-    pairs for repeated names); a ``("symlink", target)`` content is a symbolic link."""
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as tar:
-        for name, content in (files.items() if isinstance(files, dict) else files):
-            info = tarfile.TarInfo(top + name)
-            info.mtime = 0
-            if isinstance(content, tuple):
-                info.type, info.linkname = tarfile.SYMTYPE, content[1]
-                tar.addfile(info)
-                continue
-            data = json.dumps(content).encode() if isinstance(content, dict) else content
-            info.size = len(data)
-            tar.addfile(info, io.BytesIO(data))
-    return gzip.compress(buf.getvalue(), mtime=gz_mtime)
+    """``tgz`` in the vector tests' argument order (the gzip header's ``mtime`` second)."""
+    return tgz(files, top, gz_mtime)
 
 
 def expected_address(rows: list[tuple[str, str]]) -> str:
@@ -2015,6 +2008,53 @@ class TestNpmlock(unittest.TestCase):
             self.add("node_modules/zeta", "zeta", "1.0.0", {})
             os.chmod(path, 0)
             self.assertEqual(self.run_fetch()[0], 2)
+
+
+class Deterministic(unittest.TestCase):
+    """The suite's tarball builders give bytes that are a function of their arguments, whatever the clock reads."""
+
+    FILES = {"package.json": {"name": "twin", "version": "1.0.0", "bin": "cli.js"}, "cli.js": b"#!/usr/bin/env node\n",
+             "link": ("symlink", "cli.js")}
+
+    def at(self, second: float, build):
+        with mock.patch("time.time", return_value=second):
+            return build()
+
+    def test_two_builds_of_one_content_are_equal_across_a_clock_step(self):
+        for name, build in (("tgz", lambda: tgz(self.FILES)), ("tgz top", lambda: tgz(self.FILES, top="")),
+                            ("vtgz", lambda: vtgz(self.FILES)), ("vtgz pairs", lambda: vtgz(list(self.FILES.items())))):
+            with self.subTest(name=name):
+                first, later = self.at(1_700_000_000.0, build), self.at(1_700_000_005.0, build)
+                self.assertEqual(first, later)
+                self.assertEqual(first[4:8], bytes(4), "the gzip header's MTIME is 0")
+
+    def test_the_header_time_is_the_argument_and_the_tar_inside_is_the_same(self):
+        # the other header bytes are the library's (the OS byte differs between its two paths), so not compared
+        zero, seven = tgz(self.FILES), tgz(self.FILES, gz_mtime=7)
+        self.assertEqual((seven[4:8], vtgz(self.FILES, 7)), ((7).to_bytes(4, "little"), seven))
+        self.assertEqual(gzip.decompress(zero), gzip.decompress(seven))
+        self.assertNotEqual(sri(zero), sri(seven))
+
+    def test_a_different_content_is_different_bytes(self):
+        self.assertNotEqual(tgz(self.FILES), tgz(dict(self.FILES, extra=b"x")))
+        self.assertNotEqual(tgz(self.FILES), tgz(self.FILES, top="other"))
+
+    def test_the_members_are_placed_under_top(self):
+        for top, want in (("package", b"package/cli.js"), ("package/", b"package/cli.js"), ("", b"cli.js"),
+                          ("./package/", b"./package/cli.js")):
+            with self.subTest(top=top):
+                header = gzip.decompress(tgz({"cli.js": b"x"}, top=top))[:512]
+                self.assertEqual(header[:100].rstrip(b"\0"), want, "the member's name field, as written")
+                self.assertEqual(int(header[136:148].rstrip(b"\0 "), 8), 0, "the member's time")
+
+    def test_the_profile_trees_tar_is_equal_across_a_clock_step(self):
+        from profile_tree import write_tar
+        base = tempfile.mkdtemp(prefix="t-tar-")
+        self.addCleanup(shutil.rmtree, base, ignore_errors=True)
+        path, read = os.path.join(base, "a.tgz"), lambda p: open(p, "rb").read()
+        first = self.at(1_700_000_000.0, lambda: read(write_tar(path, {"a/b.py": b"x = 1\n"}, dirs=["a"])))
+        later = self.at(1_700_000_005.0, lambda: read(write_tar(path, {"a/b.py": b"x = 1\n"}, dirs=["a"])))
+        self.assertEqual((first, first[4:8]), (later, bytes(4)))
 
 
 if __name__ == "__main__":

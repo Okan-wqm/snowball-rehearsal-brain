@@ -43,11 +43,14 @@ def write_tree(root: str, files: dict) -> str:
 
 def write_tar(path: str, files, dirs=(), extra=()) -> str:
     """A gzip tar at ``path``: ``files`` (names, or name -> bytes) as regular members, ``dirs`` as
-    directory members, ``extra`` as ready ``TarInfo`` members (symlinks and such)."""
+    directory members, ``extra`` as ready ``TarInfo`` members (symlinks and such). The gzip header's MTIME is 0,
+    not the clock (``test_archives.GzipWriters``)."""
+    import gzip
     import io
     import tarfile
     items = files.items() if isinstance(files, dict) else ((f, b"x") for f in files)
-    with tarfile.open(path, "w:gz") as tar:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
         for name in dirs:
             info = tarfile.TarInfo(name)
             info.type = tarfile.DIRTYPE
@@ -58,4 +61,6 @@ def write_tar(path: str, files, dirs=(), extra=()) -> str:
             tar.addfile(info, io.BytesIO(data))
         for info in extra:
             tar.addfile(info)
+    with open(path, "wb") as fh:
+        fh.write(gzip.compress(buf.getvalue(), mtime=0))
     return path

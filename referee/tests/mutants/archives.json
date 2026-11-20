@@ -107,6 +107,168 @@
    "tests": [
     "test_archives.Corpus.test_pulled_extract_tree"
    ]
+  },
+  {
+   "id": "gz_tgz_header_clock",
+   "file": "tests/test_deps_npm.py",
+   "old": "    return gzip.compress(buf.getvalue(), mtime=gz_mtime)",
+   "new": "    return gzip.compress(buf.getvalue(), mtime=None)",
+   "tests": [
+    "test_deps_npm.Deterministic.test_two_builds_of_one_content_are_equal_across_a_clock_step"
+   ]
+  },
+  {
+   "id": "gz_tgz_header_always_zero",
+   "file": "tests/test_deps_npm.py",
+   "old": "    return gzip.compress(buf.getvalue(), mtime=gz_mtime)",
+   "new": "    return gzip.compress(buf.getvalue(), mtime=0)",
+   "tests": [
+    "test_deps_npm.Deterministic.test_the_header_time_is_the_argument_and_the_tar_inside_is_the_same"
+   ]
+  },
+  {
+   "id": "gz_tgz_top_no_slash",
+   "file": "tests/test_deps_npm.py",
+   "old": "    prefix = top + \"/\" if top and not top.endswith(\"/\") else top",
+   "new": "    prefix = top",
+   "tests": [
+    "test_deps_npm.Deterministic.test_the_members_are_placed_under_top"
+   ]
+  },
+  {
+   "id": "gz_write_tar_clock",
+   "file": "tests/profile_tree.py",
+   "old": "fh.write(gzip.compress(buf.getvalue(), mtime=0))",
+   "new": "fh.write(gzip.compress(buf.getvalue(), mtime=None))",
+   "tests": [
+    "test_deps_npm.Deterministic.test_the_profile_trees_tar_is_equal_across_a_clock_step"
+   ]
+  },
+  {
+   "id": "gz_write_tar_no_mtime",
+   "file": "tests/profile_tree.py",
+   "old": "fh.write(gzip.compress(buf.getvalue(), mtime=0))",
+   "new": "fh.write(gzip.compress(buf.getvalue()))",
+   "tests": [
+    "test_archives.GzipWriters.test_no_file_writes_a_gzip_header_with_the_clock"
+   ]
+  },
+  {
+   "id": "gz_write_tar_mode",
+   "file": "tests/profile_tree.py",
+   "old": "    with tarfile.open(fileobj=buf, mode=\"w\") as tar:",
+   "new": "    with tarfile.open(fileobj=buf, mode=\"w:gz\") as tar:",
+   "tests": [
+    "test_archives.GzipWriters.test_no_file_writes_a_gzip_header_with_the_clock"
+   ]
+  },
+  {
+   "id": "gz_rule_mode_off",
+   "file": "tests/test_archives.py",
+   "old": "            found.append((node.lineno, \"mode\"))",
+   "new": "            pass",
+   "tests": [
+    "test_archives.GzipWriters.test_the_rules_see_each_form"
+   ]
+  },
+  {
+   "id": "gz_rule_mode_only_w",
+   "file": "tests/test_archives.py",
+   "old": "GZ_MODE = re.compile(r\"[wxa][:|]gz\")",
+   "new": "GZ_MODE = re.compile(r\"w[:|]gz\")",
+   "tests": [
+    "test_archives.GzipWriters.test_the_rules_see_each_form"
+   ]
+  },
+  {
+   "id": "gz_rule_mode_no_stream",
+   "file": "tests/test_archives.py",
+   "old": "GZ_MODE = re.compile(r\"[wxa][:|]gz\")",
+   "new": "GZ_MODE = re.compile(r\"[wxa]:gz\")",
+   "tests": [
+    "test_archives.GzipWriters.test_the_rules_see_each_form"
+   ]
+  },
+  {
+   "id": "gz_rule_mode_search",
+   "file": "tests/test_archives.py",
+   "old": "        if any(GZ_MODE.fullmatch(v) for v in literals):",
+   "new": "        if any(GZ_MODE.search(v) for v in literals):",
+   "tests": [
+    "test_archives.GzipWriters.test_the_rules_see_each_form"
+   ]
+  },
+  {
+   "id": "gz_rule_mtime_off",
+   "file": "tests/test_archives.py",
+   "old": "not any(k.arg == \"mtime\" for k in node.keywords):",
+   "new": "not node.keywords:",
+   "tests": [
+    "test_archives.GzipWriters.test_the_rules_see_each_form"
+   ]
+  },
+  {
+   "id": "gz_rule_mtime_compress_only",
+   "file": "tests/test_archives.py",
+   "old": "            if f.attr in (\"compress\", \"GzipFile\") and",
+   "new": "            if f.attr in (\"compress\",) and",
+   "tests": [
+    "test_archives.GzipWriters.test_the_rules_see_each_form"
+   ]
+  },
+  {
+   "id": "gz_rule_open_off",
+   "file": "tests/test_archives.py",
+   "old": "            if f.attr == \"open\" and any(v[:1] in (\"w\", \"x\", \"a\") for v in literals):",
+   "new": "            if f.attr == \"open\" and any(v[:1] in (\"w\", \"x\") for v in literals):",
+   "tests": [
+    "test_archives.GzipWriters.test_the_rules_see_each_form"
+   ]
+  },
+  {
+   "id": "gz_rule_open_any_mode",
+   "file": "tests/test_archives.py",
+   "old": "            if f.attr == \"open\" and any(v[:1] in (\"w\", \"x\", \"a\") for v in literals):",
+   "new": "            if f.attr == \"open\":",
+   "tests": [
+    "test_archives.GzipWriters.test_the_rules_see_each_form"
+   ]
+  },
+  {
+   "id": "gz_rule_from_off",
+   "file": "tests/test_archives.py",
+   "old": "        if isinstance(node, ast.ImportFrom) and node.module == \"gzip\":",
+   "new": "        if isinstance(node, ast.ImportFrom) and node.module == \"zlib\":",
+   "tests": [
+    "test_archives.GzipWriters.test_the_rules_see_each_form"
+   ]
+  },
+  {
+   "id": "gz_scan_without_referee",
+   "file": "tests/test_archives.py",
+   "old": "    for start in (REFEREE, os.path.join(brain, \"tests\")):",
+   "new": "    for start in (os.path.join(brain, \"tests\"),):",
+   "tests": [
+    "test_archives.GzipWriters.test_no_file_writes_a_gzip_header_with_the_clock"
+   ]
+  },
+  {
+   "id": "gz_scan_without_brain_tests",
+   "file": "tests/test_archives.py",
+   "old": "    for start in (REFEREE, os.path.join(brain, \"tests\")):",
+   "new": "    for start in (REFEREE,):",
+   "tests": [
+    "test_archives.GzipWriters.test_no_file_writes_a_gzip_header_with_the_clock"
+   ]
+  },
+  {
+   "id": "gz_scan_skips_test_dirs",
+   "file": "tests/test_archives.py",
+   "old": "            dirs[:] = sorted(d for d in dirs if d != \"__pycache__\")",
+   "new": "            dirs[:] = sorted(d for d in dirs if d not in (\"__pycache__\", \"tests\"))",
+   "tests": [
+    "test_archives.GzipWriters.test_no_file_writes_a_gzip_header_with_the_clock"
+   ]
   }
  ]
 }

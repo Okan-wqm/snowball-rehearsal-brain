@@ -8,7 +8,10 @@
   ``runner.deps_npm``'s two tarball readers, ``loop.pulled.extract_tree`` (tar), and ``profile.unit_verify.unpack``,
   whose handler is in ``install_deps``: there every exception is one that handler catches;
 - ``Register``: outside ``cli.py``, no handler names one of the tuple's library errors itself (each reader had
-  written its own list, and three missed one).
+  written its own list, and three missed one);
+- ``GzipWriters``: no Python file under ``referee/`` or the brain's ``tests/`` writes a gzip stream whose header
+  carries the clock, by the syntactic rules of ``clocked_gzip_writes`` (its docstring lists them and what they do
+  not see). 23a1086 was rejected for a test that compared two ``w:gz`` builds of one content.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import gzip
 import io
 import os
 import random
+import re
 import shutil
 import sys
 import tarfile
@@ -233,6 +237,74 @@ class Register(unittest.TestCase):
                 self.assertNotEqual(own_archive_lists(text), [])
         self.assertEqual(own_archive_lists("try:\n    pass\nexcept (*cli.ARCHIVE_ERRORS, OSError):\n    pass\n"
                                            "try:\n    pass\nexcept tarfile.FilterError:\n    pass\n"), [])
+
+
+GZ_MODE = re.compile(r"[wxa][:|]gz")
+
+
+def clocked_gzip_writes(source: str) -> list:
+    """``(line, rule)`` for each place ``source`` can write a gzip header stamped with ``time.time()``. The rules,
+    all syntactic: (1) ``mode``: a call with a string literal argument that is a ``tarfile`` gzip write mode
+    (``w:gz``, ``w|gz``, and the same with ``x`` or ``a``); (2) ``mtime``: a call of ``gzip.compress`` or
+    ``gzip.GzipFile`` without an ``mtime`` keyword (a ``GzipFile`` that only reads is refused too: the rule does
+    not read modes); (3) ``open``: a call of ``gzip.open`` whose mode literal starts with ``w``, ``x`` or ``a``,
+    which has no ``mtime`` to give; (4) ``from``: ``from gzip import ...``, which would hide (2) and (3).
+    Not seen: ``gzip`` under another name (``import gzip as g``), a mode built at run time, a writer reached
+    through another library (``shutil.make_archive``, a subprocess), and what value ``mtime`` is given."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom) and node.module == "gzip":
+            found.append((node.lineno, "from"))
+        if not isinstance(node, ast.Call):
+            continue
+        literals = [a.value for a in [*node.args, *(k.value for k in node.keywords)]
+                    if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+        if any(GZ_MODE.fullmatch(v) for v in literals):
+            found.append((node.lineno, "mode"))
+        f = node.func
+        if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id == "gzip":
+            if f.attr in ("compress", "GzipFile") and not any(k.arg == "mtime" for k in node.keywords):
+                found.append((node.lineno, "mtime"))
+            if f.attr == "open" and any(v[:1] in ("w", "x", "a") for v in literals):
+                found.append((node.lineno, "open"))
+    return sorted(found)
+
+
+def python_files() -> dict[str, str]:
+    """Path relative to the brain -> source, of every .py file under ``referee/`` (tests included) and under the
+    brain's ``tests/``."""
+    brain, found = os.path.dirname(REFEREE), {}
+    for start in (REFEREE, os.path.join(brain, "tests")):
+        for top, dirs, files in os.walk(start):
+            dirs[:] = sorted(d for d in dirs if d != "__pycache__")
+            for name in sorted(files):
+                if name.endswith(".py"):
+                    with open(os.path.join(top, name), encoding="utf-8") as fh:
+                        found[os.path.relpath(os.path.join(top, name), brain)] = fh.read()
+    return found
+
+
+class GzipWriters(unittest.TestCase):
+    def test_no_file_writes_a_gzip_header_with_the_clock(self):
+        files = python_files()
+        for known in ("referee/runner/deps_npm.py", "referee/tests/test_deps_npm.py", "referee/tests/profile_tree.py",
+                      "tests/prepush.py"):
+            self.assertIn(known, files)
+        self.assertEqual({p: f for p, f in ((p, clocked_gzip_writes(src)) for p, src in files.items()) if f}, {})
+
+    def test_the_rules_see_each_form(self):
+        for text, rule in (('tarfile.open(p, "w:gz")', "mode"), ('tarfile.open(fileobj=b, mode="w|gz")', "mode"),
+                           ('tarfile.open(p, "x:gz")', "mode"), ('tarfile.open(p, mode="a:gz")', "mode"),
+                           ("gzip.compress(data)", "mtime"), ("gzip.compress(data, compresslevel=9)", "mtime"),
+                           ('gzip.GzipFile(p, "wb")', "mtime"), ('gzip.open(p, "wb")', "open"),
+                           ('gzip.open(p, mode="at")', "open"), ("from gzip import compress", "from")):
+            with self.subTest(text=text):
+                self.assertEqual(clocked_gzip_writes("import gzip, tarfile\n" + text + "\n"), [(2, rule)])
+        for text in ("gzip.compress(data, mtime=0)", 'gzip.GzipFile(fileobj=b, mode="wb", mtime=0)',
+                     'gzip.open(p, "rb")', "gzip.open(p)", "gzip.decompress(data)", 'tarfile.open(p, "r:gz")',
+                     'tarfile.open(p, "w")', 'x = "w:gz"', 'print("built with w:gz once")'):
+            with self.subTest(text=text):
+                self.assertEqual(clocked_gzip_writes(text + "\n"), [])
 
 
 if __name__ == "__main__":
