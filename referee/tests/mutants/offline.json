@@ -278,6 +278,51 @@
    "tests": [
     "test_offline.Static.test_the_brains_own_harness_is_clean"
    ]
+  },
+  {
+   "id": "statements_not_kept",
+   "file": "status/pygraph.py",
+   "old": "@functools.lru_cache(maxsize=READ_KEPT)\ndef import_statements",
+   "new": "def import_statements",
+   "tests": [
+    "test_offline.Kept"
+   ]
+  },
+  {
+   "id": "dynamic_not_kept",
+   "file": "harness/offline.py",
+   "old": "@functools.lru_cache(maxsize=pygraph.READ_KEPT)\ndef _dynamic",
+   "new": "def _dynamic",
+   "tests": [
+    "test_offline.Kept"
+   ]
+  },
+  {
+   "id": "check_kept_by_root",
+   "file": "harness/offline.py",
+   "old": "def check(root: str) -> dict[str, Any]:",
+   "new": "@functools.lru_cache(maxsize=None)\ndef check(root: str) -> dict[str, Any]:",
+   "tests": [
+    "test_offline.Kept"
+   ]
+  },
+  {
+   "id": "statements_kept_without_bound",
+   "file": "status/pygraph.py",
+   "old": "@functools.lru_cache(maxsize=READ_KEPT)\ndef import_statements",
+   "new": "@functools.lru_cache(maxsize=None)\ndef import_statements",
+   "tests": [
+    "test_offline.Kept"
+   ]
+  },
+  {
+   "id": "statements_kept_as_lists",
+   "file": "status/pygraph.py",
+   "old": "return tuple((level, name, tuple(names)) for",
+   "new": "return tuple((level, name, names) for",
+   "tests": [
+    "test_offline.Kept"
+   ]
   }
  ]
 }

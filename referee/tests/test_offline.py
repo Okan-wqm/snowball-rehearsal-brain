@@ -236,6 +236,83 @@ TOUCHES = {
 }
 
 
+class Kept(Trees):
+    """What a process keeps of a text it read (``pygraph.import_statements``, ``OF._dynamic``): the reading of the
+    text, never of the file. ``setUp`` empties both, so each count below starts from nothing kept."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        pygraph.import_statements.cache_clear()
+        OF._dynamic.cache_clear()
+
+    def parses(self):
+        return mock.patch("ast.parse", side_effect=pygraph.ast.parse)
+
+    def test_a_text_is_parsed_once_and_another_text_again(self):
+        text = "import json\nfrom ..x import y, z\nfrom . import w\n"
+        with self.parses() as parse:
+            first = pygraph.import_statements(text)
+            self.assertEqual(first, ((0, "json", ()), (2, "x", ("y", "z")), (1, "", ("w",))))
+            self.assertEqual(parse.call_count, 1)
+            self.assertIs(pygraph.import_statements(text), first)
+            self.assertEqual(parse.call_count, 1)
+            self.assertEqual(pygraph.import_statements(text + "import os\n")[-1], (0, "os", ()))
+            self.assertEqual(parse.call_count, 2)
+
+    def test_a_text_that_does_not_parse_is_refused_each_time(self):
+        for _ in range(2):
+            with self.assertRaises(SyntaxError):
+                pygraph.import_statements("def (:\n")
+            with self.assertRaises(SyntaxError):
+                OF._dynamic("def (:\n")
+        self.assertEqual(pygraph.import_statements.cache_info().currsize, 0)
+        self.assertEqual(OF._dynamic.cache_info().currsize, 0)
+
+    def test_a_second_check_of_an_unchanged_tree_parses_nothing(self):
+        root = self.tree()
+        with self.parses() as parse:
+            first = OF.check(root)
+            self.assertEqual(first["modules"], 5)
+            self.assertEqual(parse.call_count, 2 * 4)   # five modules, four texts (two empty inits), two readings
+            self.assertEqual(OF.check(root), first)
+            self.assertEqual(parse.call_count, 2 * 4)
+
+    def test_a_file_changed_between_two_checks_is_read_again(self):
+        """Same root, same paths: the client imported, a dynamic import, a text that does not parse, and back."""
+        root = self.tree()
+        clean = OF.check(root)
+        self.assertEqual(clean["reasons"], [])
+        path = os.path.join(root, "ledger", "chain.py")
+        for text, reasons in (("from dispatcher import llm_call\n", [VIA_CHAIN]),
+                              ("import importlib\n", ["dynamic_import:ledger.chain:importlib"]),
+                              ("def (:\n", ["unparsed:ledger/chain.py"]),
+                              (CLEAN["ledger/chain.py"], [])):
+            with open(path, "w") as fh:
+                fh.write(text)
+            self.assertEqual(OF.check(root)["reasons"], reasons, text)
+        self.assertEqual(OF.check(root), clean)
+
+    def test_the_same_text_at_another_path_is_judged_at_its_own(self):
+        """A kept reading is the text's, not the module's: the client's line moved to another module names that
+        module, and a relative import is resolved against the module asking."""
+        line = "from dispatcher import llm_call\n"
+        self.assertEqual(self.reasons(harness__stats=line), ["client_import:harness.stats:dispatcher.llm_call"])
+        self.assertEqual(self.reasons(ledger__chain=line), [VIA_CHAIN])
+        relative = "from . import llm_call\n"
+        self.assertEqual(self.reasons(ledger__chain=relative), [])
+        self.assertEqual(self.reasons(harness__stats="import dispatcher.sub\n", dispatcher__sub=relative),
+                         ["client_import:harness.stats:dispatcher.sub"])
+
+    def test_no_more_texts_are_kept_than_the_bound(self):
+        self.assertEqual(pygraph.import_statements.cache_info().maxsize, pygraph.READ_KEPT)
+        self.assertEqual(OF._dynamic.cache_info().maxsize, pygraph.READ_KEPT)
+        with mock.patch.object(pygraph, "import_statements",
+                               pygraph.functools.lru_cache(maxsize=2)(pygraph.import_statements.__wrapped__)) as kept:
+            for n in range(5):
+                kept("import m%d\n" % n)
+            self.assertEqual(kept.cache_info().currsize, 2)
+
+
 class Guard(unittest.TestCase):
     def test_the_answer_of_a_call_that_stays_in_the_process(self):
         args = (Fraction(59), 60, Fraction(1, 10))

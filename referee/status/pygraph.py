@@ -21,9 +21,11 @@ Not read, stated: a module imported by a name built at run time (``importlib``, 
 from __future__ import annotations
 
 import ast
+import functools
 import os
 
 BRAIN_SKIP = {"tests", "__pycache__"}
+READ_KEPT = 4096   # the texts whose import statements a process keeps (``import_statements``)
 
 
 def python_modules(root: str) -> dict[str, str]:
@@ -66,11 +68,15 @@ def _deepest(name: str, modules: dict[str, str]) -> str | None:
     return None
 
 
-def import_statements(source: str) -> list[tuple[int, str, list[str]]]:
+@functools.lru_cache(maxsize=READ_KEPT)
+def import_statements(source: str) -> tuple[tuple[int, str, tuple[str, ...]], ...]:
     """Every import statement of a Python source, anywhere in it: ``(level, module, names)``; ``import a.b`` is
-    ``(0, "a.b", [])``, ``from ..x import y, z`` is ``(2, "x", ["y", "z"])``, ``from . import y`` is
-    ``(1, "", ["y"])``. ``SyntaxError`` when the source does not parse. The one reader of both maps."""
-    return tree_import_statements(ast.parse(source))
+    ``(0, "a.b", ())``, ``from ..x import y, z`` is ``(2, "x", ("y", "z"))``, ``from . import y`` is
+    ``(1, "", ("y",))``. ``SyntaxError`` when the source does not parse. The one reader of both maps. The answer
+    is a function of the text alone and is kept by the text (``READ_KEPT`` texts, the least recently asked dropped
+    first): a text asked again in this process is not parsed again; a refusal is not kept. The answer is of tuples,
+    so no caller can change what the next one is given."""
+    return tuple((level, name, tuple(names)) for level, name, names in tree_import_statements(ast.parse(source)))
 
 
 def tree_import_statements(tree: ast.AST) -> list[tuple[int, str, list[str]]]:

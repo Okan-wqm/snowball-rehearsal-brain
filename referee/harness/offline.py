@@ -62,6 +62,7 @@ sandbox and the ``koş`` job close theirs themselves); whether a standard-librar
 from __future__ import annotations
 
 import ast
+import functools
 import json
 import os
 import sys
@@ -108,13 +109,17 @@ def _names_import(tree: ast.AST) -> bool:
     return False
 
 
-def _dynamic(source: str) -> set[str]:
-    tree = ast.parse(source)
-    found = {name.split(".")[0] for level, name, _ in pygraph.tree_import_statements(tree)
+@functools.lru_cache(maxsize=pygraph.READ_KEPT)
+def _dynamic(source: str) -> frozenset[str]:
+    """The ``dynamic_import`` names of a source. A function of the text alone, kept by the text like
+    ``pygraph.import_statements`` (a refusal is not kept): ``check`` opens and reads every module it reaches on
+    every call and parses only a text this process has not read before."""
+    found = {name.split(".")[0] for level, name, _ in pygraph.import_statements(source)
              if not level and name.split(".")[0] in DYNAMIC}
+    tree = ast.parse(source)
     if _names_import(tree):
         found.add(IMPORT_NAME)
-    return found
+    return frozenset(found)
 
 
 def check(root: str) -> dict[str, Any]:

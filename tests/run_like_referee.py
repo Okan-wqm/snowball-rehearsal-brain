@@ -39,8 +39,11 @@ What it does, each rule bound by ``tests/test_run_like_referee.py``:
   read-only; one ``python -m loop.job`` start took 1.14 s cold and 0.56 s from a moved home.
 - **The environment is only** ``PATH``, ``HOME=/nonexistent`` (no home to read or write), ``TMPDIR`` (a new
   directory per command) and ``LANG=C.UTF-8``; nothing of this session's environment passes.
-- **A time limit per command** (``--timeout``, default 1800 s, the referee's bound for a whole push): a command
-  that exceeds it is killed and is ``timed_out``, not ok.
+- **A time limit per command** (``--timeout``, default ``TIMEOUT``, 600 s): a command that exceeds it is killed
+  and is ``timed_out``, not ok. The number is observed, not read from a page (reports/seed-081): the referee's
+  result for c467639 has T46 with ``duration_ms`` 600162, ``exit`` 124 and ``timed_out`` true, while this runner,
+  then at 1800 s, called the same tree green. A command's duration here is this host's, at this ``-j``; it says
+  nothing certain of the referee's host.
 - One JSON line per command (``id``, ``exit``, ``ok``, ``timed_out``, ``wrote``, ``duration_ms``, ``tail``: the
   last 600 characters of stdout and stderr together; ``read`` only when the caller watches paths, see ``run_one``),
   then one summary line (``ok``, ``tests``, ``failed``,
@@ -77,7 +80,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOME = "/nonexistent"
 SHELL = "/bin/sh"
 TAIL = 600
-TIMEOUT = 1800.0
+TIMEOUT = 600.0
 PYCACHE = "__pycache__"
 LS_FILES = ("ls-files", "-z", "--cached", "--others", "--exclude-standard")
 
