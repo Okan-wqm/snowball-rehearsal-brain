@@ -169,12 +169,13 @@ refused tree is ``pulled_invalid``). Then:
   cycle's findings are none (``FINDINGS``) until an organ's output is kept, so every case of a cycle is a miss
   today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``min_groups`` and ``window``
   are not given (``policy.json`` holds none of their keys, reports/seed-076), so ``recall_lb`` is ``null``.
-  The harness reaches no model (P1 MF5, ``harness.offline``): before anything of the target is read, ``yaz_offline``
-  reads the import statements of the running code's harness (``CODE_ROOT``), and a reason there refuses the target
-  (``harness_online`` with the reasons, exit 1); the report above, the copy's genesis gate, the PASS judgement and
+  The harness reaches no model (P1 MF5, ``harness.offline``): the job's first step, before ``pulled`` is opened
+  and before MF6's reads below (``run``), is ``yaz_offline``, which reads the import statements of the running
+  code's harness (``CODE_ROOT``); a reason there refuses the job, not a target (``harness_online`` with the
+  reasons, ``targets`` ``[]``, no ``target``, exit 1), and the job's line otherwise has ``offline`` (``{modules}``,
+  how many modules the reading reached). The report above, the copy's genesis gate, the PASS judgement and
   D8's judgement (``loop.drill``) run inside ``harness.offline.run``, and a socket or a child process one of them
-  asks for refuses the target the same way (reasons ``event:<audit event>``) before D6 writes ``brain/state``; a
-  target's line otherwise has ``offline`` (``{modules}``, how many modules the reading reached).
+  asks for refuses the target (``harness_online``, reasons ``event:<audit event>``) before D6 writes ``brain/state``.
   Nothing reads ``cases`` or ``harness`` to decide and nothing is written from them: no merge, row or exit code
   depends on a case or a report (``<state_root>/cases/`` is not written yet, reports/seed-075). Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
   ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it), read
@@ -202,7 +203,7 @@ refused tree is ``pulled_invalid``). Then:
   ``$GITHUB_REPOSITORY``'s ``main`` (``loop.accepted.workflow_identity``, the identity the next cycle's
   D1 verifies the root against), the cycle id ``<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`` and the clock's time: the merge,
   if D5 chose one, or the revert of D7's red, or the end row of its green or flaky, and the cycle's one ``brain/state`` commit.
-  Before the job serves its first target, stage 1's MF6 (``yaz_drift``, tohum/01b:57-65: before the cycle's first
+  Before the job serves its first target and after MF5's reading above, stage 1's MF6 (``yaz_drift``, tohum/01b:57-65: before the cycle's first
   write, and a ``yaz`` job writes to every target it serves): ``drift.check`` of the checkout's
   ``setup/summary.json`` for each served target, in the order served, against the repository its ``pulled`` names
   (the one D6, or the activation of a genesis cycle, writes to), through the transport given or, the job's own,
@@ -1014,7 +1015,7 @@ SUMMARY = "setup/summary.json"
 
 def yaz_drift(environ: dict[str, str], served: list[str], transport: Any = None,
               now: Any = None) -> dict[str, Any]:
-    """MF6 of stage 1, ``yaz``'s first step, before any target is served (see the module docstring):
+    """MF6 of stage 1, ``yaz``'s step after ``yaz_offline`` and before any target is served (see the module docstring):
     ``drift.check`` of the checkout's ``setup/summary.json`` for every target of ``served`` whose ``pulled`` is
     read and names a repository, against that repository (the one D6 or the activation would write to):
     ``{checked, drifted}``, the ids checked in the order served and ``{id: reasons}`` of those with a reason. Its
@@ -1428,8 +1429,9 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
     """The job's line: ``{job, steps, mfs, ok, targets?, reason?, reasons?, target?}``. ``targets`` holds one line
     per target in the order served, each ``{target, ok, ...}``; the first target refused stops the job (no later
     target is served) and its ``reason``, ``reasons`` and id (``target``) are the job's. ``yaz`` first runs
-    ``yaz_drift`` on every served target and its line carries ``drift``; a drifted target stops the job with no
-    target served (``targets`` ``[]``). ``job_calls``, one list
+    ``yaz_offline`` (its line carries ``offline``; a reason stops the job as ``harness_online`` with ``targets``
+    ``[]`` and no ``target``, before ``pulled`` is read), then ``yaz_drift`` on every served target (its line
+    carries ``drift``); a drifted target stops the job with no target served (``targets`` ``[]``). ``job_calls``, one list
     made here, is where every root signer the job makes itself counts its runs (``loop.sign`` "The job's count")."""
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
@@ -1446,6 +1448,11 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         return dict(result, ok=True, done=["D1"], checked=list(CEK_CHECKED), **d1)
     if name not in TARGET_JOBS:
         raise Unusable("job %r has no entry" % name)
+    if name == "yaz":  # MF5 of stage 1: the running harness's own imports, before ``pulled`` or a target is read
+        offline = yaz_offline()
+        if offline["reasons"]:
+            return dict(result, reason="harness_online", reasons=offline["reasons"], targets=[])
+        result["offline"] = {"modules": offline["modules"]}
     try:
         served = P.served(_dir(environ, "in", "pulled"))
     except P.PulledError as exc:
@@ -1487,9 +1494,6 @@ def _cagir(environ: dict[str, str], tid: str, now: Any = None, **_: Any) -> dict
 
 def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any = None, now: Any = None,
          job_calls: list | None = None, **_: Any) -> dict[str, Any]:
-    offline = yaz_offline()
-    if offline["reasons"]:
-        return {"ok": False, "reason": "harness_online", "reasons": offline["reasons"]}
     try:
         d5, art, tree = yaz_d5(environ, tid)
         if "reason" in d5:
@@ -1497,8 +1501,7 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
         cases = yaz_cases(environ, tid, art)
         harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten
         written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)
-        return dict(written, cases=cases, harness=harness,
-                    offline={"modules": offline["modules"]})
+        return dict(written, cases=cases, harness=harness)
     except OF.Online as exc:
         return {"ok": False, "reason": "harness_online", "reasons": exc.reasons}
 

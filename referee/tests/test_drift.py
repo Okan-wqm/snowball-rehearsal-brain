@@ -1,4 +1,5 @@
-"""Test 24 (asama-0/09), stage 1 MF6: ``drift.check`` and its place in ``yaz`` (``loop.job.yaz_drift``, the job's first step).
+"""Test 24 (asama-0/09), stage 1 MF6: ``drift.check`` and its place in ``yaz`` (``loop.job.yaz_drift``, the job's step after
+stage 1 MF5's offline reading, ``yaz_offline``).
 
 - ``Check``: on the facts setup leaves (``activation_world.facts``, a toy and a copy) there is no reason and exactly
   the reads the module names are sent, each once, all ``GET``; each change of one fact gives its one reason
@@ -15,7 +16,10 @@
   both targets' reads precede the first write to either, both drifted name each one's reasons with the job's the
   first served's; a target whose ``pulled`` is refused is sent no request. The check is of the repository D6
   writes to; a fact that cannot be read, a checkout without the summary, a summary without the target and a
-  missing writer token are unusable with nothing written;
+  missing writer token are unusable with nothing written. The order with MF5 (``Order``): the offline reading is
+  made once per job with no request sent before it; a harness that imports the client stops the job as
+  ``harness_online`` with no request sent, no target named and ``pulled`` not opened (the same job without its
+  ``pulled`` ends the same way, and ``pulled_invalid`` on the code as it is);
 - ``YazGenesis``: a genesis cycle's target with a fact changed stops the job the same way, nothing written.
 
 Not tested, because not built (``drift.check`` "Out of scope"): a diff against values recorded in the summary, other
@@ -31,6 +35,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
@@ -285,8 +290,8 @@ def reads_of(repo: str, kind: str = "toy") -> list[tuple]:
     return [("GET", path.replace(AW.REPO, repo)) for path in READS[kind] if AW.REPO in path]
 
 
-class Yaz(TLW.D6):
-    """``yaz``'s first step (``test_loop_write.D6``'s worlds: t1, a toy at ``yaz_world.REPO``, or t1 and t2)."""
+class Yaz(TLW.StateBase):
+    """``yaz``'s step before any target is served (``test_loop_write.StateBase``'s worlds: t1, a toy at ``yaz_world.REPO``, or t1 and t2)."""
 
     def ready(self) -> None:
         self.kos({"good": TLW.candidate(TLW.GOOD)})
@@ -413,6 +418,52 @@ class Yaz(TLW.D6):
         with self.assertRaisesRegex(J.Unusable, r"\Ayaz: WRITER_TOKEN is not set\Z"):
             self.job(WRITER_TOKEN="")
         self.assertEqual(self.gh.requests, [])
+
+
+ONLINE = {"harness/__init__.py": "", "harness/score.py": "from dispatcher import llm_call\n",
+          "dispatcher/__init__.py": "", "dispatcher/llm_call.py": ""}
+
+
+class Order(TLW.StateBase):
+    """Stage 1 MF5 before MF6: the static reading of the running harness is the job's first step."""
+    ready, job, two = Yaz.ready, Yaz.job, Yaz.two
+
+    def online(self) -> dict:
+        """The job on a code root whose harness imports the client: its line, after nothing was sent or written."""
+        root = os.path.join(self.temp, "online-code")
+        TLW.write_tree(root, ONLINE)
+        refs = dict(self.gh.refs)
+        with unittest.mock.patch.object(J, "CODE_ROOT", root):
+            out = self.job()
+        self.assertEqual((self.gh.requests, self.gh.refs, self.signer.payloads), ([], refs, []))
+        return out
+
+    def test_an_online_harness_stops_the_job_before_a_request_to_any_target(self):
+        self.ready()
+        out = self.online()
+        self.assertEqual({k: out[k] for k in out if k not in ("job", "steps", "mfs")},
+                         {"ok": False, "reason": "harness_online", "targets": [],
+                          "reasons": ["client_import:harness.score:dispatcher.llm_call"]}, out)
+
+    def test_an_online_harness_stops_the_job_before_pulled_is_opened(self):
+        self.ready()
+        pulled = os.path.join(self.temp, "in", "pulled")
+        os.rename(pulled, pulled + "-away")
+        self.assertEqual(self.online()["reason"], "harness_online")
+        out = self.job()   # the code as it is: the reading passes and the job goes on to open ``pulled``
+        self.assertEqual((out["reason"], out["offline"], "drift" in out),
+                         ("pulled_invalid", {"modules": J.yaz_offline()["modules"]}, False), out)
+
+    def test_the_reading_is_made_once_per_job_before_the_first_request(self):
+        ghs = self.two()
+        transport, real, seen = Recorded(TLW.Router(ghs)), J.yaz_offline, []
+        with unittest.mock.patch.object(J, "yaz_offline", side_effect=lambda: seen.append(list(transport.sent)) or real()):
+            out = J.run("yaz", YW.env(self.temp, self.workspace), transport=transport, signer=self.signer,
+                        now=lambda: YW.NOW)
+        self.assertEqual((out["ok"], out["drift"]["checked"], seen), (True, ["t1", "t2"], [[]]), out)
+        self.assertEqual(out["offline"], {"modules": real()["modules"]})
+        self.assertTrue(all("offline" not in line for line in out["targets"]), out["targets"])
+        self.assertTrue(transport.sent)
 
 
 class YazGenesis(TLW.Genesis):

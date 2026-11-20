@@ -3,7 +3,7 @@
 **Test 9** (``harness.offline``): ``Static`` binds each reason of ``check`` on small trees and reads the brain's own
 tree; ``Guard`` binds ``run`` (each refused event with the real call that raises it, the swallowed event, the nested
 run, the guard idle outside); ``Command`` the command's exits; ``Live`` the loop's use of both on the rehearsal's
-world (``test_rehearsal.Flow``): a harness that imports the client refuses the target before anything of it is read,
+world (``test_rehearsal.Flow``): a harness that imports the client refuses the job before ``pulled`` or anything of a target is read,
 and each of the four judgements, made to open a socket and go on, stops its target with ``harness_online`` and
 leaves ``brain/state`` where it was (each in the first run of the rehearsal that makes that judgement).
 ``CostData`` binds the move that made the brain's tree pass (the cost section's data is ``ledger.cost``'s, the
@@ -439,10 +439,12 @@ class Live(Trees):
     def test_a_harness_that_imports_the_client_refuses_the_target_before_it_is_read(self):
         root = self.tree(ledger__chain="from dispatcher import llm_call\n")
         flow = R.without_fixtures(os.path.join(self.base, "flow"))
-        with mock.patch.object(R.J, "CODE_ROOT", root), \
-                mock.patch.object(R.J, "yaz_d5", side_effect=AssertionError("the target was read")):
+        read = AssertionError("something of a target was read")
+        with mock.patch.object(R.J, "CODE_ROOT", root), mock.patch.object(R.J, "yaz_drift", side_effect=read), \
+                mock.patch.object(R.J, "yaz_d5", side_effect=read):
             stopped = self.stopped(flow)
-        self.assertEqual(stopped, {"job": "yaz", "target": "t1", "reason": "harness_online", "reasons": [VIA_CHAIN]})
+        # the job is refused, not a target, and names none (``pulled`` not opened: ``test_drift.Order``)
+        self.assertEqual(stopped, {"job": "yaz", "target": None, "reason": "harness_online", "reasons": [VIA_CHAIN]})
         self.assertEqual(flow.state_heads, [None])
         self.assertEqual(sorted(flow.hubs["o/toy"].refs), ["main"])
 

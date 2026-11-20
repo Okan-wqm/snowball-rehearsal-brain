@@ -199,6 +199,34 @@ class StateBase(YazBase):
     def state_file(self, path: str) -> bytes:
         return self.gh.read_file(B.STATE, path)
 
+    def two_targets(self, cands: dict) -> dict[str, "Router"]:
+        """``in/pulled`` serving t1 then t2 (``served.json``), each a toy on its own repository at ``HEADS`` with
+        ``cands``; ``kos`` run on both and its ``out/results/<id>`` handed over; ``control.json``. Returns each target's
+        fake GitHub by id (``acme/t1``, ``acme/t2``), the cycle's responses not written yet."""
+        served = os.path.dirname(self.pulled)
+        os.makedirs(served)
+        P.write_served(served, ["t1", "t2"])
+        for tid in ("t1", "t2"):
+            self.pulled = os.path.join(served, tid)
+            self.write_pulled(cands, target=dict(TARGET, id=tid, repo="acme/" + tid))
+        kos = J.run("kos", {"RUNNER_TEMP": self.temp}, runner=RedAs())
+        self.assertEqual((kos["ok"], [t["target"] for t in kos["targets"]]), (True, ["t1", "t2"]), kos)
+        shutil.move(os.path.join(self.temp, "out", "results"), os.path.join(self.temp, "in", "results"))
+        self.control(OPEN)
+        YW.write_summary(self.workspace, [YW.entry("t1"), YW.entry("t2")])
+        return {tid: YW.github_at(HEADS, YW.files_of(self.src), self.state, repo="acme/" + tid) for tid in ("t1", "t2")}
+
+    def check_calls(self, ghs: dict) -> list[tuple[str, str]]:
+        """``Router.calls`` of ``drift.check`` for each of ``two_targets``' targets in order: what the job's first
+        step (stage 1 MF6) sends before it serves t1. The fakes' own request lists are left as they were."""
+        probe, before = Router(ghs), {tid: gh.requests[:] for tid, gh in ghs.items()}
+        with open(os.path.join(self.workspace, *J.SUMMARY.split("/")), "rb") as fh:
+            summary = fh.read()
+        for tid in ghs:
+            self.assertEqual(DC.check(probe, summary, tid, "acme/" + tid)["reasons"], [])
+            ghs[tid].requests[:] = before[tid]
+        return probe.calls
+
 
 class D6(StateBase):
     def test_a_cycle_merges_and_writes_one_state_commit(self):
@@ -497,34 +525,6 @@ class D6(StateBase):
         self.assertEqual([r["kind"] for r in rows_of(new)][-2:], ["status_edited", "status"])
         self.assertEqual(SC.status_reasons(self.state_file(B.STATE_STATUS), new), [])
         self.assertNotIn(b"EDITED-BY-HAND", self.state_file(B.STATE_STATUS))
-
-    def two_targets(self, cands: dict) -> dict[str, "Router"]:
-        """``in/pulled`` serving t1 then t2 (``served.json``), each a toy on its own repository at ``HEADS`` with
-        ``cands``; ``kos`` run on both and its ``out/results/<id>`` handed over; ``control.json``. Returns each target's
-        fake GitHub by id (``acme/t1``, ``acme/t2``), the cycle's responses not written yet."""
-        served = os.path.dirname(self.pulled)
-        os.makedirs(served)
-        P.write_served(served, ["t1", "t2"])
-        for tid in ("t1", "t2"):
-            self.pulled = os.path.join(served, tid)
-            self.write_pulled(cands, target=dict(TARGET, id=tid, repo="acme/" + tid))
-        kos = J.run("kos", {"RUNNER_TEMP": self.temp}, runner=RedAs())
-        self.assertEqual((kos["ok"], [t["target"] for t in kos["targets"]]), (True, ["t1", "t2"]), kos)
-        shutil.move(os.path.join(self.temp, "out", "results"), os.path.join(self.temp, "in", "results"))
-        self.control(OPEN)
-        YW.write_summary(self.workspace, [YW.entry("t1"), YW.entry("t2")])
-        return {tid: YW.github_at(HEADS, YW.files_of(self.src), self.state, repo="acme/" + tid) for tid in ("t1", "t2")}
-
-    def check_calls(self, ghs: dict) -> list[tuple[str, str]]:
-        """``Router.calls`` of ``drift.check`` for each of ``two_targets``' targets in order: what the job's first
-        step (stage 1 MF6) sends before it serves t1. The fakes' own request lists are left as they were."""
-        probe, before = Router(ghs), {tid: gh.requests[:] for tid, gh in ghs.items()}
-        with open(os.path.join(self.workspace, *J.SUMMARY.split("/")), "rb") as fh:
-            summary = fh.read()
-        for tid in ghs:
-            self.assertEqual(DC.check(probe, summary, tid, "acme/" + tid)["reasons"], [])
-            ghs[tid].requests[:] = before[tid]
-        return probe.calls
 
     def test_two_served_targets_are_written_in_order_with_one_cycle_id(self):
         ghs = self.two_targets({"good": candidate(GOOD)})

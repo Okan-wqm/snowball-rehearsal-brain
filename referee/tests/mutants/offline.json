@@ -201,19 +201,58 @@
   {
    "id": "yaz_ignores_the_static_reading",
    "file": "loop/job.py",
-   "old": "    if offline[\"reasons\"]:\n",
-   "new": "    if False:\n",
+   "old": "        if offline[\"reasons\"]:\n",
+   "new": "        if False:\n",
    "tests": [
-    "test_offline.Live.test_a_harness_that_imports_the_client_refuses_the_target_before_it_is_read"
+    "test_offline.Live.test_a_harness_that_imports_the_client_refuses_the_target_before_it_is_read",
+    "test_drift.Order.test_an_online_harness_stops_the_job_before_a_request_to_any_target"
    ]
   },
   {
    "id": "yaz_reads_the_target_first",
    "file": "loop/job.py",
-   "old": "    offline = yaz_offline()\n    if offline[\"reasons\"]:\n        return {\"ok\": False, \"reason\": \"harness_online\", \"reasons\": offline[\"reasons\"]}\n    try:\n        d5, art, tree = yaz_d5(environ, tid)\n",
-   "new": "    offline = yaz_offline()\n    try:\n        d5, art, tree = yaz_d5(environ, tid)\n        if offline[\"reasons\"]:\n            return {\"ok\": False, \"reason\": \"harness_online\", \"reasons\": offline[\"reasons\"]}\n",
+   "old": "    if name == \"yaz\":  # MF5 of stage 1: the running harness's own imports, before ``pulled`` or a target is read\n        offline = yaz_offline()\n        if offline[\"reasons\"]:\n            return dict(result, reason=\"harness_online\", reasons=offline[\"reasons\"], targets=[])\n        result[\"offline\"] = {\"modules\": offline[\"modules\"]}\n    try:\n        served = P.served(_dir(environ, \"in\", \"pulled\"))\n    except P.PulledError as exc:\n        return dict(result, reason=\"pulled_invalid\", reasons=exc.reasons)\n    if name == \"yaz\":  # MF6 of stage 1: every target's setup facts before the first target is served\n        drift = yaz_drift(environ, served, transport, now)\n        result[\"drift\"] = drift\n        if drift[\"drifted\"]:\n            first = next(iter(drift[\"drifted\"]))\n            return dict(result, reason=\"drift\", reasons=drift[\"drifted\"][first], target=first, targets=[])\n",
+   "new": "    try:\n        served = P.served(_dir(environ, \"in\", \"pulled\"))\n    except P.PulledError as exc:\n        return dict(result, reason=\"pulled_invalid\", reasons=exc.reasons)\n    if name == \"yaz\":\n        drift = yaz_drift(environ, served, transport, now)\n        result[\"drift\"] = drift\n        if drift[\"drifted\"]:\n            first = next(iter(drift[\"drifted\"]))\n            return dict(result, reason=\"drift\", reasons=drift[\"drifted\"][first], target=first, targets=[])\n        offline = yaz_offline()\n        if offline[\"reasons\"]:\n            return dict(result, reason=\"harness_online\", reasons=offline[\"reasons\"], targets=[])\n        result[\"offline\"] = {\"modules\": offline[\"modules\"]}\n",
    "tests": [
+    "test_offline.Live.test_a_harness_that_imports_the_client_refuses_the_target_before_it_is_read",
+    "test_drift.Order.test_the_reading_is_made_once_per_job_before_the_first_request"
+   ]
+  },
+  {
+   "id": "yaz_opens_pulled_before_the_static_reading",
+   "file": "loop/job.py",
+   "old": "    if name == \"yaz\":  # MF5 of stage 1: the running harness's own imports, before ``pulled`` or a target is read\n        offline = yaz_offline()\n        if offline[\"reasons\"]:\n            return dict(result, reason=\"harness_online\", reasons=offline[\"reasons\"], targets=[])\n        result[\"offline\"] = {\"modules\": offline[\"modules\"]}\n    try:\n        served = P.served(_dir(environ, \"in\", \"pulled\"))\n    except P.PulledError as exc:\n        return dict(result, reason=\"pulled_invalid\", reasons=exc.reasons)\n    if name == \"yaz\":  # MF6 of stage 1: every target's setup facts before the first target is served\n        drift = yaz_drift(environ, served, transport, now)\n        result[\"drift\"] = drift\n        if drift[\"drifted\"]:\n            first = next(iter(drift[\"drifted\"]))\n            return dict(result, reason=\"drift\", reasons=drift[\"drifted\"][first], target=first, targets=[])\n",
+   "new": "    try:\n        served = P.served(_dir(environ, \"in\", \"pulled\"))\n    except P.PulledError as exc:\n        return dict(result, reason=\"pulled_invalid\", reasons=exc.reasons)\n    if name == \"yaz\":\n        offline = yaz_offline()\n        if offline[\"reasons\"]:\n            return dict(result, reason=\"harness_online\", reasons=offline[\"reasons\"], targets=[])\n        result[\"offline\"] = {\"modules\": offline[\"modules\"]}\n        drift = yaz_drift(environ, served, transport, now)\n        result[\"drift\"] = drift\n        if drift[\"drifted\"]:\n            first = next(iter(drift[\"drifted\"]))\n            return dict(result, reason=\"drift\", reasons=drift[\"drifted\"][first], target=first, targets=[])\n",
+   "tests": [
+    "test_drift.Order.test_an_online_harness_stops_the_job_before_pulled_is_opened"
+   ]
+  },
+  {
+   "id": "yaz_static_reading_names_the_first_target",
+   "file": "loop/job.py",
+   "old": "reasons=offline[\"reasons\"], targets=[])",
+   "new": "reasons=offline[\"reasons\"], targets=[], target=\"t1\")",
+   "tests": [
+    "test_drift.Order.test_an_online_harness_stops_the_job_before_a_request_to_any_target",
     "test_offline.Live.test_a_harness_that_imports_the_client_refuses_the_target_before_it_is_read"
+   ]
+  },
+  {
+   "id": "yaz_static_reading_per_target",
+   "file": "loop/job.py",
+   "old": "    try:\n        d5, art, tree = yaz_d5(environ, tid)\n",
+   "new": "    try:\n        yaz_offline()\n        d5, art, tree = yaz_d5(environ, tid)\n",
+   "tests": [
+    "test_drift.Order.test_the_reading_is_made_once_per_job_before_the_first_request"
+   ]
+  },
+  {
+   "id": "yaz_line_without_offline",
+   "file": "loop/job.py",
+   "old": "        result[\"offline\"] = {\"modules\": offline[\"modules\"]}\n",
+   "new": "        pass\n",
+   "tests": [
+    "test_drift.Order.test_the_reading_is_made_once_per_job_before_the_first_request"
    ]
   },
   {

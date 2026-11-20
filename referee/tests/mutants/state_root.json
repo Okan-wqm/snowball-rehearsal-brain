@@ -21,8 +21,8 @@
   {
    "id": "offline_reading_not_on_the_line",
    "file": "loop/job.py",
-   "old": "                    offline={\"modules\": offline[\"modules\"]})",
-   "new": "                    offline={\"modules\": 0})",
+   "old": "        result[\"offline\"] = {\"modules\": offline[\"modules\"]}\n",
+   "new": "        result[\"offline\"] = {\"modules\": 0}\n",
    "tests": [
     "test_state_root.py"
    ]
@@ -30,8 +30,8 @@
   {
    "id": "harness_report_not_on_the_line",
    "file": "loop/job.py",
-   "old": "cases=cases, harness=harness,\n",
-   "new": "cases=cases, harness={},\n",
+   "old": "cases=cases, harness=harness)\n",
+   "new": "cases=cases, harness={})\n",
    "tests": [
     "test_state_root.py"
    ]

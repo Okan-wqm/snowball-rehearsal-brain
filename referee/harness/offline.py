@@ -40,8 +40,9 @@ by starting a program (``dispatcher.llm_call`` starts the ``claude`` CLI). ``run
 when no such event was raised: an event the call caught and went on from still ends in ``Online(events)`` (the
 event names, sorted, each once). A ``run`` inside a ``run`` reports to both.
 
-**Live** (``loop.job``): ``yaz`` runs ``check`` on its own code (``loop.job.CODE_ROOT``) before it reads anything
-of a target and refuses the target with ``harness_online`` and the reasons; its four judgements
+**Live** (``loop.job``): ``yaz`` runs ``check`` on its own code (``loop.job.CODE_ROOT``) as the job's first step,
+before it opens ``pulled`` or sends a request (``drift.check``'s reads included), and refuses the job with
+``harness_online`` and the reasons, no target served; its four judgements
 (``harness.score.report``, ``harness.pass_row.gate`` and ``judge``, and D8's ``harness.revert_drill.judge`` in
 ``loop.drill``) go through ``run``, and an ``Online`` from one of them refuses the target with ``harness_online``
 and ``event:<name>`` reasons before that run writes ``brain/state`` (what the steps before the judgement did on
