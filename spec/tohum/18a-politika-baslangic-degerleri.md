@@ -14,7 +14,7 @@ Anahtar sütunu her anahtarı bölümüyle, tam yoluyla yazar; başka sayfada b�
 
 | Anahtar | Başlangıç | Okuyan |
 |---|---|---|
-| `constitutional.monthly_cap_usd` | Operatör yazar; öneri 300 USD; kaçak freni (`06`) | `06`, Gözcü (`28`), önyükleme hakemi (`29b`) |
+| `constitutional.monthly_cap_usd` | 10.000 USD (sahip kararı, 2026-11-19, hakem `33c01cb`: hesaplar şirketin CLI aboneliğidir, harcama frenleri sistemi durdurmaz); kaçak freni (`06`) | `06`, Gözcü (`28`), önyükleme hakemi (`29b`) |
 | `constitutional.monthly_cap_ci_minutes` | 1.800 dk (Free özel repo kotası 2.000; açık repoda kota yok, tavan fren olarak kalır; önyükleme hakemi ölçmez, Aşama 0'da fren GitHub harcama sınırıdır, `25` 8) | `01b`, `06`, `28` |
 | `constitutional.session_cap_usd` | Kurucu oturumu başına 20 USD (`--max-budget-usd`); kaçak freni | `24` |
 | `constitutional.shares` | Keşif ≤ %30, üretim ≤ %40, ölçüm ≤ %20, genel ≤ %10 | `06` |
@@ -54,11 +54,12 @@ Anahtar sütunu her anahtarı bölümüyle, tam yoluyla yazar; başka sayfada b�
 | `constitutional.stage_params.match_window_lines` | K3 ve üstü eşleme penceresi ±15 satır | `asama-1/13e` |
 | `constitutional.stage_params.rival_min_attempts` | Aşama başına rakipten sağ çıkmış 5 ayrı artefakt, artefakt başına 1 deneme | `asama-0/10`, `29`, `29b` |
 | `constitutional.stage_params.repeat_reject_limit` | Aynı imzalı 3 ardışık ret → `not_learning` | `24`, `29b` |
-| `constitutional.stage_budgets` | Aşama sayfalarının bütçe tabloları; toplamdır, aylık tavan ayrıca bağlar. Değerler kaçak frenidir, kısıt değil (`06`). Güvenlik avcısının kendi satırı `<aşama>.security_hunter_usd`'dir; yazılmamışsa avcı koşmaz | aşama bütçe sayfaları, P1'den Gözcü, önyükleme hakemi (`29b`), güvenlik avcısı (`30f`) |
+| `constitutional.stage_budgets` | Aşama sayfalarının bütçe tabloları; toplamdır, aylık tavan ayrıca bağlar. Değerler kaçak frenidir, kısıt değil (`06`); her anahtar tek başına `monthly_cap_usd` ile karşılaştırılır, toplamları değil (`02`). Güvenlik avcısının kendi satırı `<aşama>.security_hunter_usd`'dir; yazılmamışsa avcı koşmaz, Aşama 1'de yoktur (`30f`) | aşama bütçe sayfaları, P1'den Gözcü, önyükleme hakemi (`29b`), güvenlik avcısı (`30f`) |
 | `constitutional.stage_budgets.asama_0.founder_usd` | Başlangıç fren değeri 220 USD; ölçüm ~22 oturumdur, kapı değil | başlatıcı (`24`), `asama-0/12` |
 | `constitutional.stage_budgets.asama_0.rival_usd` | Başlangıç fren değeri 25 USD; 2026-11-05'ten 1000 USD (sahibin kararı: rakip `claude` CLI aboneliğiyle koşar, USD freni yalnız kaçak frenidir) | önyükleme hakemi (`29b`), `asama-0/12` |
 | `constitutional.stage_budgets.asama_0.canary_usd` | Başlangıç fren değeri 1 USD; çağrı başına ayrıca `--max-budget-usd` | `llm.call`, `asama-0/12` |
-| `constitutional.stage_budgets.asama_1.rival_usd` | Başlangıç fren değeri 1000 USD (sahibin 2026-11-05 kararı: Aşama 0'dakiyle aynı, yalnız kaçak freni); harcama kilidin açılışından sayılır, kilit onsuz açılmaz (`26e`) | önyükleme hakemi (`29b`), `stage-open`, `asama-1/10` |
+| `constitutional.stage_budgets.asama_1.rival_usd`, `founder_usd`, `runtime_llm_usd` | Her biri 10.000 USD (sahip kararı, 2026-11-20: harcama frenleri sistemi hiçbir zaman durdurmaz; yalnız kaçak freni; spec-071). `rival_usd` 2026-11-19'dan beri 10.000'dir (hakem `33c01cb`; önce 1000, 2026-11-05); koşu başına rakip tavanı 3 USD kalır; harcama kilidin açılışından sayılır, kilit `rival_usd`'siz açılmaz (`26e`) | önyükleme hakemi (`29b`), `stage-open`, başlatıcı (`24`), `asama-1/10` |
+| `constitutional.stage_params.fix_acceptance_min`, `live_merge_min` | 0,80 (Aşama 1 çıkışında düzeltme adaylarının kabul oranı) ve 10 (çıkışın canlı merge sayısı min(bu değer, uygun borç)'tur); spec-071 | `asama-1/08`, Aşama 1 çıkışı |
 
 ## İşletim sınırları (`operating`)
 

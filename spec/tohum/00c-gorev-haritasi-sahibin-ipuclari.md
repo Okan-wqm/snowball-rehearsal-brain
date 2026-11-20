@@ -75,3 +75,5 @@ Okunma: her oturumda, görev seçilirken (`00b`'nin devamı)
   vermeyen kod.
 - Seçim ölçütleri: otoriter mi; izin verici lisanslı mı; içinde bir doğrulama (test, kural) taşıyor mu; sürümü
   sabitlenebilir mi; o aşamanın hata sınıfına uygun mu; etkisi ölçülebilir mi.
+
+Sahibin 2026-11-20 ve sonraki ipuçları (E654'ten başlayarak) `00d`'dedir.

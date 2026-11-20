@@ -32,8 +32,8 @@ Okunma: takım kurarken ve ajan önerirken
   kuralı `09a`'dadır ve model politikasının üstündedir.
 - **Takım boyutu aşama spec'inde yazar.** Aşama 0 ve 1 için iki ajan: Kurucu ve tohum rakibi
   (dürüstlük ekimini kurulumda operatörün ayrı bir ajanı bir kez yapar, `asama-0/10`); Aşama 0'ın
-  çalışma-zamanı modeli yalnız (B)'deki `llm.call` kanaryası, Aşama 1'inki düzelticinin Sonnet çağrısı
-  ve P2'nin güvenlik avcısıdır. Aşama 2 ve 3'te altı ya
+  çalışma-zamanı modeli yalnız (B)'deki `llm.call` kanaryası, Aşama 1'inki düzelticinin Sonnet çağrısıdır
+  (güvenlik avcısı araç kullanan ilk çalışma-zamanı ajanıyla gelir, `30f`). Aşama 2 ve 3'te altı ya
   da yedi. Sayı bütçeyle sınırlıdır; her ajanın hangi sayıyı oynattığı çıkış raporunda yazar.
 - **Anlaşma değil, çürütme.** İki ajanın aynı sonuca varması kanıt değildir. Bir artefakt ancak
   farklı modelden ve ayrı bağlamdan bir rakip onu çürütmeyi deneyip başaramadığında kabul edilir.

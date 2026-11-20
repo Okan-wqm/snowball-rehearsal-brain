@@ -40,16 +40,17 @@ değil). Beyin ağacındaki içe aktarmaları ya da çağrıları `calls`'la kar
 | `status.block` | Hakem | `yaz` | defter (devir, son karar, taban yaşı, fren, insan dokunuşu) | `status.md` üst bloğu | `brain/state` | hakem devir sonu | MF16 |
 | `activate` | Hakem | `koş`, `yaz` | hedef, `targets[]`, hazır adaylar | genesis satırı, `brain/integration` kesimi, mandal tabanı | `brain/state` | operatörün ilk devri | MF18 |
 | `snapshot.make` | Hakem | `çek` | `base_sha`, vaka listesi, tür | `snapshot_id`, manifest | kısa ömürlü dizin | hakem; Kurucu dev | P1 |
-| `cases.build` | Hakem | `çek` | sınıf, kaynak (geçmiş, mutasyon) | dev vakaları | `cases/` önerisi | hakem; Kurucu yalnız dev | P1 |
-| `harness.score` | Hakem | `yaz` | bulgu dosyası, `snapshot_id` | harness raporu (`26b`) | rapor | Kurucu dev; hakem exit | P1 |
+| `cases.build` | Hakem | `çek` | sınıf, kaynak (geçmiş, mutasyon); `produce <araç> <kural>` (`29za`) | dev vakaları; `produce`: `{producible}` | `cases/` önerisi | hakem; Kurucu yalnız dev | P1 |
+| `harness.score` | Hakem | `yaz` | bulgu ve vaka dosyaları; rapor için snapshot belgesi ve ağacı (`--snapshot`, `--tree`) | iki dosyayla `{hits}` (`29a`); dördüyle harness raporu (`26b`) | rapor | Kurucu dev; hakem exit | P1 |
 | `drift.check` | Hakem | `yaz` | kurulum özeti | fark | sert duruş | hakem döngü başı | P1 (Aşama 0'da genesis'te bir kez) |
 | `gozcu.evaluate` | Hakem | `yaz` | defter görünümleri | dondurma, işaret | `freeze` satırı | hakem döngü sonu | P1 |
-| `agent.dispatch` | Hakem | `çağır` (iç kullanımda `claude` CLI'si; satışta `koş` + geçit, `08` 5) | rol, prompt, hakemin MCP araç listesi | çıktı, `run_meta` | yok | hakem (güvenlik avcısı; sonra her ajan) | P2 |
+| `agent.dispatch` | Hakem | `çağır` (iç kullanımda `claude` CLI'si; satışta `koş` + geçit, `08` 5) | rol, prompt, hakemin MCP araç listesi | çıktı, `run_meta` | yok | hakem (güvenlik avcısı; sonra her ajan) | Araç kullanan ilk çalışma-zamanı ajanı, en geç Aşama 4 (`30f`) |
 | `security.derive` | Hakem | `çek`, `koş` | hedef ağacı, `profile.json`, göç uygulanmış test veritabanı | güvenlik profili (`30d`); öneri yalnız ekler | `security/profile.json` | her döngü | P2 |
 | `security.scan` | Hakem | `getir`, `koş` | kilit dosyaları, profil, danışma veritabanları | tarayıcı eşleşmeleri ve dedektör isabetleri (`trust: observed`) | yok | her push, süpürme (`30f`) | P2 |
 | `security.run` | Hakem | `koş` | profilin testleri, avcının kanıtları, ağaçlar | kural durumları, doğrulanmış ve reddedilmiş bildirimler | `security` satırları `yaz`'da | her döngü (`30d`, `30f`) | P2 |
-| `exit.sample` | Hakem | `çek` | sınıf, gizli tohum, profil | çıkış vakaları (kural sayımı) | yok; aktarımında donar | hakem exit | Aşama 1 çıkışı |
+| `exit.sample` | Hakem | `çek` | sınıf, gizli tohum, profil | çıkış vakaları (kural sayımı; paydası hedefin tohumdaki `census` vektörü, oyuncağınki var, kopyanınki operatörün açık işi; mutasyon kütüphanesi `cases.build`'inki, `29za`) | yok; aktarımında donar | hakem exit | Aşama 1 çıkışı |
 | `spec.lint` | Hakem | `koş` | spec dizini, `required_exit_rows` | ihlal listesi | yok | Kurucu, aşama kilidi | Aşama 1 çıkışı (Aşama 0'da tohumun spec denetimi) |
+| `exit.adversarial` | Hakem | `koş` | saldırgan set (prompt injection, kaçan diff, gizlenmiş sır) | vaka başına kapının kararı | yok; aktarımında donar | hakem exit | Aşama 1 çıkışı (`29za`, test 54) |
 | `harness.baseline` | Hakem | `çek` | `snapshot_id`, property | bulgu dosyası | yok | hakem | LLM avcı |
 | `lock.check`, `brain.accept` | Önyükleme hakemi | `çek`, `yaz` | aşama, spec hash, `setup/stage.json`; beyin SHA'sı, testler, rakip | kilit; kabul / ret | imzalı sonuç | her push (`29b`) | tohum; Kurucu yazmaz |
 | `profile.propose` | Beyin | `koş` | hedef ağacı | profil önerisi | yok | Kurucu | Aşama 1+ oyuncu |

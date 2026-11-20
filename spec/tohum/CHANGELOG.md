@@ -4,12 +4,12 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
-- 2.2 (2026-11-19, E651–E653; sahibin ipuçları ve ilkesi): `00c`. Sahip ilkesi (E653, ilke): "Tutarlı gelişim",
-  sistem her yönüyle tutarlı gelişir, çelişen ya da tekrar eden yol bırakılmaz, tutarsızlık kayda geçer. "MVP isteği"
-  (E651, ipucu olarak işaretli): tanımı, kanıtı ve sırası Kurucu'nundur, öneri sahibin onayına gider, sınırlar
-  değişmez. "Başka repolardan öğrenme" (E652, ipucu olarak işaretli): sistemi Kurucu tasarlar; salt okunur, sabit
-  sürüm, izin verici lisans, kod kopyalanmaz, bilgi hipotezdir (`21a`), E648'in seti uygulanır, etkisi ölçülür
-  (E644); kaynak türleri bağlayıcı olmayan öneri. 5 mutant.
+- 2.2 (2026-11-20, E654; sahibin ipucu): yeni `00d` (`00c` 80 satıra yaklaştı), "Derslerin kendiliğinden yeniden
+  sınanması" (ipucu olarak işaretli): dersler otomatik ve düzenli yeniden sınansın, sonuç derse geri yazılsın;
+  ne zaman, nerede ve nasıl kaydedileceği Kurucu'nundur, tohum değişikliği rapor olarak önerilir. 1 mutant.
+- 2.2 (2026-11-20, E655–E671; bağımsız inceleme ekibi, operatör ve sahip kararları, Kurucu'nun on bir raporu, yeni
+  `01c` ve `29za`, sahibin üç ipucu `00d`'de): `CHANGELOG-9.md`.
+- 2.2 (2026-11-19, E651–E653): sahibin ilkesi ve iki ipucu, `00c`: `CHANGELOG-8.md`.
 - 2.2 (2026-11-19, E647–E650): ölçüm aynası ve sahibin üç ipucu, yeni `00c`: `CHANGELOG-8.md`.
 - 2.2 (2026-11-18 – 2026-11-19, E634–E645; bağımsız inceleme ekibi kararı, sahip kararları ve Kurucu raporları): Kurucu'nun dört
   raporunu iki bağımsız inceleyici (Opus ve Sonnet) ayrı ayrı yargıladı; bu yolla karara bağlanan ilk dönem. Sahip

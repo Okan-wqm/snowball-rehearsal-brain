@@ -15,7 +15,7 @@ ya da `flaky` kararı bu satırla yazılır; `rerun` karar değildir, satır yaz
 satırıdır (aşağıda), ayrıca `sentinel` satırı yazılmaz. Yazarı nöbetçiyi koşan devrin `yaz`'ıdır (D7, `asama-0/01`).
 
 **Geri alma** (`part: events`, `kind: revert`): üst düzey `cause` (`26`'nın kapalı kümesi, MF13'ün kuralı, `29j`) ve
-`payload {merge_sha}`; aynı satır biçimi provanın ektiği merge'ün geri alınmasıdır (`29m`).
+`payload {merge_sha, head_sha}`; aynı satır biçimi provanın ektiği merge'ün geri alınmasıdır (`29m`).
 
 **Nöbetçinin bitişi.** Bir merge'ün (`events` `kind: merge` ya da `drill` `kind: plant`) nöbetçisi, sonra gelen ve
 `merge_sha`'sı onunki olan ilk `sentinel` satırında ya da ilk `revert` satırında biter. Nöbetçisi bitmemiş merge
@@ -74,3 +74,6 @@ her sayı sıfırdır ve çekiliş bugünkü gibidir. `commit` ve `reveal`'e ver
 alanları, taahhüt ve `judge` değişmez. Uygun küme her yeniden türetmede (ekme adımı, açılım ve yargı, #geri-alma
 kapısı) o taahhüt satırından önceki satırlardan kurulur, güncel defterden asla. Kural çekilişi yönlendirir, kapıyı
 değil: #geri-alma yine her neden için PASS bir prova ister (`asama-0/10a`).
+
+**Geri almanın `head_sha`'sı** (bağımsız inceleme ekibi kararı, 2026-11-20, seed-078): geri almanın merge'ünün
+`brain/integration`'da bıraktığı baştır; `merge_sha` geri alınan merge'dür. `13` onu adlandıran satır sayar.

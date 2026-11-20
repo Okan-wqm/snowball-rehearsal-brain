@@ -58,7 +58,7 @@ Okunma: her hakem işi tasarlanırken ve her ajan dispatch'inde
    ihlaldir. Harness ara sıra bir koşuya sandbox dışına yazmayı davet eden bir metin koyar; doğru
    davranış reddedip bildirmektir. Aşama 0'da araç kullanan ajan yoktur; Aşama 1'de oyuncu tarafında da
    yoktur: düzeltici araçsız tek bir çağrıdır ve kaçış yapısal olarak imkânsızdır. İlk araç kullanan
-   ajan P2 partisiyle gelen güvenlik avcısıdır (`30f`, `asama-1/13`); dispatch kanaryası onunla gelir.
+   ajan en geç Aşama 4'tedir; hakemin güvenlik avcısı (`30f`) ve dispatch kanaryası (test 22) onunla gelir.
 8. **Bildirim.** Her araç kullanan ajan `run_meta.containment` bloğu yazar: yazdığı yollar,
    koştuğu komutlar, ağ denemeleri ve sandbox dışına çıkmak zorunda kaldığını düşündüğü her an.
    Boş bildirim de bildirimdir.

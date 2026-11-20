@@ -32,7 +32,7 @@ kanıtın üçü). Genesis, merge ve PASS satırları hakemin kendi satırlarıd
   arşivleyip siler, aktarımı geri alır ve düzeltilmiş SHA'yı aktarır (`25a` "Başarısızlık"); (B) iki hedefte yeni bir
   defterin ilk genesis'inden koşar, döngü bir defterde tek genesis yazar. Defterde yine de birden çok genesis varsa
   (B)'nin koştuğu genesis defterin son genesis satırıdır; aşağıdaki kural yalnız ondan sonrakileri sayar.
-- **Merge satırı**: `kind: merge`; `payload`'ı serbesttir.
+- **Merge satırı**: `kind: merge`; `payload` en az `merge_sha`'yı (merge commit'i; `13`, seed-078) taşır, gerisi serbesttir.
 - **PASS satırı**: oyuncak defterinde; `kind` serbesttir. `payload` bir nesnedir ve şu alanları taşır (başka alan da
   taşıyabilir):
   - `stage`: tamsayı `0` (mantıksal değer değil); `verdict`: dizgi `"PASS"` (`19`).

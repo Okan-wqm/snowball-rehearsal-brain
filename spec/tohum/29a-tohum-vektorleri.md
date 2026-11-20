@@ -64,12 +64,12 @@ p-değeri (b: eskinin lehine, c: yeninin lehine uyuşmaz çift):
 
 ## Arayüz
 
-Önyükleme hakemi vektörleri Kurucu'nun koduna `referee/` kökünden uygular; çıktı stdout'ta tek satır
-JSON'dur, karşılaştırma tablodaki basamak sayısıyla yapılır:
+Önyükleme hakemi vektörleri Kurucu'nun koduna `referee/` kökünden uygular; çıktı stdout'ta tek satır JSON'dur,
+karşılaştırma çıktıyı tablodaki basamak sayısına yarım yukarı yuvarlayarak yapılır (seed-076):
 
 - `python -m ledger.chain hash` (stdin: tek satır) → `{"row_hash": ...}`
 - `python -m ledger.chain verify <dosya> [--previous <dosya>]` → `{"valid": bool, "broken_row": ...}`
-- P1: `python -m harness.stats cp_lower <x> <n> <alpha>` → `{"lb": "0.962400"}` (altı ondalık dizgi);
+- P1: `python -m harness.stats cp_lower 60 60 0.10` → `{"lb": "0.962351"}` (altı ondalık dizgi; tabloda 0,9624);
   `python -m harness.stats mcnemar <b> <c>` → `{"p": "0.062500"}`; `python -m harness.score <bulgular>
   <vakalar>` (iki JSON dizisi) → `{"hits": int}`, eşleme fikstürleri `seed/bootstrap/vectors/`'te.
 - Aşama 2 partisi: `python -m harness.drill judge <prova dosyası>` → `{"drill": ..., "verdicts": {...}}`

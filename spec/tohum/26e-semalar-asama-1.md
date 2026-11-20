@@ -25,7 +25,6 @@ değildir.
 | `P1` | 7 | 41 | — | `gozcu/evaluate.py` | — |
 | `P1` | 8 | 52 | — | `policy/operating.py` | — |
 | `P2` | 1 | 53 | — | `security/derive.py` | — |
-| `P2` | 2 | 22 | — | `agent/dispatch.py` | — |
 
 Test numaraları §0.9'undur (`asama-0/09`); 53 onun numaralarının devamıdır: `asama-1/13`'ün P2 MF1 için andığı
 "`30d`'nin profil testleri", tanımı `30d` "Profil testi"ndedir. Öbür testler ve gruplar `asama-1/13`'ündür. Modül yolu `26a`'nın
@@ -37,11 +36,12 @@ düşer); böyle bir satırı olan tablo yüklenmez. Aşama 0'ın donmuş tablos
 gelir ve o tablo yeniden açılana kadar kalır; hakemin hiçbir komutu `cProfile`'ı çağırmaz. Parti çıkış isteği
 `{stage: 1, sha, spec_sha256, batch}`'tir (`26c`); `batch` bu tablonun ilk sütunudur ve açık partininki olmalıdır,
 değilse `exit_request_wrong_batch`.
+P2'nin MF2'si düştü (aşağıda "P2'nin tek MF'si", seed-072).
 
-**Çıkış partisi.** `asama-1/13`'ün "Aşama 1 çıkışı" satırları (`exit.sample` 27 ve 16, `spec.lint` 33) bu tohumda tablo
-değildir: o parti Aşama 1'in kendi çıkışının (A)'sıyla gelir (`asama-1/08`) ve bu tohum Aşama 1'in çıkış isteğini
-yargılamaz (`batch`'siz istek `exit_request_wrong_stage`'dir). Tablosu o yargıyla, bir tohum döneminde gelir. P1 ve P2
-aktarılınca açık tablo boştur, `done_mf` `[]`'dir.
+**Çıkış partisi.** `asama-1/13`'ün "Aşama 1 çıkışı" satırları (`exit.sample` 27, `spec.lint` 33, `exit.adversarial`
+54; `29za`) bu tohumda tablo değildir: o parti Aşama 1'in kendi çıkışının (A)'sıyla gelir (`asama-1/08`) ve bu tohum
+Aşama 1'in çıkış isteğini yargılamaz (`batch`'siz istek `exit_request_wrong_stage`'dir). Tablosu o yargıyla, bir tohum
+döneminde gelir. P1 ve P2 aktarılınca açık tablo boştur, `done_mf` `[]`'dir.
 
 **Önyükleme hakemi Aşama 1'de.** Rakip freni açık aşamanın `constitutional.stage_budgets.asama_<k>.rival_usd`'sidir: `k`
 kilidin `stage`'idir, kilit yokken 0; Aşama 1'inki `asama-1/10`'un tablosundadır (`18a`). Aşamanın harcaması kilidin
@@ -50,3 +50,31 @@ tutar (Aşama 0'ın durumunda alan yoktur). Kilit açıkken anahtar `policy.json
 dosyası kapalıya düşer); `stage-open` anahtarsız politikayla kilidi açmaz. Kod isteğinde rakip, tohum sayfalarının
 yanında açık tablonun kopyaladığı aşama sayfalarını görür: Aşama 0'da `asama-0/09` ve `asama-0/14`; Aşama 1'de
 `asama-0/09`, `asama-1/06` ve `asama-1/13`.
+
+**P2'nin tek MF'si** `30d`'nin profilidir (bağımsız inceleme ekibi kararı, 2026-11-20, seed-072): `agent.dispatch` ve
+dispatch kanaryası (test 22) çalışma zamanında araç kullanan ilk ajanla, en geç Aşama 4'te gelir (`30f`); §0.9'un
+donmuş tablosunda 22'nin partisi `P2` yazılı kalır, bu sayfa ondan üstündür (`02`).
+
+**P1'in arayüz olguları** (bağımsız inceleme ekibi kararı, 2026-11-20; Kurucu raporları seed-073–077). Aşama
+sayfalarının (`asama-1/13a`, `13c`, `13e`, `asama-0/09`) bıraktığı arayüz olgularıdır; kodun nasıl yazılacağı
+Kurucu'nundur.
+- **Organ tanımının hash'i** (`26b` `definition_sha256`; seed-073): organın okuyabildiği her beyin dosyasını kapsar;
+  hakemde tek bir hash fonksiyonu vardır ve her organ onu kullanır; LLM organı ayrıca prompt'unu, modelini ve
+  araçlarını hash'e katar (`11`: tanım hash'i prompt hash'i, model ve araç yüzeyidir).
+- **Snapshot** (`snapshot.make`; seed-074): yer tutucu snapshot'ın türünü (temiz ya da ekilmiş) ele vermez. Vaka
+  listesi `26`'nın `case` şemasıdır. Boş `finding_id_patterns` geçerlidir. "Yorum satırı"nın tanımı ertelenmiştir: bu
+  tohum onu henüz tanımlamaz.
+- **Dev vaka seti** (`cases.build`; seed-075): `<state_root>/cases/`'e bir kez yazılır ve yalnız sonuna eklenir. Bir
+  vakanın modül grubu (`group`) değiştirilen dosyaya en yakın, paket manifesti taşıyan dizindir; öyle bir dizin yoksa
+  birimin köküdür (bu bir sıkılaştırmadır). Vakanın ihlal kuralı operatörün hedeflediği kuraldır. Döngü başına
+  önerilen vaka sayısı Kurucu'nun seçimidir; inceleyicilerden biri sabit bir sayı istedi, muhalefet kayıtlıdır.
+- **Puanlama** (`harness.score`; seed-076): test 6, bulgunun bir `evidence_refs` yolu snapshot manifestinde yoksa ya
+  da o yolun baytlarının hash'i manifesttekine uymuyorsa bulgunun reddedilip raporda adlandırılmasıdır. `rules_total`
+  aracın kataloğunda vaka üretilebilen kuralların sayısıdır, yalnız puanlanan vakalardakiler değil. Vektör
+  karşılaştırması tablonun basamağına yarım yukarı yuvarlar (`29a`). İmza `26a`'dadır. `confidence_level` ve
+  `stage_params`'ın `census_min_groups`, `planted_max_cases`, `evidence_ref_max_lines`, `match_window_lines`
+  anahtarları Y'nin tesliminden okunması zorunlu yollardır: beynin politika okuması onları adlandırana kadar
+  üzerlerindeki `policy_reads_required_absent` kırmızıdır (`29v`).
+- **Test 9** (`asama-0/09`; seed-077): harness, `referee/harness/` paketi ve onun import kapanışıdır; model istemcisi
+  `dispatcher/llm_call`'dur; ağı `koş` kapatır. Test 11'in sözü (`01a`'nın boş oyuncak reposu, sıfırdan büyüyen
+  `<state_root>`) gevşetilmez.

@@ -64,7 +64,9 @@ karşılaştırır:
 - hedefte sır kullanan ve `brain/**` dallarında ya da PR'larında tetiklenen iş akışı yok;
 - tohum ağacı, anayasal politika ve vektör dosyasının hash'leri kurulum özetiyle aynı.
 
-Fark varsa sert duruş (`28`).
+Her maddenin okuması, tabanı (`setup/summary.json` `drift`) ve operatörün dönemsel denetimi `01c`'dedir (bağımsız
+inceleme ekibi kararı, 2026-11-20, seed-080). Fark varsa sert duruş (`28`); dönemsel denetim eskiyse temiz duruş
+(`01c`).
 
 **Tavanlar.** Döngü ve gün başına PR, merge, model çağrısı ve CI dakikası tavanları
 `policy.json`'dadır; aylık Actions dakikası anayasal tavandır (`monthly_cap_ci_minutes`). Aşım

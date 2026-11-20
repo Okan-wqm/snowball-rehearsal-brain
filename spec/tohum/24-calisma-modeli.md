@@ -48,7 +48,8 @@ repoya gömülü bir hook, bir `.mcp.json` sunucusu ve bir yönerge dosyası kan
 ajanda hiçbiri yüklenmemelidir, yüklenirse dispatcher kırmızıdır. İç kullanımda geçit yoktur: araç
 kullanan ajan `çağır` işinde `claude` CLI'siyle ve yalnız hakemin MCP araçlarıyla koşar, oyuncu kodu
 koşturmaz; koşuya bağlı belirteçli geçit ticari kullanımda API anahtarıyla açılır (`08` 5). Hakemin
-`agent.dispatch`'i P2 partisiyle gelir (`asama-1/13`); Aşama 0'da araç kullanan ajan yoktur.
+`agent.dispatch`'i araç kullanan ilk çalışma-zamanı ajanıyla, en geç Aşama 4'te gelir (`30f`); Aşama 0'da ve
+Aşama 1'de araç kullanan ajan yoktur.
 
 **Araçsız çağrı.** Aşama 0'ın (B) kanaryası ve Aşama 1 düzelticisi araç kullanmaz: hakemin `llm.call`'ı
 tipli girdiden prompt kurar ve çağrıyı tohum rakibi gibi yapar (`29b`): pinli `claude` CLI'si, operatörün
@@ -59,11 +60,11 @@ yapısal olarak imkânsızdır.
 
 ## Aşama 0 ve 1 araçları
 
-Hakem, Aşama 0 (`asama-0/14`): `ledger.chain`, `chain.verify`, `secrets.scan`, `run.contained`,
-`profile.derive`, `deps.fetch`, `unit.verify`, `gate.diffguard`, `gate.check`, `target.write`,
-`ledger.append`, `rekor.anchor`, `sentinel.run`, `gate.revert`, `exit.drill` (yalnız geri alma),
-`llm.call`, `status.block`, `activate`. Partilerle (`asama-1/13`): `snapshot.make`, `cases.build`,
-`harness.score`, `drift.check`, `gozcu.evaluate` (P1); `agent.dispatch`, `security.*` (P2); `exit.sample`,
-`spec.lint` (Aşama 1 çıkışı); `harness.drill` (Aşama 2); `harness.baseline` (LLM avcıyla). Push kabulü ve
-aşama kilidi önyükleme hakemindedir (`29b`). Beyin, Aşama 1: `profile.propose`, `lint.discover`,
-`fixer.range`, `fixer.llm`, `candidate.publish`, `docs.render`, `docs.index`. İmzalar `26a`'da.
+Hakem, Aşama 0 (`asama-0/14`): `ledger.chain`, `chain.verify`, `secrets.scan`, `run.contained`, `profile.derive`,
+`deps.fetch`, `unit.verify`, `gate.diffguard`, `gate.check`, `target.write`, `ledger.append`, `rekor.anchor`,
+`sentinel.run`, `gate.revert`, `exit.drill` (yalnız geri alma), `llm.call`, `status.block`, `activate`. Partilerle
+(`asama-1/13`): `snapshot.make`, `cases.build`, `harness.score`, `drift.check`, `gozcu.evaluate` (P1); `security.*`
+(P2); `exit.sample`, `spec.lint`, `exit.adversarial` (Aşama 1 çıkışı); `agent.dispatch` (araç kullanan ilk
+çalışma-zamanı ajanıyla, en geç Aşama 4); `harness.drill` (Aşama 2); `harness.baseline` (LLM avcıyla). Push kabulü ve
+aşama kilidi önyükleme hakemindedir (`29b`). Beyin, Aşama 1: `profile.propose`, `lint.discover`, `fixer.range`,
+`fixer.llm`, `candidate.publish`, `docs.render`, `docs.index`. İmzalar `26a`'da.

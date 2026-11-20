@@ -40,7 +40,9 @@ satırın geri kalanı yerindedir: `too_large` (özet satırı ya da yazılmış
 derin iç içe yapı), `duplicate_key` (bir anahtar iki kez), `non_finite` (`NaN`, sonsuz), `secret_shape` (tohum
 tarayıcısının, `30c`, bir deseni; kaçışla yazılmış olsa da). Özette, `output` satırlarında, iş adında ve her alanda
 hedef adı taşıyan dize `sha256:` ve ilk 16 onaltılık karakteriyle yazılır (`29e` "Genellik okuması"), dizenin dışı
-yerindedir; sır deseni taşıyan iş adı `null`'dır.
+yerindedir; sır deseni taşıyan iş adı `null`'dır. Birim dizedir (bağımsız inceleme ekibi kararı, 2026-11-20,
+seed-070): çok satırlı bir metin tek dize olarak yazılırsa adı taşıyan tek satırı bütün dizeyi gizler; çok satırlı
+içerik ayrı dizeler olarak yazılır.
 
 **Okunamayan ve sınırlar.** Okunamayan değer `null`'dır; okunup boş çıkan değer boştur, biri ötekinin yerine yazılmaz.
 En çok üç koşu ve koşu başına sekiz iş okunur; bir çağrı 30 saniyeyi, okumanın tamamı 90 saniyeyi aşmaz ve hiçbir çağrı

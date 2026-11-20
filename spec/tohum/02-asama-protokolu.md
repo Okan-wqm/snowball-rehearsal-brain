@@ -20,7 +20,7 @@ Okunma: her aşama başında ve sonunda
    `spec.lint` Aşama 1 çıkış partisiyle gelir ve aynı listeyi uygular:
    - sekiz bölüm var ve boş değil;
    - her eşik ya `policy.json`'a ya da anayasal tabana atıf;
-   - bütçe `policy.json` tavanının altında;
+   - bütçenin her anahtarı tek başına `monthly_cap_usd`'nin altında ya da ona eşit, toplamları değil (spec-071);
    - aşama özeti getirdiği yetenekleri `18`'deki adlarla listeler ("Her aşama" her zaman) ve `03`'te
      o aşamanın satırında `18` atfıyla geçen her yeteneği listeye alır (Kurucu'nun taslağı tohumun
      hedefini düşüremez); listedeki her yeteneğin her `#kimlik`'i çıkış testinde bir satırın başında

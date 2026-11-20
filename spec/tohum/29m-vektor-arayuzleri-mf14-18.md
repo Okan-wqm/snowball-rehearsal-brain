@@ -27,29 +27,29 @@ koşudan önce adlandırırdı (veri koşucusu bunu sabitleyemez). `reveal` geri
 `judge` tohumu almaz, seçimi yeniden türetmez; defter satırları (`26`): taahhüt `part: drill`, `kind: commit`,
 `payload {drill: revert, family: revert, commitment_sha256}`; ekme `part: drill`, `kind: plant`, `payload {drill:
 revert, family: revert, instance_id, merge_sha}`; geri alma `part: events`, `kind: revert`, üst düzey `cause`
-(`26:41-44`), `payload {merge_sha}`. Sözcükler seçimdir: `26:74-75`'in drill yükü koşudan önce yazılamayacak
-`instance_id`'yi ister ve alan adını yalnız `26`, `26b`, `30d`, `30e` tanımlar (`26:9-10`); `26`'ya girmelidirler.
-Sıra: (1) dosya geçerli zincir değilse (`29a`; JSON nesnesi olmayan satır zinciri kırar, `29i`'nin seçimi) yalnız
-`chain_broken`; (2) P = `drill`/`plant`, `payload.drill: revert` olan son satır; yoksa yalnız `not_planted`; (3) C =
-dosya sırasında P'den önceki aynı biçimli son `commit`: yoksa `commitment_not_before_run`, anahtarın sha256'sı
-`C.payload.commitment_sha256` değilse `commitment_mismatch`; (4) P'nin `instance_id`'si anahtarınki değilse
-`instance_mismatch`; (5) R = P'den sonra `merge_sha`'sı P'ninki olan ilk `events`/`revert`: yoksa `not_reverted`,
-`cause`'u anahtarınki değilse `cause_mismatch`. (3)–(5)'in her nedeni yazılır; adlar seçim, `FAIL` spec
-(`asama-0/09:74`, `26:76`). "Önceki devir" yalnız zincir sırasıdır, satır devir kimliği taşımaz (`26:26-28`). Çıktı:
-`commitment_sha256`; `key`, `revealed_sha256` (aynı girdide taahhüde eşit); `verdict` (`PASS` ⇔ `reasons` boş),
-sıralı, tekil `reasons`. Çıkış: `commit`, `reveal` 0; 2 okunamayan ya da biçimsiz katalog ya da tohum, boş katalog,
-tekrarlanan kimlik, rakam dizgisi olmayan `cycle_id` (satır `{"commitment_sha256": null}`, `{"key": null,
-"revealed_sha256": null}`); `judge` 0 PASS, 1 FAIL, 2 okunamayan dosya ya da dört dizgi alanı olmayan anahtar
-(satır `{"verdict": "FAIL"}`).
-Vakalar: `commit_hmac_selection` taahhüdün seçimi; bu `cycle_id`'de dosya sırası, seçimin ilk ya da son baytı, ilk ya da
-son 32 biti, ilk 64 biti ve yer değiştirmiş anahtar ile ileti başka örnek seçer; `reveal_selects_by_hmac` prova tohumu
-HMAC anahtarı, `cycle_id` ileti, açılımın hash'i taahhüde eşit; `judge_pass` geçerli zincirde taahhüt ekmeden önce,
-anahtarın örneği ondan sonra anahtarın nedeniyle geri alınmış; `tampered_key` neden yanlıştı, anahtar koşudan sonra ona
-uydurulmuş: taahhütte düşer, neden artık tutar; `commitment_after_plant` (3)–(5)'ten birer neden: ekmeden sonra yazılmış
-taahhüt (anahtarla karşılaştırılmaz), başka örnek ekilmiş, yanlış neden, üçü de yazılır; `other_merge_reverted`
-anahtarın nedeniyle başka merge geri alınmış, ekilen değil; `rewritten_commitment` taahhüt satırı düzenlenmiş anahtara
-göre yeniden yazılmış: zincir kırılır, başka hiçbir şey yargılanmaz; `last_of_several_drills` iki prova (#geri-alma üç
-ister): P son ekme, C ondan önceki son taahhüt, ilk prova tarih. `not_planted` vakasızdır.
+(`26:41-44`), `payload {merge_sha, head_sha}` (`26f`; yargıç `merge_sha`'yı okur). Sözcükler seçimdir: `26:74-75`'in
+drill yükü koşudan önce yazılamayacak `instance_id`'yi ister ve alan adını yalnız `26`, `26b`, `30d`, `30e` tanımlar
+(`26:9-10`); `26`'ya girmelidirler. Sıra: (1) dosya geçerli zincir değilse (`29a`; JSON nesnesi olmayan satır zinciri
+kırar, `29i`'nin seçimi) yalnız `chain_broken`; (2) P = `drill`/`plant`, `payload.drill: revert` olan son satır; yoksa
+yalnız `not_planted`; (3) C = dosya sırasında P'den önceki aynı biçimli son `commit`: yoksa
+`commitment_not_before_run`, anahtarın sha256'sı `C.payload.commitment_sha256` değilse `commitment_mismatch`; (4)
+P'nin `instance_id`'si anahtarınki değilse `instance_mismatch`; (5) R = P'den sonra `merge_sha`'sı P'ninki olan ilk
+`events`/`revert`: yoksa `not_reverted`, `cause`'u anahtarınki değilse `cause_mismatch`. (3)–(5)'in her nedeni
+yazılır; adlar seçim, `FAIL` spec (`asama-0/09:74`, `26:76`). "Önceki devir" yalnız zincir sırasıdır, satır devir
+kimliği taşımaz (`26:26-28`). Çıktı: `commitment_sha256`; `key`, `revealed_sha256` (aynı girdide taahhüde eşit);
+`verdict` (`PASS` ⇔ `reasons` boş), sıralı, tekil `reasons`. Çıkış: `commit`, `reveal` 0; 2 okunamayan ya da biçimsiz
+katalog ya da tohum, boş katalog, tekrarlanan kimlik, rakam dizgisi olmayan `cycle_id` (satır `{"commitment_sha256":
+null}`, `{"key": null, "revealed_sha256": null}`); `judge` 0 PASS, 1 FAIL, 2 okunamayan dosya ya da dört dizgi alanı
+olmayan anahtar (satır `{"verdict": "FAIL"}`). Vakalar: `commit_hmac_selection` taahhüdün seçimi; bu `cycle_id`'de
+dosya sırası, seçimin ilk ya da son baytı, ilk ya da son 32 biti, ilk 64 biti ve yer değiştirmiş anahtar ile ileti
+başka örnek seçer; `reveal_selects_by_hmac` prova tohumu HMAC anahtarı, `cycle_id` ileti, açılımın hash'i taahhüde
+eşit; `judge_pass` geçerli zincirde taahhüt ekmeden önce, anahtarın örneği ondan sonra anahtarın nedeniyle geri
+alınmış; `tampered_key` neden yanlıştı, anahtar koşudan sonra ona uydurulmuş: taahhütte düşer, neden artık tutar;
+`commitment_after_plant` (3)–(5)'ten birer neden: ekmeden sonra yazılmış taahhüt (anahtarla karşılaştırılmaz), başka
+örnek ekilmiş, yanlış neden, üçü de yazılır; `other_merge_reverted` anahtarın nedeniyle başka merge geri alınmış,
+ekilen değil; `rewritten_commitment` taahhüt satırı düzenlenmiş anahtara göre yeniden yazılmış: zincir kırılır, başka
+hiçbir şey yargılanmaz; `last_of_several_drills` iki prova (#geri-alma üç ister): P son ekme, C ondan önceki son
+taahhüt, ilk prova tarih. `not_planted` vakasızdır.
 
 ## `prompt` (MF15, `dispatcher/llm_call.py`)
 

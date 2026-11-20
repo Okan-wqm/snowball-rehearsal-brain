@@ -26,7 +26,7 @@ stdout'un son JSON satırını okur, çıkış kodunu karşılaştırmaz; başar
 komut `runner_fault`'tur. `hash`'te `row_hash`'e, `verify`'da `valid`'e, V3'te ayrıca `broken_row`'a
 (`r2`, `29a`) bakılır. Kırık zincirin çıkış kodunu ve `row_id`'si olmayan satırın `broken_row` değerini
 tohum sabitlemez. `secrets`'tan `diffguard`'a grupların komutları, girdileri, çıktı alanları ve vakaları
-`29f`, `29g` ve `29k`'dedir.
+`29f`, `29g` ve `29k`'dedir; Aşama 1 çıkışının `census` grubu `29za`'dadır.
 
 | Grup | MF | Bağladığı |
 |---|---|---|

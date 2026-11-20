@@ -44,8 +44,9 @@ koşturur: adapter → oracle → düzeltme → merge → defter → maliyet ini
 yakalamadan sınıf merge etmez; bulguları `blocked` satırdır (Y8). Geçen aşama ya da açık sınıf sayısı hiçbir puana girmez.
 
 **K6 Aşama 1'den gözlenir, önkoşulları kapanınca düzeltilir.** Açık bulmak, kanıtlamak, bildirmek ve bir kuralı bekçi
-testine bağlamak davranışı değiştirmez; bunu Aşama 1'den, P2 partisiyle gelen hakemin bağımsız güvenlik
-avcısı yapar (`30f`, `asama-1/13`). Aşama 0'ın güvenlik mikro özelliği `secrets.scan`'dir.
+testine bağlamak davranışı değiştirmez. Aşama 1'de bunu P2'nin güvenlik profili (`30d`) yapar; hakemin bağımsız
+güvenlik avcısı çalışma zamanında araç kullanan ilk ajanla, en geç Aşama 4'te gelir (`30f`). Aşama 0'ın güvenlik mikro
+özelliği `secrets.scan`'dir.
 Hedefin koduna güvenlik düzeltmesi yalnız K6 canlı olunca yazılır. Bilinen açık sınıfları, bulma yolları
 ve kapanış testleri `30`–`30c`'de, hedefin tehdit modeli `30d`'de, güvenlik defteri `30e`'dedir.
 
