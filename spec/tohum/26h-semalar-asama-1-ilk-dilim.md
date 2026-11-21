@@ -1,7 +1,7 @@
 # Şemalar, Devam: Aşama 1'in İlk Dilimi
 
 Tarih: 2026-11-20 · Sürüm: 2.2 · Durum: taslak · Sahibi: operatör
-Okunma: Aşama 1'de sıradaki MF ya da parti seçilirken, P1'in MF8'i ve MF9'u yazılırken ve Aşama 1'in çıkış satırları okunurken
+Okunma: Aşama 1'de sıradaki MF ya da parti seçilirken, P1'in MF8'i ve MF9'u yazılırken, Aşama 1'in çıkış satırları ve harness'in politika değerleri okunurken
 Çapa: `seed/bootstrap/stages/stage1-P1.json`; `asama-1/06` ve `asama-1/13`'ün sırası
 
 ---
@@ -52,3 +52,21 @@ gelmezler.
 `path` bölümü bu dilimin henüz kabul edilmemiş MF'lerini (`path_mfs_left`) ve `organ_merges_copy`'yi verir. Yalnız
 olgudur; tanımları `seed/founder/mirror.py`'nin `SOURCES`'undadır. Türetilemeyen değer `null`'dır ve nedeni
 yazılıdır.
+
+**Harness'in politika değerleri ve birincil ref** (bağımsız inceleme ekibi kararı (2026-11-21), seed-083). `26e`
+"Puanlama"nın anahtarları:
+- Birincil ref bulgunun `evidence_refs[0]`'ıdır ve yalnız o `stage_params.evidence_ref_max_lines` ile sınırlıdır
+  (`line_end − line_start + 1` satır, iki uç dahil): daha uzun birincil ref'li bulgu reddedilir (`ref_over_max_lines`).
+  Öbür ref'lerin uzunluk sınırı yoktur; her ref yine manifestte kayıtlı baytlarıyla bulunur (`26e`).
+- `constitutional.confidence_level` `01c`'nin biçiminde bir dizgidir, `"0.000000"` ile `"1.000000"` arasında (uçlar
+  hariç); `18a`'nın 0,90'ı `"0.900000"`'dır ve tek yönlü kullanılır (`19`); `alpha` = 1 − değer, tam ondalık
+  aritmetikle. JSON kayan noktası, tamsayı, başka biçimde dizgi ya da nesne `policy_invalid:constitutional.confidence_level`'dır.
+- `stage_params`'ın `census_min_groups`, `planted_max_cases`, `evidence_ref_max_lines` ve `match_window_lines`'ı 1 ya da
+  daha büyük JSON tamsayılarıdır; 0, boolean, kayan nokta ya da dizgi `policy_invalid:<yol>`'dur. Hiçbir sayfada üst
+  sınırları yoktur ve Aşama 1 de koymaz.
+- `census_min_groups`'un okuyucusu `exit.sample`'dır (`19`'un tablosu çıkış ölçümüdür; "ya da mevcut olanın tamamı"
+  onundur) ve Aşama 1 çıkış partisiyle gelir. Dev raporunun hiçbir sayfada grup tabanı yoktur.
+- `planted_max_cases` ekilmiş bir snapshot var olana kadar hiçbir çıktıyı değiştirmez; ilk ekilmiş snapshot Aşama 4'ün
+  snapshot kanaryasıdır (`asama-4/13`).
+- Bu beş yoldan biri yoksa ya da biçim dışıysa politika kullanılamaz (`29v` "Döngüde eksik anahtar"). Aşama 1'de ref
+  sınırının ve politikadan rapora yolun tohum vektörü yoktur.

@@ -6,9 +6,9 @@ Okunma: kurulumda `policy.json` yazılırken ve bir eşiğin ilk değeri aranır
 
 ---
 
-`policy.json`'un her anahtarı burada ya da `18b`'de bir başlangıç değeriyle durur; anahtarı
-olmayan eşik yoktur. Anayasal değerleri operatör kurulumda yazar (`25`); bu tablo onun önerisidir.
-Performans değerleri `18b`'dedir ve `18`'deki prosedürle değişir. Adlar `26b` şemasıyla aynıdır.
+`policy.json`'un her anahtarı burada ya da `18b`'de bir başlangıç değeriyle durur; anahtarı olmayan eşik yoktur. Anayasal
+değerleri operatör kurulumda yazar (`25`); bu tablo onun önerisidir. Performans değerleri `18b`'dedir ve `18`'deki
+prosedürle değişir. Adlar `26b` şemasıyla aynıdır. Tablo kesri virgülle yazar; dosyada altı ondalıklı dizgidir (`01c`).
 Anahtar sütunu her anahtarı bölümüyle, tam yoluyla yazar; başka sayfada bölümsüz geçen ad bu yoldur (`29v`).
 ## Anayasal (`constitutional`)
 
@@ -26,10 +26,10 @@ Anahtar sütunu her anahtarı bölümüyle, tam yoluyla yazar; başka sayfada b�
 | `constitutional.noninferiority_margin` | δ = 0,05 | `06`, `19` |
 | `constitutional.n_min_paired` | 45 | `06`, `19` |
 | `constitutional.mcnemar_min_discordant` | 8 | `12`, `17`, `19` |
-| `constitutional.confidence_level` | 0,90, tek yönlü | `19` |
+| `constitutional.confidence_level` | 0,90, tek yönlü (dosyada `"0.900000"`, `26h`) | `19` |
 | `constitutional.look_budget` | Held-out havuzu başına 3 bakış; k. bakışta α/k | `19` |
 | `constitutional.survival_windows` | K0, K1, K2, K4: 72 saat; K3, K7, K8: 7 gün; K5, K6: 14 gün; yalnız uzar | `07`, `11` |
-| `constitutional.regression_freeze` | ≥ 50 merge varken 30 günde geri alma > %2; < 50 iken pencerede ≥ 2 geri alma | `20`, `28` |
+| `constitutional.regression_freeze.min_merges`, `window_days`, `revert_rate`, `min_reverts` | 50, 30, `"0.020000"`, 2: ≥ 50 merge varken 30 günde geri alma > %2; < 50 iken pencerede ≥ 2 geri alma (`28a`) | `20`, `28` |
 | `constitutional.cycle_caps` | Döngü başına PR ≤ 10, merge ≤ 5, CI ≤ 60 dk | `01b` |
 | `constitutional.daily_caps` | Gün başına PR ≤ 30, merge ≤ 15, CI ≤ 90 dk | `01b` |
 | `constitutional.security_keywords` | `14`'teki liste | `14`, `profile.derive` |
@@ -50,7 +50,7 @@ Anahtar sütunu her anahtarı bölümüyle, tam yoluyla yazar; başka sayfada b�
 | `constitutional.license_exceptions` | Boş. Operatör tek bir `ad==sürüm` için incelediği ifadeyi kanıtıyla yazar (`{expression, evidence}`); ifade yine listeden geçer | `24`, `29b`, `deps.fetch` |
 | `constitutional.stage_params.census_min_groups` | 45 modül grubu ya da mevcut olanın tamamı | `asama-1/13a`, `exit.sample` |
 | `constitutional.stage_params.planted_max_cases` | Snapshot başına 5 vaka | `asama-1/13c` |
-| `constitutional.stage_params.evidence_ref_max_lines` | Birincil ref ≤ 30 satır | `asama-1/13d` |
+| `constitutional.stage_params.evidence_ref_max_lines` | Birincil ref (`evidence_refs[0]`, `26h`) ≤ 30 satır | `asama-1/13d` |
 | `constitutional.stage_params.match_window_lines` | K3 ve üstü eşleme penceresi ±15 satır | `asama-1/13e` |
 | `constitutional.stage_params.rival_min_attempts` | Aşama başına rakipten sağ çıkmış 5 ayrı artefakt, artefakt başına 1 deneme | `asama-0/10`, `29`, `29b` |
 | `constitutional.stage_params.repeat_reject_limit` | Aynı imzalı 3 ardışık ret → `not_learning` | `24`, `29b` |
@@ -59,7 +59,7 @@ Anahtar sütunu her anahtarı bölümüyle, tam yoluyla yazar; başka sayfada b�
 | `constitutional.stage_budgets.asama_0.rival_usd` | Başlangıç fren değeri 25 USD; 2026-11-05'ten 1000 USD (sahibin kararı: rakip `claude` CLI aboneliğiyle koşar, USD freni yalnız kaçak frenidir) | önyükleme hakemi (`29b`), `asama-0/12` |
 | `constitutional.stage_budgets.asama_0.canary_usd` | Başlangıç fren değeri 1 USD; çağrı başına ayrıca `--max-budget-usd` | `llm.call`, `asama-0/12` |
 | `constitutional.stage_budgets.asama_1.rival_usd`, `founder_usd`, `runtime_llm_usd` | Her biri 10.000 USD (sahip kararı, 2026-11-20: harcama frenleri sistemi hiçbir zaman durdurmaz; yalnız kaçak freni; spec-071). `rival_usd` 2026-11-19'dan beri 10.000'dir (hakem `33c01cb`; önce 1000, 2026-11-05); koşu başına rakip tavanı 3 USD kalır; harcama kilidin açılışından sayılır, kilit `rival_usd`'siz açılmaz (`26e`) | önyükleme hakemi (`29b`), `stage-open`, başlatıcı (`24`), `asama-1/10` |
-| `constitutional.stage_params.fix_acceptance_min`, `live_merge_min` | 0,80 (Aşama 1 çıkışında düzeltme adaylarının kabul oranı) ve 10 (çıkışın canlı merge sayısı min(bu değer, uygun borç)'tur); spec-071 | `asama-1/08`, Aşama 1 çıkışı |
+| `constitutional.stage_params.fix_acceptance_min`, `live_merge_min` | 0,80 (dosyada `"0.800000"`; Aşama 1 çıkışında düzeltme adaylarının kabul oranı) ve 10 (çıkışın canlı merge sayısı min(bu değer, uygun borç)'tur); spec-071 | `asama-1/08`, Aşama 1 çıkışı |
 
 ## İşletim sınırları (`operating`)
 

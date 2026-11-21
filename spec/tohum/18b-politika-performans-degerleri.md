@@ -8,7 +8,7 @@ Okunma: etkinleştirmede performans bölümü yazılırken ve bir eşiğin ilk d
 
 Performans bölümü eylemi değil dikkati ve sırayı yönetir; değerleri `18`'deki prosedürle iki
 yönlü değişir ve her değişiklik zincire yazılır. Anayasal bölüm `18a`'dadır. Adlar `26b` şemasıyla
-aynıdır.
+aynıdır. Tablo kesri virgülle yazar; dosyada altı ondalıklı dizgidir (`01c`).
 
 ## Performans (`performance`)
 | Anahtar | Başlangıç | Okuyan |
@@ -34,6 +34,6 @@ aynıdır.
 | `performance.rules.probe_cycle` | Sonda döngüsü başına 5 düzeltme; üst üste 2 temiz → kalkış | `28` |
 | `performance.rules.lesson_n_min` | Ders başına kol başına 250 koşu; altında UNMEASURABLE | `22` |
 | `performance.rules.seat_similarity` | Karar ve referans benzerliği > 0,8 → Gözcü işareti | `09a` |
-| `performance.rules.genesis_drafts` | Pencere başına ≤ 3 taslak; kuyruk derinliği ≤ 10 | `12`, `17` |
+| `performance.rules.genesis_drafts.per_window`, `queue` | Pencere başına ≤ 3 taslak (`per_window` 3); kuyruk derinliği ≤ 10 (`queue` 10); Gözcü işareti (`28a`) | `12`, `17`, `28` |
 | `performance.rules.lease_ttl` | Görev kirası 2 saat | `16` |
 | `performance.rules.bisect` | Adım ≤ 15 dk, en çok 12 adım; bisect açılınca okunur | `07` |

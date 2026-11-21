@@ -74,7 +74,7 @@ Kurucu'nundur.
   karşılaştırması tablonun basamağına yarım yukarı yuvarlar (`29a`). İmza `26a`'dadır. `confidence_level` ve
   `stage_params`'ın `census_min_groups`, `planted_max_cases`, `evidence_ref_max_lines`, `match_window_lines`
   anahtarları Y'nin tesliminden okunması zorunlu yollardır: beynin politika okuması onları adlandırana kadar
-  üzerlerindeki `policy_reads_required_absent` kırmızıdır (`29v`).
+  üzerlerindeki `policy_reads_required_absent` kırmızıdır (`29v`); biçimleri `26h`'dedir.
 - **Test 9** (`asama-0/09`; seed-077): harness, `referee/harness/` paketi ve onun import kapanışıdır; model istemcisi
   `dispatcher/llm_call`'dur; ağı `koş` kapatır. Test 11'in sözü (`01a`'nın boş oyuncak reposu, sıfırdan büyüyen
   `<state_root>`) gevşetilmez.

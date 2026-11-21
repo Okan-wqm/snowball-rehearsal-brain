@@ -43,7 +43,7 @@ değil). Beyin ağacındaki içe aktarmaları ya da çağrıları `calls`'la kar
 | `cases.build` | Hakem | `çek` | sınıf, kaynak (geçmiş, mutasyon); `produce <araç> <kural>` (`29za`) | dev vakaları; `produce`: `{producible}` | `cases/` önerisi | hakem; Kurucu yalnız dev | P1 |
 | `harness.score` | Hakem | `yaz` | bulgu ve vaka dosyaları; rapor için snapshot belgesi ve ağacı (`--snapshot`, `--tree`) | iki dosyayla `{hits}` (`29a`); dördüyle harness raporu (`26b`) | rapor | Kurucu dev; hakem exit | P1 |
 | `drift.check` | Hakem | `yaz` | kurulum özeti | fark | sert duruş | hakem döngü başı | P1 (Aşama 0'da genesis'te bir kez) |
-| `gozcu.evaluate` | Hakem | `yaz` | defter görünümleri | dondurma, işaret | `freeze` satırı | hakem döngü sonu | P1 |
+| `gozcu.evaluate` | Hakem | `yaz` | defter görünümleri (`26i`), politika, `now` | dondurma, kalkış, sert duruş, işaret (`28a`) | `freeze` bölümünün `freeze`, `lift`, `hard_stop` satırları (`26i`) | hakem döngü sonu | P1 |
 | `findings.write` | Hakem | `yaz` | adapter önerisi, kapı kararı | bulgu ve unresolved satırları (parmak izi, durum) | `findings.jsonl`, `unresolved.jsonl` | hakem döngüsü | P1 MF8 (`26h`) |
 | `gate.allowlist` | Hakem | `yaz` | aday, kabul edilmiş SHA'daki organ dosyaları, `accept` satırları, imzalı sonuç | izinli ya da ret; `accept` satırı | `accept` satırı | `gate.check`; döngünün `yaz`'ı | P1 MF9 (`26h`) |
 | `agent.dispatch` | Hakem | `çağır` (iç kullanımda `claude` CLI'si; satışta `koş` + geçit, `08` 5) | rol, prompt, hakemin MCP araç listesi | çıktı, `run_meta` | yok | hakem (güvenlik avcısı; sonra her ajan) | Araç kullanan ilk çalışma-zamanı ajanı, en geç Aşama 4 (`30f`) |

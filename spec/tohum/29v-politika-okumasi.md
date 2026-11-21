@@ -49,6 +49,17 @@ değişmez. Kilit Aşama 1'i açınca aynı ad ret nedenidir, `ref`'i yoldur; Ku
 hafızasında sayılır (`29b`). Y döneminin tesliminden Aşama 1'in beş yolu okunması zorunlu yollardır: beynin politika
 okuması onları adlandırana kadar üzerlerindeki `policy_reads_required_absent` kırmızıdır (seed-076).
 
+**Gözcü'nün yolları** (bağımsız inceleme ekibi kararı (2026-11-21), seed-084). AA döneminden Aşama 1'in satırında
+Gözcü'nün yedi yolu da vardır: `constitutional.monthly_cap_usd`, `constitutional.regression_freeze`'in `min_merges`,
+`window_days`, `revert_rate` ve `min_reverts`'ü, `constitutional.gate_rules.soft_freeze_limit` ve
+`performance.windows.measure` (`28a`); teslimden itibaren onlar da okunması zorunlu yollardır. Fikstürlerin kesirleri
+`01c`'nin altı ondalıklı dizgileridir (seed-082).
+
+**Döngüde eksik anahtar** (bağımsız inceleme ekibi kararı (2026-11-21), seed-083, seed-084). Aşama 1'in satırındaki
+bir yol döngünün okuduğu `policy.json`'da yoksa ya da biçim dışıysa politika kullanılamaz: döngü ilk yazımından önce
+temiz durur, yolu adlandırır ve hiçbir şey yazmaz. Olmayan yol tüketicisine asla `None` ya da varsayılan olarak
+verilmez; asla "yargılanmadı, devam" değildir (`18a`: anahtarı olmayan eşik yoktur).
+
 **Okunuş.** `29t` "Okunuş" gibidir: bulgu yalnız testleri koşulan push'ta vardır, kırmızı push'ta da koşu yapılır;
 Docker'ın kendi hatası (125) bulgu değil kesintidir (`kos:docker`). Geçmek, komutun adlandırdığı değerlerin kendi
 yollarından geldiğini söyler; döngünün her okumasının komutta adlandırıldığını söylemez (E589).

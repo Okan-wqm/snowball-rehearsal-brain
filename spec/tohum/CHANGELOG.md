@@ -4,11 +4,10 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
-- 2.2 (2026-11-20, E672–E678; sahip ve operatör kararları, panelin F13 yanıtı, seed-081, yeni
-  `26h`, Aşama 1'in ilk dilimi): `CHANGELOG-9.md`.
+- 2.2 (2026-11-21, E680–E684; tohum dönemi AA, seed-082–085, yeni `26i` ve `28a`): `CHANGELOG-10.md`; girdinin
+  başında **İlk iş** listesi vardır (`25` 10b).
+- 2.2 (2026-11-20, E655–E678; Y ve Z dönemleri, yeni `01c`, `29za` ve `26h`, Aşama 1'in ilk dilimi): `CHANGELOG-9.md`.
 - 2.2 (2026-11-20, E654; sahibin ipucu): yeni `00d`, derslerin kendiliğinden yeniden sınanması: `CHANGELOG-9.md`.
-- 2.2 (2026-11-20, E655–E671; bağımsız inceleme ekibi, operatör ve sahip kararları, Kurucu'nun on bir raporu, yeni
-  `01c` ve `29za`, sahibin üç ipucu `00d`'de): `CHANGELOG-9.md`.
 - 2.2 (2026-11-19, E651–E653): sahibin ilkesi ve iki ipucu, `00c`: `CHANGELOG-8.md`.
 - 2.2 (2026-11-19, E647–E650): ölçüm aynası ve sahibin üç ipucu, yeni `00c`: `CHANGELOG-8.md`.
 - 2.2 (2026-11-18 – 2026-11-19, E634–E645; bağımsız inceleme ekibi kararı, sahip kararları ve Kurucu raporları): Kurucu'nun dört

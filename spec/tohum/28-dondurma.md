@@ -23,7 +23,7 @@ yerde, burada yazılır; başka sayfa buraya atıf yapar.
   (`25` 8, `29b`).
 - **Kapsam:** merge kapısı ilgili sınıf için kapanır; genesis yeni ACTIVE geçişi yapmaz. Keşif,
   ölçüm, SHADOW koşuları ve oracle sürer.
-- **Kayıt:** `ledger.jsonl`'a `part: freeze` satırı: tetik, kapsam, ölçüm, başlangıç.
+- **Kayıt:** `ledger.jsonl`'a `part: freeze` satırı: tetik, kapsam, ölçüm, başlangıç (biçimi `26i`; Aşama 1'i `28a`).
 - **Kalkış:** dondurulmuş sistem boşta olduğu için "üç döngü sınır içinde" kanıt değildir ve
   30 günlük geri alma sayısının kendiliğinden düşmesi beklenmez. Kalkış için **sonda döngüsü**
   gerekir: dondurulmuş kapsamda `policy.json`'daki sayıda düzeltme ayrı bir sonda dalında koşar,
