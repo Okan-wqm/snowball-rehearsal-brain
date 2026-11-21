@@ -1,7 +1,8 @@
 """``gate.allowlist``: the gate's allowlist of organ definitions and the ``accept`` rows it is built from
 (P1 MF9, test 55 of tohum/26h, tohum/26j "İzin listesi, MF9"). ``rows`` is called by D6
-(``loop.write_cycle``) and ``request`` by ``çek`` (``loop.cek``). ``reasons`` is called by test 55 only: D5
-(``loop.decide``) does not ask it yet, so a ready candidate still merges by stage 0's rule in every cycle and
+(``loop.write_cycle``) and ``request`` by ``çek`` (``loop.cek``). ``reasons`` is called by D5 (``loop.decide``) in every
+cycle but the genesis cycle, on the ready candidates' package, which names no organ: bound at the job by
+test_loop_yaz's ``ClosedGate``, not yet seen in a live cycle (26j: MF9 is done when the reject has run live), so
 MF9 is not in ``done_mf``.
 
 Rules: tohum/26h MF9 (the gate refuses the candidate of an organ whose definition hash is in no ``accept`` row;

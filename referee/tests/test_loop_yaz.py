@@ -4,6 +4,13 @@ here (``in/pulled/served.json`` listing t1): its ``pulled`` is ``in/pulled/t1``,
 handed over as ``in/results/t1``, and the job's line holds its one target line ``targets[0]`` (``target`` t1, the
 job's ``ok``; a refused target's ``reason``, ``reasons`` and id are the job's).
 
+The classes with ``listed = True`` stand behind an open allowlist gate (``listed_world``: P1 MF9, tohum/26j), since
+their subject is what the other criteria and the merge do; ``ClosedGate`` is the gate as a job meets it.
+
+- the allowlist gate (``ClosedGate``): after the genesis cycle every ready candidate is refused with ``no_organ``
+  (beside its other reasons, and by the ``yaz`` job itself); the genesis cycle keeps stage 0's rule; a package
+  naming an organ merges only with the organ's definition and its accept row (``organ_unknown:<id>``,
+  ``organ_not_listed:<id>``); a ledger or a package the allowlist cannot read judges nothing;
 - one cycle: a good candidate merges; a test-breaking and a ratchet-raising one are rejected for their own reasons;
   merges are serial (a second good candidate carries ``sentinel_pending``); the order is the ids' code-point order;
 - criterion 1 through ``gate.diffguard`` with the profile ``kos`` staged with: a manifest change, a security
@@ -31,6 +38,7 @@ import shutil
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
@@ -50,7 +58,9 @@ from test_revert_drill import plant, reverted  # noqa: E402
 from test_serial import M1, START, merge  # noqa: E402
 from test_loop_cagir import policy  # noqa: E402
 import yaz_world as YW  # noqa: E402
+import listed_world as LW  # noqa: E402
 from loop import sign as S  # noqa: E402
+from target import branches as B  # noqa: E402
 from loop_inputs_world import install_sigstore, own_path  # noqa: E402
 
 KEY_ID = "AK" + "IA" + "Q7" * 8  # a key id shape (MF2's floor), spelled so this file holds none
@@ -236,6 +246,79 @@ class Artifacts(Cycle):
         self.kos({"good": candidate(GOOD)})
         with self.assertRaises(E.Unusable):
             self.decide(unit=recipe(inputs="pkg"))
+
+
+class ClosedGate(Cycle):
+    """P1 MF9 at D5 (tohum/26j "İzin listesi, MF9"), on the inputs a job has, without ``listed_world``'s open
+    gate: the candidates read are the ready candidates and their package names no organ."""
+
+    CANDS = {"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)}
+
+    def rewrite(self, **kw) -> None:
+        """``pulled`` written again with ``CANDS`` (``kos``'s results stay: the tree and the candidates are the same)."""
+        shutil.rmtree(self.pulled)
+        self.write_pulled(self.CANDS, **kw)
+
+    def test_after_the_genesis_cycle_every_ready_candidate_is_refused_with_no_organ(self):
+        self.kos(self.CANDS)
+        got = self.decide()
+        self.assertEqual((got["merge"], self.reasons(got)), (None, {"good": ["no_organ"], "breaks": ["no_organ", "tests_red"]}))
+        self.assertEqual(got["decisions"]["good"]["decision"], "reject")
+        # beside another standing reason, and with the organ listed but no package naming it
+        got = self.decide(control={"merge_paused": True})
+        self.assertEqual(self.reasons(got)["good"], ["merge_paused", "no_organ"])
+        self.rewrite(state=LW.listed(state_files()), organs=LW.ORGANS)
+        self.assertEqual(self.reasons(self.decide())["good"], ["no_organ"])
+
+    def test_the_genesis_cycle_keeps_stage_0_s_rule(self):
+        genesis = {"heads": dict(HEADS, **{B.STATE: None}), "state": {p: b"" for p in B.STATE_CHAINS}}
+        self.kos(self.CANDS, **genesis)
+        self.assertTrue(P.genesis(P.read(self.pulled)))
+        got = self.decide()
+        self.assertEqual((got["merge"], self.reasons(got)), ("good", {"good": [], "breaks": ["tests_red"]}))
+
+    def test_a_named_organ_opens_the_gate_only_with_its_definition_and_its_accept_row(self):
+        """``listed_world``'s three parts, each needed: the package's organ, its definition at the accepted SHA,
+        its accept row in the ledger the cycle started from."""
+        LW.name_organ(self)
+        listed = LW.listed(state_files())
+        self.kos(self.CANDS, state=listed, organs=LW.ORGANS)
+        got = self.decide()
+        self.assertEqual((got["merge"], self.reasons(got)), ("good", {"good": [], "breaks": ["tests_red"]}))
+        self.rewrite(state=state_files(), organs=LW.ORGANS)                 # no accept row
+        got = self.decide()
+        self.assertEqual((got["merge"], self.reasons(got)["good"]), (None, ["organ_not_listed:" + LW.ORGAN]))
+        other = {LW.ORGAN: dict(LW.ORGANS[LW.ORGAN], files={"adapters/listed/main.py": b"print('[1]')\n"})}
+        self.rewrite(state=listed, organs=other)                            # the row is of another definition
+        self.assertEqual(self.reasons(self.decide())["good"], ["organ_not_listed:" + LW.ORGAN])
+        self.rewrite(state=listed, organs={})                               # no definition at the accepted SHA
+        got = self.decide()
+        self.assertEqual((got["merge"], self.reasons(got)["good"]), (None, ["organ_unknown:" + LW.ORGAN]))
+
+    def test_a_ledger_or_a_package_the_allowlist_cannot_read_judges_nothing(self):
+        accept = LW.accept_rows()[0]
+        bad = dict(accept, payload=dict(accept["payload"], evidence_run_ids=[]))
+        self.kos(self.CANDS)
+        self.rewrite(state=state_files([START, bad]))
+        with self.assertRaisesRegex(E.Unusable, "^decide: allowlist: "):
+            self.decide()
+        self.rewrite()
+        with mock.patch.dict(E.READY, {"organ_ids": LW.ORGAN}):             # not a list
+            with self.assertRaisesRegex(E.Unusable, "^decide: allowlist: "):
+                self.decide()
+        self.assertEqual(self.reasons(self.decide())["good"], ["no_organ"])
+
+    def test_the_job_s_cycle_merges_no_ready_candidate(self):
+        """``yaz`` itself, as ``YazJob`` runs it: D5 and D6 done, no merge, each reject with ``no_organ``."""
+        job = YazBase("run_yaz")
+        job.setUp()
+        self.addCleanup(job.doCleanups)
+        job.kos(self.CANDS)
+        job.control(OPEN)
+        job.github()
+        out = job.line(job.run_yaz())
+        self.assertEqual((out["ok"], out["done"], out["merge"], job.reasons(out)),
+                         (True, ["D5", "D6"], None, {"good": ["no_organ"], "breaks": ["no_organ", "tests_red"]}))
 
 
 class YazBase(Cycle):

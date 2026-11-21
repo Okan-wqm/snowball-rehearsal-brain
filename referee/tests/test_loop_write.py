@@ -3,6 +3,9 @@ on the in-process GitHub at ``pulled``'s heads, after ``kos`` ran the candidates
 pieces D6 shares with ``activate`` (``ledger.events``, ``target.land``). Unless said otherwise one target, t1, is
 served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line checked is the job line's one target line.
 
+The classes with ``listed = True`` (and every cycle after a genesis they build with ``genesis``) stand behind an
+open allowlist gate (``listed_world``; the gate as a job meets it is test_loop_yaz's ``ClosedGate``).
+
 - a cycle with a merge: the candidate's branch, pull request, check and merge on ``brain/integration``, then one
   ``brain/state`` commit on the head D1 read: the rows in order (cycle start, the base's ratchet base, decisions, the
   response's cost row, status), the whole ledger of ``ledger.schema``, an append-only extension, the root signed once and its row, the

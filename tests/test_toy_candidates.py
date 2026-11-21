@@ -42,6 +42,7 @@ import activation_world as AW  # noqa: E402
 from gate import diffguard  # noqa: E402
 from loop import decide as E  # noqa: E402
 from loop import pulled as P  # noqa: E402
+from target import branches as B  # noqa: E402
 from target import land  # noqa: E402
 from profile import unit_verify as V  # noqa: E402
 from runner import kos as K  # noqa: E402
@@ -126,8 +127,12 @@ BRAIN_FILES = P.CANDIDATE_FILES  # what pulled carries of a candidate (diff.patc
 RUN_FILES = ("cand.jsonl", "checks.json", "hashes.json")
 
 
+GENESIS = {B.STATE: None, B.INTEGRATION: None}  # the heads of ``loop.pulled``'s genesis form
+
+
 def d5(cands: list[dict]) -> dict:
-    """``loop.decide`` over ``cands`` as one cycle's: a ``pulled`` of the toy tree carrying their brain files, and
+    """``loop.decide`` over ``cands`` as the genesis cycle's (the one cycle that merges a ready candidate since P1
+    MF9, tohum/26j: the activation's): a ``pulled`` of the toy tree carrying their brain files, and
     ``koş``'s results (``index.json`` verified, ``base.jsonl``, ``c/<cid>/``) built from the capture."""
     results = tempfile.mkdtemp()
     try:
@@ -141,7 +146,7 @@ def d5(cands: list[dict]) -> dict:
             for name in RUN_FILES:
                 with open(os.path.join(results, "c", c["id"], name), "wb") as fh:
                     fh.write(c[name])
-        art = P.Pulled(None, {"units": [recipe()]}, None, "", {c["id"]: brain_files(c) for c in cands}, {}, {}, b"",
+        art = P.Pulled(None, {"units": [recipe()]}, None, "", {c["id"]: brain_files(c) for c in cands}, GENESIS, {}, b"",
                        None, {}, {}, None, {})
         return E.decide(art, recipe(), TOY, results, CONTROL, [], [])
     finally:

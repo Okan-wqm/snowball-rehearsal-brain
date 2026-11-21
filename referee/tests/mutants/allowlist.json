@@ -610,6 +610,78 @@
    "tests": [
     "test_allowlist.AcceptRows.test_an_entry_no_row_can_be_written_from_writes_nothing"
    ]
+  },
+  {
+   "id": "decide_gate_never_asked",
+   "file": "loop/decide.py",
+   "old": "closed = [] if P.genesis(art) else",
+   "new": "closed = [] if True else",
+   "tests": [
+    "test_loop_yaz.ClosedGate.test_after_the_genesis_cycle_every_ready_candidate_is_refused_with_no_organ"
+   ]
+  },
+  {
+   "id": "decide_genesis_judged_too",
+   "file": "loop/decide.py",
+   "old": "[] if P.genesis(art) else AL.reasons",
+   "new": "[] if False else AL.reasons",
+   "tests": [
+    "test_loop_yaz.ClosedGate.test_the_genesis_cycle_keeps_stage_0_s_rule"
+   ]
+  },
+  {
+   "id": "decide_definitions_unread",
+   "file": "loop/decide.py",
+   "old": "AL.reasons(READY, art.organs,",
+   "new": "AL.reasons(READY, {},",
+   "tests": [
+    "test_loop_yaz.ClosedGate.test_a_named_organ_opens_the_gate_only_with_its_definition_and_its_accept_row"
+   ]
+  },
+  {
+   "id": "decide_accept_rows_unread",
+   "file": "loop/decide.py",
+   "old": "art.organs, serial.rows(art.state[B.STATE_LEDGER]))",
+   "new": "art.organs, [])",
+   "tests": [
+    "test_loop_yaz.ClosedGate.test_a_named_organ_opens_the_gate_only_with_its_definition_and_its_accept_row"
+   ]
+  },
+  {
+   "id": "decide_gate_reasons_dropped",
+   "file": "loop/decide.py",
+   "old": "+ list(frozen) + closed",
+   "new": "+ list(frozen)",
+   "tests": [
+    "test_loop_yaz.ClosedGate.test_after_the_genesis_cycle_every_ready_candidate_is_refused_with_no_organ"
+   ]
+  },
+  {
+   "id": "decide_package_unusable_escapes",
+   "file": "loop/decide.py",
+   "old": "except (AL.Unusable, serial.Unusable) as exc:",
+   "new": "except (serial.Unusable,) as exc:",
+   "tests": [
+    "test_loop_yaz.ClosedGate.test_a_ledger_or_a_package_the_allowlist_cannot_read_judges_nothing"
+   ]
+  },
+  {
+   "id": "decide_ledger_unusable_escapes",
+   "file": "loop/decide.py",
+   "old": "except (AL.Unusable, serial.Unusable) as exc:",
+   "new": "except (AL.Unusable,) as exc:",
+   "tests": [
+    "test_loop_yaz.ClosedGate.test_a_ledger_or_a_package_the_allowlist_cannot_read_judges_nothing"
+   ]
+  },
+  {
+   "id": "decide_job_package_names_an_organ",
+   "file": "loop/decide.py",
+   "old": "READY = {\"organ_ids\": []}",
+   "new": "READY = {\"organ_ids\": [\"x\"]}",
+   "tests": [
+    "test_loop_yaz.ClosedGate.test_the_job_s_cycle_merges_no_ready_candidate"
+   ]
   }
  ]
 }
