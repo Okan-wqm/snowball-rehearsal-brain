@@ -32,6 +32,7 @@ sys.path.insert(0, REFEREE)
 from fractions import Fraction  # noqa: E402
 
 from dispatcher import llm_call as L  # noqa: E402
+from gozcu import evaluate as G  # noqa: E402
 from harness import params as HP  # noqa: E402
 from policy import reads as P  # noqa: E402
 from profile import derive as D  # noqa: E402
@@ -56,12 +57,22 @@ def sectioned() -> dict:
             "confidence_level": 0.8,
             "stage_params": {"census_min_groups": 41, "planted_max_cases": 4, "evidence_ref_max_lines": 31,
                              "match_window_lines": 16, "unread_lines": 99},
+            "monthly_cap_usd": 301, "monthly_cap_ci_minutes": 302,
+            "regression_freeze": {"min_merges": 303, "window_days": 304, "revert_rate": 0.305, "min_reverts": 306,
+                                  "unread": 1},
+            "gate_rules": {"soft_freeze_limit": 307, "containment_freeze": 308, "gross_delete_cap": 9},
+            "windows": {"measure": 1}, "rules": {"drift_bound": 0.5, "genesis_drafts": {"queue": 1}},
             "unread": 1,
         },
         "operating": dict({name: entry(100 + i) for i, name in enumerate(P.OPERATING_NAMES)},
                           unnamed_bytes=entry(999)),
         "performance": {"kos_wall_s": entry(555), "license_allowlist": ["PERF"], "confidence_level": 0.5,
-                        "stage_params": {"census_min_groups": 2, "match_window_lines": 3}},
+                        "stage_params": {"census_min_groups": 2, "match_window_lines": 3},
+                        "windows": {"measure": 309, "security_sweep": 9},
+                        "rules": {"drift_bound": 0.31, "seat_similarity": 0.311, "lease_ttl": 9,
+                                  "genesis_drafts": {"per_window": 312, "queue": 313}},
+                        "monthly_cap_usd": 1, "gate_rules": {"soft_freeze_limit": 1},
+                        "regression_freeze": {"min_merges": 1}},
         "schema": 1,
     }
 
@@ -413,6 +424,18 @@ class Readers(unittest.TestCase):
         self.assertEqual(U.vector_check({"path": "pkg", "inputs": ["pkg"], "limits": {"kos_wall_s": 5},
                                          "env_image": "x", "services": []}, policy).count("limit_key_unknown:kos_wall_s"),
                          1)
+        self.check(log)
+
+    def test_the_watcher_reads_its_thirteen_paths(self):
+        policy, log = self.recorded()
+        self.assertEqual(G.thresholds(policy), {
+            "monthly_cap_usd": 301, "monthly_cap_ci_minutes": 302, "min_merges": 303, "window_days": 304,
+            "revert_rate": Fraction(305, 1000), "min_reverts": 306, "soft_freeze_limit": 307,
+            "containment_freeze": 308, "measure_window": 309, "drift_bound": Fraction(31, 100),
+            "seat_similarity": Fraction(311, 1000), "per_window": 312, "queue": 313})
+        self.check(log, *P.GOZCU_PATHS)
+        policy, log = self.recorded(hoisted())
+        self.assertEqual(G.thresholds(policy), dict.fromkeys(G.THRESHOLDS))
         self.check(log)
 
     def test_policy_usd_reads_the_path_from_the_root_only(self):

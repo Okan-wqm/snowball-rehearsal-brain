@@ -9,17 +9,20 @@ Rules (each bound by a test in ``tests/test_policy_reads.py``, class ``Harness``
 1. ``count(policy, path)``: ``None`` when the path is absent; the value when it is an integer of 1 or more (a
    boolean is not one); else ``Invalid`` with the one reason ``policy_invalid:<dotted path>``. ``Invalid`` with
    the same reason when ``policy.reads.at`` finds no object on the way (``Malformed``).
-2. ``alpha(policy)``: ``None`` when ``constitutional.confidence_level`` is absent; else the level must be a JSON
-   fraction (a Python ``float``) strictly between 0 and 1, and the answer is ``1 - level`` as an exact
-   ``Fraction``, the level read as the shortest decimal Python writes for the float (``repr``; ``0.9`` is 9/10,
-   so alpha is 1/10: tohum/19, one-sided). Anything else is ``Invalid`` as in rule 1.
+2. ``fraction(policy, path)``: ``None`` when the path is absent; else the value must be a JSON fraction (a
+   Python ``float``) strictly between 0 and 1, and the answer is that value as an exact ``Fraction``, read as
+   the shortest decimal Python writes for the float (``repr``; ``0.9`` is 9/10). Anything else is ``Invalid`` as
+   in rule 1. ``alpha(policy)`` is ``1 - fraction`` of ``constitutional.confidence_level`` (so alpha of ``0.9``
+   is 1/10: tohum/19, one-sided), ``None`` when absent.
 3. ``score(policy)``: the four keyword arguments ``harness.score.report`` takes from the policy: ``alpha`` (rule
    2), ``min_groups`` (``census_min_groups``), ``window`` (``match_window_lines``) and ``ref_max_lines``
    (``evidence_ref_max_lines``), the last three by rule 1. ``Invalid`` carries every reason that holds, in that
    order.
 4. ``planted_max_cases(policy)``: rule 1 on its path; ``snapshot.make``'s ``max_cases``.
 
-The readers: ``loop.job.yaz_harness`` (``score``) and ``loop.cek.assemble`` (``planted_max_cases``).
+The readers: ``loop.job.yaz_harness`` (``score``) and ``loop.cek.assemble`` (``planted_max_cases``);
+``count``, ``fraction`` and ``Invalid`` are also what ``gozcu.evaluate.thresholds`` judges its values with (one
+rule for a count and for a fraction of the policy, not a second copy there).
 
 Outside, stated: a default (an absent key leaves the argument ``None`` and the consumer says what that means:
 no bound, ``min_groups_unknown``, the symbol alone, no length rule, ``max_cases_invalid`` for a planted
@@ -68,14 +71,20 @@ def count(policy: Any, path: tuple[str, ...]) -> int | None:
     return value
 
 
-def alpha(policy: Any) -> Fraction | None:
-    """``1 - confidence_level``, exact; ``None`` when absent (rule 2)."""
-    level = _at(policy, R.CONFIDENCE_LEVEL)
+def fraction(policy: Any, path: tuple[str, ...]) -> Fraction | None:
+    """The JSON fraction strictly between 0 and 1 at ``path``, exact; ``None`` when absent (rule 2)."""
+    level = _at(policy, path)
     if level is R.ABSENT:
         return None
     if type(level) is not float or not 0 < level < 1:
-        raise Invalid([_reason(R.CONFIDENCE_LEVEL)])
-    return 1 - Fraction(repr(level))
+        raise Invalid([_reason(path)])
+    return Fraction(repr(level))
+
+
+def alpha(policy: Any) -> Fraction | None:
+    """``1 - confidence_level``, exact; ``None`` when absent (rule 2)."""
+    level = fraction(policy, R.CONFIDENCE_LEVEL)
+    return None if level is None else 1 - level
 
 
 def score(policy: Any) -> dict[str, Any]:

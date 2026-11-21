@@ -9,7 +9,8 @@ modules read through ``at`` and ``operating``, and the command prints ``at`` ove
 Rules (each bound by a test in ``tests/test_policy_reads.py``):
 
 1. ``PATHS``: the full path, section first (tohum/29v "Yol"), of every value read through this module: the four
-   ``constitutional`` paths of stage 0 below, the harness's five of stage 1 (``HARNESS_PATHS``) and
+   ``constitutional`` paths of stage 0 below, the harness's five of stage 1 (``HARNESS_PATHS``), the watcher's
+   thirteen thresholds (``GOZCU_PATHS``, tohum/28: eight ``constitutional``, five ``performance``) and
    ``("operating", name)`` for each of ``OPERATING_NAMES``. No path key holds a ``.``, so the dotted names of the
    command are distinct.
 2. ``at(policy, path)``: the value at ``path`` walked from the root, one key at a time; ``ABSENT`` when a key on the
@@ -26,7 +27,8 @@ Rules (each bound by a test in ``tests/test_policy_reads.py``):
    caller names; ``loop.cagir`` and ``loop.write_cycle`` name ``CANARY_USD``), ``harness.params`` (``HARNESS_PATHS``:
    ``score`` for ``loop.job.yaz_harness``, ``planted_max_cases`` for ``loop.cek.assemble``, which hands it to
    ``snapshot.make``; the snapshot ``çek`` makes is a clean one, and a clean snapshot's rules do not use the
-   number). ``tests/test_policy_reads.py``'s
+   number), ``gozcu.evaluate.thresholds`` (``GOZCU_PATHS``; no job calls it yet, ``status/off_live.json``, so
+   the command names these thirteen before the loop reads them). ``tests/test_policy_reads.py``'s
    ``Readers`` runs each of these functions on a policy that records every key looked up in it and finds no
    lookup off ``PATHS``; and its register finds the section names as string constants in no other source file.
 
@@ -68,10 +70,31 @@ PLANTED_MAX_CASES = (CONSTITUTIONAL, STAGE_PARAMS, "planted_max_cases")
 EVIDENCE_REF_MAX_LINES = (CONSTITUTIONAL, STAGE_PARAMS, "evidence_ref_max_lines")
 MATCH_WINDOW_LINES = (CONSTITUTIONAL, STAGE_PARAMS, "match_window_lines")
 HARNESS_PATHS = (CONFIDENCE_LEVEL, CENSUS_MIN_GROUPS, PLANTED_MAX_CASES, EVIDENCE_REF_MAX_LINES, MATCH_WINDOW_LINES)
+PERFORMANCE = "performance"
+MONTHLY_CAP_USD = (CONSTITUTIONAL, "monthly_cap_usd")
+MONTHLY_CAP_CI_MINUTES = (CONSTITUTIONAL, "monthly_cap_ci_minutes")
+REGRESSION_FREEZE = "regression_freeze"
+REGRESSION_MIN_MERGES = (CONSTITUTIONAL, REGRESSION_FREEZE, "min_merges")
+REGRESSION_WINDOW_DAYS = (CONSTITUTIONAL, REGRESSION_FREEZE, "window_days")
+REGRESSION_REVERT_RATE = (CONSTITUTIONAL, REGRESSION_FREEZE, "revert_rate")
+REGRESSION_MIN_REVERTS = (CONSTITUTIONAL, REGRESSION_FREEZE, "min_reverts")
+GATE_RULES = "gate_rules"
+SOFT_FREEZE_LIMIT = (CONSTITUTIONAL, GATE_RULES, "soft_freeze_limit")
+CONTAINMENT_FREEZE = (CONSTITUTIONAL, GATE_RULES, "containment_freeze")
+MEASURE_WINDOW = (PERFORMANCE, "windows", "measure")
+RULES = "rules"
+DRIFT_BOUND = (PERFORMANCE, RULES, "drift_bound")
+SEAT_SIMILARITY = (PERFORMANCE, RULES, "seat_similarity")
+GENESIS_DRAFTS = "genesis_drafts"
+GENESIS_DRAFTS_PER_WINDOW = (PERFORMANCE, RULES, GENESIS_DRAFTS, "per_window")
+GENESIS_DRAFTS_QUEUE = (PERFORMANCE, RULES, GENESIS_DRAFTS, "queue")
+GOZCU_PATHS = (MONTHLY_CAP_USD, MONTHLY_CAP_CI_MINUTES, REGRESSION_MIN_MERGES, REGRESSION_WINDOW_DAYS,
+               REGRESSION_REVERT_RATE, REGRESSION_MIN_REVERTS, SOFT_FREEZE_LIMIT, CONTAINMENT_FREEZE, MEASURE_WINDOW,
+               DRIFT_BOUND, SEAT_SIMILARITY, GENESIS_DRAFTS_PER_WINDOW, GENESIS_DRAFTS_QUEUE)
 OPERATING = "operating"
 OPERATING_NAMES = ("unit_inputs_bytes", "deps_bytes", "worktree_bytes", "container_mem_bytes", "kos_wall_s",
                    "test_total_s", "output_bytes")
-PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + tuple(
+PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + GOZCU_PATHS + tuple(
     (OPERATING, name) for name in OPERATING_NAMES)
 
 

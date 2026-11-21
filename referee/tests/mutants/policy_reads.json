@@ -210,8 +210,8 @@
   {
    "id": "hp_alpha_is_the_level",
    "file": "harness/params.py",
-   "old": "    return 1 - Fraction(repr(level))",
-   "new": "    return Fraction(repr(level))",
+   "old": "    return None if level is None else 1 - level",
+   "new": "    return level",
    "tests": [
     "test_policy_reads.Harness"
    ]
@@ -219,8 +219,8 @@
   {
    "id": "hp_alpha_of_the_binary_float",
    "file": "harness/params.py",
-   "old": "    return 1 - Fraction(repr(level))",
-   "new": "    return Fraction(1 - level)",
+   "old": "    return Fraction(repr(level))",
+   "new": "    return Fraction(level)",
    "tests": [
     "test_policy_reads.Harness.test_alpha_is_one_minus_the_level_exactly"
    ]

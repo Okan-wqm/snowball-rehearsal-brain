@@ -1,4 +1,8 @@
 {
+  "gozcu.evaluate": {
+    "kind": "unwired",
+    "why": "the watcher's rules of tohum/28 (P1 MF7) as a function over declared views, run by test 41 (tests/test_gozcu.py) only; the cycle-end call in yaz, the view builders, the freeze row's shape and the gate's reading are not built, so MF7 is not in done_mf"
+  },
   "ledger.founder": {
     "kind": "session_tool",
     "why": "the founder ledger's rules and its append command, run by a session and by test 14 (tests/test_founder_ledger.py); the loop never writes founder rows"
