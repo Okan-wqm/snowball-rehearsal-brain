@@ -102,8 +102,8 @@
   {
    "id": "pulled_accepted_not_required",
    "file": "loop/pulled.py",
-   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT, MUTATIONS) + STATE_FILES",
-   "new": "TOP = (TREE, UNITS, POLICY, SNAPSHOT, MUTATIONS) + STATE_FILES",
+   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT, MUTATIONS, ACCEPT) + STATE_FILES",
+   "new": "TOP = (TREE, UNITS, POLICY, SNAPSHOT, MUTATIONS, ACCEPT) + STATE_FILES",
    "tests": [
     "test_loop_kos.py"
    ]

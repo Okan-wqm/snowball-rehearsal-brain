@@ -312,8 +312,8 @@
   {
    "id": "schema_names_the_client",
    "file": "ledger/schema.py",
-   "old": "from ledger import chain, cost\nfrom target import branches\n",
-   "new": "from ledger import chain, cost\nfrom dispatcher import llm_call  # noqa\nfrom target import branches\n",
+   "old": "from ledger import chain, cost, events\nfrom target import branches\n",
+   "new": "from ledger import chain, cost, events\nfrom dispatcher import llm_call  # noqa\nfrom target import branches\n",
    "tests": [
     "test_offline.Static.test_the_brains_own_harness_is_clean"
    ]

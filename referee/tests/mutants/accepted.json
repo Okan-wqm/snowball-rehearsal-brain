@@ -561,8 +561,8 @@
   {
    "id": "ac_open_hash",
    "file": "loop/accepted.py",
-   "old": "\"result_sha256\": hashlib.sha256(result).hexdigest()}",
-   "new": "\"result_sha256\": hashlib.sha256(bundle).hexdigest()}",
+   "old": "\"result_sha256\": hashlib.sha256(result).hexdigest(),",
+   "new": "\"result_sha256\": hashlib.sha256(bundle).hexdigest(),",
    "tests": [
     "test_accepted.Verify.test_the_verifier_sees_both_files_first"
    ]
@@ -1087,6 +1087,24 @@
    "new": "argv(git, git_dir, url, sha)):",
    "tests": [
     "test_fetch.Fetch.test_history_asks_for_every_commit_and_no_tree"
+   ]
+  },
+  {
+   "id": "ac_run_id_of_any_type",
+   "file": "loop/accepted.py",
+   "old": "\"run_id\": run_id if isinstance(run_id, str) and run_id else None}",
+   "new": "\"run_id\": run_id}",
+   "tests": [
+    "test_accepted.Verify.test_the_run_id_is_the_results_run_id_when_a_non_empty_string"
+   ]
+  },
+  {
+   "id": "ac_run_id_dropped",
+   "file": "loop/accepted.py",
+   "old": "\"run_id\": run_id if isinstance(run_id, str) and run_id else None}",
+   "new": "\"run_id\": None}",
+   "tests": [
+    "test_accepted.Verify.test_the_run_id_is_the_results_run_id_when_a_non_empty_string"
    ]
   }
  ]

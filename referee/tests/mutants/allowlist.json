@@ -11,32 +11,13 @@
    ]
   },
   {
-   "id": "list_skips_bad_kind",
-   "file": "gate/allowlist.py",
-   "old": "found = S.exactly(KIND)(row.get(\"kind\"), \"accept row.kind\") or PAYLOAD(",
-   "new": "found = PAYLOAD(",
-   "tests": [
-    "test_allowlist.Listed.test_an_accept_row_of_another_shape_lists_nothing"
-   ]
-  },
-  {
    "id": "list_skips_bad_payload",
    "file": "gate/allowlist.py",
    "old": "        if found:\n            raise Unusable(\"; \".join(found))\n        out.append(row[\"payload\"])",
    "new": "        if found:\n            continue\n        out.append(row[\"payload\"])",
    "tests": [
     "test_allowlist.Listed.test_an_accept_row_of_another_shape_lists_nothing",
-    "test_allowlist.Rows.test_unusable_input_writes_no_row_for_any_organ"
-   ]
-  },
-  {
-   "id": "list_kind_only",
-   "file": "gate/allowlist.py",
-   "old": " or PAYLOAD(row.get(\"payload\"), \"accept row.payload\")",
-   "new": " or (lambda p: [] if isinstance(p, dict) and not S.hex64(p.get(\"definition_sha256\"), \"h\") else [\"bad\"])(row.get(\"payload\"))",
-   "tests": [
-    "test_allowlist.Listed.test_an_accept_row_of_another_shape_lists_nothing",
-    "test_allowlist.Rows.test_unusable_input_writes_no_row_for_any_organ"
+    "test_allowlist.Rows.test_unusable_input_gives_no_row_for_any_organ"
    ]
   },
   {
@@ -55,35 +36,6 @@
    "new": "if not isinstance(rows, list):",
    "tests": [
     "test_allowlist.Listed.test_rows_that_are_no_list_of_objects_list_nothing"
-   ]
-  },
-  {
-   "id": "payload_no_organ",
-   "file": "gate/allowlist.py",
-   "old": "PAYLOAD = S.shape({\"organ_id\": S.text, ",
-   "new": "PAYLOAD = S.shape({\"organ_id\": lambda v, w: [], ",
-   "tests": [
-    "test_allowlist.Listed.test_an_accept_row_of_another_shape_lists_nothing"
-   ]
-  },
-  {
-   "id": "payload_sha_64",
-   "file": "gate/allowlist.py",
-   "old": "\"brain_sha\": S.hex40, \"evidence",
-   "new": "\"brain_sha\": S.hex64, \"evidence",
-   "tests": [
-    "test_allowlist.Listed.test_only_accept_rows_are_read",
-    "test_allowlist.Decision.test_a_package_that_names_no_organ_is_refused"
-   ]
-  },
-  {
-   "id": "payload_hash_40",
-   "file": "gate/allowlist.py",
-   "old": "\"definition_sha256\": S.hex64, \"brain_sha\"",
-   "new": "\"definition_sha256\": S.hex40, \"brain_sha\"",
-   "tests": [
-    "test_allowlist.Listed.test_only_accept_rows_are_read",
-    "test_allowlist.Decision.test_a_package_that_names_no_organ_is_refused"
    ]
   },
   {
@@ -120,20 +72,11 @@
    "id": "decision_trusts_stated_hash",
    "file": "gate/allowlist.py",
    "old": "        own = _hash(definitions, organ_id)\n        if own is None:\n            out.append(",
-   "new": "        own = _hash(definitions, organ_id)\n        stated = package.get(\"definition_sha256\")\n        if isinstance(stated, list) and any(isinstance(s, str) and s in allowed for s in stated):\n            continue\n        if own is None:\n            out.append(",
+   "new": "        own = _hash(definitions, organ_id)\n        stated = package.get(\"definition_sha256\")\n        if isinstance(stated, list) and any(isinstance(s, str) and s in {h for _, h in allowed} for s in stated):\n            continue\n        if own is None:\n            out.append(",
    "tests": [
+    "test_allowlist.Test55.test_the_hash_the_package_states_changes_no_answer",
     "test_allowlist.Decision.test_an_organ_the_accepted_sha_does_not_hold_is_unknown",
     "test_allowlist.Decision.test_each_part_of_the_definition_changes_the_hash_compared"
-   ]
-  },
-  {
-   "id": "decision_stated_must_match",
-   "file": "gate/allowlist.py",
-   "old": "        elif own not in allowed:\n",
-   "new": "        elif own not in allowed or own not in (package.get(\"definition_sha256\") or [own]):\n",
-   "tests": [
-    "test_allowlist.Decision.test_each_part_of_the_definition_changes_the_hash_compared",
-    "test_allowlist.Test55.test_the_hash_the_package_states_changes_no_answer"
    ]
   },
   {
@@ -181,15 +124,6 @@
    "new": "out.append(\"%s:%s\" % (NOT_LISTED, organ_id))",
    "tests": [
     "test_allowlist.Decision.test_an_organ_the_accepted_sha_does_not_hold_is_unknown",
-    "test_allowlist.Decision.test_every_named_organ_is_judged_in_the_package_s_order"
-   ]
-  },
-  {
-   "id": "decision_any_organ_listed",
-   "file": "gate/allowlist.py",
-   "old": "    return out\n\n\n@dataclass",
-   "new": "    return out if len(out) == len(organ_ids) or out == [NO_ORGAN] else []\n\n\n@dataclass",
-   "tests": [
     "test_allowlist.Decision.test_every_named_organ_is_judged_in_the_package_s_order"
    ]
   },
@@ -245,7 +179,7 @@
    "new": "    if organ_id not in definitions:\n        return None\n    for d in definitions.values():\n        O.definition_sha256(d)\n",
    "tests": [
     "test_allowlist.Decision.test_definitions_of_another_shape_are_unusable",
-    "test_allowlist.Rows.test_unusable_input_writes_no_row_for_any_organ"
+    "test_allowlist.Rows.test_unusable_input_gives_no_row_for_any_organ"
    ]
   },
   {
@@ -264,7 +198,7 @@
    "new": "        O.definition_sha256(definitions[organ_id])\n        return O.definition_sha256({\"entry\": [\"x\"], \"files\": definitions[organ_id][\"files\"]})\n",
    "tests": [
     "test_allowlist.Decision.test_a_package_of_another_shape_is_unusable",
-    "test_allowlist.Decision.test_a_hash_is_listed_whichever_organ_s_row_carries_it"
+    "test_allowlist.Decision.test_each_part_of_the_definition_changes_the_hash_compared"
    ]
   },
   {
@@ -274,127 +208,7 @@
    "new": "        O.definition_sha256(definitions[organ_id])\n        return O.definition_sha256({\"entry\": definitions[organ_id][\"entry\"], \"files\": {}})\n",
    "tests": [
     "test_allowlist.Decision.test_a_package_of_another_shape_is_unusable",
-    "test_allowlist.Decision.test_a_hash_is_listed_whichever_organ_s_row_carries_it"
-   ]
-  },
-  {
-   "id": "accept_no_chain_check",
-   "file": "gate/allowlist.py",
-   "old": "    if not verdict[\"valid\"]:\n        raise append.HardStop(\"ledger: %s (%s)\" % (verdict[\"reason\"], verdict[\"broken_row\"]))\n    brain_sha",
-   "new": "    brain_sha",
-   "tests": [
-    "test_allowlist.File.test_a_ledger_that_is_no_extension_is_a_hard_stop"
-   ]
-  },
-  {
-   "id": "accept_chain_check_after_state",
-   "file": "gate/allowlist.py",
-   "old": "    verdict = chain.verify_bytes(ledger, previous)\n    if not verdict[\"valid\"]:\n        raise append.HardStop(\"ledger: %s (%s)\" % (verdict[\"reason\"], verdict[\"broken_row\"]))\n    brain_sha = state.get(\"last_accepted_sha\") if isinstance(state, dict) else None\n    if S.hex40(brain_sha, \"last_accepted_sha\"):\n        raise Unusable(\"the signed result names no accepted SHA\")\n",
-   "new": "    brain_sha = state.get(\"last_accepted_sha\") if isinstance(state, dict) else None\n    if S.hex40(brain_sha, \"last_accepted_sha\"):\n        raise Unusable(\"the signed result names no accepted SHA\")\n    verdict = chain.verify_bytes(ledger, previous)\n    if not verdict[\"valid\"]:\n        raise append.HardStop(\"ledger: %s (%s)\" % (verdict[\"reason\"], verdict[\"broken_row\"]))\n",
-   "tests": [
-    "test_allowlist.File.test_a_ledger_that_is_no_extension_is_a_hard_stop"
-   ]
-  },
-  {
-   "id": "accept_chain_self_only",
-   "file": "gate/allowlist.py",
-   "old": "    verdict = chain.verify_bytes(ledger, previous)\n    if not verdict[\"valid\"]:\n        raise append.HardStop(\"ledger: %s (%s)\" % (verdict[\"reason\"], verdict[\"broken_row\"]))\n    brain_sha",
-   "new": "    verdict = chain.verify_bytes(ledger, ledger)\n    if not verdict[\"valid\"]:\n        raise append.HardStop(\"ledger: %s (%s)\" % (verdict[\"reason\"], verdict[\"broken_row\"]))\n    brain_sha",
-   "tests": [
-    "test_allowlist.File.test_a_ledger_that_is_no_extension_is_a_hard_stop"
-   ]
-  },
-  {
-   "id": "accept_sha_unchecked",
-   "file": "gate/allowlist.py",
-   "old": "    if S.hex40(brain_sha, \"last_accepted_sha\"):\n",
-   "new": "    if not isinstance(brain_sha, str):\n",
-   "tests": [
-    "test_allowlist.Rows.test_unusable_input_writes_no_row_for_any_organ"
-   ]
-  },
-  {
-   "id": "accept_sha_from_result_hash",
-   "file": "gate/allowlist.py",
-   "old": "brain_sha = state.get(\"last_accepted_sha\") if isinstance(state, dict) else None",
-   "new": "brain_sha = state.get(\"result_sha256\", state.get(\"last_accepted_sha\"))[:40] if isinstance(state, dict) else None",
-   "tests": [
-    "test_allowlist.Rows.test_unusable_input_writes_no_row_for_any_organ",
-    "test_allowlist.Rows.test_the_row_written"
-   ]
-  },
-  {
-   "id": "accept_sha_is_snapshot",
-   "file": "gate/allowlist.py",
-   "old": "\"brain_sha\": brain_sha,",
-   "new": "\"brain_sha\": cycle[\"snapshot_id\"],",
-   "tests": [
-    "test_allowlist.Rows.test_the_sha_is_the_signed_result_s_and_the_hash_is_computed",
-    "test_allowlist.Rows.test_the_row_written"
-   ]
-  },
-  {
-   "id": "accept_runs_checked_late",
-   "file": "gate/allowlist.py",
-   "old": "    runs = list(_ids(run_ids, \"run_ids\"))\n    held",
-   "new": "    runs = run_ids\n    held",
-   "tests": [
-    "test_allowlist.Rows.test_unusable_input_writes_no_row_for_any_organ"
-   ]
-  },
-  {
-   "id": "accept_runs_dropped",
-   "file": "gate/allowlist.py",
-   "old": "\"evidence_run_ids\": list(runs)}",
-   "new": "\"evidence_run_ids\": []}",
-   "tests": [
-    "test_allowlist.Rows.test_the_row_written"
-   ]
-  },
-  {
-   "id": "accept_runs_sorted_reverse",
-   "file": "gate/allowlist.py",
-   "old": "\"evidence_run_ids\": list(runs)}",
-   "new": "\"evidence_run_ids\": list(runs)[::-1]}",
-   "tests": [
-    "test_allowlist.Rows.test_the_row_written"
-   ]
-  },
-  {
-   "id": "accept_held_by_hash",
-   "file": "gate/allowlist.py",
-   "old": "        if (organ_id, own) in held:\n",
-   "new": "        if own in {h for _, h in held}:\n",
-   "tests": [
-    "test_allowlist.Rows.test_an_entry_made_twice_writes_once"
-   ]
-  },
-  {
-   "id": "accept_held_by_organ",
-   "file": "gate/allowlist.py",
-   "old": "        if (organ_id, own) in held:\n",
-   "new": "        if organ_id in {o for o, _ in held}:\n",
-   "tests": [
-    "test_allowlist.Rows.test_an_entry_made_twice_writes_once"
-   ]
-  },
-  {
-   "id": "accept_always_writes",
-   "file": "gate/allowlist.py",
-   "old": "        if (organ_id, own) in held:\n            continue\n",
-   "new": "",
-   "tests": [
-    "test_allowlist.File.test_the_rows_go_onto_the_ledger_not_onto_its_previous_version",
-    "test_allowlist.Rows.test_an_entry_made_twice_writes_once"
-   ]
-  },
-  {
-   "id": "accept_held_stops_the_rest",
-   "file": "gate/allowlist.py",
-   "old": "        if (organ_id, own) in held:\n            continue\n",
-   "new": "        if (organ_id, own) in held:\n            break\n",
-   "tests": [
-    "test_allowlist.Rows.test_an_entry_made_twice_writes_once"
+    "test_allowlist.Decision.test_each_part_of_the_definition_changes_the_hash_compared"
    ]
   },
   {
@@ -403,85 +217,398 @@
    "old": "        if own is None:\n            raise Unusable(\"organ %s: not an organ of the accepted SHA\" % organ_id)\n",
    "new": "        if own is None:\n            continue\n",
    "tests": [
-    "test_allowlist.Rows.test_unusable_input_writes_no_row_for_any_organ"
+    "test_allowlist.Rows.test_unusable_input_gives_no_row_for_any_organ"
    ]
   },
   {
-   "id": "accept_row_id_no_organ",
+   "id": "list_skips_bad_kind",
    "file": "gate/allowlist.py",
-   "old": "events.row(cycle, \"accept:%s\" % organ_id, KIND",
-   "new": "events.row(cycle, \"accept:%d\" % len(rows), KIND",
+   "old": "found = S.exactly(KIND)(row.get(\"kind\"), \"accept row.kind\") \\\n            or S.ACCEPT(",
+   "new": "found = S.ACCEPT(",
    "tests": [
-    "test_allowlist.File.test_the_rows_go_onto_the_ledger_not_onto_its_previous_version",
-    "test_allowlist.Rows.test_the_row_written"
+    "test_allowlist.Listed.test_an_accept_row_of_another_shape_lists_nothing"
    ]
   },
   {
-   "id": "accept_row_in_events",
+   "id": "list_payload_two_keys_only",
    "file": "gate/allowlist.py",
-   "old": "KIND, payload, part=PART))",
-   "new": "KIND, payload))",
+   "old": "            or S.ACCEPT(row.get(\"payload\"), \"accept row.payload\")",
+   "new": "            or ([] if isinstance(row.get(\"payload\"), dict) and not S.text(row[\"payload\"].get(\"organ_id\"), \"o\") and not S.hex64(row[\"payload\"].get(\"definition_sha256\"), \"h\") else [\"bad\"])",
    "tests": [
-    "test_allowlist.Rows.test_the_row_type_is_not_in_the_ledger_s_table_yet",
-    "test_allowlist.Test55.test_refused_until_the_row_of_its_hash_is_written_then_the_same_package_passes"
+    "test_allowlist.Listed.test_an_accept_row_of_another_shape_lists_nothing"
    ]
   },
   {
-   "id": "accept_sorted_ids",
+   "id": "decision_by_hash",
    "file": "gate/allowlist.py",
-   "old": "    for organ_id in _ids(organ_ids, \"organ_ids\"):\n",
-   "new": "    for organ_id in sorted(_ids(organ_ids, \"organ_ids\")):\n",
+   "old": "        elif (organ_id, own) not in allowed:",
+   "new": "        elif own not in {h for _, h in allowed}:",
    "tests": [
-    "test_allowlist.Rows.test_the_row_written"
+    "test_allowlist.Decision.test_a_hash_listed_for_one_organ_is_not_listed_for_another"
    ]
   },
   {
-   "id": "accept_payload_organ_dropped",
+   "id": "request_other_keys",
    "file": "gate/allowlist.py",
-   "old": "payload = {\"organ_id\": organ_id, \"definition_sha256\": own,",
-   "new": "payload = {\"organ_id\": \"organ\", \"definition_sha256\": own,",
+   "old": "set(doc) == {\"organ_ids\"}",
+   "new": "\"organ_ids\" in doc",
    "tests": [
-    "test_allowlist.File.test_the_rows_go_onto_the_ledger_not_onto_its_previous_version",
-    "test_allowlist.Rows.test_the_row_written"
+    "test_allowlist.Request.test_exactly_organ_ids",
+    "test_allowlist.Entry.test_a_request_of_another_form_refuses_the_assembly"
    ]
   },
   {
-   "id": "accept_unchained",
+   "id": "rows_entry_other_keys",
    "file": "gate/allowlist.py",
-   "old": "    return Accepted(append.plan_cycle(ledger, previous, lambda: chain.canonical({\"rows\": rows})).content, rows)",
-   "new": "    return Accepted(ledger + b\"\".join(chain.canonical(r) + b\"\\n\" for r in rows), rows)",
+   "old": "set(entry) == ENTRY_KEYS",
+   "new": "set(entry) >= ENTRY_KEYS",
    "tests": [
-    "test_allowlist.Rows.test_the_row_type_is_not_in_the_ledger_s_table_yet",
-    "test_allowlist.Rows.test_unusable_input_writes_no_row_for_any_organ"
+    "test_allowlist.Rows.test_unusable_input_gives_no_row_for_any_organ"
    ]
   },
   {
-   "id": "accept_plan_onto_previous",
+   "id": "rows_held_written_again",
    "file": "gate/allowlist.py",
-   "old": "append.plan_cycle(ledger, previous, lambda",
-   "new": "append.plan_cycle(previous, previous, lambda",
+   "old": "        if (organ_id, own) not in held:\n            payloads.append",
+   "new": "        if True:\n            payloads.append",
    "tests": [
-    "test_allowlist.File.test_the_rows_go_onto_the_ledger_not_onto_its_previous_version"
+    "test_allowlist.Rows.test_an_entry_made_twice_writes_once",
+    "test_allowlist.AcceptRows.test_the_next_cycle_s_same_entry_writes_no_row"
    ]
   },
   {
-   "id": "accept_empty_rewrites",
+   "id": "rows_held_by_organ",
    "file": "gate/allowlist.py",
-   "old": "    if not rows:\n        return Accepted(ledger, [])\n",
-   "new": "    if not rows:\n        return Accepted(ledger.rstrip(b\"\\n\"), [])\n",
+   "old": "        if (organ_id, own) not in held:\n            payloads.append",
+   "new": "        if organ_id not in {o for o, _ in held}:\n            payloads.append",
    "tests": [
-    "test_allowlist.File.test_the_rows_go_onto_the_ledger_not_onto_its_previous_version",
     "test_allowlist.Rows.test_an_entry_made_twice_writes_once"
    ]
   },
   {
-   "id": "accept_writes_before_all_judged",
+   "id": "rows_held_by_hash",
    "file": "gate/allowlist.py",
-   "old": "        rows.append(events.row(",
-   "new": "        if len(rows) == 1:\n            break\n        rows.append(events.row(",
+   "old": "        if (organ_id, own) not in held:\n            payloads.append",
+   "new": "        if own not in {h for _, h in held}:\n            payloads.append",
+   "tests": [
+    "test_allowlist.Rows.test_an_entry_made_twice_writes_once"
+   ]
+  },
+  {
+   "id": "rows_payload_unjudged",
+   "file": "gate/allowlist.py",
+   "old": "    if found:\n        raise Unusable(\"; \".join(found))\n    return [events.row(",
+   "new": "    return [events.row(",
+   "tests": [
+    "test_allowlist.Rows.test_unusable_input_gives_no_row_for_any_organ",
+    "test_allowlist.AcceptRows.test_an_entry_no_row_can_be_written_from_writes_nothing"
+   ]
+  },
+  {
+   "id": "rows_sha_is_snapshot",
+   "file": "gate/allowlist.py",
+   "old": "\"brain_sha\": entry[\"brain_sha\"],",
+   "new": "\"brain_sha\": cycle[\"snapshot_id\"],",
+   "tests": [
+    "test_allowlist.Rows.test_the_sha_and_the_run_are_the_entry_s_and_the_hash_is_computed"
+   ]
+  },
+  {
+   "id": "rows_in_events",
+   "file": "gate/allowlist.py",
+   "old": "KIND, p, part=PART) for p in payloads]",
+   "new": "KIND, p) for p in payloads]",
+   "tests": [
+    "test_allowlist.Rows.test_the_row_written"
+   ]
+  },
+  {
+   "id": "rows_row_id_no_organ",
+   "file": "gate/allowlist.py",
+   "old": "events.row(cycle, \"accept:%s\" % p[\"organ_id\"], KIND",
+   "new": "events.row(cycle, \"accept\", KIND",
+   "tests": [
+    "test_allowlist.Rows.test_the_row_written"
+   ]
+  },
+  {
+   "id": "rows_unknown_skipped",
+   "file": "gate/allowlist.py",
+   "old": "        if own is None:\n            raise Unusable(\"organ %s: not an organ of the accepted SHA\" % organ_id)\n",
+   "new": "        if own is None:\n            continue\n",
+   "tests": [
+    "test_allowlist.Rows.test_unusable_input_gives_no_row_for_any_organ"
+   ]
+  },
+  {
+   "id": "accept_runs_any_count",
+   "file": "ledger/schema.py",
+   "old": "    return found or ([] if len(value) == 1 else _bad(where, \"not one run id\"))",
+   "new": "    return found",
+   "tests": [
+    "test_allowlist.Rows.test_the_schema_refuses_an_accept_row_of_another_shape",
+    "test_allowlist.Listed.test_an_accept_row_of_another_shape_lists_nothing"
+   ]
+  },
+  {
+   "id": "accept_type_not_in_table",
+   "file": "ledger/schema.py",
+   "old": "    (\"accept\", \"accept\"): (ACCEPT, False),\n",
+   "new": "",
    "tests": [
     "test_allowlist.Rows.test_the_row_written",
-    "test_allowlist.File.test_a_secret_in_a_row_writes_nothing"
+    "test_allowlist.AcceptRows.test_the_entry_s_row_is_in_the_cycle_s_commit_under_its_root"
+   ]
+  },
+  {
+   "id": "reject_cause_always_asked",
+   "file": "ledger/schema.py",
+   "old": "    return not (isinstance(reasons, list) and all(isinstance(r, str) for r in reasons) and events.standing(reasons))",
+   "new": "    return True",
+   "tests": [
+    "test_schema.Artifacts.test_a_closed_gate_s_reject_carries_no_cause"
+   ]
+  },
+  {
+   "id": "reject_cause_never_asked",
+   "file": "ledger/schema.py",
+   "old": "    return not (isinstance(reasons, list) and all(isinstance(r, str) for r in reasons) and events.standing(reasons))",
+   "new": "    return False",
+   "tests": [
+    "test_schema.Artifacts.test_a_closed_gate_s_reject_carries_no_cause"
+   ]
+  },
+  {
+   "id": "reject_cause_any_standing",
+   "file": "ledger/schema.py",
+   "old": "all(isinstance(r, str) for r in reasons) and events.standing(reasons))",
+   "new": "all(isinstance(r, str) for r in reasons) and any(events.standing([r]) for r in reasons))",
+   "tests": [
+    "test_schema.Artifacts.test_a_closed_gate_s_reject_carries_no_cause"
+   ]
+  },
+  {
+   "id": "decided_closed_gate_with_cause",
+   "file": "ledger/events.py",
+   "old": "None if standing(reasons) else cause(reasons))",
+   "new": "cause(reasons))",
+   "tests": [
+    "test_schema.Artifacts.test_a_closed_gate_s_reject_carries_no_cause",
+    "test_loop_write.D6.test_without_a_merge_only_brain_state_is_written"
+   ]
+  },
+  {
+   "id": "decided_no_cause",
+   "file": "ledger/events.py",
+   "old": "None if standing(reasons) else cause(reasons))",
+   "new": "None)",
+   "tests": [
+    "test_schema.Artifacts.test_a_closed_gate_s_reject_carries_no_cause"
+   ]
+  },
+  {
+   "id": "decided_any_standing",
+   "file": "ledger/events.py",
+   "old": "None if standing(reasons) else cause(reasons))",
+   "new": "None if any(standing([r]) for r in reasons) else cause(reasons))",
+   "tests": [
+    "test_schema.Artifacts.test_a_closed_gate_s_reject_carries_no_cause"
+   ]
+  },
+  {
+   "id": "pulled_accept_not_required",
+   "file": "loop/pulled.py",
+   "old": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT, MUTATIONS, ACCEPT) + STATE_FILES",
+   "new": "TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT, MUTATIONS) + STATE_FILES",
+   "tests": [
+    "test_allowlist.Carried.test_none_is_written_as_no_entry_and_the_file_is_required"
+   ]
+  },
+  {
+   "id": "pulled_accept_unjudged_at_write",
+   "file": "loop/pulled.py",
+   "old": "    if not _accept_valid(accept):\n        raise PulledError([\"accept_invalid\"])\n",
+   "new": "",
+   "tests": [
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_write"
+   ]
+  },
+  {
+   "id": "pulled_accept_unjudged_at_read",
+   "file": "loop/pulled.py",
+   "old": "    if ACCEPT in parsed and not _accept_valid(parsed[ACCEPT]):",
+   "new": "    if False:",
+   "tests": [
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_read"
+   ]
+  },
+  {
+   "id": "pulled_accept_other_keys",
+   "file": "loop/pulled.py",
+   "old": "set(doc) == {\"brain_sha\", \"run_id\", \"organ_ids\"}",
+   "new": "set(doc) >= {\"brain_sha\", \"organ_ids\"} and \"run_id\" in dict(doc, run_id=doc.get(\"run_id\"))",
+   "tests": [
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_write",
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_read"
+   ]
+  },
+  {
+   "id": "pulled_accept_any_sha",
+   "file": "loop/pulled.py",
+   "old": "isinstance(doc[\"brain_sha\"], str) and SHA40.fullmatch(doc[\"brain_sha\"]) is not None",
+   "new": "isinstance(doc[\"brain_sha\"], str)",
+   "tests": [
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_write",
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_read"
+   ]
+  },
+  {
+   "id": "pulled_accept_empty_run",
+   "file": "loop/pulled.py",
+   "old": "(isinstance(doc[\"run_id\"], str) and doc[\"run_id\"] != \"\")",
+   "new": "isinstance(doc[\"run_id\"], str)",
+   "tests": [
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_write",
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_read"
+   ]
+  },
+  {
+   "id": "pulled_accept_run_required",
+   "file": "loop/pulled.py",
+   "old": "(doc[\"run_id\"] is None or (isinstance(doc[\"run_id\"], str) and doc[\"run_id\"] != \"\"))",
+   "new": "(isinstance(doc[\"run_id\"], str) and doc[\"run_id\"] != \"\")",
+   "tests": [
+    "test_allowlist.Carried.test_an_entry_is_carried_as_written"
+   ]
+  },
+  {
+   "id": "pulled_accept_ids_repeat",
+   "file": "loop/pulled.py",
+   "old": " and len(set(ids)) == len(ids)\n",
+   "new": "\n",
+   "tests": [
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_write",
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_read"
+   ]
+  },
+  {
+   "id": "pulled_accept_empty_id",
+   "file": "loop/pulled.py",
+   "old": "all(isinstance(i, str) and i for i in ids)",
+   "new": "all(isinstance(i, str) for i in ids)",
+   "tests": [
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_write",
+    "test_allowlist.Carried.test_an_entry_of_another_form_is_refused_at_the_read"
+   ]
+  },
+  {
+   "id": "cek_entry_unknown_organ_enters",
+   "file": "loop/cek.py",
+   "old": "    return ids, [\"accept_unknown:%s\" % i for i in ids if i not in organs]",
+   "new": "    return ids, []",
+   "tests": [
+    "test_allowlist.Entry.test_an_id_the_commit_holds_no_organ_of_refuses_the_assembly",
+    "test_loop_cek.CekJob.test_the_entry_request_reaches_pulled_with_the_signed_results_run_id"
+   ]
+  },
+  {
+   "id": "cek_entry_invalid_is_no_entry",
+   "file": "loop/cek.py",
+   "old": "        return [], [\"accept_invalid\"]",
+   "new": "        return [], []",
+   "tests": [
+    "test_allowlist.Entry.test_a_request_of_another_form_refuses_the_assembly"
+   ]
+  },
+  {
+   "id": "cek_entry_reasons_dropped",
+   "file": "loop/cek.py",
+   "old": "        entering, bad = _entry(brain, brain_commit, organs)\n        reasons += bad\n",
+   "new": "        entering, bad = _entry(brain, brain_commit, organs)\n",
+   "tests": [
+    "test_allowlist.Entry.test_a_request_of_another_form_refuses_the_assembly",
+    "test_allowlist.Entry.test_an_id_the_commit_holds_no_organ_of_refuses_the_assembly"
+   ]
+  },
+  {
+   "id": "cek_entry_not_carried",
+   "file": "loop/cek.py",
+   "old": "{\"brain_sha\": brain_commit, \"run_id\": run_id, \"organ_ids\": entering}",
+   "new": "{\"brain_sha\": brain_commit, \"run_id\": run_id, \"organ_ids\": []}",
+   "tests": [
+    "test_allowlist.Entry.test_the_request_reaches_pulled_with_the_commit_and_the_run"
+   ]
+  },
+  {
+   "id": "cek_entry_run_dropped",
+   "file": "loop/cek.py",
+   "old": "{\"brain_sha\": brain_commit, \"run_id\": run_id, \"organ_ids\": entering}",
+   "new": "{\"brain_sha\": brain_commit, \"run_id\": None, \"organ_ids\": entering}",
+   "tests": [
+    "test_allowlist.Entry.test_the_request_reaches_pulled_with_the_commit_and_the_run"
+   ]
+  },
+  {
+   "id": "cek_entry_sha_of_target",
+   "file": "loop/cek.py",
+   "old": "{\"brain_sha\": brain_commit, \"run_id\": run_id, \"organ_ids\": entering}",
+   "new": "{\"brain_sha\": commit, \"run_id\": run_id, \"organ_ids\": entering}",
+   "tests": [
+    "test_allowlist.Entry.test_the_request_reaches_pulled_with_the_commit_and_the_run"
+   ]
+  },
+  {
+   "id": "cek_entry_link_followed",
+   "file": "loop/cek.py",
+   "old": "        if found[0] != \"file\":\n            raise AL.Unusable(\"not a file\")\n",
+   "new": "",
+   "tests": [
+    "test_allowlist.Entry.test_a_request_of_another_form_refuses_the_assembly"
+   ]
+  },
+  {
+   "id": "job_run_id_not_passed",
+   "file": "loop/job.py",
+   "old": "run_id=state[\"run_id\"]))",
+   "new": "run_id=None))",
+   "tests": [
+    "test_loop_cek.CekJob.test_the_entry_request_reaches_pulled_with_the_signed_results_run_id"
+   ]
+  },
+  {
+   "id": "yaz_accept_rows_dropped",
+   "file": "loop/write_cycle.py",
+   "old": "        return out + accepts + list(cost)\n",
+   "new": "        return out + list(cost)\n",
+   "tests": [
+    "test_allowlist.AcceptRows.test_the_entry_s_row_is_in_the_cycle_s_commit_under_its_root"
+   ]
+  },
+  {
+   "id": "yaz_accept_rows_after_cost",
+   "file": "loop/write_cycle.py",
+   "old": "        return out + accepts + list(cost)\n",
+   "new": "        return out + list(cost) + accepts\n",
+   "tests": [
+    "test_allowlist.AcceptRows.test_the_entry_s_row_is_in_the_cycle_s_commit_under_its_root"
+   ]
+  },
+  {
+   "id": "yaz_accept_reads_no_ledger",
+   "file": "loop/write_cycle.py",
+   "old": "allowlist.rows(cyc, art.accept, art.organs, written)",
+   "new": "allowlist.rows(cyc, art.accept, art.organs, [])",
+   "tests": [
+    "test_allowlist.AcceptRows.test_the_next_cycle_s_same_entry_writes_no_row"
+   ]
+  },
+  {
+   "id": "yaz_accept_unusable_is_no_row",
+   "file": "loop/write_cycle.py",
+   "old": "        accepts = allowlist.rows(cyc, art.accept, art.organs, written)\n    except allowlist.Unusable as exc:\n",
+   "new": "        accepts = allowlist.rows(cyc, art.accept, art.organs, written)\n    except allowlist.Unusable as exc:\n        accepts = []\n    except ZeroDivisionError as exc:\n",
+   "tests": [
+    "test_allowlist.AcceptRows.test_an_entry_no_row_can_be_written_from_writes_nothing"
    ]
   }
  ]

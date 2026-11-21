@@ -1,8 +1,4 @@
 {
-  "gate.allowlist": {
-    "kind": "unwired",
-    "why": "P1 MF9's rules (tohum/26h, test 55): the allowlist read from accept rows, the gate's decision over a package's organ_ids and the accept rows' writer, run by test 55 (tests/test_allowlist.py) only; nothing in the loop calls it until the pages give where a run-time package's organ_ids is read, which organs a cycle enters and when, and a row's evidence run ids (seed-087), so MF9 is not in done_mf"
-  },
   "ledger.founder": {
     "kind": "session_tool",
     "why": "the founder ledger's rules and its append command, run by a session and by test 14 (tests/test_founder_ledger.py); the loop never writes founder rows"

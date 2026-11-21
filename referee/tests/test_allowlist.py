@@ -484,7 +484,8 @@ class Entry(unittest.TestCase):
                             ("no key", b"{}"), ("ids no list", b'{"organ_ids": "lint.discover"}'),
                             ("an id twice", b'{"organ_ids": ["lint.discover", "lint.discover"]}'),
                             ("an empty id", b'{"organ_ids": [""]}'), ("an id no string", b'{"organ_ids": [1]}'),
-                            ("a link", ("120000", b"other.json"))):
+                            ("a link", ("120000", b"other.json")),
+                            ("a link whose text is a request", ("120000", b'{"organ_ids": []}'))):
             with self.subTest(name):
                 self.brain[C.ENTRY_REQUEST] = entry
                 self.assertEqual(self.refused(), ["accept_invalid"])

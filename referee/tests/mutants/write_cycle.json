@@ -30,8 +30,8 @@
   {
    "id": "cost_rows_dropped",
    "file": "loop/write_cycle.py",
-   "old": "        return out + list(cost)\n",
-   "new": "        return out\n",
+   "old": "        return out + accepts + list(cost)\n",
+   "new": "        return out + accepts\n",
    "tests": [
     "test_loop_write.py"
    ]

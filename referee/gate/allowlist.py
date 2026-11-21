@@ -1,7 +1,8 @@
 """``gate.allowlist``: the gate's allowlist of organ definitions and the ``accept`` rows it is built from
-(P1 MF9, test 55 of tohum/26h, tohum/26j "İzin listesi, MF9"). ``reasons`` is called by D5 (``loop.decide``) on
-every candidate of a cycle that is not the genesis cycle; ``rows`` by D6 (``loop.write_cycle``); ``request`` by
-``çek`` (``loop.cek``).
+(P1 MF9, test 55 of tohum/26h, tohum/26j "İzin listesi, MF9"). ``rows`` is called by D6
+(``loop.write_cycle``) and ``request`` by ``çek`` (``loop.cek``). ``reasons`` is called by test 55 only: D5
+(``loop.decide``) does not ask it yet, so a ready candidate still merges by stage 0's rule in every cycle and
+MF9 is not in ``done_mf``.
 
 Rules: tohum/26h MF9 (the gate refuses the candidate of an organ whose definition hash is in no ``accept`` row;
 the hash compared is the one the referee computes itself, with its one hash function, from the organ's files at
@@ -66,8 +67,7 @@ Nothing here writes or chains: the rows enter the ledger in the cycle's one plan
 candidate is judged against the ledger the cycle started from, so an entry opens the gate from the next cycle.
 
 Out of scope, stated: the run-time package's reading (``candidates/<id>/package.json`` of ``koş``'s output tree,
-tohum/26j: P1 MF12, ``loop/candidates.py``; until then D5 judges the ready candidates only, which name no
-organ). Taking an entry off the list: no row does in stage 1 (26j, L1), so tohum/12's DEGRADED and 12a's planted
+tohum/26j: P1 MF12, ``loop/candidates.py``). Taking an entry off the list: no row does in stage 1 (26j, L1), so tohum/12's DEGRADED and 12a's planted
 organs are not answered here. An organ's ``state`` (tohum/26b). Whether ``brain_sha`` holds that organ and
 whether ``run_id`` is that result's run: the caller hands them (``loop.cek`` reads the definitions and the
 request at the accepted SHA; ``loop.accepted`` reads the run id from the signed result). The package's other
