@@ -1,0 +1,87 @@
+{
+ "cases": [
+  {
+   "exit": 1,
+   "options": [],
+   "stdout": "TAP version 13\n# Subtest: alpha passes\nok 1 - alpha passes\n  ---\n  duration_ms: 0.713538\n  type: 'test'\n  ...\n# Subtest: beta fails\nnot ok 2 - beta fails\n  ---\n  duration_ms: 0.896948\n  type: 'test'\n  location: '/tmp/node-reporters-dn__86mr/a.test.js:4:1'\n  failureType: 'testCodeFailure'\n  error: '1 == 2'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 2\n  actual: 1\n  operator: '=='\n  stack: |-\n    TestContext.<anonymous> (/tmp/node-reporters-dn__86mr/a.test.js:4:35)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 1\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 70.512355\n"
+  },
+  {
+   "exit": 1,
+   "options": [
+    "--test-reporter=tap"
+   ],
+   "stdout": "TAP version 13\n# Subtest: alpha passes\nok 1 - alpha passes\n  ---\n  duration_ms: 1.404775\n  type: 'test'\n  ...\n# Subtest: beta fails\nnot ok 2 - beta fails\n  ---\n  duration_ms: 1.486079\n  type: 'test'\n  location: '/tmp/node-reporters-dn__86mr/a.test.js:4:1'\n  failureType: 'testCodeFailure'\n  error: '1 == 2'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 2\n  actual: 1\n  operator: '=='\n  stack: |-\n    TestContext.<anonymous> (/tmp/node-reporters-dn__86mr/a.test.js:4:35)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 1\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 74.478367\n"
+  },
+  {
+   "exit": 1,
+   "options": [
+    "--test-reporter",
+    "tap"
+   ],
+   "stdout": "TAP version 13\n# Subtest: alpha passes\nok 1 - alpha passes\n  ---\n  duration_ms: 0.676836\n  type: 'test'\n  ...\n# Subtest: beta fails\nnot ok 2 - beta fails\n  ---\n  duration_ms: 0.984753\n  type: 'test'\n  location: '/tmp/node-reporters-dn__86mr/a.test.js:4:1'\n  failureType: 'testCodeFailure'\n  error: '1 == 2'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 2\n  actual: 1\n  operator: '=='\n  stack: |-\n    TestContext.<anonymous> (/tmp/node-reporters-dn__86mr/a.test.js:4:35)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 1\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 60.064499\n"
+  },
+  {
+   "exit": 1,
+   "options": [
+    "--test-reporter=tap",
+    "--test-reporter-destination=stdout"
+   ],
+   "stdout": "TAP version 13\n# Subtest: alpha passes\nok 1 - alpha passes\n  ---\n  duration_ms: 0.730339\n  type: 'test'\n  ...\n# Subtest: beta fails\nnot ok 2 - beta fails\n  ---\n  duration_ms: 0.894147\n  type: 'test'\n  location: '/tmp/node-reporters-dn__86mr/a.test.js:4:1'\n  failureType: 'testCodeFailure'\n  error: '1 == 2'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 2\n  actual: 1\n  operator: '=='\n  stack: |-\n    TestContext.<anonymous> (/tmp/node-reporters-dn__86mr/a.test.js:4:35)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 1\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 69.602106\n"
+  },
+  {
+   "exit": 1,
+   "options": [
+    "--test-reporter=tap",
+    "--test-reporter-destination",
+    "stdout"
+   ],
+   "stdout": "TAP version 13\n# Subtest: alpha passes\nok 1 - alpha passes\n  ---\n  duration_ms: 0.805143\n  type: 'test'\n  ...\n# Subtest: beta fails\nnot ok 2 - beta fails\n  ---\n  duration_ms: 1.070657\n  type: 'test'\n  location: '/tmp/node-reporters-dn__86mr/a.test.js:4:1'\n  failureType: 'testCodeFailure'\n  error: '1 == 2'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 2\n  actual: 1\n  operator: '=='\n  stack: |-\n    TestContext.<anonymous> (/tmp/node-reporters-dn__86mr/a.test.js:4:35)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 1\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 66.962766\n"
+  },
+  {
+   "exit": 1,
+   "options": [
+    "--test-reporter=spec"
+   ],
+   "stdout": "\u2714 alpha passes (0.739439ms)\n\u2716 beta fails (1.062957ms)\n\u2139 tests 2\n\u2139 suites 0\n\u2139 pass 1\n\u2139 fail 1\n\u2139 cancelled 0\n\u2139 skipped 0\n\u2139 todo 0\n\u2139 duration_ms 74.030543\n\n\u2716 failing tests:\n\ntest at a.test.js:4:1\n\u2716 beta fails (1.062957ms)\n  AssertionError [ERR_ASSERTION]: 1 == 2\n      at TestContext.<anonymous> (/tmp/node-reporters-dn__86mr/a.test.js:4:35)\n      at Test.runInAsyncScope (node:async_hooks:214:14)\n      at Test.run (node:internal/test_runner/test:1047:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n      at Test.postRun (node:internal/test_runner/test:1173:19)\n      at Test.run (node:internal/test_runner/test:1101:12)\n      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: 1,\n    expected: 2,\n    operator: '==',\n    diff: 'simple'\n  }\n"
+  },
+  {
+   "exit": 1,
+   "options": [
+    "--test-reporter",
+    "dot"
+   ],
+   "stdout": ".X\n\nFailed tests:\n\n\u2716 beta fails (1.637088ms)\n  AssertionError [ERR_ASSERTION]: 1 == 2\n      at TestContext.<anonymous> (/tmp/node-reporters-dn__86mr/a.test.js:4:35)\n      at Test.runInAsyncScope (node:async_hooks:214:14)\n      at Test.run (node:internal/test_runner/test:1047:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n      at Test.postRun (node:internal/test_runner/test:1173:19)\n      at Test.run (node:internal/test_runner/test:1101:12)\n      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: 1,\n    expected: 2,\n    operator: '==',\n    diff: 'simple'\n  }\n"
+  },
+  {
+   "exit": 1,
+   "options": [
+    "--test-reporter=junit"
+   ],
+   "stdout": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<testsuites>\n\t<testcase name=\"alpha passes\" time=\"0.000775\" classname=\"test\"/>\n\t<testcase name=\"beta fails\" time=\"0.001010\" classname=\"test\" failure=\"1 == 2\">\n\t\t<failure type=\"testCodeFailure\" message=\"1 == 2\">\n[Error [ERR_TEST_FAILURE]: 1 == 2] {\n  code: 'ERR_TEST_FAILURE',\n  failureType: 'testCodeFailure',\n  cause: AssertionError [ERR_ASSERTION]: 1 == 2\n      at TestContext.&lt;anonymous> (/tmp/node-reporters-dn__86mr/a.test.js:4:35)\n      at Test.runInAsyncScope (node:async_hooks:214:14)\n      at Test.run (node:internal/test_runner/test:1047:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n      at Test.postRun (node:internal/test_runner/test:1173:19)\n      at Test.run (node:internal/test_runner/test:1101:12)\n      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: 1,\n    expected: 2,\n    operator: '==',\n    diff: 'simple'\n  }\n}\n\t\t</failure>\n\t</testcase>\n\t<!-- tests 2 -->\n\t<!-- suites 0 -->\n\t<!-- pass 1 -->\n\t<!-- fail 1 -->\n\t<!-- cancelled 0 -->\n\t<!-- skipped 0 -->\n\t<!-- todo 0 -->\n\t<!-- duration_ms 69.862521 -->\n</testsuites>\n"
+  },
+  {
+   "exit": 1,
+   "options": [
+    "--test-reporter=tap",
+    "--test-reporter-destination=out.txt"
+   ],
+   "stdout": ""
+  },
+  {
+   "exit": 1,
+   "options": [
+    "--test-reporter",
+    "tap",
+    "--test-reporter-destination",
+    "out.txt"
+   ],
+   "stdout": ""
+  }
+ ],
+ "major": 22,
+ "node": "v22.23.4",
+ "tests": [
+  "alpha passes",
+  "beta fails"
+ ]
+}
