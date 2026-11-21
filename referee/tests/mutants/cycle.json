@@ -48,8 +48,8 @@
   {
    "id": "root_of_old_ledger",
    "file": "ledger/cycle.py",
-   "old": "    tip_map = anchor.tips(cycle.content)\n",
-   "new": "    tip_map = anchor.tips(ledger or cycle.content)\n",
+   "old": "    tip_map = anchor.tips(cycle.content, anchor.named(registers))\n",
+   "new": "    tip_map = anchor.tips(ledger or cycle.content, anchor.named(registers))\n",
    "tests": [
     "test_cycle.py"
    ]

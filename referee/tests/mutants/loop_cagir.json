@@ -102,8 +102,8 @@
   {
    "id": "cek_hands_over_empty_chains",
    "file": "loop/job.py",
-   "old": "{p: chains[p] for p in B.STATE_CHAINS}",
-   "new": "{p: b\"\" for p in B.STATE_CHAINS}",
+   "old": "objects, commit, heads[B.STATE], dict(chains), status,",
+   "new": "objects, commit, heads[B.STATE], {p: b\"\" for p in B.STATE_CHAINS}, status,",
    "tests": [
     "test_loop_cek.py"
    ]

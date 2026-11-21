@@ -34,6 +34,9 @@ signed root per cycle) with ``ledger.events``' rows, the ones ``activate`` and D
   absent or not 64 lowercase hex (a path, upper case, short, a trailing LF or path, a number) and a counter with no
   import name no file (unusable).
 
+``#kok`` with registers (tohum/26j, ``test_the_root_is_over_the_states_registers``, ``CommandLine``): the root is
+over the ledger and the state's registers that hold a row, as handed over and as read from the state directory.
+
 The PASS row's write (the toy's cycle in ``yaz``, ``loop.write_cycle``) is tested in test_loop_write.Pass.
 
 The loop's own drill ledger (D8 over four cycles) is judged in test_loop_write.D8.

@@ -57,8 +57,8 @@
   {
    "id": "empty_ledger_tip",
    "file": "harness/pass_row.py",
-   "old": "anchor.root_of(anchor.tips(ledger)) if rows else None",
-   "new": "anchor.root_of(anchor.tips(ledger))",
+   "old": "anchor.root_of(anchor.tips(ledger, anchor.named(registers))) if rows else None",
+   "new": "anchor.root_of(anchor.tips(ledger, anchor.named(registers)))",
    "tests": [
     "test_pass_row.py"
    ]

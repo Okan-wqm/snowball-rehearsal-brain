@@ -1,0 +1,431 @@
+{
+ "mutants": [
+  {
+   "id": "tips_files_ignored",
+   "file": "ledger/anchor.py",
+   "old": "    for name in sorted(files or {}):",
+   "new": "    for name in sorted({}):",
+   "tests": [
+    "test_anchor.py"
+   ]
+  },
+  {
+   "id": "tips_file_not_verified",
+   "file": "ledger/anchor.py",
+   "old": "        if not verdict[\"valid\"]:\n            raise Unusable(\"%s is not a valid chain",
+   "new": "        if False:\n            raise Unusable(\"%s is not a valid chain",
+   "tests": [
+    "test_anchor.py"
+   ]
+  },
+  {
+   "id": "tips_part_name_overwritten",
+   "file": "ledger/anchor.py",
+   "old": "        if name in out:\n",
+   "new": "        if False:\n",
+   "tests": [
+    "test_anchor.py"
+   ]
+  },
+  {
+   "id": "tips_first_row_of_file",
+   "file": "ledger/anchor.py",
+   "old": "out[name] = chain.parse_row(lines[-1].decode(\"utf-8\"))[\"row_hash\"]",
+   "new": "out[name] = chain.parse_row(lines[0].decode(\"utf-8\"))[\"row_hash\"]",
+   "tests": [
+    "test_anchor.py"
+   ]
+  },
+  {
+   "id": "judge_without_files",
+   "file": "ledger/anchor.py",
+   "old": "    current = root_of(tips(ledger, files))",
+   "new": "    current = root_of(tips(ledger))",
+   "tests": [
+    "test_anchor.py"
+   ]
+  },
+  {
+   "id": "cli_same_name_twice",
+   "file": "ledger/anchor.py",
+   "old": "            if len(set(names)) != len(names):",
+   "new": "            if False:",
+   "tests": [
+    "test_anchor.py"
+   ]
+  },
+  {
+   "id": "named_by_whole_path",
+   "file": "ledger/anchor.py",
+   "old": "    return {branches.state_name(path): data for",
+   "new": "    return {path: data for",
+   "tests": [
+    "test_cycle.py"
+   ]
+  },
+  {
+   "id": "standing_empty",
+   "file": "ledger/events.py",
+   "old": "    return bool(reasons) and all(",
+   "new": "    return all(",
+   "tests": [
+    "test_findings_write.Decisions"
+   ]
+  },
+  {
+   "id": "standing_any",
+   "file": "ledger/events.py",
+   "old": "bool(reasons) and all(r in STANDING or",
+   "new": "bool(reasons) and any(r in STANDING or",
+   "tests": [
+    "test_findings_write.Decisions.test_a_closed_gates_reject_writes_nothing"
+   ]
+  },
+  {
+   "id": "standing_no_prefixes",
+   "file": "ledger/events.py",
+   "old": "all(r in STANDING or r.startswith(STANDING_PREFIXES) for r in reasons)",
+   "new": "all(r in STANDING for r in reasons)",
+   "tests": [
+    "test_findings_write.Decisions.test_a_closed_gates_reject_writes_nothing"
+   ]
+  },
+  {
+   "id": "standing_without_no_organ",
+   "file": "ledger/events.py",
+   "old": "STANDING = (\"merge_paused\", \"sentinel_pending\", \"no_organ\")",
+   "new": "STANDING = (\"merge_paused\", \"sentinel_pending\")",
+   "tests": [
+    "test_findings_write.Decisions.test_a_closed_gates_reject_writes_nothing"
+   ]
+  },
+  {
+   "id": "unresolved_same_base_reopened",
+   "file": "findings/write.py",
+   "old": "return None if decided_at[earlier[\"fingerprint\"]] == finding[\"snapshot_id\"] else \"open\"",
+   "new": "return \"open\"",
+   "tests": [
+    "test_findings_write.Reobserved"
+   ]
+  },
+  {
+   "id": "unresolved_other_base_silent",
+   "file": "findings/write.py",
+   "old": "return None if decided_at[earlier[\"fingerprint\"]] == finding[\"snapshot_id\"] else \"open\"",
+   "new": "return None",
+   "tests": [
+    "test_findings_write.Reobserved"
+   ]
+  },
+  {
+   "id": "unresolved_counts_as_reopened",
+   "file": "findings/write.py",
+   "old": "return None if decided_at[earlier[\"fingerprint\"]] == finding[\"snapshot_id\"] else \"open\"",
+   "new": "return None if decided_at[earlier[\"fingerprint\"]] == finding[\"snapshot_id\"] else \"reopened\"",
+   "tests": [
+    "test_findings_write.Reobserved"
+   ]
+  },
+  {
+   "id": "unresolved_without_row_passes",
+   "file": "findings/write.py",
+   "old": "    if earlier[\"fingerprint\"] not in decided_at:\n        raise",
+   "new": "    if False:\n        raise",
+   "tests": [
+    "test_findings_write.Reobserved"
+   ]
+  },
+  {
+   "id": "unresolved_file_unverified",
+   "file": "findings/write.py",
+   "old": "for row in _verified(unresolved, unresolved, \"unresolved\")}",
+   "new": "for row in _stored(unresolved)}",
+   "tests": [
+    "test_findings_write.Files",
+    "test_findings_write.Cycle"
+   ]
+  },
+  {
+   "id": "decide_standing_written",
+   "file": "findings/write.py",
+   "old": "        if events.standing(decision[\"reasons\"]):\n            continue\n",
+   "new": "",
+   "tests": [
+    "test_findings_write.Decisions.test_a_closed_gates_reject_writes_nothing"
+   ]
+  },
+  {
+   "id": "decide_unknown_refuses_all",
+   "file": "findings/write.py",
+   "old": "            refused.append({\"index\": index, \"reasons\": [\"finding_unknown\" if row is None else \"finding_not_open\"]})\n            continue",
+   "new": "            raise Unusable(\"decision %d names no open finding\" % index)",
+   "tests": [
+    "test_findings_write.Decisions",
+    "test_findings_write.Cycle"
+   ]
+  },
+  {
+   "id": "decide_refusal_one_name",
+   "file": "findings/write.py",
+   "old": "[\"finding_unknown\" if row is None else \"finding_not_open\"]",
+   "new": "[\"finding_unknown\"]",
+   "tests": [
+    "test_findings_write.Decisions"
+   ]
+  },
+  {
+   "id": "decide_base_of_the_finding",
+   "file": "findings/write.py",
+   "old": "\"reasons\": decision[\"reasons\"], \"snapshot_id\": base})",
+   "new": "\"reasons\": decision[\"reasons\"], \"snapshot_id\": row[\"snapshot_id\"]})",
+   "tests": [
+    "test_findings_write.Decisions"
+   ]
+  },
+  {
+   "id": "cycle_steps_from_the_read_file",
+   "file": "findings/write.py",
+   "old": "        observed.append(observe(now, findings, proposal, proposed_by, read, unresolved))",
+   "new": "        observed.append(observe(findings, findings, proposal, proposed_by, read, unresolved))",
+   "tests": [
+    "test_findings_write.Cycle"
+   ]
+  },
+  {
+   "id": "cycle_decides_the_read_file",
+   "file": "findings/write.py",
+   "old": "    decided = decide(now, findings, unresolved, unresolved, decisions, base)",
+   "new": "    decided = decide(findings, findings, unresolved, unresolved, decisions, base)",
+   "tests": [
+    "test_findings_write.Cycle"
+   ]
+  },
+  {
+   "id": "cycle_observes_without_unresolved",
+   "file": "findings/write.py",
+   "old": "proposal, proposed_by, read, unresolved))",
+   "new": "proposal, proposed_by, read))",
+   "tests": [
+    "test_findings_write.Cycle"
+   ]
+  },
+  {
+   "id": "cycle_proposals_any_shape",
+   "file": "findings/write.py",
+   "old": "all(isinstance(p, tuple) and len(p) == 2 for p in proposals)",
+   "new": "all(len(p) == 2 for p in proposals)",
+   "tests": [
+    "test_findings_write.Cycle"
+   ]
+  },
+  {
+   "id": "registers_not_rooted",
+   "file": "ledger/cycle.py",
+   "old": "    tip_map = anchor.tips(cycle.content, anchor.named(registers))\n",
+   "new": "    tip_map = anchor.tips(cycle.content)\n",
+   "tests": [
+    "test_cycle.py"
+   ]
+  },
+  {
+   "id": "registers_not_written",
+   "file": "ledger/cycle.py",
+   "old": "    files.update({path: data for path, data in (registers or {}).items() if data})\n",
+   "new": "",
+   "tests": [
+    "test_cycle.py"
+   ]
+  },
+  {
+   "id": "empty_register_written",
+   "file": "ledger/cycle.py",
+   "old": "for path, data in (registers or {}).items() if data})",
+   "new": "for path, data in (registers or {}).items()})",
+   "tests": [
+    "test_cycle.py"
+   ]
+  },
+  {
+   "id": "commit_drops_registers",
+   "file": "ledger/cycle.py",
+   "old": "signer, root_row_id,\n                   registers)",
+   "new": "signer, root_row_id)",
+   "tests": [
+    "test_cycle.py",
+    "test_loop_write.Registers.test_a_finding_is_written_in_the_cycles_commit_under_its_root"
+   ]
+  },
+  {
+   "id": "register_chain_unverified",
+   "file": "loop/state.py",
+   "old": "            continue\n        verdict = chain.verify_bytes(data)\n        if not verdict[\"valid\"]:\n            reasons.append(\"chain_broken:%s:%d\" % (path, verdict[\"line\"]))\n            continue\n        rows[path] = len(chain._lines(data))\n        verdict = chain.verify_bytes(data, old or b\"\")",
+   "new": "            continue\n        verdict = chain.verify_bytes(data)\n        if False:\n            reasons.append(\"chain_broken:%s:%d\" % (path, verdict[\"line\"]))\n            continue\n        rows[path] = len(chain._lines(data))\n        verdict = chain.verify_bytes(data, old or b\"\")",
+   "tests": [
+    "test_loop_state.py"
+   ]
+  },
+  {
+   "id": "register_not_against_parent",
+   "file": "loop/state.py",
+   "old": "        verdict = chain.verify_bytes(data, old or b\"\")\n        if not verdict[\"valid\"]:\n            reasons.append(\"not_append_only:%s:%d\"",
+   "new": "        verdict = chain.verify_bytes(data, b\"\")\n        if not verdict[\"valid\"]:\n            reasons.append(\"not_append_only:%s:%d\"",
+   "tests": [
+    "test_loop_state.py"
+   ]
+  },
+  {
+   "id": "register_gone_passes",
+   "file": "loop/state.py",
+   "old": "            elif old is not None:\n                reasons.append(\"file_missing:%s\" % path)\n",
+   "new": "",
+   "tests": [
+    "test_loop_state.py"
+   ]
+  },
+  {
+   "id": "register_link_passes",
+   "file": "loop/state.py",
+   "old": "            if entry is not None:\n                reasons.append(\"not_a_file:%s\" % path)\n            elif old is not None:",
+   "new": "            if old is not None:",
+   "tests": [
+    "test_loop_state.py"
+   ]
+  },
+  {
+   "id": "chains_without_registers",
+   "file": "loop/state.py",
+   "old": "        if data is not None:\n            out[path] = data\n    return out",
+   "new": "        if False:\n            out[path] = data\n    return out",
+   "tests": [
+    "test_loop_cek.CekJob.test_the_heads_registers_are_under_its_root_and_carried",
+    "test_loop_state.py"
+   ]
+  },
+  {
+   "id": "pulled_any_state_file",
+   "file": "loop/pulled.py",
+   "old": "<= set(state) <= set(B.STATE_CHAINS + B.STATE_REGISTERS)",
+   "new": "<= set(state)",
+   "tests": [
+    "test_loop_kos.Layout"
+   ]
+  },
+  {
+   "id": "pulled_registers_not_read",
+   "file": "loop/pulled.py",
+   "old": "    state.update({p: contents[_carried(p)] for p in B.STATE_REGISTERS if _carried(p) in contents})\n",
+   "new": "",
+   "tests": [
+    "test_loop_kos.Layout"
+   ]
+  },
+  {
+   "id": "cek_root_without_registers",
+   "file": "loop/job.py",
+   "old": "entries, AN.named(_registers(chains)))",
+   "new": "entries)",
+   "tests": [
+    "test_loop_cek.CekJob.test_the_heads_registers_are_under_its_root_and_carried"
+   ]
+  },
+  {
+   "id": "cek_carries_chains_only",
+   "file": "loop/job.py",
+   "old": "objects, commit, heads[B.STATE], dict(chains), status,",
+   "new": "objects, commit, heads[B.STATE], {p: chains[p] for p in B.STATE_CHAINS}, status,",
+   "tests": [
+    "test_loop_cek.CekJob.test_the_heads_registers_are_under_its_root_and_carried"
+   ]
+  },
+  {
+   "id": "pass_state_without_registers",
+   "file": "loop/job.py",
+   "old": "\"roots\": art.state[B.STATE_ROOTS], \"registers\": _registers(art.state)}",
+   "new": "\"roots\": art.state[B.STATE_ROOTS]}",
+   "tests": [
+    "test_loop_write.Pass.test_the_toy_is_judged_with_the_registers_of_its_state"
+   ]
+  },
+  {
+   "id": "kok_without_registers",
+   "file": "harness/pass_row.py",
+   "old": "anchor.root_of(anchor.tips(ledger, anchor.named(registers))) if rows",
+   "new": "anchor.root_of(anchor.tips(ledger)) if rows",
+   "tests": [
+    "test_pass_row.py"
+   ]
+  },
+  {
+   "id": "read_state_without_registers",
+   "file": "harness/pass_row.py",
+   "old": "\"registers\": {path: _read(os.path.join(root, path)) for path in paths}}",
+   "new": "\"registers\": {}}",
+   "tests": [
+    "test_pass_row.CommandLine"
+   ]
+  },
+  {
+   "id": "yaz_registry_not_run",
+   "file": "loop/write_cycle.py",
+   "old": "    registers = {B.STATE_FINDINGS: kept.findings, B.STATE_UNRESOLVED: kept.unresolved}",
+   "new": "    registers = {p: art.state[p] for p in B.STATE_REGISTERS if p in art.state}",
+   "tests": [
+    "test_loop_write.Registers"
+   ]
+  },
+  {
+   "id": "yaz_drops_the_unresolved_file",
+   "file": "loop/write_cycle.py",
+   "old": "    registers = {B.STATE_FINDINGS: kept.findings, B.STATE_UNRESOLVED: kept.unresolved}",
+   "new": "    registers = {B.STATE_FINDINGS: kept.findings}",
+   "tests": [
+    "test_loop_write.Registers"
+   ]
+  },
+  {
+   "id": "yaz_registry_on_no_files",
+   "file": "loop/write_cycle.py",
+   "old": "findings_write.cycle(art.state.get(B.STATE_FINDINGS, b\"\"), art.state.get(B.STATE_UNRESOLVED, b\"\"),",
+   "new": "findings_write.cycle(b\"\", b\"\",",
+   "tests": [
+    "test_loop_write.Registers"
+   ]
+  },
+  {
+   "id": "yaz_base_not_the_cycles",
+   "file": "loop/write_cycle.py",
+   "old": "[] if finding_decisions is None else finding_decisions, cyc[\"snapshot_id\"],",
+   "new": "[] if finding_decisions is None else finding_decisions, cycle_id,",
+   "tests": [
+    "test_loop_write.Registers"
+   ]
+  },
+  {
+   "id": "yaz_register_hard_stop_softened",
+   "file": "loop/write_cycle.py",
+   "old": "lambda path: derive._read_regular(tree, path))\n    except append.HardStop as exc:\n        raise land.HardStop(\"state: %s\" % cli.cause(exc), []) from None",
+   "new": "lambda path: derive._read_regular(tree, path))\n    except append.HardStop as exc:\n        raise Refused([\"state_unwritable: %s\" % cli.cause(exc)]) from None",
+   "tests": [
+    "test_loop_write.Registers"
+   ]
+  },
+  {
+   "id": "yaz_commit_without_registers",
+   "file": "loop/write_cycle.py",
+   "old": "                               root_row_id, registers)\n    except (W.ApiError",
+   "new": "                               root_row_id)\n    except (W.ApiError",
+   "tests": [
+    "test_loop_write.Registers"
+   ]
+  },
+  {
+   "id": "yaz_findings_count_fixed",
+   "file": "loop/write_cycle.py",
+   "old": "\"findings\": {\"rows\": sum(len(o.rows) for o in kept.observed) + len(kept.decided.rows),",
+   "new": "\"findings\": {\"rows\": len(kept.decided.rows),",
+   "tests": [
+    "test_loop_write.Registers"
+   ]
+  }
+ ]
+}

@@ -65,7 +65,16 @@ served: ``in/pulled/t1``, ``in/results/t1``, ``in/response/t1``, and the line ch
   is judged (a model mismatch of its canary fails it); before the gate's row, on a copy, it is not judged, without
   a served copy, with the copy in its genesis form or only another toy it waits; a result that is not the import's
   and an ``expect.json`` of the copy it cannot use fail it with ``unusable``; a missing result (nothing written)
-  and a second copy are unusable; ``loop.write_cycle`` writes the row it is given at ``<cycle>:pass``;
+  and a second copy are unusable; ``loop.write_cycle`` writes the row it is given at ``<cycle>:pass``; a toy
+  whose state has a register under its root is judged with it;
+- the registers (``Registers``, stage 1 MF8, tohum/26j): a cycle on a state with no register and no input writes
+  none and its root is the ledger's alone; a proposal handed to ``loop.write_cycle.write`` writes the finding in
+  the cycle's one ``brain/state`` commit, the signed root over the ledger and the file (the empty unresolved file
+  not written); the next cycle reads the file from ``pulled``, its decisions write the ``unresolved`` rows on the
+  cycle's base and a decision naming an unknown finding is refused alone; the job's cycle (empty input) keeps
+  both files byte for byte under its root, which ``ledger.anchor.judge`` accepts only with them; a register that
+  is no chain is a hard stop before any write; a secret in a claim and input of another shape write nothing.
+  Not proven: a job that hands ``yaz`` a proposal or a decision (none does before MF10-12);
 - the genesis cycle (``Genesis``): ``kos`` then ``yaz`` on a toy's ``pulled`` in loop.pulled's genesis form;
   ``yaz`` runs ``activate`` with D5's answer, D3's base run and D4's cost row (the cut at main, the merge, the
   orphan state with the genesis payload naming the counter's transfer, the checkout's security ledger, the pulled
@@ -1268,7 +1277,7 @@ class Pass(StateBase):
         self.seed = {DR.SEED_ENV: TP.SEED["seed"], DR.FIXTURES_ENV: fixtures_value(doc, counter["imports"])}
 
     def states(self) -> dict:
-        return {tid: {B.STATE_LEDGER: w.ledger, B.STATE_ROOTS: w.roots, B.STATE_STATUS: w.status}
+        return {tid: dict({B.STATE_LEDGER: w.ledger, B.STATE_ROOTS: w.roots, B.STATE_STATUS: w.status}, **w.registers)
                 for tid, w in (("t1", self.toy), ("t2", self.copy))}
 
     def served(self, kinds=(("t1", "toy"), ("t2", "copy")), run="300", genesis=(), cands=None) -> dict:
@@ -1290,7 +1299,8 @@ class Pass(StateBase):
                                   state={p: b"" for p in B.STATE_CHAINS}, status=None)
             else:
                 self.write_pulled(offered, target=dict(TARGET, id=tid, kind=kind, repo="acme/" + tid),
-                                  units=SENTINEL_UNITS, state={p: state[p] for p in B.STATE_CHAINS},
+                                  units=SENTINEL_UNITS,
+                                  state={p: state[p] for p in B.STATE_CHAINS + B.STATE_REGISTERS if p in state},
                                   status=state[B.STATE_STATUS])
         self.pulled = os.path.join(served, "t1")
         kos = J.run("kos", {"RUNNER_TEMP": self.temp}, runner=RedAs())
@@ -1312,6 +1322,16 @@ class Pass(StateBase):
     def judged(self, **env) -> tuple:
         """``loop.job.yaz_pass`` on t1's ``pulled`` as served."""
         return J.yaz_pass(YW.env(self.temp, self.workspace, **env), "t1", P.read(self.pulled))
+
+    def test_the_toy_is_judged_with_the_registers_of_its_state(self):
+        """tohum/26j: the root of a state with a register is over it, and ``#kok`` is judged on the state as pulled."""
+        self.toy.registers = {B.STATE_FINDINGS: TFW.observe(b"", [TFW.lint()]).content}
+        self.toy.cycle(self.TP.cost)  # a cycle whose root is over the file
+        ghs = self.served()
+        self.assertEqual(self.judged(**self.seed)[0]["verdict"], "PASS")
+        out = self.run_both(ghs, **self.seed)
+        self.assertEqual(out["targets"][0]["pass"], {"verdict": "PASS", "conditions": {}}, out)
+        self.assertEqual(ghs["t1"].read_file(B.STATE, B.STATE_FINDINGS), self.toy.registers[B.STATE_FINDINGS])
 
     def test_a_pass_writes_its_row_on_the_toys_cycle_once(self):
         ghs = self.served()

@@ -153,6 +153,7 @@ class Fingerprint(unittest.TestCase):
     def test_normalize_folds_whitespace_and_nothing_else(self):
         self.assertEqual(W.normalize("  a \t b\n\nc d  "), "a b c d")
         self.assertEqual(W.normalize("A b."), "A b.")
+        self.assertEqual(W.normalize("a\u00a0\u2003b\u3000\u2028 c"), "a b c")  # tohum/26j: every Unicode space
         read = reader(TREE)
         base = W.fingerprint(named(), read)
         self.assertEqual(W.fingerprint(named(claim=" helper  is never\ncalled "), read), base)

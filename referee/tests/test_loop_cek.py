@@ -28,7 +28,8 @@
   with a fake Rekor (``FakeRekor``; ``loop.rekor``'s own rules are ``test_rekor.py``'s) and the same fake verifier:
   the root row anchoring the head's ledger and its entry verified against ``loop.yml``'s identity; a ledger row no
   root anchors, no entry, another root's entry, an entry the verifier refuses and a last root row without a root
-  are ``root_refused`` before the target is fetched, Rekor unreadable is unusable; then tohum/13:56-58 (E637,
+  are ``root_refused`` before the target is fetched, Rekor unreadable is unusable; a register on the head
+  (tohum/26j) is verified, under the root D1 judges and carried in ``pulled``, and a root not over it is refused; then tohum/13:56-58 (E637,
   ``loop.integration``; its own rules are ``test_loop_integration.py``'s): the fixture ledger's cut row names the
   listed ``brain/integration`` head; a head other than the commit the last naming row (cut, merge, plant) names is
   ``integration_refused`` (``head_not_named``) with ``integration`` (the row and its commit) before the target is

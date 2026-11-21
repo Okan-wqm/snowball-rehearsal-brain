@@ -84,8 +84,8 @@
   {
    "id": "observe_reobservation_written",
    "file": "findings/write.py",
-   "old": "if print_ in seen or (earlier is not None and earlier[\"state\"] not in REOPENS):",
-   "new": "if print_ in seen or (earlier is not None and earlier[\"state\"] in (\"blocked\",)):",
+   "old": "    if earlier[\"state\"] != \"unresolved\":\n        return None\n",
+   "new": "    if earlier[\"state\"] == \"blocked\":\n        return None\n    if earlier[\"state\"] != \"unresolved\":\n        return \"open\"\n",
    "tests": [
     "test_findings_write.Fingerprint.test_the_same_finding_in_two_runs_is_one_row"
    ]
@@ -93,8 +93,8 @@
   {
    "id": "observe_twice_in_one",
    "file": "findings/write.py",
-   "old": "if print_ in seen or (earlier",
-   "new": "if (earlier",
+   "old": "state = None if print_ in seen else _observed_state(",
+   "new": "state = _observed_state(",
    "tests": [
     "test_findings_write.Reobserved.test_twice_in_one_proposal_is_once"
    ]
@@ -138,8 +138,8 @@
   {
    "id": "observe_trust_as_proposed",
    "file": "findings/write.py",
-   "old": "state=\"open\" if earlier is None else \"reopened\", trust=\"inferred\")",
-   "new": "state=\"open\" if earlier is None else \"reopened\", trust=\"verified\")",
+   "old": "state=state, trust=\"inferred\")",
+   "new": "state=state, trust=\"verified\")",
    "tests": [
     "test_findings_write.Proposal.test_the_row_written"
    ]
