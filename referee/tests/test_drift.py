@@ -51,9 +51,17 @@ stage 1 MF5's offline reading, ``yaz_offline``).
   without ``policy.json``, ``vectors/`` or ``seats/``, with a link among them or a float in the policy, is
   unusable with no request sent.
 
-Not tested, because not built (``drift.check`` "Out of scope"): the baseline's ``activity`` beyond its form, a
-stale stop that is not a red job, other Apps' installations, the referee repository's own settings, workflow
-triggers. Not tested either: a real checkout made by git (the folders here are written by ``open``), a real API.
+- ``Activity``: tohum/01c "Etkinlik API'si", ``drift.check``'s rules 1-5: every (actor, type, ref) of the page's
+  table allowed or named, logins byte for byte, the refs judged, the window's start and its boundary second, a
+  full page that does not reach it, the item's form, the App's slug, the order of the answer, the command;
+  ``ledger.serial.last_start``. ``YazActivity``: the same in a ``yaz`` job, the window's start read from the
+  pulled ledger, a stop that writes nothing and lasts until ``not_before`` moves.
+
+Not tested, because not built (``drift.check`` "Out of scope"): a second page of the activity, Gözcü's
+``hard_stop`` row, a stale stop that is not a red job, other Apps' installations, the referee repository's own
+settings, workflow triggers. Not tested either: a real checkout made by git (the folders here are written by
+``open``), a real API (the activity items here are written from the documentation's field names; the form of a
+real ``timestamp`` was not seen).
 """
 
 from __future__ import annotations
@@ -1059,10 +1067,10 @@ class Activity(unittest.TestCase):
         with unittest.mock.patch.object(SE.schema, "ledger_reasons", return_value=[]), \
                 unittest.mock.patch.object(SE.chain, "parse_row", side_effect=json.loads):
             ledger = "\n".join([row(1, "cycle_start", "2026-10-30T01:00:00Z"), row(2, "merge", "2026-10-30T05:00:00Z"),
-                                row(3, "cycle_start", "2026-10-30T02:00:00Z"),
+                                row(3, "cycle_start", "2026-10-30T00:30:00Z"),
                                 json.dumps({"part": "drill", "kind": "cycle_start", "ts": "2026-10-30T09:00:00Z"}),
                                 row(4, "status", "2026-10-30T03:00:00Z")]) + "\n"
-            self.assertEqual(SE.last_start(ledger.encode()), "2026-10-30T02:00:00Z")  # the last in the file's order
+            self.assertEqual(SE.last_start(ledger.encode()), "2026-10-30T00:30:00Z")  # the last in the file's order
             self.assertEqual(SE.last_start((row(2, "merge", "2026-10-30T05:00:00Z") + "\n").encode()), None)
         self.assertEqual(SE.last_start(b""), None)
         with self.assertRaises(SE.Unusable):

@@ -202,8 +202,8 @@
   {
    "id": "yaz_drift_repo_unchecked",
    "file": "loop/job.py",
-   "old": "DC.check(transport, summary, hashes, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"), repo)",
-   "new": "DC.check(transport, summary, hashes, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"))",
+   "old": "                           _previous_start(art), repo)\n        except",
+   "new": "                           _previous_start(art))\n        except",
    "tests": [
     "test_drift.Yaz.test_the_check_is_of_the_repository_d6_writes_to"
    ]
@@ -346,8 +346,8 @@
   {
    "id": "dc_recorded_unread",
    "file": "drift/check.py",
-   "old": " | actions(reads, entry) | recorded(reads, drift, entry, hashes))",
-   "new": " | actions(reads, entry))",
+   "old": " | actions(reads, entry) | recorded(reads, drift, entry, hashes)\n    offending =",
+   "new": " | actions(reads, entry)\n    offending =",
    "tests": [
     "test_drift.Baseline.test_a_writer_app_of_another_id_is_a_hard_stop"
    ]
@@ -472,8 +472,8 @@
   {
    "id": "dc_stale_a_hard_stop",
    "file": "drift/check.py",
-   "old": "\"hard_stop\": bool(reasons), \"reasons\": reasons, \"stale\": stale}",
-   "new": "\"hard_stop\": bool(reasons) or stale, \"reasons\": reasons, \"stale\": stale}",
+   "old": "\"hard_stop\": bool(reasons), \"reasons\": reasons, \"stale\": stale,\n",
+   "new": "\"hard_stop\": bool(reasons) or stale, \"reasons\": reasons, \"stale\": stale,\n",
    "tests": [
     "test_drift.Baseline.test_an_operator_check_older_than_seven_days_is_stale_and_no_hard_stop"
    ]
@@ -490,8 +490,8 @@
   {
    "id": "dc_stale_skips_the_reads",
    "file": "drift/check.py",
-   "old": "    reads = Reads(transport)\n    reasons = sorted(",
-   "new": "    reads = Reads((lambda m, p, b: (500, None)) if stale else transport)\n    reasons = sorted(",
+   "old": "    reads = Reads(transport)\n    reasons = rules(",
+   "new": "    reads = Reads((lambda m, p, b: (500, None)) if stale else transport)\n    reasons = rules(",
    "tests": [
     "test_drift.Baseline.test_an_operator_check_older_than_seven_days_is_stale_and_no_hard_stop"
    ]
@@ -544,8 +544,8 @@
   {
    "id": "yaz_drift_clock_not_the_job_s",
    "file": "loop/job.py",
-   "old": "DC.check(transport, summary, hashes, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"), repo)",
-   "new": "DC.check(transport, summary, hashes, tid, \"2026-10-30T00:00:00Z\", repo)",
+   "old": "DC.check(transport, summary, hashes, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"),\n",
+   "new": "DC.check(transport, summary, hashes, tid, \"2026-10-30T00:00:00Z\",\n",
    "tests": [
     "test_drift.Yaz.test_a_stale_operator_check_ends_the_job_cleanly_with_nothing_written"
    ]
@@ -562,8 +562,8 @@
   {
    "id": "drift_order_class_unlisted",
    "file": "tests/test_drift.py",
-   "old": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
-   "new": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, YazGenesis, Listed)",
+   "old": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, YazGenesis, Listed)",
    "tests": [
     "test_drift.py"
    ]
@@ -571,8 +571,8 @@
   {
    "id": "drift_policy_class_unlisted",
    "file": "tests/test_drift.py",
-   "old": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
-   "new": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, Order, YazGenesis, Listed)",
+   "old": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, Order, YazGenesis, Listed)",
    "tests": [
     "test_drift.py"
    ]
@@ -634,8 +634,8 @@
   {
    "id": "drift_compared_class_unlisted",
    "file": "tests/test_drift.py",
-   "old": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
-   "new": "LISTED = (Check, Baseline, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "old": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
    "tests": [
     "test_drift.py"
    ]
@@ -643,8 +643,8 @@
   {
    "id": "drift_held_class_unlisted",
    "file": "tests/test_drift.py",
-   "old": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
-   "new": "LISTED = (Check, Baseline, Compared, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "old": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Compared, Activity, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
    "tests": [
     "test_drift.py"
    ]
@@ -652,8 +652,8 @@
   {
    "id": "drift_checkout_class_unlisted",
    "file": "tests/test_drift.py",
-   "old": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
-   "new": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazPolicy, Order, YazGenesis, Listed)",
+   "old": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazPolicy, Order, YazGenesis, Listed)",
    "tests": [
     "test_drift.py"
    ]
@@ -1136,6 +1136,834 @@
    "new": "                hashes = DC.held(environ[\"GITHUB_WORKSPACE\"])\n            except KeyError as exc:",
    "tests": [
     "test_drift.YazCheckout"
+   ]
+  },
+  {
+   "id": "act_slack_nine_minutes",
+   "file": "drift/check.py",
+   "old": "ACTIVITY_SLACK = datetime.timedelta(minutes=10)",
+   "new": "ACTIVITY_SLACK = datetime.timedelta(minutes=9)",
+   "tests": [
+    "test_drift.Activity.test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start"
+   ]
+  },
+  {
+   "id": "act_slack_eleven_minutes",
+   "file": "drift/check.py",
+   "old": "ACTIVITY_SLACK = datetime.timedelta(minutes=10)",
+   "new": "ACTIVITY_SLACK = datetime.timedelta(minutes=11)",
+   "tests": [
+    "test_drift.Activity.test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start"
+   ]
+  },
+  {
+   "id": "act_bot_may_force_push",
+   "file": "drift/check.py",
+   "old": "WRITER_TYPES = (\"push\", \"branch_creation\", \"pr_merge\")",
+   "new": "WRITER_TYPES = (\"push\", \"branch_creation\", \"pr_merge\", \"force_push\")",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_bot_may_delete",
+   "file": "drift/check.py",
+   "old": "WRITER_TYPES = (\"push\", \"branch_creation\", \"pr_merge\")",
+   "new": "WRITER_TYPES = (\"push\", \"branch_creation\", \"pr_merge\", \"branch_deletion\")",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_bot_may_queue_merge",
+   "file": "drift/check.py",
+   "old": "WRITER_TYPES = (\"push\", \"branch_creation\", \"pr_merge\")",
+   "new": "WRITER_TYPES = (\"push\", \"branch_creation\", \"pr_merge\", \"merge_queue_merge\")",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_bot_may_not_merge",
+   "file": "drift/check.py",
+   "old": "WRITER_TYPES = (\"push\", \"branch_creation\", \"pr_merge\")",
+   "new": "WRITER_TYPES = (\"push\", \"branch_creation\")",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_bot_may_not_create",
+   "file": "drift/check.py",
+   "old": "WRITER_TYPES = (\"push\", \"branch_creation\", \"pr_merge\")",
+   "new": "WRITER_TYPES = (\"push\", \"pr_merge\")",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_bot_may_not_push",
+   "file": "drift/check.py",
+   "old": "WRITER_TYPES = (\"push\", \"branch_creation\", \"pr_merge\")",
+   "new": "WRITER_TYPES = (\"branch_creation\", \"pr_merge\")",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_operator_may_push",
+   "file": "drift/check.py",
+   "old": "OPERATOR_TYPES = (\"branch_deletion\",)",
+   "new": "OPERATOR_TYPES = (\"branch_deletion\", \"push\")",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_operator_may_force_push",
+   "file": "drift/check.py",
+   "old": "OPERATOR_TYPES = (\"branch_deletion\",)",
+   "new": "OPERATOR_TYPES = (\"branch_deletion\", \"force_push\")",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_state_not_kept",
+   "file": "drift/check.py",
+   "old": "KEPT_REFS = (\"refs/heads/\" + STATE, \"refs/heads/\" + INTEGRATION)",
+   "new": "KEPT_REFS = (\"refs/heads/\" + INTEGRATION,)",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_integration_not_kept",
+   "file": "drift/check.py",
+   "old": "KEPT_REFS = (\"refs/heads/\" + STATE, \"refs/heads/\" + INTEGRATION)",
+   "new": "KEPT_REFS = (\"refs/heads/\" + STATE,)",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_reason_renamed",
+   "file": "drift/check.py",
+   "old": "REF_CHANGE = \"ref_change\"",
+   "new": "REF_CHANGE = \"activity\"",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_prefix_without_slash",
+   "file": "drift/check.py",
+   "old": "BRAIN_REFS = \"refs/heads/brain/\"",
+   "new": "BRAIN_REFS = \"refs/heads/brain\"",
+   "tests": [
+    "test_drift.Activity.test_only_refs_under_the_brain_s_prefix_are_judged"
+   ]
+  },
+  {
+   "id": "act_prefix_anywhere",
+   "file": "drift/check.py",
+   "old": "if item[\"ref\"].startswith(BRAIN_REFS) and item[\"timestamp\"] >= since",
+   "new": "if BRAIN_REFS in item[\"ref\"] and item[\"timestamp\"] >= since",
+   "tests": [
+    "test_drift.Activity.test_only_refs_under_the_brain_s_prefix_are_judged"
+   ]
+  },
+  {
+   "id": "act_every_ref_judged",
+   "file": "drift/check.py",
+   "old": "if item[\"ref\"].startswith(BRAIN_REFS) and item[\"timestamp\"] >= since",
+   "new": "if item[\"timestamp\"] >= since",
+   "tests": [
+    "test_drift.Activity.test_only_refs_under_the_brain_s_prefix_are_judged"
+   ]
+  },
+  {
+   "id": "act_prefix_caseless",
+   "file": "drift/check.py",
+   "old": "if item[\"ref\"].startswith(BRAIN_REFS) and item[\"timestamp\"] >= since",
+   "new": "if item[\"ref\"].lower().startswith(BRAIN_REFS) and item[\"timestamp\"] >= since",
+   "tests": [
+    "test_drift.Activity.test_only_refs_under_the_brain_s_prefix_are_judged"
+   ]
+  },
+  {
+   "id": "act_window_start_excluded",
+   "file": "drift/check.py",
+   "old": "if item[\"ref\"].startswith(BRAIN_REFS) and item[\"timestamp\"] >= since",
+   "new": "if item[\"ref\"].startswith(BRAIN_REFS) and item[\"timestamp\"] > since",
+   "tests": [
+    "test_drift.Activity.test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start"
+   ]
+  },
+  {
+   "id": "act_window_ignored",
+   "file": "drift/check.py",
+   "old": "if item[\"ref\"].startswith(BRAIN_REFS) and item[\"timestamp\"] >= since",
+   "new": "if item[\"ref\"].startswith(BRAIN_REFS)",
+   "tests": [
+    "test_drift.Activity.test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start"
+   ]
+  },
+  {
+   "id": "act_window_previous_ignored",
+   "file": "drift/check.py",
+   "old": "    if moment(previous) - moment(since) > ACTIVITY_SLACK:\n",
+   "new": "    if moment(previous) is None:\n",
+   "tests": [
+    "test_drift.Activity.test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start"
+   ]
+  },
+  {
+   "id": "act_window_previous_always",
+   "file": "drift/check.py",
+   "old": "    if moment(previous) - moment(since) > ACTIVITY_SLACK:\n",
+   "new": "    if moment(previous) is not None:\n",
+   "tests": [
+    "test_drift.Activity.test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start"
+   ]
+  },
+  {
+   "id": "act_window_previous_itself",
+   "file": "drift/check.py",
+   "old": "since = (moment(previous) - ACTIVITY_SLACK).strftime(TIME)",
+   "new": "since = previous",
+   "tests": [
+    "test_drift.Activity.test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start"
+   ]
+  },
+  {
+   "id": "act_window_slack_added",
+   "file": "drift/check.py",
+   "old": "since = (moment(previous) - ACTIVITY_SLACK).strftime(TIME)",
+   "new": "since = (moment(previous) + ACTIVITY_SLACK).strftime(TIME)",
+   "tests": [
+    "test_drift.Activity.test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start"
+   ]
+  },
+  {
+   "id": "act_window_ends_at_the_checked_time",
+   "file": "drift/check.py",
+   "old": "if item[\"ref\"].startswith(BRAIN_REFS) and item[\"timestamp\"] >= since",
+   "new": "if item[\"ref\"].startswith(BRAIN_REFS) and \"2026-10-30T12:00:00Z\" >= item[\"timestamp\"] >= since",
+   "tests": [
+    "test_drift.Activity.test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start"
+   ]
+  },
+  {
+   "id": "act_previous_form_not_checked",
+   "file": "drift/check.py",
+   "old": "    if _instant(previous, \"previous\"):\n        raise Unusable(\"previous must be YYYY-MM-DDTHH:MM:SSZ or null\")\n",
+   "new": "    if _instant(previous, \"previous\"):\n        return since\n",
+   "tests": [
+    "test_drift.Activity.test_a_previous_start_that_is_no_time_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "act_previous_checked_after_reads",
+   "file": "drift/check.py",
+   "old": "    window(drift, previous)  # a ``previous`` that is no time is refused before any read\n",
+   "new": "",
+   "tests": [
+    "test_drift.Activity.test_a_previous_start_that_is_no_time_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "act_previous_checked_after_repo",
+   "file": "drift/check.py",
+   "old": "    window(drift, previous)  # a ``previous`` that is no time is refused before any read\n    if repo is not None and repo != entry[\"repo\"]:\n        return {\"ok\": False, \"hard_stop\": True, \"reasons\": [\"target_repo_mismatch\"], \"stale\": stale, \"activity\": []}\n",
+   "new": "    if repo is not None and repo != entry[\"repo\"]:\n        return {\"ok\": False, \"hard_stop\": True, \"reasons\": [\"target_repo_mismatch\"], \"stale\": stale, \"activity\": []}\n    window(drift, previous)  # a ``previous`` that is no time is refused before any read\n",
+   "tests": [
+    "test_drift.Activity.test_a_previous_start_that_is_no_time_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "act_full_page_accepted",
+   "file": "drift/check.py",
+   "old": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "new": "    if len(body) < 0:",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_full_page_exactly",
+   "file": "drift/check.py",
+   "old": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "new": "    if len(body) == PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_full_page_over",
+   "file": "drift/check.py",
+   "old": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "new": "    if len(body) > PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_full_page_always_refused",
+   "file": "drift/check.py",
+   "old": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "new": "    if len(body) >= PAGE:",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_full_page_start_reaches",
+   "file": "drift/check.py",
+   "old": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "new": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) > since:",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_full_page_last_item",
+   "file": "drift/check.py",
+   "old": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "new": "    if len(body) >= PAGE and body[-1][\"timestamp\"] >= since:",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_full_page_first_item",
+   "file": "drift/check.py",
+   "old": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "new": "    if len(body) >= PAGE and body[0][\"timestamp\"] >= since:",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_full_page_newest",
+   "file": "drift/check.py",
+   "old": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "new": "    if len(body) >= PAGE and max(item[\"timestamp\"] for item in body) >= since:",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_short_page_refused",
+   "file": "drift/check.py",
+   "old": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "new": "    if body and min(item[\"timestamp\"] for item in body) >= since:",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_full_page_not_before_only",
+   "file": "drift/check.py",
+   "old": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= since:",
+   "new": "    if len(body) >= PAGE and min(item[\"timestamp\"] for item in body) >= drift[\"activity\"][\"not_before\"]:",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_form_not_checked",
+   "file": "drift/check.py",
+   "old": "    if not all(_entry(item) for item in body):",
+   "new": "    if not all(_entry(item) or True for item in body):",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_form_any",
+   "file": "drift/check.py",
+   "old": "    if not all(_entry(item) for item in body):",
+   "new": "    if not any(_entry(item) for item in body):",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_form_brain_only",
+   "file": "drift/check.py",
+   "old": "    if not all(_entry(item) for item in body):",
+   "new": "    if not all(_entry(item) for item in body if isinstance(item, dict) and str(item.get(\"ref\")).startswith(BRAIN_REFS)):",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_form_id_bool",
+   "file": "drift/check.py",
+   "old": "    return isinstance(item, dict) and type(item.get(\"id\")) is int",
+   "new": "    return isinstance(item, dict) and isinstance(item.get(\"id\"), int)",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_form_id_any",
+   "file": "drift/check.py",
+   "old": "    return isinstance(item, dict) and type(item.get(\"id\")) is int",
+   "new": "    return isinstance(item, dict) and \"id\" in item",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_form_ref_any",
+   "file": "drift/check.py",
+   "old": "and isinstance(item.get(\"ref\"), str) \\",
+   "new": "and \"ref\" in item \\",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_form_type_any",
+   "file": "drift/check.py",
+   "old": "isinstance(item.get(\"activity_type\"), str)",
+   "new": "\"activity_type\" in item",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_form_timestamp_text",
+   "file": "drift/check.py",
+   "old": "not _instant(item.get(\"timestamp\"), \"timestamp\")",
+   "new": "isinstance(item.get(\"timestamp\"), str)",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_form_actor_absent",
+   "file": "drift/check.py",
+   "old": "and \"actor\" in item and (item[\"actor\"] is None",
+   "new": "and (item.get(\"actor\") is None",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_form_actor_any_object",
+   "file": "drift/check.py",
+   "old": "isinstance(item[\"actor\"], dict)\n                                 and isinstance(item[\"actor\"].get(\"login\"), str))",
+   "new": "isinstance(item[\"actor\"], dict))",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_form_actor_a_login",
+   "file": "drift/check.py",
+   "old": "(item[\"actor\"] is None or isinstance(item[\"actor\"], dict)\n",
+   "new": "(item[\"actor\"] is None or isinstance(item[\"actor\"], str) or isinstance(item[\"actor\"], dict)\n",
+   "tests": [
+    "test_drift.Activity.test_an_item_not_of_the_form_is_unusable_whatever_its_ref"
+   ]
+  },
+  {
+   "id": "act_null_actor_skipped",
+   "file": "drift/check.py",
+   "old": "        login = item[\"actor\"][\"login\"] if item[\"actor\"] is not None else None\n",
+   "new": "        if item[\"actor\"] is None:\n            continue\n        login = item[\"actor\"][\"login\"]\n",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_slug_not_checked",
+   "file": "drift/check.py",
+   "old": "    if not isinstance(slug, str) or not slug:\n        raise Unusable(\"GET /app: no slug to name the writer's bot by\")\n",
+   "new": "    slug = slug if isinstance(slug, str) else \"\"\n",
+   "tests": [
+    "test_drift.Activity.test_an_app_without_a_slug_is_unusable"
+   ]
+  },
+  {
+   "id": "act_slug_empty_taken",
+   "file": "drift/check.py",
+   "old": "    if not isinstance(slug, str) or not slug:",
+   "new": "    if not isinstance(slug, str):",
+   "tests": [
+    "test_drift.Activity.test_an_app_without_a_slug_is_unusable"
+   ]
+  },
+  {
+   "id": "act_slug_after_activity",
+   "file": "drift/check.py",
+   "old": "    slug = reads.get(\"/app\", dict).get(\"slug\")\n    if not isinstance(slug, str) or not slug:\n        raise Unusable(\"GET /app: no slug to name the writer's bot by\")\n    path = \"/repos/%s/activity?per_page=%d\" % (entry[\"repo\"], PAGE)\n    body = reads.get(path, list)\n",
+   "new": "    path = \"/repos/%s/activity?per_page=%d\" % (entry[\"repo\"], PAGE)\n    body = reads.get(path, list)\n    slug = reads.get(\"/app\", dict).get(\"slug\")\n    if not isinstance(slug, str) or not slug:\n        raise Unusable(\"GET /app: no slug to name the writer's bot by\")\n",
+   "tests": [
+    "test_drift.Activity.test_an_app_without_a_slug_is_unusable"
+   ]
+  },
+  {
+   "id": "act_bot_without_suffix",
+   "file": "drift/check.py",
+   "old": "slug + \"[bot]\", drift",
+   "new": "slug, drift",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_bot_fixed_name",
+   "file": "drift/check.py",
+   "old": "slug + \"[bot]\", drift",
+   "new": "\"snowball-writer[bot]\", drift",
+   "tests": [
+    "test_drift.Activity.test_a_login_is_compared_byte_for_byte_and_the_bot_is_never_an_operator"
+   ]
+  },
+  {
+   "id": "act_bot_caseless",
+   "file": "drift/check.py",
+   "old": "    if login == bot:\n",
+   "new": "    if str(login).lower() == bot.lower():\n",
+   "tests": [
+    "test_drift.Activity.test_a_login_is_compared_byte_for_byte_and_the_bot_is_never_an_operator"
+   ]
+  },
+  {
+   "id": "act_operator_caseless",
+   "file": "drift/check.py",
+   "old": "    return login in operators and kind in OPERATOR_TYPES and ref not in KEPT_REFS",
+   "new": "    return str(login).lower() in operators and kind in OPERATOR_TYPES and ref not in KEPT_REFS",
+   "tests": [
+    "test_drift.Activity.test_a_login_is_compared_byte_for_byte_and_the_bot_is_never_an_operator"
+   ]
+  },
+  {
+   "id": "act_operator_stripped",
+   "file": "drift/check.py",
+   "old": "    return login in operators and kind in OPERATOR_TYPES and ref not in KEPT_REFS",
+   "new": "    return str(login).strip() in operators and kind in OPERATOR_TYPES and ref not in KEPT_REFS",
+   "tests": [
+    "test_drift.Activity.test_a_login_is_compared_byte_for_byte_and_the_bot_is_never_an_operator"
+   ]
+  },
+  {
+   "id": "act_operator_first",
+   "file": "drift/check.py",
+   "old": "    if login == bot:\n        return kind in WRITER_TYPES\n",
+   "new": "    if login == bot and kind in WRITER_TYPES:\n        return True\n",
+   "tests": [
+    "test_drift.Activity.test_a_login_is_compared_byte_for_byte_and_the_bot_is_never_an_operator"
+   ]
+  },
+  {
+   "id": "act_anyone_deletes",
+   "file": "drift/check.py",
+   "old": "    return login in operators and kind in OPERATOR_TYPES and ref not in KEPT_REFS",
+   "new": "    return kind in OPERATOR_TYPES and ref not in KEPT_REFS",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_operator_any_type",
+   "file": "drift/check.py",
+   "old": "    return login in operators and kind in OPERATOR_TYPES and ref not in KEPT_REFS",
+   "new": "    return login in operators and ref not in KEPT_REFS",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_operator_deletes_kept",
+   "file": "drift/check.py",
+   "old": "    return login in operators and kind in OPERATOR_TYPES and ref not in KEPT_REFS",
+   "new": "    return login in operators and kind in OPERATOR_TYPES",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_no_operator",
+   "file": "drift/check.py",
+   "old": "    return login in operators and kind in OPERATOR_TYPES and ref not in KEPT_REFS",
+   "new": "    return login is bot",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_another_repository",
+   "file": "drift/check.py",
+   "old": "    path = \"/repos/%s/activity?per_page=%d\" % (entry[\"repo\"], PAGE)\n",
+   "new": "    path = \"/repos/%s/activity?per_page=%d\" % (entry[\"toy_repo\"], PAGE)\n",
+   "tests": [
+    "test_drift.Activity.test_the_offending_items_are_named_in_time_order_beside_the_other_reasons"
+   ]
+  },
+  {
+   "id": "act_default_page",
+   "file": "drift/check.py",
+   "old": "    path = \"/repos/%s/activity?per_page=%d\" % (entry[\"repo\"], PAGE)\n",
+   "new": "    path = \"/repos/%s/activity\" % entry[\"repo\"]\n",
+   "tests": [
+    "test_drift.Activity.test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable"
+   ]
+  },
+  {
+   "id": "act_order_as_read",
+   "file": "drift/check.py",
+   "old": "    return sorted(found, key=lambda e: (e[\"timestamp\"], e[\"id\"]))",
+   "new": "    return found",
+   "tests": [
+    "test_drift.Activity.test_the_offending_items_are_named_in_time_order_beside_the_other_reasons"
+   ]
+  },
+  {
+   "id": "act_order_by_id",
+   "file": "drift/check.py",
+   "old": "    return sorted(found, key=lambda e: (e[\"timestamp\"], e[\"id\"]))",
+   "new": "    return sorted(found, key=lambda e: e[\"id\"])",
+   "tests": [
+    "test_drift.Activity.test_the_offending_items_are_named_in_time_order_beside_the_other_reasons"
+   ]
+  },
+  {
+   "id": "act_order_by_time_only",
+   "file": "drift/check.py",
+   "old": "    return sorted(found, key=lambda e: (e[\"timestamp\"], e[\"id\"]))",
+   "new": "    return sorted(found, key=lambda e: e[\"timestamp\"])",
+   "tests": [
+    "test_drift.Activity.test_the_offending_items_are_named_in_time_order_beside_the_other_reasons"
+   ]
+  },
+  {
+   "id": "act_order_newest_first",
+   "file": "drift/check.py",
+   "old": "    return sorted(found, key=lambda e: (e[\"timestamp\"], e[\"id\"]))",
+   "new": "    return sorted(found, key=lambda e: (e[\"timestamp\"], e[\"id\"]), reverse=True)",
+   "tests": [
+    "test_drift.Activity.test_the_offending_items_are_named_in_time_order_beside_the_other_reasons"
+   ]
+  },
+  {
+   "id": "act_first_offender_only",
+   "file": "drift/check.py",
+   "old": "    return sorted(found, key=lambda e: (e[\"timestamp\"], e[\"id\"]))",
+   "new": "    return sorted(found, key=lambda e: (e[\"timestamp\"], e[\"id\"]))[:1]",
+   "tests": [
+    "test_drift.Activity.test_the_offending_items_are_named_in_time_order_beside_the_other_reasons"
+   ]
+  },
+  {
+   "id": "act_item_whole",
+   "file": "drift/check.py",
+   "old": "            found.append({\"id\": item[\"id\"], \"timestamp\": item[\"timestamp\"], \"ref\": item[\"ref\"],\n                          \"activity_type\": item[\"activity_type\"], \"actor\": login})",
+   "new": "            found.append(dict(item, actor=login))",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_not_read",
+   "file": "drift/check.py",
+   "old": "    offending = activity(reads, drift, entry, previous)",
+   "new": "    offending = []",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_read_without_previous",
+   "file": "drift/check.py",
+   "old": "    offending = activity(reads, drift, entry, previous)",
+   "new": "    offending = activity(reads, drift, entry, None)",
+   "tests": [
+    "test_drift.Activity.test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start"
+   ]
+  },
+  {
+   "id": "act_no_reason",
+   "file": "drift/check.py",
+   "old": "    reasons = sorted(reasons | ({REF_CHANGE} if offending else set()))",
+   "new": "    reasons = sorted(reasons)",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_reason_always",
+   "file": "drift/check.py",
+   "old": "    reasons = sorted(reasons | ({REF_CHANGE} if offending else set()))",
+   "new": "    reasons = sorted(reasons | {REF_CHANGE})",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_reason_replaces",
+   "file": "drift/check.py",
+   "old": "    reasons = sorted(reasons | ({REF_CHANGE} if offending else set()))",
+   "new": "    reasons = sorted({REF_CHANGE} if offending else reasons)",
+   "tests": [
+    "test_drift.Activity.test_the_offending_items_are_named_in_time_order_beside_the_other_reasons"
+   ]
+  },
+  {
+   "id": "act_read_first",
+   "file": "drift/check.py",
+   "old": "    reasons = rules(reads, doc, entry) | actions(reads, entry) | recorded(reads, drift, entry, hashes)\n    offending = activity(reads, drift, entry, previous)",
+   "new": "    offending = activity(reads, drift, entry, previous)\n    reasons = rules(reads, doc, entry) | actions(reads, entry) | recorded(reads, drift, entry, hashes)",
+   "tests": [
+    "test_drift.Activity.test_the_offending_items_are_named_in_time_order_beside_the_other_reasons"
+   ]
+  },
+  {
+   "id": "act_items_not_answered",
+   "file": "drift/check.py",
+   "old": "            \"activity\": offending}",
+   "new": "            \"activity\": []}",
+   "tests": [
+    "test_drift.Activity.test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says"
+   ]
+  },
+  {
+   "id": "act_mismatch_names_no_list",
+   "file": "drift/check.py",
+   "old": "\"reasons\": [\"target_repo_mismatch\"], \"stale\": stale, \"activity\": []}",
+   "new": "\"reasons\": [\"target_repo_mismatch\"], \"stale\": stale, \"activity\": None}",
+   "tests": [
+    "test_drift.Activity.test_the_offending_items_are_named_in_time_order_beside_the_other_reasons"
+   ]
+  },
+  {
+   "id": "act_cli_previous_optional",
+   "file": "drift/check.py",
+   "old": "set(request) != {\"target\", \"now\", \"previous\"}:",
+   "new": "not {\"target\", \"now\"} <= set(request) <= {\"target\", \"now\", \"previous\"}:",
+   "tests": [
+    "test_drift.Activity.test_the_command_takes_the_previous_start_and_prints_the_items"
+   ]
+  },
+  {
+   "id": "act_cli_previous_dropped",
+   "file": "drift/check.py",
+   "old": "request[\"target\"], request[\"now\"], request[\"previous\"])",
+   "new": "request[\"target\"], request[\"now\"], None)",
+   "tests": [
+    "test_drift.Activity.test_the_command_takes_the_previous_start_and_prints_the_items"
+   ]
+  },
+  {
+   "id": "act_last_start_first",
+   "file": "ledger/serial.py",
+   "old": "    return starts[-1] if starts else None",
+   "new": "    return starts[0] if starts else None",
+   "tests": [
+    "test_drift.Activity.test_the_last_start_of_a_ledger"
+   ]
+  },
+  {
+   "id": "act_last_start_latest",
+   "file": "ledger/serial.py",
+   "old": "    return starts[-1] if starts else None",
+   "new": "    return max(starts) if starts else None",
+   "tests": [
+    "test_drift.Activity.test_the_last_start_of_a_ledger"
+   ]
+  },
+  {
+   "id": "act_last_start_any_part",
+   "file": "ledger/serial.py",
+   "old": "    starts = [row[\"ts\"] for row in _rows(ledger) if _type(row) == CYCLE_START]",
+   "new": "    starts = [row[\"ts\"] for row in _rows(ledger) if row.get(\"kind\") == CYCLE_START[1]]",
+   "tests": [
+    "test_drift.Activity.test_the_last_start_of_a_ledger"
+   ]
+  },
+  {
+   "id": "act_last_start_any_row",
+   "file": "ledger/serial.py",
+   "old": "    starts = [row[\"ts\"] for row in _rows(ledger) if _type(row) == CYCLE_START]",
+   "new": "    starts = [row[\"ts\"] for row in _rows(ledger)]",
+   "tests": [
+    "test_drift.Activity.test_the_last_start_of_a_ledger"
+   ]
+  },
+  {
+   "id": "act_last_start_unchecked",
+   "file": "ledger/serial.py",
+   "old": "    starts = [row[\"ts\"] for row in _rows(ledger) if _type(row) == CYCLE_START]",
+   "new": "    starts = [row[\"ts\"] for row in map(chain.parse_row, ledger.decode().splitlines()) if _type(row) == CYCLE_START]",
+   "tests": [
+    "test_drift.Activity.test_the_last_start_of_a_ledger"
+   ]
+  },
+  {
+   "id": "yaz_activity_no_previous",
+   "file": "loop/job.py",
+   "old": "                           _previous_start(art), repo)",
+   "new": "                           None, repo)",
+   "tests": [
+    "test_drift.YazActivity"
+   ]
+  },
+  {
+   "id": "yaz_activity_items_dropped",
+   "file": "loop/job.py",
+   "old": "        if got[\"activity\"]:\n            out[\"activity\"][tid] = got[\"activity\"]\n",
+   "new": "",
+   "tests": [
+    "test_drift.YazActivity"
+   ]
+  },
+  {
+   "id": "yaz_activity_always_listed",
+   "file": "loop/job.py",
+   "old": "        if got[\"activity\"]:\n            out[\"activity\"][tid]",
+   "new": "        if got[\"activity\"] is not None:\n            out[\"activity\"][tid]",
+   "tests": [
+    "test_drift.YazActivity"
+   ]
+  },
+  {
+   "id": "yaz_previous_fault_raises",
+   "file": "loop/job.py",
+   "old": "        return SE.last_start(art.state[B.STATE_LEDGER])\n    except SE.Unusable:",
+   "new": "        return SE.last_start(art.state[B.STATE_LEDGER])\n    except KeyError:",
+   "tests": [
+    "test_drift.YazActivity"
+   ]
+  },
+  {
+   "id": "yaz_previous_never",
+   "file": "loop/job.py",
+   "old": "        return SE.last_start(art.state[B.STATE_LEDGER])\n    except SE.Unusable:",
+   "new": "        return None\n    except SE.Unusable:",
+   "tests": [
+    "test_drift.YazActivity"
+   ]
+  },
+  {
+   "id": "drift_activity_class_unlisted",
+   "file": "tests/test_drift.py",
+   "old": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "tests": [
+    "test_drift.py"
+   ]
+  },
+  {
+   "id": "drift_yaz_activity_class_unlisted",
+   "file": "tests/test_drift.py",
+   "old": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "tests": [
+    "test_drift.py"
    ]
   }
  ]
