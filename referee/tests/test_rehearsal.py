@@ -122,11 +122,11 @@ class Router:
 
     def __call__(self, method, path, body):
         if (method, path) == ("GET", "/app"):
-            return 200, {"id": AW.APP_ID, "slug": "snowball-writer"}
+            return 200, {"id": AW.APP_ID, "slug": "snowball-writer", "permissions": AW.APP_PERMISSIONS}
         if (method, path) == ("GET", "/installation/repositories"):
             return 200, {"total_count": len(self.hubs), "repositories": [{"full_name": r} for r in self.hubs]}
         for repo, hub in self.hubs.items():
-            if path.startswith("/repos/%s/" % repo):
+            if (path + "/").startswith("/repos/%s/" % repo) or path.startswith("/repos/%s?" % repo):
                 return hub(method, path, body)
         return 404, {"message": "Not Found"}
 

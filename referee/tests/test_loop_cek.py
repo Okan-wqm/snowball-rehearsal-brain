@@ -490,8 +490,7 @@ class CekJob(unittest.TestCase):
             os.makedirs(d)
         self.summary = {"targets": [{"id": "t1", "kind": "toy", "repo": "o/target", "excluded_paths": [],
                                      "unit_candidates": []}]}
-        with open(os.path.join(self.work, "policy.json"), "wb") as fh:
-            fh.write(POLICY)
+        YW.AW.write_checkout(self.work)  # the operator files yaz hashes (tohum/01c); the policy among them is POLICY
         self.setUp_state()
 
     def setUp_state(self) -> None:
@@ -1399,6 +1398,8 @@ class CekJob(unittest.TestCase):
         gh.overrides.update(AW.facts("copy", "o/copy"))
         gh.overrides[("GET", "/installation/repositories")] = (200, {  # the App on both targets of the summary
             "total_count": 2, "repositories": [{"full_name": "o/target"}, {"full_name": "o/copy"}]})
+        gh.overrides[("GET", "/repos/o/target")] = (200, {  # drift reads every named repository's visibility (01c)
+            "full_name": "o/target", "visibility": "public", "private": False})
         got = J.run("yaz", YW.env(temps["yaz"], self.work, GITHUB_RUN_ID="1"), transport=gh, signer=YW.signer(),
                     now=lambda: YW.NOW)
         line = got["targets"][0]

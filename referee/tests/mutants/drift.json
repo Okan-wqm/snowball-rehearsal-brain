@@ -1059,8 +1059,8 @@
   {
    "id": "dc_constitutional_float_path_unnamed",
    "file": "drift/check.py",
-   "old": "(_unhashable(section, \"constitutional\") or \"constitutional\",",
-   "new": "(\"constitutional\",",
+   "old": "(_unhashable(section, paths.CONSTITUTIONAL) or paths.CONSTITUTIONAL,",
+   "new": "(paths.CONSTITUTIONAL,",
    "tests": [
     "test_drift.Held.test_a_policy_that_has_no_such_hash_is_unusable"
    ]

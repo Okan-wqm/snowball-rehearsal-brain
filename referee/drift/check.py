@@ -134,6 +134,7 @@ from typing import Any
 
 from ledger import chain, schema
 from loop import accepted, treehash
+from policy import reads as paths
 from target import branches, write
 import cli
 
@@ -309,13 +310,13 @@ def constitutional_hash(policy: bytes) -> str:
     path as ``policy_invalid:<path>``, for a value there the canonical form refuses (a JSON float, 01c
     "Politikanın sayıları")."""
     doc = read_json(policy, POLICY)
-    section = doc.get("constitutional") if isinstance(doc, dict) else None
+    section = doc.get(paths.CONSTITUTIONAL) if isinstance(doc, dict) else None
     if not isinstance(section, dict):
-        raise Unusable("%s carries no constitutional object" % POLICY)
+        raise Unusable("%s carries no %s object" % (POLICY, paths.CONSTITUTIONAL))
     try:
         return hashlib.sha256(chain.canonical(section)).hexdigest()
     except chain.ChainError as exc:
-        raise Unusable("policy_invalid:%s (%s)" % (_unhashable(section, "constitutional") or "constitutional",
+        raise Unusable("policy_invalid:%s (%s)" % (_unhashable(section, paths.CONSTITUTIONAL) or paths.CONSTITUTIONAL,
                                                     cli.cause(exc))) from None
 
 
