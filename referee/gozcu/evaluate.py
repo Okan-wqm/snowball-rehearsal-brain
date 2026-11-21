@@ -101,7 +101,7 @@ from ledger import schema as S
 from policy import reads as R
 
 DAY = 86400
-SOFT = ("regression", "containment", "budget_usd", "budget_ci_minutes")
+SOFT = S.FREEZE_TRIGGERS    # the freeze row's triggers, one list (``ledger.schema``)
 BUDGET = (("budget_usd", "usd_micros", "monthly_cap_usd", 1000000),
           ("budget_ci_minutes", "ci_minutes", "monthly_cap_ci_minutes", 1))
 HARD_FACTS = ("drift", "chain_break", "rekor", "attestation", "activation", "ref_change", "kill_switch")

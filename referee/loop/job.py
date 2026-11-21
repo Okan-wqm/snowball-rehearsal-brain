@@ -360,6 +360,7 @@ from cases import build as CB
 from dispatcher import llm_call as LL
 from drift import check as DC
 from gate import revert as RV
+from gozcu import watch as GW
 from harness import offline as OF
 from harness import params as HP
 from harness import pass_row as PR
@@ -798,7 +799,10 @@ def yaz_d5(environ: dict[str, str], tid: str) -> tuple[dict[str, Any], Any, str 
     if refused:
         return refused, None, None
     try:
-        return E.decide(art, unit, tree, _dir(environ, "in", "results", tid), control, unfinished), art, tree
+        frozen = GW.closed(art.state[B.STATE_LEDGER])   # the ledger conforms: ``_unfinished`` read it
+        return E.decide(art, unit, tree, _dir(environ, "in", "results", tid), control, unfinished, frozen), art, tree
+    except GW.Unusable as exc:
+        return {"reason": "state_refused", "reasons": [cli.cause(exc)]}, None, None
     except (E.Unusable, D.DeriveError) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
@@ -1541,6 +1545,8 @@ def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any
         return dict(ok=False, done=["D5"], **d5, **d7, **d6, **shown)
     done = ["D5", "D6"] + (["D7"] if end else []) + ([] if d8["action"] == "off" else ["D8"])
     line = dict(ok=True, done=done, drill=DR.line(d8), **d5, **d7, **d6, **shown)
+    if d6["written"]["gozcu"]["hard_stop"]:     # the cycle that tipped the limit is written, and is the last
+        return dict(line, ok=False, reason="hard_stop")
     if d8.get("judged", {}).get("verdict") == "FAIL":
         return dict(line, ok=False, reason="drill_fail")
     return line

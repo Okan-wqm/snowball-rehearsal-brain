@@ -38,8 +38,15 @@ seed-048); and ``cycle_start``,
 ``integration_cut``, ``ratchet_base``, ``observation`` (``{base_run_sha256, fixable}``, ``fixable`` a list of
 ``FIXABLE``, ``gate.check.fixable``'s ``{rule_id, path, line, fix_range}``) and ``decision``
 (``payload.decision`` is the field 29n reads) are ``activate``'s (MF18; D6 writes ``cycle_start``, ``ratchet_base``,
-``observation`` and ``decision`` with the same builders, ``ledger.events``). Kinds no writer here produces (``rival``,
-``accept``, ``freeze``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
+``observation`` and ``decision`` with the same builders, ``ledger.events``). The ``freeze`` part has two types,
+both ``gozcu.watch``'s, written by D6 at the cycle's end (tohum/28 "her dondurma `ledger.jsonl`'de `part: freeze`
+satırıdır: tetik, kapsam, ölçüm, başlangıç" and "kaldırma da satırdır"): ``freeze`` (``{trigger, scope,
+measurement, start}``: ``trigger`` one of ``FREEZE_TRIGGERS``, ``scope`` a non-empty sorted list of distinct
+names, ``measurement`` an object of counts, ``start`` a ``ts``) and ``lift`` (``{trigger, scope, start}``, the
+three of the freeze it lifts; the lift's time is the row's ``ts``). No page gives either a shape (seed-084 b):
+these are tohum/28's four words and the least that names one freeze. That a lift's freeze is in the ledger is
+not a rule of one row: ``gozcu.watch`` reads it. Kinds no writer here produces (``rival``,
+``accept``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
 writer and its shape are added. The founder row is a session's, not the loop's: its shape and writer are
 ``ledger.founder``'s, built on ``ROW_FIELDS`` below.
 
@@ -291,6 +298,12 @@ def _rejected(payload: Any) -> bool:
 # the sentinel verdicts that end a merge's sentinel without a revert (``events``/``sentinel``, tohum/26f)
 SENTINEL_ENDS = ("green", "flaky")
 
+# tohum/28's soft freeze triggers that have a rule (``gozcu.evaluate``'s ``SOFT``, in its order); the budget's two
+# caps are two triggers
+FREEZE_TRIGGERS = ("regression", "containment", "budget_usd", "budget_ci_minutes")
+_FROZEN = {"trigger": one_of(*FREEZE_TRIGGERS), "scope": list_of(text, non_empty=True, unique_sorted=True),
+           "start": timestamp}
+
 # (part, kind) -> (payload shape, cause required: a bool or a test on the payload)
 ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
     ("events", "genesis"): (GENESIS, False),
@@ -321,6 +334,8 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
                           False),
     ("drill", "plant"): (shape({"drill": one_of("revert"), "family": one_of("revert"), "instance_id": text,
                                 "merge_sha": hex40}), False),
+    ("freeze", "freeze"): (shape(dict(_FROZEN, measurement=map_of(count))), False),
+    ("freeze", "lift"): (shape(_FROZEN), False),
 }
 
 # tohum/26's row fields, one source for ROW and for a part with extra optional fields (the founder row's supersedes)

@@ -89,6 +89,11 @@ def _rows(ledger: bytes) -> list[dict]:
     return [chain.parse_row(line.decode("utf-8")) for line in chain._lines(ledger)]
 
 
+def rows(ledger: bytes) -> list[dict]:
+    """``_rows`` for a reader of other rows of the same ledger (``gozcu.watch``, ``loop.write_cycle``)."""
+    return _rows(ledger)
+
+
 def unfinished(ledger: bytes) -> list[str]:
     """The merge SHAs of ``ledger`` whose sentinel has not finished, in file order; see the module docstring."""
     open_: dict[str, bool] = {}  # merge sha -> still unfinished, in file order

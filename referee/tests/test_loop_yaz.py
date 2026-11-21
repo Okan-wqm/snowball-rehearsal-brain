@@ -104,10 +104,10 @@ class Cycle(Base):
         P.extract_tree(os.path.join(self.pulled, P.TREE), tree)
         return tree
 
-    def decide(self, control=None, unfinished=(), unit=None) -> dict:
+    def decide(self, control=None, unfinished=(), unit=None, frozen=()) -> dict:
         art = P.read(self.pulled)
         return E.decide(art, unit or recipe(), self.tree(), self.results(), OPEN if control is None else control,
-                        list(unfinished))
+                        list(unfinished), list(frozen))
 
     def reasons(self, got: dict) -> dict:
         return {cid: d["reasons"] for cid, d in got["decisions"].items()}

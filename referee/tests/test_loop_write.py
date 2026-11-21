@@ -130,9 +130,10 @@ GENESIS_TS = "2026-10-30T12:00:00Z"
 CYCLE = "9-1"
 
 
-def genesis_state() -> dict[str, bytes]:
-    """``brain/state``'s files as an activation leaves them: a ``cycle_start`` row, the status block, a signed root."""
-    rows = [EV.start({"cycle_id": "g", "ts": GENESIS_TS, "snapshot_id": HEADS[B.INTEGRATION]})]
+def genesis_state(then: tuple = ()) -> dict[str, bytes]:
+    """``brain/state``'s files as an activation leaves them: a ``cycle_start`` row, the status block, a signed root;
+    the rows of ``then`` after the first (test_gozcu_watch's states with a freeze already written)."""
+    rows = [EV.start({"cycle_id": "g", "ts": GENESIS_TS, "snapshot_id": HEADS[B.INTEGRATION]})] + list(then)
     facts = {"ts": GENESIS_TS, "snapshot_id": HEADS[B.INTEGRATION], "row_id": "g:status",
              "canary_cap_usd_micros": 1_000_000}
     return CY.plan(b"", b"", b"", b"", None, rows, YW.chained(YW.IMPORTS_ROWS), facts,
@@ -601,9 +602,9 @@ SENTINEL_UNITS = {"units": [recipe(affected_test_cmd=["python", "pkg/sentinel.py
 RED_AT_HEAD = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // SENTINEL_RED"])
 
 
-class D7(StateBase):
-    """Cycle 9-1 merges a candidate; cycle 10-1's ``kos`` runs the sentinel at the merge (the head) and ``yaz``
-    reads it: red is reverted with its cause in the cycle's one ``brain/state`` commit."""
+class Watching(StateBase):
+    """A target with a sentinel command, and the two steps that bring a merge to its watching cycle (no tests here:
+    test_gozcu_watch's regression tests share it)."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -622,6 +623,11 @@ class D7(StateBase):
         self.assertEqual((watched["done"], watched["index"]["sentinel"]["merge_sha"]),
                          (["D3", "D7"], heads[B.INTEGRATION]))  # kos ends ok after D7 whatever the verdict
         return first["written"], heads
+
+
+class D7(Watching):
+    """Cycle 9-1 merges a candidate; cycle 10-1's ``kos`` runs the sentinel at the merge (the head) and ``yaz``
+    reads it: red is reverted with its cause in the cycle's one ``brain/state`` commit."""
 
     def test_a_red_merge_is_reverted_with_its_cause(self):
         first, heads = self.merged_then_watched(RED_AT_HEAD)

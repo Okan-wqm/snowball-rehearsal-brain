@@ -101,7 +101,7 @@ def _gate(files: dict[str, bytes], results: str, cid: str, control: Any, unfinis
 
 
 def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
-           unfinished: list[str]) -> dict[str, Any]:
+           unfinished: list[str], frozen: list[str]) -> dict[str, Any]:
     """D5 over every candidate; see the module docstring."""
     profile = V.guard_profile(tree, art.target, art.policy)
     index = _index(results)
@@ -123,7 +123,7 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
             raise Unusable("decide: %s" % cli.cause(exc)) from None
         reasons += _kos_reasons(index.get(cid))
         reasons += _gate(files, results, cid, control, pending + ([merge] if merge else []))
-        reasons = sorted(set(reasons))
+        reasons = sorted(set(reasons + list(frozen)))
         decisions[cid] = {"decision": "reject" if reasons else "merge", "reasons": reasons}
         if not reasons and merge is None:
             merge = cid

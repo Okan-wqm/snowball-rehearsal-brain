@@ -89,9 +89,13 @@ from typing import Any
 from dispatcher import llm_call
 from gate import revert as gate_revert
 from gate import sentinel
+from gozcu import evaluate as gozcu_rules
+from gozcu import watch
+from harness import params as harness_params
 from harness import pass_row as PR
 from harness import revert_drill
 from ledger import append, cycle, events, schema, serial
+from ledger import cost as ledger_cost
 from loop import cagir
 from loop import pulled as P
 from target import branches as B
@@ -190,16 +194,28 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         except (gate_revert.Unusable, sentinel.Unusable) as exc:
             raise Unusable("sentinel: %s" % cli.cause(exc)) from None
     observe = None  # the base's tool output, published once per base run (ledger.events.observation)
-    if base_lint is not None:
-        try:
-            if serial.observed(art.state[B.STATE_LEDGER]) != base_lint["base_run_sha256"]:
-                observe = base_lint
-        except serial.Unusable as exc:
-            raise Unusable("state: %s" % cli.cause(exc)) from None
+    try:
+        if base_lint is not None and serial.observed(art.state[B.STATE_LEDGER]) != base_lint["base_run_sha256"]:
+            observe = base_lint
+        written = serial.rows(art.state[B.STATE_LEDGER])
+    except serial.Unusable as exc:
+        raise Unusable("state: %s" % cli.cause(exc)) from None
     moved = ["head_moved:%s" % b for b in P.HEAD_BRANCHES if writer.head(b) != art.heads[b]]
     if moved:
         raise Refused(moved)
     facts = status_facts(art, cyc)
+
+    def watched(planned: list[dict]) -> dict:
+        try:
+            return watch.judge(written, planned, art.policy, ts)
+        except harness_params.Invalid as exc:
+            raise Refused(["gozcu_policy:%s" % reason for reason in exc.reasons]) from None
+        except (gozcu_rules.Unusable, watch.Unusable, ledger_cost.Unusable) as exc:
+            raise Unusable("gozcu: %s" % cli.cause(exc)) from None
+
+    stops = watched([])["hard_stop"]
+    if stops:
+        raise land.HardStop("gozcu: %s" % ", ".join(stop["trigger"] for stop in stops), [])
 
     def rows(merged: dict | None, plant_sha: str) -> list[dict]:
         out = [events.start(cyc)]
@@ -225,9 +241,11 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
     ledger, roots = art.state[B.STATE_LEDGER], art.state[B.STATE_ROOTS]
     args = (ledger, ledger, roots, roots, art.status)
     root_row_id = "%s:root" % cycle_id
+    dry = rows(dict(PLACEHOLDER, path=change["path"]) if change else None, PLACEHOLDER["merge_sha"])
+    judged = watched(dry)  # no view reads what the placeholders stand for
+    frozen = watch.rows(cyc, judged)
     try:
-        cycle.plan(*args, rows(dict(PLACEHOLDER, path=change["path"]) if change else None, PLACEHOLDER["merge_sha"]),
-                   imports, facts, DRY, root_row_id)
+        cycle.plan(*args, dry + frozen, imports, facts, DRY, root_row_id)
     except append.HardStop as exc:
         raise land.HardStop("state: %s" % cli.cause(exc), []) from None
     except cycle.FAILURES as exc:
@@ -244,11 +262,12 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         if planted:
             plant = dict(land.plant(writer, cycle_id, drill["path"], drill["content"], art.heads[B.INTEGRATION],
                                     B.CHECK), instance_id=drill["instance_id"])
-        planned = cycle.commit(state, "cycle %s" % cycle_id, *args, rows(merged, plant and plant["merge_sha"]),
-                               imports, facts, signer, root_row_id)
+        planned = cycle.commit(state, "cycle %s" % cycle_id, *args,
+                               rows(merged, plant and plant["merge_sha"]) + frozen, imports, facts, signer,
+                               root_row_id)
     except (W.ApiError, W.Refused) + cycle.FAILURES as exc:
         raise land.HardStop("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     return {"merge": dict(merged, candidate=merge) if merged else None, "revert": reverted, "plant": plant,
             "state_sha": state.commits_made[-1],
             "root": planned["root"], "rekor_uuid": planned["entry"]["uuid"], "rows": len(planned["row_hashes"]),
-            "edited": planned["edited"]}
+            "edited": planned["edited"], "gozcu": judged}
