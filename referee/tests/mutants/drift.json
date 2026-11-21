@@ -202,8 +202,8 @@
   {
    "id": "yaz_drift_repo_unchecked",
    "file": "loop/job.py",
-   "old": "DC.check(transport, summary, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"), repo)",
-   "new": "DC.check(transport, summary, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"))",
+   "old": "DC.check(transport, summary, hashes, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"), repo)",
+   "new": "DC.check(transport, summary, hashes, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"))",
    "tests": [
     "test_drift.Yaz.test_the_check_is_of_the_repository_d6_writes_to"
    ]
@@ -319,8 +319,8 @@
   {
    "id": "dc_baseline_branch_key_unchecked",
    "file": "drift/check.py",
-   "old": "    return out or [\"%s: key %r is not a branch name\" % (where, b) for b in value if not write.branch_syntax(b)]",
-   "new": "    return out",
+   "old": "    out = out or [\"%s: key %r is not a branch name\" % (where, b) for b in value if not write.branch_syntax(b)]\n",
+   "new": "",
    "tests": [
     "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
    ]
@@ -328,8 +328,8 @@
   {
    "id": "dc_baseline_visibility_any",
    "file": "drift/check.py",
-   "old": "    \"visibility\": schema.map_of(schema.one_of(\"public\", \"private\")),",
-   "new": "    \"visibility\": schema.map_of(schema.text),",
+   "old": "    out = schema.map_of(schema.one_of(\"public\", \"private\"))(value, where)",
+   "new": "    out = schema.map_of(schema.text)(value, where)",
    "tests": [
     "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
    ]
@@ -346,7 +346,7 @@
   {
    "id": "dc_recorded_unread",
    "file": "drift/check.py",
-   "old": " | actions(reads, entry) | recorded(reads, drift, entry))",
+   "old": " | actions(reads, entry) | recorded(reads, drift, entry, hashes))",
    "new": " | actions(reads, entry))",
    "tests": [
     "test_drift.Baseline.test_a_writer_app_of_another_id_is_a_hard_stop"
@@ -355,7 +355,7 @@
   {
    "id": "dc_app_id_unread",
    "file": "drift/check.py",
-   "old": "    if type(app_id) is not int or app_id != drift[\"writer_app_id\"]:",
+   "old": "    if type(app.get(\"id\")) is not int or app[\"id\"] != drift[\"writer_app_id\"]:",
    "new": "    if False:",
    "tests": [
     "test_drift.Baseline.test_a_writer_app_of_another_id_is_a_hard_stop"
@@ -364,8 +364,8 @@
   {
    "id": "dc_app_id_type_unread",
    "file": "drift/check.py",
-   "old": "    if type(app_id) is not int or app_id != drift[\"writer_app_id\"]:",
-   "new": "    if app_id != drift[\"writer_app_id\"]:",
+   "old": "    if type(app.get(\"id\")) is not int or app[\"id\"] != drift[\"writer_app_id\"]:",
+   "new": "    if app.get(\"id\") != drift[\"writer_app_id\"]:",
    "tests": [
     "test_drift.Baseline.test_a_writer_app_of_another_id_is_a_hard_stop"
    ]
@@ -544,8 +544,8 @@
   {
    "id": "yaz_drift_clock_not_the_job_s",
    "file": "loop/job.py",
-   "old": "DC.check(transport, summary, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"), repo)",
-   "new": "DC.check(transport, summary, tid, \"2026-10-30T00:00:00Z\", repo)",
+   "old": "DC.check(transport, summary, hashes, tid, now().strftime(\"%Y-%m-%dT%H:%M:%SZ\"), repo)",
+   "new": "DC.check(transport, summary, hashes, tid, \"2026-10-30T00:00:00Z\", repo)",
    "tests": [
     "test_drift.Yaz.test_a_stale_operator_check_ends_the_job_cleanly_with_nothing_written"
    ]
@@ -562,8 +562,8 @@
   {
    "id": "drift_order_class_unlisted",
    "file": "tests/test_drift.py",
-   "old": "LISTED = (Check, Baseline, Genesis, Cli, Yaz, YazPolicy, Order, YazGenesis, Listed)",
-   "new": "LISTED = (Check, Baseline, Genesis, Cli, Yaz, YazPolicy, YazGenesis, Listed)",
+   "old": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, YazGenesis, Listed)",
    "tests": [
     "test_drift.py"
    ]
@@ -571,8 +571,8 @@
   {
    "id": "drift_policy_class_unlisted",
    "file": "tests/test_drift.py",
-   "old": "LISTED = (Check, Baseline, Genesis, Cli, Yaz, YazPolicy, Order, YazGenesis, Listed)",
-   "new": "LISTED = (Check, Baseline, Genesis, Cli, Yaz, Order, YazGenesis, Listed)",
+   "old": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, Order, YazGenesis, Listed)",
    "tests": [
     "test_drift.py"
    ]
@@ -629,6 +629,477 @@
    "new": "    if isinstance(found, float) and 0 < found < 1:\n        return Fraction(repr(found))\n    if not (isinstance(found, str) and _FRACTION.fullmatch(found)) or not int(found[2:]):\n",
    "tests": [
     "test_drift.YazPolicy.test_each_required_path_absent_or_off_its_form_stops_the_job_and_the_policy_put_back_is_written"
+   ]
+  },
+  {
+   "id": "drift_compared_class_unlisted",
+   "file": "tests/test_drift.py",
+   "old": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "tests": [
+    "test_drift.py"
+   ]
+  },
+  {
+   "id": "drift_held_class_unlisted",
+   "file": "tests/test_drift.py",
+   "old": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Compared, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "tests": [
+    "test_drift.py"
+   ]
+  },
+  {
+   "id": "drift_checkout_class_unlisted",
+   "file": "tests/test_drift.py",
+   "old": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)",
+   "new": "LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazPolicy, Order, YazGenesis, Listed)",
+   "tests": [
+    "test_drift.py"
+   ]
+  },
+  {
+   "id": "dc_baseline_three_branches_not_required",
+   "file": "drift/check.py",
+   "old": "    return out or [\"%s: %s is not named\" % (where, b) for b in BRANCHES if b not in value]",
+   "new": "    return out",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_main_not_required",
+   "file": "drift/check.py",
+   "old": "    return out or [\"%s: %s is not named\" % (where, b) for b in BRANCHES if b not in value]",
+   "new": "    return out or [\"%s: %s is not named\" % (where, b) for b in BRANCHES[:2] if b not in value]",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_rulesets_any_order",
+   "file": "drift/check.py",
+   "old": "schema.list_of(_integer, unique_sorted=True)",
+   "new": "schema.list_of(_integer)",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_permissions_not_required",
+   "file": "drift/check.py",
+   "old": "    \"writer_app_permissions\": schema.any_object,\n",
+   "new": "",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_visibility_key_unchecked",
+   "file": "drift/check.py",
+   "old": "    return out or [\"%s: key %r is not a repository name\" % (where, r) for r in value if not _repo_name(r)]",
+   "new": "    return out",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_baseline_target_repo_not_in_visibility",
+   "file": "drift/check.py",
+   "old": "        if not isinstance(repo, str) or repo not in summary[\"drift\"][\"visibility\"]:",
+   "new": "        if False:",
+   "tests": [
+    "test_drift.Baseline.test_a_baseline_not_of_the_form_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_permissions_unread",
+   "file": "drift/check.py",
+   "old": "    if not _same(app.get(\"permissions\"), drift[\"writer_app_permissions\"]):",
+   "new": "    if False:",
+   "tests": [
+    "test_drift.Compared.test_permissions_other_than_the_recorded_ones_are_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_permissions_python_equality",
+   "file": "drift/check.py",
+   "old": "    if not _same(app.get(\"permissions\"), drift[\"writer_app_permissions\"]):",
+   "new": "    if app.get(\"permissions\") != drift[\"writer_app_permissions\"]:",
+   "tests": [
+    "test_drift.Compared.test_permissions_other_than_the_recorded_ones_are_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_permissions_subset_passes",
+   "file": "drift/check.py",
+   "old": "    if not _same(app.get(\"permissions\"), drift[\"writer_app_permissions\"]):",
+   "new": "    if not (app.get(\"permissions\") or {}).items() <= drift[\"writer_app_permissions\"].items():",
+   "tests": [
+    "test_drift.Compared.test_permissions_other_than_the_recorded_ones_are_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_permissions_superset_passes",
+   "file": "drift/check.py",
+   "old": "    if not _same(app.get(\"permissions\"), drift[\"writer_app_permissions\"]):",
+   "new": "    if not drift[\"writer_app_permissions\"].items() <= (app.get(\"permissions\") or {}).items():",
+   "tests": [
+    "test_drift.Compared.test_permissions_other_than_the_recorded_ones_are_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_rulesets_unread",
+   "file": "drift/check.py",
+   "old": "    if rulesets(reads, entry[\"repo\"]) != set(drift[\"targets\"][entry[\"id\"]][\"rulesets\"]):",
+   "new": "    if False:",
+   "tests": [
+    "test_drift.Compared.test_a_ruleset_list_other_than_the_recorded_set_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_rulesets_added_passes",
+   "file": "drift/check.py",
+   "old": "    if rulesets(reads, entry[\"repo\"]) != set(drift[\"targets\"][entry[\"id\"]][\"rulesets\"]):",
+   "new": "    if rulesets(reads, entry[\"repo\"]) < set(drift[\"targets\"][entry[\"id\"]][\"rulesets\"]):",
+   "tests": [
+    "test_drift.Compared.test_a_ruleset_list_other_than_the_recorded_set_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_rulesets_removed_passes",
+   "file": "drift/check.py",
+   "old": "    if rulesets(reads, entry[\"repo\"]) != set(drift[\"targets\"][entry[\"id\"]][\"rulesets\"]):",
+   "new": "    if rulesets(reads, entry[\"repo\"]) > set(drift[\"targets\"][entry[\"id\"]][\"rulesets\"]):",
+   "tests": [
+    "test_drift.Compared.test_a_ruleset_list_other_than_the_recorded_set_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_rulesets_as_a_list",
+   "file": "drift/check.py",
+   "old": "    if rulesets(reads, entry[\"repo\"]) != set(drift[\"targets\"][entry[\"id\"]][\"rulesets\"]):",
+   "new": "    if sorted(reads.get(\"/repos/%s/rulesets?per_page=100\" % entry[\"repo\"], list), key=str) != drift[\"targets\"][entry[\"id\"]][\"rulesets\"] and [i.get(\"id\") for i in reads.get(\"/repos/%s/rulesets?per_page=100\" % entry[\"repo\"], list)] != drift[\"targets\"][entry[\"id\"]][\"rulesets\"]:",
+   "tests": [
+    "test_drift.Compared.test_a_ruleset_list_other_than_the_recorded_set_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_rulesets_first_page_only",
+   "file": "drift/check.py",
+   "old": "        if len(body) < PAGE:\n            return ids",
+   "new": "        if True:\n            return ids",
+   "tests": [
+    "test_drift.Compared.test_every_page_of_the_ruleset_list_is_read"
+   ]
+  },
+  {
+   "id": "dc_rulesets_page_of_99_is_full",
+   "file": "drift/check.py",
+   "old": "        if len(body) < PAGE:\n            return ids",
+   "new": "        if len(body) < PAGE - 1:\n            return ids",
+   "tests": [
+    "test_drift.Compared.test_every_page_of_the_ruleset_list_is_read"
+   ]
+  },
+  {
+   "id": "dc_rulesets_second_page_again",
+   "file": "drift/check.py",
+   "old": "(\"&page=%d\" % page if page > 1 else \"\")",
+   "new": "(\"&page=2\" if page > 1 else \"\")",
+   "tests": [
+    "test_drift.Compared.test_every_page_of_the_ruleset_list_is_read"
+   ]
+  },
+  {
+   "id": "dc_rulesets_default_page_size",
+   "file": "drift/check.py",
+   "old": "        path = \"/repos/%s/rulesets?per_page=%d\" % (repo, PAGE) + ",
+   "new": "        path = \"/repos/%s/rulesets?x=%d\" % (repo, PAGE) + ",
+   "tests": [
+    "test_drift.Check.test_setup_s_facts_give_no_reason_and_only_the_named_reads_are_sent"
+   ]
+  },
+  {
+   "id": "dc_rulesets_item_id_unchecked",
+   "file": "drift/check.py",
+   "old": "        if not all(isinstance(item, dict) and type(item.get(\"id\")) is int for item in body):",
+   "new": "        if not all(isinstance(item, dict) and \"id\" in item and isinstance(item[\"id\"], (int, str)) for item in body):",
+   "tests": [
+    "test_drift.Compared.test_a_ruleset_list_other_than_the_recorded_set_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_visibility_unread",
+   "file": "drift/check.py",
+   "old": "        if reads.get(\"/repos/%s\" % repo, dict).get(\"visibility\") != visibility:",
+   "new": "        if False:",
+   "tests": [
+    "test_drift.Compared.test_a_visibility_other_than_the_recorded_one_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_visibility_private_only",
+   "file": "drift/check.py",
+   "old": "        if reads.get(\"/repos/%s\" % repo, dict).get(\"visibility\") != visibility:",
+   "new": "        if reads.get(\"/repos/%s\" % repo, dict).get(\"visibility\") == \"private\" != visibility:",
+   "tests": [
+    "test_drift.Compared.test_a_visibility_other_than_the_recorded_one_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_visibility_absent_passes",
+   "file": "drift/check.py",
+   "old": "        if reads.get(\"/repos/%s\" % repo, dict).get(\"visibility\") != visibility:",
+   "new": "        if reads.get(\"/repos/%s\" % repo, dict).get(\"visibility\", visibility) != visibility:",
+   "tests": [
+    "test_drift.Compared.test_a_visibility_other_than_the_recorded_one_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_visibility_target_only",
+   "file": "drift/check.py",
+   "old": "    for repo, visibility in sorted(drift[\"visibility\"].items()):",
+   "new": "    for repo, visibility in [(entry[\"repo\"], drift[\"visibility\"][entry[\"repo\"]])]:",
+   "tests": [
+    "test_drift.Compared.test_every_repository_the_baseline_names_is_read"
+   ]
+  },
+  {
+   "id": "dc_visibility_reason_unnamed",
+   "file": "drift/check.py",
+   "old": "            reasons.add(\"visibility_changed:%s\" % repo)",
+   "new": "            reasons.add(\"visibility_changed:%s\" % entry[\"repo\"])",
+   "tests": [
+    "test_drift.Compared.test_every_repository_the_baseline_names_is_read"
+   ]
+  },
+  {
+   "id": "dc_hashes_uncompared",
+   "file": "drift/check.py",
+   "old": "    reasons = {reason for key, reason in HASH_REASONS.items() if hashes[key] != drift[\"hashes\"][key]}",
+   "new": "    reasons = set()",
+   "tests": [
+    "test_drift.Compared.test_a_hash_of_the_checkout_other_than_the_recorded_one_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_hashes_any_recorded_passes",
+   "file": "drift/check.py",
+   "old": "    reasons = {reason for key, reason in HASH_REASONS.items() if hashes[key] != drift[\"hashes\"][key]}",
+   "new": "    reasons = {reason for key, reason in HASH_REASONS.items() if hashes[key] not in drift[\"hashes\"].values()}",
+   "tests": [
+    "test_drift.Compared.test_a_hash_of_the_checkout_other_than_the_recorded_one_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_hash_constitutional_uncompared",
+   "file": "drift/check.py",
+   "old": "    reasons = {reason for key, reason in HASH_REASONS.items() if hashes[key] != drift[\"hashes\"][key]}",
+   "new": "    reasons = {reason for key, reason in HASH_REASONS.items() if key != \"constitutional_sha256\" and hashes[key] != drift[\"hashes\"][key]}",
+   "tests": [
+    "test_drift.Compared.test_a_hash_of_the_checkout_other_than_the_recorded_one_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_hash_vectors_uncompared",
+   "file": "drift/check.py",
+   "old": "    reasons = {reason for key, reason in HASH_REASONS.items() if hashes[key] != drift[\"hashes\"][key]}",
+   "new": "    reasons = {reason for key, reason in HASH_REASONS.items() if key != \"vectors_sha256\" and hashes[key] != drift[\"hashes\"][key]}",
+   "tests": [
+    "test_drift.Compared.test_a_hash_of_the_checkout_other_than_the_recorded_one_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_hash_seats_uncompared",
+   "file": "drift/check.py",
+   "old": "    reasons = {reason for key, reason in HASH_REASONS.items() if hashes[key] != drift[\"hashes\"][key]}",
+   "new": "    reasons = {reason for key, reason in HASH_REASONS.items() if key != \"seats_sha256\" and hashes[key] != drift[\"hashes\"][key]}",
+   "tests": [
+    "test_drift.Compared.test_a_hash_of_the_checkout_other_than_the_recorded_one_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_hash_reasons_swapped",
+   "file": "drift/check.py",
+   "old": "\"vectors_sha256\": \"vectors_hash_mismatch\",\n                \"seats_sha256\": \"seats_hash_mismatch\"}",
+   "new": "\"vectors_sha256\": \"seats_hash_mismatch\",\n                \"seats_sha256\": \"vectors_hash_mismatch\"}",
+   "tests": [
+    "test_drift.Compared.test_a_hash_of_the_checkout_other_than_the_recorded_one_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "dc_hashes_form_unchecked",
+   "file": "drift/check.py",
+   "old": "    if schema.shape(dict.fromkeys(HASH_REASONS, schema.hex64))(hashes, \"hashes\"):",
+   "new": "    if not isinstance(hashes, dict) or set(HASH_REASONS) - set(hashes):",
+   "tests": [
+    "test_drift.Compared.test_hashes_not_of_the_form_are_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_operator_check_after_now_read",
+   "file": "drift/check.py",
+   "old": "    if moment(drift[\"operator_checked_at\"]) > moment(now):\n        raise Unusable(\"summary.json: drift.operator_checked_at is after now\")\n",
+   "new": "",
+   "tests": [
+    "test_drift.Compared.test_an_operator_check_after_the_clock_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_operator_check_at_now_refused",
+   "file": "drift/check.py",
+   "old": "    if moment(drift[\"operator_checked_at\"]) > moment(now):",
+   "new": "    if moment(drift[\"operator_checked_at\"]) >= moment(now):",
+   "tests": [
+    "test_drift.Compared.test_an_operator_check_after_the_clock_is_unusable_and_nothing_is_read"
+   ]
+  },
+  {
+   "id": "dc_folder_links_followed",
+   "file": "drift/check.py",
+   "old": "            elif entry.is_file(follow_symlinks=False):",
+   "new": "            elif entry.is_file():",
+   "tests": [
+    "test_drift.Held.test_a_link_or_what_is_no_regular_file_is_refused"
+   ]
+  },
+  {
+   "id": "dc_folder_linked_folder_walked",
+   "file": "drift/check.py",
+   "old": "            if entry.is_dir(follow_symlinks=False):",
+   "new": "            if entry.is_dir():",
+   "tests": [
+    "test_drift.Held.test_a_link_or_what_is_no_regular_file_is_refused"
+   ]
+  },
+  {
+   "id": "dc_folder_specials_skipped",
+   "file": "drift/check.py",
+   "old": "            else:\n                raise Unusable(\"%s is a link or no regular file\" % path.encode(\"utf-8\", \"backslashreplace\").decode())",
+   "new": "            else:\n                pass",
+   "tests": [
+    "test_drift.Held.test_a_link_or_what_is_no_regular_file_is_refused"
+   ]
+  },
+  {
+   "id": "dc_folder_itself_a_link",
+   "file": "drift/check.py",
+   "old": "    if os.path.islink(root) or not os.path.isdir(root):",
+   "new": "    if not os.path.isdir(root):",
+   "tests": [
+    "test_drift.Held.test_a_link_or_what_is_no_regular_file_is_refused"
+   ]
+  },
+  {
+   "id": "dc_folder_absent_is_empty",
+   "file": "drift/check.py",
+   "old": "    if os.path.islink(root) or not os.path.isdir(root):",
+   "new": "    if os.path.islink(root) or os.path.isfile(root):",
+   "tests": [
+    "test_drift.Held.test_a_link_or_what_is_no_regular_file_is_refused",
+    "test_drift.Held.test_the_three_hashes_of_a_checkout"
+   ]
+  },
+  {
+   "id": "dc_folder_not_utf8_replaced",
+   "file": "drift/check.py",
+   "old": "                    name = path.encode(\"utf-8\")\n",
+   "new": "                    name = path.encode(\"utf-8\", \"replace\")\n",
+   "tests": [
+    "test_drift.Held.test_a_link_or_what_is_no_regular_file_is_refused"
+   ]
+  },
+  {
+   "id": "dc_folder_names_not_nested",
+   "file": "drift/check.py",
+   "old": "            path = \"%s/%s\" % (rel, entry.name) if rel else entry.name\n",
+   "new": "            path = \"%s%s\" % (rel, entry.name) if rel else entry.name\n",
+   "tests": [
+    "test_drift.Held.test_a_folder_s_hash_is_the_page_s_recipe"
+   ]
+  },
+  {
+   "id": "dc_folder_top_level_only",
+   "file": "drift/check.py",
+   "old": "                folders.append(path)",
+   "new": "                pass",
+   "tests": [
+    "test_drift.Held.test_a_folder_s_hash_is_the_page_s_recipe"
+   ]
+  },
+  {
+   "id": "dc_folder_line_one_space",
+   "file": "loop/treehash.py",
+   "old": "    return b\"%s  %s\\n\" % (",
+   "new": "    return b\"%s %s\\n\" % (",
+   "tests": [
+    "test_drift.Held.test_a_folder_s_hash_is_the_page_s_recipe"
+   ]
+  },
+  {
+   "id": "dc_folder_lines_in_name_order",
+   "file": "loop/treehash.py",
+   "old": "    return hashlib.sha256(b\"\".join(sorted(lines))).hexdigest()",
+   "new": "    return hashlib.sha256(b\"\".join(lines)).hexdigest()",
+   "tests": [
+    "test_drift.Held.test_a_folder_s_hash_is_the_page_s_recipe",
+    "test_treehash.py"
+   ]
+  },
+  {
+   "id": "dc_constitutional_whole_policy",
+   "file": "drift/check.py",
+   "old": "        return hashlib.sha256(chain.canonical(section)).hexdigest()",
+   "new": "        return hashlib.sha256(chain.canonical(doc)).hexdigest()",
+   "tests": [
+    "test_drift.Held.test_the_constitutional_hash_is_of_that_object_s_canonical_form"
+   ]
+  },
+  {
+   "id": "dc_constitutional_float_path_unnamed",
+   "file": "drift/check.py",
+   "old": "(_unhashable(section, \"constitutional\") or \"constitutional\",",
+   "new": "(\"constitutional\",",
+   "tests": [
+    "test_drift.Held.test_a_policy_that_has_no_such_hash_is_unusable"
+   ]
+  },
+  {
+   "id": "dc_constitutional_float_as_text",
+   "file": "drift/check.py",
+   "old": "        return hashlib.sha256(chain.canonical(section)).hexdigest()",
+   "new": "        return hashlib.sha256(json.dumps(section, sort_keys=True).encode()).hexdigest()",
+   "tests": [
+    "test_drift.Held.test_the_constitutional_hash_is_of_that_object_s_canonical_form",
+    "test_drift.Held.test_a_policy_that_has_no_such_hash_is_unusable"
+   ]
+  },
+  {
+   "id": "dc_held_folders_swapped",
+   "file": "drift/check.py",
+   "old": "TREES = {\"vectors_sha256\": \"vectors\", \"seats_sha256\": \"seats\"}",
+   "new": "TREES = {\"vectors_sha256\": \"seats\", \"seats_sha256\": \"vectors\"}",
+   "tests": [
+    "test_drift.Held.test_the_three_hashes_of_a_checkout"
+   ]
+  },
+  {
+   "id": "yaz_drift_hashes_the_baseline_s_own",
+   "file": "loop/job.py",
+   "old": "                hashes = DC.held(environ[\"GITHUB_WORKSPACE\"])",
+   "new": "                hashes = json.loads(summary)[\"drift\"][\"hashes\"]",
+   "tests": [
+    "test_drift.YazCheckout"
+   ]
+  },
+  {
+   "id": "yaz_drift_checkout_fault_not_unusable",
+   "file": "loop/job.py",
+   "old": "                hashes = DC.held(environ[\"GITHUB_WORKSPACE\"])\n            except DC.Unusable as exc:",
+   "new": "                hashes = DC.held(environ[\"GITHUB_WORKSPACE\"])\n            except KeyError as exc:",
+   "tests": [
+    "test_drift.YazCheckout"
    ]
   }
  ]

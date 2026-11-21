@@ -37,9 +37,23 @@ stage 1 MF5's offline reading, ``yaz_offline``).
   more than 7 days old is ``stale`` with no hard stop and every read still made, exactly 7 days is not, and in
   ``yaz`` it ends the job ``operator_check_stale`` with nothing written (a drift beside it is the job's reason).
 
-Not tested, because not built (``drift.check`` "Out of scope"): the baseline's ``rulesets``, ``hashes``,
-``visibility`` and ``activity`` beyond their form, other Apps' installations, the referee repository's own settings,
-workflow triggers.
+- ``Compared`` (tohum/01c, the answer to seed-082): the App's permissions other than the recorded object
+  (``writer_app_permissions_changed``; JSON equality), a ruleset list whose ids are not the recorded set
+  (``rulesets_changed``; every page while one holds 100), a ``visibility`` other than the recorded one for every
+  repository the baseline names (``visibility_changed:<repo>``), each of the caller's three hashes against the
+  recorded ones; hashes not of the form and an operator check after the clock are unusable with nothing read.
+- ``Held``: ``drift.check.held`` on a checkout written here: the folder hash by the page's recipe over literal
+  bytes (nested files, an empty folder, a name beyond ASCII), a link, a fifo, a name that is not UTF-8 and a
+  folder that is absent, a file or a link refused; the constitutional hash of the object's canonical form, a JSON
+  float there ``policy_invalid:<path>``.
+- ``YazCheckout``: ``yaz`` with one operator file of its checkout changed ends ``drift`` with that hash's reason
+  and nothing written, a pulled policy that differs from the checkout's is not what is hashed, and a checkout
+  without ``policy.json``, ``vectors/`` or ``seats/``, with a link among them or a float in the policy, is
+  unusable with no request sent.
+
+Not tested, because not built (``drift.check`` "Out of scope"): the baseline's ``activity`` beyond its form, a
+stale stop that is not a red job, other Apps' installations, the referee repository's own settings, workflow
+triggers. Not tested either: a real checkout made by git (the folders here are written by ``open``), a real API.
 """
 
 from __future__ import annotations
@@ -71,10 +85,13 @@ from target import branches as B  # noqa: E402
 P = "/repos/%s" % AW.REPO
 STATE, INTEGRATION, MAIN = (P + "/rules/branches/" + b for b in (B.STATE, B.INTEGRATION, "main"))
 WORKFLOWS, PERMISSIONS, INSTALLED = P + "/actions/workflows", P + "/actions/permissions", "/installation/repositories"
+LISTING = P + "/rulesets?per_page=100"
 READS = {"toy": ["/app", INSTALLED, STATE, INTEGRATION, MAIN, P + "/rulesets/1", P + "/rulesets/2", P + "/rulesets/3",
-                 WORKFLOWS],
+                 WORKFLOWS, LISTING, P],
          "copy": ["/app", INSTALLED, STATE, INTEGRATION, MAIN, P + "/rulesets/1", P + "/rulesets/2",
-                  P + "/rulesets/3", PERMISSIONS]}
+                  P + "/rulesets/3", PERMISSIONS, LISTING, P]}
+# what genesis reads of them (``activate.genesis`` calls ``rules`` and ``actions``, not the baseline's comparison)
+GENESIS_READS = {kind: [path for path in paths if path not in (LISTING, P)] for kind, paths in READS.items()}
 
 
 def without(kind: str):
@@ -156,8 +173,10 @@ def world(kind: str = "toy", *changes) -> AW.World:
     return w
 
 
-def check(w: AW.World, target="toy", repo=None, now=AW.TS) -> dict:
-    return DC.check(w.gh, w.files["summary.json"], AW.checkout_hashes(), target, now, repo)
+def check(w: AW.World, target="toy", repo=None, now=AW.TS, hashes=None) -> dict:
+    """The check on the world; ``hashes`` are the checkout's (``activation_world.CHECKOUT``'s when ``None``)."""
+    return DC.check(w.gh, w.files["summary.json"], AW.checkout_hashes() if hashes is None else hashes, target, now,
+                    repo)
 
 
 def recorded(path: str, reason: str) -> list:
@@ -228,6 +247,7 @@ class Check(unittest.TestCase):
                 {"id": "copy", "repo": "acme/copy", "kind": "copy", "base_sha": "c" * 40}]
         w = world("toy")
         w.files["summary.json"] = YW.summary(both)
+        w.gh.overrides[("GET", "/repos/acme/copy")] = (200, {"visibility": "public"})
         self.assertEqual(check(w)["reasons"], ["app_scope"])  # installed on one of the two declared
         change(w.gh, INSTALLED, lambda body: dict(body, repositories=[{"full_name": "acme/copy"},
                                                                       {"full_name": AW.REPO}]))
@@ -293,8 +313,19 @@ def put(*keys, value):
 MALFORMED = {
     "not an object": lambda d: [d],
     "null": lambda d: None,
-    **{"without " + key: drop(key) for key in ("writer_app_id", "targets", "activity", "hashes", "visibility",
-                                                "operator_checked_at")},
+    **{"without " + key: drop(key) for key in ("writer_app_id", "writer_app_permissions", "targets", "activity",
+                                                "hashes", "visibility", "operator_checked_at")},
+    "writer_app_permissions a list": put("writer_app_permissions", value=["contents"]),
+    "writer_app_permissions null": put("writer_app_permissions", value=None),
+    "rulesets not ascending": put("targets", "toy", "rulesets", value=[1, 3, 2]),
+    "a ruleset id twice": put("targets", "toy", "rulesets", value=[1, 2, 2, 3]),
+    "a ruleset id a boolean": put("targets", "toy", "rulesets", value=[True, 2, 3]),
+    "rules naming no branch": put("targets", "toy", "rules", value={}),
+    **{"rules without " + b: (lambda b: lambda d: put("targets", "toy", "rules", value={
+        k: v for k, v in d["targets"]["toy"]["rules"].items() if k != b})(d))(b) for b in DC.BRANCHES},
+    "visibility without the target's repository": put("visibility", value={"acme/other": "public"}),
+    "a visibility key that is no repository name": put("visibility", "acme", value="public"),
+    "a visibility key with a path": put("visibility", "acme/toy/../other", value="public"),
     "the draft's apps[]": put("apps", value=[]),
     "the draft's referee_workflow_permission": put("referee_workflow_permission", value="read"),
     "writer_app_id a string": put("writer_app_id", value=str(AW.APP_ID)),
@@ -349,9 +380,11 @@ class Baseline(unittest.TestCase):
             with self.assertRaisesRegex(DC.Unusable, r"\Asummary.json: drift", msg=name):
                 check(w)
             self.assertEqual(w.gh.requests, [], name)
-        # the form itself, with no login, no ruleset and an empty rules map, is read
+        # the form itself, with no login and no permission, is read
         w = rebased(world("toy"), put("activity", "operator_logins", value=[]))
-        self.assertEqual(check(rebased(w, put("targets", "toy", value={"rulesets": [], "rules": {}})))["reasons"], [])
+        self.assertEqual(check(w)["reasons"], [])
+        self.assertEqual(check(rebased(w, put("writer_app_permissions", value={})))["reasons"],
+                         ["writer_app_permissions_changed"])
 
     def test_a_baseline_without_the_target_is_unusable(self):
         w = rebased(world("toy"), lambda d: dict(d, targets={"other": d["targets"]["toy"]}))
@@ -446,18 +479,15 @@ class Baseline(unittest.TestCase):
         w.gh.overrides[("GET", extra)] = (200, body)
         del w.gh.requests[:]
         self.assertEqual(check(w)["reasons"], [])
-        self.assertEqual(w.gh.requests, [("GET", path, None) for path in READS["toy"] + [extra]])
+        self.assertEqual(w.gh.requests, [("GET", path, None) for path in READS["toy"] + [extra]])  # after the others
         w.gh.overrides[("GET", extra)] = (200, [])
         self.assertEqual(check(w)["reasons"], ["rules_changed:brain/extra"])
         w.gh.overrides[("GET", extra)] = (200, [{"type": "deletion"}])
         with self.assertRaises(DC.Unusable):
             check(w)
-        # a branch it does not name is compared with nothing (stated out of scope): today's reasons only
-        w = rebased(world("toy", (MAIN, review(2))), put("targets", "toy", "rules", value={}))
-        self.assertEqual(check(w)["reasons"], [])
         # another target's entry is not this one's
         w = rebased(world("toy"), lambda d: dict(d, targets=dict(d["targets"], other={
-            "rulesets": [], "rules": {"main": "0" * 64}})))
+            "rulesets": [], "rules": {b: "0" * 64 for b in DC.BRANCHES}})))
         self.assertEqual(check(w)["reasons"], [])
 
     def test_an_operator_check_older_than_seven_days_is_stale_and_no_hard_stop(self):
@@ -490,6 +520,294 @@ class Baseline(unittest.TestCase):
         self.assertEqual(w.gh.requests, [])
 
 
+def hashes(**over) -> dict:
+    return dict(AW.checkout_hashes(), **over)
+
+
+class Compared(unittest.TestCase):
+    """tohum/01c (the answer to seed-082): the App's permissions, the ruleset list, the visibility and the three
+    hashes against the baseline; an operator check after the clock."""
+
+    def stop(self, w: AW.World, reasons: list, msg=None, **kw) -> None:
+        self.assertEqual(check(w, **kw), {"ok": False, "hard_stop": True, "reasons": reasons, "stale": False}, msg)
+
+    def test_permissions_other_than_the_recorded_ones_are_a_hard_stop(self):
+        changes = {
+            "one widened": lambda app: dict(app, permissions=dict(app["permissions"], metadata="write")),
+            "one more": lambda app: dict(app, permissions=dict(app["permissions"], actions="read")),
+            "one fewer": lambda app: dict(app, permissions={k: v for k, v in app["permissions"].items()
+                                                             if k != "checks"}),
+            "none": lambda app: dict(app, permissions={}),
+            "the field absent": lambda app: {k: v for k, v in app.items() if k != "permissions"},
+            "null": lambda app: dict(app, permissions=None),
+        }
+        for kind in ("toy", "copy"):
+            for name, how in changes.items():
+                self.stop(world(kind, ("/app", how)), ["writer_app_permissions_changed"], name)
+        # the recorded ones changed instead
+        self.stop(rebased(world("toy"), put("writer_app_permissions", "contents", value="read")),
+                  ["writer_app_permissions_changed"])
+        # the keys' order is no difference; a boolean is not the number it equals
+        w = world("toy", ("/app", lambda app: dict(app, permissions=dict(reversed(list(app["permissions"].items()))))))
+        self.assertEqual(check(w)["reasons"], [])
+        one = lambda value: ("/app", lambda app: dict(app, permissions={"x": value}))  # noqa: E731
+        self.assertEqual(check(rebased(world("toy", one(1)), put("writer_app_permissions", value={"x": 1})))["reasons"],
+                         [])
+        self.stop(rebased(world("toy", one(True)), put("writer_app_permissions", value={"x": 1})),
+                  ["writer_app_permissions_changed"])
+
+    def test_a_ruleset_list_other_than_the_recorded_set_is_a_hard_stop(self):
+        item = lambda n: {"id": n, "name": "r%d" % n}  # noqa: E731
+        for kind in ("toy", "copy"):
+            self.stop(world(kind, (LISTING, lambda body: body + [item(4)])), ["rulesets_changed"], "one added")
+            self.stop(world(kind, (LISTING, lambda body: body[:2])), ["rulesets_changed"], "one removed")
+            self.stop(world(kind, (LISTING, lambda body: body[:2] + [item(9)])), ["rulesets_changed"], "one replaced")
+            self.stop(world(kind, (LISTING, lambda body: [])), ["rulesets_changed"], "none")
+        self.stop(rebased(world("toy"), put("targets", "toy", "rulesets", value=[1, 2])), ["rulesets_changed"])
+        self.stop(rebased(world("toy"), put("targets", "toy", "rulesets", value=[])), ["rulesets_changed"])
+        # a set: the list's order and an id listed twice are no difference
+        w = world("toy", (LISTING, lambda body: body[::-1] + body[:1]))
+        self.assertEqual(check(w)["reasons"], [])
+        # another target's recorded list is not this one's
+        w = rebased(world("toy"), lambda d: dict(d, targets=dict(d["targets"], other=dict(d["targets"]["toy"],
+                                                                                         rulesets=[7]))))
+        self.assertEqual(check(w)["reasons"], [])
+        for body in ([{"id": "1"}], [{"name": "x"}], [1], [{"id": True}], [item(1), None]):
+            w = world("toy", (LISTING, lambda _: body))
+            with self.assertRaisesRegex(DC.Unusable, "an item without an integer id", msg=body):
+                check(w)
+
+    def test_every_page_of_the_ruleset_list_is_read(self):
+        item = lambda n: {"id": n}  # noqa: E731
+        full = [item(n) for n in range(1, 101)]
+        second, third = LISTING + "&page=2", LISTING + "&page=3"
+
+        def paged(recorded: list, pages: dict) -> AW.World:
+            w = rebased(world("toy", (LISTING, lambda _: full)), put("targets", "toy", "rulesets", value=recorded))
+            w.gh.overrides.update({("GET", path): (200, body) for path, body in pages.items()})
+            return w
+
+        asked = lambda w: [path for _, path, _ in w.gh.requests if path.startswith(LISTING)]  # noqa: E731
+        # a full page has a next one: its absence is no end of the list
+        w = paged(list(range(1, 101)), {})
+        with self.assertRaisesRegex(DC.Unusable, r"rulesets\?per_page=100&page=2 answered 404"):
+            check(w)
+        w = paged(list(range(1, 101)), {second: []})
+        self.assertEqual((check(w)["reasons"], asked(w)), ([], [LISTING, second]))
+        # the 101st ruleset is on the second page: one more than recorded there, or one recorded only there
+        self.stop(paged(list(range(1, 101)), {second: [item(101)]}), ["rulesets_changed"])
+        w = paged(list(range(1, 102)), {second: [item(101)]})
+        self.assertEqual((check(w)["reasons"], asked(w)), ([], [LISTING, second]))
+        self.stop(paged(list(range(1, 102)), {second: []}), ["rulesets_changed"])
+        w = paged(list(range(1, 202)), {second: [item(n) for n in range(101, 201)], third: [item(201)]})
+        self.assertEqual((check(w)["reasons"], asked(w)), ([], [LISTING, second, third]))
+        # a page of 99 is the last
+        w = rebased(world("toy", (LISTING, lambda _: full[:99])), put("targets", "toy", "rulesets",
+                                                                      value=list(range(1, 100))))
+        self.assertEqual((check(w)["reasons"], asked(w)), ([], [LISTING]))
+        with self.assertRaisesRegex(DC.Unusable, "an item without an integer id"):
+            check(paged(list(range(1, 102)), {second: [{"id": "101"}]}))
+
+    def test_a_visibility_other_than_the_recorded_one_is_a_hard_stop(self):
+        named = "visibility_changed:" + AW.REPO
+        seen = lambda value: (P, lambda body: dict(body, visibility=value))  # noqa: E731
+        for kind in ("toy", "copy"):
+            for value in ("private", "internal", None, "PUBLIC", True):
+                self.stop(world(kind, seen(value)), [named], value)
+            self.stop(world(kind, (P, lambda body: {"full_name": AW.REPO, "private": False})), [named], "no field")
+        private = put("visibility", AW.REPO, value="private")
+        self.stop(rebased(world("toy"), private), [named])
+        self.assertEqual(check(rebased(world("toy", seen("private")), private))["reasons"], [])
+        self.stop(rebased(world("toy", seen("internal")), private), [named])
+
+    def test_every_repository_the_baseline_names_is_read(self):
+        other = "/repos/acme/referee"
+        w = rebased(world("toy"), put("visibility", "acme/referee", value="private"))
+        with self.assertRaisesRegex(DC.Unusable, r"GET /repos/acme/referee answered 404"):
+            check(w)
+        w.gh.overrides[("GET", other)] = (200, {"visibility": "private"})
+        del w.gh.requests[:]
+        self.assertEqual(check(w)["reasons"], [])
+        self.assertEqual([path for _, path, _ in w.gh.requests], READS["toy"][:-1] + [other, P])  # in the names' order
+        w.gh.overrides[("GET", other)] = (200, {"visibility": "public"})
+        self.stop(w, ["visibility_changed:acme/referee"])
+        change(w.gh, P, lambda body: dict(body, visibility="private"))
+        self.stop(w, ["visibility_changed:acme/referee", "visibility_changed:" + AW.REPO])
+        w.gh.overrides[("GET", other)] = (200, ["public"])
+        with self.assertRaises(DC.Unusable):
+            check(w)
+
+    def test_a_hash_of_the_checkout_other_than_the_recorded_one_is_a_hard_stop(self):
+        reasons = {"constitutional_sha256": "constitutional_hash_mismatch", "vectors_sha256": "vectors_hash_mismatch",
+                   "seats_sha256": "seats_hash_mismatch"}
+        self.assertEqual(set(reasons), set(AW.checkout_hashes()))
+        for key, reason in reasons.items():
+            for kind in ("toy", "copy"):
+                self.stop(world(kind), [reason], key, hashes=hashes(**{key: "0" * 64}))
+            # the recorded one changed instead
+            self.stop(rebased(world("toy"), put("hashes", key, value="0" * 64)), [reason], key)
+        self.stop(world("toy"), sorted(reasons.values()), hashes=dict.fromkeys(reasons, "0" * 64))
+        # one hash in another's place is not that hash
+        held = AW.checkout_hashes()
+        self.assertEqual(len(set(held.values())), 3)
+        self.stop(world("toy"), ["seats_hash_mismatch", "vectors_hash_mismatch"],
+                  hashes=hashes(vectors_sha256=held["seats_sha256"], seats_sha256=held["vectors_sha256"]))
+        # beside a fact of the target
+        self.stop(world("toy", (WORKFLOWS, CASES["a workflow on the toy"][2])),
+                  ["toy_workflows", "vectors_hash_mismatch"], hashes=hashes(vectors_sha256="0" * 64))
+
+    def test_hashes_not_of_the_form_are_unusable_and_nothing_is_read(self):
+        w = world("toy")
+        good = AW.checkout_hashes()
+        with self.assertRaisesRegex(DC.Unusable, r"\Ahashes must be "):
+            DC.check(w.gh, w.files["summary.json"], None, "toy", AW.TS)
+        for bad in ({}, [], {k: v for k, v in good.items() if k != "seats_sha256"}, dict(good, more="0" * 64),
+                    dict(good, vectors_sha256=good["vectors_sha256"].upper()), dict(good, seats_sha256=None),
+                    dict(good, constitutional_sha256="0" * 63)):
+            with self.assertRaisesRegex(DC.Unusable, r"\Ahashes must be ", msg=bad):
+                check(w, hashes=bad)
+        self.assertEqual(w.gh.requests, [])
+
+    def test_an_operator_check_after_the_clock_is_unusable_and_nothing_is_read(self):
+        w = world("toy")
+        for now in (later(-1), later(-WEEK), "2025-01-01T00:00:00Z"):
+            with self.assertRaisesRegex(DC.Unusable, r"\Asummary.json: drift.operator_checked_at is after now\Z"):
+                check(w, now=now)
+            with self.assertRaises(DC.Unusable):   # not answered as a mismatch before it either
+                check(w, now=now, repo="acme/other")
+        self.assertEqual(w.gh.requests, [])
+        self.assertEqual(check(w, now=later(0))["ok"], True)   # the same second is not after
+
+    def test_every_reason_against_the_baseline_has_a_case_here(self):
+        with open(DC.__file__, encoding="utf-8") as fh:
+            source = fh.read()
+        named = {r for r in ("writer_app_permissions_changed", "rulesets_changed", "visibility_changed:%s",
+                             "constitutional_hash_mismatch", "vectors_hash_mismatch", "seats_hash_mismatch")
+                 if '"%s"' % r in source}
+        self.assertEqual(len(named), 6)
+        self.assertEqual(set(DC.HASH_REASONS.values()), {r for r in named if r.endswith("_hash_mismatch")})
+
+
+def sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+class Held(unittest.TestCase):
+    """``drift.check.held``: tohum/01c's three hashes of a checkout, each expected value computed here by
+    ``hashlib`` over literal bytes."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = tmp.name
+
+    def tree(self, files: dict) -> str:
+        """A new folder under the test's directory holding ``files``."""
+        root = tempfile.mkdtemp(dir=self.root)
+        AW.write_checkout(root, files)
+        return root
+
+    def test_the_three_hashes_of_a_checkout(self):
+        AW.write_checkout(self.root)
+        self.assertEqual(DC.held(self.root), AW.checkout_hashes())
+        # what is beside the three is not read
+        AW.write_checkout(self.root, {"setup/summary.json": b"{}", "vectorsx/a": b"1", "README.md": b"x"})
+        self.assertEqual(DC.held(self.root), AW.checkout_hashes())
+        for path, key in (("vectors/cases.json", "vectors_sha256"), ("seats/rival.json", "seats_sha256")):
+            before = DC.held(self.root)
+            AW.write_checkout(self.root, {path: AW.CHECKOUT[path] + b" "})
+            self.assertEqual({k for k, v in DC.held(self.root).items() if v != before[k]}, {key})
+        for gone in ("policy.json", "vectors", "seats"):
+            root = self.tree(AW.CHECKOUT)
+            (os.remove if gone == "policy.json" else __import__("shutil").rmtree)(os.path.join(root, gone))
+            with self.assertRaises(DC.Unusable, msg=gone):
+                DC.held(root)
+
+    def test_a_folder_s_hash_is_the_page_s_recipe(self):
+        # content sha256, two spaces, the path with "/", LF; the lines sorted (not the names), joined, sha256
+        files = {"b.json": b"one\n", "a/z.txt": b"", "a/b/c": b"\x00\xff"}
+        lines = sorted(["%s  b.json\n" % sha(b"one\n"), "%s  a/z.txt\n" % sha(b""), "%s  a/b/c\n" % sha(b"\x00\xff")])
+        self.assertNotEqual(lines, sorted(lines, key=lambda line: line[66:]))  # the two orders differ here
+        want = sha("".join(lines).encode())
+        self.assertEqual(DC.folder_hash(self.tree(files)), want)
+        # a folder without a file has the hash of no line, and an empty folder inside is no line
+        self.assertEqual(DC.folder_hash(self.tree({})), sha(b""))
+        root = self.tree(files)
+        os.makedirs(os.path.join(root, "a", "empty"))
+        self.assertEqual(DC.folder_hash(root), want)
+        # a file's bytes, its name and its place are each in the hash; the folder's own name is not
+        for other in (dict(files, **{"b.json": b"one"}), {"c.json": b"one\n", "a/z.txt": b"", "a/b/c": b"\x00\xff"},
+                      {"a/b.json": b"one\n", "a/z.txt": b"", "a/b/c": b"\x00\xff"}, dict(files, more=b"")):
+            self.assertNotEqual(DC.folder_hash(self.tree(other)), want, other)
+        self.assertEqual(DC.folder_hash(self.tree(files)), want)
+        # a name that is not ASCII is its UTF-8 bytes
+        self.assertEqual(DC.folder_hash(self.tree({"\u00e7": b"x"})), sha(("%s  \u00e7\n" % sha(b"x")).encode("utf-8")))
+
+    def test_a_link_or_what_is_no_regular_file_is_refused(self):
+        files = {"a.json": b"1", "sub/b.json": b"2"}
+        outside = self.tree({"x": b"1"})
+
+        def linked_file(root):
+            os.symlink(os.path.join(root, "a.json"), os.path.join(root, "link.json"))
+
+        def linked_file_below(root):
+            os.symlink(os.path.join(outside, "x"), os.path.join(root, "sub", "x"))
+
+        def linked_folder(root):
+            os.symlink(outside, os.path.join(root, "more"))
+
+        def dangling(root):
+            os.symlink(os.path.join(root, "nothing"), os.path.join(root, "gone"))
+
+        def fifo(root):
+            os.mkfifo(os.path.join(root, "sub", "pipe"))
+
+        def not_utf8(root):
+            with open(os.path.join(os.fsencode(root), b"\xff.json"), "wb") as fh:
+                fh.write(b"1")
+
+        for how in (linked_file, linked_file_below, linked_folder, dangling, fifo, not_utf8):
+            root = self.tree(files)
+            how(root)
+            with self.assertRaises(DC.Unusable, msg=how.__name__):
+                DC.folder_hash(root)
+        # the folder itself: absent, a file, a link to a folder
+        root = self.tree(files)
+        for name in ("absent", "a.json"):
+            with self.assertRaisesRegex(DC.Unusable, "is not a directory of the checkout", msg=name):
+                DC.folder_hash(os.path.join(root, name))
+        os.symlink(os.path.join(root, "sub"), os.path.join(root, "alias"))
+        with self.assertRaisesRegex(DC.Unusable, "is not a directory of the checkout"):
+            DC.folder_hash(os.path.join(root, "alias"))
+        self.assertEqual(DC.folder_hash(os.path.join(root, "sub")), sha(("%s  b.json\n" % sha(b"2")).encode()))
+
+    def test_the_constitutional_hash_is_of_that_object_s_canonical_form(self):
+        policy = b'{"operating": {"ratio": 0.5}, "constitutional": {"b": [1, "0.220000"], "a": {"\\u00e7": null}}}'
+        want = sha('{"a":{"\u00e7":null},"b":[1,"0.220000"]}'.encode("utf-8"))
+        self.assertEqual(DC.constitutional_hash(policy), want)   # a float beside the object is not in the hash
+        self.assertEqual(DC.constitutional_hash(b' {"constitutional":{"a":{"\xc3\xa7":null},"b":[1,"0.220000"]}}\n'), want)
+        self.assertNotEqual(DC.constitutional_hash(policy.replace(b"0.220000", b"0.230000")), want)
+        self.assertEqual(DC.constitutional_hash(b'{"constitutional": {}}'), sha(b"{}"))
+
+    def test_a_policy_that_has_no_such_hash_is_unusable(self):
+        # tohum/01c "Politikanın sayıları": a JSON float there is policy_invalid, the path named
+        floats = {b'{"constitutional": {"a": 1, "confidence_level": 0.95}}': "constitutional.confidence_level",
+                  b'{"constitutional": {"z": 0.5, "stage_params": {"x": [1, {"y": 1.0}]}}}':
+                      "constitutional.stage_params.x.1.y",
+                  b'{"constitutional": {"cap": 1e2}}': "constitutional.cap"}
+        for policy, path in floats.items():
+            with self.assertRaisesRegex(DC.Unusable, r"\Apolicy_invalid:%s " % path.replace(".", r"\."), msg=policy):
+                DC.constitutional_hash(policy)
+        for policy in (b"", b"[]", b"{}", b'{"constitutional": []}', b'{"constitutional": null}', b"\xff",
+                       b'{"constitutional": {"a": 1, "a": 1}}', b'{"constitutional": {"a": NaN}}',
+                       b'{"operating": {"constitutional": {}}}'):
+            with self.assertRaises(DC.Unusable, msg=policy):
+                DC.constitutional_hash(policy)
+        AW.write_checkout(self.root, dict(AW.CHECKOUT, **{"policy.json": b'{"constitutional": {"cap": 0.5}}'}))
+        with self.assertRaisesRegex(DC.Unusable, r"\Apolicy_invalid:constitutional\.cap "):
+            DC.held(self.root)
+
+
 class Genesis(unittest.TestCase):
     """``activate.genesis`` reads the same facts through ``drift.check``'s rules."""
 
@@ -503,19 +821,21 @@ class Genesis(unittest.TestCase):
         for kind, more in (("toy", [P + "/git/ref/heads/main"]), ("copy", [])):
             w = world(kind)
             self.assertTrue(AC.genesis(w.gh, w.files, "toy")["ok"])
-            self.assertEqual(sorted(p for _, p, _ in w.gh.requests), sorted(READS[kind] + more))
+            self.assertEqual(sorted(p for _, p, _ in w.gh.requests), sorted(GENESIS_READS[kind] + more))
         self.assertIs(AC.Unusable, DC.Unusable)
 
 
 class Cli(unittest.TestCase):
-    def run_cli(self, w: AW.World, stdin: str = '{"target": "toy", "now": "%s"}' % AW.TS, args=None):
+    def run_cli(self, w: AW.World, stdin: str = '{"target": "toy", "now": "%s"}' % AW.TS, args=None, files=None):
+        """The command on a recorded API of ``w``'s answers and a checkout ``ROOT`` holding ``w``'s summary and the
+        operator files ``files`` (``activation_world.CHECKOUT`` when ``None``)."""
         with tempfile.TemporaryDirectory() as tmp:
-            api, summary = os.path.join(tmp, "api.json"), os.path.join(tmp, "summary.json")
+            api, root = os.path.join(tmp, "api.json"), os.path.join(tmp, "checkout")
             with open(api, "w") as fh:
                 json.dump({"%s %s" % key: body for key, (_, body) in w.gh.overrides.items()}, fh)
-            with open(summary, "wb") as fh:
-                fh.write(w.files["summary.json"])
-            proc = subprocess.run([sys.executable, "-m", "drift.check"] + (["check", api, summary] if args is None
+            AW.write_checkout(root, dict(AW.CHECKOUT if files is None else files,
+                                         **{DC.SUMMARY: w.files["summary.json"]}))
+            proc = subprocess.run([sys.executable, "-m", "drift.check"] + (["check", api, root] if args is None
                                                                            else args),
                                   input=stdin.encode(), capture_output=True, cwd=REFEREE)
         return proc.returncode, json.loads(proc.stdout), proc.stderr.decode()
@@ -537,7 +857,9 @@ class Cli(unittest.TestCase):
                     self.run_cli(world(), stdin='{"target": "toy", "now": "2026-10-30"}'),
                     self.run_cli(rebased(world(), lambda d: None)),
                     self.run_cli(world(), stdin='{"target": "other", %s}' % now), self.run_cli(world(), args=["check"]),
-                    self.run_cli(world(), args=["check", "/nonexistent/api", "/nonexistent/summary"])):
+                    self.run_cli(world(), args=["check", "/nonexistent/api", "/nonexistent/root"]),
+                    self.run_cli(world(), files={k: v for k, v in AW.CHECKOUT.items() if k != "policy.json"}),
+                    self.run_cli(world(), files={k: v for k, v in AW.CHECKOUT.items() if not k.startswith("seats/")})):
             self.assertEqual((got[0], got[1]), (2, fault))
             self.assertTrue(got[2].startswith("unusable input: "), got[2])
 
@@ -556,6 +878,13 @@ class Recorded:
 def reads_of(repo: str, kind: str = "toy") -> list[tuple]:
     """The check's reads that name ``repo`` (all but ``/app`` and the installation's list)."""
     return [("GET", path.replace(AW.REPO, repo)) for path in READS[kind] if AW.REPO in path]
+
+
+def reads_of_two() -> list[tuple]:
+    """The reads of t1's check and then t2's that name either repository, in order: each check reads the visibility
+    of both (the baseline names every target's repository), in the names' order, after its own target's facts."""
+    both = [("GET", "/repos/acme/t1"), ("GET", "/repos/acme/t2")]
+    return reads_of("acme/t1")[:-1] + both + reads_of("acme/t2")[:-1] + both
 
 
 class Yaz(TLW.StateBase):
@@ -650,7 +979,7 @@ class Yaz(TLW.StateBase):
         self.assertEqual((out["ok"], out["drift"]),
                          (True, {"checked": ["t1", "t2"], "drifted": {}, "stale": False}), out)
         first_write = next(i for i, (m, _) in enumerate(sent) if m != "GET")
-        reads = reads_of("acme/t1") + reads_of("acme/t2")
+        reads = reads_of_two()
         self.assertEqual([s for s in sent[:first_write] if s in reads], reads)
         self.assertEqual([s for s in sent[first_write:] if s in reads], [])
         self.assertEqual({p.split("/")[3] for m, p in sent[first_write:] if m != "GET"}, {"t1", "t2"})
@@ -662,7 +991,8 @@ class Yaz(TLW.StateBase):
         self.assertEqual((out["ok"], out["target"], out["reason"], [t["ok"] for t in out["targets"]]),
                          (False, "t2", "pulled_invalid", [True, False]), out)
         self.assertEqual(out["drift"], {"checked": ["t1"], "drifted": {}, "stale": False})
-        self.assertEqual(ghs["t2"].requests, [])
+        # of the refused target only what t1's baseline names is read: its repository's visibility
+        self.assertEqual(ghs["t2"].requests, [("GET", "/repos/acme/t2", None)])
 
     # tohum/01c
     def test_a_summary_without_the_baseline_is_unusable_and_nothing_is_written(self):
@@ -723,7 +1053,7 @@ class Yaz(TLW.StateBase):
                          out)
         self.assertNotIn("target", out)
         self.assertEqual(([s for s in sent if s[0] != "GET"], self.signer.payloads), ([], []))
-        self.assertEqual([s for s in sent if s in reads_of("acme/t2")], reads_of("acme/t2"))
+        self.assertEqual([s for s in sent if s in reads_of_two()], reads_of_two())
 
     def test_the_check_is_of_the_repository_d6_writes_to(self):
         self.ready()
@@ -752,6 +1082,69 @@ class Yaz(TLW.StateBase):
         with self.assertRaisesRegex(J.Unusable, r"\Ayaz: WRITER_TOKEN is not set\Z"):
             self.job(WRITER_TOKEN="")
         self.assertEqual(self.gh.requests, [])
+
+
+class YazCheckout(TLW.StateBase):
+    """``yaz`` and the operator files of its checkout (tohum/01c's three hashes; ``Yaz``'s world)."""
+    ready, job = Yaz.ready, Yaz.job
+
+    def test_an_operator_file_other_than_the_recorded_one_stops_the_job(self):
+        self.ready()
+        refs = dict(self.gh.refs)
+        policy = json.loads(AW.CHECKOUT["policy.json"])
+        policy["constitutional"]["monthly_cap_usd"] = "changed"
+        cases = {"vectors_hash_mismatch": {"vectors/chain/V1.json": b'{"row": 2}\n'},
+                 "seats_hash_mismatch": {"seats/more.json": b"{}"},
+                 "constitutional_hash_mismatch": {"policy.json": json.dumps(policy).encode()}}
+        for reason, files in cases.items():
+            AW.write_checkout(self.workspace, files)
+            out = self.job()
+            self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"], out["drift"]),
+                             (False, "drift", [reason], "t1", [],
+                              {"checked": ["t1"], "drifted": {"t1": [reason]}, "stale": False}), out)
+            self.assertEqual((self.writes(), self.gh.refs, self.signer.payloads), ([], refs, []))
+            for path in files:
+                os.remove(os.path.join(self.workspace, *path.split("/")))
+            AW.write_checkout(self.workspace)
+        # the pulled policy is not what is hashed: with another constitutional value than the checkout's, written
+        YazPolicy.repolicied(self, "t1", lambda doc: doc["constitutional"].update(monthly_cap_usd=10001))
+        job = self.job()
+        self.assertEqual((self.line(job)["ok"], job["drift"], bool(self.writes())),
+                         (True, {"checked": ["t1"], "drifted": {}, "stale": False}, True), job)
+
+    def test_a_checkout_without_an_operator_file_is_unusable_and_no_request_is_sent(self):
+        self.ready()
+        refs = dict(self.gh.refs)
+        import shutil
+
+        def no_policy(root):
+            os.remove(os.path.join(root, "policy.json"))
+
+        def no_vectors(root):
+            shutil.rmtree(os.path.join(root, "vectors"))
+
+        def seats_a_file(root):
+            shutil.rmtree(os.path.join(root, "seats"))
+            AW.write_checkout(root, {"seats": b""})
+
+        def a_link_among_the_vectors(root):
+            os.symlink(os.path.join(root, "policy.json"), os.path.join(root, "vectors", "policy.json"))
+
+        def a_float(root):
+            AW.write_checkout(root, {"policy.json": b'{"constitutional": {"monthly_cap_usd": 0.5}}'})
+
+        for how in (no_policy, no_vectors, seats_a_file, a_link_among_the_vectors, a_float):
+            how(self.workspace)
+            with self.assertRaisesRegex(J.Unusable, r"\Ayaz: drift: ", msg=how.__name__):
+                self.job()
+            self.assertEqual((self.gh.requests, self.gh.refs, self.signer.payloads), ([], refs, []), how.__name__)
+            for name in ("vectors", "seats"):
+                path = os.path.join(self.workspace, name)
+                shutil.rmtree(path) if os.path.isdir(path) else os.path.exists(path) and os.remove(path)
+            AW.write_checkout(self.workspace)
+        with self.assertRaisesRegex(J.Unusable, r"\Ayaz: drift: policy_invalid:constitutional\.monthly_cap_usd "):
+            a_float(self.workspace)
+            self.job()
 
 
 ONLINE = {"harness/__init__.py": "", "harness/score.py": "from dispatcher import llm_call\n",
@@ -899,10 +1292,10 @@ class Listed(unittest.TestCase):
         own = {c for c in globals().values() if isinstance(c, type) and issubclass(c, unittest.TestCase)
                and c.__module__ == __name__}
         self.assertEqual(own, set(LISTED))
-        self.assertEqual(len(LISTED), 9)
+        self.assertEqual(len(LISTED), 12)
 
 
-LISTED = (Check, Baseline, Genesis, Cli, Yaz, YazPolicy, Order, YazGenesis, Listed)
+LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)
 
 
 def load_tests(loader, standard, pattern):

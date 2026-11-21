@@ -1641,7 +1641,7 @@ class Router:
             return 200, {"repositories": [{"full_name": p[len("/repos/"):-1]} for p in self.ghs]}
         if path == "/app":
             return next(iter(self.ghs.values()))(method, path, body)
-        [prefix] = [p for p in self.ghs if path.startswith(p)]
+        [prefix] = [p for p in self.ghs if (path + "/").startswith(p) or path.startswith(p[:-1] + "?")]
         self.calls.append((prefix[len("/repos/"):-1], path))
         return self.ghs[prefix](method, path, body)
 

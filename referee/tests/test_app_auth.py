@@ -31,6 +31,7 @@ CLOCK = lambda: datetime.datetime.fromtimestamp(NOW, datetime.timezone.utc)  # n
 KEY = GA.rsa()
 PEM = GA.pem(GA.pkcs1(KEY))
 SECRETS = {J.APP_ID_ENV: str(AW.APP_ID), J.APP_KEY_ENV: PEM}
+APP_ANSWER = {"id": AW.APP_ID, "slug": "snowball-writer", "permissions": AW.APP_PERMISSIONS}  # ``GET /app``'s body
 
 
 def refusal(pem, app_id="4242", now=NOW) -> str:
@@ -395,7 +396,7 @@ class WriterTransport(unittest.TestCase):
         refused the same secret. Each rule of ``action_input`` against the tests' token action, which reads its
         inputs by its own list of code points."""
         world, gh, token = self.world()
-        app = (200, {"id": AW.APP_ID, "slug": "snowball-writer"})
+        app = (200, APP_ANSWER)
 
         def read(app_id, key):
             """``GET /app`` with the secrets as given, after the action made a token from the same two."""
@@ -455,7 +456,7 @@ class WriterTransport(unittest.TestCase):
             transport("GET", "/app", None)
         self.assertEqual(ctx.exception.status, 401)
         at[0] = NOW
-        self.assertEqual(transport("GET", "/app", None), (200, {"id": AW.APP_ID, "slug": "snowball-writer"}))
+        self.assertEqual(transport("GET", "/app", None), (200, APP_ANSWER))
         # another App's id on the same key: not this App's JWT
         other = J.writer_transport(environ(token, **{J.APP_ID_ENV: "4243"}), CLOCK, True, (gh,))
         with self.assertRaises(W.ApiError):

@@ -18,6 +18,7 @@ import shutil
 import tempfile
 
 from fake_github import FakeGitHub
+import github_auth
 import test_loop_cagir
 from ledger import anchor, chain
 from loop import pulled
@@ -108,7 +109,7 @@ def decided() -> dict:
     return {"decisions": out, "merge": "good"}
 
 
-APP_PERMISSIONS = {"checks": "write", "contents": "write", "metadata": "read", "pull_requests": "write"}
+APP_PERMISSIONS = dict(github_auth.APP_PERMISSIONS)  # what ``GET /app`` names and setup records (tohum/01c)
 # The operator files of a referee checkout that tohum/01c's ``drift.hashes`` are over: ``policy.json`` (no float in
 # it: 01c "Politikanın sayıları") and two folders, one with a file below a subfolder.
 CHECKOUT = {"policy.json": test_loop_cagir.policy(),

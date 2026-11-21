@@ -212,8 +212,9 @@ refused tree is ``pulled_invalid``). Then:
   (the one D6, or the activation of a genesis cycle, writes to), through the transport given or, the job's own,
   ``writer_transport`` with the App's credential (``GET /app``; a transport of its own: D6's writer keeps none).
   The job's line carries ``drift`` ``{checked, drifted, stale}``: the ids checked, ``{id: reasons}`` of those with a
-  reason (a rule, the App's scope, a workflow, a difference from the summary's ``drift`` baseline of tohum/01c:
-  ``drift.check``'s list, or ``target_repo_mismatch``) and whether the baseline's ``operator_checked_at`` is more
+  reason (a rule, the App's scope, a workflow, a difference from the summary's ``drift`` baseline of tohum/01c,
+  among them the three hashes of the checkout's operator files, ``policy.json``'s ``constitutional``, ``vectors/``
+  and ``seats/``, read once per job by ``drift.check.held``: ``drift.check``'s list, or ``target_repo_mismatch``) and whether the baseline's ``operator_checked_at`` is more
   than 7 days before the job's clock. Any reason on
   any target ends the job there: ``reason`` ``drift`` with the reasons and id of the first drifted target served,
   ``targets`` ``[]``, exit 1, no target served and nothing written on any; with no reason on any target, a stale
@@ -226,7 +227,9 @@ refused tree is ``pulled_invalid``). Then:
   job's line carries ``policy`` ``{id: reasons}``, ``{}`` on a usable one). ``cek`` refuses the same policy by the
   same judge when it assembles ``pulled``, so a cycle that reaches ``yaz`` with one was pulled by other code. A
   read drift cannot use, an unreadable
-  summary, a summary without the ``drift`` baseline or a secret unset is unusable (exit 2). Not checked, stated: a served target whose ``pulled`` is refused
+  summary, a summary without the ``drift`` baseline, a checkout whose ``policy.json``, ``vectors/`` or ``seats/``
+  has no hash (absent, a link inside, a JSON float under ``constitutional``) or a secret unset is unusable (exit 2,
+  no request sent for the checkout's faults). Not checked, stated: a served target whose ``pulled`` is refused
   or names no repository (``pulled_invalid``, ``units_not_one``, ``target_repo_unsafe``: its own step refuses it
   before any request to it; the targets served before it were checked and are written), and a target of the
   summary the job does not serve (a copy waiting for its gate). A genesis cycle's target is checked here like

@@ -14,25 +14,53 @@ is what genesis held it to, and, since tohum/01c, the baseline setup recorded: t
 The reads, each once, through a transport (``target.write``'s): ``GET /app``, ``GET /installation/repositories``,
 ``GET /repos/{repo}/rules/branches/{brain/state, brain/integration, main}``, ``GET /repos/{repo}/rulesets/{id}`` for
 each ``ruleset_id`` of those three answers; for a ``toy`` ``GET /repos/{repo}/actions/workflows``; for a ``copy``
-``GET /repos/{repo}/actions/permissions``; then ``GET /repos/{repo}/rules/branches/{branch}`` for each branch the
+``GET /repos/{repo}/actions/permissions``; then, for the baseline, ``GET /repos/{repo}/rulesets?per_page=100`` (and
+``&page=2`` and on, while a page holds 100 items), ``GET /repos/{r}`` for each repository ``r`` the baseline's
+``visibility`` names, in the names' order, and ``GET /repos/{repo}/rules/branches/{branch}`` for each branch the
 baseline names that is not one of those three. A read answered other than 200, or a body not of the form read, is
-``Unusable``: no verdict.
+``Unusable``: no verdict. Genesis sends only the reads of ``rules`` and ``actions``: those before the baseline's.
 
 **The baseline** (tohum/01c). A summary without a top-level ``drift`` object is ``Unusable`` (the reasons below are
 never a fallback for it), and so is one whose ``drift`` is not exactly of 01c's form: ``writer_app_id`` an integer;
-``targets`` ``{id: {rulesets: [integer], rules: {branch: 64 lowercase hex}}}`` with an entry for the target checked
-and every ``rules`` key a branch name; ``activity`` ``{operator_logins: [string], not_before}``; ``hashes``
-``{constitutional_sha256, vectors_sha256, seats_sha256}``, each 64 lowercase hex; ``visibility``
-``{repo: "public"|"private"}``; ``operator_checked_at``; no other key at any of these levels; the two times
-``YYYY-MM-DDTHH:MM:SSZ`` of a real date (the one ISO-8601 UTC form read). A ``targets[]`` entry that carries a
-``drift`` key is ``Unusable`` too (01c: never inside ``targets[]``). Compared with it, after the reasons of today:
+``writer_app_permissions`` an object; ``targets`` ``{id: {rulesets: [integer], rules: {branch: 64 lowercase hex}}}``
+with an entry for the target checked, ``rulesets`` ascending without a repeat, every ``rules`` key a branch name
+and ``brain/state``, ``brain/integration`` and ``main`` among them; ``activity`` ``{operator_logins: [string],
+not_before}``; ``hashes`` ``{constitutional_sha256, vectors_sha256, seats_sha256}``, each 64 lowercase hex;
+``visibility`` ``{repo: "public"|"private"}``, every key a repository name (``loop.accepted.repo_name``) and the
+``repo`` of every ``targets[]`` entry of the summary among them; ``operator_checked_at``; no other key at any of
+these levels; the two times ``YYYY-MM-DDTHH:MM:SSZ`` of a real date (the one form 01c reads). A ``targets[]`` entry
+that carries a ``drift`` key is ``Unusable`` too (01c: never inside ``targets[]``), and so is an
+``operator_checked_at`` after ``now``. Compared with it, after the reasons of today:
 
 - ``writer_app_changed``: ``GET /app``'s ``id`` is not the integer ``drift.writer_app_id``;
+- ``writer_app_permissions_changed``: ``GET /app``'s ``permissions`` (absent: null) is not equal, as JSON, to
+  ``drift.writer_app_permissions`` (the keys' order is no difference; ``true`` is not ``1``);
+- ``rulesets_changed``: the set of ``id`` over every page of the target's ruleset list is not the set
+  ``drift.targets.<id>.rulesets`` (an item without an integer ``id`` is ``Unusable``; ``includes_parents`` is not
+  sent: the API's default, as 01c reads it);
+- ``visibility_changed:<repo>``: ``GET /repos/<repo>``'s ``visibility`` is not the recorded string, for each
+  repository ``drift.visibility`` names, the targets' and any other (``internal``, or no such field, differs from
+  both recorded values);
+- ``constitutional_hash_mismatch``, ``vectors_hash_mismatch``, ``seats_hash_mismatch``: the caller's hash of that
+  name (``check``'s ``hashes``, see "The hashes") is not ``drift.hashes``' one;
 - ``rules_changed:<branch>``: for each key of ``drift.targets.<id>.rules``, the hash of that branch's rules as read
   now is not the recorded one. The hash is 01c's: each item of the answer reduced to ``{type, parameters}``
   (``parameters`` absent: ``{}``), the items ordered by the bytes of their RFC 8785 form (``ledger.chain.canonical``),
   sha256 of the RFC 8785 form of that array, lowercase hex. A rule content the canonical form cannot hold (a float)
   is ``Unusable``.
+
+**The hashes** (tohum/01c "Hash tarifleri", "Okumalar ve nedenler"). ``held(root)`` gives the three of a checkout
+of the referee repository, the folder ``root``: ``constitutional_sha256`` is sha256 of the RFC 8785 form of the
+``constitutional`` object of ``root/policy.json`` (``Unusable`` when the file is absent, not JSON or holds no such
+object, and ``policy_invalid:<dotted path>`` when a value there has no canonical form: a JSON float);
+``vectors_sha256`` and ``seats_sha256`` are the tree hash of ``root/vectors`` and ``root/seats``: one line per
+regular file at any depth, ``<sha256 of its bytes>  <path relative to the folder, "/" between names>`` and LF
+(``loop.treehash.line``, the one place the line is written), the lines sorted by their bytes, joined, sha256
+(``loop.treehash.joined``). A link or anything that is neither a regular file nor a folder, at any depth, a name
+that is not UTF-8, and a folder that is absent, a link or no folder are ``Unusable``; a folder holding no file has
+the hash of no line. ``check`` does not read the checkout: its caller passes the three (``loop.job`` computes
+them once per job from ``$GITHUB_WORKSPACE``, the command below from ``ROOT``), and ``hashes`` not of that form
+are ``Unusable``.
 
 **The operator's check** (tohum/01c): ``stale`` is true when ``drift.operator_checked_at`` is more than 7 days
 (604800 s) before ``now``, the caller's clock (exactly 7 days is not stale). It is no reason and no hard stop: the
@@ -66,29 +94,33 @@ One more, of the caller, before any read: ``target_repo_mismatch``: the reposito
 (``loop.job``'s ``yaz`` runs it for every target it serves before it serves the first, writes nothing on any target
 when one has a reason or the check is stale, and ends the job).
 
-Out of scope, stated (none of these is read, so none is promised; the questions that keep them open are seed-082):
+Out of scope, stated (none of these is read, so none is promised):
 
-- of the baseline, validated in form but compared with nothing: ``targets.<id>.rulesets`` (01c names no read for
-  "the ruleset list"), ``hashes`` (the constitutional policy holds floats the canonical form refuses; the trees are
-  hashed "over the git archive"), ``visibility`` (01c names no read) and ``activity`` (the activity API's actors,
-  its window and the bot's identity);
-- a branch the baseline's ``rules`` does not name: only the branches named are hashed (an empty ``rules`` compares
-  none), and no branch is required to be named;
-- an ``operator_checked_at`` later than ``now`` (not stale), and whatever the operator's check covers: other Apps
-  installed on a target, the referee repository's workflow permission, ``bypass_actors`` (tohum/01c: the
-  operator's, recorded only as that time);
-- the writer App's own permissions (``GET /app``'s ``permissions``: the baseline has no field for them);
+- the baseline's ``activity``, validated in form and compared with nothing: tohum/01c's "Etkinlik API'si" (the
+  activity read, its window and actors, Gözcü's ``hard_stop`` row for it) is not built;
+- a clean stop that is "not a red job" with a warning the operator sees (01c): ``stale`` is answered here, and
+  ``loop.job`` still ends such a job with exit 1;
+- the policy a cycle was pulled with (``pulled``'s copy): the hash is of the checkout's ``policy.json`` only, and a
+  float elsewhere in that file than under ``constitutional`` is not looked for here (the readers of those paths
+  refuse it, ``harness.params``);
+- that the checkout is the one setup hashed: file modes, and names git would not check out, are not in the hash;
+- a branch the baseline's ``rules`` names beyond the three is compared, one it does not name is not;
+- whatever the operator's check covers: other Apps installed on a target, the referee repository's workflow
+  permission, ``bypass_actors`` (tohum/01c: the operator's, recorded only as that time);
+- a ruleset list of a parent organization's rulesets beyond what the API's default lists, and a repository of
+  ``visibility`` the writer's token cannot read (``Unusable``: no verdict);
 - a target that is neither ``toy`` nor ``copy`` (``Unusable``, tohum/01c), and so the triggers and secrets of a
   target's workflows: for the two kinds setup knows, no workflow may run at all.
 
 Command line, run from ``referee/``, one JSON line on stdout, the cause on stderr::
 
-    python -m drift.check check API SUMMARY   stdin {"target": id, "now": "YYYY-MM-DDTHH:MM:SSZ"}
+    python -m drift.check check API ROOT   stdin {"target": id, "now": "YYYY-MM-DDTHH:MM:SSZ"}
         -> {ok, hard_stop, reasons, stale}
         exit 0 no drift; 1 a hard stop or a stale operator check (the line says which);
         2 unusable ({"ok": false, "hard_stop": true, "reasons": null, "stale": null})
 
-``API`` is a recorded API (``target.write.Replay``: ``{"GET <path>": body}``), ``SUMMARY`` the summary file.
+``API`` is a recorded API (``target.write.Replay``: ``{"GET <path>": body}``), ``ROOT`` a checkout of the referee
+repository: the folder holding ``setup/summary.json``, ``policy.json``, ``vectors/`` and ``seats/``.
 """
 
 from __future__ import annotations
@@ -287,23 +319,30 @@ def constitutional_hash(policy: bytes) -> str:
                                                     cli.cause(exc))) from None
 
 
-def _files(root: str, rel: str, out: list[bytes]) -> None:
-    try:
-        entries = sorted(os.scandir(os.path.join(root, *rel.split("/")) if rel else root), key=lambda e: e.name)
-    except OSError as exc:
-        raise Unusable("cannot list %s: %s" % (rel or ".", cli.cause(exc))) from None
-    for entry in entries:
-        path = "%s/%s" % (rel, entry.name) if rel else entry.name
-        if entry.is_dir(follow_symlinks=False):
-            _files(root, path, out)
-        elif entry.is_file(follow_symlinks=False):
-            try:
-                name = path.encode("utf-8")
-            except UnicodeEncodeError:
-                raise Unusable("a path that is not UTF-8 under the folder") from None
-            out.append(treehash.line(name, _read(entry.path)))
-        else:
-            raise Unusable("%s is a link or no regular file" % path.encode("utf-8", "backslashreplace").decode())
+def _lines(root: str) -> list[bytes]:
+    """``loop.treehash``'s line of every regular file under the folder ``root`` (no call of itself: a folder's
+    depth is the checkout's, not a bound of this code)."""
+    out: list[bytes] = []
+    folders = [""]
+    while folders:
+        rel = folders.pop()
+        try:
+            entries = list(os.scandir(os.path.join(root, *rel.split("/")) if rel else root))
+        except OSError as exc:
+            raise Unusable("cannot list %s: %s" % (rel or ".", cli.cause(exc))) from None
+        for entry in entries:
+            path = "%s/%s" % (rel, entry.name) if rel else entry.name
+            if entry.is_dir(follow_symlinks=False):
+                folders.append(path)
+            elif entry.is_file(follow_symlinks=False):
+                try:
+                    name = path.encode("utf-8")
+                except UnicodeEncodeError:
+                    raise Unusable("a path that is not UTF-8 under the folder") from None
+                out.append(treehash.line(name, _read(entry.path)))
+            else:
+                raise Unusable("%s is a link or no regular file" % path.encode("utf-8", "backslashreplace").decode())
+    return out
 
 
 def folder_hash(root: str) -> str:
@@ -314,9 +353,7 @@ def folder_hash(root: str) -> str:
     file has the hash of no line."""
     if os.path.islink(root) or not os.path.isdir(root):
         raise Unusable("%s is not a directory of the checkout" % os.path.basename(root))
-    lines: list[bytes] = []
-    _files(root, "", lines)
-    return treehash.joined(lines)
+    return treehash.joined(_lines(root))
 
 
 def held(root: str) -> dict[str, str]:

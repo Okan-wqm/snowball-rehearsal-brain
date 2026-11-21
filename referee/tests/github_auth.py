@@ -20,7 +20,8 @@ file's error, to be corrected when a real run shows it):
 
 - a JWT is RS256 under the App's public key, ``iss`` the App's id, ``iat`` not in the future, ``exp`` in the future
   and at most 600 s ahead; a JWT is answered on no repository route (401);
-- the permission each repository route asks (``NEEDS``); ``metadata: read`` is in every token;
+- the permission each repository route asks (``NEEDS``; the repository itself and its ruleset list ask
+  ``metadata: read``, as one ruleset does); ``metadata: read`` is in every token;
 - ``actions/workflows`` asks ``actions: read`` on a private repository and nothing on a public one;
 - a token asked for a permission the App does not hold, or a level above the App's, is not made (422);
 - a repository outside the token's is 404; a route in no row of ``NEEDS`` is 403 (closed: a route the code starts
@@ -68,8 +69,10 @@ def get_input(value: str) -> str:
 
 # (method, route under /repos/{repo}/) -> (permission, level); the first row that matches decides
 NEEDS = [
+    ("GET", r"", ("metadata", "read")),  # the repository itself ("Get a repository")
     ("GET", r"rules/branches/.+", ("metadata", "read")),
     ("GET", r"rulesets/\d+", ("metadata", "read")),
+    ("GET", r"rulesets\?per_page=\d+(&page=\d+)?", ("metadata", "read")),  # "Get all repository rulesets"
     ("GET", r"actions/permissions", ("administration", "read")),
     ("GET", r"actions/workflows", ("actions", "read")),  # nothing on a public repository, see ``https_open``
     ("GET", r"git/ref/heads/.+", ("contents", "read")),
@@ -269,11 +272,11 @@ class GitHub(urllib.request.BaseHandler):
             return "other", 401, {"message": "Bad credentials"}
         if path == "/installation/repositories":
             return ("token",) + tuple(self.fake(method, path, body))
-        m = re.fullmatch(r"/repos/([^/]+/[^/]+)/(.+)", path)
+        m = re.fullmatch(r"/repos/([^/?]+/[^/?]+)(?:/(.+)|(\?.*))?", path)
         if not m or m.group(1) not in grant["repositories"]:
             return "token", 404, {"message": "Not Found"}
         for row_method, route, (name, level) in NEEDS:
-            if row_method == method and re.fullmatch(route, m.group(2)):
+            if row_method == method and re.fullmatch(route, m.group(2) or m.group(3) or ""):
                 free = self.public and (name, level) == ("actions", "read")
                 if not free and LEVELS.get(grant["permissions"].get(name), 0) < LEVELS[level]:
                     break

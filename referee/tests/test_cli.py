@@ -664,7 +664,14 @@ class Walks(unittest.TestCase):
         finally:
             case.doCleanups()
 
+    def walk_unhashable(self):
+        from drift import check
+        policy = '{"constitutional":' + '{"a":' * (cli.DEPTH - 1) + "0.5" + "}" * cli.DEPTH
+        with self.assertRaisesRegex(check.Unusable, r"\Apolicy_invalid:constitutional(\.a){%d} " % (cli.DEPTH - 1)):
+            check.constitutional_hash(policy.encode())  # the float at the deepest level is the path named
+
     WALKS = {"ledger/chain.py": {"_canon": walk_canon},
+             "drift/check.py": {"_unhashable": walk_unhashable},
              "ledger/schema.py": {"no_float": walk_no_float},
              "status/depmap.py": {"_leaves": walk_leaves},
              "loop/job.py": {"_emit": walk_emit},
