@@ -347,6 +347,12 @@ class FromPolicy(Base):
         cases, findings = [case("c1", 2)], [finding("x", 2)]
         self.assertEqual(self.harness(policy, findings, cases),
                          self.report(findings, cases, alpha=TENTH, window=1, ref_max_lines=30))
+        del policy["constitutional"]["confidence_level"]     # at the root and in another section only: not that key
+        del policy["constitutional"]["stage_params"]["match_window_lines"]
+        with self.assertRaises(HP.Invalid) as ctx:
+            self.harness(policy, findings, cases)
+        self.assertEqual(ctx.exception.reasons, ["policy_invalid:constitutional.confidence_level",
+                                                 "policy_invalid:constitutional.stage_params.match_window_lines"])
 
     def test_a_policy_missing_or_off_a_value_is_no_report_and_no_line(self):
         """Not ``harness_refused`` beside a written cycle: ``Invalid`` leaves ``yaz_harness`` (``run`` stops the job

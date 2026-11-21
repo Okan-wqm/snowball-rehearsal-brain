@@ -46,8 +46,9 @@ planned:
    ``policy_invalid:<path>``; views it cannot read (a lift row of no freeze) are ``Unusable``;
 3. the watcher at the cycle's end: ``gozcu.watch.judge`` again, now with the cycle's rows after the ledger's (its
    merge, its revert, its cost rows; the merge's answer is not read by any view), and ``gozcu.watch.rows`` of its
-   answer: the cycle's ``freeze`` and ``lift`` rows. A threshold absent from the policy leaves its rule unjudged
-   and the cycle is written; the answer names the path. Then
+   answer: the cycle's ``freeze`` and ``lift`` rows. A threshold absent from the policy that is not one of the
+   seven required (tohum/28a) leaves its rule unjudged and the cycle is written; the answer names the path (a
+   required one absent is the ``Refused`` above). Then
    a dry plan: ``ledger.cycle.plan`` of the cycle's rows with the merge's answer left as placeholders and a signer
    that signs nothing (``DRY``): the roots file and the ledger as chains extending themselves (D1's versions are the
    previous ones: nothing was added since), the rows' secret scan, the whole new ledger against ``ledger.schema``,

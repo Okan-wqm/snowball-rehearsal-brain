@@ -28,9 +28,11 @@ What is proven, each by the test named for it:
   ``frozen:regression``, while with ``min_reverts`` 2 the same reverts freeze nothing and the candidate merges;
   the cycle whose freeze passes ``soft_freeze_limit`` is written and its line is ``hard_stop``, the next cycle
   writes nothing and is ``hard_stop``, and at the limit the cycle is not stopped; a policy value the watcher
-  cannot use refuses the write (``policy_invalid:<path>``, nothing written); a ledger whose lift names no freeze
-  is ``state_refused`` (nothing written; ``loop.write_cycle.write`` itself: ``Unusable``); with no threshold in
-  the policy the cycle is written and its line names the thirteen paths unjudged and the unmeasured views.
+  cannot use, or without one of the seven required (tohum/28a), refuses the write (``policy_invalid:<path>``,
+  nothing written; ``loop.write_cycle.write`` itself, since the job stops before it: ``tests/test_drift.py``'s
+  ``YazPolicy``); a ledger whose lift names no freeze is ``state_refused`` (nothing written;
+  ``loop.write_cycle.write`` itself: ``Unusable``); without the six thresholds that are not required the cycle
+  is written and its line names those six paths unjudged and the unmeasured views.
 
 Not proven here: the rules themselves (tests/test_gozcu.py); anything on a real ledger or GitHub; the views this
 loop does not measure (``gozcu.watch.UNMEASURED``); the genesis cycle, which the watcher does not read.

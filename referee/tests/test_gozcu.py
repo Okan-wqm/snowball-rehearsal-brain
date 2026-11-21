@@ -9,8 +9,8 @@ cycle's reading of its ledger is tests/test_gozcu_watch.py's):
   short of firing, the window's two edges, the scope a freeze in force leaves;
 - ``HardStop``: rules 5-6, the soft-freeze limit and each fact of ``HARD_FACTS``;
 - ``Marks``: rules 7-9;
-- ``Thresholds``: the thirteen paths, an absent one named in ``unjudged`` with its rules unjudged, a value off
-  its rule ``Invalid``;
+- ``Thresholds``: the thirteen paths, an absent one of the six not required named in ``unjudged`` with its
+  rules unjudged, an absent one of the seven required (tohum/28a) and a value off its rule ``Invalid``;
 - ``Shapes``: each view off its shape is ``Unusable`` at the place named.
 
 Not shown: "salınım birikimi" (no rule exists, see the module), a cycle that freezes, a gate that closes.
@@ -534,7 +534,7 @@ class Thresholds(unittest.TestCase):
     def test_a_value_off_its_rule_is_invalid_and_nothing_is_judged(self):
         fractions = (P.REGRESSION_REVERT_RATE, P.DRIFT_BOUND, P.SEAT_SIMILARITY)
         for path in P.GOZCU_PATHS:
-            bad = (0, 1, 1.0, 0.0, 0.5, 0.02, 2e-2, 1.5, True, None, "0.5", "0.000000", "1.000000", "0.0200000",
+            bad = (0, 1, 1.0, 0.0, 0.5, 0.02, 2e-2, 1.5, True, None, "0.5", "0.000000", "1.000000", "1.500000", "0.0200000",
                    ["0.500000"]) if path in fractions else (0, -1, 1.5, 0.5, 2.0, True, None, "2", "0.500000", [2])
             for value in bad:
                 with self.subTest(path=path, value=value), self.assertRaises(HP.Invalid) as ctx:
