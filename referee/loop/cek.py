@@ -9,8 +9,8 @@ Rules: asama-0/01 D1 (``çek`` reads, at the SHA the bootstrap referee last acce
 ``brain_commit`` (the accepted SHA); ``summary`` and ``policy``, the bytes of the referee repository's
 ``setup/summary.json`` and ``policy.json``; ``target_id``; ``objects``, a ``loop.gitobj`` object source holding the
 target's commit; ``commit``, that commit's 40-hex id (``brain/integration``'s head); ``state_head``, the
-``brain/state`` head D1 verified, and ``state``, its files of ``target.branches.STATE_CHAINS`` (path -> bytes) as
-verified; ``status``, that head's ``status.md`` (``None`` when it has none), carried as read. ``state/heads.json`` is ``{brain/state: state_head, brain/integration: commit}``, so the head recorded
+``brain/state`` head D1 verified, and ``state``, its files of ``target.branches.STATE_CHAINS`` and those of ``STATE_REGISTERS`` it
+has (path -> bytes) as verified; ``status``, that head's ``status.md`` (``None`` when it has none), carried as read. ``state/heads.json`` is ``{brain/state: state_head, brain/integration: commit}``, so the head recorded
 for the tree is the commit the tree was read from. Nothing here reads the network or a clock.
 
 **Rules**, every reason that holds is listed (``PulledError``; ``out`` is not created):
@@ -70,7 +70,8 @@ for the tree is the commit the tree was read from. Nothing here reads the networ
   ``units.json`` of another shape names none, and ``loop.pulled.read`` or the jobs after refuse it) and the
   commit's id as the seed; the proposal is the artifact's ``mutations.json`` (``loop.pulled``, "Mutations"),
   which ``kos`` runs and ``yaz`` judges (``cases.build``).
-- ``state_incomplete``: ``state`` does not map exactly the paths of ``STATE_CHAINS`` to bytes;
+- ``state_incomplete``: ``state`` does not map the paths of ``STATE_CHAINS``, and none besides those of
+  ``STATE_REGISTERS``, to bytes;
   ``heads_invalid``: ``state_head`` or ``commit`` is not 40 lowercase hex, ``state_head`` ``None`` (the genesis
   cycle) only with both chains empty and no ``status`` (``loop.pulled.write``'s rules).
 

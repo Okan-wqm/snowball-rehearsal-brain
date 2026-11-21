@@ -24,10 +24,17 @@ has no previous version: its files are verified as chains only. A head with more
 - with a parent: ``previous_missing:<path>`` (the parent's tree has no file entry there) and
   ``not_append_only:<path>:<line>`` (a line of the parent's file is not, byte for byte, the same line of the
   head's: changed, moved or gone), judged only on a file that is a valid chain;
+- for each file of ``target.branches.STATE_REGISTERS`` (``findings.jsonl``, ``unresolved.jsonl``: absent until
+  their first row, tohum/26j) that the head or the parent has an entry for: ``not_a_file:<path>`` (the head's
+  entry is no file), ``file_missing:<path>`` (the parent has the file and the head has no entry: a state file
+  gone), ``chain_broken:<path>:<line>`` and, against the parent's file or against nothing when the parent has
+  none, ``not_append_only:<path>:<line>``; a register with no row is no reason, and a parent's entry that is no
+  file is not read (that head was refused in its own cycle);
 - a git object reason of either commit (``loop.gitobj``: ``object_missing:<sha>``, ``commit_unreadable``, ...)
   as ``state:<reason>``.
 
-On success: ``{"head", "previous" (the parent or ``None``), "rows" (path -> its number of rows)}``.
+On success: ``{"head", "previous" (the parent or ``None``), "rows" (path -> its number of rows; a register the
+head has no file for is not named)}``.
 
 Out of scope, stated: whether the head is the commit the last cycle wrote and not one more pushed on top of it,
 which is the root's question (MF11's ``ledger.anchor.judge`` of the ledger's root against the last row of
@@ -65,9 +72,15 @@ def _file(source: G.Source, commit: str, path: str) -> bytes | None:
 
 
 def chains(source: G.Source, commit: str) -> dict[str, bytes | None]:
-    """``commit``'s chained files (``STATE_CHAINS``), each its bytes or ``None`` where no file entry is; ``PulledError``
-    for a git object reason, unmarked. Read by ``verify`` and by D1's root check (``loop.job``)."""
-    return {path: _file(source, commit, path) for path in branches.STATE_CHAINS}
+    """``commit``'s chained files (``STATE_CHAINS``), each its bytes or ``None`` where no file entry is, and each
+    file of ``STATE_REGISTERS`` the commit has, its bytes; ``PulledError`` for a git object reason, unmarked. Read
+    by D1's root check and carried to D6 (``loop.job``)."""
+    out = {path: _file(source, commit, path) for path in branches.STATE_CHAINS}
+    for path in branches.STATE_REGISTERS:
+        data = _file(source, commit, path)
+        if data is not None:
+            out[path] = data
+    return out
 
 
 def status(source: G.Source, commit: str) -> bytes | None:
@@ -104,6 +117,28 @@ def verify(source: G.Source, head: str, previous: G.Source | None = None, prev: 
             verdict = chain.verify_bytes(data, old)
             if not verdict["valid"]:
                 reasons.append("not_append_only:%s:%d" % (path, verdict["line"]))
+    for path in branches.STATE_REGISTERS:
+        try:
+            entry = G.lookup(source, head, path)
+            data = _file(source, head, path)
+            old = _file(previous, prev, path) if prev is not None else None
+        except PulledError as exc:
+            reasons += ["state:%s" % r for r in exc.reasons]
+            continue
+        if data is None:
+            if entry is not None:
+                reasons.append("not_a_file:%s" % path)
+            elif old is not None:
+                reasons.append("file_missing:%s" % path)
+            continue
+        verdict = chain.verify_bytes(data)
+        if not verdict["valid"]:
+            reasons.append("chain_broken:%s:%d" % (path, verdict["line"]))
+            continue
+        rows[path] = len(chain._lines(data))
+        verdict = chain.verify_bytes(data, old or b"")
+        if not verdict["valid"]:
+            reasons.append("not_append_only:%s:%d" % (path, verdict["line"]))
     if reasons:
         raise PulledError(list(dict.fromkeys(reasons)))
     return {"head": head, "previous": prev, "rows": rows}

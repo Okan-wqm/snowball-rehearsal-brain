@@ -22,7 +22,11 @@ flaky, sha256, facts}`` (``loop.watch.read``'s verified answer at ``brain/integr
 (``{payload}``) and ``plant`` (``{instance_id, path, content}``) write; an action ``loop.drill`` does not give is
 ``Unusable``; ``gate``, the payload of the toy's ``copy_gate`` row (``harness.pass_row.gate_payload``) when the copy's
 genesis gate opened on this cycle's state, or ``None``; ``passed``, the payload of the toy's PASS row
-(``harness.pass_row.judge``'s ``payload``) when the toy's and the copy's states were judged ``PASS``, or ``None``.
+(``harness.pass_row.judge``'s ``payload``) when the toy's and the copy's states were judged ``PASS``, or ``None``;
+``proposals`` (a list of ``(proposed_by, proposal)``) and ``finding_decisions`` (a list of ``{fingerprint,
+reasons}``), the cycle's input to the finding registry (``findings.write.cycle``, P1 MF8, tohum/26j): both empty
+unless given, and ``loop.job`` gives neither (no proposal and no finding decision exists before P1 MF10-MF12 and
+stage 1 MF1), so every live cycle runs the registry on empty input.
 
 **Order.** Nothing is written on the target before every check holds, and nothing is signed before the rows are
 planned:
@@ -49,6 +53,14 @@ planned:
    answer: the cycle's ``freeze`` and ``lift`` rows. A threshold absent from the policy that is not one of the
    seven required (tohum/28a) leaves its rule unjudged and the cycle is written; the answer names the path (a
    required one absent is the ``Refused`` above). Then
+   the finding registry: ``findings.write.cycle`` of ``pulled``'s ``findings.jsonl`` and ``unresolved.jsonl``
+   (``target.branches.STATE_REGISTERS``; ``b""`` where the head has none) with ``proposals`` and
+   ``finding_decisions`` on the cycle's snapshot, a finding's lines read from ``tree`` (a link is not followed).
+   A file that is no chain is ``target.land.HardStop`` with nothing written, also on empty input; a secret in a
+   proposed row (``ledger.append.SecretRow``) is ``Refused`` with ``state_unwritable``; input of another form is
+   ``Unusable``. The two files as it returns them are the cycle's registers: ``ledger.cycle`` roots them with
+   the ledger and writes the ones that hold a row in the cycle's commit (a cycle with empty input writes the
+   files it read, so a state without them stays without them and its root is the ledger's alone). Then
    a dry plan: ``ledger.cycle.plan`` of the cycle's rows with the merge's answer left as placeholders and a signer
    that signs nothing (``DRY``): the roots file and the ledger as chains extending themselves (D1's versions are the
    previous ones: nothing was added since), the rows' secret scan, the whole new ledger against ``ledger.schema``,
@@ -90,11 +102,13 @@ cap D4 called with).
 
 Returns ``{merge: {candidate, path, pull, head_sha, merge_sha} | None, revert: {reverted, cause, pull, commit,
 merge_sha} | None, plant: {instance_id, pull, head_sha, merge_sha} | None, state_sha, root, rekor_uuid, rows,
-edited, gozcu}``, ``gozcu`` the watcher's answer of step 3 (``{hard_stop, freezes, lifts, marks, unjudged,
+edited, gozcu, findings}``, ``findings`` the registry's ``{rows, unresolved_rows, refused}`` (the numbers of rows
+added to each file and ``findings.write.decide``'s refused decisions), ``gozcu`` the watcher's answer of step 3 (``{hard_stop, freezes, lifts, marks, unjudged,
 unmeasured}``). A hard stop in it (this cycle's freeze passed ``soft_freeze_limit``) does not undo the cycle: it is
 written, with the freeze, and the caller ends red.
 
-Out of scope, stated: what a freeze closes besides D5's merges (``kos`` and ``cagir`` ran before this job, and
+Out of scope, stated: a row of the ledger for what the registry wrote or refused, and a refused proposal's
+element (``findings.write.Observed.refused`` is not returned: its reader comes with MF12); what a freeze closes besides D5's merges (``kos`` and ``cagir`` ran before this job, and
 this cycle's revert, drill and rows are written under a freeze); a record of the hard stop or of the operator's
 restart (the stop is read off the freeze rows each cycle); which drill step is due (``loop.drill``); whether GitHub's ruleset accepts the writes (``target.write``'s known limits); the signer's program (``loop.sign``).
 """
@@ -104,6 +118,7 @@ from __future__ import annotations
 from typing import Any
 
 from dispatcher import llm_call
+from findings import write as findings_write
 from gate import revert as gate_revert
 from gate import sentinel
 from gozcu import evaluate as gozcu_rules
@@ -115,6 +130,7 @@ from ledger import append, cycle, events, schema, serial
 from ledger import cost as ledger_cost
 from loop import cagir
 from loop import pulled as P
+from profile import derive
 from target import branches as B
 from target import land
 from target import write as W
@@ -180,7 +196,8 @@ def candidate_rows(cyc: dict, decided: dict, merged: dict | None, change: dict |
 def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.Writer, signer: Any,
           imports: bytes, cycle_id: str, ts: str, base_lint: dict | None = None,
           end: dict | None = None, drill: dict | None = None, gate: dict | None = None,
-          passed: dict | None = None) -> dict[str, Any]:
+          passed: dict | None = None, proposals: list | None = None,
+          finding_decisions: list | None = None) -> dict[str, Any]:
     """D6, D7's end of a sentinel, D8's step, the gate's and the PASS row (see the module docstring)."""
     cyc = {"cycle_id": cycle_id, "ts": ts, "snapshot_id": art.heads[B.INTEGRATION]}
     merge = decided["merge"]
@@ -263,7 +280,19 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
     judged = watched(dry)  # no view reads what the placeholders stand for
     frozen = watch.rows(cyc, judged)
     try:
-        cycle.plan(*args, dry + frozen, imports, facts, DRY, root_row_id)
+        kept = findings_write.cycle(art.state.get(B.STATE_FINDINGS, b""), art.state.get(B.STATE_UNRESOLVED, b""),
+                                    [] if proposals is None else proposals,
+                                    [] if finding_decisions is None else finding_decisions, cyc["snapshot_id"],
+                                    lambda path: derive._read_regular(tree, path))
+    except append.HardStop as exc:
+        raise land.HardStop("state: %s" % cli.cause(exc), []) from None
+    except append.SecretRow as exc:
+        raise Refused(["state_unwritable: %s" % cli.cause(exc)]) from None
+    except findings_write.Unusable as exc:
+        raise Unusable("findings: %s" % cli.cause(exc)) from None
+    registers = {B.STATE_FINDINGS: kept.findings, B.STATE_UNRESOLVED: kept.unresolved}
+    try:
+        cycle.plan(*args, dry + frozen, imports, facts, DRY, root_row_id, registers)
     except append.HardStop as exc:
         raise land.HardStop("state: %s" % cli.cause(exc), []) from None
     except cycle.FAILURES as exc:
@@ -282,10 +311,12 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
                                     B.CHECK), instance_id=drill["instance_id"])
         planned = cycle.commit(state, "cycle %s" % cycle_id, *args,
                                rows(merged, plant and plant["merge_sha"]) + frozen, imports, facts, signer,
-                               root_row_id)
+                               root_row_id, registers)
     except (W.ApiError, W.Refused) + cycle.FAILURES as exc:
         raise land.HardStop("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     return {"merge": dict(merged, candidate=merge) if merged else None, "revert": reverted, "plant": plant,
             "state_sha": state.commits_made[-1],
             "root": planned["root"], "rekor_uuid": planned["entry"]["uuid"], "rows": len(planned["row_hashes"]),
-            "edited": planned["edited"], "gozcu": judged}
+            "edited": planned["edited"], "gozcu": judged,
+            "findings": {"rows": sum(len(o.rows) for o in kept.observed) + len(kept.decided.rows),
+                         "unresolved_rows": len(kept.decided.unresolved_rows), "refused": kept.decided.refused}}

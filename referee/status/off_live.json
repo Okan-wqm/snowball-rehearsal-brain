@@ -1,8 +1,4 @@
 {
-  "findings.write": {
-    "kind": "unwired",
-    "why": "the finding registry's rows of tohum/26h MF8 (fingerprint, proposal to finding rows, gate decisions to fixed and unresolved rows) as functions over the two files' bytes, run by test 12 (tests/test_findings_write.py) only; no job hands it an adapter proposal, and the write to brain/state with the root over both files is not built (seed-086), so MF8 is not in done_mf"
-  },
   "gate.allowlist": {
     "kind": "unwired",
     "why": "P1 MF9's rules (tohum/26h, test 55): the allowlist read from accept rows, the gate's decision over a package's organ_ids and the accept rows' writer, run by test 55 (tests/test_allowlist.py) only; nothing in the loop calls it until the pages give where a run-time package's organ_ids is read, which organs a cycle enters and when, and a row's evidence run ids (seed-087), so MF9 is not in done_mf"

@@ -10,7 +10,9 @@ in Rekor; a chain break or a root that cannot be signed is a hard stop), tohum/2
 versions the caller last verified: equal to the current ones when nothing was added since; ``b""`` for a target with
 no ``brain/state`` yet, the activation's orphan commit), the head's ``status.md`` (``None`` when it has none), the
 cycle's rows (JSON objects without ``prev_hash`` and ``row_hash``), ``setup/imports.jsonl``'s bytes, the status facts
-``{ts, snapshot_id, row_id, canary_cap_usd_micros}`` (``status.block``'s), the signer and the root row's id.
+``{ts, snapshot_id, row_id, canary_cap_usd_micros}`` (``status.block``'s), the signer and the root row's id;
+``registers``, the cycle's chained state files beside the ledger (a path of ``brain/state``'s commit -> its new
+bytes: ``findings.write``'s files from D6, tohum/26j; none by default).
 
 **Order**, nothing signed or returned before every check holds:
 
@@ -23,14 +25,17 @@ cycle's rows (JSON objects without ``prev_hash`` and ``row_hash``), ``setup/impo
    payload's shape, the old rows included: a loop ledger holds only rows the loop writes), else ``Unusable``;
 5. the root row's id is new in the roots file and ``ts`` is a timestamp (``ledger.anchor.root_row_reasons``), else
    ``Unusable``, before the signer is asked;
-6. the root of the new ledger (``ledger.anchor.root_of``) is signed (``ledger.anchor.anchor``: the tips' bytes, whose
+6. the root of the new ledger and of ``registers`` (``ledger.anchor.tips``: each register that holds a row adds
+   its key, one that is no valid chain is ``Unusable``; ``ledger.anchor.root_of``) is signed
+   (``ledger.anchor.anchor``: the tips' bytes, whose
    sha256 the root is; ``Unsignable``, a ``HardStop``, when it cannot be) and one chained root row is appended.
 
 ``plan`` returns ``{files, row_hashes, root, entry, block_sha256, edited}``. ``files`` maps paths of ``brain/state``'s
 commit to bytes, all under the state directory (``target.branches.STATE_ROOT``, tohum/26d "Yer"): exactly
 ``.brain/ledger.jsonl``, ``.brain/chain/root.jsonl``, ``.brain/status.md`` and the new root's Sigstore bundle as the
 signer gave it, ``.brain/chain/<root>.sigstore.json`` (``ledger.anchor.bundle_path``), beside the root row that names
-that root. The bundles of earlier roots stay where their cycles wrote them. ``plan`` writes nothing. ``commit`` plans
+that root, and each register that is not empty at its path (an empty one is not written: the commit keeps what the
+head has there). The bundles of earlier roots stay where their cycles wrote them. ``plan`` writes nothing. ``commit`` plans
 and hands ``files`` to the state writer in one ``commit_files`` call (``ledger.append.CountingState`` or
 ``TargetState``): the cycle's one commit. The activation opens ``brain/state`` with ``plan``'s files as an orphan
 commit (``target.write.Writer.open_orphan``).
@@ -38,7 +43,8 @@ commit (``target.write.Writer.open_orphan``).
 Out of scope, stated: which rows a cycle writes (the caller's: ``activate`` and D6 of ``yaz``,
 ``loop.write_cycle``, both through ``ledger.events``); where ``status.md`` and the previous versions come from (the
 caller's read of ``brain/state``: D6 takes them from ``pulled``, which D1 filled); the meaning of a row's values
-(``ledger.schema`` checks shapes); what the bundle's bytes are (the signer's: ``loop.sign`` checks the real one
+(``ledger.schema`` checks shapes); a register's rows and that it extends the head's version (``findings.write``
+plans them; here it is rooted and written as given); what the bundle's bytes are (the signer's: ``loop.sign`` checks the real one
 before it answers); a ``profile.json`` in the state directory (no module writes one).
 """
 
@@ -61,7 +67,8 @@ FAILURES = (append.HardStop, append.SecretRow, append.Unusable, Unusable, block.
 
 
 def plan(ledger: bytes, previous: bytes, roots: bytes, previous_roots: bytes, status: bytes | None, rows: Any,
-         imports: bytes, facts: Any, signer: Any, root_row_id: str) -> dict[str, Any]:
+         imports: bytes, facts: Any, signer: Any, root_row_id: str,
+         registers: dict[str, bytes] | None = None) -> dict[str, Any]:
     """The cycle's files and what they record; see the module docstring. Writes nothing."""
     verdict = chain.verify_bytes(roots, previous_roots)
     if not verdict["valid"]:
@@ -76,19 +83,22 @@ def plan(ledger: bytes, previous: bytes, roots: bytes, previous_roots: bytes, st
     reasons = anchor.root_row_reasons(roots, root_row_id, ts)
     if reasons:
         raise Unusable("root row: %s" % "; ".join(reasons))
-    tip_map = anchor.tips(cycle.content)
+    tip_map = anchor.tips(cycle.content, anchor.named(registers))
     root = anchor.root_of(tip_map)
     entry, bundle = anchor.anchor(tip_map, signer)
     files = {anchor.LEDGER_PATH: cycle.content, anchor.ROOTS_PATH: anchor.root_row(roots, root_row_id, ts, root,
                                                                                    entry["uuid"]),
              anchor.bundle_path(root): bundle, block.STATUS_PATH: planned["status"]}
+    files.update({path: data for path, data in (registers or {}).items() if data})
     return {"files": files, "row_hashes": cycle.row_hashes, "root": root, "entry": entry,
             "block_sha256": planned["block_sha256"], "edited": planned["edited"]}
 
 
 def commit(state: Any, message: str, ledger: bytes, previous: bytes, roots: bytes, previous_roots: bytes,
-           status: bytes | None, rows: Any, imports: bytes, facts: Any, signer: Any, root_row_id: str) -> dict[str, Any]:
+           status: bytes | None, rows: Any, imports: bytes, facts: Any, signer: Any, root_row_id: str,
+           registers: dict[str, bytes] | None = None) -> dict[str, Any]:
     """``plan`` and its files in one ``state.commit_files`` call; returns ``plan``'s result."""
-    planned = plan(ledger, previous, roots, previous_roots, status, rows, imports, facts, signer, root_row_id)
+    planned = plan(ledger, previous, roots, previous_roots, status, rows, imports, facts, signer, root_row_id,
+                   registers)
     state.commit_files(planned["files"], message)
     return planned

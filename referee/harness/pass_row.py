@@ -72,7 +72,9 @@ diff no longer applies, so later rows are not its verdict):
   for each reason (a plant whose merge is not yet reverted included: ``not_reverted``); each cause of
   ``DRILL_CAUSES`` needs a ``PASS`` drill whose key has it (``cause_unshown:<cause>``);
 - ``#kok``: one root row per cycle (``roots_per_cycle:<roots>/<cycles>``) and the last root row's ``root`` is the
-  ledger's (``ledger.anchor.root_of``; ``root_mismatch``);
+  state's: the ledger's with the keys of the state's ``registers`` (``target.branches.STATE_REGISTERS`` path ->
+  bytes, tohum/26j; a state given without the key has none) (``ledger.anchor.tips`` and ``root_of``;
+  ``root_mismatch``; a register that is no chain is ``Unusable``);
 - ``#durum``: each cycle holds exactly one ``status`` row (``status_count:<cycle_id>:<n>``);
 - ``#model #belirtec``: some ``cost`` row (``canary_missing``) has outcome ``ok`` (``canary_not_ok``); each ``ok``
   row's ``models_served`` is exactly ``[model_requested]`` (``model_mismatch:<row_id>``); no row's
@@ -287,12 +289,13 @@ def _drills(ledger: bytes, rows: list[dict], drill: dict | None) -> list[str]:
     return out + ["cause_unshown:" + c for c in DRILL_CAUSES if c not in shown]
 
 
-def _roots(ledger: bytes, roots: bytes, rows: list[dict]) -> list[str]:
+def _roots(ledger: bytes, roots: bytes, rows: list[dict], registers: dict[str, bytes] | None) -> list[str]:
     root_rows = _rows(roots)
     cycles = len(_cycles(rows))
     out = [] if len(root_rows) == cycles else ["roots_per_cycle:%d/%d" % (len(root_rows), cycles)]
     last = root_rows[-1]["root"] if root_rows else None
-    mine = anchor.root_of(anchor.tips(ledger)) if rows else None  # an empty ledger has no tip (#genesis names it)
+    # an empty ledger has no tip (#genesis names it); the root covers the state's registers (tohum/26j)
+    mine = anchor.root_of(anchor.tips(ledger, anchor.named(registers))) if rows else None
     return out + ([] if last == mine else ["root_mismatch"])
 
 
@@ -326,7 +329,7 @@ def _target(name: str, state: dict, expect: dict, drill: dict | None, imported: 
              "#kapsama-kaydi": [],  # ledger.schema's merge row requires hunk_covered: judged with the state above
              "#nobetci #hayatta": _sentinels(ledger, run),
              "#geri-alma": _drills(ledger, rows, drill) if name == "toy" else [],
-             "#kok": _roots(ledger, state["roots"], rows), "#durum": _status(rows), "#model #belirtec": _canary(run)}
+             "#kok": _roots(ledger, state["roots"], rows, state.get("registers")), "#durum": _status(rows), "#model #belirtec": _canary(run)}
     return {cond: ["%s:%s" % (name, r) for r in reasons] for cond, reasons in found.items()}
 
 
@@ -462,8 +465,10 @@ def _json(path: str) -> Any:
 
 
 def read_state(root: str) -> dict:
+    paths = [path for path in branches.STATE_REGISTERS if os.path.isfile(os.path.join(root, path))]
     return {"ledger": _read(os.path.join(root, branches.STATE_LEDGER)),
-            "roots": _read(os.path.join(root, branches.STATE_ROOTS))}
+            "roots": _read(os.path.join(root, branches.STATE_ROOTS)),
+            "registers": {path: _read(os.path.join(root, path)) for path in paths}}
 
 
 def read_expectations(root: str) -> dict:

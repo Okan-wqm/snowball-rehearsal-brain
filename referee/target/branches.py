@@ -26,6 +26,11 @@ STATE_LEDGER = STATE_ROOT + "/ledger.jsonl"
 STATE_ROOTS = STATE_ROOT + "/chain/root.jsonl"
 STATE_CHAINS = (STATE_LEDGER, STATE_ROOTS)
 STATE_STATUS = STATE_ROOT + "/status.md"
+# The chained state files beside the ledger (tohum/26, tohum/26j "Kök"): written by ``findings.write`` through D6,
+# absent until their first row, and covered by the cycle's root under their names (``ledger.anchor.tips``).
+STATE_FINDINGS = STATE_ROOT + "/findings.jsonl"
+STATE_UNRESOLVED = STATE_ROOT + "/unresolved.jsonl"
+STATE_REGISTERS = (STATE_FINDINGS, STATE_UNRESOLVED)
 
 
 def state_bundle(root: str) -> str:

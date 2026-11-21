@@ -1,7 +1,7 @@
 """``findings.write``: the finding registry's rows, from an adapter's proposal and from the gate's decisions
-(P1 MF8, test 12 of asama-0/09; the rules only: nothing in the loop calls this module yet).
+(P1 MF8, test 12 of asama-0/09; called by ``yaz``'s D6, ``loop.write_cycle``, through ``cycle``).
 
-Rules: tohum/26h MF8, tohum/26 (the finding's fields and closed sets; both files' rows carry ``prev_hash`` and
+Rules: tohum/26h MF8, tohum/26j "Bulgu yazıcısı" and "Kapalı kapının reddi", tohum/26 (the finding's fields and closed sets; both files' rows carry ``prev_hash`` and
 ``row_hash``; proposed content carries ``proposed_by`` and is stored ``trust: inferred``; no float), tohum/07
 "Bulgu kimliği" and asama-1/13d (the fingerprint, the states, three reopenings), asama-1/05 (a failed fix goes
 to ``unresolved.jsonl`` with its ``cause``).
@@ -37,18 +37,33 @@ to ``unresolved.jsonl`` with its ``cause``).
    the fingerprint (this brain's form), ``proposed_by`` the name ``observe`` was given, ``trust: inferred``.
 7. A fingerprint the file holds is a re-observation. When the finding's last row is ``fixed`` or ``verified`` it
    writes a ``reopened`` row carrying the new observation; when that is the finding's third ``reopened`` row, a
-   ``blocked`` row follows it (``REOPEN_LIMIT``). In every other state, and for a fingerprint seen earlier in
-   the same proposal, it writes nothing and is named in ``reobserved``.
+   ``blocked`` row follows it (``REOPEN_LIMIT``; the three are counted over the finding's whole life). When the
+   last row is ``unresolved`` and the observation's ``snapshot_id`` is not the base its reject was decided on
+   (the ``snapshot_id`` of the finding's last row in the unresolved file, given as ``unresolved``), it writes an
+   ``open`` row, which is no reopening and is not counted; a finding whose last row is ``unresolved`` with no
+   row in that file is ``Unusable``. In every other state (``unresolved`` on the same base, ``open``,
+   ``reopened``, ``withdrawn``, ``blocked``: final in stage 1), and for a fingerprint seen earlier in the same
+   proposal, it writes nothing and is named in ``reobserved``.
 
 **The gate's decisions** (``decide``) are a list of ``{fingerprint, reasons}``, ``reasons`` a list of non-empty
-strings: empty is a merge, anything else a reject (``ledger.events.decided``'s reading).
+strings: empty is a merge, anything else a reject (``ledger.events.decided``'s reading), decided on ``base``
+(the snapshot the cycle judged).
 
-8. Each names a finding whose last row is ``open`` or ``reopened``, once; otherwise ``Unusable`` and nothing is
-   written for any of them.
+8. A reject whose reasons are all standing ones (``ledger.events.standing``: the gate was closed, tohum/26j)
+   writes nothing and leaves its finding as it is, whatever finding it names. Every other decision names a
+   finding whose last row is ``open`` or ``reopened``; one that names no finding of the file
+   (``finding_unknown``) or one in another state (``finding_not_open``: this brain's reading of the same rule)
+   writes nothing and is named in ``refused`` (``{index, reasons}``): it is that candidate's, not the cycle's,
+   and the other decisions are written. A list that is no list of ``{fingerprint, reasons}``, or that decides
+   one fingerprint twice outside rule 8's rejects, is ``Unusable`` and nothing is written for any of them.
 9. A merge writes the finding's last row again with ``state: fixed``. A reject writes it with ``state:
    unresolved``, and one row in the unresolved file: ``{finding_id, fingerprint, cause, reasons, snapshot_id}``,
-   ``cause`` being ``ledger.events.cause(reasons)`` and ``snapshot_id`` the finding's (this brain's shape: no
-   page gives the unresolved row's).
+   ``cause`` being ``ledger.events.cause(reasons)`` and ``snapshot_id`` ``base`` (tohum/26j).
+
+**A cycle** (``cycle``), what ``yaz`` calls once per cycle: each ``(proposed_by, proposal)`` of ``proposals`` in
+order through ``observe``, then ``decisions`` through ``decide`` on the cycle's base; both files are verified
+against themselves as read (rule 10) also when both lists are empty, which is every cycle of P1: no proposal
+and no finding decision reaches ``yaz`` before the candidate path of P1 MF10-MF12 and stage 1 MF1.
 
 **The files.**
 
@@ -58,10 +73,11 @@ strings: empty is a merge, anything else a reject (``ledger.events.decided``'s r
 11. ``findings_reasons`` and ``unresolved_reasons`` say what in a file does not conform: the chain, then each
     row's shape (``finding_id`` is ``f-`` and its ``fingerprint``; a finding row's ``trust`` in tohum/26's set). A float breaks the chain (``ledger.chain``).
 
-Out of scope, stated (seed-086): writing either file to ``brain/state`` and covering it by the signed root
-(tohum/26 says the root covers every chain; ``ledger.anchor`` roots the ledger's parts, and these rows have no
-part); who writes ``verified`` and ``withdrawn`` (no page names the trigger; they are read here, never
-written); retrying a ``blocked`` or ``unresolved`` finding; whether a ref exists in the snapshot
+Out of scope, stated: writing the files to ``brain/state`` and their keys in the signed root
+(``loop.write_cycle``, ``ledger.cycle``, ``ledger.anchor.tips``); where a proposal and a decision's fingerprint
+come from (P1 MF10-MF12); turning a ``refused`` decision into its candidate's reject row (the caller's, with
+MF12); two decisions of one finding in one cycle; who writes ``verified`` and ``withdrawn`` (no page names the
+trigger; they are read here, never written); retrying a ``blocked`` finding; whether a ref exists in the snapshot
 (``harness.score.sift``); the per-class ``op`` sets of ``policy.json``; that a re-derived fingerprint equals a
 stored row's (form 2 needs the tree of that row's snapshot).
 """
@@ -232,9 +248,24 @@ class Observed:
     refused: list[dict]         # {index, reasons} of each refused element
 
 
-def observe(findings: bytes, previous: bytes, proposal: Any, proposed_by: str, read: Read) -> Observed:
+def _observed_state(earlier: dict | None, finding: dict, decided_at: dict[str, str]) -> str | None:
+    """The state an observation of ``finding`` writes after its last row ``earlier``, or None (rules 6 and 7)."""
+    if earlier is None:
+        return "open"
+    if earlier["state"] in REOPENS:
+        return "reopened"
+    if earlier["state"] != "unresolved":
+        return None
+    if earlier["fingerprint"] not in decided_at:
+        raise Unusable("finding %s is unresolved with no row in the unresolved file" % earlier["finding_id"])
+    return None if decided_at[earlier["fingerprint"]] == finding["snapshot_id"] else "open"
+
+
+def observe(findings: bytes, previous: bytes, proposal: Any, proposed_by: str, read: Read,
+            unresolved: bytes = b"") -> Observed:
     """The findings file after an adapter's proposal (rules 5-7, 10)."""
     held = _verified(findings, previous, "findings")
+    decided_at = {row["fingerprint"]: row["snapshot_id"] for row in _verified(unresolved, unresolved, "unresolved")}
     if not isinstance(proposal, list):
         raise Unusable("the proposal is not a list")
     if not (isinstance(proposed_by, str) and proposed_by):
@@ -256,15 +287,15 @@ def observe(findings: bytes, previous: bytes, proposal: Any, proposed_by: str, r
         if print_ is None:
             refused.append({"index": index, "reasons": ["no_line"]})
             continue
-        earlier = last.get(print_)
-        if print_ in seen or (earlier is not None and earlier["state"] not in REOPENS):
+        state = None if print_ in seen else _observed_state(last.get(print_), finding, decided_at)
+        if state is None:
             reobserved.append(print_)
             continue
         seen.add(print_)
         row = dict(finding, finding_id=finding_id(print_), fingerprint=print_, proposed_by=proposed_by,
-                   state="open" if earlier is None else "reopened", trust="inferred")
+                   state=state, trust="inferred")
         rows.append(row)
-        if earlier is not None:
+        if state == "reopened":
             reopened[print_] = reopened.get(print_, 0) + 1
             if reopened[print_] >= REOPEN_LIMIT:
                 rows.append(dict(row, state="blocked"))
@@ -279,33 +310,64 @@ class Decided:
     unresolved: bytes           # the unresolved file after them
     rows: list[dict]            # the finding rows added
     unresolved_rows: list[dict]
+    refused: list[dict]         # {index, reasons} of each decision that names no open finding
 
 
 def decide(findings: bytes, previous: bytes, unresolved: bytes, unresolved_previous: bytes,
-           decisions: Any) -> Decided:
-    """Both files after the gate's decisions (rules 8-10)."""
+           decisions: Any, base: str) -> Decided:
+    """Both files after the gate's decisions on ``base`` (rules 8-10)."""
     last = _last(_verified(findings, previous, "findings"))
     _verified(unresolved, unresolved_previous, "unresolved")
     if not isinstance(decisions, list):
         raise Unusable("the decisions are not a list")
+    if not (isinstance(base, str) and base):
+        raise Unusable("base is not a non-empty string")
     rows: list[dict] = []
     lost: list[dict] = []
+    refused: list[dict] = []
     named: set[str] = set()
     for index, decision in enumerate(decisions):
         found = DECISION(decision, "decision %d" % index)
         if found:
             raise Unusable("; ".join(found))
         print_ = decision["fingerprint"]
+        if events.standing(decision["reasons"]):
+            continue
         if print_ in named:
             raise Unusable("decision %d: a fingerprint decided twice" % index)
         named.add(print_)
         row = last.get(print_)
         if row is None or row["state"] not in DECIDABLE:
-            raise Unusable("decision %d: no finding of that fingerprint is %s" % (index, " or ".join(DECIDABLE)))
+            refused.append({"index": index, "reasons": ["finding_unknown" if row is None else "finding_not_open"]})
+            continue
         if not decision["reasons"]:
             rows.append(_restated(row, "fixed"))
             continue
         rows.append(_restated(row, "unresolved"))
         lost.append({"finding_id": row["finding_id"], "fingerprint": print_, "cause": events.cause(decision["reasons"]),
-                     "reasons": decision["reasons"], "snapshot_id": row["snapshot_id"]})
-    return Decided(_appended(findings, previous, rows), _appended(unresolved, unresolved_previous, lost), rows, lost)
+                     "reasons": decision["reasons"], "snapshot_id": base})
+    return Decided(_appended(findings, previous, rows), _appended(unresolved, unresolved_previous, lost), rows, lost,
+                   refused)
+
+
+# ---------------------------------------------------------------- a cycle
+
+@dataclass
+class Cycle:
+    findings: bytes             # the findings file after the cycle
+    unresolved: bytes           # the unresolved file after it
+    observed: list[Observed]    # ``observe``'s answer per proposal, in order
+    decided: Decided
+
+
+def cycle(findings: bytes, unresolved: bytes, proposals: Any, decisions: Any, base: str, read: Read) -> Cycle:
+    """Both files after one cycle's proposals and decisions; ``findings`` and ``unresolved`` are the files as
+    ``brain/state``'s head holds them (``b""`` for an absent one), the previous versions of every step."""
+    if not (isinstance(proposals, list) and all(isinstance(p, tuple) and len(p) == 2 for p in proposals)):
+        raise Unusable("the proposals are not a list of (proposed_by, proposal)")
+    now, observed = findings, []
+    for proposed_by, proposal in proposals:
+        observed.append(observe(now, findings, proposal, proposed_by, read, unresolved))
+        now = observed[-1].content
+    decided = decide(now, findings, unresolved, unresolved, decisions, base)
+    return Cycle(decided.findings, decided.unresolved, observed, decided)

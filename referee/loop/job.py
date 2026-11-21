@@ -938,7 +938,7 @@ def _expectations(art: Any) -> dict:
 
 
 def _state(art: Any) -> dict:
-    return {"ledger": art.state[B.STATE_LEDGER], "roots": art.state[B.STATE_ROOTS]}
+    return {"ledger": art.state[B.STATE_LEDGER], "roots": art.state[B.STATE_ROOTS], "registers": _registers(art.state)}
 
 
 JUDGE_UNUSABLE = (UnicodeDecodeError, json.JSONDecodeError, RecursionError, PR.Unusable)
@@ -1402,7 +1402,7 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
         with G.GitBatch(brain_dir, git=git, environ=environ) as brain, \
                 G.GitBatch(target_dir, git=git, environ=environ) as objects:
             manifest = C.assemble(brain, brain_sha, files["setup/summary.json"], files["policy.json"], target_id,
-                                  objects, commit, heads[B.STATE], {p: chains[p] for p in B.STATE_CHAINS}, status,
+                                  objects, commit, heads[B.STATE], dict(chains), status,
                                   out)
     except P.PulledError as exc:
         return dict({"reason": "pulled_refused", "reasons": exc.reasons}, heads=heads)
@@ -1444,11 +1444,18 @@ def _cek_state(url: str, head: str, root: str, git: str,
             return {"reason": "state_refused", "reasons": exc.reasons}, {}, None
 
 
+def _registers(state: dict[str, Any]) -> dict[str, bytes]:
+    """The files of ``target.branches.STATE_REGISTERS`` among a head's state files: the ones its root covers
+    beside the ledger (tohum/26j)."""
+    return {p: state[p] for p in B.STATE_REGISTERS if p in state}
+
+
 def _cek_root(chains: dict[str, bytes | None], entries: Any) -> dict[str, Any]:
     """MF11's verify of the root (``ledger.anchor.judge`` with the entry read from Rekor, ``loop.rekor``) on the
-    verified head's files: ``{root, rekor_uuid}`` or ``{reason: root_refused, reasons}``."""
+    verified head's files, its registers under the root with the ledger: ``{root, rekor_uuid}`` or ``{reason:
+    root_refused, reasons}``."""
     try:
-        found = AN.judge(chains[B.STATE_LEDGER], chains[B.STATE_ROOTS], entries)
+        found = AN.judge(chains[B.STATE_LEDGER], chains[B.STATE_ROOTS], entries, AN.named(_registers(chains)))
     except AN.Unusable:
         return {"reason": "root_refused", "reasons": ["root_unreadable"]}
     except RK.RekorError as exc:

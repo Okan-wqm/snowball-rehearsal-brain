@@ -76,6 +76,18 @@ def cause(reasons: list[str]) -> str:
     return "unknown"
 
 
+# tohum/26j "Kapalı kapının reddi": the reasons of a closed gate. They say nothing of the candidate's fix.
+STANDING = ("merge_paused", "sentinel_pending", "no_organ")
+STANDING_PREFIXES = ("frozen:", "organ_unknown:", "organ_not_listed:")
+
+
+def standing(reasons: list[str]) -> bool:
+    """Whether ``reasons`` are a closed gate's reject: not empty, and each a standing reason (tohum/26j). Read by
+    ``findings.write``: such a reject writes no ``unresolved`` row. A ``decision`` row still carries
+    ``cause(reasons)``: the page's "no cause" is not built here."""
+    return bool(reasons) and all(r in STANDING or r.startswith(STANDING_PREFIXES) for r in reasons)
+
+
 def start(cycle: dict) -> dict:
     return row(cycle, "start", "cycle_start", {"cycle_id": cycle["cycle_id"]})
 

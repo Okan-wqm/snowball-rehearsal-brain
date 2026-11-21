@@ -8,7 +8,13 @@ chain break or a root that cannot be written to Rekor is a hard stop), tohum/26 
   verifier) and every row must carry a non-empty string ``part``; otherwise ``Unusable``. ``tips`` maps each part
   that has a row to the stored ``row_hash`` of that part's last row in file order; ``root`` is the lowercase hex
   sha256 of the RFC 8785 bytes of ``tips`` (``ledger.chain.canonical``). An empty ledger has no tip and is
-  ``Unusable``: there is nothing to anchor.
+  ``Unusable``: there is nothing to anchor. **State files** (tohum/26j "Kök", tohum/29zb, group ``root_files``):
+  ``tips(ledger, files)`` with ``files`` a map of a name to the bytes of a chained state file adds, for each file
+  that holds a row, the key ``name`` valued with the stored ``row_hash`` of its last row; a file with no row adds
+  no key, so the root of a state without such a row is the ledger's alone. A file that is not a valid chain, and a
+  name that is a part of the ledger (one key would stand for two chains), are ``Unusable``. In the loop the names
+  are those of ``target.branches.STATE_REGISTERS`` under the state directory (``named``: ``findings.jsonl``,
+  ``unresolved.jsonl``); the command takes each file's base name, and two files of one base name are ``Unusable``.
 - **Anchor** (``anchor``): the signer signs the tips' RFC 8785 bytes (``preimage``), the bytes whose sha256 the
   root is, so the hash of the signed data is the root itself and not a digest of it (tohum/26d "Kök": the Rekor
   record's ``spec.data.hash`` is the root). It answers ``{uuid, identity, bundle}``, ``bundle`` the bytes of the
@@ -37,7 +43,7 @@ chain break or a root that cannot be written to Rekor is a hard stop), tohum/26 
 
 Command line (tohum/29j), run from ``referee/``, one JSON line on stdout, the cause on stderr::
 
-    python -m ledger.anchor root LEDGER                  -> {tips, root}                       exit 0
+    python -m ledger.anchor root LEDGER [STATE_FILE...]  -> {tips, root}                       exit 0
     python -m ledger.anchor anchor SIGNER  stdin {"root"} -> {ok, hard_stop, entry}             exit 0, 1 unsignable
     python -m ledger.anchor verify LEDGER ROOTS REKOR  stdin {"identity"} -> {valid, reasons}   exit 0 valid, 1 not
     exit 2 in all three: unusable input (the line then carries null or empty fields).
@@ -51,6 +57,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -75,7 +82,13 @@ class Unsignable(append.HardStop):
 
 # ---------------------------------------------------------------- root
 
-def tips(ledger: bytes) -> dict[str, str]:
+def named(registers: dict[str, bytes] | None) -> dict[str, bytes]:
+    """``registers`` (a path of ``brain/state``'s commit -> bytes) keyed as the root names them: each file by its
+    name under the state directory."""
+    return {branches.state_name(path): data for path, data in (registers or {}).items()}
+
+
+def tips(ledger: bytes, files: dict[str, bytes] | None = None) -> dict[str, str]:
     verdict = chain.verify_bytes(ledger)
     if not verdict["valid"]:
         raise Unusable("ledger is not a valid chain: %s (%s)" % (verdict["reason"], verdict["broken_row"]))
@@ -88,6 +101,16 @@ def tips(ledger: bytes) -> dict[str, str]:
         out[part] = row["row_hash"]
     if not out:
         raise Unusable("empty ledger: no tip to anchor")
+    for name in sorted(files or {}):
+        verdict = chain.verify_bytes(files[name])
+        if not verdict["valid"]:
+            raise Unusable("%s is not a valid chain: %s (%s)" % (name, verdict["reason"], verdict["broken_row"]))
+        lines = chain._lines(files[name])
+        if not lines:
+            continue
+        if name in out:
+            raise Unusable("%s names a state file and a part of the ledger" % name)
+        out[name] = chain.parse_row(lines[-1].decode("utf-8"))["row_hash"]
     return out
 
 
@@ -184,12 +207,13 @@ def _entries(rekor: Any) -> dict:
     return entries
 
 
-def judge(ledger: bytes, roots: bytes, entry_reasons: Callable[[str, str], list[str] | None]) -> dict:
+def judge(ledger: bytes, roots: bytes, entry_reasons: Callable[[str, str], list[str] | None],
+          files: dict[str, bytes] | None = None) -> dict:
     """The root check with the Rekor entry judged by ``entry_reasons(rekor_uuid, recorded_root)``: ``None`` when
     there is no entry under the uuid, else the entry's reasons in order. ``verify`` gives it the recorded entries;
     the next cycle's D1 (``loop.rekor``) gives it the entry read from Rekor. Returns ``{valid, reasons, root,
-    rekor_uuid}`` (the last root row's)."""
-    current = root_of(tips(ledger))
+    rekor_uuid}`` (the last root row's). ``files`` are the state files the root covers (``tips``)."""
+    current = root_of(tips(ledger, files))
     last = _last_root_row(roots)
     reasons = ["root_mismatch"] if current != last["root"] else []
     found = entry_reasons(last["rekor_uuid"], last["root"])
@@ -239,7 +263,7 @@ def root_row(roots: bytes, row_id: str, ts: str, root: str, rekor_uuid: str) -> 
 
 # ---------------------------------------------------------------- command line
 
-USAGE = ("usage: python -m ledger.anchor root LEDGER | anchor SIGNER < {\"root\"} | "
+USAGE = ("usage: python -m ledger.anchor root LEDGER [STATE_FILE...] | anchor SIGNER < {\"root\"} | "
          "verify LEDGER ROOTS REKOR < {\"identity\"}")
 EMPTY = {"root": {"tips": None, "root": None},
          "anchor": {"ok": False, "hard_stop": False, "entry": None},
@@ -272,8 +296,11 @@ def _emit(obj: dict) -> None:
 def main(argv: list[str]) -> int:
     command = argv[0] if argv else ""
     try:
-        if command == "root" and len(argv) == 2:
-            tip_map = tips(_read(argv[1]))
+        if command == "root" and len(argv) >= 2:
+            names = [os.path.basename(path) for path in argv[2:]]
+            if len(set(names)) != len(names):
+                raise Unusable("two state files of one name")
+            tip_map = tips(_read(argv[1]), {name: _read(path) for name, path in zip(names, argv[2:])})
             _emit({"tips": tip_map, "root": root_of(tip_map)})
             return 0
         if command == "anchor" and len(argv) == 2:

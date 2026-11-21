@@ -13,19 +13,27 @@ What is proven, each by the test named for it:
 - a proposal (``Proposal``): the row written (fields, ``open``, ``f-`` id, ``proposed_by``, ``trust:
   inferred``); every field's refusal; K0-K2 without tool or rule; ``doc_fix`` outside K8; a refused element
   writes nothing and the others are written; what is not a list or has no proposer is ``Unusable``;
-- re-observation (``Reobserved``): nothing is written in ``open``, ``reopened``, ``blocked``, ``unresolved``,
-  ``withdrawn``; ``fixed`` and ``verified`` write ``reopened`` with the new observation; the third ``reopened``
-  is followed by ``blocked`` and the second is not; twice in one proposal is once;
+- re-observation (``Reobserved``): nothing is written in ``open``, ``reopened``, ``blocked``, ``withdrawn``;
+  ``fixed`` and ``verified`` write ``reopened`` with the new observation; the third ``reopened`` is followed by
+  ``blocked`` and the second is not; twice in one proposal is once; an ``unresolved`` finding seen on the base
+  its reject was decided on writes nothing, on another base it is opened with an ``open`` row that no count of
+  reopenings holds, and without its row in the unresolved file it is ``Unusable``;
 - the gate's decisions (``Decisions``): a merge writes ``fixed``; a reject writes ``unresolved`` and the
-  unresolved row with ``ledger.events``'s cause; a finding that is not open or reopened, an unknown or repeated
-  fingerprint, a decision of another shape refuse all of them;
+  unresolved row with ``ledger.events``'s cause and the base it was decided on; a decision naming an unknown
+  finding or one that is not open or reopened is refused alone and the others are written; a reject of standing
+  reasons only writes nothing, a reject with one other reason is written (the standing reasons are the ones
+  their modules give); a repeated fingerprint, a decision of another shape, a base that is no name refuse all;
+- a cycle (``Cycle``): proposals and decisions in order on the files as read, each step extending them; the
+  empty cycle returns both files as they are and still stops on a broken one; proposals of another form are
+  ``Unusable``;
 - the files (``Files``): both are chains ``ledger.chain`` verifies, extended byte for byte; a broken file or one
   that does not extend the previous version is a hard stop, also when nothing would be written; a secret in a
   proposed claim writes nothing; ``findings_reasons`` and ``unresolved_reasons`` on each shape rule;
 - with the scorer (``Scored``): the rows written from two runs of a shifted file are what ``harness.score.sift``
   accepts once each, and the two runs' proposals given the writer's fingerprints fold as re-observations.
 
-Not proven here: anything in a cycle (nothing calls the module); the root over these files.
+Not proven here: ``yaz``'s call and the files on ``brain/state`` (tests/test_loop_write.py); the root over these
+files (tests/test_anchor.py, tests/test_cycle.py).
 """
 
 from __future__ import annotations
@@ -41,13 +49,17 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from findings import write as W  # noqa: E402
+from gate import allowlist as GA  # noqa: E402
+from gozcu import watch as GW  # noqa: E402
 from harness import score as HS  # noqa: E402
 from ledger import append as LA  # noqa: E402
 from ledger import chain as LC  # noqa: E402
+from ledger import events as LE  # noqa: E402
 from ledger import schema as SC  # noqa: E402
 from profile import derive as D  # noqa: E402
 
 SNAP = "s" * 8
+BASE = "b" * 8      # the base a decision is made on: not the finding's own snapshot
 TREE = {"pkg/a.js": b"use strict;\nvar a = 1;\nlet b = 2;\nvar c = 3;\n",
         "pkg/b.js": b"var a = 1;\n"}
 SHIFTED = dict(TREE, **{"pkg/a.js": b"// header\n\nuse strict;\n    var  a = 1;\nlet b = 2;\nvar c = 3;\n"})
@@ -84,6 +96,11 @@ def named(line: int = 2, **over) -> dict:
 
 def observe(data: bytes, proposal: list, tree: dict = TREE, previous: bytes | None = None, by: str = "hunter-1"):
     return W.observe(data, data if previous is None else previous, proposal, by, reader(tree))
+
+
+def observe_on(lost, snap: str):
+    """The finding of ``lost`` (a ``decide`` answer) seen again on ``snap``."""
+    return W.observe(lost.findings, lost.findings, [lint(snapshot_id=snap)], "hunter-1", reader(TREE), lost.unresolved)
 
 
 def chained(rows: list[dict], onto: bytes = b"") -> bytes:
@@ -318,7 +335,7 @@ class Reobserved(unittest.TestCase):
         self.print = stored(self.open)[0]["fingerprint"]
 
     def test_nothing_is_written_while_the_finding_is_not_fixed(self):
-        for state in ("open", "reopened", "blocked", "unresolved", "withdrawn"):
+        for state in ("open", "reopened", "blocked", "withdrawn"):
             with self.subTest(state=state):
                 data = self.open if state == "open" else with_state(self.open, state)
                 out = observe(data, [lint()])
@@ -357,6 +374,44 @@ class Reobserved(unittest.TestCase):
         self.assertEqual([row["state"] for row in other.rows], ["reopened"])
         self.assertEqual(W.REOPEN_LIMIT, 3)
 
+    def test_an_unresolved_finding_is_opened_again_on_another_base_only(self):
+        lost = W.decide(self.open, self.open, b"", b"", [{"fingerprint": self.print, "reasons": ["tests_red"]}], BASE)
+        self.assertEqual(states(lost.findings), ["open", "unresolved"])
+        same = W.observe(lost.findings, lost.findings, [lint(snapshot_id=BASE)], "hunter-1", reader(TREE),
+                         lost.unresolved)
+        self.assertEqual((same.content, same.rows, same.reobserved), (lost.findings, [], [self.print]))
+        # the finding's own first snapshot is not the base of the decision: seen there, it is another base
+        for snap in (SNAP, "later"):
+            out = W.observe(lost.findings, lost.findings, [lint(snapshot_id=snap)], "hunter-2", reader(TREE),
+                            lost.unresolved)
+            self.assertEqual(states(out.content), ["open", "unresolved", "open"])
+            self.assertEqual((out.rows[0]["snapshot_id"], out.rows[0]["proposed_by"], out.reobserved),
+                             (snap, "hunter-2", []))
+        # the base is the one of the finding's last reject, not of an earlier one
+        again = W.decide(out.content, out.content, lost.unresolved, lost.unresolved,
+                         [{"fingerprint": self.print, "reasons": ["tests_red"]}], "later")
+        for snap, want in ((BASE, 1), ("later", 0)):
+            got = W.observe(again.findings, again.findings, [lint(snapshot_id=snap)], "h", reader(TREE), again.unresolved)
+            self.assertEqual(len(got.rows), want, snap)
+        # an open row is no reopening: three of them block nothing, and the count of a later life starts at none
+        data, held = self.open, b""
+        for turn in range(4):
+            lost = W.decide(data, data, held, held, [{"fingerprint": self.print, "reasons": ["tests_red"]}], "b%d" % turn)
+            data, held = observe_on(lost, "n%d" % turn).content, lost.unresolved
+        self.assertEqual((states(data).count("open"), states(data).count("reopened"), states(data).count("blocked")),
+                         (5, 0, 0))
+        # without its row in the unresolved file the finding's base is unknown
+        with self.assertRaises(W.Unusable):
+            observe(lost.findings, [lint()])
+        # another finding's reject does not stand for it
+        other = W.decide(observe(b"", [lint(4)]).content, observe(b"", [lint(4)]).content, b"", b"",
+                         [{"fingerprint": W.fingerprint(lint(4), reader(TREE)), "reasons": ["tests_red"]}], BASE)
+        with self.assertRaises(W.Unusable):
+            W.observe(lost.findings, lost.findings, [lint()], "h", reader(TREE), other.unresolved)
+        # the unresolved file is held to its chain here too
+        with self.assertRaises(LA.HardStop):
+            W.observe(self.open, self.open, [], "h", reader(TREE), lost.unresolved[:-20])
+
     def test_twice_in_one_proposal_is_once(self):
         out = observe(b"", [lint(), lint(claim="again")])
         self.assertEqual((len(out.rows), out.reobserved), (1, [self.print]))
@@ -371,7 +426,7 @@ class Decisions(unittest.TestCase):
 
     def decide(self, decisions, data=None, unresolved=b""):
         data = self.data if data is None else data
-        return W.decide(data, data, unresolved, unresolved, decisions)
+        return W.decide(data, data, unresolved, unresolved, decisions, BASE)
 
     def test_a_merge_fixes_and_a_reject_is_unresolved(self):
         a, b, c = self.prints
@@ -385,12 +440,13 @@ class Decisions(unittest.TestCase):
         lost = stored(out.unresolved)
         self.assertEqual([{k: v for k, v in row.items() if k not in ("prev_hash", "row_hash")} for row in lost],
                          [{"finding_id": "f-" + b, "fingerprint": b, "cause": "test_regression",
-                           "reasons": ["tests_red", "kos:limit"], "snapshot_id": SNAP}])
+                           "reasons": ["tests_red", "kos:limit"], "snapshot_id": BASE}])
+        self.assertEqual(rows[4]["snapshot_id"], SNAP)   # the finding's row keeps the finding's own snapshot
         self.assertEqual(out.unresolved_rows, [{k: v for k, v in lost[0].items() if k not in ("prev_hash", "row_hash")}])
         self.assertEqual((W.findings_reasons(out.findings), W.unresolved_reasons(out.unresolved)), ([], []))
         # the cause is the ledger's reading of the reasons, and the unresolved file grows
         more = W.decide(out.findings, out.findings, out.unresolved, out.unresolved,
-                        [{"fingerprint": c, "reasons": ["ratchet_increase"]}])
+                        [{"fingerprint": c, "reasons": ["ratchet_increase"]}], BASE)
         self.assertEqual([row["cause"] for row in stored(more.unresolved)], ["test_regression", "lint_regression"])
         self.assertTrue(more.unresolved.startswith(out.unresolved))
         for reasons, cause in ((["scope_violation"], "scope_violation"), (["kos:patch"], "unknown")):
@@ -408,17 +464,28 @@ class Decisions(unittest.TestCase):
         a, b, _ = self.prints
         good = {"fingerprint": a, "reasons": []}
         for state in ("fixed", "verified", "withdrawn", "blocked", "unresolved"):
-            with self.subTest(state=state):
-                data = with_state(observe(b"", [lint()]).content, state)
-                with self.assertRaises(W.Unusable):
-                    self.decide([good], data)
-        bad = {"an unknown fingerprint": {"fingerprint": "0" * 64, "reasons": []},
-               "the same fingerprint again": good,
+            for reasons in ([], ["tests_red"]):
+                with self.subTest(state=state, reasons=reasons):
+                    data = with_state(observe(b"", [lint()]).content, state)
+                    out = self.decide([{"fingerprint": a, "reasons": reasons}], data)
+                    self.assertEqual((out.findings, out.unresolved, out.rows, out.unresolved_rows),
+                                     (data, b"", [], []))
+                    self.assertEqual(out.refused, [{"index": 0, "reasons": ["finding_not_open"]}])
+        # a decision naming a finding the file does not hold is refused alone: the others are written
+        lost = {"fingerprint": b, "reasons": ["tests_red"]}
+        for reasons in ([], ["tests_red"]):
+            out = self.decide([{"fingerprint": "0" * 64, "reasons": reasons}, good, lost])
+            self.assertEqual(out.refused, [{"index": 0, "reasons": ["finding_unknown"]}])
+            self.assertEqual([(row["fingerprint"], row["state"]) for row in out.rows], [(a, "fixed"), (b, "unresolved")])
+            self.assertEqual([row["fingerprint"] for row in out.unresolved_rows], [b])
+        self.assertEqual(self.decide([good, lost]).refused, [])
+        self.assertEqual(self.decide([{"fingerprint": "f-" + a, "reasons": []}]).refused,   # an id is no fingerprint
+                         [{"index": 0, "reasons": ["finding_unknown"]}])
+        bad = {"the same fingerprint again": good,
                "no reasons": {"fingerprint": b},
                "reasons that are no list": {"fingerprint": b, "reasons": "tests_red"},
                "an empty reason": {"fingerprint": b, "reasons": [""]},
                "another key": {"fingerprint": b, "reasons": [], "decision": "merge"},
-               "a fingerprint that is none": {"fingerprint": "f-" + b, "reasons": []},
                "not an object": [b]}
         for name, decision in bad.items():
             with self.subTest(name=name):
@@ -426,8 +493,91 @@ class Decisions(unittest.TestCase):
                     self.decide([good, decision])
         with self.assertRaises(W.Unusable):
             self.decide({"decisions": [good]})
+        for base in ("", None, 7):
+            with self.assertRaises(W.Unusable):
+                W.decide(self.data, self.data, b"", b"", [good], base)
         self.assertEqual(len(self.decide([good]).rows), 1)
         self.assertEqual(W.DECIDABLE, ("open", "reopened"))
+
+
+    def test_a_closed_gates_reject_writes_nothing(self):
+        a, b, _ = self.prints
+        closed = ["merge_paused", "sentinel_pending", GA.NO_ORGAN, GA.UNKNOWN + ":o1", GA.NOT_LISTED + ":o1",
+                  GW.FROZEN % "regression", GW.FROZEN % "budget_usd"]
+        for reasons in [[r] for r in closed] + [closed]:
+            with self.subTest(reasons=reasons):
+                self.assertTrue(LE.standing(reasons))
+                # of a known finding, of one already decided in the list, of none at all: the finding is left as it is
+                out = self.decide([{"fingerprint": a, "reasons": reasons}, {"fingerprint": a, "reasons": reasons},
+                                   {"fingerprint": "0" * 64, "reasons": reasons}])
+                self.assertEqual((out.findings, out.unresolved, out.rows, out.unresolved_rows, out.refused),
+                                 (self.data, b"", [], [], []))
+                # one other reason and it is a reject of the fix: written, the cause from the reasons
+                out = self.decide([{"fingerprint": a, "reasons": reasons + ["tests_red"]}])
+                self.assertEqual(([row["state"] for row in out.rows], [row["cause"] for row in out.unresolved_rows]),
+                                 (["unresolved"], ["test_regression"]))
+        # a merge is no reject, and a name that only looks like a standing one is none
+        self.assertFalse(LE.standing([]))
+        for reasons in (["frozen"], ["no_organ:x"], ["organ_unknown"], ["merge_paused:x"], ["x:frozen:regression"],
+                        ["Frozen:regression"], ["sentinel_pending "], ["organ_listed:o1"], ["tests_red"]):
+            with self.subTest(reasons=reasons):
+                self.assertFalse(LE.standing(reasons))
+                self.assertEqual(len(self.decide([{"fingerprint": b, "reasons": reasons}]).unresolved_rows), 1)
+        # after the standing reject the finding can still be decided
+        self.assertEqual(self.decide([{"fingerprint": a, "reasons": ["merge_paused"]}, {"fingerprint": a, "reasons": []}])
+                         .rows[0]["state"], "fixed")
+
+
+class Cycle(unittest.TestCase):
+    def test_proposals_then_decisions_on_the_files_as_read(self):
+        first = W.cycle(b"", b"", [("hunter-1", [lint(), named()]), ("hunter-2", [lint(4), lint()])], [], BASE,
+                        reader(TREE))
+        self.assertEqual([(r["proposed_by"], r["state"]) for r in stored(first.findings)],
+                         [("hunter-1", "open")] * 2 + [("hunter-2", "open")])
+        self.assertEqual(([len(o.rows) for o in first.observed], first.observed[1].reobserved, first.unresolved),
+                         ([2, 1], [stored(first.findings)[0]["fingerprint"]], b""))
+        a, b, c = [row["fingerprint"] for row in stored(first.findings)]
+        # a finding proposed in the cycle is decided in it; each file extends the one read
+        second = W.cycle(first.findings, b"", [("hunter-1", [lint(1, snapshot_id="later")])],
+                         [{"fingerprint": a, "reasons": ["tests_red"]}, {"fingerprint": b, "reasons": []},
+                          {"fingerprint": W.fingerprint(lint(1), reader(TREE)), "reasons": ["ratchet_increase"]},
+                          {"fingerprint": "0" * 64, "reasons": []}], "later", reader(TREE))
+        self.assertTrue(second.findings.startswith(first.findings))
+        self.assertEqual(states(second.findings)[3:], ["open", "unresolved", "fixed", "unresolved"])
+        self.assertEqual([(r["cause"], r["snapshot_id"]) for r in stored(second.unresolved)],
+                         [("test_regression", "later"), ("lint_regression", "later")])
+        self.assertEqual(second.decided.refused, [{"index": 3, "reasons": ["finding_unknown"]}])
+        self.assertTrue(LC.verify_bytes(second.findings, first.findings)["valid"])
+        self.assertEqual((W.findings_reasons(second.findings), W.unresolved_reasons(second.unresolved)), ([], []))
+        # the next cycle: the unresolved file read decides what an observation writes (the same base: nothing)
+        third = W.cycle(second.findings, second.unresolved, [("hunter-1", [lint(snapshot_id="later")]),
+                                                             ("hunter-1", [lint(snapshot_id="after")])], [], "after",
+                        reader(TREE))
+        self.assertEqual(([len(o.rows) for o in third.observed], third.unresolved), ([0, 1], second.unresolved))
+        self.assertEqual(states(third.findings)[7:], ["open"])
+
+    def test_the_empty_cycle_writes_nothing_and_still_verifies(self):
+        data = observe(b"", [lint()]).content
+        lost = W.decide(data, data, b"", b"", [{"fingerprint": stored(data)[0]["fingerprint"], "reasons": ["tests_red"]}],
+                        BASE)
+        for findings, unresolved in ((b"", b""), (data, b""), (lost.findings, lost.unresolved)):
+            out = W.cycle(findings, unresolved, [], [], BASE, reader(TREE))
+            self.assertEqual((out.findings, out.unresolved, out.observed, out.decided.rows, out.decided.refused),
+                             (findings, unresolved, [], [], []))
+        for findings, unresolved in ((data[:-20], b""), (data, lost.unresolved[:-20]),
+                                     (data.replace(b"a var is declared", b"a var was declared"), b"")):
+            with self.assertRaises(LA.HardStop):
+                W.cycle(findings, unresolved, [], [], BASE, reader(TREE))
+
+    def test_what_is_no_cycle_input_is_unusable(self):
+        for proposals in (None, {}, [["hunter-1", []]], [("hunter-1",)], [("hunter-1", [], 1)], [("", [])],
+                          [("hunter-1", {})]):
+            with self.subTest(proposals=proposals):
+                with self.assertRaises(W.Unusable):
+                    W.cycle(b"", b"", proposals, [], BASE, reader(TREE))
+        for decisions, base in ((None, BASE), ([], "")):
+            with self.assertRaises(W.Unusable):
+                W.cycle(b"", b"", [], decisions, base, reader(TREE))
 
 
 class Files(unittest.TestCase):
@@ -443,7 +593,7 @@ class Files(unittest.TestCase):
         self.assertEqual((rows[0]["prev_hash"], rows[1]["prev_hash"]), (LC.ZERO_HASH, rows[0]["row_hash"]))
         self.assertEqual([LC.row_hash(row) for row in rows], [row["row_hash"] for row in rows])
         self.assertEqual(self.two.splitlines()[1], LC.canonical(rows[1]))
-        out = W.decide(self.two, self.two, b"", b"", [{"fingerprint": self.print, "reasons": ["tests_red"]}])
+        out = W.decide(self.two, self.two, b"", b"", [{"fingerprint": self.print, "reasons": ["tests_red"]}], BASE)
         self.assertTrue(LC.verify_bytes(out.findings, self.two)["valid"])
         self.assertTrue(LC.verify_bytes(out.unresolved, b"")["valid"])
         self.assertEqual(stored(out.unresolved)[0]["prev_hash"], LC.ZERO_HASH)
@@ -461,11 +611,11 @@ class Files(unittest.TestCase):
                     with self.assertRaises(LA.HardStop):
                         W.observe(data, previous, proposal, "hunter-1", reader(TREE))
                 with self.assertRaises(LA.HardStop):
-                    W.decide(data, previous, b"", b"", decision)
+                    W.decide(data, previous, b"", b"", decision, BASE)
                 with self.assertRaises(LA.HardStop):             # the unresolved file is held to the same
-                    W.decide(self.two, self.two, data, previous, decision)
+                    W.decide(self.two, self.two, data, previous, decision, BASE)
                 with self.assertRaises(LA.HardStop):             # even when only merges are decided
-                    W.decide(self.two, self.two, data, previous, [{"fingerprint": self.print, "reasons": []}])
+                    W.decide(self.two, self.two, data, previous, [{"fingerprint": self.print, "reasons": []}], BASE)
         # the stop comes before the proposal is judged
         with self.assertRaises(LA.HardStop):
             W.observe(edited, edited, None, "", reader(TREE))
@@ -512,7 +662,7 @@ class Files(unittest.TestCase):
                         .startswith("chain: "))
 
     def test_unresolved_reasons(self):
-        out = W.decide(self.two, self.two, b"", b"", [{"fingerprint": self.print, "reasons": ["tests_red"]}])
+        out = W.decide(self.two, self.two, b"", b"", [{"fingerprint": self.print, "reasons": ["tests_red"]}], BASE)
         row = out.unresolved_rows[0]
         self.assertEqual(W.unresolved_reasons(out.unresolved), [])
         self.assertEqual(W.unresolved_reasons(chained([dict(row, cause=c) for c in SC.CAUSES])), [])
@@ -547,7 +697,7 @@ class Scored(unittest.TestCase):
         self.assertEqual((len(accepted), refused, reobserved), (3, [], 3))
         self.assertEqual([f["fingerprint"] for f in accepted], [row["fingerprint"] for row in rows[:3]])
         # a state row of the same finding is the same identity to the scorer, never a conflict
-        fixed = W.decide(second.content, second.content, b"", b"", [{"fingerprint": rows[0]["fingerprint"], "reasons": []}])
+        fixed = W.decide(second.content, second.content, b"", b"", [{"fingerprint": rows[0]["fingerprint"], "reasons": []}], BASE)
         accepted, refused, reobserved = HS.sift(stored(fixed.findings))
         self.assertEqual((len(accepted), refused, reobserved), (4, [], 1))
 
