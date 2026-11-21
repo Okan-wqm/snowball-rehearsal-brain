@@ -2010,6 +2010,141 @@
    "tests": [
     "test_write.OneWay.test_the_module_that_names_the_push_activity_starts_no_program"
    ]
+  },
+  {
+   "id": "end_stale_red",
+   "file": "loop/job.py",
+   "old": "        return line, 1\n    return warning + \"\\n\" + line, 0",
+   "new": "        return line, 1\n    return warning + \"\\n\" + line, 1",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_stale_no_warning",
+   "file": "loop/job.py",
+   "old": "    return warning + \"\\n\" + line, 0",
+   "new": "    return line, 0",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_warning_after_the_line",
+   "file": "loop/job.py",
+   "old": "    return warning + \"\\n\" + line, 0",
+   "new": "    return line + warning + \"\\n\", 0",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_every_stop_green",
+   "file": "loop/job.py",
+   "old": "    if warning is None:\n        return line, 1",
+   "new": "    if warning is None:\n        return line, 0",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_reason_wins_over_ok",
+   "file": "loop/job.py",
+   "old": "    if out[\"ok\"]:\n        return line, 0\n    warning",
+   "new": "    warning",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_ok_red",
+   "file": "loop/job.py",
+   "old": "    if out[\"ok\"]:\n        return line, 0\n    warning",
+   "new": "    if out[\"ok\"]:\n        return line, 1\n    warning",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_line_unsorted",
+   "file": "loop/job.py",
+   "old": "    line = json.dumps(out, sort_keys=True) + \"\\n\"\n    if out[\"ok\"]:",
+   "new": "    line = json.dumps(out) + \"\\n\"\n    if out[\"ok\"]:",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_policy_stop_clean",
+   "file": "loop/job.py",
+   "old": "CLEAN_STOPS = {\n",
+   "new": "CLEAN_STOPS = {\n    \"policy_unusable\": \"::warning::policy\",\n",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_hard_stop_clean",
+   "file": "loop/job.py",
+   "old": "CLEAN_STOPS = {\n",
+   "new": "CLEAN_STOPS = {\n    \"hard_stop\": \"::warning::stop\",\n",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_drift_clean",
+   "file": "loop/job.py",
+   "old": "CLEAN_STOPS = {\n",
+   "new": "CLEAN_STOPS = {\n    \"drift\": \"::warning::drift\",\n",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_warning_is_a_notice",
+   "file": "loop/job.py",
+   "old": "\"operator_check_stale\": \"::warning title=",
+   "new": "\"operator_check_stale\": \"::notice title=",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "end_warning_two_lines",
+   "file": "loop/job.py",
+   "old": "served and nothing was written; the cycle",
+   "new": "served and nothing was written;\\nthe cycle",
+   "tests": [
+    "test_drift.Yaz.test_a_stale_stop_is_no_red_job_and_warns_the_operator"
+   ]
+  },
+  {
+   "id": "main_ignores_the_ending",
+   "file": "loop/job.py",
+   "old": "            sys.stdout.write(text)\n            return code",
+   "new": "            sys.stdout.write(text)\n            return 1",
+   "tests": [
+    "test_drift.Yaz.test_the_command_ends_as_ending_says"
+   ]
+  },
+  {
+   "id": "main_writes_no_text",
+   "file": "loop/job.py",
+   "old": "            sys.stdout.write(text)\n            return code",
+   "new": "            return code",
+   "tests": [
+    "test_drift.Yaz.test_the_command_ends_as_ending_says"
+   ]
+  },
+  {
+   "id": "main_runs_another_job",
+   "file": "loop/job.py",
+   "old": "ending(run(argv[1], dict(os.environ)))",
+   "new": "ending(run(argv[0], dict(os.environ)))",
+   "tests": [
+    "test_drift.Yaz.test_the_command_ends_as_ending_says"
+   ]
   }
  ]
 }
