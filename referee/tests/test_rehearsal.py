@@ -297,8 +297,8 @@ def step(record: dict) -> dict:
 def toy(merge=None, decisions=None, sentinel=None, drill=None, gate=None, done=("D5", "D6"), genesis=False,
         judged=None) -> dict:
     """The toy's part of an expected record; ``decisions`` default: both candidates' diffs no longer apply (``good``
-    merged at the genesis)."""
-    stale = ["artefact_hash_mismatch", "kos:patch_does_not_apply"]
+    merged at the genesis) and, as ready candidates of a cycle after the genesis, they name no organ (P1 MF9)."""
+    stale = ["artefact_hash_mismatch", "kos:patch_does_not_apply", "no_organ"]
     return {"genesis": genesis, "merge": merge, "decisions": decisions or {"breaks": stale, "good": stale},
             "sentinel": sentinel, "drill": drill, "gate": gate, "pass": judged, "done": list(done)}
 
@@ -438,8 +438,8 @@ class Rehearsal(unittest.TestCase):
         commit = {"action": "commit"}
         d8 = ("D5", "D6", "D8")
         d78 = ("D5", "D6", "D7", "D8")
-        no_base = ["artefact_hash_mismatch", "kos:base_unavailable"]
-        stale = ["artefact_hash_mismatch", "kos:patch_does_not_apply"]
+        no_base = ["artefact_hash_mismatch", "kos:base_unavailable", "no_organ"]
+        stale = ["artefact_hash_mismatch", "kos:patch_does_not_apply", "no_organ"]
         records = self.rehearse(flow)
         self.assert_documented("with-fixtures", records)
         self.assertEqual(records, [

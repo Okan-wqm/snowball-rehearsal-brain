@@ -1149,8 +1149,9 @@ class Yaz(TLW.StateBase):
         del self.gh.requests[:]
         job = self.job()
         out = self.line(job)
+        # (the ready candidate of a cycle after the genesis merges nowhere, P1 MF9: the write is brain/state's)
         self.assertEqual((out["ok"], out["done"], out["merge"], job["drift"]),
-                         (True, ["D5", "D6"], "good", {"checked": ["t1"], "drifted": {}, "stale": False, "activity": {}}), job)
+                         (True, ["D5", "D6"], None, {"checked": ["t1"], "drifted": {}, "stale": False, "activity": {}}), job)
         sent = [(m, path) for m, path, _ in self.gh.requests]
         first_write = next(i for i, (m, _) in enumerate(sent) if m != "GET")
         reads = [("GET", path.replace(AW.REPO, YW.REPO)) for path in READS["toy"]]

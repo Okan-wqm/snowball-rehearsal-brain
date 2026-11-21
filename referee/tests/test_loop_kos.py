@@ -62,6 +62,7 @@ from test_revert_drill import ledger_with, reverted, row  # noqa: E402
 from test_serial import START, merge  # noqa: E402
 from test_kos import A_JS, BREAKS_TEST, FINDING, GOOD, LINT, RAISES, TESTS, operating, recipe  # noqa: E402
 from test_kos import diff as kos_diff  # noqa: E402
+import listed_world as LW  # noqa: E402
 
 TREE = {
     ".nvmrc": "v20.11.1\n",
@@ -149,7 +150,11 @@ class RedAs:
 
 
 class Base(unittest.TestCase):
+    listed = False      # True: the class's tests stand in listed_world's open gate (see that module)
+
     def setUp(self) -> None:
+        if self.listed:
+            LW.name_organ(self)
         self.base = writable_base("t-loopkos-")
         self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
         self.src = os.path.join(self.base, "src")
@@ -165,11 +170,14 @@ class Base(unittest.TestCase):
         if not os.path.exists(os.path.join(served, P.SERVED)):
             os.makedirs(served, exist_ok=True)
             P.write_served(served, [os.path.basename(self.pulled)])
+        state = state_files() if state is None else state
+        if self.listed:
+            state, organs = LW.listed(state), LW.ORGANS if organs is None else organs
         return P.write(self.pulled, target or TARGET, tree_tar if tree_tar is not None else tar_of(self.src),
                        json.dumps(units if units is not None else {"units": [recipe()]}).encode(),
                        policy if isinstance(policy, bytes) else json.dumps(policy or {"operating": operating()}).encode(),
                        cands if cands is not None else {}, HEADS if heads is None else heads,
-                       state_files() if state is None else state, status, accepted, organs,
+                       state, status, accepted, organs,
                        snapshot_of(self.src, target or TARGET) if snapshot is OWN_SNAPSHOT else snapshot,
                        mutations, accept)
 

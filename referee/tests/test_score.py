@@ -812,7 +812,8 @@ class Live(LY.YazBase):
         self.control(LY.OPEN)
         self.github()
         yaz = self.line(self.run_yaz())
-        self.assertEqual(yaz["merge"], "good")
+        # a ready candidate of a cycle after the genesis merges nowhere (P1 MF9, ``no_organ``)
+        self.assertEqual((yaz["merge"], yaz["decisions"]["good"]["reasons"]), (None, ["no_organ"]))
         self.assertEqual((yaz["harness"]["report"]["verdict"], yaz["harness"]["verdict_reason"],
                           yaz["harness"]["report"]["clean_findings"]), ("UNMEASURABLE", "no_cases", 0))
 

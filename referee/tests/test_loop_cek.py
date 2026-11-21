@@ -780,11 +780,11 @@ class CekJob(unittest.TestCase):
                     now=lambda: YW.NOW)
         self.assertEqual((got["ok"], self.one(got)["done"]), (True, ["D5", "D6"]))
         got = self.one(got)
-        # criterion 8 from the ledger cek verified: no merge in it, so good merges
+        # the brain's candidates are ready candidates and this is no genesis cycle: each names no organ and none
+        # merges (P1 MF9, tohum/26j); the genesis cycle's merge through every job is the next test's
         self.assertEqual((got["merge"], {cid: d["reasons"] for cid, d in got["decisions"].items()}),
-                         ("good", {"good": [], "breaks": ["tests_red"]}))
-        self.assertEqual((got["written"]["merge"]["candidate"], gh.refs["brain/integration"]),
-                         ("good", got["written"]["merge"]["merge_sha"]))
+                         (None, {"good": ["no_organ"], "breaks": ["no_organ", "tests_red"]}))
+        self.assertEqual((got["written"]["merge"], gh.refs["brain/integration"]), (None, heads["brain/integration"]))
         # D6 appended cagir's cost row, as the response carried it, onto the ledger cek verified
         ledger = gh.read_file("brain/state", ".brain/ledger.jsonl")
         self.assertTrue(ledger.startswith(self.state_content[self.state_head][".brain/ledger.jsonl"]))

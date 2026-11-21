@@ -713,7 +713,9 @@ class LivePath(LY.YazBase):
         self.control(LY.OPEN)
         self.github()
         yaz = self.line(self.run_yaz())
-        self.assertEqual((yaz["merge"], yaz["cases"]), ("good", {"cases": [], "oracle": {}, "refused": {}}))
+        # a ready candidate of a cycle after the genesis merges nowhere (P1 MF9, ``no_organ``)
+        self.assertEqual((yaz["merge"], yaz["decisions"]["good"]["reasons"], yaz["cases"]),
+                         (None, ["no_organ"], {"cases": [], "oracle": {}, "refused": {}}))
 
 
 if __name__ == "__main__":

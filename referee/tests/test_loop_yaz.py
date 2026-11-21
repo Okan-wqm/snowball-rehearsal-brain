@@ -114,6 +114,8 @@ class Cycle(Base):
 
 
 class OneCycle(Cycle):
+    listed = True
+
     def test_good_merges_bad_rejected_for_their_reasons(self):
         self.kos({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST), "raises": candidate(RAISES)})
         got = self.decide()
@@ -142,6 +144,8 @@ class OneCycle(Cycle):
 
 
 class Criteria(Cycle):
+    listed = True
+
     def test_criterion_1_a_manifest(self):
         self.kos({"good": candidate(MANIFEST)})
         reasons = self.reasons(self.decide())["good"]
@@ -195,6 +199,8 @@ class Criteria(Cycle):
 
 
 class Artifacts(Cycle):
+    listed = True
+
     def test_a_changed_byte_of_a_run_file(self):
         self.kos({"good": candidate(GOOD)})
         with open(self.results("c", "good", "cand.jsonl"), "ab") as fh:
@@ -268,6 +274,8 @@ class YazBase(Cycle):
 
 
 class YazJob(YazBase):
+    listed = True
+
     def test_the_job_runs_d5_with_criterion_8_from_the_state(self):
         self.kos({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
         self.control(OPEN)

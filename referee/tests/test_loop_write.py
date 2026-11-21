@@ -135,6 +135,7 @@ from loop import program as PG  # noqa: E402
 import activation_world as AW  # noqa: E402
 import test_findings_write as TFW  # noqa: E402
 import yaz_world as YW  # noqa: E402
+import listed_world as LW  # noqa: E402
 
 GENESIS_TS = "2026-10-30T12:00:00Z"
 CYCLE = "9-1"
@@ -159,7 +160,13 @@ class StateBase(YazBase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.state = genesis_state()
+        self.state = self.genesis()
+
+    def genesis(self, then: tuple = ()) -> dict[str, bytes]:
+        """``genesis_state`` with the rows of ``then``, after the listed organ's accept row in a ``listed`` class
+        (written by the genesis cycle, under the state's signed root)."""
+        cycle = {"cycle_id": "g", "ts": GENESIS_TS, "snapshot_id": HEADS[B.INTEGRATION]}
+        return genesis_state((tuple(LW.accept_rows(cycle)) if self.listed else ()) + tuple(then))
 
     def write_pulled(self, cands=None, **kw) -> dict:
         kw.setdefault("state", {p: self.state[p] for p in B.STATE_CHAINS})
@@ -240,6 +247,8 @@ class StateBase(YazBase):
 
 
 class D6(StateBase):
+    listed = True
+
     def test_a_cycle_merges_and_writes_one_state_commit(self):
         write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})  # the next cycle's candidate's finding
         out = self.cycle({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
@@ -614,6 +623,8 @@ RED_AT_HEAD = diff("pkg/a.js", ["var a = 1;"], ["let a = 1; // SENTINEL_RED"])
 
 
 class Watching(StateBase):
+    listed = True
+
     """A target with a sentinel command, and the two steps that bring a merge to its watching cycle (no tests here:
     test_gozcu_watch's regression tests share it)."""
 
@@ -802,6 +813,8 @@ def seed_for(catalog: dict, instance_id: str, run: str) -> dict:
 
 
 class D8(StateBase):
+    listed = True
+
     """The revert drill over four cycles on one target: 9-1 commits, 10-1 plants the key's instance as the cycle's
     one merge, 11-1's ``kos`` watches it red and its ``yaz`` reverts it (D7), 12-1 reveals and judges it and commits
     the next drill."""

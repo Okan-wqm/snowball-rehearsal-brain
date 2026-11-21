@@ -281,6 +281,8 @@ class Closed(unittest.TestCase):
 
 
 class Decide(YazBase):
+    listed = True
+
     def test_a_frozen_gate_merges_nothing(self):
         self.kos({"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST)})
         open_ = self.decide()
@@ -340,6 +342,8 @@ class Watched:
 
 
 class Budget(Watched, StateBase):
+    listed = True
+
     policy_doc = policy_of(cap=1)
 
     def test_the_cycle_that_reaches_the_cap_writes_the_freeze(self):
@@ -447,6 +451,8 @@ class HardStop(Watched, StateBase):
 
 
 class Refusals(Watched, StateBase):
+    listed = True
+
     def test_a_threshold_the_watcher_cannot_use_refuses_the_write(self):
         """``write_cycle.write`` itself, called on a ``pulled`` whose policy the job's own stop (``yaz_policy``,
         shown in ``test_loop_yaz``) would not have let through: refused before any write, absent or off its form."""
@@ -470,7 +476,7 @@ class Refusals(Watched, StateBase):
         return ctx.exception.reasons
 
     def test_a_lift_of_no_freeze_refuses_the_state(self):
-        self.state = genesis_state(freeze_rows(GENESIS_TS, lifts=[lifted(start=GENESIS_TS)], cycle_id="g"))
+        self.state = self.genesis(freeze_rows(GENESIS_TS, lifts=[lifted(start=GENESIS_TS)], cycle_id="g"))
         self.policy_doc = policy_of(cap=1)
         out = self.first(5, {"good": candidate(GOOD)})
         self.assertEqual((out["ok"], out["reason"], out["reasons"]),
