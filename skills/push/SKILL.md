@@ -14,7 +14,11 @@ line of a report pushed without a run; founder ledger f1359 onward).
 3. `python3 tests/prepush.py run -j 3`. It runs the whole manifest as `tests/run_like_referee.py` does and writes
    a stamp only when every command is green on a tree that did not change during the run. Red: repair the cause,
    then run again; do not push.
-4. Write the ledger rows with `python -m ledger.founder append` (from `referee/`), then
+4. Write the ledger rows with `python -m ledger.founder append` (from `referee/`). Then
+   `python3 tests/lesson_recheck.py record --snapshot <HEAD's SHA>`: it runs the `recheck` of every lesson in
+   force and appends one row with each result. Not ok: for each lesson it names, repair the code (step 3 again),
+   or close the lesson with a row whose refs carry `closes:<row_id>` and whose summary says why, or replace it
+   with a new lesson that closes it (tohum/26g); a lesson is not left failing unseen. Then
    `python -m ledger.founder check`.
 5. Commit. Then `python3 tests/prepush.py check -j 3`: ok only when the committed tree is the stamped tree and the
    ledger only grew; it runs again the commands that read the ledger. Push only on `"ok": true`. Any reason it
