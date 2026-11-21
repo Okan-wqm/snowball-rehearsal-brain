@@ -9,7 +9,9 @@ tohum/07 (merges are serial: no merge while another merge's sentinel is unfinish
 ``tree``, the directory its ``tree.tar`` was extracted to; ``results``, the ``results`` artifact ``runner.kos`` wrote
 (``index.json``, ``base.jsonl``, ``c/<cid>/{cand.jsonl, checks.json, hashes.json}``); ``control``, ``control.json`` as
 the job's ``control`` step read it; ``unfinished``, the merge SHAs whose sentinel has not finished
-(``ledger.serial.unfinished`` of the ``brain/state`` ledger D1 verified, read by the ``yaz`` job).
+(``ledger.serial.unfinished`` of the ``brain/state`` ledger D1 verified, read by the ``yaz`` job); ``frozen``, the
+``frozen:<trigger>`` reasons of the soft freezes in force that close this loop's merges (``gozcu.watch.closed`` of
+the same ledger; tohum/28, 27a).
 
 **Rules.** Candidates are judged in code-point order of their id. Each one's ``reasons`` are, sorted and unique:
 
@@ -23,6 +25,7 @@ the job's ``control`` step read it; ``unfinished``, the merge SHAs whose sentine
   ``{control, unfinished_sentinels}``. Without ``c/<cid>/hashes.json`` there is nothing whose hash can hold:
   ``artefact_hash_mismatch``. A ``finding.json``, run file or ``hashes.json`` ``gate.check`` cannot use is
   ``candidate_unusable``;
+- every reason of ``frozen`` (tohum/28: the merge gate is closed), so under a freeze no candidate merges;
 - merges are serial: the first candidate with no reason is the cycle's merge; every later one is judged with that
   candidate in ``unfinished_sentinels`` (its merge is written in D6 and its sentinel runs in the next cycle's D7),
   so it carries ``sentinel_pending``.

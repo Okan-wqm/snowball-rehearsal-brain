@@ -1,7 +1,7 @@
 """``gozcu.evaluate`` (P1 MF7; test 41 of asama-0/09): every trigger of tohum/28 on a synthetic input.
 
 What these tests show, on the views and policies they build (no ledger, no job and no file is read here: the
-module is not wired, ``status/off_live.json``):
+cycle's reading of its ledger is tests/test_gozcu_watch.py's):
 
 - ``Quiet``, ``Pure``: the answer's five lists, empty on empty views; the arguments are not changed, the row
   order does not matter, no value is a float, the clock is not read;

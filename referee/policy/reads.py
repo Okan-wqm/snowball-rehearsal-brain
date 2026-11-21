@@ -27,8 +27,8 @@ Rules (each bound by a test in ``tests/test_policy_reads.py``):
    caller names; ``loop.cagir`` and ``loop.write_cycle`` name ``CANARY_USD``), ``harness.params`` (``HARNESS_PATHS``:
    ``score`` for ``loop.job.yaz_harness``, ``planted_max_cases`` for ``loop.cek.assemble``, which hands it to
    ``snapshot.make``; the snapshot ``çek`` makes is a clean one, and a clean snapshot's rules do not use the
-   number), ``gozcu.evaluate.thresholds`` (``GOZCU_PATHS``; no job calls it yet, ``status/off_live.json``, so
-   the command names these thirteen before the loop reads them). ``tests/test_policy_reads.py``'s
+   number), ``gozcu.evaluate.thresholds`` (``GOZCU_PATHS``; ``loop.write_cycle`` calls it through
+   ``gozcu.watch.judge`` with ``pulled``'s policy). ``tests/test_policy_reads.py``'s
    ``Readers`` runs each of these functions on a policy that records every key looked up in it and finds no
    lookup off ``PATHS``; and its register finds the section names as string constants in no other source file.
 

@@ -1,0 +1,284 @@
+{
+ "mutants": [
+  {
+   "id": "watch_plant_revert_counted",
+   "file": "gozcu/watch.py",
+   "old": " and row[\"payload\"][\"merge_sha\"] not in planted:",
+   "new": ":",
+   "tests": [
+    "test_gozcu_watch.Views.test_a_planted_merge_and_its_revert_are_no_events"
+   ]
+  },
+  {
+   "id": "watch_merge_as_revert",
+   "file": "gozcu/watch.py",
+   "old": "seen.append({\"ts\": row[\"ts\"], \"kind\": \"merge\", \"class\": CLASS})",
+   "new": "seen.append({\"ts\": row[\"ts\"], \"kind\": \"revert\", \"class\": CLASS})",
+   "tests": [
+    "test_gozcu_watch.Views.test_merges_and_reverts_are_events_of_class_k0_at_their_rows_times"
+   ]
+  },
+  {
+   "id": "watch_class_k1",
+   "file": "gozcu/watch.py",
+   "old": "CLASS = \"K0\"",
+   "new": "CLASS = \"K1\"",
+   "tests": [
+    "test_gozcu_watch.Views.test_merges_and_reverts_are_events_of_class_k0_at_their_rows_times"
+   ]
+  },
+  {
+   "id": "watch_spend_of_the_year",
+   "file": "gozcu/watch.py",
+   "old": "row[\"ts\"][:7] == now[:7]",
+   "new": "row[\"ts\"][:4] == now[:4]",
+   "tests": [
+    "test_gozcu_watch.Views.test_the_spend_is_the_cost_rows_of_nows_month"
+   ]
+  },
+  {
+   "id": "watch_spend_of_all_time",
+   "file": "gozcu/watch.py",
+   "old": "month = [row for row in rows if row[\"ts\"][:7] == now[:7]]",
+   "new": "month = list(rows)",
+   "tests": [
+    "test_gozcu_watch.Views.test_the_spend_is_the_cost_rows_of_nows_month"
+   ]
+  },
+  {
+   "id": "watch_lift_of_a_lifted",
+   "file": "gozcu/watch.py",
+   "old": "hit = [f for f in out if f[\"lifted\"] is None\n                   and (",
+   "new": "hit = [f for f in out if (",
+   "tests": [
+    "test_gozcu_watch.Views.test_a_lift_of_no_freeze_in_force_is_unusable"
+   ]
+  },
+  {
+   "id": "watch_lift_of_any",
+   "file": "gozcu/watch.py",
+   "old": "(f[\"trigger\"], f[\"scope\"], f[\"start\"]) == _key(row[\"payload\"])]",
+   "new": "True]",
+   "tests": [
+    "test_gozcu_watch.Views.test_a_lift_of_no_freeze_in_force_is_unusable"
+   ]
+  },
+  {
+   "id": "watch_lift_ignored",
+   "file": "gozcu/watch.py",
+   "old": "hit[0][\"lifted\"] = row[\"ts\"]",
+   "new": "hit[0][\"lifted\"] = None",
+   "tests": [
+    "test_gozcu_watch.Views.test_a_freeze_is_in_force_until_its_lift"
+   ]
+  },
+  {
+   "id": "watch_stray_lift_passes",
+   "file": "gozcu/watch.py",
+   "old": "raise Unusable(\"row %s lifts no freeze in force\" % row.get(\"row_id\"))",
+   "new": "continue",
+   "tests": [
+    "test_gozcu_watch.Views.test_a_lift_of_no_freeze_in_force_is_unusable"
+   ]
+  },
+  {
+   "id": "watch_now_unchecked",
+   "file": "gozcu/watch.py",
+   "old": "if schema.timestamp(now, \"now\"):",
+   "new": "if False:",
+   "tests": [
+    "test_gozcu_watch.Views.test_a_now_that_is_no_ts_is_unusable"
+   ]
+  },
+  {
+   "id": "watch_planned_unread",
+   "file": "gozcu/watch.py",
+   "old": "views(list(rows) + list(planned), now)",
+   "new": "views(list(rows), now)",
+   "tests": [
+    "test_gozcu_watch.Views.test_judge_reads_the_planned_rows_after_the_ledgers"
+   ]
+  },
+  {
+   "id": "watch_unmeasured_unnamed",
+   "file": "gozcu/watch.py",
+   "old": "unmeasured=list(UNMEASURED))",
+   "new": "unmeasured=[])",
+   "tests": [
+    "test_gozcu_watch.Views.test_judge_reads_the_planned_rows_after_the_ledgers"
+   ]
+  },
+  {
+   "id": "watch_no_lift_rows",
+   "file": "gozcu/watch.py",
+   "old": "for f in judged[\"lifts\"]]",
+   "new": "for f in []]",
+   "tests": [
+    "test_gozcu_watch.Rows.test_a_freeze_row_and_a_lift_row_per_answer"
+   ]
+  },
+  {
+   "id": "watch_no_freeze_rows",
+   "file": "gozcu/watch.py",
+   "old": "for f in judged[\"freezes\"]]",
+   "new": "for f in []]",
+   "tests": [
+    "test_gozcu_watch.Rows.test_a_freeze_row_and_a_lift_row_per_answer"
+   ]
+  },
+  {
+   "id": "watch_closed_by_lifted",
+   "file": "gozcu/watch.py",
+   "old": "if f[\"lifted\"] is None and {CLASS, GE.LOOP} & set(f[\"scope\"])})",
+   "new": "if {CLASS, GE.LOOP} & set(f[\"scope\"])})",
+   "tests": [
+    "test_gozcu_watch.Closed.test_another_class_or_a_lifted_freeze_does_not"
+   ]
+  },
+  {
+   "id": "watch_closed_by_any_class",
+   "file": "gozcu/watch.py",
+   "old": "if f[\"lifted\"] is None and {CLASS, GE.LOOP} & set(f[\"scope\"])})",
+   "new": "if f[\"lifted\"] is None})",
+   "tests": [
+    "test_gozcu_watch.Closed.test_another_class_or_a_lifted_freeze_does_not"
+   ]
+  },
+  {
+   "id": "watch_loop_scope_open",
+   "file": "gozcu/watch.py",
+   "old": "{CLASS, GE.LOOP} & set(f[\"scope\"])",
+   "new": "{CLASS} & set(f[\"scope\"])",
+   "tests": [
+    "test_gozcu_watch.Closed.test_a_freeze_in_force_of_k0_or_the_loop_closes"
+   ]
+  },
+  {
+   "id": "watch_class_scope_open",
+   "file": "gozcu/watch.py",
+   "old": "{CLASS, GE.LOOP} & set(f[\"scope\"])",
+   "new": "{GE.LOOP} & set(f[\"scope\"])",
+   "tests": [
+    "test_gozcu_watch.Closed.test_a_freeze_in_force_of_k0_or_the_loop_closes"
+   ]
+  },
+  {
+   "id": "schema_lift_with_measurement",
+   "file": "ledger/schema.py",
+   "old": "(\"freeze\", \"lift\"): (shape(_FROZEN), False),",
+   "new": "(\"freeze\", \"lift\"): (shape(dict(_FROZEN, measurement=map_of(count))), False),",
+   "tests": [
+    "test_gozcu_watch.Rows.test_the_schema_refuses_a_freeze_off_its_shape"
+   ]
+  },
+  {
+   "id": "schema_freeze_empty_scope",
+   "file": "ledger/schema.py",
+   "old": "_FROZEN = {\"trigger\": one_of(*FREEZE_TRIGGERS), \"scope\": list_of(text, non_empty=True, unique_sorted=True),",
+   "new": "_FROZEN = {\"trigger\": one_of(*FREEZE_TRIGGERS), \"scope\": list_of(text, unique_sorted=True),",
+   "tests": [
+    "test_gozcu_watch.Rows.test_the_schema_refuses_a_freeze_off_its_shape"
+   ]
+  },
+  {
+   "id": "schema_freeze_unsorted_scope",
+   "file": "ledger/schema.py",
+   "old": "_FROZEN = {\"trigger\": one_of(*FREEZE_TRIGGERS), \"scope\": list_of(text, non_empty=True, unique_sorted=True),",
+   "new": "_FROZEN = {\"trigger\": one_of(*FREEZE_TRIGGERS), \"scope\": list_of(text, non_empty=True),",
+   "tests": [
+    "test_gozcu_watch.Rows.test_the_schema_refuses_a_freeze_off_its_shape"
+   ]
+  },
+  {
+   "id": "schema_freeze_any_trigger",
+   "file": "ledger/schema.py",
+   "old": "_FROZEN = {\"trigger\": one_of(*FREEZE_TRIGGERS),",
+   "new": "_FROZEN = {\"trigger\": text,",
+   "tests": [
+    "test_gozcu_watch.Rows.test_the_schema_refuses_a_freeze_off_its_shape"
+   ]
+  },
+  {
+   "id": "schema_freeze_any_measurement",
+   "file": "ledger/schema.py",
+   "old": "shape(dict(_FROZEN, measurement=map_of(count)))",
+   "new": "shape(dict(_FROZEN, measurement=any_object))",
+   "tests": [
+    "test_gozcu_watch.Rows.test_the_schema_refuses_a_freeze_off_its_shape"
+   ]
+  },
+  {
+   "id": "schema_freeze_any_start",
+   "file": "ledger/schema.py",
+   "old": "unique_sorted=True),\n           \"start\": timestamp}",
+   "new": "unique_sorted=True),\n           \"start\": text}",
+   "tests": [
+    "test_gozcu_watch.Rows.test_the_schema_refuses_a_freeze_off_its_shape"
+   ]
+  },
+  {
+   "id": "cycle_start_stop_unread",
+   "file": "loop/write_cycle.py",
+   "old": "stops = watched([])[\"hard_stop\"]",
+   "new": "stops = []",
+   "tests": [
+    "test_gozcu_watch.HardStop.test_the_cycle_that_passes_the_limit_is_written_and_the_next_writes_nothing"
+   ]
+  },
+  {
+   "id": "cycle_end_reads_no_own_row",
+   "file": "loop/write_cycle.py",
+   "old": "judged = watched(dry)",
+   "new": "judged = watched([])",
+   "tests": [
+    "test_gozcu_watch.Budget.test_the_cycle_that_reaches_the_cap_writes_the_freeze"
+   ]
+  },
+  {
+   "id": "cycle_freeze_rows_unwritten",
+   "file": "loop/write_cycle.py",
+   "old": "rows(merged, plant and plant[\"merge_sha\"]) + frozen, imports",
+   "new": "rows(merged, plant and plant[\"merge_sha\"]), imports",
+   "tests": [
+    "test_gozcu_watch.Budget.test_the_cycle_that_reaches_the_cap_writes_the_freeze"
+   ]
+  },
+  {
+   "id": "cycle_bad_threshold_unusable",
+   "file": "loop/write_cycle.py",
+   "old": "raise Refused(list(exc.reasons)) from None",
+   "new": "raise Unusable(cli.cause(exc)) from None",
+   "tests": [
+    "test_gozcu_watch.Refusals.test_a_threshold_the_watcher_cannot_use_refuses_the_write"
+   ]
+  },
+  {
+   "id": "decide_frozen_unread",
+   "file": "loop/decide.py",
+   "old": "reasons = sorted(set(reasons + list(frozen)))",
+   "new": "reasons = sorted(set(reasons))",
+   "tests": [
+    "test_gozcu_watch.Decide.test_a_frozen_gate_merges_nothing"
+   ]
+  },
+  {
+   "id": "job_gate_reads_no_freeze",
+   "file": "loop/job.py",
+   "old": "frozen = GW.closed(art.state[B.STATE_LEDGER])",
+   "new": "frozen = GW.closed(art.state[B.STATE_LEDGER]) and []",
+   "tests": [
+    "test_gozcu_watch.Budget.test_a_budget_freeze_closes_the_gate_until_the_month_after_its_lift",
+    "test_gozcu_watch.Regression.test_a_revert_that_reaches_min_reverts_freezes_the_class"
+   ]
+  },
+  {
+   "id": "job_tipping_cycle_green",
+   "file": "loop/job.py",
+   "old": "if d6[\"written\"][\"gozcu\"][\"hard_stop\"]:",
+   "new": "if False:",
+   "tests": [
+    "test_gozcu_watch.HardStop.test_the_cycle_that_passes_the_limit_is_written_and_the_next_writes_nothing"
+   ]
+  }
+ ]
+}

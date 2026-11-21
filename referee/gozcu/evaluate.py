@@ -10,11 +10,10 @@ is the caller's ``YYYY-MM-DDTHH:MM:SSZ``). It answers one new object::
 No value in it is a float (tohum/26: none in a hashed artifact); the four fields of a freeze are tohum/28's
 "tetik, kapsam, ölçüm, başlangıç". The same views in another row order give the same answer.
 
-**Not wired, stated** (``status/off_live.json``): no job calls this yet. The cycle-end call in ``yaz`` (tohum/26a),
-the builders of the views from ``ledger.jsonl``, the ``freeze`` row's shape in ``ledger.schema`` and the gate's
-reading of it (tohum/27a) are not built; the views below are this brain's choice of input, since tohum/26a says
-"defter görünümleri" and no page gives them a shape (seed-084). So what is shown is the rules on these views, not
-that a cycle freezes.
+**Its caller**: ``yaz``'s D6 (``loop.write_cycle``), at the cycle's start and end, with the views
+``gozcu.watch`` builds from the target's ledger; ``gozcu.watch`` says which of the views below a cycle measures
+(the others are handed in empty, so their rules do not fire in a cycle). The views are this brain's choice of
+input, since tohum/26a says "defter görünümleri" and no page gives them a shape (seed-084).
 
 **Views**: an object of exactly ``VIEWS``; anything else in it, or a value off the shapes below, is ``Unusable``
 (nothing is judged on a view that cannot be read):
@@ -84,8 +83,8 @@ when none is left no freeze starts (a class a trigger has closed is not closed a
 Outside, stated: "salınım birikimi" (tohum/28's third soft trigger: no page and no policy key says how many
 oscillations accumulate to a freeze, so no rule is written; seed-084); the probe cycle and its lift
 (``performance.rules.probe_cycle``); HTTP 429 (an outage, no freeze, tohum/28: nothing here reads it); the
-identity freeze of an agent with an unreported violation (tohum/08 rule 9); what a scope closes (the gate's and
-genesis's reading); whether a view is true (that the rows are the ledger's, the spend the month's).
+identity freeze of an agent with an unreported violation (tohum/08 rule 9); what a scope closes (the gate's
+reading is ``gozcu.watch.closed``; genesis's is not built); whether a view is true (that the rows are the ledger's, the spend the month's).
 """
 
 from __future__ import annotations

@@ -4,7 +4,9 @@ Rules: asama-0/01 D6 (``yaz`` writes ``brain/c/<id>``, the pull request, the che
 ``brain/state`` commit per cycle with the signed root and ``status.md``; every ref under ``refs/heads/brain/``;
 the chain verified before the write; judges MF9, 10, 11, 16), tohum/07 and tohum/01b (merges are serial, by pull
 request; ``brain/state`` takes one direct commit per cycle on the head D1 verified), tohum/13 and tohum/28 (a chain
-break or a root that cannot be signed is a hard stop), asama-0/10a ``#model`` (the canary's ``cost`` row is written).
+break or a root that cannot be signed is a hard stop; the watcher's freezes are rows, and more soft freezes than
+the limit is a hard stop), tohum/26a (``gozcu.evaluate`` runs in ``yaz`` at the cycle's end and writes the
+``freeze`` row), asama-0/10a ``#model`` (the canary's ``cost`` row is written).
 
 **Inputs** (``write``): ``art``, the ``pulled`` artifact (``loop.pulled.read``): its ``brain/state`` ledger, roots
 file and ``status.md`` as D1 read them, its heads, its candidates, its policy; ``tree``, the directory its tree was
@@ -37,7 +39,16 @@ planned:
 2. both heads read from the target equal ``pulled``'s (``head_moved:<branch>``, ``Refused``): the state this cycle
    decided on is still the state it writes on, so a second run of the same cycle (a rerun of ``yaz`` after its
    first run wrote) writes nothing;
-3. a dry plan: ``ledger.cycle.plan`` of the cycle's rows with the merge's answer left as placeholders and a signer
+   Then the watcher on the ledger as pulled (``gozcu.watch.judge`` with ``pulled``'s policy at ``ts``, no row of
+   this cycle): any hard stop is ``target.land.HardStop`` ``gozcu: <triggers>`` with nothing written (the freezes
+   already written pass ``soft_freeze_limit``: the cycle after the one that tipped it, and every one after, until
+   the window has passed). A threshold of the policy the watcher cannot use is ``Refused`` with
+   ``policy_invalid:<path>``; views it cannot read (a lift row of no freeze) are ``Unusable``;
+3. the watcher at the cycle's end: ``gozcu.watch.judge`` again, now with the cycle's rows after the ledger's (its
+   merge, its revert, its cost rows; the merge's answer is not read by any view), and ``gozcu.watch.rows`` of its
+   answer: the cycle's ``freeze`` and ``lift`` rows. A threshold absent from the policy leaves its rule unjudged
+   and the cycle is written; the answer names the path. Then
+   a dry plan: ``ledger.cycle.plan`` of the cycle's rows with the merge's answer left as placeholders and a signer
    that signs nothing (``DRY``): the roots file and the ledger as chains extending themselves (D1's versions are the
    previous ones: nothing was added since), the rows' secret scan, the whole new ledger against ``ledger.schema``,
    the root row's id. A failure is ``Refused`` with ``state_unwritable`` (a ``ledger.append.HardStop`` stays a hard
@@ -66,7 +77,8 @@ the hunks step 1 applied, ``ledger.events.hunk_covered``); ``revert {merge_sha}`
 one (the row that finishes the merge's sentinel, ``ledger.serial``; tohum/26f); D8's ``drill`` row (``commit`` with its payload, or ``plant`` with ``harness.revert_drill``'s
 ``{drill, family, instance_id, merge_sha}``, the planted merge's SHA; ``ledger.events.drill``); the ``copy_gate`` row
 with ``gate`` (``harness.pass_row``'s gate); the ``pass`` row with ``passed`` (tohum/26d); the response's cost rows as
-they are; then
+they are; the watcher's ``freeze`` and ``lift`` rows (step 3; ``<cycle_id>:freeze:<trigger>``,
+``<cycle_id>:lift:<trigger>``); then
 ``status.block``'s rows (``ledger.cycle``). ``ts`` is the given time; ``snapshot_id`` is ``brain/integration``'s
 head in ``pulled`` (the snapshot D3 ran on and D5 judged; the cost row carries the same, ``loop.cagir``). Row ids are
 ``<cycle_id>:start``, ``<cycle_id>:ratchet``, ``<cycle_id>:observation``, ``<cycle_id>:c:<cid>``, ``<cycle_id>:m:<cid>``, ``<cycle_id>:revert`` or
@@ -77,9 +89,13 @@ cap D4 called with).
 
 Returns ``{merge: {candidate, path, pull, head_sha, merge_sha} | None, revert: {reverted, cause, pull, commit,
 merge_sha} | None, plant: {instance_id, pull, head_sha, merge_sha} | None, state_sha, root, rekor_uuid, rows,
-edited}``.
+edited, gozcu}``, ``gozcu`` the watcher's answer of step 3 (``{hard_stop, freezes, lifts, marks, unjudged,
+unmeasured}``). A hard stop in it (this cycle's freeze passed ``soft_freeze_limit``) does not undo the cycle: it is
+written, with the freeze, and the caller ends red.
 
-Out of scope, stated: which drill step is due (``loop.drill``); whether GitHub's ruleset accepts the writes (``target.write``'s known limits); the signer's program (``loop.sign``).
+Out of scope, stated: what a freeze closes besides D5's merges (``kos`` and ``cagir`` ran before this job, and
+this cycle's revert, drill and rows are written under a freeze); a record of the hard stop or of the operator's
+restart (the stop is read off the freeze rows each cycle); which drill step is due (``loop.drill``); whether GitHub's ruleset accepts the writes (``target.write``'s known limits); the signer's program (``loop.sign``).
 """
 
 from __future__ import annotations

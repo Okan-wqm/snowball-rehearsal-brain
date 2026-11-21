@@ -157,7 +157,9 @@ refused tree is ``pulled_invalid``). Then:
 - ``yaz`` runs D5 (``yaz_d5``): it reads ``control.json`` from the ``control`` step's clone
   (``$RUNNER_TEMP/control/control.json``; unreadable is unusable, exit 2), ``$RUNNER_TEMP/in/pulled`` as ``kos`` does
   (the same refusals, the same one unit), extracts the tree under ``$RUNNER_TEMP/work`` and calls ``loop.decide`` on
-  ``$RUNNER_TEMP/in/results``: ``decisions`` (every candidate's ``decision`` and ``reasons``) and ``merge`` are in the
+  ``$RUNNER_TEMP/in/results`` with the soft freezes in force in ``pulled``'s ledger (``gozcu.watch.closed``: under
+  one every candidate carries ``frozen:<trigger>``; a ledger whose lift row names no freeze is ``state_refused``):
+  ``decisions`` (every candidate's ``decision`` and ``reasons``) and ``merge`` are in the
   output and ``done`` is ``["D5"]``. Once D5 has decided, the dev cases (P1 MF3, ``yaz_cases``): ``cases.build.build``
   judges ``pulled``'s ``mutations.json`` against the results (``index.json``'s ``mutations`` and ``base_run_sha256``,
   ``base.jsonl`` and each ``m/<mid>/mut.jsonl`` read under its hash) with ``brain/integration``'s head as
@@ -226,8 +228,11 @@ refused tree is ``pulled_invalid``). Then:
   drift does: nothing is recorded, the next job reads the facts anew (a record that outlives the drift, tohum/28's
   restart by the operator, is not built here). D6's refusals before any write
   (``head_moved:<branch>``, ``state_unwritable: ...``) are ``write_refused`` with the reasons; a hard stop
-  (``target.land.HardStop``: a chain break, a root that cannot be signed, a write that failed after the first) is
-  ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. A hard stop's line
+  (``target.land.HardStop``: a chain break, a root that cannot be signed, a write that failed after the first, the
+  watcher's stop on the ledger as pulled, P1 MF7) is
+  ``hard_stop`` with ``written``, the refs already written; both exit 1 with ``done`` ``["D5"]``. A written cycle
+  whose own freeze passed ``soft_freeze_limit`` (``written.gozcu.hard_stop``) is ``hard_stop`` too, exit 1, after
+  its writes. A hard stop's line
   and a written cycle's (the genesis cycle's too) carry ``sign_calls``: every run of the signing program made for
   this target's root, each ``{exit, signs, result}`` (``loop.sign`` "Every run named"). tohum/13's count, at most 3
   runs in one ``yaz`` job, is the job's: ``run`` keeps one list of the job's runs and every signer ``_signer``
