@@ -787,8 +787,8 @@
   {
    "id": "dc_rulesets_first_page_only",
    "file": "drift/check.py",
-   "old": "        if len(body) < PAGE:\n            return ids",
-   "new": "        if True:\n            return ids",
+   "old": "        if len(body) < PAGE:\n            return ids.union(",
+   "new": "        if True:\n            return ids.union(",
    "tests": [
     "test_drift.Compared.test_every_page_of_the_ruleset_list_is_read"
    ]
@@ -796,8 +796,8 @@
   {
    "id": "dc_rulesets_page_of_99_is_full",
    "file": "drift/check.py",
-   "old": "        if len(body) < PAGE:\n            return ids",
-   "new": "        if len(body) < PAGE - 1:\n            return ids",
+   "old": "        if len(body) < PAGE:\n            return ids.union(",
+   "new": "        if len(body) < PAGE - 1:\n            return ids.union(",
    "tests": [
     "test_drift.Compared.test_every_page_of_the_ruleset_list_is_read"
    ]
@@ -807,6 +807,42 @@
    "file": "drift/check.py",
    "old": "(\"&page=%d\" % page if page > 1 else \"\")",
    "new": "(\"&page=2\" if page > 1 else \"\")",
+   "tests": [
+    "test_drift.Compared.test_every_page_of_the_ruleset_list_is_read"
+   ]
+  },
+  {
+   "id": "dc_rulesets_repeated_page_read_on",
+   "file": "drift/check.py",
+   "old": "        if ids.issuperset(item[\"id\"] for item in body):",
+   "new": "        if False:",
+   "tests": [
+    "test_drift.Compared.test_every_page_of_the_ruleset_list_is_read"
+   ]
+  },
+  {
+   "id": "dc_rulesets_last_page_dropped",
+   "file": "drift/check.py",
+   "old": "            return ids.union(item[\"id\"] for item in body)",
+   "new": "            return ids",
+   "tests": [
+    "test_drift.Compared.test_every_page_of_the_ruleset_list_is_read"
+   ]
+  },
+  {
+   "id": "dc_rulesets_full_page_dropped",
+   "file": "drift/check.py",
+   "old": "        ids.update(item[\"id\"] for item in body)\n",
+   "new": "        pass\n",
+   "tests": [
+    "test_drift.Compared.test_every_page_of_the_ruleset_list_is_read"
+   ]
+  },
+  {
+   "id": "dc_rulesets_one_new_id_is_no_progress",
+   "file": "drift/check.py",
+   "old": "        if ids.issuperset(item[\"id\"] for item in body):",
+   "new": "        if ids.intersection(item[\"id\"] for item in body):",
    "tests": [
     "test_drift.Compared.test_every_page_of_the_ruleset_list_is_read"
    ]

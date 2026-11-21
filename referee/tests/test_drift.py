@@ -601,6 +601,14 @@ class Compared(unittest.TestCase):
         self.stop(paged(list(range(1, 102)), {second: []}), ["rulesets_changed"])
         w = paged(list(range(1, 202)), {second: [item(n) for n in range(101, 201)], third: [item(201)]})
         self.assertEqual((check(w)["reasons"], asked(w)), ([], [LISTING, second, third]))
+        # a full page that repeats the pages before it is no progress: refused, not read for ever
+        w = paged(list(range(1, 101)), {second: full})
+        with self.assertRaisesRegex(DC.Unusable, r"page=2: a full page with no new id"):
+            check(w)
+        self.assertEqual(asked(w), [LISTING, second])
+        # ... while a full page with one new id among known ones is progress
+        w = paged(list(range(1, 201)), {second: [item(n) for n in range(100, 200)], third: [item(200)]})
+        self.assertEqual((check(w)["reasons"], asked(w)), ([], [LISTING, second, third]))
         # a page of 99 is the last
         w = rebased(world("toy", (LISTING, lambda _: full[:99])), put("targets", "toy", "rulesets",
                                                                       value=list(range(1, 100))))

@@ -368,7 +368,8 @@ def held(root: str) -> dict[str, str]:
 
 def rulesets(reads: Reads, repo: str) -> set[int]:
     """The ids of the repository's ruleset list: ``GET /repos/{repo}/rulesets?per_page=100``, then ``&page=2``
-    and on while a page is full; ``Unusable`` for an item without an integer ``id``."""
+    and on while a page is full; ``Unusable`` for an item without an integer ``id`` and for a full page that
+    names no id the pages before it did not (a list that does not advance is never read to its end)."""
     ids: set[int] = set()
     page = 1
     while True:
@@ -376,9 +377,11 @@ def rulesets(reads: Reads, repo: str) -> set[int]:
         body = reads.get(path, list)
         if not all(isinstance(item, dict) and type(item.get("id")) is int for item in body):
             raise Unusable("GET %s: an item without an integer id" % path)
-        ids.update(item["id"] for item in body)
         if len(body) < PAGE:
-            return ids
+            return ids.union(item["id"] for item in body)
+        if ids.issuperset(item["id"] for item in body):
+            raise Unusable("GET %s: a full page with no new id, the list does not advance" % path)
+        ids.update(item["id"] for item in body)
         page += 1
 
 
