@@ -190,7 +190,7 @@ def _organ_of(path: str) -> tuple[str, str | None] | None:
     if parts[2:] == [ORGAN_ENTRY]:
         return parts[1], None
     rest = "/".join(parts[3:])
-    if parts[2] == ORGAN_FILES and rest and rest != "." and D.norm_path(rest) == rest:
+    if parts[2] == ORGAN_FILES and D.file_path(rest):
         return parts[1], rest
     return None
 

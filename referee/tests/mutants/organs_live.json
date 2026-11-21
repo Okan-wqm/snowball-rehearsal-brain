@@ -111,8 +111,8 @@
   {
    "id": "pulled_organ_path_any",
    "file": "loop/pulled.py",
-   "old": "rest and rest != \".\" and D.norm_path(rest) == rest",
-   "new": "rest",
+   "old": "if parts[2] == ORGAN_FILES and D.file_path(rest):",
+   "new": "if parts[2] == ORGAN_FILES and rest:",
    "tests": [
     "test_loop_kos.py"
    ]

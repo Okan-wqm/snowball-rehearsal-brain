@@ -9,7 +9,7 @@ tohum/08 items 2-3 (player code runs in a container without network, in a fresh 
 **A definition** is what the runner is given of one organ: ``{"entry": [str, ...], "files": {path: bytes}}`` and
 nothing else. ``entry`` is the entry point, a non-empty list of non-empty strings: the command run in the
 container, as written (nothing is appended). ``files`` are the organ's files: each path relative and normal
-(``profile.derive.norm_path`` leaves it as written, and it is not ``.``), no path a directory on the way of
+(``profile.derive.file_path``: ``norm_path`` leaves it as written, and it is not ``.``), no path a directory on the way of
 another (``a`` and ``a/b``).
 
 **Its hash** (``definition_sha256``): the sha256, lowercase hex, of the UTF-8 bytes of the JSON object
@@ -81,7 +81,7 @@ def _shape_ok(definition: Any) -> bool:
         return False
     if not (isinstance(files, dict) and all(isinstance(d, bytes) for d in files.values())):
         return False
-    if not all(D.norm_path(p) == p and p != "." for p in files):
+    if not all(D.file_path(p) for p in files):
         return False
     return not any(q.startswith(p + "/") for p in files for q in files)
 

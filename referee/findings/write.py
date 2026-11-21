@@ -25,10 +25,14 @@ to ``unresolved.jsonl`` with its ``cause``).
 
 5. ``finding_invalid``: the element is not an object of ``PROPOSED`` (tohum/26's fields without ``finding_id``,
    ``fingerprint``, ``state``, ``trust`` and ``proposed_by``, which are written here; ``symbol``, ``tool`` and
-   ``rule_id`` optional), with ``class_level`` K0-K8, ``derivation`` of tohum/26's set, each ``required_change``
-   entry ``{file, symbol?, op}`` with ``op`` of tohum/26's list, ``confidence`` a fixed decimal string in [0, 1]
-   with one to six decimals, ``file`` a normalised relative path (so no value of it is a float); or it lacks ``tool`` or
-   ``rule_id`` in K0-K2; or it names ``doc_fix`` outside K8.
+   ``rule_id`` optional), with ``class_level`` K0-K8, ``derivation`` of tohum/26's set, each ``evidence_refs``
+   entry ``{path, line_start, line_end}`` (``ledger.schema.evidence``), each ``required_change`` entry ``{file,
+   symbol?, op}`` with ``op`` of tohum/26's list, ``confidence`` a fixed decimal string in [0, 1] with one to
+   six decimals (so no value of it is a float); or one of the three places a finding names a path (its ``file``,
+   an ``evidence_refs[].path``, a ``required_change[].file``) is not ``profile.derive.file_path``: relative,
+   ``/``-separated, as ``posixpath.normpath`` writes it, not leaving the tree and not its root ``.`` (the rule
+   reads the string alone: whether the path exists, is a regular file or a link is not looked at here); or it
+   lacks ``tool`` or ``rule_id`` in K0-K2; or it names ``doc_fix`` outside K8.
 6. A fingerprint the file does not hold is a new finding: one row, ``state: open``, ``finding_id`` ``f-`` and
    the fingerprint (this brain's form), ``proposed_by`` the name ``observe`` was given, ``trust: inferred``.
 7. A fingerprint the file holds is a re-observation. When the finding's last row is ``fixed`` or ``verified`` it
@@ -95,12 +99,16 @@ def _confidence(value: Any, where: str) -> list[str]:
 
 
 def _path(value: Any, where: str) -> list[str]:
-    return [] if D.norm_path(value) == value else ["%s: not a normalised relative path" % where]
+    return [] if D.file_path(value) else ["%s: not a normalised relative path of a file" % where]
 
 
-CHANGE = S.shape({"file": S.text, "op": S.one_of(*OPS)}, {"symbol": S.text})
+def _ref(value: Any, where: str) -> list[str]:
+    return S.evidence(value, where) or _path(value["path"], where + ".path")
+
+
+CHANGE = S.shape({"file": _path, "op": S.one_of(*OPS)}, {"symbol": S.text})
 PROPOSED = {"class_level": S.one_of(*CLASS_LEVELS), "property": S.text, "file": _path, "claim": S.text,
-            "evidence_refs": S.list_of(S.evidence), "required_change": S.list_of(CHANGE), "severity_hint": S.text,
+            "evidence_refs": S.list_of(_ref), "required_change": S.list_of(CHANGE), "severity_hint": S.text,
             "confidence": _confidence, "derivation": S.one_of(*S.DERIVATIONS), "snapshot_id": S.text}
 OPTIONAL = {"symbol": S.text, "tool": S.text, "rule_id": S.text}
 CHAINED = {"finding_id": S.any_value, "prev_hash": S.any_value, "row_hash": S.any_value}   # judged by rule 11's two checks

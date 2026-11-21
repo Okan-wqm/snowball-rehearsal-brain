@@ -45,11 +45,19 @@ from harness import score as HS  # noqa: E402
 from ledger import append as LA  # noqa: E402
 from ledger import chain as LC  # noqa: E402
 from ledger import schema as SC  # noqa: E402
+from profile import derive as D  # noqa: E402
 
 SNAP = "s" * 8
 TREE = {"pkg/a.js": b"use strict;\nvar a = 1;\nlet b = 2;\nvar c = 3;\n",
         "pkg/b.js": b"var a = 1;\n"}
 SHIFTED = dict(TREE, **{"pkg/a.js": b"// header\n\nuse strict;\n    var  a = 1;\nlet b = 2;\nvar c = 3;\n"})
+
+
+# What ``profile.derive.file_path`` refuses and takes: absolute, leaving the tree (at once or after a descent),
+# not as normpath writes it, the root, a backslash, a NUL, empty; and paths it leaves alone.
+NOT_FILE_PATHS = ["/pkg/a.js", "../a.js", "../../outside/x.js", "pkg/../../a.js", "..", "pkg/../a.js", "pkg/./a.js",
+                  "./pkg/a.js", "pkg//a.js", "pkg/a.js/", ".", "./", "pkg\\a.js", "pkg/a\x00.js", ""]
+FILE_PATHS = ["pkg/a.js", "a", "pkg/..a.js", "pkg/a..js", "...", ".github/x.yml", "pkg/ a.js"]
 
 
 def reader(tree: dict):
@@ -271,6 +279,32 @@ class Proposal(unittest.TestCase):
         self.assertEqual(W.proposal_reasons(lint()), [])
         self.assertEqual(W.proposal_reasons(named(class_level="K3")), [])   # K3 needs neither tool nor rule
 
+    def test_every_path_a_finding_names_is_a_file_of_the_tree(self):
+        places = {"file": lambda p: lint(file=p),
+                  "evidence_refs[].path": lambda p: lint(evidence_refs=[
+                      {"path": "pkg/a.js", "line_start": 2, "line_end": 2}, {"path": p, "line_start": 1, "line_end": 1}]),
+                  "required_change[].file": lambda p: lint(required_change=[
+                      {"file": "pkg/a.js", "op": "lint_fix"}, {"file": p, "op": "add_test"}])}
+        for place, build in places.items():
+            for path in NOT_FILE_PATHS:
+                with self.subTest(place=place, path=path):
+                    out = observe(b"", [lint(4), build(path), named()])
+                    self.assertEqual(out.refused, [{"index": 1, "reasons": ["finding_invalid"]}])
+                    self.assertEqual(len(stored(out.content)), 2)
+                    self.assertTrue(all(place.split("[")[0] in r for r in W.proposal_reasons(build(path))))
+            for path in FILE_PATHS:
+                with self.subTest(place=place, path=path):
+                    if place == "file":         # form 2 reads the finding's own file: give it a line there
+                        finding, tree = lint(path=path), dict(TREE, **{path: TREE["pkg/a.js"]})
+                    else:
+                        finding, tree = build(path), TREE
+                    out = observe(b"", [finding], tree)
+                    self.assertEqual((out.refused, len(out.rows)), ([], 1))
+
+    def test_the_path_rule_is_one_rule(self):
+        self.assertEqual([p for p in NOT_FILE_PATHS + FILE_PATHS if D.file_path(p)], FILE_PATHS)
+        self.assertFalse(any(D.file_path(v) for v in (None, 1, b"pkg/a.js", ["pkg/a.js"])))
+
     def test_what_is_no_proposal_is_unusable(self):
         for proposal, by in (({"findings": [lint()]}, "hunter-1"), (None, "hunter-1"), ([lint()], ""), ([lint()], None)):
             with self.assertRaises(W.Unusable):
@@ -461,6 +495,9 @@ class Files(unittest.TestCase):
                "a float": dict(row, confidence=0.5),
                "K0 with no rule": {k: v for k, v in row.items() if k != "rule_id"},
                "doc_fix in K0": dict(row, required_change=[{"file": "a", "op": "doc_fix"}]),
+               "a change leaving the tree": dict(row, required_change=[{"file": "../../outside/x.js", "op": "lint_fix"}]),
+               "a ref leaving the tree": dict(row, evidence_refs=[{"path": "../a.js", "line_start": 1, "line_end": 1}]),
+               "the root as its file": dict(row, file="."),
                "an unresolved row": {"finding_id": row["finding_id"], "fingerprint": row["fingerprint"],
                                      "cause": "unknown", "reasons": ["x"], "snapshot_id": SNAP}}
         for name, changed in bad.items():

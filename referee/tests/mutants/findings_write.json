@@ -182,11 +182,11 @@
   },
   {
    "id": "observe_path_as_written",
-   "file": "findings/write.py",
-   "old": "return [] if D.norm_path(value) == value else",
-   "new": "return [] if D.norm_path(value) is not None else",
+   "file": "profile/derive.py",
+   "old": "return norm is not None and norm == path and",
+   "new": "return norm is not None and",
    "tests": [
-    "test_findings_write.Proposal.test_each_refusal"
+    "test_findings_write.Proposal.test_every_path_a_finding_names_is_a_file_of_the_tree"
    ]
   },
   {
@@ -268,6 +268,60 @@
    "new": "    out[\"state\"] = state\n    out[\"fingerprint\"] = hashlib.sha256(state.encode()).hexdigest()\n    return out",
    "tests": [
     "test_findings_write.Scored.test_two_runs_of_a_shifted_file_are_counted_once"
+   ]
+  },
+  {
+   "id": "change_file_any_text",
+   "file": "findings/write.py",
+   "old": "CHANGE = S.shape({\"file\": _path,",
+   "new": "CHANGE = S.shape({\"file\": S.text,",
+   "tests": [
+    "test_findings_write.Proposal.test_every_path_a_finding_names_is_a_file_of_the_tree"
+   ]
+  },
+  {
+   "id": "ref_path_any_text",
+   "file": "findings/write.py",
+   "old": "return S.evidence(value, where) or _path(value[\"path\"], where + \".path\")",
+   "new": "return S.evidence(value, where)",
+   "tests": [
+    "test_findings_write.Proposal.test_every_path_a_finding_names_is_a_file_of_the_tree"
+   ]
+  },
+  {
+   "id": "finding_file_any_text",
+   "file": "findings/write.py",
+   "old": "\"property\": S.text, \"file\": _path,",
+   "new": "\"property\": S.text, \"file\": S.text,",
+   "tests": [
+    "test_findings_write.Proposal.test_every_path_a_finding_names_is_a_file_of_the_tree"
+   ]
+  },
+  {
+   "id": "path_root_allowed",
+   "file": "profile/derive.py",
+   "old": "norm == path and path != \".\"",
+   "new": "norm == path",
+   "tests": [
+    "test_findings_write.Proposal.test_every_path_a_finding_names_is_a_file_of_the_tree"
+   ]
+  },
+  {
+   "id": "path_none_allowed",
+   "file": "profile/derive.py",
+   "old": "return norm is not None and norm == path",
+   "new": "return norm == path",
+   "tests": [
+    "test_findings_write.Proposal.test_the_path_rule_is_one_rule"
+   ]
+  },
+  {
+   "id": "stored_row_paths_unchecked",
+   "file": "findings/write.py",
+   "old": "FINDING = S.shape(dict(PROPOSED, **WRITTEN)",
+   "new": "FINDING = S.shape(dict(PROPOSED, **dict(WRITTEN, file=S.text, required_change=S.any_value, evidence_refs=S.any_value))",
+   "tests": [
+    "test_findings_write.Files.test_findings_reasons"
    ]
   }
  ]

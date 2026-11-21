@@ -266,6 +266,12 @@ def norm_path(path: Any) -> str | None:
     return norm
 
 
+def file_path(path: Any) -> bool:
+    """Whether the string ``path`` can name a file of the tree: ``norm_path`` leaves it as written, not the root ``.``."""
+    norm = norm_path(path)
+    return norm is not None and norm == path and path != "."
+
+
 def covers(entry: str, path: str) -> bool:
     entry, path = entry.casefold(), path.casefold()
     return entry == "." or path == entry or path.startswith(entry + "/")

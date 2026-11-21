@@ -317,7 +317,7 @@ def _patch(worktree: str, diff: bytes) -> list[str]:
             reasons.append("patch_not_in_place")
             continue
         path = block["old"]
-        if D.norm_path(path) != path or path == ".":
+        if not D.file_path(path):
             reasons.append("patch_path_invalid")
             continue
         if path.split("/")[0] == U.RESERVED:

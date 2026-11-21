@@ -245,18 +245,18 @@
   },
   {
    "id": "path_dot_allowed",
-   "file": "runner/organs.py",
-   "old": "D.norm_path(p) == p and p != \".\" for p in files",
-   "new": "D.norm_path(p) == p for p in files",
+   "file": "profile/derive.py",
+   "old": "norm == path and path != \".\"",
+   "new": "norm == path",
    "tests": [
     "test_organs.py"
    ]
   },
   {
    "id": "path_not_normal_allowed",
-   "file": "runner/organs.py",
-   "old": "D.norm_path(p) == p and p != \".\" for p in files",
-   "new": "D.norm_path(p) is not None and p != \".\" for p in files",
+   "file": "profile/derive.py",
+   "old": "return norm is not None and norm == path and",
+   "new": "return norm is not None and",
    "tests": [
     "test_organs.py"
    ]
