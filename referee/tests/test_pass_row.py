@@ -63,6 +63,7 @@ from ledger import schema as SC  # noqa: E402
 from target import branches as B  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 from test_revert_drill import ledger_with  # noqa: E402
+import test_findings_write as TFW  # noqa: E402
 import yaz_world as YW  # noqa: E402
 
 TS = "2026-11-02T10:00:00Z"
@@ -124,6 +125,7 @@ class State:
 
     def __init__(self, target: str):
         self.target, self.ledger, self.roots, self.status, self.run = target, b"", b"", None, 100
+        self.registers: dict = {}  # brain/state's registers (tohum/26j): rooted by the next cycle, as given
 
     def cycle(self, *makers, genesis: bool | dict = False, run: str | None = None) -> dict:
         """``genesis``: ``True``, or the genesis payload's changed keys (another import)."""
@@ -138,13 +140,14 @@ class State:
         facts = {"ts": TS, "snapshot_id": h(99), "row_id": c["cycle_id"] + ":status",
                  "canary_cap_usd_micros": 1_000_000}
         planned = CY.plan(self.ledger, self.ledger, self.roots, self.roots, self.status, rows, IMPORTS, facts,
-                          AN.FakeSigner(True, YW.IDENTITY, "rekor-%d" % self.run), c["cycle_id"] + ":root")
+                          AN.FakeSigner(True, YW.IDENTITY, "rekor-%d" % self.run), c["cycle_id"] + ":root",
+                          self.registers)
         files = planned["files"]
         self.ledger, self.roots, self.status = files[B.STATE_LEDGER], files[B.STATE_ROOTS], files[B.STATE_STATUS]
         return c
 
     def files(self) -> dict:
-        return {"ledger": self.ledger, "roots": self.roots}
+        return {"ledger": self.ledger, "roots": self.roots, "registers": self.registers}
 
 
 def merged(sha: str, pull: int = 1) -> dict:
@@ -375,6 +378,19 @@ class Fails(unittest.TestCase):
         got = judge(toy)
         self.assertEqual(got["conditions"]["#kok"], ["toy:roots_per_cycle:11/12", "toy:root_mismatch"])
         self.assertEqual(got["conditions"]["#durum"], ["toy:status_count:900-1:0"])
+
+    def test_the_root_is_over_the_states_registers(self):
+        """tohum/26j: a state with a register passes ``#kok`` when its last root is over the ledger and the file."""
+        findings = {B.STATE_FINDINGS: TFW.observe(b"", [TFW.lint()]).content}
+        toy = toy_world()
+        toy.registers = findings
+        self.assertEqual(judge(toy)["conditions"]["#kok"], ["toy:root_mismatch"])  # a file the last root is not over
+        toy.cycle(cost)
+        self.assertEqual(judge(toy)["conditions"]["#kok"], [])
+        toy.registers = {}
+        self.assertEqual(judge(toy)["conditions"]["#kok"], ["toy:root_mismatch"])  # the root's file not handed over
+        toy.registers = {B.STATE_FINDINGS: findings[B.STATE_FINDINGS], B.STATE_UNRESOLVED: b""}
+        self.assertEqual(judge(toy)["conditions"]["#kok"], [])  # a file with no row adds nothing
 
     def test_the_canary(self):
         toy = State("toy")
@@ -657,7 +673,7 @@ class Unusable(unittest.TestCase):
 
 
 def write_state(root: str, state: State) -> str:
-    write_tree(root, {B.STATE_LEDGER: state.ledger, B.STATE_ROOTS: state.roots})
+    write_tree(root, dict({B.STATE_LEDGER: state.ledger, B.STATE_ROOTS: state.roots}, **state.registers))
     return root
 
 
@@ -688,6 +704,16 @@ class CommandLine(unittest.TestCase):
             code, line = self.run_cli("judge", toy, copy, te, ce, imports, result)
             self.assertEqual((code, line["verdict"], line["conditions"]["#geri-alma"]),
                              (1, "FAIL", ["toy:drill_inputs_missing"]))
+            # the state directory's registers are read with it (tohum/26j): the root over them is the directory's
+            rooted = toy_world()
+            rooted.registers = {B.STATE_FINDINGS: TFW.observe(b"", [TFW.lint()]).content}
+            rooted.cycle(cost)
+            with_file = write_state(os.path.join(base, "rooted"), rooted)
+            code, line = self.run_cli("judge", with_file, copy, te, ce, imports, result, catalog, seed)
+            self.assertEqual(line["conditions"]["#kok"], [])
+            os.remove(os.path.join(with_file, B.STATE_FINDINGS))
+            code, line = self.run_cli("judge", with_file, copy, te, ce, imports, result, catalog, seed)
+            self.assertEqual((code, line["conditions"]["#kok"]), (1, ["toy:root_mismatch"]))
             for argv in (("judge", toy, copy, te, ce), ("judge", toy, copy, te, ce, imports, catalog),
                          ("judge", toy, copy, te, ce, imports, os.path.join(base, "none")),
                          ("judge", toy, copy, te, ce, imports, result, catalog),

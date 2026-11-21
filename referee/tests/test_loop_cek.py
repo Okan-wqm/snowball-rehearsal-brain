@@ -512,7 +512,8 @@ class CekJob(unittest.TestCase):
         self.TARGET = files
         self.setUp_state()
 
-    def state_commit(self, counts: dict, parents: tuple, extra: dict | None = None) -> str:
+    def state_commit(self, counts: dict, parents: tuple, extra: dict | None = None,
+                     registers: dict | None = None) -> str:
         """A ``brain/state`` commit whose chained files hold ``counts`` rows (``loop.state``'s rules); root row ``i``
         anchors the ledger's first ``ANCHORED[i]`` rows, its entry in the fake Rekor (``ledger.anchor``'s rules)."""
         ledger = self.ledger_rows or self.rows()
@@ -522,12 +523,14 @@ class CekJob(unittest.TestCase):
         if ".brain/chain/root.jsonl" in counts:
             roots = b""
             for i in range(counts[".brain/chain/root.jsonl"]):
-                root = AN.root_of(AN.tips(self.TA.chained(ledger[:self.ANCHORED[i]])))
+                last = i == counts[".brain/chain/root.jsonl"] - 1  # ``registers``: files the last root is over
+                root = AN.root_of(AN.tips(self.TA.chained(ledger[:self.ANCHORED[i]]),
+                                          AN.named(registers) if last else None))
                 uuid, entry = entry_for(root)
                 self.rekor.entries[uuid] = entry
                 roots = AN.root_row(roots, "r%d" % i, "2026-11-01T00:00:00Z", root, uuid)
             content[".brain/chain/root.jsonl"] = roots
-        commit = S.store(dict(content, **(extra or {})), parents, self.state_objects)[1]
+        commit = S.store(dict(content, **(extra or {}), **(registers or {})), parents, self.state_objects)[1]
         self.state_content[commit] = content
         if ".brain/chain/root.jsonl" in counts:
             self.rekor.last[commit] = uuid
@@ -1049,6 +1052,26 @@ class CekJob(unittest.TestCase):
                 self.assertNotIn("checked", out)
                 self.assertFalse(self.target_fetched())
                 self.assertEqual(self.assembled(), [])
+
+    def test_the_heads_registers_are_under_its_root_and_carried(self):
+        """tohum/26j: a register on ``brain/state``'s head is verified with it, its tip is in the root D1 judges,
+        and ``pulled`` carries the file to D6."""
+        counts = {p: n[1] for p, n in self.STATE.items()}
+        findings = self.TA.chained([{"row_id": "f1", "part": "findings"}, {"row_id": "f2", "part": "findings"}])
+        files = {".brain/findings.jsonl": findings}
+        self.state_head = self.state_commit(counts, (self.state_genesis,), {".brain/status.md": self.STATUS_MD}, files)
+        out, _, _ = self.run_cek()
+        self.assertEqual((out["ok"], self.one(out)["state"]["rows"]), (True, dict(counts, **{".brain/findings.jsonl": 2})), out)
+        art = P.read(os.path.join(self.temp, "out", "pulled", "t1"))
+        self.assertEqual(art.state[".brain/findings.jsonl"], findings)
+        self.assertNotIn(".brain/unresolved.jsonl", art.state)
+        # the file on the head and a root that is not over it (the ledger's alone)
+        self.clean()
+        self.setUp_state()
+        self.state_head = self.state_commit(counts, (self.state_genesis,), dict(files, **{".brain/status.md": self.STATUS_MD}))
+        out, _, _ = self.run_cek()
+        self.assertEqual((out["ok"], out["reason"], out["reasons"]), (False, "root_refused", ["root_mismatch"]))
+        self.assertFalse(self.target_fetched())
 
     def test_rekor_unreadable_is_no_verdict(self):
         class Down:

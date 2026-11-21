@@ -124,6 +124,7 @@ from test_rekor import REAL  # noqa: E402
 from test_sign import Rooted, rooted_program  # noqa: E402
 from loop import program as PG  # noqa: E402
 import activation_world as AW  # noqa: E402
+import test_findings_write as TFW  # noqa: E402
 import yaz_world as YW  # noqa: E402
 
 GENESIS_TS = "2026-10-30T12:00:00Z"
@@ -1447,6 +1448,134 @@ class Pass(StateBase):
                          [("301-1:start", "cycle_start"), ("301-1:pass", "pass"), ("301-1:status", "status")])
         self.assertEqual(rows[1]["payload"], payload)
         self.assertEqual((got["rows"], SC.ledger_reasons(new)), (3, []))
+
+
+class Registers(StateBase):
+    """Stage 1 MF8 (tohum/26j): ``yaz`` runs ``findings.write.cycle`` each cycle on ``brain/state``'s registers as
+    ``pulled`` holds them, and the files it returns are written in the cycle's one ``brain/state`` commit under the
+    signed root. The job hands it no proposal and no decision (their producers are MF10-12's)."""
+
+    def write_pulled(self, cands=None, **kw) -> dict:
+        kw.setdefault("state", {p: self.state[p] for p in B.STATE_CHAINS + B.STATE_REGISTERS if p in self.state})
+        return super().write_pulled(cands, **kw)
+
+    def registers(self) -> dict:
+        tree = self.gh.trees[self.gh.commits[self.gh.refs[B.STATE]]["tree"]]
+        return {p: self.gh.blobs[tree[p]] for p in B.STATE_REGISTERS if p in tree}
+
+    def direct(self, cycle_id: str, proposals=None, decisions=None) -> dict:
+        """``loop.write_cycle.write`` of a cycle with no candidate on ``pulled``, with the registry's input."""
+        return WC.write(P.read(self.pulled), self.src, {"decisions": {}, "merge": None}, [],
+                        W.Writer(YW.REPO, self.gh), self.signer, YW.chained(YW.IMPORTS_ROWS), cycle_id, YW.TS,
+                        proposals=proposals, finding_decisions=decisions)
+
+    def pull_again(self) -> None:
+        """``pulled`` and the target as the next cycle's D1 finds them: ``brain/state``'s files, the registers too."""
+        self.state = dict({p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}, **self.registers())
+        heads = {b: self.gh.refs[b] for b in P.HEAD_BRANCHES}
+        shutil.rmtree(self.pulled)
+        shutil.rmtree(self.results())
+        self.kos({}, heads=heads)
+        self.control(OPEN)
+        self.github()
+
+    def found(self) -> tuple[dict, bytes]:
+        """One cycle that wrote one finding on a state with no register; its answer and the file."""
+        self.kos({})
+        self.control(OPEN)
+        self.github()
+        got = self.direct("301-1", [("hunter-1", [TFW.lint(1)])])
+        return got, self.registers()[B.STATE_FINDINGS]
+
+    def signed(self) -> str:
+        return hashlib.sha256(self.signer.payloads[-1]).hexdigest()
+
+    def test_a_cycle_with_no_register_and_no_input_writes_none(self):
+        out = self.cycle({})
+        self.assertEqual(out["ok"], True, out)
+        self.assertEqual(out["written"]["findings"], {"rows": 0, "unresolved_rows": 0, "refused": []})
+        self.assertEqual(self.registers(), {})
+        self.assertEqual(self.signed(), AN.root_of(AN.tips(self.state_file(B.STATE_LEDGER))))
+
+    def test_a_finding_is_written_in_the_cycles_commit_under_its_root(self):
+        before = self.state[B.STATE_LEDGER]
+        got, findings = self.found()
+        self.assertEqual(got["findings"], {"rows": 1, "unresolved_rows": 0, "refused": []})
+        [row] = rows_of(findings)
+        self.assertEqual((row["state"], row["proposed_by"], row["file"]), ("open", "hunter-1", "pkg/a.js"))
+        self.assertEqual(self.registers(), {B.STATE_FINDINGS: findings})  # the empty unresolved file is not written
+        # one brain/state commit holds the ledger and the register; the signed root is over both
+        self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [HEADS[B.STATE]])
+        self.assertEqual(got["state_sha"], self.gh.refs[B.STATE])
+        ledger = self.state_file(B.STATE_LEDGER)
+        self.assertTrue(ledger.startswith(before) and ledger != before)
+        tips = AN.tips(ledger, {"findings.jsonl": findings})
+        self.assertEqual(tips["findings.jsonl"], row["row_hash"])
+        self.assertEqual((got["root"], self.signed()), (AN.root_of(tips),) * 2)
+        self.assertNotEqual(got["root"], AN.root_of(AN.tips(ledger)))
+
+    def test_the_next_cycles_decide_it_and_a_live_cycle_keeps_both_files(self):
+        _, findings = self.found()
+        print_ = rows_of(findings)[0]["fingerprint"]
+        self.pull_again()
+        art = P.read(self.pulled)
+        self.assertEqual(art.state[B.STATE_FINDINGS], findings)
+        got = self.direct("302-1", decisions=[{"fingerprint": print_, "reasons": ["tests_red"]},
+                                              {"fingerprint": "0" * 64, "reasons": []}])
+        self.assertEqual(got["findings"], {"rows": 1, "unresolved_rows": 1,
+                                           "refused": [{"index": 1, "reasons": ["finding_unknown"]}]})
+        files = self.registers()
+        self.assertTrue(files[B.STATE_FINDINGS].startswith(findings))
+        self.assertEqual([r["state"] for r in rows_of(files[B.STATE_FINDINGS])], ["open", "unresolved"])
+        [lost] = rows_of(files[B.STATE_UNRESOLVED])
+        # the unresolved row's base is the cycle's: brain/integration's head as pulled
+        self.assertEqual((lost["fingerprint"], lost["cause"], lost["snapshot_id"]),
+                         (print_, "test_regression", art.heads[B.INTEGRATION]))
+        named = AN.named(files)
+        self.assertEqual(sorted(named), ["findings.jsonl", "unresolved.jsonl"])
+        self.assertEqual(self.signed(), AN.root_of(AN.tips(self.state_file(B.STATE_LEDGER), named)))
+        # the live cycle (the job: empty input) leaves both files byte for byte and its root is over them
+        self.pull_again()
+        out = self.run_yaz()
+        self.assertEqual(out["ok"], True, out)
+        self.assertEqual(out["written"]["findings"], {"rows": 0, "unresolved_rows": 0, "refused": []})
+        self.assertEqual(self.registers(), files)
+        self.assertEqual(self.signed(), AN.root_of(AN.tips(self.state_file(B.STATE_LEDGER), named)))
+        judged = [AN.judge(self.state_file(B.STATE_LEDGER), self.state_file(B.STATE_ROOTS), lambda *_: [], files)
+                  for files in (named, None)]
+        self.assertEqual((judged[0]["reasons"], judged[1]["reasons"] != []), ([], True), judged)
+
+    def test_a_register_that_is_no_chain_is_a_hard_stop_before_any_write(self):
+        _, findings = self.found()
+        for name, broken in (("a changed row", findings.replace(b"hunter-1", b"hunter-2")),
+                             ("a cut row", findings[:-20])):
+            with self.subTest(name):
+                self.pull_again()
+                shutil.rmtree(self.pulled)
+                self.state[B.STATE_FINDINGS] = broken
+                self.kos({}, heads={b: self.gh.refs[b] for b in P.HEAD_BRANCHES})
+                self.github()
+                out = self.run_yaz()
+                self.assertEqual((out["reason"], out["written"]), ("hard_stop", []), out)
+                self.assertTrue(out["reasons"][0].startswith("state: "), out)
+                self.assertEqual(self.writes(), [])
+                self.state[B.STATE_FINDINGS] = findings
+
+    def test_input_the_registry_refuses_writes_nothing(self):
+        self.kos({})
+        self.control(OPEN)
+        self.github()
+        token = "ghp_" + "Q7x" * 12  # a GitHub token shape, not a real token
+        with self.assertRaises(WC.Refused) as caught:
+            self.direct("301-1", [("hunter-1", [TFW.lint(1, claim="leak " + token)])])
+        [reason] = caught.exception.reasons
+        self.assertTrue(reason.startswith("state_unwritable: "), reason)
+        self.assertNotIn(token, reason)
+        for name, proposals, decisions in (("proposals", [("", [])], None), ("decisions", None, [{"reasons": []}])):
+            with self.subTest(name), self.assertRaises(WC.Unusable) as caught:
+                self.direct("301-1", proposals, decisions)
+            self.assertTrue(str(caught.exception).startswith("findings: "), caught.exception)
+        self.assertEqual((self.writes(), self.signer.payloads), ([], []))
 
 
 class Genesis(StateBase):
