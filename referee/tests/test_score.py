@@ -37,6 +37,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from harness import params as HP  # noqa: E402
 from harness import score as HS  # noqa: E402
 from harness import stats as ST  # noqa: E402
 from loop import job as J  # noqa: E402
@@ -101,7 +102,7 @@ class Empty(Base):
     """Test 1."""
 
     def test_no_finding_is_recall_zero_and_a_report(self):
-        out = self.report([], [case("c1", 2), case("c2", 3)], alpha=TENTH, min_groups=1)
+        out = self.report([], [case("c1", 2), case("c2", 3)], alpha=TENTH)
         self.assertEqual(out["hits"], 0)
         self.assertEqual(out["refused"], [])
         self.assertEqual(out["counts"], {"given": 0, "distinct": 0, "reobserved": 0, "refused": 0})
@@ -112,7 +113,7 @@ class Empty(Base):
         self.assertEqual((report["verdict"], out["verdict_reason"]), ("FAIL", "misses"))
 
     def test_no_finding_and_no_case(self):
-        out = self.report([], [], alpha=TENTH, min_groups=1)
+        out = self.report([], [], alpha=TENTH)
         report = out["report"]
         self.assertEqual((report["n"], report["recall"], report["x_eff"], report["recall_lb"], report["census"]),
                          (0, None, None, None, None))
@@ -233,7 +234,7 @@ def span(fingerprint: str, *spans: tuple, **over) -> dict:
 
 
 class RefLength(Base):
-    """``ref_over_max_lines``: every reference of the finding spans more lines than ``ref_max_lines``."""
+    """``ref_over_max_lines``: the primary reference, ``evidence_refs[0]``, spans more lines than ``ref_max_lines``."""
 
     def test_the_bound_is_the_number_of_lines_spanned(self):
         cases = [case("c1", 1, end=5)]
@@ -245,13 +246,15 @@ class RefLength(Base):
         one_line = self.report([span("x", (2, 2))], cases, ref_max_lines=1)
         self.assertEqual((one_line["hits"], one_line["refused"]), (1, []))
 
-    def test_one_reference_within_the_bound_keeps_the_finding(self):
+    def test_only_the_first_reference_is_bounded(self):
         cases = [case("c1", 1, end=5)]
-        for spans in (((1, 5), (2, 2)), ((2, 2), (1, 5)), ((1, 4), (1, 5), (2, 3))):
+        refused = [{"index": 0, "reasons": ["ref_over_max_lines"]}]
+        for spans, want in ((((2, 2), (1, 5)), []), (((2, 3), (1, 5), (1, 4)), []), (((2, 3),), []),
+                            (((1, 5), (2, 2)), refused), (((1, 3), (2, 2), (2, 3)), refused),
+                            (((1, 3), (2, 5)), refused), (((2, 4), (2, 3)), refused)):
             with self.subTest(spans=spans):
-                self.assertEqual(self.report([span("x", *spans)], cases, ref_max_lines=2)["refused"], [])
-        every = self.report([span("x", (1, 3), (2, 5))], cases, ref_max_lines=2)
-        self.assertEqual(every["refused"], [{"index": 0, "reasons": ["ref_over_max_lines"]}])
+                self.assertEqual(self.report([span("x", *spans)], cases, ref_max_lines=2)["refused"], want)
+                self.assertEqual(HS.sift([span("x", *spans)], ref_max_lines=2)[1], want)
 
     def test_without_the_bound_no_length_is_judged(self):
         out = self.report([span("x", (2, 5))], [case("c1", 1, end=5)])
@@ -302,47 +305,65 @@ class FromPolicy(Base):
         with mock.patch.object(J, "FINDINGS", self.stamped(findings)):
             return J.yaz_harness(art, self.tree, {"cases": cases})
 
-    def policy(self, level=0.9, **params) -> dict:
+    def policy(self, level="0.900000", **params) -> dict:
+        params = dict({"match_window_lines": 1, "evidence_ref_max_lines": 30}, **params)
         return {"constitutional": {"confidence_level": level, "stage_params": params}}
 
     def test_each_value_reaches_the_report(self):
         cases, findings = [case("c1", 2), case("c2", 3, group="lib")], [finding("x", 2), finding("y", 3)]
-        bare = self.harness({}, findings, cases)
-        self.assertEqual(bare, self.report(findings, cases))
-        self.assertEqual((bare["report"]["recall_lb"], bare["verdict_reason"]), (None, "min_groups_unknown"))
-        got = self.harness(self.policy(census_min_groups=2), findings, cases)
-        self.assertEqual(got, self.report(findings, cases, alpha=TENTH, min_groups=2))
+        got = self.harness(self.policy(), findings, cases)
+        self.assertEqual(got, self.report(findings, cases, alpha=TENTH, window=1, ref_max_lines=30))
         self.assertEqual((got["report"]["recall_lb"], got["report"]["verdict"]),
                          (ST.fixed6(ST.cp_lower(Fraction(2), 2, TENTH)), "PASS"))
-        self.assertEqual(self.harness(self.policy(census_min_groups=3), findings, cases)["verdict_reason"],
-                         "groups_below_min")
-        other = self.harness(self.policy(level=0.5, census_min_groups=2), findings, cases)
+        other = self.harness(self.policy(level="0.500000"), findings, cases)
         self.assertEqual(other["report"]["recall_lb"], ST.fixed6(ST.cp_lower(Fraction(2), 2, Fraction(1, 2))))
         self.assertNotEqual(other["report"]["recall_lb"], got["report"]["recall_lb"])
+
+    def test_the_group_floor_of_the_policy_changes_nothing_of_the_dev_report(self):
+        cases, findings = [case("c1", 2), case("c2", 3, group="lib")], [finding("x", 2), finding("y", 3)]
+        plain = self.harness(self.policy(), findings, cases)
+        for floor in (1, 2, 3, 40, 10 ** 6):     # tohum/26h: under, at and over G; the exit sample's, not this report's
+            with self.subTest(floor=floor):
+                self.assertEqual(self.harness(self.policy(census_min_groups=floor), findings, cases), plain)
+        self.assertEqual((plain["report"]["n_groups"], plain["report"]["verdict"], plain["verdict_reason"]),
+                         (2, "PASS", None))
 
     def test_the_window_and_the_reference_bound(self):
         cases = [dict(case("c1", 2), **self.K3)]
         near = dict(finding("x", 4), property="p", required_change=[{"file": "a", "op": "e"}])
-        self.assertEqual(self.harness(self.policy(), [near], cases)["hits"], 0)
         self.assertEqual(self.harness(self.policy(match_window_lines=1), [near], cases)["hits"], 0)
         self.assertEqual(self.harness(self.policy(match_window_lines=2), [near], cases)["hits"], 1)
         long = [span("x", (2, 4))]
         self.assertEqual(self.harness(self.policy(evidence_ref_max_lines=3), long, [case("c1", 1, end=5)])["refused"], [])
         self.assertEqual(self.harness(self.policy(evidence_ref_max_lines=2), long, [case("c1", 1, end=5)])["refused"],
                          [{"index": 0, "reasons": ["ref_over_max_lines"]}])
+        second = [span("x", (2, 3), (1, 5))]     # the policy's bound is on the first reference alone
+        self.assertEqual(self.harness(self.policy(evidence_ref_max_lines=2), second, [case("c1", 1, end=5)])["refused"], [])
 
     def test_a_value_elsewhere_in_the_policy_is_not_read(self):
-        policy = {"confidence_level": 0.9, "stage_params": {"census_min_groups": 1, "match_window_lines": 9},
-                  "performance": self.policy(census_min_groups=1)["constitutional"], "census_min_groups": 1}
+        policy = self.policy()
+        policy.update({"confidence_level": "0.500000", "stage_params": {"match_window_lines": 9, "evidence_ref_max_lines": 1},
+                       "performance": self.policy(level="0.500000", match_window_lines=9)["constitutional"]})
         cases, findings = [case("c1", 2)], [finding("x", 2)]
-        self.assertEqual(self.harness(policy, findings, cases), self.report(findings, cases))
+        self.assertEqual(self.harness(policy, findings, cases),
+                         self.report(findings, cases, alpha=TENTH, window=1, ref_max_lines=30))
 
-    def test_an_invalid_value_refuses_the_report(self):
-        got = self.harness(self.policy(level=2, match_window_lines=0), [], [case("c1", 2)])
-        self.assertEqual(got, {"reason": "harness_refused",
-                               "reasons": ["policy_invalid:constitutional.confidence_level",
-                                           "policy_invalid:constitutional.stage_params.match_window_lines"]})
-        self.assertEqual(self.harness([], [], [])["reason"], "harness_refused")
+    def test_a_policy_missing_or_off_a_value_is_no_report_and_no_line(self):
+        """Not ``harness_refused`` beside a written cycle: ``Invalid`` leaves ``yaz_harness`` (``run`` stops the job
+        at ``yaz_policy`` before any target; ``test_drift.YazPolicy`` shows that)."""
+        absent = self.policy()
+        del absent["constitutional"]["stage_params"]["evidence_ref_max_lines"]
+        for policy, reasons in ((self.policy(level=0.9, match_window_lines=0),
+                                 ["policy_invalid:constitutional.confidence_level",
+                                  "policy_invalid:constitutional.stage_params.match_window_lines"]),
+                                (absent, ["policy_invalid:constitutional.stage_params.evidence_ref_max_lines"]),
+                                ({}, ["policy_invalid:constitutional.confidence_level",
+                                      "policy_invalid:constitutional.stage_params.match_window_lines",
+                                      "policy_invalid:constitutional.stage_params.evidence_ref_max_lines"])):
+            with self.subTest(policy=policy), self.assertRaises(HP.Invalid) as ctx:
+                self.harness(policy, [], [case("c1", 2)])
+            self.assertEqual(ctx.exception.reasons, reasons)
+        self.assertEqual(self.harness(self.policy(), [], "no cases")["reason"], "harness_refused")
 
 
 class Match(Base):
@@ -385,7 +406,7 @@ class Determinism(Base):
         findings = self.file("f.json", self.stamped([WIDE, NARROW, finding("z", 9), None, finding("wide", 4)]))
         cases = self.file("c.json", TWO + [case("c3", 1, path="pkg/b.js", rule="no-eval", group="other")])
         args = (findings, cases, "--snapshot", self.file("s.json", self.snapshot), "--tree", self.tree,
-                "--alpha", "0.10", "--min-groups", "2")
+                "--alpha", "0.10")
         first, second = self.command(*args, seed="1"), self.command(*args, seed="2")
         self.assertEqual(first, second)
         self.assertEqual(first[0], 0)
@@ -621,7 +642,7 @@ class Statistics(Base):
 class Report(Base):
     def test_the_fields_are_26b_s(self):
         meta = {"run_id": "r1", "spec_version": "2.2", "hunter_id": "h", "prompt_sha256": "p", "rung": 1, "n": 99}
-        out = self.report([finding("x", 2)], [case("c1", 2)], alpha=TENTH, min_groups=1, meta=meta)
+        out = self.report([finding("x", 2)], [case("c1", 2)], alpha=TENTH, meta=meta)
         self.assertEqual(set(out), {"report", "hits", "matched", "missed_rules", "refused", "counts", "verdict_reason"})
         self.assertEqual(out["report"], {
             "run_id": "r1", "snapshot_id": self.snapshot["snapshot_id"], "spec_version": "2.2",
@@ -638,7 +659,7 @@ class Report(Base):
             self.assertNotIsInstance(value, float)
             for inner in (value.values() if isinstance(value, dict) else value if isinstance(value, list) else ()):
                 walk(inner)
-        walk(self.report([finding("x", 2)], TWO + [case("c3", 4, group="g")], alpha=TENTH, min_groups=1))
+        walk(self.report([finding("x", 2)], TWO + [case("c3", 4, group="g")], alpha=TENTH))
 
     def test_the_census(self):
         cases = [case("c1", 2), case("c2", 3), case("c3", 4, rule="no-eval"), case("c4", 1, path="pkg/b.js", rule="eqeqeq")]
@@ -652,16 +673,18 @@ class Report(Base):
 
     def test_the_verdicts(self):
         hit, cases = [finding("x", 2), finding("y", 1, path="pkg/b.js")], [case("c1", 2), case("c2", 1, path="pkg/b.js", group="g2")]
-        for kw, want in (({"min_groups": 2}, ("PASS", None)), ({"min_groups": 3}, ("UNMEASURABLE", "groups_below_min")),
-                         ({}, ("UNMEASURABLE", "min_groups_unknown"))):
-            out = self.report(hit, cases, **kw)
-            self.assertEqual((out["report"]["verdict"], out["verdict_reason"]), want)
-        out = self.report(hit[:1], cases, min_groups=1)
+        out = self.report(hit, cases)     # every case hit is PASS, whatever the number of groups (tohum/26h)
+        self.assertEqual((out["report"]["n_groups"], out["report"]["verdict"], out["verdict_reason"]), (2, "PASS", None))
+        one = self.report(hit[:1], cases[:1])
+        self.assertEqual((one["report"]["n_groups"], one["report"]["verdict"], one["verdict_reason"]), (1, "PASS", None))
+        with self.assertRaises(TypeError):     # the report takes no floor of groups
+            self.report(hit, cases, min_groups=2)
+        out = self.report(hit[:1], cases)
         self.assertEqual((out["report"]["verdict"], out["verdict_reason"]), ("FAIL", "misses"))
         # a class outside the census: recall is reported, nothing is gated
         k3 = [case("c1", 2, class_level="K3")]
         found = dict(finding("x", 2), required_change=[{"file": "pkg/a.js", "op": "edit"}])
-        out = self.report([found], k3, min_groups=1, window=0)
+        out = self.report([found], k3, window=0)
         self.assertEqual((out["hits"], out["report"]["recall"], out["report"]["census"], out["missed_rules"],
                           out["report"]["verdict"], out["verdict_reason"]),
                          (1, "1.000000", None, None, "UNMEASURABLE", "class_without_census"))
@@ -724,6 +747,7 @@ class Vectors(Base):
                      [self.hit, self.file("mixed.json", [case("c1", 1), case("c2", 2, class_level="K1")])],
                      [self.hit, self.one, "--snapshot", snapshot], [self.hit, self.one, "--tree", self.tree],
                      [self.hit, self.one, "--alpha", "0.1"], [self.hit, self.one, "--min-groups", "1"],
+                     [self.hit, self.one, "--snapshot", snapshot, "--tree", self.tree, "--min-groups", "1"],
                      [self.hit, self.one, "--window"], [self.hit, self.one, "--window", "x"],
                      [self.hit, self.one, "--window", "1", "--window", "2"], [self.hit, self.one, "--other", "1"],
                      [self.hit, self.one, "--snapshot", snapshot, "--tree", self.tree, "--alpha", "1"],
@@ -762,14 +786,16 @@ class Live(LY.YazBase):
         report = harness["report"]
         self.assertEqual((report["snapshot_id"], report["n"], report["n_groups"], report["recall"], report["recall_lb"],
                           report["census"], report["verdict"]),
-                         (snapshot["snapshot_id"], 1, 1, "0.000000", None,
+                         (snapshot["snapshot_id"], 1, 1, "0.000000", "0.000000",
                           {"rules_total": 1, "rules_covered": 0, "misses": 1}, "FAIL"))
         self.assertEqual(harness["missed_rules"], [["eslint", "no-var"]])
 
         def read(path):
             return D._read_regular(self.src, path)
 
-        self.assertEqual(harness, HS.report([], yaz["cases"]["cases"], snapshot, read))
+        # the policy's three values reached the report: the world's policy is test_loop_cagir's ``STAGE1``
+        self.assertEqual(harness, HS.report([], yaz["cases"]["cases"], snapshot, read, alpha=TENTH, window=15,
+                                            ref_max_lines=30))
         # the case's oracle finding, given an identity and the snapshot, is a hit on the same cases and document
         oracle = dict(yaz["cases"]["oracle"][built["case_id"]], fingerprint="fp", snapshot_id=snapshot["snapshot_id"])
         scored = HS.report([oracle], yaz["cases"]["cases"], snapshot, read)
@@ -785,7 +811,7 @@ class Live(LY.YazBase):
                           yaz["harness"]["report"]["clean_findings"]), ("UNMEASURABLE", "no_cases", 0))
 
     def test_what_the_scorer_refuses_is_on_the_line(self):
-        art = types.SimpleNamespace(snapshot={"schema": "other"}, policy={})
+        art = types.SimpleNamespace(snapshot={"schema": "other"}, policy=json.loads(LY.policy()))
         self.assertEqual(J.yaz_harness(art, self.src, {"cases": []}),
                          {"reason": "harness_refused", "reasons": ["snapshot:document_invalid"]})
 

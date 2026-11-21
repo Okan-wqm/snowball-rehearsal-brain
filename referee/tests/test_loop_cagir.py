@@ -65,9 +65,25 @@ def result(**over) -> str:
 def policy(canary: str = "1") -> bytes:
     """``policy.json`` in tohum/26b's shape, ``canary_usd`` written as the JSON text ``canary`` (so ``0.5`` is a JSON
     fraction): ``operating{}`` beside ``constitutional{}``, which holds ``stage_budgets{}`` and, as every policy
-    ``profile.derive`` takes, ``security_keywords`` (derive's own list, so a tree derives as with no policy)."""
+    ``profile.derive`` takes, ``security_keywords`` (derive's own list, so a tree derives as with no policy); and
+    stage 1's twelve required paths (``STAGE1``: tohum/18a's starting values, the fractions tohum/01c's strings)."""
+    stage1 = json.dumps(STAGE1["constitutional"])[1:-1]
     return ('{"operating": %s, "constitutional": {"security_keywords": %s, "stage_budgets": {"asama_0": '
-            '{"canary_usd": %s}}}}' % (json.dumps(operating()), json.dumps(list(D.SECURITY_KEYWORDS)), canary)).encode()
+            '{"canary_usd": %s}}, %s}, "performance": %s}'
+            % (json.dumps(operating()), json.dumps(list(D.SECURITY_KEYWORDS)), canary, stage1,
+               json.dumps(STAGE1["performance"]))).encode()
+
+
+STAGE1 = {
+    "constitutional": {
+        "confidence_level": "0.900000", "monthly_cap_usd": 10000,
+        "stage_params": {"census_min_groups": 40, "planted_max_cases": 5, "evidence_ref_max_lines": 30,
+                         "match_window_lines": 15},
+        "regression_freeze": {"min_merges": 50, "window_days": 30, "revert_rate": "0.020000", "min_reverts": 2},
+        "gate_rules": {"soft_freeze_limit": 2},
+    },
+    "performance": {"windows": {"measure": 14}},
+}
 
 
 def ledger_with_costs(*costs: int) -> list[dict]:

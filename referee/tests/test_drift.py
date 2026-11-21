@@ -21,6 +21,12 @@ stage 1 MF5's offline reading, ``yaz_offline``).
   ``harness_online`` with no request sent, no target named and ``pulled`` not opened (the same job without its
   ``pulled`` ends the same way, and ``pulled_invalid`` on the code as it is);
 - ``YazGenesis``: a genesis cycle's target with a fact changed stops the job the same way, nothing written.
+- ``YazPolicy`` (tohum/29v "Döngüde eksik anahtar", ``loop.job.yaz_policy``): with two targets served, a policy
+  of the second without one required path serves no target and writes nothing on either (``policy_unusable``, the
+  path named), after drift's reads of both; a drift beside it is the job's reason, and it comes before a stale
+  operator check. On one target: each of the twelve required paths absent, and each judged kind off its form (a
+  JSON float where a six-decimal string or an integer belongs), stops the job the same way with nothing written
+  and no signature; the policy put back is written.
 
 - ``Baseline`` (tohum/01c): a summary without the top-level ``drift`` object, with one inside ``targets[]``, with a
   ``drift`` not of the form or without the target is unusable and nothing is read; a writer App of another id is
@@ -59,6 +65,7 @@ import test_loop_write as TLW  # noqa: E402
 import yaz_world as YW  # noqa: E402
 from drift import check as DC  # noqa: E402
 from loop import job as J  # noqa: E402
+from policy import reads as R  # noqa: E402
 from target import branches as B  # noqa: E402
 
 P = "/repos/%s" % AW.REPO
@@ -690,7 +697,7 @@ class Yaz(TLW.StateBase):
         refs = dict(self.gh.refs)
         out = self.job()
         self.assertEqual({k: out[k] for k in out if k not in ("job", "steps", "mfs", "offline")},
-                         {"ok": False, "reason": "operator_check_stale", "targets": [],
+                         {"ok": False, "reason": "operator_check_stale", "targets": [], "policy": {},
                           "drift": {"checked": ["t1"], "drifted": {}, "stale": True}}, out)
         self.assertEqual((self.writes(), self.gh.refs, self.signer.payloads), ([], refs, []))
         sent = [(m, path) for m, path, _ in self.gh.requests]
@@ -808,15 +815,94 @@ class YazGenesis(TLW.Genesis):
         self.assertEqual(self.writes(), [])
 
 
+class YazPolicy(Yaz):
+    """``yaz``'s stop on a policy it cannot use, before any target is served (``Yaz``'s worlds)."""
+
+    def repolicied(self, tid: str, change) -> None:
+        """Target ``tid``'s ``pulled`` with ``change`` made to its parsed policy, the manifest naming the new bytes
+        (what a ``cek`` of other code would have handed over: this code's ``cek`` refuses such a pull)."""
+        self.pulled = os.path.join(self.temp, "in", "pulled", tid)
+        path = os.path.join(self.pulled, "policy.json")
+        with open(path, "rb") as fh:
+            doc = json.loads(fh.read())
+        change(doc)
+        data = json.dumps(doc).encode()
+        with open(path, "wb") as fh:
+            fh.write(data)
+        manifest = self.manifest()
+        manifest["files"]["policy.json"] = TLW.P._sha(data)
+        self.set_manifest(manifest)
+
+    # "before the loop's first write", whichever target's policy it is
+    def test_a_required_path_absent_on_a_later_target_leaves_every_target_unwritten(self):
+        ghs = self.two()
+        self.repolicied("t2", lambda doc: doc["constitutional"]["stage_params"].pop("evidence_ref_max_lines"))
+        named = ["policy_invalid:constitutional.stage_params.evidence_ref_max_lines"]
+        out, sent = self.run_two(ghs)
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"], out["policy"]),
+                         (False, "policy_unusable", named, "t2", [], {"t2": named}), out)
+        self.assertEqual(out["drift"], {"checked": ["t1", "t2"], "drifted": {}, "stale": False})
+        self.assertEqual(([s for s in sent if s[0] != "GET"], self.signer.payloads), ([], []))
+        for gh in ghs.values():
+            self.assertEqual((gh.refs[B.STATE], gh.refs[B.INTEGRATION]), (TLW.HEADS[B.STATE], TLW.HEADS[B.INTEGRATION]))
+        # before a stale operator check, which is the other clean stop
+        self.stale_summary(1, [YW.entry("t1"), YW.entry("t2")])
+        out, sent = self.run_two(ghs)
+        self.assertEqual((out["reason"], out["target"], out["drift"]["stale"], out["targets"]),
+                         ("policy_unusable", "t2", True, []), out)
+        # a hard stop beside it is the job's reason
+        change(ghs["t1"], "/repos/acme/t1/rulesets/1", bypass("always"))
+        out, sent = self.run_two(ghs)
+        self.assertEqual((out["reason"], out["reasons"], out["target"], out["targets"]),
+                         ("drift", ["rules_bypassable"], "t1", []), out)
+        self.assertNotIn("policy", out)
+        self.assertEqual(([s for s in sent if s[0] != "GET"], self.signer.payloads), ([], []))
+
+    def test_each_required_path_absent_or_off_its_form_stops_the_job_and_the_policy_put_back_is_written(self):
+        self.ready()
+        refs = dict(self.gh.refs)
+        with open(os.path.join(self.pulled, "policy.json"), "rb") as fh:
+            good = json.loads(fh.read())
+        self.assertEqual(len(R.REQUIRED), 12)
+
+        def cut(path):
+            def change(doc):
+                for key in path[:-1]:
+                    doc = doc[key]
+                del doc[path[-1]]
+            return change
+
+        def put(path, value):
+            def change(doc):
+                for key in path[:-1]:
+                    doc = doc[key]
+                doc[path[-1]] = value
+            return change
+
+        for path in R.REQUIRED:
+            for how in (cut(path), put(path, 0.5), put(path, None)):     # absent; a JSON float; a null
+                self.repolicied("t1", lambda doc: (doc.clear(), doc.update(copy.deepcopy(good))))
+                self.repolicied("t1", how)
+                with self.subTest(path=path):
+                    out = self.job()
+                    named = ["policy_invalid:" + R.dotted(path)]
+                    self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"],
+                                      out["policy"]), (False, "policy_unusable", named, "t1", [], {"t1": named}), out)
+                    self.assertEqual((self.writes(), self.gh.refs, self.signer.payloads), ([], refs, []))
+        self.repolicied("t1", lambda doc: (doc.clear(), doc.update(copy.deepcopy(good))))
+        job = self.job()
+        self.assertEqual((self.line(job)["ok"], job["policy"], bool(self.writes())), (True, {}, True), job)
+
+
 class Listed(unittest.TestCase):
     def test_every_test_class_of_this_module_is_in_the_list_the_command_runs(self):
         own = {c for c in globals().values() if isinstance(c, type) and issubclass(c, unittest.TestCase)
                and c.__module__ == __name__}
         self.assertEqual(own, set(LISTED))
-        self.assertEqual(len(LISTED), 8)
+        self.assertEqual(len(LISTED), 9)
 
 
-LISTED = (Check, Baseline, Genesis, Cli, Yaz, Order, YazGenesis, Listed)
+LISTED = (Check, Baseline, Genesis, Cli, Yaz, YazPolicy, Order, YazGenesis, Listed)
 
 
 def load_tests(loader, standard, pattern):

@@ -35,10 +35,11 @@ A time is ``ledger.schema``'s ``ts`` and a real date; a count is an integer of 0
 or a finite float, no boolean, compared exactly (a float read as the decimal Python writes for it).
 
 **Thresholds** (``thresholds(policy)``): the thirteen paths of ``policy.reads.GOZCU_PATHS``, each judged by
-``harness.params.count`` (an integer of 1 or more) or ``fraction`` (a JSON fraction strictly between 0 and 1);
-a value off that is ``harness.params.Invalid`` naming every such path, and nothing is judged. An absent path is
-``None``: the rules that need it are not judged and ``unjudged`` names the path, sorted (what a cycle does when a
-rule cannot be judged is the wiring's choice, not made here). The leaf names under ``regression_freeze`` and
+``harness.params.value`` (a count is an integer of 1 or more, a fraction a six-decimal string strictly between 0
+and 1; which path holds which is its table); a value off that is ``harness.params.Invalid`` naming every such
+path, and nothing is judged. So is an absent path of the seven tohum/28a requires (``policy.reads.REQUIRED``).
+An absent path of the other six is ``None``: the rules that need it are not judged and ``unjudged`` names the
+path, sorted (tohum/28a: not a stop). The leaf names under ``regression_freeze`` and
 ``genesis_drafts`` are those of ``/vec/policy/policy.json``; tohum/18a and 18b name only the two objects.
 
 **Window**: a time ``t`` is in the last ``d`` days when ``now - d * 86400 < t <= now``; a row after ``now`` is in
@@ -111,19 +112,19 @@ GENESIS = "genesis"
 EVENT_KINDS = ("merge", "revert")
 VIEWS = ("events", "containment", "spend", "freezes", "stops", "thresholds", "similarities", "genesis")
 THRESHOLDS = {
-    "monthly_cap_usd": (HP.count, R.MONTHLY_CAP_USD),
-    "monthly_cap_ci_minutes": (HP.count, R.MONTHLY_CAP_CI_MINUTES),
-    "min_merges": (HP.count, R.REGRESSION_MIN_MERGES),
-    "window_days": (HP.count, R.REGRESSION_WINDOW_DAYS),
-    "revert_rate": (HP.fraction, R.REGRESSION_REVERT_RATE),
-    "min_reverts": (HP.count, R.REGRESSION_MIN_REVERTS),
-    "soft_freeze_limit": (HP.count, R.SOFT_FREEZE_LIMIT),
-    "containment_freeze": (HP.count, R.CONTAINMENT_FREEZE),
-    "measure_window": (HP.count, R.MEASURE_WINDOW),
-    "drift_bound": (HP.fraction, R.DRIFT_BOUND),
-    "seat_similarity": (HP.fraction, R.SEAT_SIMILARITY),
-    "per_window": (HP.count, R.GENESIS_DRAFTS_PER_WINDOW),
-    "queue": (HP.count, R.GENESIS_DRAFTS_QUEUE),
+    "monthly_cap_usd": R.MONTHLY_CAP_USD,
+    "monthly_cap_ci_minutes": R.MONTHLY_CAP_CI_MINUTES,
+    "min_merges": R.REGRESSION_MIN_MERGES,
+    "window_days": R.REGRESSION_WINDOW_DAYS,
+    "revert_rate": R.REGRESSION_REVERT_RATE,
+    "min_reverts": R.REGRESSION_MIN_REVERTS,
+    "soft_freeze_limit": R.SOFT_FREEZE_LIMIT,
+    "containment_freeze": R.CONTAINMENT_FREEZE,
+    "measure_window": R.MEASURE_WINDOW,
+    "drift_bound": R.DRIFT_BOUND,
+    "seat_similarity": R.SEAT_SIMILARITY,
+    "per_window": R.GENESIS_DRAFTS_PER_WINDOW,
+    "queue": R.GENESIS_DRAFTS_QUEUE,
 }
 
 
@@ -132,12 +133,13 @@ class Unusable(ValueError):
 
 
 def thresholds(policy: Any) -> dict[str, Any]:
-    """Each name of ``THRESHOLDS`` with its value, ``None`` when absent; ``harness.params.Invalid`` otherwise."""
+    """Each name of ``THRESHOLDS`` with ``harness.params.value`` of its path (``None``: absent and not required);
+    ``harness.params.Invalid`` with every reason otherwise."""
     out: dict[str, Any] = {}
     reasons: list[str] = []
-    for name, (read, path) in THRESHOLDS.items():
+    for name, path in THRESHOLDS.items():
         try:
-            out[name] = read(policy, path)
+            out[name] = HP.value(policy, path)
         except HP.Invalid as exc:
             reasons += exc.reasons
     if reasons:
@@ -332,7 +334,7 @@ def evaluate(views: Any, policy: Any, now: Any) -> dict[str, list]:
     unjudged: set[str] = set()
 
     def need(*names: str) -> tuple | None:
-        absent = [R.dotted(THRESHOLDS[name][1]) for name in names if limits[name] is None]
+        absent = [R.dotted(THRESHOLDS[name]) for name in names if limits[name] is None]
         unjudged.update(absent)
         return None if absent else tuple(limits[name] for name in names)
 

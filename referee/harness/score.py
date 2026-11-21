@@ -23,11 +23,9 @@ reason that holds is listed, in this order; with ``finding_invalid`` nothing mor
    one's (tohum/07 derives the fingerprint from those, so one fingerprint cannot stand for two of them), and
    then it is refused, not folded.
 3. With ``ref_max_lines`` (a positive integer, ``stage_params.evidence_ref_max_lines``; another value that is not
-   ``None`` is ``Unusable``, ``ref_max_lines_invalid``): ``ref_over_max_lines``: **every** reference of the
-   finding spans more lines than it (a reference spans ``line_end - line_start + 1`` lines). asama-1/13d bounds
-   "the one primary reference" and no page says which reference that is, so a finding is refused only when none
-   of its references could be it within the bound; a finding with one reference within the bound is not judged
-   further on length (reports/seed-083).
+   ``None`` is ``Unusable``, ``ref_max_lines_invalid``): ``ref_over_max_lines``: the finding's **primary**
+   reference, ``evidence_refs[0]``, spans more lines than it (a reference spans ``line_end - line_start + 1``
+   lines, both ends counted; tohum/26h). No other reference is bounded in length, whatever the first one is.
 4. With a snapshot (``snapshot`` the ``snapshot.make`` document, ``read(path)`` the bytes of a file of the tree
    the document was made of, or ``None``): ``snapshot_mismatch``: the finding's ``snapshot_id`` is not the
    document's; for its references, each reason once: ``ref_outside_manifest``: a ``path`` that is not a file of
@@ -48,7 +46,7 @@ findings nor on that of the cases. Which of several largest sets is returned is 
 ``case_id_twice:<index>``, ``cases_mixed_class``). The cases are the referee's own product
 (``cases.build``); their other fields are read by the hit rule only.
 
-**The report** (``report(findings, cases, snapshot, read, alpha, min_groups, window, meta, ref_max_lines)``) is ``{report,
+**The report** (``report(findings, cases, snapshot, read, alpha, window, meta, ref_max_lines)``) is ``{report,
 hits, matched, missed_rules, refused, counts, verdict_reason}``. ``report`` holds exactly tohum/26b's fields:
 
 - ``snapshot_id``: the document's (``snapshot.make.check`` must accept it, else ``Unusable`` with its reasons
@@ -68,9 +66,8 @@ hits, matched, missed_rules, refused, counts, verdict_reason}``. ``report`` hold
 - ``precision``, ``precision_lb``, ``unresolved``, ``cost_usd``, ``value_per_usd``: ``null`` (below);
 - ``verdict``, with its reason beside the report (``verdict_reason``):
   ``UNMEASURABLE`` ``no_cases``; ``UNMEASURABLE`` ``class_without_census`` (a class outside ``DETERMINISTIC``);
-  ``FAIL`` ``misses`` (a case not hit: 13e's gate is every rule covered and no miss); with no miss,
-  ``UNMEASURABLE`` ``min_groups_unknown`` when ``min_groups`` is ``None`` and ``groups_below_min`` when G is
-  under it, else ``PASS`` (reason ``null``). So ``PASS`` needs a floor the caller gave and met.
+  ``FAIL`` ``misses`` (a case not hit: 13e's gate is every rule covered and no miss); with no miss ``PASS``
+  (reason ``null``). The dev report has no floor of groups (tohum/26h): G changes no verdict.
 
 ``matched`` is ``{case_id: the finding's fingerprint}``, ``missed_rules`` the sorted ``[tool, rule_id]`` of the
 rules with a missed case (``null`` without census), ``counts`` ``{given, distinct, reobserved, refused}`` over
@@ -88,16 +85,15 @@ Out of scope, stated:
 - ``precision``, ``precision_lb``, ``unresolved`` (they need the triage of findings that hit no case: the panel
   and the oracle, later parties), ``cost_usd``, ``value_per_usd`` (the cost of a hunter's run: P2);
 - the census of K4 (13e names it a census class; no page says what its rule is; the same report);
-- where ``alpha``, ``min_groups``, ``window`` and ``ref_max_lines`` come from: the caller's
-  (``harness.params.score`` reads them from the policy for ``loop.job``); "or all there are" of
-  ``stage_params.census_min_groups`` (tohum/18a: the exit sample's judgement, ``exit.sample``): ``min_groups`` here
-  is a floor and nothing else;
+- where ``alpha``, ``window`` and ``ref_max_lines`` come from: the caller's (``harness.params.score`` reads
+  them from the policy for ``loop.job``); ``stage_params.census_min_groups`` (tohum/26h: the exit sample's,
+  ``exit.sample``, not built; nothing here reads it);
 - the views of 13e (which of these fields an agent may see) and writing the report anywhere.
 
 Command line, run from ``referee/`` (``FINDINGS`` and ``CASES`` are files holding one JSON list each)::
 
     python -m harness.score FINDINGS CASES [--window N] [--ref-max-lines N]
-    python -m harness.score FINDINGS CASES --snapshot DOCUMENT --tree DIR [--alpha A] [--min-groups N] [--window N]
+    python -m harness.score FINDINGS CASES --snapshot DOCUMENT --tree DIR [--alpha A] [--window N]
                             [--ref-max-lines N]
 
 The first form (tohum/29a) prints ``{"hits": N}``: ``sift`` without a snapshot, then ``match``; when a finding
@@ -188,8 +184,8 @@ def sift(findings: list, snapshot: dict | None = None, read: Callable[[str], "by
         reasons = []
         if earlier is not None and any(finding.get(k) != earlier.get(k) for k in IDENTITY_FIELDS):
             reasons.append("fingerprint_conflict")
-        if ref_max_lines is not None and all(r["line_end"] - r["line_start"] + 1 > ref_max_lines
-                                             for r in finding["evidence_refs"]):
+        primary = finding["evidence_refs"][0]
+        if ref_max_lines is not None and primary["line_end"] - primary["line_start"] + 1 > ref_max_lines:
             reasons.append("ref_over_max_lines")
         if snapshot is not None:
             reasons += _ref_reasons(finding, snapshot, read)
@@ -259,8 +255,8 @@ def match(accepted: list[dict], cases: list[dict], window: int | None = None) ->
 # ---------------------------------------------------------------- the report
 
 def report(findings: Any, cases: Any, snapshot: Any, read: Callable[[str], "bytes | None"],
-           alpha: Fraction | None = None, min_groups: int | None = None, window: int | None = None,
-           meta: dict | None = None, ref_max_lines: int | None = None) -> dict[str, Any]:
+           alpha: Fraction | None = None, window: int | None = None, meta: dict | None = None,
+           ref_max_lines: int | None = None) -> dict[str, Any]:
     """The harness report and what stands beside it; see the module docstring, "The report"."""
     try:
         SM.check(snapshot)
@@ -293,14 +289,7 @@ def report(findings: Any, cases: Any, snapshot: Any, read: Callable[[str], "byte
             missed = {(case["tool"], case["rule_id"]) for case in ordered if case["case_id"] not in matched}
             missed_rules = [list(rule) for rule in sorted(missed)]
             out["census"] = {"rules_total": len(rules), "rules_covered": len(rules - missed), "misses": n - hits}
-            if hits < n:
-                verdict, why = "FAIL", "misses"
-            elif min_groups is None:
-                verdict, why = "UNMEASURABLE", "min_groups_unknown"
-            elif groups < min_groups:
-                verdict, why = "UNMEASURABLE", "groups_below_min"
-            else:
-                verdict, why = "PASS", None
+            verdict, why = ("FAIL", "misses") if hits < n else ("PASS", None)
     out["verdict"] = verdict
     return {"report": out, "hits": hits, "matched": {cid: accepted[f]["fingerprint"] for cid, f in matched.items()},
             "missed_rules": missed_rules, "refused": refused, "verdict_reason": why,
@@ -324,19 +313,19 @@ def _list(path: str) -> list:
 
 
 def _options(argv: list[str]) -> dict[str, str]:
-    names = ("--snapshot", "--tree", "--alpha", "--min-groups", "--window", "--ref-max-lines")
+    names = ("--snapshot", "--tree", "--alpha", "--window", "--ref-max-lines")
     if len(argv) % 2 or any(name not in names for name in argv[::2]) or len(set(argv[::2])) != len(argv) // 2:
         raise Unusable(["usage"])
     options = dict(zip(argv[::2], argv[1::2]))
     if ("--snapshot" in options) != ("--tree" in options) \
-            or ("--snapshot" not in options and ("--alpha" in options or "--min-groups" in options)):
+            or ("--snapshot" not in options and "--alpha" in options):
         raise Unusable(["usage"])
     return options
 
 
 def main(argv: list[str]) -> int:
-    usage = ("usage: harness.score FINDINGS CASES [--snapshot DOCUMENT --tree DIR [--alpha A] [--min-groups N]] "
-             "[--window N] [--ref-max-lines N]")
+    usage = ("usage: harness.score FINDINGS CASES [--snapshot DOCUMENT --tree DIR [--alpha A]] [--window N] "
+             "[--ref-max-lines N]")
     try:
         if len(argv) < 2:
             raise Unusable(["usage"])
@@ -356,8 +345,7 @@ def main(argv: list[str]) -> int:
             alpha = stats._number(options["--alpha"], stats.DECIMAL) if "--alpha" in options else None
             if alpha is not None and not 0 < alpha < 1:
                 raise Unusable(["usage"])
-            floor = int(stats._number(options["--min-groups"], stats.INTEGER)) if "--min-groups" in options else None
-            line = report(findings, cases, document, lambda path: D._read_regular(tree, path), alpha, floor, window,
+            line = report(findings, cases, document, lambda path: D._read_regular(tree, path), alpha, window,
                           ref_max_lines=longest)
     except Unusable as exc:
         return _refuse(usage if exc.reasons == ["usage"] else "unusable input: %s" % cli.cause(exc))

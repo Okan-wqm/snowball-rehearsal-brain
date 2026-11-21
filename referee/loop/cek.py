@@ -239,13 +239,16 @@ def _inputs(units: bytes | None) -> list[str]:
 
 
 def _planted_max(policy: bytes) -> int | None:
-    """``snapshot.make``'s ``max_cases``: ``harness.params.planted_max_cases`` of the policy (``Invalid`` when the
-    value is there and is no positive integer). ``None`` for bytes that are no JSON: ``pulled.read`` refuses those
-    below (``json_unreadable:policy.json``), so nothing is passed over here."""
+    """``snapshot.make``'s ``max_cases``: ``harness.params.planted_max_cases`` of the policy, after
+    ``harness.params.usable`` has judged the whole of it (tohum/29v "Döngüde eksik anahtar": ``Invalid`` naming
+    every path of stage 1 that is absent though required, or off its form, so the cycle's first job refuses the
+    pull and no later job runs). ``None`` for bytes that are no JSON: ``pulled.read`` refuses those below
+    (``json_unreadable:policy.json``), so nothing is passed over here."""
     try:
         parsed = cli.loads(policy.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         return None
+    HP.usable(parsed)
     return HP.planted_max_cases(parsed)
 
 

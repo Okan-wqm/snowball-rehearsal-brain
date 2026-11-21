@@ -479,11 +479,29 @@
   },
   {
    "id": "gz_rate_is_a_count",
-   "file": "gozcu/evaluate.py",
-   "old": "    \"revert_rate\": (HP.fraction, R.REGRESSION_REVERT_RATE),",
-   "new": "    \"revert_rate\": (HP.count, R.REGRESSION_REVERT_RATE),",
+   "file": "harness/params.py",
+   "old": "FRACTIONS = (R.CONFIDENCE_LEVEL, R.REGRESSION_REVERT_RATE, R.DRIFT_BOUND,",
+   "new": "FRACTIONS = (R.CONFIDENCE_LEVEL, R.DRIFT_BOUND,",
    "tests": [
     "test_gozcu.Thresholds.test_the_values_are_read_from_their_paths"
+   ]
+  },
+  {
+   "id": "gz_required_absent_is_unjudged",
+   "file": "harness/params.py",
+   "old": "    if path in R.REQUIRED:\n        raise Invalid([_reason(path)])\n",
+   "new": "    if False:\n        raise Invalid([_reason(path)])\n",
+   "tests": [
+    "test_gozcu.Thresholds.test_an_absent_required_path_is_invalid_and_nothing_is_judged"
+   ]
+  },
+  {
+   "id": "gz_required_absent_is_written",
+   "file": "harness/params.py",
+   "old": "    if path in R.REQUIRED:\n        raise Invalid([_reason(path)])\n",
+   "new": "    if False:\n        raise Invalid([_reason(path)])\n",
+   "tests": [
+    "test_gozcu_watch.Refusals"
    ]
   },
   {

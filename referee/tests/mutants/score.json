@@ -156,22 +156,21 @@
    ]
   },
   {
-   "id": "pass_below_the_floor",
-   "file": "harness/score.py",
-   "old": "            elif groups < min_groups:",
-   "new": "            elif False:",
+   "id": "report_reads_the_group_floor",
+   "file": "loop/job.py",
+   "old": "    params = HP.score(art.policy)\n",
+   "new": "    params = HP.score(art.policy)\n    if HP.count(art.policy, HP.R.CENSUS_MIN_GROUPS) > 2:\n        return {\"reason\": \"harness_refused\", \"reasons\": [\"groups_below_floor\"]}\n",
    "tests": [
-    "test_score.Report"
+    "test_score.FromPolicy.test_the_group_floor_of_the_policy_changes_nothing_of_the_dev_report"
    ]
   },
   {
-   "id": "pass_without_a_floor",
+   "id": "pass_with_a_miss",
    "file": "harness/score.py",
-   "old": "            elif min_groups is None:\n                verdict, why = \"UNMEASURABLE\", \"min_groups_unknown\"",
-   "new": "            elif min_groups is None:\n                verdict, why = \"PASS\", None",
+   "old": "verdict, why = (\"FAIL\", \"misses\") if hits < n else (\"PASS\", None)",
+   "new": "verdict, why = (\"PASS\", None)",
    "tests": [
-    "test_score.Report",
-    "test_score.Live"
+    "test_score.Report"
    ]
   },
   {
@@ -292,19 +291,37 @@
    ]
   },
   {
-   "id": "ref_length_any_reference",
+   "id": "ref_length_last_reference",
    "file": "harness/score.py",
-   "old": "        if ref_max_lines is not None and all(r[\"line_end\"]",
-   "new": "        if ref_max_lines is not None and any(r[\"line_end\"]",
+   "old": "        primary = finding[\"evidence_refs\"][0]",
+   "new": "        primary = finding[\"evidence_refs\"][-1]",
    "tests": [
-    "test_score.RefLength.test_one_reference_within_the_bound_keeps_the_finding"
+    "test_score.RefLength.test_only_the_first_reference_is_bounded"
+   ]
+  },
+  {
+   "id": "ref_length_every_reference",
+   "file": "harness/score.py",
+   "old": "        if ref_max_lines is not None and primary[\"line_end\"] - primary[\"line_start\"] + 1 > ref_max_lines:\n",
+   "new": "        if ref_max_lines is not None and any(r[\"line_end\"] - r[\"line_start\"] + 1 > ref_max_lines\n                                             for r in finding[\"evidence_refs\"]):\n",
+   "tests": [
+    "test_score.RefLength.test_only_the_first_reference_is_bounded"
+   ]
+  },
+  {
+   "id": "ref_length_every_reference_in_yaz",
+   "file": "harness/score.py",
+   "old": "        if ref_max_lines is not None and primary[\"line_end\"] - primary[\"line_start\"] + 1 > ref_max_lines:\n",
+   "new": "        if ref_max_lines is not None and any(r[\"line_end\"] - r[\"line_start\"] + 1 > ref_max_lines\n                                             for r in finding[\"evidence_refs\"]):\n",
+   "tests": [
+    "test_score.FromPolicy.test_the_window_and_the_reference_bound"
    ]
   },
   {
    "id": "ref_length_off_by_one",
    "file": "harness/score.py",
-   "old": "r[\"line_start\"] + 1 > ref_max_lines",
-   "new": "r[\"line_start\"] > ref_max_lines",
+   "old": "primary[\"line_start\"] + 1 > ref_max_lines",
+   "new": "primary[\"line_start\"] > ref_max_lines",
    "tests": [
     "test_score.RefLength.test_the_bound_is_the_number_of_lines_spanned"
    ]
@@ -339,8 +356,8 @@
   {
    "id": "ref_length_cli_report_dropped",
    "file": "harness/score.py",
-   "old": "alpha, floor, window,\n                          ref_max_lines=longest)",
-   "new": "alpha, floor, window)",
+   "old": "alpha, window,\n                          ref_max_lines=longest)",
+   "new": "alpha, window)",
    "tests": [
     "test_score.RefLength.test_the_command_s_option_in_both_forms"
    ]
@@ -357,10 +374,10 @@
   {
    "id": "yaz_invalid_policy_not_refused",
    "file": "loop/job.py",
-   "old": "        params = HP.score(art.policy)\n",
-   "new": "        try:\n            params = HP.score(art.policy)\n        except HP.Invalid:\n            params = {}\n",
+   "old": "    params = HP.score(art.policy)\n",
+   "new": "    try:\n        params = HP.score(art.policy)\n    except HP.Invalid:\n        params = {}\n",
    "tests": [
-    "test_score.FromPolicy.test_an_invalid_value_refuses_the_report"
+    "test_score.FromPolicy.test_a_policy_missing_or_off_a_value_is_no_report_and_no_line"
    ]
   }
  ]

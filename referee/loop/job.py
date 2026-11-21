@@ -169,10 +169,9 @@ refused tree is ``pulled_invalid``). Then:
   target's line has ``harness`` (``{report, hits, matched, missed_rules, refused, counts, verdict_reason}``, "The
   report" there; ``{reason: "harness_refused", reasons}`` when the scorer refuses the document or the cases). The
   cycle's findings are none (``FINDINGS``) until an organ's output is kept, so every case of a cycle is a miss
-  today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``min_groups``, ``window``
-  and ``ref_max_lines`` are ``harness.params.score`` of ``pulled``'s policy (tohum/29v's paths of stage 1; an
-  absent key leaves its argument out, so without ``confidence_level`` ``recall_lb`` is ``null``; an invalid value
-  is ``harness_refused`` with ``policy_invalid:<path>``).
+  today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``window``
+  and ``ref_max_lines`` are ``harness.params.score`` of ``pulled``'s policy (tohum/29v's paths of stage 1; all
+  three are there and in form, or the job stopped at ``yaz_policy`` below before this target was served).
   The harness reaches no model (P1 MF5, ``harness.offline``): the job's first step, before ``pulled`` is opened
   and before MF6's reads below (``run``), is ``yaz_offline``, which reads the import statements of the running
   code's harness (``CODE_ROOT``); a reason there refuses the job, not a target (``harness_online`` with the
@@ -219,7 +218,14 @@ refused tree is ``pulled_invalid``). Then:
   any target ends the job there: ``reason`` ``drift`` with the reasons and id of the first drifted target served,
   ``targets`` ``[]``, exit 1, no target served and nothing written on any; with no reason on any target, a stale
   operator check ends it as cleanly, no hard stop: ``reason`` ``operator_check_stale``, no ``target``, ``targets``
-  ``[]``, exit 1, nothing written; a read it cannot use, an unreadable
+  ``[]``, exit 1, nothing written. Between the two, the policy (``yaz_policy``, tohum/29v "Döngüde eksik
+  anahtar"): ``harness.params.check`` of every served target's ``pulled`` policy, and a reason on any (a path of
+  stage 1's twelve absent, or a judged value off its form: ``policy_invalid:<path>``) ends the job as cleanly:
+  ``reason`` ``policy_unusable`` with the reasons and id of the first such target served, ``targets`` ``[]``,
+  exit 1, no target served and nothing written on any (after drift's reads, so that it hides no hard stop; the
+  job's line carries ``policy`` ``{id: reasons}``, ``{}`` on a usable one). ``cek`` refuses the same policy by the
+  same judge when it assembles ``pulled``, so a cycle that reaches ``yaz`` with one was pulled by other code. A
+  read drift cannot use, an unreadable
   summary, a summary without the ``drift`` baseline or a secret unset is unusable (exit 2). Not checked, stated: a served target whose ``pulled`` is refused
   or names no repository (``pulled_invalid``, ``units_not_one``, ``target_repo_unsafe``: its own step refuses it
   before any request to it; the targets served before it were checked and are written), and a target of the
@@ -844,14 +850,14 @@ def yaz_offline() -> dict[str, Any]:
 def yaz_harness(art: Any, tree: str, cases: dict[str, Any]) -> dict[str, Any]:
     """The harness report of the cycle (P1 MF4; see the module docstring): ``harness.score.report`` of
     ``FINDINGS`` against the dev cases ``yaz_cases`` built, on ``pulled``'s snapshot document and the extracted
-    tree, with ``harness.params.score`` of ``pulled``'s policy (``alpha``, ``min_groups``, ``window``,
-    ``ref_max_lines``); ``{reason: "harness_refused", reasons}`` when the scorer refuses them or a value of the
-    policy is invalid (``policy_invalid:<path>``)."""
+    tree, with ``harness.params.score`` of ``pulled``'s policy (``alpha``, ``window``, ``ref_max_lines``; the
+    policy is one ``yaz_policy`` found usable, so no value is absent or invalid here);
+    ``{reason: "harness_refused", reasons}`` when the scorer refuses the document or the cases."""
+    params = HP.score(art.policy)
     try:
-        params = HP.score(art.policy)
         return OF.run(lambda: HS.report(list(FINDINGS), cases["cases"], art.snapshot,
                                         lambda path: D._read_regular(tree, path), **params))
-    except (HS.Unusable, HP.Invalid) as exc:
+    except HS.Unusable as exc:
         return {"reason": "harness_refused", "reasons": exc.reasons}
 
 
@@ -1063,6 +1069,20 @@ def yaz_drift(environ: dict[str, str], served: list[str], transport: Any = None,
         if got["hard_stop"]:
             out["drifted"][tid] = got["reasons"]
         out["stale"] = out["stale"] or got["stale"]
+    return out
+
+
+def yaz_policy(environ: dict[str, str], served: list[str]) -> dict[str, list[str]]:
+    """``yaz``'s step after ``yaz_drift`` and before any target is served (see the module docstring; tohum/29v
+    "Döngüde eksik anahtar"): ``{id: reasons}``, ``harness.params.check`` of the policy of every target of
+    ``served`` whose ``pulled`` is read, those with a reason only. A target whose ``pulled`` is refused is not
+    judged here: its own step refuses it, as in ``yaz_drift``."""
+    out: dict[str, list[str]] = {}
+    for tid in served:
+        art, _, refused = _pulled_unit(environ, tid)
+        reasons = [] if refused else HP.check(art.policy)
+        if reasons:
+            out[tid] = reasons
     return out
 
 
@@ -1452,7 +1472,8 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
     target is served) and its ``reason``, ``reasons`` and id (``target``) are the job's. ``yaz`` first runs
     ``yaz_offline`` (its line carries ``offline``; a reason stops the job as ``harness_online`` with ``targets``
     ``[]`` and no ``target``, before ``pulled`` is read), then ``yaz_drift`` on every served target (its line
-    carries ``drift``); a drifted target stops the job with no target served (``targets`` ``[]``). ``job_calls``, one list
+    carries ``drift``); a drifted target stops the job with no target served (``targets`` ``[]``), and so does a
+    target whose policy ``yaz_policy`` finds unusable (the line carries ``policy``). ``job_calls``, one list
     made here, is where every root signer the job makes itself counts its runs (``loop.sign`` "The job's count")."""
     if name not in JOBS:
         raise Unusable("unknown job %r" % name)
@@ -1484,6 +1505,11 @@ def run(name: str, environ: dict[str, str], runner: Any = None, red_control: dic
         if drift["drifted"]:
             first = next(iter(drift["drifted"]))
             return dict(result, reason="drift", reasons=drift["drifted"][first], target=first, targets=[])
+        unusable = yaz_policy(environ, served)  # tohum/29v: no target is served on a policy missing a required path
+        result["policy"] = unusable
+        if unusable:
+            first = next(iter(unusable))
+            return dict(result, reason="policy_unusable", reasons=unusable[first], target=first, targets=[])
         if drift["stale"]:  # tohum/01c: a clean stop, after every target's reads so that it hides no hard stop
             return dict(result, reason="operator_check_stale", targets=[])
     lines: list[dict[str, Any]] = []

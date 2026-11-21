@@ -54,22 +54,22 @@ def sectioned() -> dict:
             "license_exceptions": {"a==1.0.0": {"expression": "MIT", "evidence": "e"}},
             "security_keywords": ["auth", "secret"],
             "stage_budgets": {"asama_0": {"canary_usd": 7, "other_usd": 70}, "asama_1": {"canary_usd": 700}},
-            "confidence_level": 0.8,
+            "confidence_level": "0.800000",
             "stage_params": {"census_min_groups": 41, "planted_max_cases": 4, "evidence_ref_max_lines": 31,
                              "match_window_lines": 16, "unread_lines": 99},
             "monthly_cap_usd": 301, "monthly_cap_ci_minutes": 302,
-            "regression_freeze": {"min_merges": 303, "window_days": 304, "revert_rate": 0.305, "min_reverts": 306,
+            "regression_freeze": {"min_merges": 303, "window_days": 304, "revert_rate": "0.305000", "min_reverts": 306,
                                   "unread": 1},
             "gate_rules": {"soft_freeze_limit": 307, "containment_freeze": 308, "gross_delete_cap": 9},
-            "windows": {"measure": 1}, "rules": {"drift_bound": 0.5, "genesis_drafts": {"queue": 1}},
+            "windows": {"measure": 1}, "rules": {"drift_bound": "0.500000", "genesis_drafts": {"queue": 1}},
             "unread": 1,
         },
         "operating": dict({name: entry(100 + i) for i, name in enumerate(P.OPERATING_NAMES)},
                           unnamed_bytes=entry(999)),
-        "performance": {"kos_wall_s": entry(555), "license_allowlist": ["PERF"], "confidence_level": 0.5,
+        "performance": {"kos_wall_s": entry(555), "license_allowlist": ["PERF"], "confidence_level": "0.500000",
                         "stage_params": {"census_min_groups": 2, "match_window_lines": 3},
                         "windows": {"measure": 309, "security_sweep": 9},
-                        "rules": {"drift_bound": 0.31, "seat_similarity": 0.311, "lease_ttl": 9,
+                        "rules": {"drift_bound": "0.310000", "seat_similarity": "0.311000", "lease_ttl": 9,
                                   "genesis_drafts": {"per_window": 312, "queue": 313}},
                         "monthly_cap_usd": 1, "gate_rules": {"soft_freeze_limit": 1},
                         "regression_freeze": {"min_merges": 1}},
@@ -435,7 +435,10 @@ class Readers(unittest.TestCase):
             "seat_similarity": Fraction(311, 1000), "per_window": 312, "queue": 313})
         self.check(log, *P.GOZCU_PATHS)
         policy, log = self.recorded(hoisted())
-        self.assertEqual(G.thresholds(policy), dict.fromkeys(G.THRESHOLDS))
+        with self.assertRaises(HP.Invalid) as ctx:    # the seven required ones are named, a root value is not read
+            G.thresholds(policy)
+        self.assertEqual(ctx.exception.reasons,
+                         ["policy_invalid:%s" % P.dotted(p) for p in P.GOZCU_PATHS if p in P.REQUIRED])
         self.check(log)
 
     def test_policy_usd_reads_the_path_from_the_root_only(self):
@@ -452,8 +455,40 @@ class Readers(unittest.TestCase):
         self.assertIs(U.OPERATING_NAMES, P.OPERATING_NAMES)
 
 
+REQUIRED = (     # tohum/29v, 28a: stage 1's row, written here from the pages (no file of ``/vec`` is read)
+    "constitutional.confidence_level", "constitutional.gate_rules.soft_freeze_limit",
+    "constitutional.monthly_cap_usd", "constitutional.regression_freeze.min_merges",
+    "constitutional.regression_freeze.min_reverts", "constitutional.regression_freeze.revert_rate",
+    "constitutional.regression_freeze.window_days", "constitutional.stage_params.census_min_groups",
+    "constitutional.stage_params.evidence_ref_max_lines", "constitutional.stage_params.match_window_lines",
+    "constitutional.stage_params.planted_max_cases", "performance.windows.measure")
+NOT_A_COUNT = (0, -1, 1.0, 30.5, 3e0, True, False, None, "30", "0.500000", [30], {"value": 30})
+NOT_A_FRACTION = (0, 1, 0.9, 0.5, 9e-1, 0.0, 1.0, True, False, None, "0.9", "0.9000000", "0.90000", ".900000",
+                  "0.000000", "1.000000", "1.500000", "-0.100000", "+0.900000", "0.9e-100", " 0.900000",
+                  "0.900000 ", "0.900000\n", "0,900000", "0.\u0669\u0660\u0660\u0660\u0660\u0660", ["0.900000"],
+                  {"value": "0.900000"}, 90)
+
+
+def put(policy: dict, path: tuple, value: object) -> dict:
+    """``policy`` with ``value`` at ``path`` (the objects on the way made when absent); the same object."""
+    node = policy
+    for key in path[:-1]:
+        node = node.setdefault(key, {})
+    node[path[-1]] = value
+    return policy
+
+
+def cut(policy: dict, path: tuple) -> dict:
+    """``policy`` without the key at the end of ``path``; the same object."""
+    node = policy
+    for key in path[:-1]:
+        node = node[key]
+    del node[path[-1]]
+    return policy
+
+
 class Harness(unittest.TestCase):
-    """``harness.params``' rules 1-4 and its two readers in the loop."""
+    """``harness.params``' rules 1-5 and its readers in the loop."""
 
     def test_the_stage_1_paths_are_the_five_of_tohum_29v(self):
         self.assertEqual(sorted(P.dotted(p) for p in P.HARNESS_PATHS),
@@ -464,15 +499,26 @@ class Harness(unittest.TestCase):
         for path in P.HARNESS_PATHS:
             self.assertIn(path, P.PATHS)
 
-    def test_score_reads_its_four_paths_and_nothing_else(self):
+    def test_the_required_paths_are_the_twelve_of_stage_1_and_all_are_judged(self):
+        self.assertEqual(tuple(sorted(P.dotted(p) for p in P.REQUIRED)), REQUIRED)
+        self.assertEqual(len(set(P.REQUIRED)), 12)
+        for path in P.REQUIRED:
+            self.assertIn(path, HP.JUDGED)
+            self.assertIn(path, P.PATHS)
+        self.assertEqual(HP.JUDGED, P.HARNESS_PATHS + P.GOZCU_PATHS)
+        self.assertEqual(set(HP.FRACTIONS), {P.CONFIDENCE_LEVEL, P.REGRESSION_REVERT_RATE, P.DRIFT_BOUND,
+                                             P.SEAT_SIMILARITY})
+
+    def test_score_reads_its_three_paths_and_nothing_else(self):
         log: list = []
         got = HP.score(wrap(sectioned(), (), log))
-        self.assertEqual(got, {"alpha": Fraction(1, 5), "min_groups": 41, "window": 16, "ref_max_lines": 31})
+        self.assertEqual(got, {"alpha": Fraction(1, 5), "window": 16, "ref_max_lines": 31})
         self.assertIs(type(got["alpha"]), Fraction)
         self.assertEqual(off_paths(log), [])
-        for path in (P.CONFIDENCE_LEVEL, P.CENSUS_MIN_GROUPS, P.MATCH_WINDOW_LINES, P.EVIDENCE_REF_MAX_LINES):
+        for path in (P.CONFIDENCE_LEVEL, P.MATCH_WINDOW_LINES, P.EVIDENCE_REF_MAX_LINES):
             self.assertIn(path, log)
-        self.assertNotIn(P.PLANTED_MAX_CASES, log)
+        for path in (P.PLANTED_MAX_CASES, P.CENSUS_MIN_GROUPS):     # tohum/26h: the group floor is the exit sample's
+            self.assertNotIn(path, log)
 
     def test_planted_max_cases_reads_its_path(self):
         log: list = []
@@ -480,57 +526,109 @@ class Harness(unittest.TestCase):
         self.assertEqual(off_paths(log), [])
         self.assertEqual({seen for seen in log if len(seen) == 3}, {P.PLANTED_MAX_CASES})
 
-    def test_a_hoisted_policy_gives_no_value(self):
-        for policy in (hoisted(), {}, {"constitutional": {}}, {"constitutional": {"stage_params": {}}},
-                       {"performance": sectioned()["constitutional"]}, sectioned()["constitutional"]):
-            with self.subTest(policy=policy):
-                self.assertEqual(HP.score(policy), {"alpha": None, "min_groups": None, "window": None,
-                                                    "ref_max_lines": None})
-                self.assertIsNone(HP.planted_max_cases(policy))
+    def test_check_reads_every_judged_path_from_its_section_and_passes_a_whole_policy(self):
+        log: list = []
+        self.assertEqual(HP.check(wrap(sectioned(), (), log)), [])
+        self.assertEqual(off_paths(log), [])
+        for path in HP.JUDGED:
+            self.assertIn(path, log)
+        HP.usable(sectioned())
 
-    def test_alpha_is_one_minus_the_level_exactly(self):
-        for level, alpha in ((0.9, Fraction(1, 10)), (0.95, Fraction(1, 20)), (0.5, Fraction(1, 2)),
-                             (1e-05, Fraction(99999, 100000)), (0.999, Fraction(1, 1000))):
-            self.assertEqual(HP.alpha({"constitutional": {"confidence_level": level}}), alpha)
+    def test_a_required_path_absent_is_invalid_and_never_none(self):
+        for path in P.REQUIRED:
+            reason = ["policy_invalid:%s" % P.dotted(path)]
+            policies = [cut(sectioned(), path), put(cut(sectioned(), path), path[-1:], 5),
+                        put(cut(sectioned(), path), path[-1:], "0.500000")]     # a value at the root is not it
+            for policy in policies:
+                self.assertEqual(HP.check(policy), reason)
+            if len(path) > 2:
+                policies.append(cut(sectioned(), path[:-1]))    # the object it lives in is gone
+            for policy in policies:
+                with self.subTest(path=path, policy=policy):
+                    self.assertIn(reason[0], HP.check(policy))
+                    with self.assertRaises(HP.Invalid) as ctx:
+                        HP.value(policy, path)
+                    self.assertEqual(ctx.exception.reasons, reason)
+                    for read in (HP.count, HP.fraction):    # whichever half a caller names: no ``None`` comes back
+                        with self.assertRaises(HP.Invalid):
+                            read(policy, path)
+            with self.assertRaises(HP.Invalid) as ctx:
+                HP.usable(cut(sectioned(), path))
+            self.assertEqual(ctx.exception.reasons, reason)
 
-    def test_a_level_that_is_no_fraction_between_0_and_1_is_invalid(self):
-        for level in (0, 1, 0.0, 1.0, 1.5, -0.1, True, False, None, "0.9", [0.9], {"value": 0.9}, 90):
-            with self.subTest(level=level), self.assertRaises(HP.Invalid) as ctx:
-                HP.alpha({"constitutional": {"confidence_level": level}})
-            self.assertEqual(ctx.exception.reasons, ["policy_invalid:constitutional.confidence_level"])
+    def test_a_path_that_is_not_required_is_none_when_absent_and_judged_when_there(self):
+        optional = [path for path in HP.JUDGED if path not in P.REQUIRED]
+        self.assertEqual(len(optional), 6)
+        for path in optional:
+            with self.subTest(path=path):
+                self.assertIsNone(HP.value(cut(sectioned(), path), path))
+                self.assertEqual(HP.check(cut(sectioned(), path)), [])
+                bad = "0.500000" if path not in HP.FRACTIONS else 5
+                self.assertEqual(HP.check(put(sectioned(), path, bad)), ["policy_invalid:%s" % P.dotted(path)])
 
-    def test_a_count_that_is_no_positive_integer_is_invalid(self):
-        for path in P.HARNESS_PATHS[1:]:
-            self.assertEqual(HP.count({path[0]: {path[1]: {path[2]: 1}}}, path), 1)
-            for value in (0, -1, 1.0, 30.5, True, False, None, "30", [30], {"value": 30}):
-                with self.subTest(path=path, value=value), self.assertRaises(HP.Invalid) as ctx:
-                    HP.count({path[0]: {path[1]: {path[2]: value}}}, path)
-                self.assertEqual(ctx.exception.reasons, ["policy_invalid:%s" % P.dotted(path)])
+    def test_every_judged_path_takes_its_kind_and_refuses_each_value_off_it(self):
+        for path in HP.JUDGED:
+            bad, good, want = ((NOT_A_FRACTION, "0.250000", Fraction(1, 4)) if path in HP.FRACTIONS
+                               else (NOT_A_COUNT, 1, 1))
+            got = HP.value(put(sectioned(), path, good), path)
+            self.assertEqual((got, type(got)), (want, type(want)))
+            for value in bad:
+                with self.subTest(path=path, value=value):
+                    policy = put(sectioned(), path, value)
+                    with self.assertRaises(HP.Invalid) as ctx:
+                        HP.value(policy, path)
+                    self.assertEqual(ctx.exception.reasons, ["policy_invalid:%s" % P.dotted(path)])
+                    self.assertEqual(HP.check(policy), ["policy_invalid:%s" % P.dotted(path)])
+
+    def test_a_fraction_is_its_six_decimals_exactly(self):
+        for text, want in (("0.900000", Fraction(9, 10)), ("0.000001", Fraction(1, 1000000)),
+                           ("0.999999", Fraction(999999, 1000000)), ("0.020000", Fraction(1, 50)),
+                           ("0.100000", Fraction(1, 10))):
+            for path in HP.FRACTIONS:
+                self.assertEqual(HP.fraction(put({}, path, text), path), want)
+            self.assertEqual(HP.alpha({"constitutional": {"confidence_level": text}}), 1 - want)
+        self.assertEqual(HP.alpha({"constitutional": {"confidence_level": "0.900000"}}), Fraction(1, 10))
 
     def test_no_object_on_the_way_is_invalid(self):
         for policy in ([], None, {"constitutional": []}, {"constitutional": {"stage_params": 5}}):
             with self.subTest(policy=policy), self.assertRaises(HP.Invalid) as ctx:
                 HP.planted_max_cases(policy)
             self.assertEqual(ctx.exception.reasons, ["policy_invalid:constitutional.stage_params.planted_max_cases"])
+        for path in (P.DRIFT_BOUND, P.GENESIS_DRAFTS_QUEUE):     # not required: off its shape is still no ``None``
+            with self.assertRaises(HP.Invalid):
+                HP.value({"performance": {"rules": 5}}, path)
+        self.assertEqual(HP.check([]), ["policy_invalid:%s" % P.dotted(p) for p in HP.JUDGED])
 
     def test_score_lists_every_invalid_path_in_order(self):
         policy = sectioned()
-        policy["constitutional"]["confidence_level"] = 1
+        policy["constitutional"]["confidence_level"] = 0.8
         policy["constitutional"]["stage_params"].update(census_min_groups=0, evidence_ref_max_lines="30")
+        del policy["constitutional"]["stage_params"]["match_window_lines"]
         with self.assertRaises(HP.Invalid) as ctx:
             HP.score(policy)
         self.assertEqual(ctx.exception.reasons, ["policy_invalid:constitutional.confidence_level",
-                                                 "policy_invalid:constitutional.stage_params.census_min_groups",
+                                                 "policy_invalid:constitutional.stage_params.match_window_lines",
                                                  "policy_invalid:constitutional.stage_params.evidence_ref_max_lines"])
+        self.assertEqual(HP.check(policy), ["policy_invalid:constitutional.confidence_level",
+                                            "policy_invalid:constitutional.stage_params.census_min_groups",
+                                            "policy_invalid:constitutional.stage_params.evidence_ref_max_lines",
+                                            "policy_invalid:constitutional.stage_params.match_window_lines"])
 
-    def test_the_loop_s_two_readers_call_this_module(self):
+    def test_the_loop_s_readers_call_this_module(self):
         from loop import cek, job
         self.assertIs(job.HP, HP)
         self.assertIs(cek.HP, HP)
         self.assertEqual(cek._planted_max(json.dumps(sectioned()).encode()), 4)
-        self.assertIsNone(cek._planted_max(json.dumps(hoisted()).encode()))
         self.assertIsNone(cek._planted_max(b"\xff"))
         self.assertIsNone(cek._planted_max(b"{"))
+        for path in P.REQUIRED:     # a pull is refused on any required path, not on the snapshot's own alone
+            with self.subTest(path=path), self.assertRaises(HP.Invalid) as ctx:
+                cek._planted_max(json.dumps(cut(sectioned(), path)).encode())
+            self.assertEqual(ctx.exception.reasons, ["policy_invalid:%s" % P.dotted(path)])
+        with self.assertRaises(HP.Invalid) as ctx:
+            cek._planted_max(json.dumps(hoisted()).encode())
+        self.assertEqual(ctx.exception.reasons, ["policy_invalid:%s" % P.dotted(p) for p in HP.JUDGED
+                                                 if p in P.REQUIRED])
 
 
 def sources() -> list[str]:

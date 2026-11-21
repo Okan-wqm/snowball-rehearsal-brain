@@ -309,7 +309,7 @@ class Brain(unittest.TestCase):
     def test_the_snapshot_is_made_with_the_policy_s_planted_max_cases(self):
         def with_params(**params) -> bytes:
             policy = json.loads(POLICY)
-            policy["constitutional"]["stage_params"] = params
+            policy["constitutional"]["stage_params"].update(params)
             return json.dumps(policy).encode()
 
         seen = []
@@ -324,15 +324,41 @@ class Brain(unittest.TestCase):
             shutil.rmtree(self.out)
             self.assemble()
             shutil.rmtree(self.out)
-            hoisted = json.loads(with_params())
-            hoisted.update(planted_max_cases=9, stage_params={"planted_max_cases": 9})
-            self.assemble(policy=json.dumps(hoisted).encode())
-            shutil.rmtree(self.out)
-        self.assertEqual(seen, [4, None, None])
+        self.assertEqual(seen, [4, json.loads(POLICY)["constitutional"]["stage_params"]["planted_max_cases"]])
+        self.assertNotEqual(seen[0], seen[1])
         for bad in (0, "5", True, 2.5, None):
             with self.subTest(bad=bad):
                 self.assertEqual(self.refused(policy=with_params(planted_max_cases=bad)),
                                  ["policy_invalid:constitutional.stage_params.planted_max_cases"])
+
+    def test_a_policy_the_loop_cannot_use_is_no_pull(self):
+        """tohum/29v: a required path absent, or a judged value off its form, refuses the pull with the path named
+        (``harness.params.check``, whose own cross of paths and values is ``tests/test_policy_reads.py``'s)."""
+        def changed(change) -> bytes:
+            policy = json.loads(POLICY)
+            change(policy)
+            return json.dumps(policy).encode()
+
+        def hoist(policy):
+            policy["planted_max_cases"] = policy["constitutional"]["stage_params"].pop("planted_max_cases")
+
+        made = []
+        with mock.patch.object(C.SM, "make", lambda *args: made.append(args)):
+            for name, change, reasons in (
+                    ("absent", lambda p: p["constitutional"].pop("monthly_cap_usd"),
+                     ["policy_invalid:constitutional.monthly_cap_usd"]),
+                    ("hoisted", hoist, ["policy_invalid:constitutional.stage_params.planted_max_cases"]),
+                    ("float", lambda p: p["constitutional"].update(confidence_level=0.9),
+                     ["policy_invalid:constitutional.confidence_level"]),
+                    ("optional off form", lambda p: p["performance"].setdefault("rules", {}).update(drift_bound=0.5),
+                     ["policy_invalid:performance.rules.drift_bound"]),
+                    ("two", lambda p: (p["constitutional"]["regression_freeze"].update(revert_rate=0.02),
+                                       p["constitutional"]["stage_params"].pop("match_window_lines")),
+                     ["policy_invalid:constitutional.stage_params.match_window_lines",
+                      "policy_invalid:constitutional.regression_freeze.revert_rate"])):
+                with self.subTest(name=name):
+                    self.assertEqual(self.refused(policy=changed(change)), reasons)
+        self.assertEqual(made, [])
 
     def test_out_must_not_exist(self):
         os.makedirs(self.out)

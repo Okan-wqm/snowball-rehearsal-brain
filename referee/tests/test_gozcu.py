@@ -50,11 +50,11 @@ def policy() -> dict:
     return {
         "constitutional": {
             "monthly_cap_usd": 10000, "monthly_cap_ci_minutes": 1800,
-            "regression_freeze": {"min_merges": 50, "window_days": 30, "revert_rate": 0.02, "min_reverts": 2},
+            "regression_freeze": {"min_merges": 50, "window_days": 30, "revert_rate": "0.020000", "min_reverts": 2},
             "gate_rules": {"soft_freeze_limit": 2, "containment_freeze": 2, "gross_delete_cap": 200},
         },
         "performance": {"windows": {"measure": 14, "security_sweep": 7},
-                        "rules": {"drift_bound": 0.2, "seat_similarity": 0.8,
+                        "rules": {"drift_bound": "0.200000", "seat_similarity": "0.800000",
                                   "genesis_drafts": {"per_window": 3, "queue": 10}}},
     }
 
@@ -148,12 +148,12 @@ class Regression(unittest.TestCase):
 
     def test_the_rate_is_the_decimal_written_and_not_its_binary_float(self):
         self.assertGreater(57, 0.57 * 100)
-        rate = having(P.REGRESSION_REVERT_RATE, 0.57)
+        rate = having(P.REGRESSION_REVERT_RATE, "0.570000")
         self.assertEqual(run(rate, events=merges(100) + reverts(57)), QUIET)
         self.assertEqual(len(run(rate, events=merges(100) + reverts(58))["freezes"]), 1)
 
     def test_exactly_min_merges_is_judged_by_the_rate(self):
-        rate = having(P.REGRESSION_REVERT_RATE, 0.57)
+        rate = having(P.REGRESSION_REVERT_RATE, "0.570000")
         self.assertEqual(run(rate, events=merges(50) + reverts(2)), QUIET)
         self.assertEqual(len(run(rate, events=merges(49) + reverts(2))["freezes"]), 1)
 
@@ -282,9 +282,13 @@ class Budget(unittest.TestCase):
                              [("budget_usd", ago(3)), ("budget_usd", ago(2)), ("budget_ci_minutes", ago(1))])
 
     def test_an_absent_cap_neither_freezes_nor_lifts(self):
-        got = run(without(P.MONTHLY_CAP_USD), spend={"usd_micros": CAP_MICROS * 9, "ci_minutes": 0},
-                  freezes=[frozen("budget_usd", ["loop"], ago(1))])
-        self.assertEqual(got, dict(QUIET, unjudged=["constitutional.monthly_cap_usd"]))
+        got = run(without(P.MONTHLY_CAP_CI_MINUTES), spend={"usd_micros": 0, "ci_minutes": 10 ** 9},
+                  freezes=[frozen("budget_ci_minutes", ["loop"], ago(1))])
+        self.assertEqual(got, dict(QUIET, unjudged=["constitutional.monthly_cap_ci_minutes"]))
+        with self.assertRaises(HP.Invalid) as ctx:     # the USD cap is one of tohum/28a's seven: absent is no rule skipped
+            run(without(P.MONTHLY_CAP_USD), spend={"usd_micros": CAP_MICROS * 9, "ci_minutes": 0},
+                freezes=[frozen("budget_usd", ["loop"], ago(1))])
+        self.assertEqual(ctx.exception.reasons, ["policy_invalid:constitutional.monthly_cap_usd"])
 
 
 class InForce(unittest.TestCase):
@@ -394,8 +398,8 @@ class Marks(unittest.TestCase):
         self.assertEqual(self.moved(0.35, 0.42), [])
 
     def test_the_bound_is_drift_bound(self):
-        self.assertEqual(len(self.moved(10, 12, having(P.DRIFT_BOUND, 0.19))), 1)
-        self.assertEqual(self.moved(10, 13, having(P.DRIFT_BOUND, 0.3)), [])
+        self.assertEqual(len(self.moved(10, 12, having(P.DRIFT_BOUND, "0.190000"))), 1)
+        self.assertEqual(self.moved(10, 13, having(P.DRIFT_BOUND, "0.300000")), [])
 
     def test_two_seats_more_similar_than_the_bound_are_marked(self):
         rows = [{"seats": ["rival", "oracle"], "similarity": 0.81}, {"seats": ["a", "b"], "similarity": 0.8},
@@ -403,7 +407,7 @@ class Marks(unittest.TestCase):
         self.assertEqual(self.marks(similarities=rows), [
             {"mark": "seat_similarity", "subject": ["b", "c"], "measurement": {"similarity": "1"}},
             {"mark": "seat_similarity", "subject": ["oracle", "rival"], "measurement": {"similarity": "0.81"}}])
-        self.assertEqual(len(self.marks(having(P.SEAT_SIMILARITY, 0.79), similarities=rows)), 3)
+        self.assertEqual(len(self.marks(having(P.SEAT_SIMILARITY, "0.790000"), similarities=rows)), 3)
 
     def test_genesis_drafts_and_queue_over_their_limits_are_marked(self):
         self.assertEqual(self.marks(genesis={"drafts": 3, "queue": 10}), [])
@@ -461,7 +465,7 @@ SILENCED = {
 
 class Thresholds(unittest.TestCase):
     def test_the_thirteen_paths_are_policy_reads_and_the_command_names_them(self):
-        self.assertEqual(tuple(path for _, path in G.THRESHOLDS.values()), P.GOZCU_PATHS)
+        self.assertEqual(tuple(G.THRESHOLDS.values()), P.GOZCU_PATHS)
         self.assertEqual(len(set(P.GOZCU_PATHS)), 13)
         self.assertEqual(set(SILENCED), set(P.GOZCU_PATHS))
         for path in P.GOZCU_PATHS:
@@ -488,27 +492,50 @@ class Thresholds(unittest.TestCase):
         self.assertEqual(got["unjudged"], [])
 
     def test_an_absent_path_is_named_and_only_its_rules_are_not_judged(self):
-        for path, silenced in SILENCED.items():
+        optional = (P.MONTHLY_CAP_CI_MINUTES, P.CONTAINMENT_FREEZE, P.DRIFT_BOUND, P.SEAT_SIMILARITY,
+                    P.GENESIS_DRAFTS_PER_WINDOW, P.GENESIS_DRAFTS_QUEUE)
+        self.assertEqual(set(optional), set(P.GOZCU_PATHS) - set(P.REQUIRED))
+        for path in optional:
             with self.subTest(path=path):
                 got = G.evaluate(loud(), without(path), NOW)
                 self.assertEqual(got["unjudged"], [P.dotted(path)])
-                self.assertEqual(fired(got), sorted(set(ALL) - silenced))
+                self.assertEqual(fired(got), sorted(set(ALL) - SILENCED[path]))
+
+    def test_an_absent_required_path_is_invalid_and_nothing_is_judged(self):
+        required = (P.MONTHLY_CAP_USD, P.REGRESSION_MIN_MERGES, P.REGRESSION_WINDOW_DAYS, P.REGRESSION_REVERT_RATE,
+                    P.REGRESSION_MIN_REVERTS, P.SOFT_FREEZE_LIMIT, P.MEASURE_WINDOW)     # tohum/28a's seven
+        self.assertEqual(set(required), set(P.GOZCU_PATHS) & set(P.REQUIRED))
+        for path in required:
+            for views_ in (loud(), views()):
+                with self.subTest(path=path), self.assertRaises(HP.Invalid) as ctx:
+                    G.evaluate(views_, without(path), NOW)
+                self.assertEqual(ctx.exception.reasons, ["policy_invalid:" + P.dotted(path)])
 
     def test_values_at_the_root_or_in_another_section_are_not_read(self):
         source = policy()
         hoisted = dict(source["constitutional"], **source["performance"])
         hoisted.update(constitutional={"performance": source["performance"], "rules": source["performance"]["rules"]},
                        performance=source["constitutional"])
+        named = ["policy_invalid:" + P.dotted(p) for p in P.GOZCU_PATHS if p in P.REQUIRED]
+        for policy_ in (hoisted, {}):
+            with self.assertRaises(HP.Invalid) as ctx:
+                G.evaluate(loud(), policy_, NOW)
+            self.assertEqual(ctx.exception.reasons, named)
+        # with the seven required ones in their sections, the other six are still not read from elsewhere
+        for path in P.REQUIRED:
+            if path in P.GOZCU_PATHS:
+                node, at = hoisted, source
+                for key in path[:-1]:
+                    node, at = node[key] if key in ("constitutional", "performance") else node.setdefault(key, {}), at[key]
+                node[path[-1]] = at[path[-1]]
         got = G.evaluate(loud(), hoisted, NOW)
-        self.assertEqual(got, dict(QUIET, hard_stop=[{"trigger": "drift", "evidence": ["rules_bypassable"]}],
-                                   unjudged=sorted(P.dotted(p) for p in P.GOZCU_PATHS)))
-        self.assertEqual(G.thresholds({}), dict.fromkeys(G.THRESHOLDS))
+        self.assertEqual(got["unjudged"], sorted(P.dotted(p) for p in P.GOZCU_PATHS if p not in P.REQUIRED))
 
     def test_a_value_off_its_rule_is_invalid_and_nothing_is_judged(self):
         fractions = (P.REGRESSION_REVERT_RATE, P.DRIFT_BOUND, P.SEAT_SIMILARITY)
         for path in P.GOZCU_PATHS:
-            bad = (0, 1, 1.0, 0.0, 1.5, True, None, "0.5", [0.5]) if path in fractions else \
-                (0, -1, 1.5, 0.5, True, None, "2", [2])
+            bad = (0, 1, 1.0, 0.0, 0.5, 0.02, 2e-2, 1.5, True, None, "0.5", "0.000000", "1.000000", "0.0200000",
+                   ["0.500000"]) if path in fractions else (0, -1, 1.5, 0.5, 2.0, True, None, "2", "0.500000", [2])
             for value in bad:
                 with self.subTest(path=path, value=value), self.assertRaises(HP.Invalid) as ctx:
                     G.evaluate(loud(), having(path, value), NOW)

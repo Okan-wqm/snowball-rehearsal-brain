@@ -113,7 +113,7 @@ def policy_of(cap: int | None = None, min_reverts: int | None = None, limit: int
     if cap is not None:
         doc["constitutional"]["monthly_cap_usd"] = cap
     if min_reverts is not None:
-        doc["constitutional"]["regression_freeze"] = {"min_merges": 50, "window_days": 30, "revert_rate": 0.02,
+        doc["constitutional"]["regression_freeze"] = {"min_merges": 50, "window_days": 30, "revert_rate": "0.020000",
                                                       "min_reverts": min_reverts}
     if limit is not None:
         doc["constitutional"]["gate_rules"] = {"soft_freeze_limit": limit}
@@ -184,7 +184,8 @@ class Views(unittest.TestCase):
     def test_judge_reads_the_planned_rows_after_the_ledgers(self):
         policy = policy_of(cap=1)
         quiet = dict(QUIET, unjudged=GW.judge([], [], policy, NOV)["unjudged"], unmeasured=list(GW.UNMEASURED))
-        self.assertEqual(len(quiet["unjudged"]), 12)
+        self.assertEqual(quiet["unjudged"], sorted(R.dotted(p) for p in R.GOZCU_PATHS if p not in R.REQUIRED))
+        self.assertEqual(len(quiet["unjudged"]), 6)
         self.assertEqual(GW.judge([cost(USD - 1, row_id="a")], [], policy, NOV), quiet)
         fired = dict(quiet, freezes=[frozen("budget_usd", ("loop",), NOV, spent=USD, cap=USD)])
         self.assertEqual(GW.judge([cost(USD - 1, row_id="a")], [cost(1, row_id="b")], policy, NOV), fired)
@@ -445,12 +446,26 @@ class HardStop(Watched, StateBase):
 
 class Refusals(Watched, StateBase):
     def test_a_threshold_the_watcher_cannot_use_refuses_the_write(self):
-        self.policy_doc = policy_of(cap=1)
-        self.policy_doc["constitutional"]["monthly_cap_usd"] = 0
-        out = self.first(5, {"good": candidate(GOOD)})
-        self.assertEqual((out["ok"], out["reason"], out["reasons"]),
-                         (False, "write_refused", ["policy_invalid:constitutional.monthly_cap_usd"]))
+        """``write_cycle.write`` itself, called on a ``pulled`` whose policy the job's own stop (``yaz_policy``,
+        shown in ``test_loop_yaz``) would not have let through: refused before any write, absent or off its form."""
+        zero = policy_of(cap=1)
+        zero["constitutional"]["monthly_cap_usd"] = 0
+        self.assertEqual(self.refused_write(zero), ["policy_invalid:constitutional.monthly_cap_usd"])
+
+    def test_a_required_threshold_absent_refuses_the_write(self):
+        absent = policy_of()
+        del absent["constitutional"]["regression_freeze"]["min_reverts"]
+        self.assertEqual(self.refused_write(absent), ["policy_invalid:constitutional.regression_freeze.min_reverts"])
+
+    def refused_write(self, doc: dict) -> list[str]:
+        self.policy_doc = doc
+        self.kos({})
+        self.github()
+        with self.assertRaises(WC.Refused) as ctx:
+            WC.write(P.read(self.pulled), self.src, {"decisions": {}, "merge": None}, [],
+                     W.Writer(YW.REPO, self.gh), self.signer, b"", "9-1", YW.TS)
         self.assertEqual(self.writes(), [])
+        return ctx.exception.reasons
 
     def test_a_lift_of_no_freeze_refuses_the_state(self):
         self.state = genesis_state(freeze_rows(GENESIS_TS, lifts=[lifted(start=GENESIS_TS)], cycle_id="g"))
@@ -465,13 +480,13 @@ class Refusals(Watched, StateBase):
         self.assertEqual(str(ctx.exception), "gozcu: row g:lift:budget_usd lifts no freeze in force")
         self.assertEqual(self.writes(), [])
 
-    def test_without_thresholds_the_cycle_is_written_and_says_what_was_not_judged(self):
+    def test_without_the_six_thresholds_not_required_the_cycle_is_written_and_says_what_was_not_judged(self):
         self.policy_doc = policy_of()
-        out = self.first(USD * 50000, {"good": candidate(GOOD)})
+        out = self.first(USD, {"good": candidate(GOOD)})
         self.assertEqual((out["ok"], out["merge"]), (True, "good"))
-        self.assertEqual(out["written"]["gozcu"], dict(QUIET, unjudged=sorted(R.dotted(p) for p in R.GOZCU_PATHS),
-                                                       unmeasured=list(GW.UNMEASURED)))
-        self.assertEqual(len(out["written"]["gozcu"]["unjudged"]), 13)
+        unjudged = sorted(R.dotted(p) for p in R.GOZCU_PATHS if p not in R.REQUIRED)
+        self.assertEqual(out["written"]["gozcu"], dict(QUIET, unjudged=unjudged, unmeasured=list(GW.UNMEASURED)))
+        self.assertEqual(len(unjudged), 6)
         self.assertNotIn("freeze", [r["part"] for r in self.added()])
 
 
