@@ -75,6 +75,7 @@ from typing import Any
 from ledger import append, chain, events
 from ledger import schema as S
 from runner import organs as O
+import cli
 
 PART = KIND = "accept"
 NO_ORGAN = "no_organ"
@@ -125,7 +126,7 @@ def _hash(definitions: Any, organ_id: str) -> str | None:
     try:
         return O.definition_sha256(definitions[organ_id])
     except O.OrganError as exc:
-        raise Unusable("organ %s: %s" % (organ_id, exc)) from None
+        raise Unusable("organ %s: %s" % (organ_id, cli.cause(exc))) from None
 
 
 def reasons(package: Any, definitions: Any, rows: Any) -> list[str]:

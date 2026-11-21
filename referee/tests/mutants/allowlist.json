@@ -232,7 +232,7 @@
   {
    "id": "hash_error_is_unknown",
    "file": "gate/allowlist.py",
-   "old": "        raise Unusable(\"organ %s: %s\" % (organ_id, exc)) from None",
+   "old": "        raise Unusable(\"organ %s: %s\" % (organ_id, cli.cause(exc))) from None",
    "new": "        return None",
    "tests": [
     "test_allowlist.Decision.test_definitions_of_another_shape_are_unusable"
