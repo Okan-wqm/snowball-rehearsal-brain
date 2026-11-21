@@ -35,7 +35,10 @@ stage 1 MF5's offline reading, ``yaz_offline``).
   fields other than ``type`` and ``parameters`` change nothing; the hash is the page's recipe, computed here by
   ``hashlib`` over literal bytes; a branch the baseline names beyond the three is read and compared; an operator check
   more than 7 days old is ``stale`` with no hard stop and every read still made, exactly 7 days is not, and in
-  ``yaz`` it ends the job ``operator_check_stale`` with nothing written (a drift beside it is the job's reason).
+  ``yaz`` it ends the job ``operator_check_stale`` with nothing written (a drift beside it is the job's reason);
+  that stop alone is exit 0 with one fixed ``::warning`` line before the job's line (``loop.job.ending``), a line
+  with any other reason or none is exit 1, and ``main`` ends as ``ending`` says. Not tested: that GitHub shows
+  the warning (no live run was seen).
 
 - ``Compared`` (tohum/01c, the answer to seed-082): the App's permissions other than the recorded object
   (``writer_app_permissions_changed``; JSON equality), a ruleset list whose ids are not the recorded set
@@ -58,7 +61,7 @@ stage 1 MF5's offline reading, ``yaz_offline``).
   pulled ledger, a stop that writes nothing and lasts until ``not_before`` moves.
 
 Not tested, because not built (``drift.check`` "Out of scope"): a second page of the activity, Gözcü's
-``hard_stop`` row, a stale stop that is not a red job, other Apps' installations, the referee repository's own
+``hard_stop`` row, other Apps' installations, the referee repository's own
 settings, workflow triggers. Not tested either: a real checkout made by git (the folders here are written by
 ``open``), a real API (the activity items here are written from the documentation's field names; the form of a
 real ``timestamp`` was not seen).
@@ -69,6 +72,7 @@ from __future__ import annotations
 import copy
 import datetime
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -1257,6 +1261,47 @@ class Yaz(TLW.StateBase):
         self.stale_summary(0)
         job = self.job()
         self.assertEqual((self.line(job)["ok"], job["drift"]["stale"], bool(self.writes())), (True, False, True), job)
+
+    def test_a_stale_stop_is_no_red_job_and_warns_the_operator(self):
+        """tohum/01c: "iş kırmızı değildir", "operatör görünür bir uyarı alır"; every other stop stays exit 1."""
+        self.ready()
+        self.stale_summary(1)
+        stale = self.job()
+        text, code = J.ending(stale)
+        lines = text.split("\n")
+        self.assertEqual((code, len(lines), lines[2], json.loads(lines[1])), (0, 3, "", stale), text)
+        self.assertEqual(lines[1], json.dumps(stale, sort_keys=True))
+        self.assertRegex(lines[0], r"\A::warning title=operator check stale::operator check stale: [ -~]+\Z")
+        self.assertEqual(lines[0], J.CLEAN_STOPS["operator_check_stale"])
+        self.assertEqual(self.writes(), [])
+        # a hard stop beside the stale check is red and carries no warning
+        change(self.gh, "/repos/%s/rulesets/1" % YW.REPO, bypass("always"))
+        drifted = self.job()
+        self.assertEqual((drifted["reason"], drifted["drift"]["stale"]), ("drift", True))
+        self.assertEqual(J.ending(drifted), (json.dumps(drifted, sort_keys=True) + "\n", 1))
+        change(self.gh, "/repos/%s/rulesets/1" % YW.REPO, bypass("never"))
+        # the reason alone does not make a job green, nor does a line without one: only ok does
+        self.assertEqual(J.ending(dict(stale, ok=True)), (json.dumps(dict(stale, ok=True), sort_keys=True) + "\n", 0))
+        for other in (dict(stale, reason="policy_unusable"), dict(stale, reason="hard_stop"),
+                      {k: v for k, v in stale.items() if k != "reason"}):
+            self.assertEqual(J.ending(other), (json.dumps(other, sort_keys=True) + "\n", 1), other)
+        # a written cycle: one line, exit 0
+        self.stale_summary(0)
+        job = self.job()
+        self.assertEqual((job["ok"], J.ending(job)), (True, (json.dumps(job, sort_keys=True) + "\n", 0)))
+
+    def test_the_command_ends_as_ending_says(self):
+        """``main`` writes ``ending``'s text and returns its code (``run`` replaced: the command's own ``run``
+        reads the process's environment and sends real requests)."""
+        self.assertEqual(list(J.CLEAN_STOPS), ["operator_check_stale"])
+        stale = {"job": "yaz", "ok": False, "reason": "operator_check_stale", "targets": []}
+        for out in (stale, dict(stale, reason="drift"), dict(stale, ok=True)):
+            with unittest.mock.patch.object(J, "run", return_value=out) as run, \
+                    unittest.mock.patch.object(sys, "stdout", new_callable=io.StringIO) as stdout:
+                code = J.main(["run", "yaz"])
+            self.assertEqual((stdout.getvalue(), code), J.ending(out), out)
+            self.assertEqual(run.call_args.args[0], "yaz")
+        self.assertEqual([J.ending(o)[1] for o in (stale, dict(stale, reason="drift"), dict(stale, ok=True))], [0, 1, 0])
 
     def test_a_stale_check_stops_every_target_after_all_were_read(self):
         ghs = self.two()

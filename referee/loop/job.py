@@ -220,7 +220,9 @@ refused tree is ``pulled_invalid``). Then:
   any target ends the job there: ``reason`` ``drift`` with the reasons and id of the first drifted target served,
   ``targets`` ``[]``, exit 1, no target served and nothing written on any; with no reason on any target, a stale
   operator check ends it as cleanly, no hard stop: ``reason`` ``operator_check_stale``, no ``target``, ``targets``
-  ``[]``, exit 1, nothing written. Between the two, the policy (``yaz_policy``, tohum/29v "Döngüde eksik
+  ``[]``, nothing written, and it is the one stop that is not a red job (tohum/01c; ``CLEAN_STOPS``, ``ending``):
+  ``ok`` stays false on the line, the exit is 0 and stdout carries, before the line, one ``::warning`` workflow
+  command of fixed text (GitHub shows it as an annotation of the run; no answer of a live run was seen here). Between the two, the policy (``yaz_policy``, tohum/29v "Döngüde eksik
   anahtar"): ``harness.params.check`` of every served target's ``pulled`` policy, and a reason on any (a path of
   stage 1's twelve absent, or a judged value off its form: ``policy_invalid:<path>``) ends the job as cleanly:
   ``reason`` ``policy_unusable`` with the reasons and id of the first such target served, ``targets`` ``[]``,
@@ -355,7 +357,8 @@ behaviour of the pinned actions (their tags were resolved to the SHAs below on 2
 Command line, from ``referee/``::
 
     python -m loop.job render        # the workflow on stdout, exit 0
-    python -m loop.job run JOB       # one JSON line on stdout; exit 0 the job's steps all done (``ok`` true),
+    python -m loop.job run JOB       # one JSON line on stdout; exit 0 the job's steps all done (``ok`` true)
+                                     # or a stop of ``CLEAN_STOPS`` (``ok`` false, a ``::warning`` line first),
                                      # 1 refused or not wired, 2 unusable (RUNNER_TEMP unset, an input
                                      # unusable, getir's fetch failed, an out/ directory that exists)
 """
@@ -1640,6 +1643,29 @@ def scope(environ: dict[str, str]) -> str:
     return "owner=%s\nrepositories=%s\n" % (owners[0], ",".join(names))
 
 
+# tohum/01c: the stops that are not a red job, each with the warning its job shows the operator. The text is fixed:
+# nothing read from a file or an API is put in a workflow command.
+CLEAN_STOPS = {
+    "operator_check_stale": "::warning title=operator check stale::operator check stale: drift.operator_checked_at "
+                            "of setup/summary.json is more than 7 days before this job's clock. No target was "
+                            "served and nothing was written; the cycle is served again when the summary records "
+                            "a newer operator check.",
+}
+
+
+def ending(out: dict[str, Any]) -> tuple[str, int]:
+    """What ``run JOB`` ends with for the job's line ``out``: the text of stdout and the exit code. The line is
+    always the last line of the text. ``ok`` true: exit 0. A line that is not ok and whose ``reason`` is a key of
+    ``CLEAN_STOPS``: that reason's warning on the line before, exit 0. Every other line: exit 1."""
+    line = json.dumps(out, sort_keys=True) + "\n"
+    if out["ok"]:
+        return line, 0
+    warning = CLEAN_STOPS.get(out.get("reason"))
+    if warning is None:
+        return line, 1
+    return warning + "\n" + line, 0
+
+
 def main(argv: list[str]) -> int:
     try:
         if argv == ["render"]:
@@ -1655,9 +1681,9 @@ def main(argv: list[str]) -> int:
             sys.stdout.write(text)
             return 0
         if len(argv) == 2 and argv[0] == "run":
-            out = run(argv[1], dict(os.environ))
-            sys.stdout.write(json.dumps(out, sort_keys=True) + "\n")
-            return 0 if out["ok"] else 1
+            text, code = ending(run(argv[1], dict(os.environ)))
+            sys.stdout.write(text)
+            return code
         raise Unusable(USAGE)
     except Unusable as exc:
         sys.stderr.write("unusable input: %s\n" % cli.cause(exc))

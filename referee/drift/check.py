@@ -131,8 +131,8 @@ Out of scope, stated (none of these is read, so none is promised):
 - Gözcü's ``hard_stop`` row for the offending items (tohum/26i): nothing is written here or by the caller. The
   stop lasts all the same while the items stay in the window: a job stopped so writes no ``cycle_start`` row, so
   only the operator's ``not_before`` moves the window past them (``test_drift.YazActivity``);
-- a clean stop that is "not a red job" with a warning the operator sees (01c): ``stale`` is answered here, and
-  ``loop.job`` still ends such a job with exit 1;
+- the clean stop itself (01c: not a red job, a warning the operator sees): ``stale`` is answered here, the exit
+  and the warning are ``loop.job``'s (``CLEAN_STOPS``); this module's own command still exits 1 on a stale check;
 - the policy a cycle was pulled with (``pulled``'s copy): the hash is of the checkout's ``policy.json`` only, and a
   float elsewhere in that file than under ``constitutional`` is not looked for here (the readers of those paths
   refuse it, ``harness.params``);
