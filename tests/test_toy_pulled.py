@@ -6,7 +6,8 @@
 What is proven here: the artifact ``loop.pulled.read`` accepts holds, byte for byte, the brain's ``units.json``
 (one unit, the number ``koş`` runs) and all five candidate directories, the ``targets[]`` entry as given, the
 ``brain/state`` files given (a stand-in genesis: the toy's real state is activation's) with the toy's commit as
-``brain/integration``'s head, and a tree that unpacks (``extract_tree``, ``koş``'s rule) to exactly the fixture's files. Not proven here: the
+``brain/integration``'s head, and a tree that unpacks (``extract_tree``, ``koş``'s rule) to exactly the fixture's files, on a policy
+the loop can use (the loop tests' own; ``b"{}"`` is refused, tohum/29v, ``tests/test_loop_cek.py``). Not proven here: the
 fetch of the real toy repository's objects, and the contained runs over it (asama-0/10a #birim, #merge, #ret).
 
 Run from the brain root: ``python -m unittest discover -s tests -p 'test_toy_pulled.py'``.
@@ -29,12 +30,14 @@ from loop import cek as C  # noqa: E402
 from loop import pulled as P  # noqa: E402
 import git_store as S  # noqa: E402
 from test_loop_kos import HEADS, state_files  # noqa: E402
+from test_loop_cagir import policy  # noqa: E402
 
 TOY = os.path.join(ROOT, "tests", "fixtures", "toy-repo")
 CANDIDATES = os.path.join(ROOT, "candidates", "toy")
 OBJECTS, COMMIT = S.store(S.from_dir(TOY))
 BRAIN, BRAIN_COMMIT = S.store({"%s/%s" % (top, path): value for top in ("targets/toy", "candidates/toy")
                                for path, value in S.from_dir(os.path.join(ROOT, top)).items()})
+POLICY = policy()  # one the loop can use (tohum/29v: ``çek`` refuses a pull whose policy lacks a required path)
 ENTRY = {"id": "toy", "repo": "owner/toy", "kind": "toy", "base_sha": COMMIT, "identifiers": [],
          "excluded_paths": [], "unit_candidates": []}
 
@@ -56,7 +59,7 @@ class ToyPulled(unittest.TestCase):
     def test_the_toy_as_pulled(self):
         out = os.path.join(self.tmp, "pulled")
         summary = json.dumps({"targets": [ENTRY, dict(ENTRY, id="copy", kind="copy")]}).encode()
-        C.assemble(BRAIN.__getitem__, BRAIN_COMMIT, summary, b"{}", "toy", OBJECTS.__getitem__, COMMIT,
+        C.assemble(BRAIN.__getitem__, BRAIN_COMMIT, summary, POLICY, "toy", OBJECTS.__getitem__, COMMIT,
                    HEADS["brain/state"], state_files(), None, out)
         got = P.read(out)
         self.assertEqual(got.target, ENTRY)
