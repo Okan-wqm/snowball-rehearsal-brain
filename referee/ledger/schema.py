@@ -16,7 +16,8 @@ optionally ``cause``, ``miss_reason``, ``derived_from``, ``proposed_by``. ``row_
 **Row types.** ``(part, kind)`` must be one of ``ROW_TYPES``; anything else is ``unknown_row_type``: the loop
 writes no row whose shape is not written here. Each type gives its payload's keys (required and optional, no
 other key), each key's shape, and whether ``cause`` is required (a failed or reverted event, tohum/26; for a
-``decision`` only when it is a reject). The words are the seed's vector pages' choices, which tohum/26 does not
+``decision`` only when it is a reject whose reasons are not all a closed gate's, ``ledger.events.standing``,
+tohum/26j). The words are the seed's vector pages' choices, which tohum/26 does not
 list yet (tohum/29m, 29n, 29o: "26'ya girmelidir"): the ``drill`` ``commit`` and ``plant`` payloads and the
 ``events`` ``revert`` row are ``harness.revert_drill``'s (MF14, 29m; the loop's D7 writes the same revert row,
 ``ledger.events.revert``); the ``cost`` payload is ``llm.call``'s (MF15,
@@ -45,8 +46,10 @@ measurement, start}``: ``trigger`` one of ``FREEZE_TRIGGERS``, ``scope`` a non-e
 names, ``measurement`` an object of counts, ``start`` a ``ts``) and ``lift`` (``{trigger, scope, start}``, the
 three of the freeze it lifts; the lift's time is the row's ``ts``). No page gives either a shape (seed-084 b):
 these are tohum/28's four words and the least that names one freeze. That a lift's freeze is in the ledger is
-not a rule of one row: ``gozcu.watch`` reads it. Kinds no writer here produces (``rival``,
-``accept``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
+not a rule of one row: ``gozcu.watch`` reads it. The ``accept`` part has one type, ``accept`` (tohum/26b's
+``{organ_id, definition_sha256, brain_sha, evidence_run_ids}``, ``ACCEPT``; ``evidence_run_ids`` a list of
+exactly one non-empty string, tohum/26j MF9), ``gate.allowlist``'s, written by D6. Kinds no writer here produces
+(``rival``, ``security``, ``looks``, ``founder``) are not in the table, so they are refused until a
 writer and its shape are added. The founder row is a session's, not the loop's: its shape and writer are
 ``ledger.founder``'s, built on ``ROW_FIELDS`` below.
 
@@ -70,7 +73,7 @@ import re
 from typing import Any, Callable
 
 import cli
-from ledger import chain, cost
+from ledger import chain, cost, events
 from target import branches
 
 PARTS = ("founder", "events", "cost", "drill", "freeze", "rival", "accept", "security", "looks")
@@ -292,7 +295,13 @@ def _hunk_paths(payload: dict, where: str) -> list[str]:
 
 
 def _rejected(payload: Any) -> bool:
-    return isinstance(payload, dict) and payload.get("decision") == "reject"
+    """Whether a ``decision`` row must carry ``cause``: a reject, but a closed gate's (tohum/26j "Kapalı kapının
+    reddi": ``ledger.events.standing`` of its reasons), which needs none. One it carries is not refused: the
+    rows written before 26j carry ``unknown``."""
+    if not (isinstance(payload, dict) and payload.get("decision") == "reject"):
+        return False
+    reasons = payload.get("reasons")
+    return not (isinstance(reasons, list) and all(isinstance(r, str) for r in reasons) and events.standing(reasons))
 
 
 # the sentinel verdicts that end a merge's sentinel without a revert (``events``/``sentinel``, tohum/26f)
@@ -303,6 +312,16 @@ SENTINEL_ENDS = ("green", "flaky")
 FREEZE_TRIGGERS = ("regression", "containment", "budget_usd", "budget_ci_minutes")
 _FROZEN = {"trigger": one_of(*FREEZE_TRIGGERS), "scope": list_of(text, non_empty=True, unique_sorted=True),
            "start": timestamp}
+
+
+
+def _one_run(value: Any, where: str) -> list[str]:
+    found = list_of(text)(value, where)
+    return found or ([] if len(value) == 1 else _bad(where, "not one run id"))
+
+
+# tohum/26b's ``accept`` row, tohum/26j MF9: ``evidence_run_ids`` is the one bootstrap run of the signed result
+ACCEPT = shape({"organ_id": text, "definition_sha256": hex64, "brain_sha": hex40, "evidence_run_ids": _one_run})
 
 # (part, kind) -> (payload shape, cause required: a bool or a test on the payload)
 ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
@@ -336,6 +355,7 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
                                 "merge_sha": hex40}), False),
     ("freeze", "freeze"): (shape(dict(_FROZEN, measurement=map_of(count))), False),
     ("freeze", "lift"): (shape(_FROZEN), False),
+    ("accept", "accept"): (ACCEPT, False),
 }
 
 # tohum/26's row fields, one source for ROW and for a part with extra optional fields (the founder row's supersedes)

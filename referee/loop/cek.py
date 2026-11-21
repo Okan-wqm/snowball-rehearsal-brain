@@ -33,6 +33,15 @@ for the tree is the commit the tree was read from. Nothing here reads the networ
   ``candidate_invalid:<name>``: an entry of ``candidates/<id>`` whose name is not a candidate id
   (``runner.kos.CANDIDATE_ID``), that is not a tree, or that does not hold exactly the three entries, each a file.
   Every candidate directory is taken; none is skipped.
+- **Entry** (tohum/26j "İzin listesi, MF9": the entry trigger is data committed at the brain SHA the bootstrap
+  referee accepted, the entry request ``{organ_ids}``). At ``brain_commit`` the request is the file
+  ``accept.json`` of the brain's root, a JSON document ``gate.allowlist.request`` takes (exactly ``{organ_ids}``,
+  distinct non-empty strings): no such entry is a request naming no organ; an entry that is no file or another
+  document is ``accept_invalid``; an id that is no organ of that commit (below) is ``accept_unknown:<id>``. The
+  artifact's ``accept.json`` is ``{brain_sha: brain_commit, run_id, organ_ids}`` (``loop.pulled``, "Entry"),
+  from which ``yaz`` writes the ``accept`` rows (``gate.allowlist.rows``). The file's path is this module's
+  choice: 26j names the request, no page where it is kept (reports/seed-087). Not judged here: ``brain_commit``
+  as a SHA and ``run_id`` (``loop.pulled`` refuses an artifact whose entry has another form).
 - **Organs** (asama-1/05 step 1 and 2, asama-1/06 item 6: the organs ``koş`` may call are those of the brain SHA
   the bootstrap referee accepted). At ``brain_commit``, an organ is a file ``organs/<oid>.json``, ``<oid>`` a
   candidate id (``runner.kos.CANDIDATE_ID``), holding a JSON object of exactly ``entry`` and ``files``:
@@ -95,6 +104,7 @@ from typing import Any
 
 import cli
 from cases import build as CB
+from gate import allowlist as AL
 from harness import params as HP
 from loop import gitobj as G
 from loop import pulled as P
@@ -172,6 +182,21 @@ def _candidates(brain: G.Source, commit: str, target_id: str) -> tuple[dict[str,
 
 ORGANS = "organs"
 ORGAN_SUFFIX = ".json"
+ENTRY_REQUEST = "accept.json"
+
+
+def _entry(brain: G.Source, commit: str, organs: dict[str, dict]) -> tuple[list[str], list[str]]:
+    """``(organ ids, reasons)``: the entry request of ``commit`` (see the module docstring, "Entry")."""
+    found = G.lookup(brain, commit, ENTRY_REQUEST)
+    if found is None:
+        return [], []
+    try:
+        if found[0] != "file":
+            raise AL.Unusable("not a file")
+        ids = AL.request(cli.loads(G.read(brain, found[1], "blob").decode("utf-8")))
+    except (AL.Unusable, UnicodeDecodeError, ValueError, RecursionError):
+        return [], ["accept_invalid"]
+    return ids, ["accept_unknown:%s" % i for i in ids if i not in organs]
 
 
 def _definition(brain: G.Source, commit: str, data: bytes) -> dict | None:
@@ -255,12 +280,13 @@ def _planted_max(policy: bytes) -> int | None:
 
 def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, target_id: str,
              objects: G.Source, commit: str, state_head: str, state: dict[str, bytes], status: bytes | None,
-             out: str) -> dict[str, Any]:
-    """Write ``pulled`` into ``out`` (which must not exist) by the rules above; returns its manifest."""
+             out: str, run_id: str | None = None) -> dict[str, Any]:
+    """Write ``pulled`` into ``out`` (which must not exist) by the rules above; returns its manifest. ``run_id``
+    is the run id of the signed result that named ``brain_commit`` (``loop.accepted``), ``None`` when it has none."""
     if not (isinstance(target_id, str) and K.CANDIDATE_ID.fullmatch(target_id)):
         raise P.PulledError(["target_id_unsafe"])
     target, reasons = target_entry(summary, target_id)
-    units, candidates, organs = None, {}, {}
+    units, candidates, organs, entering = None, {}, {}, []
     try:
         units = _units(brain, brain_commit, target_id)
         if units is None:
@@ -274,6 +300,8 @@ def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, 
         reasons += ["brain:%s" % r for r in exc.reasons]
     try:
         organs, bad = _organs(brain, brain_commit)
+        reasons += bad
+        entering, bad = _entry(brain, brain_commit, organs)
         reasons += bad
     except P.PulledError as exc:
         reasons += ["brain:%s" % r for r in exc.reasons]
@@ -293,7 +321,7 @@ def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, 
         raise P.PulledError(list(dict.fromkeys(reasons)))
     manifest = P.write(out, target, tree, units, policy, candidates, {B.STATE: state_head, B.INTEGRATION: commit},
                        state, status, {oid: O.definition_sha256(d) for oid, d in organs.items()}, organs, snapshot,
-                       mutations)
+                       mutations, {"brain_sha": brain_commit, "run_id": run_id, "organ_ids": entering})
     try:
         P.read(out)
     except P.PulledError:

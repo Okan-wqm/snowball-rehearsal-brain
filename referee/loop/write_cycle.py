@@ -23,6 +23,10 @@ flaky, sha256, facts}`` (``loop.watch.read``'s verified answer at ``brain/integr
 ``Unusable``; ``gate``, the payload of the toy's ``copy_gate`` row (``harness.pass_row.gate_payload``) when the copy's
 genesis gate opened on this cycle's state, or ``None``; ``passed``, the payload of the toy's PASS row
 (``harness.pass_row.judge``'s ``payload``) when the toy's and the copy's states were judged ``PASS``, or ``None``;
+``art.accept``, the organ entry of the accepted SHA (``loop.pulled``, "Entry"): its ``accept`` rows
+(``gate.allowlist.rows``, P1 MF9, tohum/26j) are among the cycle's rows, after the PASS row and before the cost
+rows; an entry the allowlist cannot write is ``Unusable`` with nothing written; no live cycle has an entry
+before stage 1 MF6 (no entry request is committed);
 ``proposals`` (a list of ``(proposed_by, proposal)``) and ``finding_decisions`` (a list of ``{fingerprint,
 reasons}``), the cycle's input to the finding registry (``findings.write.cycle``, P1 MF8, tohum/26j): both empty
 unless given, and ``loop.job`` gives neither (no proposal and no finding decision exists before P1 MF10-MF12 and
@@ -119,6 +123,7 @@ from typing import Any
 
 from dispatcher import llm_call
 from findings import write as findings_write
+from gate import allowlist
 from gate import revert as gate_revert
 from gate import sentinel
 from gozcu import evaluate as gozcu_rules
@@ -235,6 +240,10 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         written = serial.rows(art.state[B.STATE_LEDGER])
     except serial.Unusable as exc:
         raise Unusable("state: %s" % cli.cause(exc)) from None
+    try:
+        accepts = allowlist.rows(cyc, art.accept, art.organs, written)
+    except allowlist.Unusable as exc:
+        raise Unusable("accept: %s" % cli.cause(exc)) from None
     moved = ["head_moved:%s" % b for b in P.HEAD_BRANCHES if writer.head(b) != art.heads[b]]
     if moved:
         raise Refused(moved)
@@ -271,7 +280,7 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
             out.append(events.row(cyc, "gate", PR.GATE_ROW[1], gate))
         if passed is not None:
             out.append(events.row(cyc, "pass", PR.PASS_ROW[1], passed))
-        return out + list(cost)
+        return out + accepts + list(cost)
 
     ledger, roots = art.state[B.STATE_LEDGER], art.state[B.STATE_ROOTS]
     args = (ledger, ledger, roots, roots, art.status)

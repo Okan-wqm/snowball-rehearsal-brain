@@ -28,6 +28,9 @@ https://github.com/<repo>/.github/workflows/bootstrap.yml@refs/heads/main --cert
 https://token.actions.githubusercontent.com <dir>/result.json`` runs (``<repo>`` ``owner/name``, checked against
 ``REPO``; else ``repo_unsafe``); a non-zero exit, or a program that cannot start, is ``state_unverified``. Then
 ``result.json`` must be a JSON object whose ``state.last_accepted_sha`` is 40 lowercase hex: else ``state_invalid``.
+``run_id`` is the result's ``run.id`` when that is a non-empty string, else ``None`` (the id of the bootstrap run
+that signed it, tohum/26j MF9's ``evidence_run_ids``; no seed page gives the result this field, reports/seed-087,
+so a result without it is still a state: only an organ's entry needs it, ``gate.allowlist`` rule 12).
 Only bytes that passed the verifier are parsed.
 
 **The import** (``last_import``, the one reader of the file's transfer rows: D1 here and genesis in ``activate``):
@@ -189,7 +192,7 @@ def verify_argv(sigstore: Sequence[str], repo: str, directory: str) -> list[str]
 
 def open_state(result: bytes, bundle: bytes, repo: str, sigstore: Sequence[str],
                verifier: Callable[[list[str]], int] = PG.run) -> dict:
-    """The verified result: ``{last_accepted_sha, result_sha256}``, by the rules above (``repo_unsafe`` from
+    """The verified result: ``{last_accepted_sha, result_sha256, run_id}``, by the rules above (``repo_unsafe`` from
     ``verify_argv``, before the verifier runs)."""
     with tempfile.TemporaryDirectory(prefix="bootstrap-state-") as tmp:
         for name, body in ((RESULT, result), (BUNDLE, bundle)):
@@ -205,7 +208,10 @@ def open_state(result: bytes, bundle: bytes, repo: str, sigstore: Sequence[str],
     sha = state.get("last_accepted_sha") if isinstance(state, dict) else None
     if not (isinstance(sha, str) and SHA40.fullmatch(sha)):
         raise StateError("state_invalid")
-    return {"last_accepted_sha": sha, "result_sha256": hashlib.sha256(result).hexdigest()}
+    run = doc.get("run")
+    run_id = run.get("id") if isinstance(run, dict) else None
+    return {"last_accepted_sha": sha, "result_sha256": hashlib.sha256(result).hexdigest(),
+            "run_id": run_id if isinstance(run_id, str) and run_id else None}
 
 
 # ---- reading the Actions API -------------------------------------------------------------------------------------

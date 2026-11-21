@@ -83,8 +83,8 @@ STANDING_PREFIXES = ("frozen:", "organ_unknown:", "organ_not_listed:")
 
 def standing(reasons: list[str]) -> bool:
     """Whether ``reasons`` are a closed gate's reject: not empty, and each a standing reason (tohum/26j). Read by
-    ``findings.write``: such a reject writes no ``unresolved`` row. A ``decision`` row still carries
-    ``cause(reasons)``: the page's "no cause" is not built here."""
+    ``findings.write`` (such a reject writes no ``unresolved`` row), ``decided`` (its row carries no ``cause``) and
+    ``ledger.schema`` (which asks a ``cause`` of every other reject)."""
     return bool(reasons) and all(r in STANDING or r.startswith(STANDING_PREFIXES) for r in reasons)
 
 
@@ -126,10 +126,11 @@ def drill(cycle: dict, kind: str, payload: dict) -> dict:
 
 def decided(cycle: dict, cid: str, reasons: list[str], merged: Any = None) -> list[dict]:
     """The rows of one candidate's decision: a reject when ``reasons`` is not empty, else the merge ``merged``
-    (``{path, pull, head_sha, merge_sha, hunks}``) as its ``decision`` and ``merge`` rows."""
+    (``{path, pull, head_sha, merge_sha, hunks}``) as its ``decision`` and ``merge`` rows. A reject carries
+    ``cause(reasons)``, a closed gate's (``standing``) no ``cause`` (tohum/26j "Kapalı kapının reddi")."""
     if reasons:
         return [row(cycle, "c:" + cid, "decision", {"decision": "reject", "candidate": cid, "reasons": reasons},
-                    cause(reasons))]
+                    None if standing(reasons) else cause(reasons))]
     merge = dict({k: merged[k] for k in MERGE_FIELDS}, candidate=cid,
                  hunk_covered=hunk_covered(merged["path"], merged["hunks"]))
     return [row(cycle, "c:" + cid, "decision", {"decision": "merge", "candidate": cid}),

@@ -1318,7 +1318,8 @@ def cek_d1(environ: dict[str, str], http: Any = None, verifier: Any = None, git:
         tid = target["id"]
         os.makedirs(os.path.join(root, tid))
         line = dict({"target": tid}, **_cek_target(environ, files, target, brain_dir, sha,
-                                                    os.path.join(root, tid), git, entries, opened))
+                                                    os.path.join(root, tid), git, entries, opened,
+                                                    run_id=state["run_id"]))
         lines.append(line)
         if "reason" in line:
             return dict(_refused([line["reason"]] + line.get("reasons", [])), target=tid, targets=lines,
@@ -1347,10 +1348,12 @@ def _refused(reasons: list[str]) -> dict[str, Any]:
 
 
 def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, brain_dir: str, brain_sha: str,
-                root: str, git: str, entries: Any, opened: bool = False) -> dict[str, Any]:
+                root: str, git: str, entries: Any, opened: bool = False,
+                run_id: str | None = None) -> dict[str, Any]:
     """The target half of D1 for one ``targets[]`` entry, in its own directory ``root`` (see the module
     docstring): ``{reason?, reasons?, heads?, state?, root?, assembled?, profile?, genesis?}``, or ``{waiting,
-    heads}`` for a copy not yet opened; ``opened``: the copy's genesis gate is open on a toy served before it."""
+    heads}`` for a copy not yet opened; ``opened``: the copy's genesis gate is open on a toy served before it;
+    ``run_id``: the signed result's run id, carried in the artifact's ``accept.json`` (``loop.cek``, "Entry")."""
     target_id = target["id"]
     try:
         url = A.repo_url(target.get("repo"))
@@ -1403,7 +1406,7 @@ def _cek_target(environ: dict[str, str], files: dict[str, bytes], target: dict, 
                 G.GitBatch(target_dir, git=git, environ=environ) as objects:
             manifest = C.assemble(brain, brain_sha, files["setup/summary.json"], files["policy.json"], target_id,
                                   objects, commit, heads[B.STATE], dict(chains), status,
-                                  out)
+                                  out, run_id=run_id)
     except P.PulledError as exc:
         return dict({"reason": "pulled_refused", "reasons": exc.reasons}, heads=heads)
     assembled = {"target": target_id, "commit": commit,

@@ -1,22 +1,26 @@
 """``gate.allowlist``: the gate's allowlist of organ definitions and the ``accept`` rows it is built from
-(P1 MF9, test 55 of tohum/26h; the rules only: nothing in the loop calls this module yet).
+(P1 MF9, test 55 of tohum/26h, tohum/26j "İzin listesi, MF9"). ``reasons`` is called by D5 (``loop.decide``) on
+every candidate of a cycle that is not the genesis cycle; ``rows`` by D6 (``loop.write_cycle``); ``request`` by
+``çek`` (``loop.cek``).
 
 Rules: tohum/26h MF9 (the gate refuses the candidate of an organ whose definition hash is in no ``accept`` row;
 the hash compared is the one the referee computes itself, with its one hash function, from the organ's files at
 the accepted SHA, not the package's ``definition_sha256[]`` statement; the ``accept`` row is written from the
-bootstrap referee's signed result), tohum/26b (the ``accept`` row, ``part: accept``: ``{organ_id,
-definition_sha256, brain_sha, evidence_run_ids[]}``; the allowlist is built from these rows), tohum/26a (the
-candidate package ``{finding, diff, organ_ids, definition_sha256[]}``), tohum/26e "Organ tanımının hash'i" (one
-hash function in the referee: ``runner.organs.definition_sha256``), tohum/12 "İzin listesi" and tohum/01b.
+bootstrap referee's signed result), tohum/26j MF9 (the gate reads only the package's ``organ_ids``; the list is
+keyed by ``(organ_id, definition_sha256)``; ``evidence_run_ids`` is the one bootstrap run of the signed result;
+the entry request is ``{organ_ids}``; no row takes an entry off the list), tohum/26b (the ``accept`` row,
+``part: accept``: ``{organ_id, definition_sha256, brain_sha, evidence_run_ids[]}``), tohum/26a (the candidate
+package ``{finding, diff, organ_ids, definition_sha256[]}``), tohum/26e "Organ tanımının hash'i" (one hash
+function in the referee: ``runner.organs.definition_sha256``), tohum/12 "İzin listesi" and tohum/01b.
 
 **The list** (``listed``), over the ledger's rows (parsed objects, in any order):
 
 1. An accept row is a row whose ``part`` is ``accept``. Rows of every other part are not read.
-2. The list is the set of the accept rows' ``payload.definition_sha256``. The row's ``organ_id`` does not enter:
-   a hash is listed whichever organ's row carries it (26h: "in no ``accept`` row").
-3. An accept row whose ``kind`` is not ``accept`` or whose payload is not ``PAYLOAD`` (26b's four keys and no
-   other: ``organ_id`` a non-empty string, ``definition_sha256`` 64 lowercase hex, ``brain_sha`` 40 lowercase
-   hex, ``evidence_run_ids`` a list of distinct non-empty strings, possibly empty) is ``Unusable``, as are rows
+2. The list is the set of the accept rows' ``(payload.organ_id, payload.definition_sha256)`` pairs: a hash
+   listed for one organ is not listed for another (26j).
+3. An accept row whose ``kind`` is not ``accept`` or whose payload is not ``ledger.schema.ACCEPT`` (26b's four
+   keys and no other: ``organ_id`` a non-empty string, ``definition_sha256`` 64 lowercase hex, ``brain_sha`` 40
+   lowercase hex, ``evidence_run_ids`` a list of exactly one non-empty string) is ``Unusable``, as are rows
    that are not a list of objects: nothing is listed from such a ledger and no candidate is judged against it,
    one that names no organ included.
 
@@ -28,51 +32,53 @@ otherwise). The reasons, in the order the package names its organs, each organ j
 4. ``no_organ``: the package names no organ (an output of no listed organ, tohum/12).
 5. ``organ_unknown:<id>``: the accepted SHA's definitions hold no organ of that id, so there are no files to
    hash.
-6. ``organ_not_listed:<id>``: ``runner.organs.definition_sha256`` of that organ's definition is not in the list.
+6. ``organ_not_listed:<id>``: the pair of that id and ``runner.organs.definition_sha256`` of that organ's
+   definition is not in the list.
 7. The package's ``definition_sha256`` is not read: present or absent, of any value, it changes no answer.
 8. A named organ's definition that has no hash (``runner.organs.OrganError``) is ``Unusable``. The definitions
    of organs the package does not name are not hashed.
 
 The candidate is allowed only when there is no reason.
 
-**The rows** (``accept``), over the ledger's bytes, its last verified version, the cycle (``{cycle_id, ts,
-snapshot_id}``, ``ledger.events.row``'s), the verified signed result (``loop.accepted.open_state``'s answer; only
-``last_accepted_sha`` is read, 40 lowercase hex), the definitions of that SHA, the organ ids to enter and the
-run ids to record:
+**The entry request** (``request``), over a parsed document:
 
-9. One row per named organ, in the order named: ``part`` and ``kind`` ``accept``, ``row_id``
-   ``<cycle_id>:accept:<organ_id>``, payload ``{organ_id, definition_sha256, brain_sha, evidence_run_ids}``:
-   the hash computed here from the definition (rule 6's function), ``brain_sha`` the result's
-   ``last_accepted_sha``, ``evidence_run_ids`` the run ids given (a list of distinct non-empty strings, possibly
-   empty). The other fields are ``ledger.events.row``'s (``derivation: tool``, ``trust: verified``).
-10. No row for an organ whose ``(organ_id, definition_sha256)`` an accept row of the ledger already holds: the
-    same entry twice writes once.
-11. Organ ids not a list of distinct non-empty strings, an id the definitions do not hold, a definition without
-    a hash, a result without such a SHA, run ids of another shape: ``Unusable``, and no row is written for any
-    organ.
-12. The ledger must be a valid chain extending ``previous`` byte for byte (``ledger.append.HardStop``
-    otherwise, also when no row would be written); rows are added through ``ledger.append.plan_cycle`` (its
-    secret scan and chaining) onto ``ledger``, whose every row stays. With no row to add the ledger's bytes
-    are returned as they are.
+9. Exactly ``{organ_ids}``, a list of distinct non-empty strings, possibly empty; its ``organ_ids`` is
+   returned. Anything else is ``Unusable``.
 
-Out of scope, stated (reports/seed-087): calling ``reasons`` from the gate and ``accept`` from ``yaz``. The
-package's format is asama-1 MF5 (``candidate.publish``), not built: no page gives the file a run-time package's
-``organ_ids`` is read from, and the stage-0 ready candidates name no organ (they are not judged here). Which
-organs a cycle enters and when is the caller's: asama-1 MF5's red test is the refusal of organs not yet entered
-and MF6 their entry, and no page gives what makes ``yaz`` enter an organ at MF6 and not before; nor which run ids
-are a row's evidence. Also out: the ``accept`` row type in ``ledger.schema.ROW_TYPES`` (a ledger holding an
-accept row is still refused by ``ledger.schema.ledger_reasons`` until the writer is wired); taking a hash off
-the list (tohum/12's DEGRADED, 12a's planted organs: no page gives a row that does); an organ's ``state``
-(tohum/26b); whether ``brain_sha`` holds that organ (the caller hands the definitions of that SHA, ``loop.cek``
-reads them); the package's other fields.
+**The rows** (``rows``), over the cycle (``{cycle_id, ts, snapshot_id}``, ``ledger.events.row``'s), the entry
+(``{brain_sha, run_id, organ_ids}``: the SHA the bootstrap referee accepted, the run id of its signed result and
+the request's organ ids at that SHA; ``None`` is no entry), the definitions of that SHA and the ledger's rows:
+
+10. One row per named organ, in the order named: ``part`` and ``kind`` ``accept``, ``row_id``
+    ``<cycle_id>:accept:<organ_id>``, payload ``{organ_id, definition_sha256, brain_sha, evidence_run_ids}``:
+    the hash computed here from the definition (rule 6's function), ``brain_sha`` the entry's,
+    ``evidence_run_ids`` the one-element list of the entry's ``run_id``. The other fields are
+    ``ledger.events.row``'s (``derivation: tool``, ``trust: verified``).
+11. No row for an organ whose ``(organ_id, definition_sha256)`` is already in the list (rule 2): the same entry
+    twice writes once.
+12. An entry that is not ``None`` nor exactly those three keys, organ ids not a list of distinct non-empty
+    strings, an id the definitions do not hold, a definition without a hash, a ledger of rule 3: ``Unusable``,
+    and there is no row for any organ. ``brain_sha`` (40 lowercase hex) and ``run_id`` (a non-empty string) are
+    judged only when a row would be written: an entry naming no organ, or only listed ones, writes nothing
+    whatever they are.
+
+Nothing here writes or chains: the rows enter the ledger in the cycle's one plan (``loop.write_cycle``), and a
+candidate is judged against the ledger the cycle started from, so an entry opens the gate from the next cycle.
+
+Out of scope, stated: the run-time package's reading (``candidates/<id>/package.json`` of ``koş``'s output tree,
+tohum/26j: P1 MF12, ``loop/candidates.py``; until then D5 judges the ready candidates only, which name no
+organ). Taking an entry off the list: no row does in stage 1 (26j, L1), so tohum/12's DEGRADED and 12a's planted
+organs are not answered here. An organ's ``state`` (tohum/26b). Whether ``brain_sha`` holds that organ and
+whether ``run_id`` is that result's run: the caller hands them (``loop.cek`` reads the definitions and the
+request at the accepted SHA; ``loop.accepted`` reads the run id from the signed result). The package's other
+fields.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
-from ledger import append, chain, events
+from ledger import events
 from ledger import schema as S
 from runner import organs as O
 import cli
@@ -83,7 +89,7 @@ UNKNOWN = "organ_unknown"
 NOT_LISTED = "organ_not_listed"
 
 _IDS = S.list_of(S.text, unique=True)
-PAYLOAD = S.shape({"organ_id": S.text, "definition_sha256": S.hex64, "brain_sha": S.hex40, "evidence_run_ids": _IDS})
+ENTRY_KEYS = {"brain_sha", "run_id", "organ_ids"}
 
 
 class Unusable(ValueError):
@@ -105,16 +111,17 @@ def _accept_payloads(rows: Any) -> list[dict]:
     for row in rows:
         if row.get("part") != PART:
             continue
-        found = S.exactly(KIND)(row.get("kind"), "accept row.kind") or PAYLOAD(row.get("payload"), "accept row.payload")
+        found = S.exactly(KIND)(row.get("kind"), "accept row.kind") \
+            or S.ACCEPT(row.get("payload"), "accept row.payload")
         if found:
             raise Unusable("; ".join(found))
         out.append(row["payload"])
     return out
 
 
-def listed(rows: Any) -> frozenset[str]:
-    """The allowlist: the definition hashes of the ledger's accept rows (rules 1-3)."""
-    return frozenset(p["definition_sha256"] for p in _accept_payloads(rows))
+def listed(rows: Any) -> frozenset[tuple[str, str]]:
+    """The allowlist: the ``(organ_id, definition_sha256)`` pairs of the ledger's accept rows (rules 1-3)."""
+    return frozenset((p["organ_id"], p["definition_sha256"]) for p in _accept_payloads(rows))
 
 
 def _hash(definitions: Any, organ_id: str) -> str | None:
@@ -140,38 +147,34 @@ def reasons(package: Any, definitions: Any, rows: Any) -> list[str]:
         own = _hash(definitions, organ_id)
         if own is None:
             out.append("%s:%s" % (UNKNOWN, organ_id))
-        elif own not in allowed:
+        elif (organ_id, own) not in allowed:
             out.append("%s:%s" % (NOT_LISTED, organ_id))
     return out
 
 
-@dataclass
-class Accepted:
-    content: bytes              # the ledger after the rows
-    rows: list[dict]            # the rows added, in order, as handed to the chain
+def request(doc: Any) -> list[str]:
+    """The organ ids of the entry request ``doc`` (rule 9)."""
+    if not (isinstance(doc, dict) and set(doc) == {"organ_ids"}):
+        raise Unusable("the entry request is not {organ_ids}")
+    return list(_ids(doc["organ_ids"], "request.organ_ids"))
 
 
-def accept(ledger: bytes, previous: bytes, cycle: dict, state: Any, definitions: Any, organ_ids: Any,
-           run_ids: Any) -> Accepted:
-    """The ledger after the accept rows of ``organ_ids`` (rules 9-12)."""
-    verdict = chain.verify_bytes(ledger, previous)
-    if not verdict["valid"]:
-        raise append.HardStop("ledger: %s (%s)" % (verdict["reason"], verdict["broken_row"]))
-    brain_sha = state.get("last_accepted_sha") if isinstance(state, dict) else None
-    if S.hex40(brain_sha, "last_accepted_sha"):
-        raise Unusable("the signed result names no accepted SHA")
-    runs = list(_ids(run_ids, "run_ids"))
-    held = {(p["organ_id"], p["definition_sha256"]) for p in _accept_payloads(append._ledger_rows(ledger))}
-    rows = []
-    for organ_id in _ids(organ_ids, "organ_ids"):
+def rows(cycle: dict, entry: Any, definitions: Any, ledger_rows: Any) -> list[dict]:
+    """The accept rows of ``entry``, as handed to the chain (rules 10-12)."""
+    held = listed(ledger_rows)
+    if entry is None:
+        return []
+    if not (isinstance(entry, dict) and set(entry) == ENTRY_KEYS):
+        raise Unusable("the entry is not {brain_sha, run_id, organ_ids}")
+    payloads = []
+    for organ_id in _ids(entry["organ_ids"], "entry.organ_ids"):
         own = _hash(definitions, organ_id)
         if own is None:
             raise Unusable("organ %s: not an organ of the accepted SHA" % organ_id)
-        if (organ_id, own) in held:
-            continue
-        payload = {"organ_id": organ_id, "definition_sha256": own, "brain_sha": brain_sha,
-                   "evidence_run_ids": list(runs)}
-        rows.append(events.row(cycle, "accept:%s" % organ_id, KIND, payload, part=PART))
-    if not rows:
-        return Accepted(ledger, [])
-    return Accepted(append.plan_cycle(ledger, previous, lambda: chain.canonical({"rows": rows})).content, rows)
+        if (organ_id, own) not in held:
+            payloads.append({"organ_id": organ_id, "definition_sha256": own, "brain_sha": entry["brain_sha"],
+                             "evidence_run_ids": [entry["run_id"]]})
+    found = [f for p in payloads for f in S.ACCEPT(p, "accept %s" % p["organ_id"])]
+    if found:
+        raise Unusable("; ".join(found))
+    return [events.row(cycle, "accept:%s" % p["organ_id"], KIND, p, part=PART) for p in payloads]
