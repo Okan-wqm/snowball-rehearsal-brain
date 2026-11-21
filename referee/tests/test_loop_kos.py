@@ -160,7 +160,7 @@ class Base(unittest.TestCase):
 
     def write_pulled(self, cands=None, units=None, tree_tar=None, policy=None, target=None, heads=None,
                      state=None, status=None, accepted=None, organs=None, snapshot=OWN_SNAPSHOT,
-                     mutations=None) -> dict:
+                     mutations=None, accept=None) -> dict:
         served = os.path.dirname(self.pulled)
         if not os.path.exists(os.path.join(served, P.SERVED)):
             os.makedirs(served, exist_ok=True)
@@ -171,7 +171,7 @@ class Base(unittest.TestCase):
                        cands if cands is not None else {}, HEADS if heads is None else heads,
                        state_files() if state is None else state, status, accepted, organs,
                        snapshot_of(self.src, target or TARGET) if snapshot is OWN_SNAPSHOT else snapshot,
-                       mutations)
+                       mutations, accept)
 
     def write_pulled_as(self, tid: str, **kw) -> dict:
         """``write_pulled`` into ``in/pulled/<tid>`` with the target id ``tid`` (unless ``target`` is given); the

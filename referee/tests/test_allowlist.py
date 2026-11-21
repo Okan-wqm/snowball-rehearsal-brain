@@ -1,24 +1,27 @@
-"""Test 55 (tohum/26h, P1 MF9): ``gate.allowlist``, the allowlist of organ definitions and its ``accept`` rows.
+"""Test 55 (tohum/26h, tohum/26j "İzin listesi, MF9"; P1 MF9): ``gate.allowlist``, the allowlist of organ
+definitions and its ``accept`` rows.
 
 What is proven, each by the test named for it:
 
 - test 55 itself (``Test55``): the candidate of an organ whose definition hash is in no ``accept`` row is
-  refused; once the row of that hash is written the same package, with the same definitions, is allowed; the
-  hash the package states changes neither answer (absent, the true one, a listed one, another organ's, not a
-  hash at all);
-- the list (``Listed``): only ``part: accept`` rows are read; the hash is listed whichever organ's row carries
-  it; an accept row of another kind or payload shape, and rows that are no list of objects, list nothing
-  (``Unusable``);
+  refused; once the row of that organ and hash is written the same package, with the same definitions, is
+  allowed; the hash the package states changes neither answer (absent, the true one, a listed one, another
+  organ's, not a hash at all);
+- the list (``Listed``): only ``part: accept`` rows are read; the list is of ``(organ_id, definition_sha256)``
+  pairs; an accept row of another kind or payload shape (run ids that are not exactly one among them), and rows
+  that are no list of objects, list nothing (``Unusable``);
 - the decision (``Decision``): every named organ is judged, in the package's order; an organ the accepted SHA
   does not hold; a package naming no organ; any byte, path or entry word of the definition changes the hash
-  compared; a listed hash of another organ's row allows; package and definitions of other shapes;
-- the rows (``Rows``): the row's fields; the hash is computed, the SHA is the signed result's; an entry made
-  twice writes once, a changed definition writes again; every unusable input writes no row for any organ;
-- the file (``File``): the ledger is a chain extended byte for byte; a ledger that is no extension is a hard
-  stop, also with nothing to write; a secret in a row writes nothing.
+  compared; a hash listed for another organ does not allow; package and definitions of other shapes;
+- the entry request (``Request``): exactly ``{organ_ids}``;
+- the rows (``Rows``): the row's fields; the hash is computed, the SHA and the one run id are the entry's; an
+  entry made twice writes once, a changed definition writes again; every unusable input gives no row for any
+  organ; the SHA and the run id are judged only when a row is written; the rows are ledger rows
+  ``ledger.schema`` takes, chained by the cycle's own plan.
 
-Not proven here: anything in a cycle (nothing calls the module); that ``ledger.schema.ledger_reasons`` takes an
-accept row (it does not: the row type is not in ``ROW_TYPES``, which the last test of ``Rows`` states).
+The wiring is proven where it runs: D5's refusal of every ready candidate outside the genesis cycle in
+``test_loop_yaz`` (``Allowlist``), D6's rows in ``test_loop_write`` (``AcceptRows``), the entry request's
+reading in ``test_loop_cek`` and its carriage in ``test_pulled``.
 """
 
 from __future__ import annotations
@@ -41,8 +44,7 @@ from runner import organs as O  # noqa: E402
 SHA = "a1" * 20
 OTHER_SHA = "b2" * 20
 CYCLE = {"cycle_id": "c-7", "ts": "2026-11-21T12:00:00Z", "snapshot_id": "c3" * 20}
-STATE = {"last_accepted_sha": SHA, "result_sha256": "d4" * 32}
-RUNS = ["44862711957"]
+RUN = "44862711957"
 
 
 def definitions() -> dict:
@@ -67,9 +69,20 @@ def stored(data: bytes) -> list[dict]:
     return [json.loads(line) for line in data.decode("utf-8").splitlines()]
 
 
-def accept(ledger: bytes, organ_ids, defs=None, previous=None, cycle=CYCLE, state=STATE, runs=RUNS) -> A.Accepted:
-    return A.accept(ledger, ledger if previous is None else previous, cycle, state,
-                    definitions() if defs is None else defs, organ_ids, runs)
+class Written:
+    def __init__(self, ledger: bytes, rows: list[dict]) -> None:
+        self.rows = rows
+        self.content = chained(rows, ledger) if rows else ledger
+
+
+def entry(organ_ids, sha=SHA, run=RUN) -> dict:
+    return {"brain_sha": sha, "run_id": run, "organ_ids": organ_ids}
+
+
+def accept(ledger: bytes, organ_ids, defs=None, cycle=CYCLE, sha=SHA, run=RUN) -> Written:
+    """``rows`` of an entry onto ``ledger``, chained as a cycle's plan chains them."""
+    return Written(ledger, A.rows(cycle, entry(organ_ids, sha, run), definitions() if defs is None else defs,
+                                  stored(ledger)))
 
 
 def events_row(suffix: str = "start") -> dict:
@@ -81,7 +94,7 @@ def chained(rows: list[dict], onto: bytes = b"") -> bytes:
 
 
 def accept_row(hash_: str, organ_id: str = "lint.discover", suffix: str = "a", **over) -> dict:
-    payload = {"organ_id": organ_id, "definition_sha256": hash_, "brain_sha": SHA, "evidence_run_ids": []}
+    payload = {"organ_id": organ_id, "definition_sha256": hash_, "brain_sha": SHA, "evidence_run_ids": ["r1"]}
     payload.update(over)
     return LE.row(CYCLE, suffix, "accept", {k: v for k, v in payload.items() if v is not ...}, part="accept")
 
@@ -101,7 +114,7 @@ class Test55(unittest.TestCase):
         # the same condition: nothing but the one accept row differs between the two ledgers
         self.assertEqual(stored(self.after)[:-1], stored(self.before))
         self.assertEqual(stored(self.after)[-1]["payload"]["definition_sha256"], own("lint.discover"))
-        # the control: the row lists that hash and no other organ's
+        # the control: the row lists that organ's hash and no other organ's
         self.assertEqual(A.reasons(package("fixer.range"), defs, stored(self.after)),
                          ["organ_not_listed:fixer.range"])
 
@@ -135,14 +148,15 @@ class Listed(unittest.TestCase):
         one, two = "1" * 64, "2" * 64
         other = LE.row(CYCLE, "o", "cycle_start", {"cycle_id": "x", "definition_sha256": two})
         freeze = LE.row(CYCLE, "f", "accept", {"organ_id": "o", "definition_sha256": two, "brain_sha": SHA,
-                                               "evidence_run_ids": []}, part="freeze")
+                                               "evidence_run_ids": ["r1"]}, part="freeze")
         self.assertEqual(A.listed([]), frozenset())
         self.assertEqual(A.listed([other, freeze]), frozenset())
-        self.assertEqual(A.listed([other, accept_row(one), freeze]), {one})
-        self.assertEqual(A.listed([accept_row(one), accept_row(two, "fixer.range"), accept_row(one, "third")]),
-                         {one, two})
+        self.assertEqual(A.listed([other, accept_row(one), freeze]), {("lint.discover", one)})
+        self.assertEqual(A.listed([accept_row(one), accept_row(two, "fixer.range"), accept_row(one, "third"),
+                                   accept_row(one)]),
+                         {("lint.discover", one), ("fixer.range", two), ("third", one)})
         # rows of other parts are not judged: one of no shape at all beside an accept row
-        self.assertEqual(A.listed([{"part": "events"}, {}, accept_row(one)]), {one})
+        self.assertEqual(A.listed([{"part": "events"}, {}, accept_row(one)]), {("lint.discover", one)})
 
     def test_an_accept_row_of_another_shape_lists_nothing(self):
         good = "1" * 64
@@ -161,6 +175,8 @@ class Listed(unittest.TestCase):
                "a run empty": accept_row(good, evidence_run_ids=[""]),
                "a run a number": accept_row(good, evidence_run_ids=[1]),
                "a run twice": accept_row(good, evidence_run_ids=["r1", "r1"]),
+               "two runs": accept_row(good, evidence_run_ids=["r1", "r2"]),
+               "no run": accept_row(good, evidence_run_ids=[]),
                "a fifth key": accept_row(good, state="ACTIVE")}
         for name, row in bad.items():
             with self.subTest(name=name):
@@ -170,7 +186,7 @@ class Listed(unittest.TestCase):
                     A.reasons(package("lint.discover"), definitions(), [accept_row(own("lint.discover")), row])
                 with self.assertRaises(A.Unusable):       # also a candidate that names no organ
                     A.reasons(package(), definitions(), [row])
-        self.assertEqual(A.listed([accept_row(good, evidence_run_ids=["r1", "r2"])]), {good})    # the control
+        self.assertEqual(A.listed([accept_row(good, evidence_run_ids=["r2"])]), {("lint.discover", good)})  # control
 
     def test_rows_that_are_no_list_of_objects_list_nothing(self):
         for rows in (None, {}, "rows", (accept_row("1" * 64),), [accept_row("1" * 64), "row"], [None], [[]]):
@@ -230,14 +246,21 @@ class Decision(unittest.TestCase):
                 rows = self.both + [accept_row(own("fixer.range", defs), "fixer.range", "n")]
                 self.assertEqual(A.reasons(package("fixer.range"), defs, rows), [])
 
-    def test_a_hash_is_listed_whichever_organ_s_row_carries_it(self):
+    def test_a_hash_listed_for_one_organ_is_not_listed_for_another(self):
+        # 26j: the list is keyed by (organ_id, definition_sha256)
         rows = [accept_row(own("fixer.range"), "some.other.organ")]
-        self.assertEqual(A.reasons(package("fixer.range"), definitions(), rows), [])
-        # two organs of one definition share a hash and so an entry
+        self.assertEqual(A.reasons(package("fixer.range"), definitions(), rows), ["organ_not_listed:fixer.range"])
+        # two organs of one definition share a hash and not an entry
         defs = definitions()
         defs["twin"] = definitions()["fixer.range"]
-        self.assertEqual(A.reasons(package("twin"), defs, rows), [])
-        self.assertEqual(A.reasons(package("lint.discover"), defs, rows), ["organ_not_listed:lint.discover"])
+        rows = [accept_row(own("fixer.range"), "fixer.range")]
+        self.assertEqual(A.reasons(package("twin"), defs, rows), ["organ_not_listed:twin"])
+        self.assertEqual(A.reasons(package("fixer.range"), defs, rows), [])
+        self.assertEqual(A.reasons(package("twin", "fixer.range"), defs, rows + [accept_row(own("twin", defs), "twin")]),
+                         [])
+        # and an organ's row of another hash does not list its definition
+        self.assertEqual(A.reasons(package("fixer.range"), defs, [accept_row(own("lint.discover"), "fixer.range")]),
+                         ["organ_not_listed:fixer.range"])
 
     def test_a_package_of_another_shape_is_unusable(self):
         bad = {"not an object": ["lint.discover"], "none": None, "no organ_ids": package(organ_ids=...),
@@ -270,34 +293,54 @@ class Decision(unittest.TestCase):
                 self.assertEqual(A.reasons(package("lint.discover"), defs, self.both), [])
 
 
+class Request(unittest.TestCase):
+    def test_exactly_organ_ids(self):
+        self.assertEqual(A.request({"organ_ids": []}), [])
+        self.assertEqual(A.request({"organ_ids": ["fixer.range", "lint.discover"]}), ["fixer.range", "lint.discover"])
+        for doc in (None, [], ["lint.discover"], "lint.discover", {}, {"organ_ids": ["a"], "more": 1},
+                    {"organs": ["a"]}, {"organ_ids": "a"}, {"organ_ids": None}, {"organ_ids": {"a": 1}},
+                    {"organ_ids": ["a", ""]}, {"organ_ids": ["a", "a"]}, {"organ_ids": [1]}):
+            with self.subTest(doc=repr(doc)):
+                with self.assertRaises(A.Unusable):
+                    A.request(doc)
+
+
 class Rows(unittest.TestCase):
     def test_the_row_written(self):
         out = accept(b"", ["lint.discover", "fixer.range"])
         self.assertEqual(out.rows, [
             {"row_id": "c-7:accept:lint.discover", "ts": CYCLE["ts"], "part": "accept", "kind": "accept",
              "payload": {"organ_id": "lint.discover", "definition_sha256": own("lint.discover"), "brain_sha": SHA,
-                         "evidence_run_ids": RUNS},
+                         "evidence_run_ids": [RUN]},
              "derivation": "tool", "trust": "verified", "snapshot_id": CYCLE["snapshot_id"], "evidence_refs": []},
             {"row_id": "c-7:accept:fixer.range", "ts": CYCLE["ts"], "part": "accept", "kind": "accept",
              "payload": {"organ_id": "fixer.range", "definition_sha256": own("fixer.range"), "brain_sha": SHA,
-                         "evidence_run_ids": RUNS},
+                         "evidence_run_ids": [RUN]},
              "derivation": "tool", "trust": "verified", "snapshot_id": CYCLE["snapshot_id"], "evidence_refs": []}])
-        written = stored(out.content)
-        self.assertEqual([{k: v for k, v in row.items() if k not in ("prev_hash", "row_hash")} for row in written],
-                         out.rows)
-        for row in written:      # tohum/26's ledger row, and 26b's payload
-            self.assertEqual(SC.ROW(row, "row") + SC.no_float(row, "row") + A.PAYLOAD(row["payload"], "payload"), [])
-        self.assertEqual(A.listed(written), {own("lint.discover"), own("fixer.range")})
-        # the order named is the order written; the runs given are the runs recorded, none included
-        back = accept(b"", ["fixer.range", "lint.discover"], runs=[])
+        # the rows are the ledger's: its schema takes the chained file (the row type is in its table, 26j)
+        self.assertEqual(SC.ledger_reasons(out.content), [])
+        self.assertEqual(A.listed(stored(out.content)),
+                         {("lint.discover", own("lint.discover")), ("fixer.range", own("fixer.range"))})
+        # the order named is the order written
+        back = accept(b"", ["fixer.range", "lint.discover"])
         self.assertEqual([r["payload"]["organ_id"] for r in back.rows], ["fixer.range", "lint.discover"])
-        self.assertEqual([r["payload"]["evidence_run_ids"] for r in back.rows], [[], []])
-        two = accept(b"", ["lint.discover"], runs=["r1", "r2"]).rows[0]["payload"]["evidence_run_ids"]
-        self.assertEqual(two, ["r1", "r2"])
 
-    def test_the_sha_is_the_signed_result_s_and_the_hash_is_computed(self):
-        out = accept(b"", ["lint.discover"], state={"last_accepted_sha": OTHER_SHA})
-        self.assertEqual(out.rows[0]["payload"]["brain_sha"], OTHER_SHA)
+    def test_the_schema_refuses_an_accept_row_of_another_shape(self):
+        good = chained([accept_row("1" * 64)])
+        self.assertEqual(SC.ledger_reasons(good), [])
+        for name, row in {"two runs": accept_row("1" * 64, evidence_run_ids=["r1", "r2"]),
+                          "no run": accept_row("1" * 64, evidence_run_ids=[]),
+                          "a run empty": accept_row("1" * 64, evidence_run_ids=[""]),
+                          "a fifth key": accept_row("1" * 64, state="ACTIVE"),
+                          "no sha": accept_row("1" * 64, brain_sha=...),
+                          "another kind": dict(accept_row("1" * 64), kind="accepted")}.items():
+            with self.subTest(name=name):
+                self.assertNotEqual(SC.ledger_reasons(chained([row])), [])
+
+    def test_the_sha_and_the_run_are_the_entry_s_and_the_hash_is_computed(self):
+        out = accept(b"", ["lint.discover"], sha=OTHER_SHA, run="r9")
+        self.assertEqual((out.rows[0]["payload"]["brain_sha"], out.rows[0]["payload"]["evidence_run_ids"]),
+                         (OTHER_SHA, ["r9"]))
         changed = definitions()
         changed["lint.discover"]["entry"].append("--strict")
         out = accept(b"", ["lint.discover"], defs=changed)
@@ -308,11 +351,10 @@ class Rows(unittest.TestCase):
         first = accept(chained([events_row()]), ["lint.discover"])
         again = accept(first.content, ["lint.discover"], cycle=dict(CYCLE, cycle_id="c-8"))
         self.assertEqual((again.rows, again.content), ([], first.content))
-        # also at another SHA and with other runs: the pair (organ, hash) is what is held
-        again = accept(first.content, ["lint.discover"], cycle=dict(CYCLE, cycle_id="c-8"),
-                       state={"last_accepted_sha": OTHER_SHA}, runs=["r9"])
+        # also at another SHA and with another run: the pair (organ, hash) is what is held
+        again = accept(first.content, ["lint.discover"], cycle=dict(CYCLE, cycle_id="c-8"), sha=OTHER_SHA, run="r9")
         self.assertEqual(again.rows, [])
-        # the other organ of the same call is still written
+        # the other organ of the same entry is still written
         both = accept(first.content, ["lint.discover", "fixer.range"], cycle=dict(CYCLE, cycle_id="c-8"))
         self.assertEqual([r["row_id"] for r in both.rows], ["c-8:accept:fixer.range"])
         # a changed definition is another hash: a row
@@ -320,14 +362,15 @@ class Rows(unittest.TestCase):
         changed["lint.discover"]["files"]["adapter.py"] = b"print('lint 2')\n"
         new = accept(first.content, ["lint.discover"], defs=changed, cycle=dict(CYCLE, cycle_id="c-8"))
         self.assertEqual([r["payload"]["definition_sha256"] for r in new.rows], [own("lint.discover", changed)])
-        self.assertEqual(A.listed(stored(new.content)), {own("lint.discover"), own("lint.discover", changed)})
+        self.assertEqual(A.listed(stored(new.content)), {("lint.discover", own("lint.discover")),
+                                                        ("lint.discover", own("lint.discover", changed))})
         # the same hash under another organ's id is that organ's row
         twin = dict(definitions(), twin=definitions()["lint.discover"])
         out = accept(first.content, ["twin"], defs=twin, cycle=dict(CYCLE, cycle_id="c-8"))
         self.assertEqual([(r["payload"]["organ_id"], r["payload"]["definition_sha256"]) for r in out.rows],
                          [("twin", own("lint.discover"))])
 
-    def test_unusable_input_writes_no_row_for_any_organ(self):
+    def test_unusable_input_gives_no_row_for_any_organ(self):
         bad_definition = dict(definitions(), broken={"entry": [], "files": {}})
         cases = {"an organ the sha does not hold": dict(organ_ids=["lint.discover", "ghost"]),
                  "a definition without a hash": dict(organ_ids=["lint.discover", "broken"], defs=bad_definition),
@@ -335,76 +378,36 @@ class Rows(unittest.TestCase):
                  "an id twice": dict(organ_ids=["lint.discover", "lint.discover"]),
                  "an id empty": dict(organ_ids=["lint.discover", ""]),
                  "definitions a list": dict(organ_ids=["lint.discover"], defs=[]),
-                 "no state": dict(organ_ids=["lint.discover"], state=None),
-                 "a state without the sha": dict(organ_ids=["lint.discover"], state={"result_sha256": "d4" * 32}),
-                 "a sha of 64": dict(organ_ids=["lint.discover"], state={"last_accepted_sha": "a" * 64}),
-                 "a sha in upper case": dict(organ_ids=["lint.discover"], state={"last_accepted_sha": "A1" * 20}),
-                 "runs a string": dict(organ_ids=["lint.discover"], runs="r1"),
-                 "runs null": dict(organ_ids=["lint.discover"], runs=None),
-                 "a run empty": dict(organ_ids=["lint.discover"], runs=[""]),
-                 "a run twice": dict(organ_ids=["lint.discover"], runs=["r1", "r1"]),
-                 "a run a number": dict(organ_ids=["lint.discover"], runs=[44862711957])}
+                 "no sha": dict(organ_ids=["lint.discover"], sha=None),
+                 "a sha of 64": dict(organ_ids=["lint.discover"], sha="a" * 64),
+                 "a sha in upper case": dict(organ_ids=["lint.discover"], sha="A1" * 20),
+                 "no run": dict(organ_ids=["lint.discover"], run=None),
+                 "a run empty": dict(organ_ids=["lint.discover"], run=""),
+                 "a run a list": dict(organ_ids=["lint.discover"], run=["r1"]),
+                 "a run a number": dict(organ_ids=["lint.discover"], run=44862711957),
+                 "the second organ's run": dict(organ_ids=["fixer.range", "lint.discover"], run=None)}
         for name, given in cases.items():
             with self.subTest(name=name):
                 with self.assertRaises(A.Unusable):
                     accept(b"", given.pop("organ_ids"), **given)
-        # runs of another shape are refused also when every organ named is already held
-        held = accept(b"", ["lint.discover"]).content
-        with self.assertRaises(A.Unusable):
-            accept(held, ["lint.discover"], runs="r1")
-        with self.assertRaises(A.Unusable):       # and a ledger whose accept row is of another shape takes no row
+        for name, bad in {"a list": ["lint.discover"], "a key missing": {"brain_sha": SHA, "organ_ids": []},
+                          "a fourth key": dict(entry([]), more=1), "a string": "lint.discover"}.items():
+            with self.subTest(entry=name):
+                with self.assertRaises(A.Unusable):
+                    A.rows(CYCLE, bad, definitions(), [])
+        with self.assertRaises(A.Unusable):       # a ledger whose accept row is of another shape takes no row,
             accept(chained([accept_row("1" * 64, state="ACTIVE")]), ["lint.discover"])
-        self.assertEqual(accept(b"", []).rows, [])       # the control: no organ named is no row, not unusable
+        with self.assertRaises(A.Unusable):       # also with no entry
+            A.rows(CYCLE, None, definitions(), [accept_row("1" * 64, state="ACTIVE")])
 
-    def test_the_row_type_is_not_in_the_ledger_s_table_yet(self):
-        # stated in the module: until the writer is wired, a ledger with an accept row is refused by the loop's
-        # own reading. When this fails the row type was added: wire the writer and delete this test.
-        out = accept(b"", ["lint.discover"])
-        self.assertTrue(any("unknown_row_type accept/accept" in r for r in SC.ledger_reasons(out.content)))
-
-
-class File(unittest.TestCase):
-    def setUp(self) -> None:
-        self.one = chained([events_row()])
-        self.two = accept(self.one, ["lint.discover"]).content
-
-    def test_the_ledger_is_a_chain_extended_byte_for_byte(self):
-        self.assertTrue(self.two.startswith(self.one) and len(stored(self.two)) == 2)
-        self.assertTrue(LC.verify_bytes(self.two, self.one)["valid"])
-        rows = stored(self.two)
-        self.assertEqual(rows[1]["prev_hash"], rows[0]["row_hash"])
-        self.assertEqual(rows[1]["row_hash"], LC.row_hash(rows[1]))
-        self.assertEqual(self.two.splitlines()[1], LC.canonical(rows[1]))
-
-    def test_the_rows_go_onto_the_ledger_not_onto_its_previous_version(self):
-        # the ledger grew since the version last verified: the rows of both stay, the new one after them
-        out = accept(self.two, ["fixer.range"], previous=self.one)
-        self.assertTrue(out.content.startswith(self.two))
-        self.assertEqual([r["row_id"] for r in stored(out.content)],
-                         ["c-7:start", "c-7:accept:lint.discover", "c-7:accept:fixer.range"])
-        self.assertTrue(LC.verify_bytes(out.content, self.two)["valid"])
-        self.assertEqual(accept(self.two, ["lint.discover"], previous=b"").content, self.two)
-
-    def test_a_ledger_that_is_no_extension_is_a_hard_stop(self):
-        edited = self.two.replace(b"lint.discover", b"lint.discovex")
-        self.assertNotEqual(edited, self.two)
-        cut = self.two[:-20]
-        for name, data, previous in (("an edited row", edited, edited), ("a cut line", cut, cut),
-                                     ("a row gone", self.one, self.two),
-                                     ("another history", chained([events_row("other")]), self.one)):
-            with self.subTest(name=name):
-                for organ_ids in (["fixer.range"], ["lint.discover"], []):   # a new row, a held one, nothing
-                    with self.assertRaises(LA.HardStop):
-                        accept(data, organ_ids, previous=previous)
-        with self.assertRaises(LA.HardStop):      # the stop comes before anything else is judged
-            A.accept(edited, edited, CYCLE, None, None, None, None)
-
-    def test_a_secret_in_a_row_writes_nothing(self):
-        leak = "AKIA" + "IOSFODNN7EXAMPLE"
-        defs = dict(definitions(), **{leak: definitions()["fixer.range"]})
-        with self.assertRaises(LA.SecretRow):
-            accept(self.one, ["fixer.range", leak], defs=defs)
-        self.assertEqual(len(accept(self.one, ["fixer.range", "plain"], defs=dict(defs, plain=defs[leak])).rows), 2)
+    def test_no_entry_and_an_entry_that_writes_nothing(self):
+        self.assertEqual(A.rows(CYCLE, None, definitions(), []), [])
+        self.assertEqual(accept(b"", []).rows, [])       # no organ named is no row, not unusable
+        # the SHA and the run are judged only when a row is written: a result without a run id enters nothing
+        # and stops nothing, as long as nothing is to enter
+        self.assertEqual(accept(b"", [], sha=None, run=None).rows, [])
+        held = accept(b"", ["lint.discover"]).content
+        self.assertEqual(accept(held, ["lint.discover"], sha=None, run=None).rows, [])
 
 
 if __name__ == "__main__":

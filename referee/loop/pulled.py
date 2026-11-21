@@ -175,7 +175,7 @@ class Pulled(NamedTuple):
     organs: dict[str, dict]                 # oid -> {"entry": entry.json parsed, "files": {path: bytes}}
     snapshot: Any                           # snapshot.json parsed: the snapshot.make document
     mutations: dict                         # mutations.json parsed: {mutation id: mutation} (cases.build)
-    accept: dict | None                     # accept.json parsed: {brain_sha, run_id, organ_ids}, None for no entry
+    accept: dict | None = None              # accept.json parsed: {brain_sha, run_id, organ_ids}, None for no entry
 
 
 def _sha(data: bytes) -> str:

@@ -60,8 +60,14 @@ def zip_of(files: dict[str, bytes], dirs=()) -> bytes:
     return buf.getvalue()
 
 
-def result(sha=SHA, **extra) -> bytes:
-    return json.dumps({"verdict": "accepted", "state": dict({"last_accepted_sha": sha}, **extra)}).encode()
+RUN_ID = "44937679607"
+
+
+def result(sha=SHA, run=..., **extra) -> bytes:
+    """A bootstrap result: its state, and its ``run`` as the bootstrap referee writes it (``...``), or as given."""
+    doc = {"verdict": "accepted", "state": dict({"last_accepted_sha": sha}, **extra),
+           "run": {"attempt": "1", "id": RUN_ID} if run is ... else run}
+    return json.dumps({k: v for k, v in doc.items() if k != "run" or run is not None}).encode()
 
 
 GOOD_ZIP = {"result.json": result(), "result.json.sigstore.json": b'{"bundle": 1}'}
@@ -256,6 +262,7 @@ class Verify(unittest.TestCase):
         out = A.open_state(GOOD_ZIP["result.json"], b"B", REPO, ("sg",), verifier)
         self.assertEqual(out["last_accepted_sha"], SHA)
         self.assertEqual(out["result_sha256"], hashlib.sha256(GOOD_ZIP["result.json"]).hexdigest())
+        self.assertEqual(sorted(out), ["last_accepted_sha", "result_sha256", "run_id"])
         argv, files = seen[0]
         self.assertEqual(argv[:3], ["sg", "verify", "identity"])
         self.assertEqual(files, {"result.json": GOOD_ZIP["result.json"], "result.json.sigstore.json": b"B"})
