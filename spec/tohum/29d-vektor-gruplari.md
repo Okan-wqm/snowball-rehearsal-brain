@@ -50,5 +50,5 @@ tohum sabitlemez. `secrets`'tan `diffguard`'a grupların komutları, girdileri, 
 | `genesis` | 18 | genesis satırının alanları ve hash'leri; ruleset, bypass, `main` ve iş akışı olguları; arayüz `29o` |
 
 `chain` dışındaki on altı grup Aşama 0'la gelir. `drill` grubunun sahibi Aşama 2 partisidir (`29c`);
-`cp_lower`, `mcnemar` ve `match` P1'indir (`29a`). Sahibi olmayan grup Aşama 0'da koşmaz ve çıkışta
-sayılmaz.
+`cp_lower`, `mcnemar`, `match` ve `root_files` (MF8, arayüz `29zb`, `26j`) P1'indir (`29a`). Sahibi olmayan grup
+Aşama 0'da koşmaz ve çıkışta sayılmaz.

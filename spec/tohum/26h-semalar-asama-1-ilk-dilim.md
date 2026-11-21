@@ -9,7 +9,7 @@ Okunma: Aşama 1'de sıradaki MF ya da parti seçilirken, P1'in MF8'i ve MF9'u y
 `26e`'nin devamı. Arayüz olgularıdır; kodun nasıl yazılacağı Kurucu'nundur. Aşama sayfası bu sayfayla çelişirse bu
 sayfa geçerlidir (`02`).
 
-**İlk dilim deterministiktir** (sahip kararı (2026-11-20)). İlk düzeltme yolunda LLM yoktur. Sıra: P1 partisi (MF9'a
+**İlk dilim deterministiktir** (sahip kararı (2026-11-20)). İlk düzeltme yolunda LLM yoktur. Sıra: P1 partisi (MF12'ye
 kadar), (A), aktarım, (B); sonra Aşama 1'in kendi MF1'i `lint.discover`, MF2'si taban, MF3'ü `fixer.range`, MF5'i
 `candidate.publish` ve MF6'sı izin listesi girişi: kapı izin listesini ve `accept` satırını okur, organ çıktısının ilk
 canlı merge'ü budur. Aşama 1'in MF'leri numaralarını korur; MF4 `fixer.llm` ilk organ merge'ünden sonradır.
@@ -28,7 +28,7 @@ organ merge'ünden öncedir. Eski MF8 aşağıda ertelenmiştir; MF1–MF7'nin n
   `definition_sha256[]` beyanı değildir. Test 55 §0.9'un numaralarının devamıdır (53 `30d`'nin, 54 `29za`'nınkidir):
   tanım hash'i hiçbir `accept` satırında olmayan organın adayı kapıda reddedilir; o hash için `accept` satırı
   yazılınca aynı aday aynı koşulda geçer; adayın beyan ettiği hash kararı değiştirmez.
-`26e`'nin tablosu ve `stages/stage1-P1.json` bu iki satırı taşır. §0.9'un donmuş tablosunda 52'nin partisi `P1`
+`26e`'nin tablosu ve `stages/stage1-P1.json` bu iki satırı ve `26j`'nin MF10–MF12'sini taşır. §0.9'un donmuş tablosunda 52'nin partisi `P1`
 yazılı kalır; bu sayfa ondan üstündür (`02`).
 
 **İlk organ merge'ünden sonraya ertelenenler** (sahip kararı (2026-11-20)). Ertelenenler P3 partisidir: Aşama 1

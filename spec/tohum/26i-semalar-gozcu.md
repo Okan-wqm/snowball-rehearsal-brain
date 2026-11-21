@@ -24,13 +24,17 @@ defter satırınınkidir (`26`). Üç tür:
 - `kind: hard_stop`, `payload {trigger, evidence}` (seed-085 h). `trigger` ∈ {`soft_freeze_limit`, `drift`,
   `chain_break`, `rekor`, `attestation`, `activation`, `ref_change`, `kill_switch`}; `evidence` boş olmayan bir dizgi
   listesidir. Sert duruşun kalkışı döngü dışı bir operatör işidir (`28`): döngü bir sert duruş için `lift` satırı yazmaz.
+- **Yeniden başlatma satırı** (seed-085 h; `28a`). Operatörün `setup/imports.jsonl`'a (`26c`) yazdığı, zincir alanlı
+  `{ts, stage, touch: "restart", target, hard_stop, note}`; `target` bir `targets[]` kimliği, `hard_stop` bitirdiği
+  `freeze`/`hard_stop` satırının `row_hash`'idir. Bir insan dokunuşudur; aktarım satırı değildir.
 
 `01c`'nin ve `13`'ün durma satırı `hard_stop`'tur: `drift.check` yalnız okur ve hiçbir şey yazmaz, duruşu Gözcü yazar.
 Etkinlik API'sinin aykırı girdileri için `trigger` `ref_change`'tir ve kanıt o girdileri adlandırır; `drift.check`'in
 öbür nedenleri için `drift`'tir.
 
 **Kapsamın okunuşu** (`27a` "Merge kapanır"). Yürürlükteki bir dondurmanın kapsamında bir sınıf varsa kapı o sınıfın
-adayını merge etmez. Kapsamda `loop` varsa hiçbir merge yapılmaz; hakemin okuma işleri sürer (`28`). Regresyon
+adayını merge etmez. Kapsamda `loop` varsa hiçbir aday merge edilmez; hakemin okuma işleri sürer (`28`). Dondurma
+yalnız adayların merge'ünü kapatır: geri almalar, prova ekmeleri ve satırlar her dondurmada sürer (`28a`). Regresyon
 dondurmasının kapsamı sayılan geri almaların sınıflarıdır, bütçe dondurmasınınki `loop`'tur. Aşama 1'de tek sınıf
 K0'dır.
 
@@ -38,8 +42,8 @@ K0'dır.
 - merge'ler `events`/`merge` satırlarıdır, geri almalar `events`/`revert` satırlarıdır. Yalnız sıradan bir
   `events`/`merge` satırının geri alınması sayılır: `drill`/`plant` satırı ve bir `plant` satırının adlandırdığı
   merge'ün geri alınması provanındır (`29m`) ve hiçbir görünümde sayılmaz (seed-085 i).
-- harcama, bu hedefin defterinde `ts`'si `now`'ın UTC takvim ayında olan `cost` satırlarının `usd_micros`
-  toplamıdır; birden çok hedefte ayın harcamasının nerede toplandığı yanıtsızdır (seed-085 c).
+- harcama, `ts`'si `now`'ın UTC takvim ayında olan `cost` satırlarının `usd_micros` toplamıdır; toplam `yaz`
+  işinin sunduğu her hedefin defteri üzerindendir (seed-085 c, `28a`).
 - dondurmalar `freeze` bölümünün kendi satırlarıdır.
 - sert duruş olguları defter satırı değildir: döngünün kendi çağrılarının bu devirde bulduklarıdır.
 - Actions dakikası, kapsayıcılık ihlali, eşik değişikliği, koltuk benzerliği ve genesis taslağı Aşama 1'de ölçülmez:

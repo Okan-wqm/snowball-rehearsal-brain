@@ -64,7 +64,7 @@ değil). Beyin ağacındaki içe aktarmaları ya da çağrıları `calls`'la kar
 | `docs.index` | Beyin | `koş` | spec ve `docs/` dizini | `INDEX.md` önerisi | yok | Kurucu, hakem döngü sonu | Aşama 1 |
 
 **Aday paketi** `{finding, diff, organ_ids, definition_sha256[]}`'dir. Çalışma zamanında `koş`
-işinin çıktı ağacındaki `candidates/<id>/`'ye yazılır ve hakem onu artefakt kimliğiyle okur. Aşama
+işinin çıktı ağacındaki `candidates/<id>/package.json`'a (`26j`) yazılır, hakem onu artefakt kimliğiyle okur. Aşama
 0'da adaylar Kurucu'nun beyin reposundaki hazır adaylarıdır (`candidates/<hedef>/<cid>/`, `26c`). Hakem
 hiçbir adaya yeniden koşturmadan güvenmez.
 

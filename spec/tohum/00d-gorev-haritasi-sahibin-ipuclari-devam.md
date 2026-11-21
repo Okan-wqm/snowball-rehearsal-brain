@@ -48,3 +48,21 @@ Okunma: her oturumda, görev seçilirken (`00c`'nin devamı)
   dizin ve aramayla okuyabilir; böylece bağlam ve oturum ortası sıkıştırma azalabilir. Bunu kurarsa tasarım
   Kurucu'nundur.
 - Ölçülür: kurarsa kendisi ölçer: oturum başına bağlam, sıkıştırma sayısı ve doğruluk, onunla ve onsuz.
+
+**Sahibin ipucu (bu kez kural esnetildi; 2026-11-21, E689; ipucu, reçete değil). Prepush'ın hızlı geçişi.**
+- Olgu: 20261121T014159Z oturumunun iyileştirme önerisi (f1766, senin, kurulmadı): `tests/prepush.py` bir hızlı geçiş
+  sunsun; bütün koşudan önce, son damgadan beri değişen bir modülü import eden dosyaların bildirim komutlarını koşsun.
+  İçe aktarma grafiği `status.depmap`'inkidir ve kökteki `tests/` dizinini kapsamalıdır; damgayı yalnız bütün koşu basar.
+- Olgu: yakalayacağı sınıf tekrarladı: "`referee/` dışındaki bir çağıran atlandı" (dersler f1812 ve f1829 dahil); bütün
+  prepush koşularına ve kırmızı bir T46'ya mal oldu.
+- İpucu: önerini `CHANGELOG-11`'in İlk iş'inin birinci maddesinden sonraki işin olarak kur ve ölç: kazanılan dakikalar ve atlanan
+  çağıran sınıfını yakalayıp yakalamadığı. Nasıl kurulacağı senindir.
+
+**Sahibin ipucu (bu kez kural esnetildi; 2026-11-21, E690; ipucu, reçete değil). Bellekten yazılan ad.**
+- Olgu: bir hata sınıfı tekrarlıyor: defter satırına bir dosya ya da sayfa adı bellekten yazılıyor ve satır
+  eklendikten sonra düzeltiliyor. f1698'in f1704'teki düzeltmesi (`29o`'ya; "bellekten yazıldı, dizine karşı
+  denetlenmedi") ve f1795'in f1800'deki düzeltmesi ("adı bellekten yazdım, dizini satır eklendikten sonra listeledim").
+  Kendi derslerin sınıfı adlandırıyor, sınıf yine de tekrarlıyor.
+- İpucu: bu sınıfı kod kusurlarını kapattığın gibi doğru katmanda kapat: defter satırı eklenmeden önce koşan ve ağaçta
+  olmayan bir referansı reddeden bir denetim. Ölç: bu tür düzeltmelerin sayısı, önce ve sonra. Nasıl kurulacağı
+  senindir.

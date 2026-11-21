@@ -53,3 +53,15 @@ sert duruşu verir. MF7'nin vektör grubu yoktur (`26e`).
   adlandıran bir sayfayla gelir.
 - **L3, sonda döngüsü ve kalkışı** (`28`, `performance.rules.probe_cycle`): P3'ün tablosunun bir satırı olarak gelir
   (`26h`; seed-085 g).
+
+**seed-085'in açık maddeleri** (operatör kararı (2026-11-21); gevşetmeler L-b, L-c ve L-j sahip kararı (2026-11-21)).
+- **(b) Harcamadan önce.** `çağır` kapsamında `loop` olan bir dondurma yürürlükteyken hiçbir çağrı yapmaz; bütçe
+  dondurmasının kapsamı `loop`'tur (`26i`). Dondurma yalnız adayların merge'ünü kapatır; geri almalar, prova
+  ekmeleri ve satırlar sürer. `koş` her dondurmada koşmayı sürdürür (gevşetme L-b).
+- **(c) Ayın harcaması** `yaz` işinin sunduğu her hedefin defteri üzerinden toplanır ve tek tavanla bir kez yargılanır
+  (gevşetme L-c: işin sunmadığı hedefin harcaması o işte sayılmaz).
+- **(f) Sınıf.** Aşama 1'de her merge ve geri alma K0'dır (`asama-1/13b`, `26i`); merge satırında sınıf alanı yoktur.
+- **(h) Yeniden başlatma.** Sert duruştan sonra operatörün yeniden başlatması `setup/imports.jsonl`'da bitirdiği
+  `hard_stop` satırını adlandıran bir satırdır (`26i`). `soft_freeze_limit` sayımını sıfırlamaz: pencere sınırı hâlâ
+  aşıyorsa sonraki devir yeni bir `hard_stop` yazar.
+- **(j)** Kapalı kapının reddi `cause` taşımaz ve bulgusunu olduğu durumda bırakır (`26j`; gevşetme L-j).

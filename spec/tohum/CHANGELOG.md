@@ -4,6 +4,7 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-21, E685–E690; tohum dönemi AB, seed-085–087, yeni `26j`): `CHANGELOG-11.md`; başında **İlk iş**.
 - 2.2 (2026-11-21, E680–E684; tohum dönemi AA, seed-082–085, yeni `26i` ve `28a`): `CHANGELOG-10.md`; girdinin
   başında **İlk iş** listesi vardır (`25` 10b).
 - 2.2 (2026-11-20, E655–E678; Y ve Z dönemleri, yeni `01c`, `29za` ve `26h`, Aşama 1'in ilk dilimi): `CHANGELOG-9.md`.
