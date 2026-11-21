@@ -152,6 +152,11 @@ class Regression(unittest.TestCase):
         self.assertEqual(run(rate, events=merges(100) + reverts(57)), QUIET)
         self.assertEqual(len(run(rate, events=merges(100) + reverts(58))["freezes"]), 1)
 
+    def test_exactly_min_merges_is_judged_by_the_rate(self):
+        rate = having(P.REGRESSION_REVERT_RATE, 0.57)
+        self.assertEqual(run(rate, events=merges(50) + reverts(2)), QUIET)
+        self.assertEqual(len(run(rate, events=merges(49) + reverts(2))["freezes"]), 1)
+
     def test_the_window_is_open_at_its_start_and_closed_at_now(self):
         for ts, inside in ((ago(30), False), (ago(30, -1), True), (NOW, True), (ago(0, -1), False)):
             with self.subTest(ts=ts):

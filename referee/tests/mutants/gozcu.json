@@ -1,0 +1,643 @@
+{
+ "mutants": [
+  {
+   "id": "gz_window_closed_at_its_start",
+   "file": "gozcu/evaluate.py",
+   "old": "    return clock - days * DAY < at <= clock",
+   "new": "    return clock - days * DAY <= at <= clock",
+   "tests": [
+    "test_gozcu.Regression.test_the_window_is_open_at_its_start_and_closed_at_now"
+   ]
+  },
+  {
+   "id": "gz_window_open_after_now",
+   "file": "gozcu/evaluate.py",
+   "old": "    return clock - days * DAY < at <= clock",
+   "new": "    return clock - days * DAY < at",
+   "tests": [
+    "test_gozcu.Regression.test_the_window_is_open_at_its_start_and_closed_at_now"
+   ]
+  },
+  {
+   "id": "gz_window_in_hours",
+   "file": "gozcu/evaluate.py",
+   "old": "DAY = 86400",
+   "new": "DAY = 3600",
+   "tests": [
+    "test_gozcu.Regression.test_merges_outside_the_window_are_not_counted"
+   ]
+  },
+  {
+   "id": "gz_rate_as_binary_float",
+   "file": "gozcu/evaluate.py",
+   "old": "fires = len(reverts) > rate * merges if",
+   "new": "fires = len(reverts) > float(rate) * merges if",
+   "tests": [
+    "test_gozcu.Regression.test_the_rate_is_the_decimal_written_and_not_its_binary_float"
+   ]
+  },
+  {
+   "id": "gz_rate_rule_always",
+   "file": "gozcu/evaluate.py",
+   "old": "if merges >= min_merges else",
+   "new": "if merges >= 0 else",
+   "tests": [
+    "test_gozcu.Regression.test_under_min_merges_the_count_of_reverts_decides"
+   ]
+  },
+  {
+   "id": "gz_count_rule_always",
+   "file": "gozcu/evaluate.py",
+   "old": "if merges >= min_merges else",
+   "new": "if merges < 0 else",
+   "tests": [
+    "test_gozcu.Regression.test_from_min_merges_the_rate_decides_and_not_the_count"
+   ]
+  },
+  {
+   "id": "gz_min_merges_exclusive",
+   "file": "gozcu/evaluate.py",
+   "old": "if merges >= min_merges else",
+   "new": "if merges > min_merges else",
+   "tests": [
+    "test_gozcu.Regression.test_exactly_min_merges_is_judged_by_the_rate"
+   ]
+  },
+  {
+   "id": "gz_rate_reached_fires",
+   "file": "gozcu/evaluate.py",
+   "old": "fires = len(reverts) > rate * merges if",
+   "new": "fires = len(reverts) >= rate * merges if",
+   "tests": [
+    "test_gozcu.Regression.test_from_min_merges_the_rate_decides_and_not_the_count"
+   ]
+  },
+  {
+   "id": "gz_min_reverts_exclusive",
+   "file": "gozcu/evaluate.py",
+   "old": "else len(reverts) >= min_reverts",
+   "new": "else len(reverts) > min_reverts",
+   "tests": [
+    "test_gozcu.Regression.test_under_min_merges_the_count_of_reverts_decides"
+   ]
+  },
+  {
+   "id": "gz_reverts_counted_as_merges",
+   "file": "gozcu/evaluate.py",
+   "old": "    merges = len(inside) - len(reverts)",
+   "new": "    merges = len(inside)",
+   "tests": [
+    "test_gozcu.Regression.test_under_min_merges_the_count_of_reverts_decides"
+   ]
+  },
+  {
+   "id": "gz_regression_unwindowed_merges",
+   "file": "gozcu/evaluate.py",
+   "old": "    merges = len(inside) - len(reverts)",
+   "new": "    merges = len(events) - len([row for row in events if row[\"kind\"] == \"revert\"])",
+   "tests": [
+    "test_gozcu.Regression.test_merges_outside_the_window_are_not_counted"
+   ]
+  },
+  {
+   "id": "gz_regression_scope_of_merges",
+   "file": "gozcu/evaluate.py",
+   "old": "    return (sorted({row[\"class\"] for row in reverts}),",
+   "new": "    return (sorted({row[\"class\"] for row in inside}),",
+   "tests": [
+    "test_gozcu.Regression.test_all_classes_are_counted_together_and_the_scope_is_the_counted_reverts_classes"
+   ]
+  },
+  {
+   "id": "gz_regression_scope_unwindowed",
+   "file": "gozcu/evaluate.py",
+   "old": "    return (sorted({row[\"class\"] for row in reverts}),",
+   "new": "    return (sorted({row[\"class\"] for row in events if row[\"kind\"] == \"revert\"}),",
+   "tests": [
+    "test_gozcu.Regression.test_all_classes_are_counted_together_and_the_scope_is_the_counted_reverts_classes"
+   ]
+  },
+  {
+   "id": "gz_regression_measure_window",
+   "file": "gozcu/evaluate.py",
+   "old": "    got = need(\"min_merges\", \"window_days\", \"revert_rate\", \"min_reverts\")",
+   "new": "    got = need(\"min_merges\", \"measure_window\", \"revert_rate\", \"min_reverts\")",
+   "tests": [
+    "test_gozcu.Regression.test_the_window_is_regression_freeze_window_days"
+   ]
+  },
+  {
+   "id": "gz_containment_limit_exclusive",
+   "file": "gozcu/evaluate.py",
+   "old": "    if distinct < limit:",
+   "new": "    if distinct <= limit:",
+   "tests": [
+    "test_gozcu.Containment.test_two_distinct_violations_in_the_window_freeze"
+   ]
+  },
+  {
+   "id": "gz_containment_counts_rows",
+   "file": "gozcu/evaluate.py",
+   "old": "    distinct = _distinct(inside)",
+   "new": "    distinct = len(inside)",
+   "tests": [
+    "test_gozcu.Containment.test_the_same_file_or_the_same_root_cause_is_one_violation"
+   ]
+  },
+  {
+   "id": "gz_containment_by_file_only",
+   "file": "gozcu/evaluate.py",
+   "old": "        group[top((\"file\", row[\"file\"]))] = top((\"root_cause\", row[\"root_cause\"]))",
+   "new": "        top((\"file\", row[\"file\"]))",
+   "tests": [
+    "test_gozcu.Containment.test_the_same_file_or_the_same_root_cause_is_one_violation"
+   ]
+  },
+  {
+   "id": "gz_containment_by_cause_only",
+   "file": "gozcu/evaluate.py",
+   "old": "    return len({top((\"file\", row[\"file\"])) for row in rows})",
+   "new": "    return len({row[\"root_cause\"] for row in rows})",
+   "tests": [
+    "test_gozcu.Containment.test_the_same_file_or_the_same_root_cause_is_one_violation"
+   ]
+  },
+  {
+   "id": "gz_containment_no_chain",
+   "file": "gozcu/evaluate.py",
+   "old": "        group[top((\"file\", row[\"file\"]))] = top((\"root_cause\", row[\"root_cause\"]))",
+   "new": "        group[(\"file\", row[\"file\"])] = top((\"root_cause\", row[\"root_cause\"]))",
+   "tests": [
+    "test_gozcu.Containment.test_one_count_runs_along_a_chain_of_shared_files_and_causes"
+   ]
+  },
+  {
+   "id": "gz_file_and_cause_one_name_space",
+   "file": "gozcu/evaluate.py",
+   "old": "top((\"root_cause\", row[\"root_cause\"]))",
+   "new": "top((\"file\", row[\"root_cause\"]))",
+   "tests": [
+    "test_gozcu.Containment.test_a_file_and_a_root_cause_of_one_name_are_two_things"
+   ]
+  },
+  {
+   "id": "gz_containment_regression_window",
+   "file": "gozcu/evaluate.py",
+   "old": "    got = need(\"containment_freeze\", \"measure_window\")",
+   "new": "    got = need(\"containment_freeze\", \"window_days\")",
+   "tests": [
+    "test_gozcu.Containment.test_the_window_is_the_measure_window_open_at_its_start"
+   ]
+  },
+  {
+   "id": "gz_containment_scope_unwindowed",
+   "file": "gozcu/evaluate.py",
+   "old": "    return sorted({row[\"class\"] for row in inside}), {\"violations\"",
+   "new": "    return sorted({row[\"class\"] for row in rows}), {\"violations\"",
+   "tests": [
+    "test_gozcu.Containment.test_the_limit_is_containment_freeze_and_the_scope_is_the_windows_violations"
+   ]
+  },
+  {
+   "id": "gz_budget_cap_exclusive",
+   "file": "gozcu/evaluate.py",
+   "old": "        if spend[spent] >= got[0] * scale:",
+   "new": "        if spend[spent] > got[0] * scale:",
+   "tests": [
+    "test_gozcu.Budget"
+   ]
+  },
+  {
+   "id": "gz_budget_usd_cap_in_micros",
+   "file": "gozcu/evaluate.py",
+   "old": "(\"budget_usd\", \"usd_micros\", \"monthly_cap_usd\", 1000000)",
+   "new": "(\"budget_usd\", \"usd_micros\", \"monthly_cap_usd\", 1)",
+   "tests": [
+    "test_gozcu.Budget.test_reaching_the_usd_cap_freezes_the_loop"
+   ]
+  },
+  {
+   "id": "gz_budget_minutes_by_usd_cap",
+   "file": "gozcu/evaluate.py",
+   "old": "(\"budget_ci_minutes\", \"ci_minutes\", \"monthly_cap_ci_minutes\", 1)",
+   "new": "(\"budget_ci_minutes\", \"ci_minutes\", \"monthly_cap_usd\", 1)",
+   "tests": [
+    "test_gozcu.Budget.test_each_cap_is_read_from_its_own_path"
+   ]
+  },
+  {
+   "id": "gz_lift_any_trigger",
+   "file": "gozcu/evaluate.py",
+   "old": "                      for row in freezes if row[\"trigger\"] == trigger and row[\"in_force\"]]",
+   "new": "                      for row in freezes if row[\"in_force\"]]",
+   "tests": [
+    "test_gozcu.Budget.test_a_budget_freeze_in_force_lifts_when_its_cap_is_no_longer_reached"
+   ]
+  },
+  {
+   "id": "gz_lift_a_lifted_freeze",
+   "file": "gozcu/evaluate.py",
+   "old": "                      for row in freezes if row[\"trigger\"] == trigger and row[\"in_force\"]]",
+   "new": "                      for row in freezes if row[\"trigger\"] == trigger]",
+   "tests": [
+    "test_gozcu.Budget.test_a_budget_freeze_in_force_lifts_when_its_cap_is_no_longer_reached"
+   ]
+  },
+  {
+   "id": "gz_lifts_in_view_order",
+   "file": "gozcu/evaluate.py",
+   "old": "sorted(lifts, key=lambda row: (SOFT.index(row[\"trigger\"]), row[\"start\"], row[\"scope\"]))",
+   "new": "list(lifts)",
+   "tests": [
+    "test_gozcu.Budget.test_lifts_are_ordered_by_trigger_then_start"
+   ]
+  },
+  {
+   "id": "gz_closed_by_any_trigger",
+   "file": "gozcu/evaluate.py",
+   "old": "closed = {name for row in freezes if row[\"trigger\"] == trigger and row[\"in_force\"] for",
+   "new": "closed = {name for row in freezes if row[\"in_force\"] for",
+   "tests": [
+    "test_gozcu.InForce.test_a_lifted_freeze_and_another_triggers_freeze_close_nothing"
+   ]
+  },
+  {
+   "id": "gz_closed_by_a_lifted_freeze",
+   "file": "gozcu/evaluate.py",
+   "old": "closed = {name for row in freezes if row[\"trigger\"] == trigger and row[\"in_force\"] for",
+   "new": "closed = {name for row in freezes if row[\"trigger\"] == trigger for",
+   "tests": [
+    "test_gozcu.InForce.test_a_lifted_freeze_and_another_triggers_freeze_close_nothing"
+   ]
+  },
+  {
+   "id": "gz_scope_not_reduced",
+   "file": "gozcu/evaluate.py",
+   "old": "        scope = [name for name in scope if name not in closed]",
+   "new": "        scope = [name for name in scope]",
+   "tests": [
+    "test_gozcu.InForce.test_a_class_the_trigger_has_closed_is_not_closed_again"
+   ]
+  },
+  {
+   "id": "gz_freeze_of_empty_scope",
+   "file": "gozcu/evaluate.py",
+   "old": "        if scope:\n            started.append",
+   "new": "        if True:\n            started.append",
+   "tests": [
+    "test_gozcu.InForce.test_a_class_the_trigger_has_closed_is_not_closed_again"
+   ]
+  },
+  {
+   "id": "gz_budget_freeze_started_again",
+   "file": "gozcu/evaluate.py",
+   "old": "        if scope:\n            started.append",
+   "new": "        if scope or trigger != \"regression\":\n            started.append",
+   "tests": [
+    "test_gozcu.Budget.test_a_budget_freeze_in_force_is_not_started_again_and_a_lifted_one_is"
+   ]
+  },
+  {
+   "id": "gz_limit_reached_is_a_stop",
+   "file": "gozcu/evaluate.py",
+   "old": "        if len(counted) > got[0]:",
+   "new": "        if len(counted) >= got[0]:",
+   "tests": [
+    "test_gozcu.HardStop.test_more_soft_freezes_in_the_window_than_the_limit_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "gz_limit_ignores_new_freezes",
+   "file": "gozcu/evaluate.py",
+   "old": "        counted += [\"%s@%s\" % (row[\"trigger\"], row[\"start\"]) for row in started]\n",
+   "new": "",
+   "tests": [
+    "test_gozcu.HardStop.test_a_freeze_this_call_starts_is_counted"
+   ]
+  },
+  {
+   "id": "gz_limit_unwindowed",
+   "file": "gozcu/evaluate.py",
+   "old": "for row in freezes if _within(row[\"at\"], clock, got[1])]",
+   "new": "for row in freezes]",
+   "tests": [
+    "test_gozcu.HardStop.test_only_the_freezes_started_in_the_measure_window_are_counted"
+   ]
+  },
+  {
+   "id": "gz_limit_counts_in_force_only",
+   "file": "gozcu/evaluate.py",
+   "old": "for row in freezes if _within(row[\"at\"], clock, got[1])]",
+   "new": "for row in freezes if _within(row[\"at\"], clock, got[1]) and row[\"in_force\"]]",
+   "tests": [
+    "test_gozcu.HardStop.test_more_soft_freezes_in_the_window_than_the_limit_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "gz_limit_regression_window",
+   "file": "gozcu/evaluate.py",
+   "old": "    got = need(\"soft_freeze_limit\", \"measure_window\")",
+   "new": "    got = need(\"soft_freeze_limit\", \"window_days\")",
+   "tests": [
+    "test_gozcu.HardStop.test_only_the_freezes_started_in_the_measure_window_are_counted"
+   ]
+  },
+  {
+   "id": "gz_fact_without_evidence_stops",
+   "file": "gozcu/evaluate.py",
+   "old": "for fact in HARD_FACTS if stops.get(fact)]",
+   "new": "for fact in HARD_FACTS if fact in stops]",
+   "tests": [
+    "test_gozcu.HardStop.test_each_fact_with_evidence_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "gz_stops_in_view_order",
+   "file": "gozcu/evaluate.py",
+   "old": "for fact in HARD_FACTS if stops.get(fact)]",
+   "new": "for fact in stops if stops.get(fact)]",
+   "tests": [
+    "test_gozcu.HardStop.test_every_hard_stop_at_once_in_the_order_of_hard"
+   ]
+  },
+  {
+   "id": "gz_kill_switch_is_no_fact",
+   "file": "gozcu/evaluate.py",
+   "old": "\"activation\", \"ref_change\", \"kill_switch\")",
+   "new": "\"activation\", \"ref_change\")",
+   "tests": [
+    "test_gozcu.HardStop.test_the_facts_are_tohum_28s_seven"
+   ]
+  },
+  {
+   "id": "gz_evidence_is_the_views_list",
+   "file": "gozcu/evaluate.py",
+   "old": "    return {fact: [_text(line, \"stops.%s[%d]\" % (fact, i))\n                   for i, line in enumerate(_rows(value[fact], \"stops.%s\" % fact))] for fact in value}",
+   "new": "    [_text(line, \"stops.%s[%d]\" % (fact, i)) for fact in value\n     for i, line in enumerate(_rows(value[fact], \"stops.%s\" % fact))]\n    return value",
+   "tests": [
+    "test_gozcu.HardStop.test_the_evidence_is_a_copy"
+   ]
+  },
+  {
+   "id": "gz_drift_bound_reached_marks",
+   "file": "gozcu/evaluate.py",
+   "old": "> got[0] * abs(row[\"initial\"])]",
+   "new": ">= got[0] * abs(row[\"initial\"])]",
+   "tests": [
+    "test_gozcu.Marks.test_a_threshold_moved_by_more_than_the_bound_is_marked"
+   ]
+  },
+  {
+   "id": "gz_drift_of_signed_initial",
+   "file": "gozcu/evaluate.py",
+   "old": "> got[0] * abs(row[\"initial\"])]",
+   "new": "> got[0] * row[\"initial\"]]",
+   "tests": [
+    "test_gozcu.Marks.test_a_threshold_moved_by_more_than_the_bound_is_marked"
+   ]
+  },
+  {
+   "id": "gz_drift_upward_only",
+   "file": "gozcu/evaluate.py",
+   "old": "if abs(row[\"current\"] - row[\"initial\"]) >",
+   "new": "if row[\"current\"] - row[\"initial\"] >",
+   "tests": [
+    "test_gozcu.Marks.test_a_threshold_moved_by_more_than_the_bound_is_marked"
+   ]
+  },
+  {
+   "id": "gz_number_as_binary_float",
+   "file": "gozcu/evaluate.py",
+   "old": "        return Fraction(repr(value))",
+   "new": "        return Fraction(value)",
+   "tests": [
+    "test_gozcu.Marks.test_the_movement_is_compared_as_decimals_and_not_as_binary_floats"
+   ]
+  },
+  {
+   "id": "gz_similarity_reached_marks",
+   "file": "gozcu/evaluate.py",
+   "old": "for row in similar if row[\"similarity\"] > got[0]]",
+   "new": "for row in similar if row[\"similarity\"] >= got[0]]",
+   "tests": [
+    "test_gozcu.Marks.test_two_seats_more_similar_than_the_bound_are_marked"
+   ]
+  },
+  {
+   "id": "gz_seats_unsorted",
+   "file": "gozcu/evaluate.py",
+   "old": "        out.append({\"seats\": sorted(seats),",
+   "new": "        out.append({\"seats\": seats,",
+   "tests": [
+    "test_gozcu.Marks.test_two_seats_more_similar_than_the_bound_are_marked"
+   ]
+  },
+  {
+   "id": "gz_genesis_limit_reached_marks",
+   "file": "gozcu/evaluate.py",
+   "old": "        if got is not None and genesis[key] > got[0]:",
+   "new": "        if got is not None and genesis[key] >= got[0]:",
+   "tests": [
+    "test_gozcu.Marks.test_genesis_drafts_and_queue_over_their_limits_are_marked"
+   ]
+  },
+  {
+   "id": "gz_queue_by_the_drafts_limit",
+   "file": "gozcu/evaluate.py",
+   "old": "(\"genesis_queue\", \"queue\", \"queue\")",
+   "new": "(\"genesis_queue\", \"queue\", \"per_window\")",
+   "tests": [
+    "test_gozcu.Marks.test_genesis_drafts_and_queue_over_their_limits_are_marked"
+   ]
+  },
+  {
+   "id": "gz_marks_unordered",
+   "file": "gozcu/evaluate.py",
+   "old": "        \"marks\": sorted(marks, key=lambda row: (MARKS.index(row[\"mark\"]), row[\"subject\"],\n                                                sorted(row[\"measurement\"].items()))),",
+   "new": "        \"marks\": sorted(marks, key=lambda row: MARKS.index(row[\"mark\"])),",
+   "tests": [
+    "test_gozcu.Marks.test_marks_are_ordered_by_mark_then_subject"
+   ]
+  },
+  {
+   "id": "gz_absent_path_unnamed",
+   "file": "gozcu/evaluate.py",
+   "old": "        unjudged.update(absent)\n",
+   "new": "",
+   "tests": [
+    "test_gozcu.Thresholds.test_an_absent_path_is_named_and_only_its_rules_are_not_judged"
+   ]
+  },
+  {
+   "id": "gz_first_invalid_only",
+   "file": "gozcu/evaluate.py",
+   "old": "            reasons += exc.reasons\n    if reasons:",
+   "new": "            raise\n    if reasons:",
+   "tests": [
+    "test_gozcu.Thresholds.test_every_invalid_path_is_named_in_the_order_of_the_table"
+   ]
+  },
+  {
+   "id": "gz_rate_is_a_count",
+   "file": "gozcu/evaluate.py",
+   "old": "    \"revert_rate\": (HP.fraction, R.REGRESSION_REVERT_RATE),",
+   "new": "    \"revert_rate\": (HP.count, R.REGRESSION_REVERT_RATE),",
+   "tests": [
+    "test_gozcu.Thresholds.test_the_values_are_read_from_their_paths"
+   ]
+  },
+  {
+   "id": "gz_views_may_hold_more",
+   "file": "gozcu/evaluate.py",
+   "old": "    if not isinstance(value, dict) or set(value) != set(keys):",
+   "new": "    if not isinstance(value, dict) or not set(keys) <= set(value):",
+   "tests": [
+    "test_gozcu.Shapes.test_each_value_off_its_shape_is_refused_at_its_place"
+   ]
+  },
+  {
+   "id": "gz_unknown_stop_fact_taken",
+   "file": "gozcu/evaluate.py",
+   "old": "    if not isinstance(value, dict) or not set(value) <= set(HARD_FACTS):",
+   "new": "    if not isinstance(value, dict):",
+   "tests": [
+    "test_gozcu.Shapes.test_an_unknown_stop_fact_is_refused"
+   ]
+  },
+  {
+   "id": "gz_scope_unsorted_taken",
+   "file": "gozcu/evaluate.py",
+   "old": "        if not scope or scope != sorted(set(scope)):",
+   "new": "        if not scope:",
+   "tests": [
+    "test_gozcu.Shapes.test_a_scope_is_a_non_empty_sorted_list_of_distinct_names"
+   ]
+  },
+  {
+   "id": "gz_scope_empty_taken",
+   "file": "gozcu/evaluate.py",
+   "old": "        if not scope or scope != sorted(set(scope)):",
+   "new": "        if scope != sorted(set(scope)):",
+   "tests": [
+    "test_gozcu.Shapes.test_a_scope_is_a_non_empty_sorted_list_of_distinct_names"
+   ]
+  },
+  {
+   "id": "gz_lift_before_start_taken",
+   "file": "gozcu/evaluate.py",
+   "old": "_seconds(row[\"lifted\"], where + \".lifted\") < start:",
+   "new": "_seconds(row[\"lifted\"], where + \".lifted\") < 0:",
+   "tests": [
+    "test_gozcu.Shapes.test_a_lift_before_its_start_is_refused_and_one_at_its_start_is_not"
+   ]
+  },
+  {
+   "id": "gz_lift_at_start_refused",
+   "file": "gozcu/evaluate.py",
+   "old": "_seconds(row[\"lifted\"], where + \".lifted\") < start:",
+   "new": "_seconds(row[\"lifted\"], where + \".lifted\") <= start:",
+   "tests": [
+    "test_gozcu.Shapes.test_a_lift_before_its_start_is_refused_and_one_at_its_start_is_not"
+   ]
+  },
+  {
+   "id": "gz_initial_zero_taken",
+   "file": "gozcu/evaluate.py",
+   "old": "        if not initial:\n            _fail",
+   "new": "        if False:\n            _fail",
+   "tests": [
+    "test_gozcu.Shapes.test_an_initial_threshold_of_zero_is_refused"
+   ]
+  },
+  {
+   "id": "gz_same_seat_twice_taken",
+   "file": "gozcu/evaluate.py",
+   "old": "        if len(seats) != 2 or seats[0] == seats[1]:",
+   "new": "        if len(seats) != 2:",
+   "tests": [
+    "test_gozcu.Shapes.test_two_seats_are_two_and_distinct"
+   ]
+  },
+  {
+   "id": "gz_three_seats_taken",
+   "file": "gozcu/evaluate.py",
+   "old": "        if len(seats) != 2 or seats[0] == seats[1]:",
+   "new": "        if len(seats) < 2 or seats[0] == seats[1]:",
+   "tests": [
+    "test_gozcu.Shapes.test_two_seats_are_two_and_distinct"
+   ]
+  },
+  {
+   "id": "gz_boolean_is_a_number",
+   "file": "gozcu/evaluate.py",
+   "old": "    if type(value) is int:\n        return Fraction(value)",
+   "new": "    if isinstance(value, int):\n        return Fraction(value)",
+   "tests": [
+    "test_gozcu.Shapes.test_a_number_is_an_integer_or_a_finite_float"
+   ]
+  },
+  {
+   "id": "gz_infinity_is_a_number",
+   "file": "gozcu/evaluate.py",
+   "old": "    if type(value) is float and math.isfinite(value):",
+   "new": "    if type(value) is float:",
+   "tests": [
+    "test_gozcu.Shapes.test_a_number_is_an_integer_or_a_finite_float"
+   ]
+  },
+  {
+   "id": "gz_event_kind_open",
+   "file": "gozcu/evaluate.py",
+   "old": "        if row[\"kind\"] not in EVENT_KINDS:",
+   "new": "        if False:",
+   "tests": [
+    "test_gozcu.Shapes.test_each_value_off_its_shape_is_refused_at_its_place"
+   ]
+  },
+  {
+   "id": "gz_freeze_trigger_open",
+   "file": "gozcu/evaluate.py",
+   "old": "        if row[\"trigger\"] not in SOFT:",
+   "new": "        if False:",
+   "tests": [
+    "test_gozcu.Shapes.test_each_value_off_its_shape_is_refused_at_its_place"
+   ]
+  },
+  {
+   "id": "gz_impossible_date_taken",
+   "file": "gozcu/evaluate.py",
+   "old": "        return calendar.timegm(time.strptime(value, \"%Y-%m-%dT%H:%M:%SZ\"))",
+   "new": "        return calendar.timegm(tuple(int(value[a:b]) for a, b in ((0, 4), (5, 7), (8, 10), (11, 13), (14, 16), (17, 19))))",
+   "tests": [
+    "test_gozcu.Shapes.test_now_is_a_timestamp_and_a_real_date"
+   ]
+  },
+  {
+   "id": "gz_now_unchecked_form",
+   "file": "gozcu/evaluate.py",
+   "old": "    if S.timestamp(value, where):\n        _fail(where, \"not YYYY-MM-DDTHH:MM:SSZ\")\n",
+   "new": "",
+   "tests": [
+    "test_gozcu.Shapes.test_now_is_a_timestamp_and_a_real_date"
+   ]
+  },
+  {
+   "id": "gz_start_is_the_clock",
+   "file": "gozcu/evaluate.py",
+   "old": "started.append({\"trigger\": trigger, \"scope\": scope, \"measurement\": measurement, \"start\": now})",
+   "new": "started.append({\"trigger\": trigger, \"scope\": scope, \"measurement\": measurement,\n                            \"start\": time.strftime(\"%Y-%m-%dT%H:%M:%SZ\", time.gmtime(time.time()))})",
+   "tests": [
+    "test_gozcu.Pure.test_the_clock_is_not_read"
+   ]
+  },
+  {
+   "id": "gz_float_in_the_answer",
+   "file": "gozcu/evaluate.py",
+   "old": "                    \"said\": {\"initial\": _said(row[\"initial\"]), \"current\": _said(row[\"current\"])}})",
+   "new": "                    \"said\": {\"initial\": row[\"initial\"], \"current\": row[\"current\"]}})",
+   "tests": [
+    "test_gozcu.Pure.test_no_value_of_the_answer_is_a_float"
+   ]
+  }
+ ]
+}

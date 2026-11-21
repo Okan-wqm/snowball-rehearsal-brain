@@ -93,8 +93,8 @@
   {
    "id": "pr_path_dropped",
    "file": "policy/reads.py",
-   "old": "PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + tuple(",
-   "new": "PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS) + HARNESS_PATHS + tuple(",
+   "old": "PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + GOZCU_PATHS + tuple(",
+   "new": "PATHS = (LICENSE_ALLOWLIST, LICENSE_EXCEPTIONS, SECURITY_KEYWORDS) + HARNESS_PATHS + GOZCU_PATHS + tuple(",
    "tests": [
     "test_policy_reads.Readers"
    ]
@@ -282,8 +282,8 @@
   {
    "id": "pr_harness_paths_unnamed",
    "file": "policy/reads.py",
-   "old": "SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + tuple(",
-   "new": "SECURITY_KEYWORDS, CANARY_USD) + tuple(",
+   "old": "SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + GOZCU_PATHS + tuple(",
+   "new": "SECURITY_KEYWORDS, CANARY_USD) + GOZCU_PATHS + tuple(",
    "tests": [
     "test_policy_reads.Harness.test_the_stage_1_paths_are_the_five_of_tohum_29v"
    ]
@@ -291,8 +291,8 @@
   {
    "id": "pr_harness_paths_unnamed_cli",
    "file": "policy/reads.py",
-   "old": "SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + tuple(",
-   "new": "SECURITY_KEYWORDS, CANARY_USD) + tuple(",
+   "old": "SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + GOZCU_PATHS + tuple(",
+   "new": "SECURITY_KEYWORDS, CANARY_USD) + GOZCU_PATHS + tuple(",
    "tests": [
     "test_policy_reads.Command.test_the_stage_1_paths_are_named_by_their_literal_names"
    ]
@@ -322,6 +322,42 @@
    "new": "    try:\n        return HP.planted_max_cases(parsed)\n    except HP.Invalid:\n        return None",
    "tests": [
     "test_loop_cek.Brain.test_the_snapshot_is_made_with_the_policy_s_planted_max_cases"
+   ]
+  },
+  {
+   "id": "pr_gozcu_paths_unnamed",
+   "file": "policy/reads.py",
+   "old": "SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + GOZCU_PATHS + tuple(",
+   "new": "SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + tuple(",
+   "tests": [
+    "test_gozcu.Thresholds.test_the_thirteen_paths_are_policy_reads_and_the_command_names_them"
+   ]
+  },
+  {
+   "id": "pr_gozcu_measure_in_constitutional",
+   "file": "policy/reads.py",
+   "old": "MEASURE_WINDOW = (PERFORMANCE, \"windows\", \"measure\")",
+   "new": "MEASURE_WINDOW = (CONSTITUTIONAL, \"windows\", \"measure\")",
+   "tests": [
+    "test_policy_reads.Readers.test_the_watcher_reads_its_thirteen_paths"
+   ]
+  },
+  {
+   "id": "hp_fraction_takes_one",
+   "file": "harness/params.py",
+   "old": "    if type(level) is not float or not 0 < level < 1:",
+   "new": "    if type(level) is not float or not 0 < level <= 1:",
+   "tests": [
+    "test_gozcu.Thresholds.test_a_value_off_its_rule_is_invalid_and_nothing_is_judged"
+   ]
+  },
+  {
+   "id": "hp_fraction_reason_is_the_levels",
+   "file": "harness/params.py",
+   "old": "    if type(level) is not float or not 0 < level < 1:\n        raise Invalid([_reason(path)])",
+   "new": "    if type(level) is not float or not 0 < level < 1:\n        raise Invalid([_reason(R.CONFIDENCE_LEVEL)])",
+   "tests": [
+    "test_gozcu.Thresholds.test_a_value_off_its_rule_is_invalid_and_nothing_is_judged"
    ]
   }
  ]

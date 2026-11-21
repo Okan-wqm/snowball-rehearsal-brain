@@ -350,7 +350,7 @@ def evaluate(views: Any, policy: Any, now: Any) -> dict[str, list]:
         if spend[spent] >= got[0] * scale:
             fired[trigger] = ([LOOP], {"spent": spend[spent], "cap": got[0] * scale})
         else:
-            lifts += [{"trigger": trigger, "scope": list(row["scope"]), "start": row["start"]}
+            lifts += [{"trigger": trigger, "scope": row["scope"], "start": row["start"]}
                       for row in freezes if row["trigger"] == trigger and row["in_force"]]
     started = []
     for trigger in SOFT:
@@ -369,16 +369,16 @@ def evaluate(views: Any, policy: Any, now: Any) -> dict[str, list]:
         counted += ["%s@%s" % (row["trigger"], row["start"]) for row in started]
         if len(counted) > got[0]:
             hard.append({"trigger": "soft_freeze_limit", "evidence": sorted(counted)})
-    hard += [{"trigger": fact, "evidence": list(stops[fact])} for fact in HARD_FACTS if stops.get(fact)]
+    hard += [{"trigger": fact, "evidence": stops[fact]} for fact in HARD_FACTS if stops.get(fact)]
 
     marks = []
     got = need("drift_bound")
     if got is not None:
-        marks += [{"mark": "threshold_drift", "subject": [row["name"]], "measurement": dict(row["said"])}
+        marks += [{"mark": "threshold_drift", "subject": [row["name"]], "measurement": row["said"]}
                   for row in moved if abs(row["current"] - row["initial"]) > got[0] * abs(row["initial"])]
     got = need("seat_similarity")
     if got is not None:
-        marks += [{"mark": "seat_similarity", "subject": list(row["seats"]),
+        marks += [{"mark": "seat_similarity", "subject": row["seats"],
                    "measurement": {"similarity": row["said"]}} for row in similar if row["similarity"] > got[0]]
     for mark, key, name in (("genesis_drafts", "drafts", "per_window"), ("genesis_queue", "queue", "queue")):
         got = need(name)
