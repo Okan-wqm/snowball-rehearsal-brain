@@ -195,8 +195,9 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
             raise Unusable("sentinel: %s" % cli.cause(exc)) from None
     observe = None  # the base's tool output, published once per base run (ledger.events.observation)
     try:
-        if base_lint is not None and serial.observed(art.state[B.STATE_LEDGER]) != base_lint["base_run_sha256"]:
-            observe = base_lint
+        if base_lint is not None:
+            if serial.observed(art.state[B.STATE_LEDGER]) != base_lint["base_run_sha256"]:
+                observe = base_lint
         written = serial.rows(art.state[B.STATE_LEDGER])
     except serial.Unusable as exc:
         raise Unusable("state: %s" % cli.cause(exc)) from None
@@ -209,7 +210,7 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         try:
             return watch.judge(written, planned, art.policy, ts)
         except harness_params.Invalid as exc:
-            raise Refused(["gozcu_policy:%s" % reason for reason in exc.reasons]) from None
+            raise Refused(list(exc.reasons)) from None
         except (gozcu_rules.Unusable, watch.Unusable, ledger_cost.Unusable) as exc:
             raise Unusable("gozcu: %s" % cli.cause(exc)) from None
 
