@@ -73,7 +73,7 @@ reddeder (çıkış 2, `29g`). İşaret betikli paketin getirilmesine izindir, k
 **policy.json `operating{}`**: `{key: {value, band: [min, max]}}`; anahtarlar `unit_inputs_bytes`, `deps_bytes`,
 `worktree_bytes`, `container_mem_bytes`, `kos_wall_s`, `test_total_s`, `output_bytes`. Döngünün karşılaştırdığı her sınır
 buradadır, sabit yoktur; bandı operatör yazar (`18a`). Sınıra takılan iş `limit_hit:<anahtar>`'dır, Kurucu'ya sayılmaz,
-`status.md`'de görünür. Aşama 0'da değer kendini ayarlamaz; bant içinde ayar P1'le gelir.
+`status.md`'de görünür. Aşama 0'da değer kendini ayarlamaz; bant içinde ayar P3'le gelir (`26h`).
 
 **status-stage0.md** (önyükleme hakeminin her koşusunun yüklediği adım özeti): son kabul ve son
 değerlendirilen SHA, park, seriler, frenlere karşı harcama, belirteç süresi, son kararlar, açık

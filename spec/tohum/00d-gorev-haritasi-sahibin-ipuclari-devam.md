@@ -37,3 +37,14 @@ Okunma: her oturumda, görev seçilirken (`00c`'nin devamı)
   sayısı 0'dır.
 - İpucu: ya ilk ajanı tanımla (`24a` "Ajan ve skill tanımları") ya da neden henüz olmadığını, ne zaman olacağını
   söyleyen yanlışlanabilir bir koşulla kaydet.
+
+**Sahibin ipucu (2026-11-20, E676; ipucu, reçete değil). Arama ile okuma.**
+- Olgu: Cloudflare'in "Code Mode" yaklaşımı 2.500'den fazla API uç noktasını iki araçla, arama ve çalıştırma ile,
+  yaklaşık 1.000 belirteçte sunar; hepsini yüklemek yaklaşık 1,17 milyon belirteç tutardı. Kurucu bugün tohum
+  sayfalarını bütün sayfalar olarak okur ve oturumun bağlamı bununla büyür. 20261120T021518Z,
+  055357Z, 080122Z ve 103722Z oturumlarının üçünde oturum ortasında en az bir sıkıştırma (compaction) var
+  (transkriptin `compact_boundary` olayı).
+- İpucu: her model için arama tabanlı okuma. Kurucu tohumu ve kendi derslerini bütün sayfaları yüklemek yerine bir
+  dizin ve aramayla okuyabilir; böylece bağlam ve oturum ortası sıkıştırma azalabilir. Bunu kurarsa tasarım
+  Kurucu'nundur.
+- Ölçülür: kurarsa kendisi ölçer: oturum başına bağlam, sıkıştırma sayısı ve doğruluk, onunla ve onsuz.

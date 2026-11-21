@@ -4,9 +4,9 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
-- 2.2 (2026-11-20, E654; sahibin ipucu): yeni `00d` (`00c` 80 satıra yaklaştı), "Derslerin kendiliğinden yeniden
-  sınanması" (ipucu olarak işaretli): dersler otomatik ve düzenli yeniden sınansın, sonuç derse geri yazılsın;
-  ne zaman, nerede ve nasıl kaydedileceği Kurucu'nundur, tohum değişikliği rapor olarak önerilir. 1 mutant.
+- 2.2 (2026-11-20, E672–E678; sahip ve operatör kararları, panelin F13 yanıtı, seed-081, yeni
+  `26h`, Aşama 1'in ilk dilimi): `CHANGELOG-9.md`.
+- 2.2 (2026-11-20, E654; sahibin ipucu): yeni `00d`, derslerin kendiliğinden yeniden sınanması: `CHANGELOG-9.md`.
 - 2.2 (2026-11-20, E655–E671; bağımsız inceleme ekibi, operatör ve sahip kararları, Kurucu'nun on bir raporu, yeni
   `01c` ve `29za`, sahibin üç ipucu `00d`'de): `CHANGELOG-9.md`.
 - 2.2 (2026-11-19, E651–E653): sahibin ilkesi ve iki ipucu, `00c`: `CHANGELOG-8.md`.

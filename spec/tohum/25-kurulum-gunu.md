@@ -60,8 +60,12 @@ Bu bölümün özeti (`setup/summary.json`, `26c`: repo adları ve görünürlü
 ve izinleri, iş akışı varsayılan izni, vektör ve koltuk hash'leri, anayasal politika hash'i,
 `seed_epochs[]`, `targets[]`, `honesty_commitment` ve yalnız ilk koşuda ilk koşu işareti) operatörce hakem
 reposuna yazılır. Önyükleme hakemi her imzalı sonuca `setup/summary.json`'un, `vectors/`'ün, `seats/`'in
-ve anayasal `policy.json`'un hash'lerini yazar (böylece Rekor'a girerler); vektör ya da koltuk hash'i
-özetle uyuşmazsa durur. Hash'ler git blob'ları üzerinden hesaplanır, satır sonundan bağımsızdır. Aşama 0
+ve anayasal `policy.json`'un hash'lerini yazar (sonucun `operator_hashes`'i; böylece Rekor'a girerler); vektör ya da
+koltuk hash'i özetle uyuşmazsa durur. Hash'ler git blob'ları üzerinden hesaplanır, satır sonundan bağımsızdır.
+**Karşılaştırmanın tabanı** (operatör kararı, 2026-11-20): özetin `drift.hashes.vectors_sha256` ve `seats_sha256`'sıdır
+(`01c`, tek yer); fark koşuyu durdurur ve nedeni adlandırır (`vectors_hash_mismatch`, `seats_hash_mismatch`), Kurucu'ya
+ret sayılmaz. `drift`'i henüz yazılmamış özet kullanılabilir kalır; sonuç o zaman karşılaştırmanın olmadığını
+`compared: []` ile söyler. `drift` varsa ve iki hash'ten biri yoksa ya da biçimsizse koşu durur. Aşama 0
 bu özet olmadan başlamaz: önyükleme hakemi ilk durumunu, özet kopya hedefin `identifiers`'ını taşıyan `targets[]`'ı
 (10a) ve `honesty_commitment`'ı (10c; sahibin istisnası varsa taşıma hedefinin ekimi) adlandırmadıkça kurmaz, durum
 kaybolunca da; var olan durum buna tabi değildir.

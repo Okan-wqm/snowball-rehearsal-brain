@@ -65,7 +65,7 @@ Anahtar sütunu her anahtarı bölümüyle, tam yoluyla yazar; başka sayfada b�
 
 Döngünün karşılaştırdığı her kaynak sınırı `operating{key: {value, band}}` anahtarıdır; sabit yoktur.
 Başlangıç değerini ve bandı operatör yazar; değer bandın içinde iki yöne oynar (Y11), kalite eşikleri
-gibi yalnız sıkılaşmaz. Aşama 0'da sınır kendini ayarlamaz; ayarı P1'le gelir (`asama-1/13`). Sınıra
+gibi yalnız sıkılaşmaz. Aşama 0'da sınır kendini ayarlamaz; ayarı P3'le gelir (`26h`). Sınıra
 takılan iş `limit_hit:<anahtar>` nedenidir, Kurucu'ya sayılmaz, `status.md`'de görünür. Okuyanlar
 `run.contained`, `unit.verify` ve `deps.fetch`'tir (`asama-0/14`).
 

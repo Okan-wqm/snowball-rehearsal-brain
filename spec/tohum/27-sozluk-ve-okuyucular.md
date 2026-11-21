@@ -13,7 +13,7 @@ Okunma: yeni terim ya da dosya eklerken
 | Önyükleme hakemi | Tohumla gelen, kurulumda hakem reposuna kurulan Aşama 0 yargıcı; Aşama 0'dan sonra da beyin reposunun itme yargıcıdır, yalnız tohum dönemiyle değişir (`29b`) |
 | Döngü hakemi | Kurucu'nun `referee/` altında yazdığı, aktarımla hakem reposuna giren ve hedeflerde devirleri koşan hakem (`asama-0/01`) |
 | Devir | Döngü hakeminin bir koşusu; `cycle_id` Actions koşu kimliğidir |
-| Parti | Aşama ortasında (A) → aktarım → (B) ile gelen MF kümesi: P1, P2 ve çıkış partileri (`asama-1/13`) |
+| Parti | Aşama ortasında (A) → aktarım → (B) ile gelen MF kümesi: P1, P2, P3 ve çıkış partileri (`asama-1/13`) |
 | Operatör aktarımı | Hakem kodunun tek değişme yolu: aşama ya da parti çıkışında pinli beyin SHA'sındaki `referee/` ağacının hash doğrulamalı kopyası; önyükleme hakemine dokunmaz (`25a`) |
 | Tohum dönemi | Tohumun (`spec/tohum`, `seed/`, `bootstrap/`) değişebildiği, özetin `seed_epochs[]`'inde adlı commit (`25` 10b) |
 | İnsan dokunuşu | Aktarımlar, tohum dönemleri, `stage-open`, dürüstlük anahtarı, sahip istisnası (`02`) ve sert duruş kalkışlarının sayacı; `status.md` üst bloğunda |

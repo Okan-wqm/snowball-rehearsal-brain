@@ -17,10 +17,10 @@ da yeni kategori önerisini genesis değil şerit yazarı yapar (`09a`).
 |---|---|---|---|
 | `founder` | beyin reposunda `founder-ledger.jsonl` | Kurucu, kendi koduyla (zincir kuralı aşağıda); `cost` satırını başlatıcı (`24a` 4) | Aşama 0, ilk oturum |
 | `events`, `cost`, `drill` | `<state_root>/ledger.jsonl` | Hakem işleri; `drill` `exit.drill` (Aşama 0'da yalnız geri alma provası) | Etkinleştirme |
-| `freeze`; `rival`, `accept`; `security` | aynı dosya (`security`'nin hakem ve beyin kapsamı tohumda `seed/security-ledger.jsonl`, `30e`) | Gözcü; döngünün `yaz`'ı, önyükleme hakeminin imzalı sonucundan; `security.run` | P1; Aşama 1 MF6; P2 (`asama-1/13`) |
+| `freeze`; `rival`, `accept`; `security` | aynı dosya (`security`'nin hakem ve beyin kapsamı tohumda `seed/security-ledger.jsonl`, `30e`) | Gözcü; döngünün `yaz`'ı, önyükleme hakeminin imzalı sonucundan; `security.run` | P1; P1 MF9, ilk satırı Aşama 1 MF6'da (`26h`); P2 (`asama-1/13`) |
 | `looks` | `<state_root>/ledger.jsonl` | Hakem exit işi | İlk held-out havuzu |
-| — (bulgu satırları) | `<state_root>/findings.jsonl` | Hakem, adapter önerisinden | Aşama 1 |
-| — (unresolved satırları) | `<state_root>/unresolved.jsonl` | Hakem kapısı | Aşama 1 |
+| — (bulgu satırları) | `<state_root>/findings.jsonl` | Hakem, adapter önerisinden (`findings.write`) | P1 MF8 (`26h`) |
+| — (unresolved satırları) | `<state_root>/unresolved.jsonl` | Hakem kapısı (`findings.write`) | P1 MF8 (`26h`) |
 | — (kökler) | `<state_root>/chain/root.jsonl` | Hakem `yaz` işi | Etkinleştirme |
 
 **ledger row** (tüm bölümler): `row_id`, `ts`, `part`, `kind`, `payload`, `derivation`, `trust`, `snapshot_id`,

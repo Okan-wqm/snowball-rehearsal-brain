@@ -49,3 +49,22 @@ Okunma: bir sayfanın geçmişi aranırken
 - 2.2 (2026-11-20, E670; sahip kararı, anayasal): `29za` "Saldırgan set": E648'in kapı seti Aşama 1 çıkış partisinin
   `exit.adversarial` satırıdır (test 54; düzeltici istemine prompt injection, kaçan diff, gizlenmiş sır); Aşama 1
   çıkışı onsuz geçmez; snapshot kanaryası (test 16) Aşama 4'e taşındı. 1 mutant.
+- 2.2 (2026-11-20, E654; sahibin ipucu): yeni `00d` (`00c` 80 satıra yaklaştı), "Derslerin kendiliğinden yeniden
+  sınanması" (ipucu olarak işaretli): dersler otomatik ve düzenli yeniden sınansın, sonuç derse geri yazılsın;
+  ne zaman, nerede ve nasıl kaydedileceği Kurucu'nundur, tohum değişikliği rapor olarak önerilir. 1 mutant.
+- 2.2 (2026-11-20, E672–E678; tohum dönemi Z): yeni `26h` "Şemalar, Devam: Aşama 1'in İlk Dilimi" (`26e` ona işaret
+  eder). Sahip kararı (O1, E672): ilk dilim deterministiktir, ilk düzeltme yolunda LLM yoktur (`lint.discover` →
+  taban → `fixer.range` → `candidate.publish` → izin listesi ve `accept`); P1 MF8 bulgu yazıcısı `findings.write`
+  (test 12 MF4'ten taşındı), P1 MF9 izin listesi ve `accept` yazıcısı `gate.allowlist` (yeni test 55; karşılaştırılan
+  hash hakemin kendi hesapladığıdır); Gözcü (MF7) önlerinde; eski MF8 (`operating{}`), düzeltme gidiş-dönüşü ve
+  `fixer.llm` ilk organ merge'ünden sonraki P3'te (tablosu bir tohum döneminde gelir); `mcnemar` MF4'le kabul edildiği
+  için kalır, K3+ dalı K3'le.
+  `stages/stage1-P1.json` 9 MF (MF1–MF7'nin numaraları değişmedi); `26e`, `26a`, `26`, `18a`, `26c`, `24`, `27` hizalandı. Sahip kararı
+  (O3, E673): H1, H2, H3 dış göz incelemesinin bulduğu tablo düzeltmeleridir. Bağımsız inceleme ekibi kararı (F13, E675): `09` "Kökenin yeri": köken gövdede, yükleyicinin kuralı
+  değişmez, tanım hash'i dosyanın dışındaki kayıttır. Sahibin ipucu (E676): `00d` "Arama ile okuma". Operatör
+  kararları: ölçüm aynasına `session_time` ve `path` (E677; `organ_merges_copy` türetilemez, `null` ve nedeni);
+  `25` "Karşılaştırmanın tabanı" ve `01c`: önyükleme hakemi `operator_hashes`'i her sonuca yazar, `drift.hashes`'e
+  karşı fark koşuyu durdurur (`vectors_hash_mismatch`, `seats_hash_mismatch`), `drift`'siz özet çalışır; teslim aracı `drift.hashes`'i sahnelenen kopyadan yeniden hesaplar (E678).
+  Yanıtlanan rapor: `seed-081-the-time-limit-of-a-manifest-command-is-on-no-page` → `29b:24` (bildirim komutunun
+  süresi `bootstrap.json` `limits.test_timeout_s`, bugün 600, komut başına; yerel koşucu okur, varsaymaz; E674).
+  41 mutant, CI 104 parça.

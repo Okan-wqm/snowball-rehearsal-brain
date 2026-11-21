@@ -63,7 +63,8 @@ yapısal olarak imkânsızdır.
 Hakem, Aşama 0 (`asama-0/14`): `ledger.chain`, `chain.verify`, `secrets.scan`, `run.contained`, `profile.derive`,
 `deps.fetch`, `unit.verify`, `gate.diffguard`, `gate.check`, `target.write`, `ledger.append`, `rekor.anchor`,
 `sentinel.run`, `gate.revert`, `exit.drill` (yalnız geri alma), `llm.call`, `status.block`, `activate`. Partilerle
-(`asama-1/13`): `snapshot.make`, `cases.build`, `harness.score`, `drift.check`, `gozcu.evaluate` (P1); `security.*`
+(`asama-1/13`): `snapshot.make`, `cases.build`, `harness.score`, `drift.check`, `gozcu.evaluate`, `findings.write`,
+`gate.allowlist` (P1); `security.*`
 (P2); `exit.sample`, `spec.lint`, `exit.adversarial` (Aşama 1 çıkışı); `agent.dispatch` (araç kullanan ilk
 çalışma-zamanı ajanıyla, en geç Aşama 4); `harness.drill` (Aşama 2); `harness.baseline` (LLM avcıyla). Push kabulü ve
 aşama kilidi önyükleme hakemindedir (`29b`). Beyin, Aşama 1: `profile.propose`, `lint.discover`, `fixer.range`,

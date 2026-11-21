@@ -35,6 +35,11 @@ Okunma: takım kurarken ve ajan önerirken
   çalışma-zamanı modeli yalnız (B)'deki `llm.call` kanaryası, Aşama 1'inki düzelticinin Sonnet çağrısıdır
   (güvenlik avcısı araç kullanan ilk çalışma-zamanı ajanıyla gelir, `30f`). Aşama 2 ve 3'te altı ya
   da yedi. Sayı bütçeyle sınırlıdır; her ajanın hangi sayıyı oynattığı çıkış raporunda yazar.
+- **Kökenin yeri** (bağımsız inceleme ekibi kararı, 2026-11-20). Ajan ya da skill dosyası kökenini (boşluk, ölçüm,
+  aşama) gövdesinde, ön maddeden sonraki metinde yazar. Kapsülün yükleyicisi ön maddede yalnız bilinen anahtarları
+  alır, başka bir anahtar tanımı düşürür (`24a`); bu kural değişmez, köken ön maddeye yazılmaz. Bir dosya kendi
+  hash'ini taşıyamaz: "tanım hash'ini taşır" dosyanın dışındaki kaydıdır. Kapsülün tanımlarında bu kayıt yükleme
+  kaydının (`/work/logs/brain-definitions.json`) kaynak sha256'sıdır, organlarda `accept` satırıdır (`26h`).
 - **Anlaşma değil, çürütme.** İki ajanın aynı sonuca varması kanıt değildir. Bir artefakt ancak
   farklı modelden ve ayrı bağlamdan bir rakip onu çürütmeyi deneyip başaramadığında kabul edilir.
   Başarılı çürütme, kabul kadar değerli bir çıktıdır.
