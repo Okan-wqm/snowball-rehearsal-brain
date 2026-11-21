@@ -27,7 +27,7 @@ to ``unresolved.jsonl`` with its ``cause``).
    ``fingerprint``, ``state``, ``trust`` and ``proposed_by``, which are written here; ``symbol``, ``tool`` and
    ``rule_id`` optional), with ``class_level`` K0-K8, ``derivation`` of tohum/26's set, each ``required_change``
    entry ``{file, symbol?, op}`` with ``op`` of tohum/26's list, ``confidence`` a fixed decimal string in [0, 1]
-   with one to six decimals, ``file`` a normalised relative path, no float anywhere; or it lacks ``tool`` or
+   with one to six decimals, ``file`` a normalised relative path (so no value of it is a float); or it lacks ``tool`` or
    ``rule_id`` in K0-K2; or it names ``doc_fix`` outside K8.
 6. A fingerprint the file does not hold is a new finding: one row, ``state: open``, ``finding_id`` ``f-`` and
    the fingerprint (this brain's form), ``proposed_by`` the name ``observe`` was given, ``trust: inferred``.
@@ -103,13 +103,12 @@ PROPOSED = {"class_level": S.one_of(*CLASS_LEVELS), "property": S.text, "file": 
             "evidence_refs": S.list_of(S.evidence), "required_change": S.list_of(CHANGE), "severity_hint": S.text,
             "confidence": _confidence, "derivation": S.one_of(*S.DERIVATIONS), "snapshot_id": S.text}
 OPTIONAL = {"symbol": S.text, "tool": S.text, "rule_id": S.text}
-WRITTEN = {"finding_id": S.text, "fingerprint": S.hex64, "state": S.one_of(*STATES), "trust": S.one_of(*S.TRUSTS),
-           "prev_hash": S.hex64, "row_hash": S.hex64}
+CHAINED = {"finding_id": S.any_value, "prev_hash": S.any_value, "row_hash": S.any_value}   # judged by rule 11's two checks
+WRITTEN = dict(CHAINED, fingerprint=S.hex64, state=S.one_of(*STATES), trust=S.one_of(*S.TRUSTS))
 FINDING = S.shape(dict(PROPOSED, **WRITTEN), dict(OPTIONAL, proposed_by=S.text))
-UNRESOLVED = S.shape({"finding_id": S.text, "fingerprint": S.hex64, "cause": S.one_of(*S.CAUSES),
-                      "reasons": S.list_of(S.text, non_empty=True), "snapshot_id": S.text,
-                      "prev_hash": S.hex64, "row_hash": S.hex64})
-DECISION = S.shape({"fingerprint": S.hex64, "reasons": S.list_of(S.text)})
+UNRESOLVED = S.shape(dict(CHAINED, fingerprint=S.hex64, cause=S.one_of(*S.CAUSES),
+                           reasons=S.list_of(S.text, non_empty=True), snapshot_id=S.text))
+DECISION = S.shape({"fingerprint": S.text, "reasons": S.list_of(S.text)})
 
 
 # ---------------------------------------------------------------- the fingerprint
@@ -203,7 +202,7 @@ def _class_reasons(finding: dict, where: str) -> list[str]:
 
 def proposal_reasons(finding: Any, where: str = "finding") -> list[str]:
     """Why one proposed finding is ``finding_invalid`` (rule 5); empty when it is not."""
-    found = S.shape(PROPOSED, OPTIONAL)(finding, where) + S.no_float(finding, where)
+    found = S.shape(PROPOSED, OPTIONAL)(finding, where)
     return found or _class_reasons(finding, where)
 
 

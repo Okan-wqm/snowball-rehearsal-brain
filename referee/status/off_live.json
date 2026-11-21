@@ -1,4 +1,8 @@
 {
+  "findings.write": {
+    "kind": "unwired",
+    "why": "the finding registry's rows of tohum/26h MF8 (fingerprint, proposal to finding rows, gate decisions to fixed and unresolved rows) as functions over the two files' bytes, run by test 12 (tests/test_findings_write.py) only; no job hands it an adapter proposal, and the write to brain/state with the root over both files is not built (seed-086), so MF8 is not in done_mf"
+  },
   "ledger.founder": {
     "kind": "session_tool",
     "why": "the founder ledger's rules and its append command, run by a session and by test 14 (tests/test_founder_ledger.py); the loop never writes founder rows"

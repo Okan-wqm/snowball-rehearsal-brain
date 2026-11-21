@@ -1,0 +1,274 @@
+{
+ "mutants": [
+  {
+   "id": "fp_symbol_drops_claim",
+   "file": "findings/write.py",
+   "old": ", finding[\"symbol\"], normalize(finding[\"claim\"])]",
+   "new": ", finding[\"symbol\"]]",
+   "tests": [
+    "test_findings_write.Fingerprint.test_each_part_of_the_form_changes_it_and_nothing_else_does"
+   ]
+  },
+  {
+   "id": "fp_claim_not_normalized",
+   "file": "findings/write.py",
+   "old": "finding[\"symbol\"], normalize(finding[\"claim\"])]",
+   "new": "finding[\"symbol\"], finding[\"claim\"]]",
+   "tests": [
+    "test_findings_write.Fingerprint.test_normalize_folds_whitespace_and_nothing_else"
+   ]
+  },
+  {
+   "id": "fp_line_not_normalized",
+   "file": "findings/write.py",
+   "old": "finding[\"file\"], normalize(content)]",
+   "new": "finding[\"file\"], content]",
+   "tests": [
+    "test_findings_write.Fingerprint.test_a_shifted_line_is_the_same_finding"
+   ]
+  },
+  {
+   "id": "fp_line_drops_file",
+   "file": "findings/write.py",
+   "old": "parts = [\"line\", finding[\"rule_id\"], finding[\"file\"], normalize(content)]",
+   "new": "parts = [\"line\", finding[\"rule_id\"], normalize(content)]",
+   "tests": [
+    "test_findings_write.Fingerprint.test_two_equal_lines_of_a_file_are_one_finding"
+   ]
+  },
+  {
+   "id": "fp_forms_meet",
+   "file": "findings/write.py",
+   "old": "parts = [\"line\", finding[\"rule_id\"]",
+   "new": "parts = [\"symbol\", finding[\"rule_id\"]",
+   "tests": [
+    "test_findings_write.Fingerprint.test_the_forms_are_the_stated_lists"
+   ]
+  },
+  {
+   "id": "fp_first_ref_anywhere",
+   "file": "findings/write.py",
+   "old": "if r[\"path\"] == finding[\"file\"]), None)",
+   "new": "if True), None)",
+   "tests": [
+    "test_findings_write.Fingerprint.test_no_symbol_and_no_line_is_no_fingerprint"
+   ]
+  },
+  {
+   "id": "fp_line_start_only",
+   "file": "findings/write.py",
+   "old": "return \"\\n\".join(lines[ref[\"line_start\"] - 1:ref[\"line_end\"]])",
+   "new": "return \"\\n\".join(lines[ref[\"line_start\"] - 1:ref[\"line_start\"]])",
+   "tests": [
+    "test_findings_write.Fingerprint.test_a_shifted_line_is_the_same_finding"
+   ]
+  },
+  {
+   "id": "fp_past_the_end",
+   "file": "findings/write.py",
+   "old": "    if ref[\"line_end\"] > len(lines):\n        return None\n",
+   "new": "",
+   "tests": [
+    "test_findings_write.Fingerprint.test_no_symbol_and_no_line_is_no_fingerprint"
+   ]
+  },
+  {
+   "id": "fp_normalize_casefold",
+   "file": "findings/write.py",
+   "old": "return \" \".join(text.split())",
+   "new": "return \" \".join(text.casefold().split())",
+   "tests": [
+    "test_findings_write.Fingerprint.test_normalize_folds_whitespace_and_nothing_else"
+   ]
+  },
+  {
+   "id": "observe_reobservation_written",
+   "file": "findings/write.py",
+   "old": "if print_ in seen or (earlier is not None and earlier[\"state\"] not in REOPENS):",
+   "new": "if print_ in seen or (earlier is not None and earlier[\"state\"] in (\"blocked\",)):",
+   "tests": [
+    "test_findings_write.Fingerprint.test_the_same_finding_in_two_runs_is_one_row"
+   ]
+  },
+  {
+   "id": "observe_twice_in_one",
+   "file": "findings/write.py",
+   "old": "if print_ in seen or (earlier",
+   "new": "if (earlier",
+   "tests": [
+    "test_findings_write.Reobserved.test_twice_in_one_proposal_is_once"
+   ]
+  },
+  {
+   "id": "observe_verified_not_reopened",
+   "file": "findings/write.py",
+   "old": "REOPENS = (\"fixed\", \"verified\")",
+   "new": "REOPENS = (\"fixed\",)",
+   "tests": [
+    "test_findings_write.Reobserved.test_a_fixed_or_verified_finding_seen_again_is_reopened"
+   ]
+  },
+  {
+   "id": "observe_never_blocks",
+   "file": "findings/write.py",
+   "old": "if reopened[print_] >= REOPEN_LIMIT:",
+   "new": "if False:",
+   "tests": [
+    "test_findings_write.Reobserved.test_the_third_reopening_blocks"
+   ]
+  },
+  {
+   "id": "observe_blocks_at_two",
+   "file": "findings/write.py",
+   "old": "REOPEN_LIMIT = 3 ",
+   "new": "REOPEN_LIMIT = 2 ",
+   "tests": [
+    "test_findings_write.Reobserved.test_the_third_reopening_blocks"
+   ]
+  },
+  {
+   "id": "observe_reopens_counted_together",
+   "file": "findings/write.py",
+   "old": "reopened[print_] = reopened.get(print_, 0) + 1\n            if",
+   "new": "reopened[print_] = sum(reopened.values()) + 1\n            if",
+   "tests": [
+    "test_findings_write.Reobserved.test_the_third_reopening_blocks"
+   ]
+  },
+  {
+   "id": "observe_trust_as_proposed",
+   "file": "findings/write.py",
+   "old": "state=\"open\" if earlier is None else \"reopened\", trust=\"inferred\")",
+   "new": "state=\"open\" if earlier is None else \"reopened\", trust=\"verified\")",
+   "tests": [
+    "test_findings_write.Proposal.test_the_row_written"
+   ]
+  },
+  {
+   "id": "observe_no_proposer",
+   "file": "findings/write.py",
+   "old": "fingerprint=print_, proposed_by=proposed_by,",
+   "new": "fingerprint=print_,",
+   "tests": [
+    "test_findings_write.Proposal.test_the_row_written"
+   ]
+  },
+  {
+   "id": "observe_invalid_written",
+   "file": "findings/write.py",
+   "old": "        if proposal_reasons(finding):\n",
+   "new": "        if proposal_reasons(finding) and not isinstance(finding, dict):\n",
+   "tests": [
+    "test_findings_write.Proposal.test_each_refusal"
+   ]
+  },
+  {
+   "id": "observe_k0_without_rule",
+   "file": "findings/write.py",
+   "old": "for key in (\"tool\", \"rule_id\")",
+   "new": "for key in (\"tool\",)",
+   "tests": [
+    "test_findings_write.Proposal.test_each_refusal"
+   ]
+  },
+  {
+   "id": "observe_doc_fix_anywhere",
+   "file": "findings/write.py",
+   "old": "if finding[\"class_level\"] != \"K8\" and any(",
+   "new": "if finding[\"class_level\"] == \"K9\" and any(",
+   "tests": [
+    "test_findings_write.Proposal.test_each_refusal"
+   ]
+  },
+  {
+   "id": "observe_path_as_written",
+   "file": "findings/write.py",
+   "old": "return [] if D.norm_path(value) == value else",
+   "new": "return [] if D.norm_path(value) is not None else",
+   "tests": [
+    "test_findings_write.Proposal.test_each_refusal"
+   ]
+  },
+  {
+   "id": "decide_reject_as_fixed",
+   "file": "findings/write.py",
+   "old": "rows.append(_restated(row, \"unresolved\"))",
+   "new": "rows.append(_restated(row, \"fixed\"))",
+   "tests": [
+    "test_findings_write.Decisions.test_a_merge_fixes_and_a_reject_is_unresolved"
+   ]
+  },
+  {
+   "id": "decide_cause_unknown",
+   "file": "findings/write.py",
+   "old": "\"cause\": events.cause(decision[\"reasons\"]),",
+   "new": "\"cause\": \"unknown\",",
+   "tests": [
+    "test_findings_write.Decisions.test_a_merge_fixes_and_a_reject_is_unresolved"
+   ]
+  },
+  {
+   "id": "decide_any_state",
+   "file": "findings/write.py",
+   "old": "if row is None or row[\"state\"] not in DECIDABLE:",
+   "new": "if row is None:",
+   "tests": [
+    "test_findings_write.Decisions.test_refused_decisions_write_nothing"
+   ]
+  },
+  {
+   "id": "decide_twice",
+   "file": "findings/write.py",
+   "old": "        if print_ in named:\n",
+   "new": "        if False:\n",
+   "tests": [
+    "test_findings_write.Decisions.test_refused_decisions_write_nothing"
+   ]
+  },
+  {
+   "id": "decide_unresolved_file_unverified",
+   "file": "findings/write.py",
+   "old": "    _verified(unresolved, unresolved_previous, \"unresolved\")\n",
+   "new": "",
+   "tests": [
+    "test_findings_write.Files.test_a_file_that_is_no_extension_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "files_previous_unread",
+   "file": "findings/write.py",
+   "old": "verdict = chain.verify_bytes(data, previous)",
+   "new": "verdict = chain.verify_bytes(data)",
+   "tests": [
+    "test_findings_write.Files.test_a_file_that_is_no_extension_is_a_hard_stop"
+   ]
+  },
+  {
+   "id": "files_id_unchecked",
+   "file": "findings/write.py",
+   "old": "if not found and row[\"finding_id\"] != finding_id(row[\"fingerprint\"]):",
+   "new": "if False:",
+   "tests": [
+    "test_findings_write.Files.test_findings_reasons"
+   ]
+  },
+  {
+   "id": "files_class_rules_unread",
+   "file": "findings/write.py",
+   "old": "FINDING(row, where) or _class_reasons(row, where))",
+   "new": "FINDING(row, where))",
+   "tests": [
+    "test_findings_write.Files.test_findings_reasons"
+   ]
+  },
+  {
+   "id": "scored_state_row_new_identity",
+   "file": "findings/write.py",
+   "old": "    out[\"state\"] = state\n    return out",
+   "new": "    out[\"state\"] = state\n    out[\"fingerprint\"] = hashlib.sha256(state.encode()).hexdigest()\n    return out",
+   "tests": [
+    "test_findings_write.Scored.test_two_runs_of_a_shifted_file_are_counted_once"
+   ]
+  }
+ ]
+}

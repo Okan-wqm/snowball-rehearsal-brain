@@ -244,6 +244,12 @@ class Proposal(unittest.TestCase):
             "a float confidence": lint(confidence=0.9),
             "a confidence over one": lint(confidence="1.000001"),
             "a confidence of seven decimals": lint(confidence="0.1234567"),
+            "a one of seven decimals": lint(confidence="1.0000000"),
+            "a float line": lint(evidence_refs=[{"path": "pkg/a.js", "line_start": 2.0, "line_end": 2.0}]),
+            "a change in no file": lint(required_change=[{"file": "", "op": "lint_fix"}]),
+            "a change of an empty symbol": lint(required_change=[{"file": "pkg/a.js", "symbol": "", "op": "remove"}]),
+            "an empty tool": lint(tool=""),
+            "an empty rule": lint(rule_id=""),
             "a confidence with no decimal": lint(confidence="1"),
             "a negative confidence": lint(confidence="-0.5"),
             "a confidence with a tail": lint(confidence="0.5\n"),
@@ -475,7 +481,8 @@ class Files(unittest.TestCase):
         self.assertEqual(W.unresolved_reasons(chained([dict(row, cause=c) for c in SC.CAUSES])), [])
         bad = {"a cause off the set": dict(row, cause="bad_luck"), "no reasons": dict(row, reasons=[]),
                "an empty reason": dict(row, reasons=[""]), "no snapshot": {k: v for k, v in row.items() if k != "snapshot_id"},
-               "another field": dict(row, state="unresolved"), "an id that is not the fingerprint's": dict(row, finding_id="f-1"),
+               "another field": dict(row, state="unresolved"),
+               "a fingerprint that is none": dict(row, fingerprint="x", finding_id="f-x"), "an empty snapshot": dict(row, snapshot_id=""), "an id that is not the fingerprint's": dict(row, finding_id="f-1"),
                "a finding row": stored(self.one)[0] and {k: v for k, v in stored(self.one)[0].items()
                                                          if k not in ("prev_hash", "row_hash")}}
         for name, changed in bad.items():
