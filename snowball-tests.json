@@ -33,7 +33,8 @@
     {"id": "T9", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_offline.py'", "stage": 1},
     {"id": "T11", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_state_root.py'", "stage": 1},
     {"id": "T24", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_drift.py'", "stage": 1},
-    {"id": "T41", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_gozcu.py' && python -m unittest discover -s tests -p 'test_gozcu_watch.py'", "stage": 1}
+    {"id": "T41", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_gozcu.py' && python -m unittest discover -s tests -p 'test_gozcu_watch.py'", "stage": 1},
+    {"id": "T55", "cmd": "cd referee && python -m unittest discover -s tests -p 'test_allowlist.py'", "stage": 1}
   ],
   "done_mf": [1, 2, 3, 4, 5, 6, 7],
   "lockfiles": []
