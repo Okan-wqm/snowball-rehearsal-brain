@@ -78,6 +78,7 @@ import activation_world as AW  # noqa: E402
 import test_loop_write as TLW  # noqa: E402
 import yaz_world as YW  # noqa: E402
 from drift import check as DC  # noqa: E402
+from ledger import serial as SE  # noqa: E402
 from loop import job as J  # noqa: E402
 from policy import reads as R  # noqa: E402
 from target import branches as B  # noqa: E402
@@ -86,12 +87,13 @@ P = "/repos/%s" % AW.REPO
 STATE, INTEGRATION, MAIN = (P + "/rules/branches/" + b for b in (B.STATE, B.INTEGRATION, "main"))
 WORKFLOWS, PERMISSIONS, INSTALLED = P + "/actions/workflows", P + "/actions/permissions", "/installation/repositories"
 LISTING = P + "/rulesets?per_page=100"
+ACTIVITY = P + "/activity?per_page=100"
 READS = {"toy": ["/app", INSTALLED, STATE, INTEGRATION, MAIN, P + "/rulesets/1", P + "/rulesets/2", P + "/rulesets/3",
-                 WORKFLOWS, LISTING, P],
+                 WORKFLOWS, LISTING, P, ACTIVITY],
          "copy": ["/app", INSTALLED, STATE, INTEGRATION, MAIN, P + "/rulesets/1", P + "/rulesets/2",
-                  P + "/rulesets/3", PERMISSIONS, LISTING, P]}
+                  P + "/rulesets/3", PERMISSIONS, LISTING, P, ACTIVITY]}
 # what genesis reads of them (``activate.genesis`` calls ``rules`` and ``actions``, not the baseline's comparison)
-GENESIS_READS = {kind: [path for path in paths if path not in (LISTING, P)] for kind, paths in READS.items()}
+GENESIS_READS = {kind: [path for path in paths if path not in (LISTING, P, ACTIVITY)] for kind, paths in READS.items()}
 
 
 def without(kind: str):
@@ -173,10 +175,10 @@ def world(kind: str = "toy", *changes) -> AW.World:
     return w
 
 
-def check(w: AW.World, target="toy", repo=None, now=AW.TS, hashes=None) -> dict:
+def check(w: AW.World, target="toy", repo=None, now=AW.TS, hashes=None, previous=None) -> dict:
     """The check on the world; ``hashes`` are the checkout's (``activation_world.CHECKOUT``'s when ``None``)."""
     return DC.check(w.gh, w.files["summary.json"], AW.checkout_hashes() if hashes is None else hashes, target, now,
-                    repo)
+                    previous, repo)
 
 
 def recorded(path: str, reason: str) -> list:
@@ -204,7 +206,7 @@ class Check(unittest.TestCase):
     def test_setup_s_facts_give_no_reason_and_only_the_named_reads_are_sent(self):
         for kind in ("toy", "copy"):
             w = world(kind)
-            self.assertEqual(check(w), {"ok": True, "hard_stop": False, "reasons": [], "stale": False})
+            self.assertEqual(check(w), {"ok": True, "hard_stop": False, "reasons": [], "stale": False, "activity": []})
             self.assertEqual(w.gh.requests, [("GET", path, None) for path in READS[kind]])
             self.assertEqual(check(w, repo=AW.REPO)["reasons"], [])
         # the summary as ``cek`` reads it (no ``seed_epochs``: genesis' own field) is enough
@@ -220,7 +222,7 @@ class Check(unittest.TestCase):
         for name, (kind, path, how, reason) in CASES.items():
             w = world(kind, (path, how))
             self.assertEqual(check(w), {"ok": False, "hard_stop": True, "reasons": recorded(path, reason),
-                                        "stale": False}, name)
+                                        "stale": False, "activity": []}, name)
             self.assertEqual({m for m, _, _ in w.gh.requests}, {"GET"}, name)
 
     def test_every_reason_of_the_module_has_a_case(self):
@@ -256,7 +258,7 @@ class Check(unittest.TestCase):
     def test_a_caller_writing_to_another_repository_is_refused_before_any_read(self):
         w = world("toy")
         self.assertEqual(check(w, repo="acme/other"),
-                         {"ok": False, "hard_stop": True, "reasons": ["target_repo_mismatch"], "stale": False})
+                         {"ok": False, "hard_stop": True, "reasons": ["target_repo_mismatch"], "stale": False, "activity": []})
         self.assertEqual(check(w, repo=AW.REPO.upper())["reasons"], ["target_repo_mismatch"])
         self.assertEqual(w.gh.requests, [])
 
@@ -395,7 +397,7 @@ class Baseline(unittest.TestCase):
     def test_a_writer_app_of_another_id_is_a_hard_stop(self):
         w = rebased(world("copy"), put("writer_app_id", value=AW.APP_ID + 1))
         self.assertEqual(check(w), {"ok": False, "hard_stop": True, "reasons": ["writer_app_changed"],
-                                    "stale": False})
+                                    "stale": False, "activity": []})
         # the App that answers is another: its required check is not the writer's either
         w = world("toy", ("/app", lambda app: dict(app, id=AW.APP_ID + 1)))
         self.assertEqual(check(w)["reasons"], ["integration_check_not_writer", "writer_app_changed"])
@@ -425,7 +427,7 @@ class Baseline(unittest.TestCase):
             for kind in ("toy", "copy"):
                 w = world(kind, (path, how))
                 self.assertEqual(check(w), {"ok": False, "hard_stop": True, "reasons": ["rules_changed:" + branch],
-                                            "stale": False}, name)
+                                            "stale": False, "activity": []}, name)
         # the recorded hash changed instead: the same stop, of that branch only
         w = rebased(world("toy"), put("targets", "toy", "rules", B.STATE, value="0" * 64))
         self.assertEqual(check(w)["reasons"], ["rules_changed:brain/state"])
@@ -479,7 +481,7 @@ class Baseline(unittest.TestCase):
         w.gh.overrides[("GET", extra)] = (200, body)
         del w.gh.requests[:]
         self.assertEqual(check(w)["reasons"], [])
-        self.assertEqual(w.gh.requests, [("GET", path, None) for path in READS["toy"] + [extra]])  # after the others
+        self.assertEqual(w.gh.requests, [("GET", path, None) for path in READS["toy"][:-1] + [extra, ACTIVITY]])  # after the others, before the activity
         w.gh.overrides[("GET", extra)] = (200, [])
         self.assertEqual(check(w)["reasons"], ["rules_changed:brain/extra"])
         w.gh.overrides[("GET", extra)] = (200, [{"type": "deletion"}])
@@ -491,7 +493,7 @@ class Baseline(unittest.TestCase):
         self.assertEqual(check(w)["reasons"], [])
 
     def test_an_operator_check_older_than_seven_days_is_stale_and_no_hard_stop(self):
-        clean = {"ok": True, "hard_stop": False, "reasons": [], "stale": False}
+        clean = {"ok": True, "hard_stop": False, "reasons": [], "stale": False, "activity": []}
         for kind in ("toy", "copy"):
             self.assertEqual(check(world(kind), now=later(WEEK)), clean)  # exactly 7 days: not older
             self.assertEqual(check(world(kind), now=AW.CHECKED_AT), clean)
@@ -507,9 +509,9 @@ class Baseline(unittest.TestCase):
         # a hard stop beside it stays one
         w = world("toy", (WORKFLOWS, CASES["a workflow on the toy"][2]))
         self.assertEqual(check(w, now=later(WEEK + 1)),
-                         {"ok": False, "hard_stop": True, "reasons": ["toy_workflows"], "stale": True})
+                         {"ok": False, "hard_stop": True, "reasons": ["toy_workflows"], "stale": True, "activity": []})
         self.assertEqual(check(world("toy"), repo="acme/other", now=later(WEEK + 1)),
-                         {"ok": False, "hard_stop": True, "reasons": ["target_repo_mismatch"], "stale": True})
+                         {"ok": False, "hard_stop": True, "reasons": ["target_repo_mismatch"], "stale": True, "activity": []})
 
     def test_a_clock_that_is_no_time_is_unusable_and_nothing_is_read(self):
         w = world("toy")
@@ -529,7 +531,7 @@ class Compared(unittest.TestCase):
     hashes against the baseline; an operator check after the clock."""
 
     def stop(self, w: AW.World, reasons: list, msg=None, **kw) -> None:
-        self.assertEqual(check(w, **kw), {"ok": False, "hard_stop": True, "reasons": reasons, "stale": False}, msg)
+        self.assertEqual(check(w, **kw), {"ok": False, "hard_stop": True, "reasons": reasons, "stale": False, "activity": []}, msg)
 
     def test_permissions_other_than_the_recorded_ones_are_a_hard_stop(self):
         changes = {
@@ -636,7 +638,7 @@ class Compared(unittest.TestCase):
         w.gh.overrides[("GET", other)] = (200, {"visibility": "private"})
         del w.gh.requests[:]
         self.assertEqual(check(w)["reasons"], [])
-        self.assertEqual([path for _, path, _ in w.gh.requests], READS["toy"][:-1] + [other, P])  # in the names' order
+        self.assertEqual([path for _, path, _ in w.gh.requests], READS["toy"][:-2] + [other, P, ACTIVITY])  # in the names' order
         w.gh.overrides[("GET", other)] = (200, {"visibility": "public"})
         self.stop(w, ["visibility_changed:acme/referee"])
         change(w.gh, P, lambda body: dict(body, visibility="private"))
@@ -668,7 +670,7 @@ class Compared(unittest.TestCase):
         w = world("toy")
         good = AW.checkout_hashes()
         with self.assertRaisesRegex(DC.Unusable, r"\Ahashes must be "):
-            DC.check(w.gh, w.files["summary.json"], None, "toy", AW.TS)
+            DC.check(w.gh, w.files["summary.json"], None, "toy", AW.TS, None)
         for bad in ({}, [], {k: v for k, v in good.items() if k != "seats_sha256"}, dict(good, more="0" * 64),
                     dict(good, vectors_sha256=good["vectors_sha256"].upper()), dict(good, seats_sha256=None),
                     dict(good, constitutional_sha256="0" * 63)):
@@ -834,7 +836,8 @@ class Genesis(unittest.TestCase):
 
 
 class Cli(unittest.TestCase):
-    def run_cli(self, w: AW.World, stdin: str = '{"target": "toy", "now": "%s"}' % AW.TS, args=None, files=None):
+    def run_cli(self, w: AW.World, stdin: str = '{"target": "toy", "now": "%s", "previous": null}' % AW.TS,
+                args=None, files=None):
         """The command on a recorded API of ``w``'s answers and a checkout ``ROOT`` holding ``w``'s summary and the
         operator files ``files`` (``activation_world.CHECKOUT`` when ``None``)."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -849,16 +852,16 @@ class Cli(unittest.TestCase):
         return proc.returncode, json.loads(proc.stdout), proc.stderr.decode()
 
     def test_the_three_exits(self):
-        clean = {"ok": True, "hard_stop": False, "reasons": [], "stale": False}
+        clean = {"ok": True, "hard_stop": False, "reasons": [], "stale": False, "activity": []}
         self.assertEqual(self.run_cli(world("copy")), (0, clean, ""))
         code, line, err = self.run_cli(world("toy", (WORKFLOWS, CASES["a workflow on the toy"][2])))
         self.assertEqual((code, line, err), (1, dict(clean, ok=False, hard_stop=True, reasons=["toy_workflows"]), ""))
         # a stale operator check is the other exit 1: the line says it is no hard stop
-        stale = '{"target": "toy", "now": "%s"}' % later(WEEK + 1)
+        stale = '{"target": "toy", "now": "%s", "previous": null}' % later(WEEK + 1)
         self.assertEqual(self.run_cli(world("copy"), stdin=stale), (1, dict(clean, ok=False, stale=True), ""))
         w = world("toy")
         del w.gh.overrides[("GET", "/app")]  # not in the record: the replay answers 404
-        fault = {"ok": False, "hard_stop": True, "reasons": None, "stale": None}
+        fault = {"ok": False, "hard_stop": True, "reasons": None, "stale": None, "activity": None}
         now = '"now": "%s"' % AW.TS
         for got in (self.run_cli(w), self.run_cli(world(), stdin='{"target": "toy", "x": 1, %s}' % now),
                     self.run_cli(world(), stdin='{"target": "toy"}'),
@@ -870,6 +873,200 @@ class Cli(unittest.TestCase):
                     self.run_cli(world(), files={k: v for k, v in AW.CHECKOUT.items() if not k.startswith("seats/")})):
             self.assertEqual((got[0], got[1]), (2, fault))
             self.assertTrue(got[2].startswith("unusable input: "), got[2])
+
+BOT = "snowball-writer[bot]"  # ``activation_world.facts``' ``/app`` slug and GitHub's suffix of an App's bot
+OPERATOR = "operator"         # ``activation_world.baseline``'s one ``operator_logins``
+SINCE = AW.CHECKED_AT         # that baseline's ``not_before``
+X, KEPT_STATE, KEPT_INTEGRATION = "refs/heads/brain/x", "refs/heads/brain/state", "refs/heads/brain/integration"
+TYPES = ("push", "force_push", "branch_creation", "branch_deletion", "pr_merge", "merge_queue_merge", "some_new_type")
+# tohum/01c "İzinli aktörler", written out: (login, type, ref) allowed; every other triple of the table's axes offends
+ALLOWED = {(BOT, kind, ref) for kind in ("push", "branch_creation", "pr_merge")
+           for ref in (X, KEPT_STATE, KEPT_INTEGRATION)} | {(OPERATOR, "branch_deletion", X)}
+
+
+def item(n: int, ts: str, ref: str = X, kind: str = "push", login=BOT, **more) -> dict:
+    """An activity item as the API's schema names its fields (the ones read, and two that are not)."""
+    return dict({"id": n, "node_id": "A_%d" % n, "before": "0" * 40, "after": "a" * 40, "ref": ref, "timestamp": ts,
+                 "activity_type": kind, "actor": None if login is None else {"login": login, "id": 7}}, **more)
+
+
+def named(n: int, ts: str, ref: str = X, kind: str = "push", login=BOT) -> dict:
+    """What ``check``'s ``activity`` says of ``item`` with the same arguments."""
+    return {"id": n, "timestamp": ts, "ref": ref, "activity_type": kind, "actor": login}
+
+
+def acted(*items, kind: str = "toy") -> AW.World:
+    """A world whose activity page is ``items``."""
+    return world(kind, (ACTIVITY, lambda body: list(items)))
+
+
+class Activity(unittest.TestCase):
+    """tohum/01c "Etkinlik API'si": ``drift.check``'s rules 1-5 of the activity."""
+
+    def test_each_actor_type_and_ref_is_allowed_or_offends_as_the_page_says(self):
+        seen = 0
+        for login in (BOT, OPERATOR, "someone", None):
+            for kind in TYPES:
+                for ref in (X, KEPT_STATE, KEPT_INTEGRATION):
+                    got = check(acted(item(5, later(60), ref, kind, login)))
+                    if (login, kind, ref) in ALLOWED:
+                        want = {"ok": True, "hard_stop": False, "reasons": [], "stale": False, "activity": []}
+                    else:
+                        want = {"ok": False, "hard_stop": True, "reasons": ["ref_change"], "stale": False,
+                                "activity": [named(5, later(60), ref, kind, login)]}
+                    self.assertEqual(got, want, (login, kind, ref))
+                    seen += 1
+        self.assertEqual((seen, len(ALLOWED)), (84, 10))
+
+    def test_a_login_is_compared_byte_for_byte_and_the_bot_is_never_an_operator(self):
+        for login in ("Operator", "operator ", "snowball-writer", "Snowball-writer[bot]", ""):
+            self.assertEqual(check(acted(item(1, later(1), kind="branch_deletion", login=login)))["reasons"],
+                             ["ref_change"], login)
+            self.assertEqual(check(acted(item(1, later(1), kind="push", login=login)))["reasons"], ["ref_change"], login)
+        # a baseline that lists the bot among the operators gives it no deletion
+        w = rebased(acted(item(1, later(1), kind="branch_deletion", login=BOT), item(2, later(1), kind="push")),
+                    put("activity", "operator_logins", value=[OPERATOR, BOT]))
+        self.assertEqual(check(w)["activity"], [named(1, later(1), kind="branch_deletion")])
+        # no operator named: nobody deletes
+        w = rebased(acted(item(1, later(1), kind="branch_deletion", login=OPERATOR)),
+                    put("activity", "operator_logins", value=[]))
+        self.assertEqual(check(w)["reasons"], ["ref_change"])
+        # the bot is the slug GET /app answers now, not a name of this code
+        w = world("toy", ("/app", lambda app: dict(app, slug="another")), (ACTIVITY, lambda body: [
+            item(1, later(1)), item(2, later(2), login="another[bot]")]))
+        self.assertEqual(check(w)["activity"], [named(1, later(1))])
+
+    def test_only_refs_under_the_brain_s_prefix_are_judged(self):
+        for ref in ("refs/heads/main", "refs/heads/brain", "refs/heads/Brain/x", "refs/heads/brainy/x",
+                    "refs/tags/brain/x", "brain/x", "refs/heads/x/refs/heads/brain/x", ""):
+            self.assertEqual(check(acted(item(1, later(1), ref, "force_push", "someone")))["reasons"], [], ref)
+        for ref in ("refs/heads/brain/", "refs/heads/brain/a/b", "refs/heads/brain/state"):
+            self.assertEqual(check(acted(item(1, later(1), ref, "force_push", "someone")))["reasons"], ["ref_change"],
+                             ref)
+
+    def test_the_window_starts_at_the_later_of_not_before_and_ten_minutes_before_the_previous_start(self):
+        bad = lambda ts: item(1, ts, kind="force_push")  # noqa: E731
+        judged = lambda ts, previous: check(acted(bad(ts)), previous=previous)["reasons"] == ["ref_change"]  # noqa: E731
+        # no cycle before: from not_before, itself inside
+        self.assertEqual([judged(later(-1), None), judged(SINCE, None), judged(later(1), None)], [False, True, True])
+        # a previous start more than ten minutes after not_before: from 600 s before it
+        previous = later(3600)
+        self.assertEqual([judged(later(2999), previous), judged(later(3000), previous), judged(later(3001), previous)],
+                         [False, True, True])
+        self.assertEqual(judged(later(-1), previous), False)
+        # a previous start within ten minutes of not_before, at it, or before it: from not_before
+        for previous in (later(600), later(599), later(1), SINCE, later(-5000), "0001-01-01T00:00:00Z"):
+            self.assertEqual([judged(later(-1), previous), judged(SINCE, previous)], [False, True], previous)
+        self.assertEqual([judged(later(0), later(601)), judged(later(1), later(601))], [False, True])
+        # the window has no end: an item after the clock is judged
+        self.assertEqual(check(acted(bad(later(10 ** 6, AW.TS))))["reasons"], ["ref_change"])
+        # the operator lifts the stop by moving not_before past the item
+        w = acted(bad(later(50)))
+        self.assertEqual(check(w)["reasons"], ["ref_change"])
+        self.assertEqual(check(rebased(w, put("activity", "not_before", value=later(50))))["reasons"], ["ref_change"])
+        self.assertEqual(check(rebased(w, put("activity", "not_before", value=later(51))))["reasons"], [])
+
+    def test_a_previous_start_that_is_no_time_is_unusable_and_nothing_is_read(self):
+        for previous in ("2026-10-30", "2026-10-30T00:00:00+00:00", "2026-02-30T00:00:00Z", 0, True, ["x"], ""):
+            w = world()
+            with self.assertRaises(DC.Unusable, msg=repr(previous)):
+                check(w, previous=previous)
+            with self.assertRaises(DC.Unusable, msg=repr(previous)):  # before the caller's repository is compared
+                check(w, previous=previous, repo="acme/other")
+            self.assertEqual(w.gh.requests, [])
+
+    def test_a_full_page_that_does_not_reach_the_window_s_start_is_unusable(self):
+        fill = lambda count, start=1: [item(n, later(n)) for n in range(start, start + count)]  # noqa: E731
+        for name, items in (("100 inside", fill(100)), ("101 inside", fill(101)),
+                            ("the oldest at the start itself", fill(99) + [item(200, SINCE)]),
+                            ("an offender among them", fill(99) + [item(200, later(5), kind="force_push")])):
+            with self.assertRaises(DC.Unusable, msg=name):
+                check(acted(*items))
+        # one item before the start shows the window whole, wherever it stands in the page
+        for older in (fill(99) + [item(200, later(-1))], [item(200, later(-1))] + fill(99)):
+            self.assertEqual(check(acted(*older))["reasons"], [])
+        offender = item(300, later(7), kind="force_push")
+        self.assertEqual(check(acted(*([item(200, later(-1)), offender] + fill(98))))["activity"],
+                         [named(300, later(7), kind="force_push")])
+        # a page under 100 is the whole list
+        self.assertEqual(check(acted(*fill(99)))["reasons"], [])
+        # the start is the window's: with a previous cycle the same page reaches back before it
+        self.assertEqual(check(acted(*fill(100)), previous=later(700))["reasons"], [])
+        with self.assertRaises(DC.Unusable):
+            check(acted(*fill(100, start=100)), previous=later(700))
+        # no second page is asked for
+        w = acted(*fill(99))
+        check(w)
+        self.assertEqual([path for _, path, _ in w.gh.requests if "activity" in path], [ACTIVITY])
+
+    def test_an_item_not_of_the_form_is_unusable_whatever_its_ref(self):
+        good = item(1, later(1), "refs/heads/main")
+        self.assertEqual(check(acted(good))["reasons"], [])
+        cut = lambda key: {k: v for k, v in good.items() if k != key}  # noqa: E731
+        bad = [cut("id"), cut("ref"), cut("activity_type"), cut("timestamp"), cut("actor"), dict(good, id="1"),
+               dict(good, id=True), dict(good, id=1.0), dict(good, ref=None), dict(good, activity_type=7),
+               dict(good, timestamp="2026-10-30T00:00:01+00:00"), dict(good, timestamp="2026-10-30T00:00:01.000Z"),
+               dict(good, timestamp="2026-10-32T00:00:01Z"), dict(good, timestamp=1), dict(good, actor="operator"),
+               dict(good, actor={}), dict(good, actor={"login": None}), dict(good, actor=[]), "x", None, [good]]
+        for n, entry in enumerate(bad):
+            with self.assertRaises(DC.Unusable, msg=n):
+                check(acted(good, entry))
+        for body in ({"items": []}, "x", None):
+            with self.assertRaises(DC.Unusable, msg=repr(body)):
+                check(world("toy", (ACTIVITY, lambda _: body)))
+        w = world()
+        w.gh.overrides[("GET", ACTIVITY)] = (404, {"message": "Not Found"})
+        with self.assertRaises(DC.Unusable):
+            check(w)
+
+    def test_an_app_without_a_slug_is_unusable(self):
+        for how in (lambda app: {k: v for k, v in app.items() if k != "slug"}, lambda app: dict(app, slug=""),
+                    lambda app: dict(app, slug=None), lambda app: dict(app, slug=7)):
+            w = world("copy", ("/app", how))
+            with self.assertRaises(DC.Unusable):
+                check(w)
+            self.assertNotIn(("GET", ACTIVITY, None), w.gh.requests)
+
+    def test_the_offending_items_are_named_in_time_order_beside_the_other_reasons(self):
+        items = [item(9, later(30), kind="force_push"), item(3, later(30), login="someone"),
+                 item(4, later(10), KEPT_STATE, "branch_deletion", OPERATOR), item(5, later(20)),
+                 item(6, later(40), "refs/heads/main", "force_push", "someone"), item(7, later(25), login=None)]
+        w = world("toy", (ACTIVITY, lambda body: items), (WORKFLOWS, CASES["a workflow on the toy"][2]))
+        self.assertEqual(check(w, now=later(WEEK + 1)), {
+            "ok": False, "hard_stop": True, "reasons": ["ref_change", "toy_workflows"], "stale": True,
+            "activity": [named(4, later(10), KEPT_STATE, "branch_deletion", OPERATOR), named(7, later(25), login=None),
+                         named(3, later(30), login="someone"), named(9, later(30), kind="force_push")]})
+        self.assertEqual(w.gh.requests[-1], ("GET", ACTIVITY, None))  # the last read, once
+        self.assertEqual(sum(path == ACTIVITY for _, path, _ in w.gh.requests), 1)
+        # a caller writing to another repository is told no activity: none was read
+        self.assertEqual(check(acted(items[0]), repo="acme/other")["activity"], [])
+
+    def test_the_command_takes_the_previous_start_and_prints_the_items(self):
+        w = acted(item(1, later(3000), kind="force_push"))
+        stdin = '{"target": "toy", "now": "%s", "previous": %s}'
+        code, line, err = Cli.run_cli(self, w, stdin=stdin % (AW.TS, "null"))
+        self.assertEqual((code, line, err), (1, {"ok": False, "hard_stop": True, "reasons": ["ref_change"],
+                                                 "stale": False,
+                                                 "activity": [named(1, later(3000), kind="force_push")]}, ""))
+        code, line, err = Cli.run_cli(self, w, stdin=stdin % (AW.TS, '"%s"' % later(3601)))
+        self.assertEqual((code, line["ok"], line["activity"], err), (0, True, [], ""))
+        for bad in (stdin % (AW.TS, '"yesterday"'), '{"target": "toy", "now": "%s"}' % AW.TS):
+            code, line, err = Cli.run_cli(self, w, stdin=bad)
+            self.assertEqual((code, line, err.startswith("unusable input: ")), (2, DC.FAULT_LINE, True), err)
+
+    def test_the_last_start_of_a_ledger(self):
+        row = lambda n, kind, ts: json.dumps({"part": "events", "kind": kind, "ts": ts, "row_id": str(n)})  # noqa: E731
+        with unittest.mock.patch.object(SE.schema, "ledger_reasons", return_value=[]), \
+                unittest.mock.patch.object(SE.chain, "parse_row", side_effect=json.loads):
+            ledger = "\n".join([row(1, "cycle_start", "2026-10-30T01:00:00Z"), row(2, "merge", "2026-10-30T05:00:00Z"),
+                                row(3, "cycle_start", "2026-10-30T02:00:00Z"),
+                                json.dumps({"part": "drill", "kind": "cycle_start", "ts": "2026-10-30T09:00:00Z"}),
+                                row(4, "status", "2026-10-30T03:00:00Z")]) + "\n"
+            self.assertEqual(SE.last_start(ledger.encode()), "2026-10-30T02:00:00Z")  # the last in the file's order
+            self.assertEqual(SE.last_start((row(2, "merge", "2026-10-30T05:00:00Z") + "\n").encode()), None)
+        self.assertEqual(SE.last_start(b""), None)
+        with self.assertRaises(SE.Unusable):
+            SE.last_start(b"not a ledger\n")
 
 
 class Recorded:
@@ -892,7 +1089,8 @@ def reads_of_two() -> list[tuple]:
     """The reads of t1's check and then t2's that name either repository, in order: each check reads the visibility
     of both (the baseline names every target's repository), in the names' order, after its own target's facts."""
     both = [("GET", "/repos/acme/t1"), ("GET", "/repos/acme/t2")]
-    return reads_of("acme/t1")[:-1] + both + reads_of("acme/t2")[:-1] + both
+    return [read for tid in ("acme/t1", "acme/t2")
+            for read in reads_of(tid)[:-2] + both + reads_of(tid)[-1:]]
 
 
 class Yaz(TLW.StateBase):
@@ -915,7 +1113,7 @@ class Yaz(TLW.StateBase):
         out = self.job()
         self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"], out["drift"]),
                          (False, "drift", reasons, "t1", [],
-                          {"checked": ["t1"], "drifted": {"t1": reasons}, "stale": False}), out)
+                          {"checked": ["t1"], "drifted": {"t1": reasons}, "stale": False, "activity": {}}), out)
         self.assertEqual((self.writes(), self.gh.refs, self.signer.payloads), ([], refs, []))
         self.gh.overrides[("GET", path)] = kept
 
@@ -940,7 +1138,7 @@ class Yaz(TLW.StateBase):
         job = self.job()
         out = self.line(job)
         self.assertEqual((out["ok"], out["done"], out["merge"], job["drift"]),
-                         (True, ["D5", "D6"], "good", {"checked": ["t1"], "drifted": {}, "stale": False}), job)
+                         (True, ["D5", "D6"], "good", {"checked": ["t1"], "drifted": {}, "stale": False, "activity": {}}), job)
         sent = [(m, path) for m, path, _ in self.gh.requests]
         first_write = next(i for i, (m, _) in enumerate(sent) if m != "GET")
         reads = [("GET", path.replace(AW.REPO, YW.REPO)) for path in READS["toy"]]
@@ -969,7 +1167,7 @@ class Yaz(TLW.StateBase):
         self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"]),
                          (False, "drift", ["toy_workflows"], "t2", []), out)
         self.assertEqual(out["drift"], {"checked": ["t1", "t2"], "drifted": {"t2": ["toy_workflows"]},
-                                        "stale": False})
+                                        "stale": False, "activity": {}})
         self.assertEqual(([s for s in sent if s[0] != "GET"], self.signer.payloads), ([], []))
         for gh in ghs.values():
             self.assertEqual((gh.refs[B.STATE], gh.refs[B.INTEGRATION]), (TLW.HEADS[B.STATE], TLW.HEADS[B.INTEGRATION]))
@@ -985,7 +1183,7 @@ class Yaz(TLW.StateBase):
         ghs = self.two()
         out, sent = self.run_two(ghs)
         self.assertEqual((out["ok"], out["drift"]),
-                         (True, {"checked": ["t1", "t2"], "drifted": {}, "stale": False}), out)
+                         (True, {"checked": ["t1", "t2"], "drifted": {}, "stale": False, "activity": {}}), out)
         first_write = next(i for i, (m, _) in enumerate(sent) if m != "GET")
         reads = reads_of_two()
         self.assertEqual([s for s in sent[:first_write] if s in reads], reads)
@@ -998,7 +1196,7 @@ class Yaz(TLW.StateBase):
         out, sent = self.run_two(ghs)
         self.assertEqual((out["ok"], out["target"], out["reason"], [t["ok"] for t in out["targets"]]),
                          (False, "t2", "pulled_invalid", [True, False]), out)
-        self.assertEqual(out["drift"], {"checked": ["t1"], "drifted": {}, "stale": False})
+        self.assertEqual(out["drift"], {"checked": ["t1"], "drifted": {}, "stale": False, "activity": {}})
         # of the refused target only what t1's baseline names is read: its repository's visibility
         self.assertEqual(ghs["t2"].requests, [("GET", "/repos/acme/t2", None)])
 
@@ -1036,7 +1234,7 @@ class Yaz(TLW.StateBase):
         out = self.job()
         self.assertEqual({k: out[k] for k in out if k not in ("job", "steps", "mfs", "offline")},
                          {"ok": False, "reason": "operator_check_stale", "targets": [], "policy": {},
-                          "drift": {"checked": ["t1"], "drifted": {}, "stale": True}}, out)
+                          "drift": {"checked": ["t1"], "drifted": {}, "stale": True, "activity": {}}}, out)
         self.assertEqual((self.writes(), self.gh.refs, self.signer.payloads), ([], refs, []))
         sent = [(m, path) for m, path, _ in self.gh.requests]
         self.assertEqual(sent, [("GET", path.replace(AW.REPO, YW.REPO)) for path in READS["toy"]])
@@ -1057,7 +1255,7 @@ class Yaz(TLW.StateBase):
         self.stale_summary(1, [YW.entry("t1"), YW.entry("t2")])
         out, sent = self.run_two(ghs)
         self.assertEqual((out["ok"], out["reason"], out["targets"], out["drift"]),
-                         (False, "operator_check_stale", [], {"checked": ["t1", "t2"], "drifted": {}, "stale": True}),
+                         (False, "operator_check_stale", [], {"checked": ["t1", "t2"], "drifted": {}, "stale": True, "activity": {}}),
                          out)
         self.assertNotIn("target", out)
         self.assertEqual(([s for s in sent if s[0] != "GET"], self.signer.payloads), ([], []))
@@ -1092,6 +1290,54 @@ class Yaz(TLW.StateBase):
         self.assertEqual(self.gh.requests, [])
 
 
+class YazActivity(TLW.StateBase):
+    """The activity in ``yaz``: the window's start is the pulled ledger's, a stop writes nothing and lasts."""
+
+    ready, job = Yaz.ready, Yaz.job
+
+    def act(self, *items) -> None:
+        self.gh.overrides[("GET", "/repos/%s/activity?per_page=100" % YW.REPO)] = (200, list(items))
+
+    def started(self) -> str:
+        """The ``ts`` of the last ``cycle_start`` row of the state ``pulled`` carries, read here by ``json``."""
+        rows = [json.loads(line) for line in self.state[B.STATE_LEDGER].decode().splitlines()]
+        return [r["ts"] for r in rows if (r["part"], r["kind"]) == ("events", "cycle_start")][-1]
+
+    def test_an_item_that_is_not_allowed_stops_the_job_until_the_operator_moves_not_before(self):
+        self.ready()
+        at = later(-300, self.started())
+        self.act(item(8, at, KEPT_STATE, "force_push", "someone"), item(9, at))
+        refs = dict(self.gh.refs)
+        for _ in range(2):  # the stop wrote nothing, so the next job judges the same window
+            out = self.job()
+            self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"], out["drift"]),
+                             (False, "drift", ["ref_change"], "t1", [],
+                              {"checked": ["t1"], "drifted": {"t1": ["ref_change"]}, "stale": False,
+                               "activity": {"t1": [named(8, at, KEPT_STATE, "force_push", "someone")]}}), out)
+            self.assertEqual((self.writes(), self.gh.refs, self.signer.payloads), ([], refs, []))
+        TLW.write_tree(self.workspace, {J.SUMMARY: YW.summary(
+            None, activity={"operator_logins": [OPERATOR], "not_before": later(1, at)}).decode()})
+        job = self.job()
+        self.assertEqual((self.line(job)["ok"], job["drift"]["activity"], bool(self.writes())), (True, {}, True), job)
+
+    def test_the_window_starts_ten_minutes_before_the_pulled_ledger_s_last_cycle_start(self):
+        self.ready()
+        self.assertGreater(DC.moment(self.started()) - DC.moment(SINCE), datetime.timedelta(minutes=10))
+        self.act(item(8, later(-600, self.started()), kind="force_push"))
+        out = self.job()
+        self.assertEqual((out["reason"], out["reasons"], self.writes()), ("drift", ["ref_change"], []), out)
+        self.act(item(8, later(-601, self.started()), kind="force_push"), item(9, later(-600, self.started())))
+        job = self.job()
+        self.assertEqual((self.line(job)["ok"], job["drift"]["activity"], bool(self.writes())), (True, {}, True), job)
+
+    def test_a_ledger_that_does_not_conform_gives_the_widest_window(self):
+        art = unittest.mock.Mock(state={B.STATE_LEDGER: b"not a ledger\n"})
+        self.assertIsNone(J._previous_start(art))
+        self.assertIsNone(J._previous_start(unittest.mock.Mock(state={B.STATE_LEDGER: b""})))
+        self.assertEqual(J._previous_start(unittest.mock.Mock(state={B.STATE_LEDGER: self.state[B.STATE_LEDGER]})),
+                         self.started())
+
+
 class YazCheckout(TLW.StateBase):
     """``yaz`` and the operator files of its checkout (tohum/01c's three hashes; ``Yaz``'s world)."""
     ready, job = Yaz.ready, Yaz.job
@@ -1109,7 +1355,7 @@ class YazCheckout(TLW.StateBase):
             out = self.job()
             self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"], out["drift"]),
                              (False, "drift", [reason], "t1", [],
-                              {"checked": ["t1"], "drifted": {"t1": [reason]}, "stale": False}), out)
+                              {"checked": ["t1"], "drifted": {"t1": [reason]}, "stale": False, "activity": {}}), out)
             self.assertEqual((self.writes(), self.gh.refs, self.signer.payloads), ([], refs, []))
             for path in files:
                 os.remove(os.path.join(self.workspace, *path.split("/")))
@@ -1118,7 +1364,7 @@ class YazCheckout(TLW.StateBase):
         YazPolicy.repolicied(self, "t1", lambda doc: doc["constitutional"].update(monthly_cap_usd=10001))
         job = self.job()
         self.assertEqual((self.line(job)["ok"], job["drift"], bool(self.writes())),
-                         (True, {"checked": ["t1"], "drifted": {}, "stale": False}, True), job)
+                         (True, {"checked": ["t1"], "drifted": {}, "stale": False, "activity": {}}, True), job)
 
     def test_a_checkout_without_an_operator_file_is_unusable_and_no_request_is_sent(self):
         self.ready()
@@ -1242,7 +1488,7 @@ class YazPolicy(Yaz):
         out, sent = self.run_two(ghs)
         self.assertEqual((out["ok"], out["reason"], out["reasons"], out["target"], out["targets"], out["policy"]),
                          (False, "policy_unusable", named, "t2", [], {"t2": named}), out)
-        self.assertEqual(out["drift"], {"checked": ["t1", "t2"], "drifted": {}, "stale": False})
+        self.assertEqual(out["drift"], {"checked": ["t1", "t2"], "drifted": {}, "stale": False, "activity": {}})
         self.assertEqual(([s for s in sent if s[0] != "GET"], self.signer.payloads), ([], []))
         for gh in ghs.values():
             self.assertEqual((gh.refs[B.STATE], gh.refs[B.INTEGRATION]), (TLW.HEADS[B.STATE], TLW.HEADS[B.INTEGRATION]))
@@ -1300,10 +1546,10 @@ class Listed(unittest.TestCase):
         own = {c for c in globals().values() if isinstance(c, type) and issubclass(c, unittest.TestCase)
                and c.__module__ == __name__}
         self.assertEqual(own, set(LISTED))
-        self.assertEqual(len(LISTED), 12)
+        self.assertEqual(len(LISTED), 14)
 
 
-LISTED = (Check, Baseline, Compared, Held, Genesis, Cli, Yaz, YazCheckout, YazPolicy, Order, YazGenesis, Listed)
+LISTED = (Check, Baseline, Compared, Activity, Held, Genesis, Cli, Yaz, YazActivity, YazCheckout, YazPolicy, Order, YazGenesis, Listed)
 
 
 def load_tests(loader, standard, pattern):

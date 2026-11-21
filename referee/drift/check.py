@@ -17,7 +17,8 @@ each ``ruleset_id`` of those three answers; for a ``toy`` ``GET /repos/{repo}/ac
 ``GET /repos/{repo}/actions/permissions``; then, for the baseline, ``GET /repos/{repo}/rulesets?per_page=100`` (and
 ``&page=2`` and on, while a page holds 100 items), ``GET /repos/{r}`` for each repository ``r`` the baseline's
 ``visibility`` names, in the names' order, and ``GET /repos/{repo}/rules/branches/{branch}`` for each branch the
-baseline names that is not one of those three. A read answered other than 200, or a body not of the form read, is
+baseline names that is not one of those three, and last ``GET /repos/{repo}/activity?per_page=100`` (one page,
+no filter). A read answered other than 200, or a body not of the form read, is
 ``Unusable``: no verdict. Genesis sends only the reads of ``rules`` and ``actions``: those before the baseline's.
 
 **The baseline** (tohum/01c). A summary without a top-level ``drift`` object is ``Unusable`` (the reasons below are
@@ -89,15 +90,47 @@ Reasons (``rules``, then ``actions``):
 One more, of the caller, before any read: ``target_repo_mismatch``: the repository the caller writes to (``check``'s
 ``repo``, when given) is not the summary entry's ``repo``; the facts read would be another repository's.
 
-``check`` answers ``{ok, hard_stop, reasons, stale}``: ``reasons`` sorted, ``hard_stop`` true when there is one,
-``ok`` true when there is none and the operator's check is not stale. It reads only; the stop itself is the caller's
+**The activity** (tohum/01c "Etkinlik API'si"; ``activity``). One read, the first page of 100 of the target
+repository's activity, and these rules, each bound by ``test_drift.Activity``:
+
+1. *The form.* Every item of the page is an object with an integer ``id``, strings ``ref`` and ``activity_type``,
+   a ``timestamp`` ``YYYY-MM-DDTHH:MM:SSZ`` of a real date and an ``actor`` that is ``null`` or an object with a
+   string ``login``; any other page is ``Unusable``, whatever ref the item is of.
+2. *The window* starts at the later of ``drift.activity.not_before`` and 600 s before ``previous``, the ``ts`` of
+   the last ``events``/``cycle_start`` row of the target's ledger as the caller read it (``null``: no such row,
+   the window starts at ``not_before``). It has no end: an item stamped after ``now`` is judged too.
+3. *Shown from its start.* A page of 100 items (or more) none of which is stamped before the window's start does
+   not show the window from its start and is ``Unusable``; a shorter page is the whole list. The order of the
+   items is not relied on (the oldest is the least ``timestamp``).
+4. *Judged* are the items stamped at or after the window's start whose ``ref`` begins with ``refs/heads/brain/``
+   (byte for byte: ``refs/heads/brain`` itself and ``refs/heads/Brain/x`` are not). The writer's bot is the login
+   ``<GET /app's slug>[bot]`` (no non-empty string ``slug``: ``Unusable``). An item is allowed only when
+   (a) its actor is the bot and its type is ``push``, ``branch_creation`` or ``pr_merge``, or (b) its actor is one
+   of ``drift.activity.operator_logins``, is not the bot, its type is ``branch_deletion`` and its ref is neither
+   ``refs/heads/brain/state`` nor ``refs/heads/brain/integration``. Logins are compared byte for byte (another
+   case is another login here, the stopping side). Every other judged item offends: a ``null`` actor, another
+   login, any other type (``force_push``, ``merge_queue_merge``, one this code has never seen), a deletion by the
+   bot, anything but a deletion by an operator.
+5. *The answer.* One offending item or more is the reason ``ref_change`` (tohum/26i's trigger for these items),
+   and ``check``'s ``activity`` names them: ``{id, timestamp, ref, activity_type, actor}`` (``actor`` the login or
+   null), ordered by ``timestamp`` then ``id``; ``[]`` when none offends.
+
+``check`` answers ``{ok, hard_stop, reasons, stale, activity}``: ``reasons`` sorted, ``hard_stop`` true when there
+is one, ``ok`` true when there is none and the operator's check is not stale. It reads only; the stop itself is
+the caller's
 (``loop.job``'s ``yaz`` runs it for every target it serves before it serves the first, writes nothing on any target
 when one has a reason or the check is stale, and ends the job).
 
 Out of scope, stated (none of these is read, so none is promised):
 
-- the baseline's ``activity``, validated in form and compared with nothing: tohum/01c's "Etkinlik API'si" (the
-  activity read, its window and actors, Gözcü's ``hard_stop`` row for it) is not built;
+- the activity beyond the first page of 100 (no second page is asked for: rule 3 refuses instead), activity of
+  refs outside ``refs/heads/brain/``, and whether the API lists every change of a ref (it is GitHub's record);
+- the ``timestamp`` as the live API writes it: the form of rule 1 is 01c's one form of a time and no answer of
+  the real API was seen here; another writing (an offset, fractions of a second) is ``Unusable``, never read
+  loosely;
+- Gözcü's ``hard_stop`` row for the offending items (tohum/26i): nothing is written here or by the caller. The
+  stop lasts all the same while the items stay in the window: a job stopped so writes no ``cycle_start`` row, so
+  only the operator's ``not_before`` moves the window past them (``test_drift.YazActivity``);
 - a clean stop that is "not a red job" with a warning the operator sees (01c): ``stale`` is answered here, and
   ``loop.job`` still ends such a job with exit 1;
 - the policy a cycle was pulled with (``pulled``'s copy): the hash is of the checkout's ``policy.json`` only, and a
@@ -114,10 +147,11 @@ Out of scope, stated (none of these is read, so none is promised):
 
 Command line, run from ``referee/``, one JSON line on stdout, the cause on stderr::
 
-    python -m drift.check check API ROOT   stdin {"target": id, "now": "YYYY-MM-DDTHH:MM:SSZ"}
-        -> {ok, hard_stop, reasons, stale}
+    python -m drift.check check API ROOT
+        stdin {"target": id, "now": "YYYY-MM-DDTHH:MM:SSZ", "previous": "YYYY-MM-DDTHH:MM:SSZ" | null}
+        -> {ok, hard_stop, reasons, stale, activity}
         exit 0 no drift; 1 a hard stop or a stale operator check (the line says which);
-        2 unusable ({"ok": false, "hard_stop": true, "reasons": null, "stale": null})
+        2 unusable ({"ok": false, "hard_stop": true, "reasons": null, "stale": null, "activity": null})
 
 ``API`` is a recorded API (``target.write.Replay``: ``{"GET <path>": body}``), ``ROOT`` a checkout of the referee
 repository: the folder holding ``setup/summary.json``, ``policy.json``, ``vectors/`` and ``seats/``.
@@ -152,8 +186,16 @@ TREES = {"vectors_sha256": "vectors", "seats_sha256": "seats"}  # tohum/01c: ope
 HASH_REASONS = {"constitutional_sha256": "constitutional_hash_mismatch", "vectors_sha256": "vectors_hash_mismatch",
                 "seats_sha256": "seats_hash_mismatch"}
 PAGE = 100  # tohum/01c: the ruleset list is read with per_page=100, every page
-FAULT_LINE = {"ok": False, "hard_stop": True, "reasons": None, "stale": None}
+FAULT_LINE = {"ok": False, "hard_stop": True, "reasons": None, "stale": None, "activity": None}
 STALE_AFTER = datetime.timedelta(days=7)  # tohum/01c: an operator check older than this ends the cycle cleanly
+TIME = "%Y-%m-%dT%H:%M:%SZ"
+# tohum/01c "Etkinlik API'si": the refs judged, the window's slack before the previous cycle's start, who may do what
+BRAIN_REFS = "refs/heads/brain/"
+ACTIVITY_SLACK = datetime.timedelta(minutes=10)
+WRITER_TYPES = ("push", "branch_creation", "pr_merge")
+OPERATOR_TYPES = ("branch_deletion",)
+KEPT_REFS = ("refs/heads/" + STATE, "refs/heads/" + INTEGRATION)  # nobody deletes these two
+REF_CHANGE = "ref_change"  # tohum/26i: the trigger of an activity entry that is not allowed
 
 
 class Unusable(ValueError):
@@ -265,7 +307,7 @@ BASELINE = schema.shape({
 
 def moment(ts: str) -> datetime.datetime:
     """The instant of a ``YYYY-MM-DDTHH:MM:SSZ``; ``ValueError`` when it is no date."""
-    return datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+    return datetime.datetime.strptime(ts, TIME)
 
 
 def baseline(summary: dict, target_id: str) -> dict:
@@ -421,6 +463,56 @@ def recorded(reads: Reads, drift: dict, entry: dict, hashes: dict[str, str]) -> 
     return reasons
 
 
+def window(drift: dict, previous: Any) -> str:
+    """The start of the activity window (rule 2): the later of ``drift.activity.not_before`` and 600 s before
+    ``previous``; ``previous`` ``None`` is no earlier cycle. ``Unusable`` for a ``previous`` that is no time."""
+    since = drift["activity"]["not_before"]
+    if previous is None:
+        return since
+    if _instant(previous, "previous"):
+        raise Unusable("previous must be YYYY-MM-DDTHH:MM:SSZ or null")
+    if moment(previous) - moment(since) > ACTIVITY_SLACK:
+        since = (moment(previous) - ACTIVITY_SLACK).strftime(TIME)
+    return since
+
+
+def _entry(item: Any) -> bool:
+    """Rule 1: an activity item of the form read."""
+    return isinstance(item, dict) and type(item.get("id")) is int and isinstance(item.get("ref"), str) \
+        and isinstance(item.get("activity_type"), str) and not _instant(item.get("timestamp"), "timestamp") \
+        and "actor" in item and (item["actor"] is None or isinstance(item["actor"], dict)
+                                 and isinstance(item["actor"].get("login"), str))
+
+
+def _allowed(login: Any, kind: str, ref: str, bot: str, operators: list[str]) -> bool:
+    """Rule 4: the bot pushes, creates and merges; an operator who is not the bot deletes, never the two kept refs."""
+    if login == bot:
+        return kind in WRITER_TYPES
+    return login in operators and kind in OPERATOR_TYPES and ref not in KEPT_REFS
+
+
+def activity(reads: Reads, drift: dict, entry: dict, previous: Any) -> list[dict]:
+    """The offending items of the target repository's activity (the module's rules 1-5), ``[]`` when none."""
+    since = window(drift, previous)
+    slug = reads.get("/app", dict).get("slug")
+    if not isinstance(slug, str) or not slug:
+        raise Unusable("GET /app: no slug to name the writer's bot by")
+    path = "/repos/%s/activity?per_page=%d" % (entry["repo"], PAGE)
+    body = reads.get(path, list)
+    if not all(_entry(item) for item in body):
+        raise Unusable("GET %s: an item not of the form {id, ref, activity_type, timestamp, actor}" % path)
+    if len(body) >= PAGE and min(item["timestamp"] for item in body) >= since:
+        raise Unusable("GET %s: a full page that does not reach back to %s, the window's start" % (path, since))
+    found = []
+    for item in body:
+        login = item["actor"]["login"] if item["actor"] is not None else None
+        if item["ref"].startswith(BRAIN_REFS) and item["timestamp"] >= since and not _allowed(
+                login, item["activity_type"], item["ref"], slug + "[bot]", drift["activity"]["operator_logins"]):
+            found.append({"id": item["id"], "timestamp": item["timestamp"], "ref": item["ref"],
+                          "activity_type": item["activity_type"], "actor": login})
+    return sorted(found, key=lambda e: (e["timestamp"], e["id"]))
+
+
 def rules(reads: Reads, summary: dict, entry: dict) -> set[str]:
     """The reasons of the App's scope and of the three branches' rules (``summary`` and ``entry`` as ``target``
     read them)."""
@@ -469,10 +561,12 @@ def actions(reads: Reads, entry: dict) -> set[str]:
     return set()
 
 
-def check(transport: Any, summary: bytes, hashes: Any, target_id: Any, now: Any, repo: Any = None) -> dict:
-    """``{ok, hard_stop, reasons, stale}`` (see the module docstring); reads only, writes nothing. ``hashes`` are
-    the three of the caller's checkout (``held``); ``now`` is the caller's clock, ``YYYY-MM-DDTHH:MM:SSZ``;
-    ``repo``, when given, is the repository the caller is about to write to."""
+def check(transport: Any, summary: bytes, hashes: Any, target_id: Any, now: Any, previous: Any,
+          repo: Any = None) -> dict:
+    """``{ok, hard_stop, reasons, stale, activity}`` (see the module docstring); reads only, writes nothing.
+    ``hashes`` are the three of the caller's checkout (``held``); ``now`` is the caller's clock,
+    ``YYYY-MM-DDTHH:MM:SSZ``; ``previous`` is the ``ts`` of the last ``cycle_start`` row of the target's ledger or
+    ``None`` (``window``); ``repo``, when given, is the repository the caller is about to write to."""
     doc = read_json(summary, "summary.json")
     entry = target(doc, target_id)
     drift = baseline(doc, target_id)
@@ -483,11 +577,15 @@ def check(transport: Any, summary: bytes, hashes: Any, target_id: Any, now: Any,
     if moment(drift["operator_checked_at"]) > moment(now):
         raise Unusable("summary.json: drift.operator_checked_at is after now")
     stale = moment(now) - moment(drift["operator_checked_at"]) > STALE_AFTER
+    window(drift, previous)  # a ``previous`` that is no time is refused before any read
     if repo is not None and repo != entry["repo"]:
-        return {"ok": False, "hard_stop": True, "reasons": ["target_repo_mismatch"], "stale": stale}
+        return {"ok": False, "hard_stop": True, "reasons": ["target_repo_mismatch"], "stale": stale, "activity": []}
     reads = Reads(transport)
-    reasons = sorted(rules(reads, doc, entry) | actions(reads, entry) | recorded(reads, drift, entry, hashes))
-    return {"ok": not reasons and not stale, "hard_stop": bool(reasons), "reasons": reasons, "stale": stale}
+    reasons = rules(reads, doc, entry) | actions(reads, entry) | recorded(reads, drift, entry, hashes)
+    offending = activity(reads, drift, entry, previous)
+    reasons = sorted(reasons | ({REF_CHANGE} if offending else set()))
+    return {"ok": not reasons and not stale, "hard_stop": bool(reasons), "reasons": reasons, "stale": stale,
+            "activity": offending}
 
 
 def _read(path: str) -> bytes:
@@ -506,9 +604,9 @@ def main(argv: list[str]) -> int:
         summary = _read(os.path.join(argv[2], *SUMMARY.split("/")))
         hashes = held(argv[2])
         request = read_json(sys.stdin.buffer.read(), "stdin")
-        if not isinstance(request, dict) or set(request) != {"target", "now"}:
-            raise Unusable('stdin must be {"target", "now"} and nothing else')
-        out = check(api, summary, hashes, request["target"], request["now"])
+        if not isinstance(request, dict) or set(request) != {"target", "now", "previous"}:
+            raise Unusable('stdin must be {"target", "now", "previous"} and nothing else')
+        out = check(api, summary, hashes, request["target"], request["now"], request["previous"])
         sys.stdout.write(json.dumps(out, sort_keys=True) + "\n")
         return 0 if out["ok"] else 1
     except (Unusable, write.Unusable) as exc:

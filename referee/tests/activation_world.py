@@ -150,6 +150,7 @@ def facts(kind: str, repo: str = REPO) -> dict:
         "/app": {"id": APP_ID, "slug": "snowball-writer", "permissions": dict(APP_PERMISSIONS)},
         p: {"full_name": repo, "visibility": "public", "private": False},
         p + "/rulesets?per_page=100": [{"id": n, "name": "ruleset-%d" % n} for n in (1, 2, 3)],
+        p + "/activity?per_page=100": [],
         "/installation/repositories": {"total_count": 1, "repositories": [{"full_name": repo}]},
         p + "/rules/branches/brain/state": [rule("deletion", 1), rule("non_fast_forward", 1)],
         p + "/rules/branches/brain/integration": [

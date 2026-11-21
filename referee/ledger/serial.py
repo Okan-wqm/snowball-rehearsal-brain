@@ -94,6 +94,13 @@ def rows(ledger: bytes) -> list[dict]:
     return _rows(ledger)
 
 
+def last_start(ledger: bytes) -> str | None:
+    """The ``ts`` of the last ``events``/``cycle_start`` row of ``ledger``, ``None`` when it has none (an empty
+    ledger among them); ``Unusable`` when the ledger does not conform."""
+    starts = [row["ts"] for row in _rows(ledger) if _type(row) == CYCLE_START]
+    return starts[-1] if starts else None
+
+
 def unfinished(ledger: bytes) -> list[str]:
     """The merge SHAs of ``ledger`` whose sentinel has not finished, in file order; see the module docstring."""
     open_: dict[str, bool] = {}  # merge sha -> still unfinished, in file order

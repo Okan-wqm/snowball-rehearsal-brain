@@ -224,7 +224,7 @@ class StateBase(YazBase):
         with open(os.path.join(self.workspace, *J.SUMMARY.split("/")), "rb") as fh:
             summary = fh.read()
         for tid in ghs:
-            self.assertEqual(DC.check(probe, summary, AW.checkout_hashes(), tid, YW.TS, "acme/" + tid)["reasons"], [])
+            self.assertEqual(DC.check(probe, summary, AW.checkout_hashes(), tid, YW.TS, None, "acme/" + tid)["reasons"], [])
             ghs[tid].requests[:] = before[tid]
         return probe.calls
 
@@ -368,7 +368,7 @@ class D6(StateBase):
         )
         # the job's first step has read the setup facts (stage 1 MF6); the refused target adds no request to them
         with open(os.path.join(self.workspace, *J.SUMMARY.split("/")), "rb") as fh:
-            DC.check(self.gh, fh.read(), AW.checkout_hashes(), "t1", YW.TS, YW.REPO)
+            DC.check(self.gh, fh.read(), AW.checkout_hashes(), "t1", YW.TS, None, YW.REPO)
         reads = self.gh.requests[:]
         for make, want in cases:
             with self.subTest(want=want):

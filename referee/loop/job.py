@@ -211,8 +211,9 @@ refused tree is ``pulled_invalid``). Then:
   ``setup/summary.json`` for each served target, in the order served, against the repository its ``pulled`` names
   (the one D6, or the activation of a genesis cycle, writes to), through the transport given or, the job's own,
   ``writer_transport`` with the App's credential (``GET /app``; a transport of its own: D6's writer keeps none).
-  The job's line carries ``drift`` ``{checked, drifted, stale}``: the ids checked, ``{id: reasons}`` of those with a
-  reason (a rule, the App's scope, a workflow, a difference from the summary's ``drift`` baseline of tohum/01c,
+  The job's line carries ``drift`` ``{checked, drifted, stale, activity}``: the ids checked, ``{id: reasons}`` of those with a
+  reason (``ref_change``: an item of the repository's activity since the cycle before, on a ``refs/heads/brain/``
+  ref, by an actor or of a type tohum/01c does not allow, the items in ``activity`` ``{id: items}``; a rule, the App's scope, a workflow, a difference from the summary's ``drift`` baseline of tohum/01c,
   among them the three hashes of the checkout's operator files, ``policy.json``'s ``constitutional``, ``vectors/``
   and ``seats/``, read once per job by ``drift.check.held``: ``drift.check``'s list, or ``target_repo_mismatch``) and whether the baseline's ``operator_checked_at`` is more
   than 7 days before the job's clock. Any reason on
@@ -1046,12 +1047,13 @@ def yaz_drift(environ: dict[str, str], served: list[str], transport: Any = None,
     """MF6 of stage 1, ``yaz``'s step after ``yaz_offline`` and before any target is served (see the module docstring):
     ``drift.check`` of the checkout's ``setup/summary.json`` for every target of ``served`` whose ``pulled`` is
     read and names a repository, against that repository (the one D6 or the activation would write to):
-    ``{checked, drifted, stale}``, the ids checked in the order served, ``{id: reasons}`` of those with a reason and
-    whether the summary's operator check is stale at ``now`` (tohum/01c). The three hashes compared with the
+    ``{checked, drifted, stale, activity}``, the ids checked in the order served, ``{id: reasons}`` of those with a
+    reason, whether the summary's operator check is stale at ``now`` (tohum/01c) and ``{id: items}`` of those with
+    an activity item that is not allowed (``drift.check``'s ``activity``; their reason is ``ref_change``). The three hashes compared with the
     baseline's are the checkout's (``drift.check.held``: ``policy.json``, ``vectors/``, ``seats/``), read once. Its
     own transport (``transport`` ``None``) is ``writer_transport`` with the App's credential, for ``GET /app``."""
     now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
-    out: dict[str, Any] = {"checked": [], "drifted": {}, "stale": False}
+    out: dict[str, Any] = {"checked": [], "drifted": {}, "stale": False, "activity": {}}
     summary = None
     for tid in served:
         art, _, refused = _pulled_unit(environ, tid)
@@ -1070,14 +1072,27 @@ def yaz_drift(environ: dict[str, str], served: list[str], transport: Any = None,
                 raise Unusable("yaz: drift: %s" % cli.cause(exc)) from None
         transport = transport or writer_transport(environ, now, app=True)
         try:
-            got = DC.check(transport, summary, hashes, tid, now().strftime("%Y-%m-%dT%H:%M:%SZ"), repo)
+            got = DC.check(transport, summary, hashes, tid, now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                           _previous_start(art), repo)
         except (DC.Unusable, W.ApiError, W.Unusable) as exc:
             raise Unusable("yaz: drift: %s" % cli.cause(exc)) from None
         out["checked"].append(tid)
         if got["hard_stop"]:
             out["drifted"][tid] = got["reasons"]
+        if got["activity"]:
+            out["activity"][tid] = got["activity"]
         out["stale"] = out["stale"] or got["stale"]
     return out
+
+
+def _previous_start(art: Any) -> str | None:
+    """The start of the cycle before this one, for the activity window (tohum/01c): ``ledger.serial.last_start``
+    of ``pulled``'s ledger. A ledger that does not conform gives ``None``, the widest window (from the baseline's
+    ``not_before``): judging that ledger is D6's, which stops on it."""
+    try:
+        return SE.last_start(art.state[B.STATE_LEDGER])
+    except SE.Unusable:
+        return None
 
 
 def yaz_policy(environ: dict[str, str], served: list[str]) -> dict[str, list[str]]:
