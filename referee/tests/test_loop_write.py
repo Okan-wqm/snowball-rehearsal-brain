@@ -334,7 +334,8 @@ class D6(StateBase):
         self.assertEqual([p for m, p in self.writes() if "/git/refs" in p], ["/repos/acme/t1/git/refs/heads/brain/state"])
         self.assertEqual(self.gh.refs[B.INTEGRATION], HEADS[B.INTEGRATION])
         [decision] = [r for r in rows_of(self.state_file(B.STATE_LEDGER)) if r["kind"] == "decision"]
-        self.assertEqual((decision["payload"]["reasons"], decision["cause"]), (["merge_paused"], "unknown"))
+        # a closed gate's reject carries no cause (tohum/26j "Kapalı kapının reddi")
+        self.assertEqual((decision["payload"]["reasons"], "cause" in decision), (["merge_paused"], False))
 
     def test_a_moved_head_writes_nothing(self):
         self.kos({"good": candidate(GOOD)})

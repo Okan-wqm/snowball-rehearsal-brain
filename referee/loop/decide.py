@@ -26,14 +26,6 @@ the same ledger; tohum/28, 27a).
   ``artefact_hash_mismatch``. A ``finding.json``, run file or ``hashes.json`` ``gate.check`` cannot use is
   ``candidate_unusable``;
 - every reason of ``frozen`` (tohum/28: the merge gate is closed), so under a freeze no candidate merges;
-- in every cycle but the genesis cycle (``loop.pulled.genesis``), the reasons of ``gate.allowlist.reasons``
-  (P1 MF9, tohum/26j "İzin listesi, MF9") for the candidate's package, against ``art.organs`` (the organ
-  definitions of the accepted SHA) and the ``accept`` rows of ``pulled``'s ``brain/state`` ledger (the ledger
-  the cycle started from: rows this cycle writes open the gate from the next). The candidates judged here are
-  the ready candidates of ``candidates/<target>/``, whose package names no organ (``READY``), so each carries
-  ``no_organ`` and no cycle after the genesis cycle merges one (26j: "Aşama 0'ın hazır adayları P1'in
-  aktarımıyla biter"); the genesis cycle keeps stage 0's rule. A ledger ``ledger.serial`` or the allowlist
-  cannot read is ``Unusable`` for the whole cycle;
 - merges are serial: the first candidate with no reason is the cycle's merge; every later one is judged with that
   candidate in ``unfinished_sentinels`` (its merge is written in D6 and its sentinel runs in the next cycle's D7),
   so it carries ``sentinel_pending``.
@@ -42,8 +34,7 @@ the same ledger; tohum/28, 27a).
 A recipe whose ``inputs`` is not a list of strings, or a tree ``profile.derive`` refuses, is ``Unusable`` for the
 whole cycle (no candidate is judged). Nothing here writes: the ``events`` rows of the reasons, the merge and the ledger are D6's (``loop.write_cycle``).
 
-Out of scope, stated: a run-time candidate's package (``candidates/<id>/package.json`` of ``koş``'s output,
-tohum/26j) is not read: P1 MF12 (``loop/candidates.py``) hands it to this gate. An operator excluded path written as a glob is judged by ``gate.diffguard`` as written
+Out of scope, stated: an operator excluded path written as a glob is judged by ``gate.diffguard`` as written
 (29f coverage), not as a pattern; the staging (``derive``'s pattern rule) leaves such files out of the worktree, so
 ``kos`` refuses a diff that changes one (``kos:base_file_missing``). Criterion 1's "applies to ``brain/integration``'s
 head" is D3's application to the pulled tree (``kos:patch_does_not_apply``); which commit was pulled is D1's.
@@ -56,14 +47,9 @@ from typing import Any
 
 import cli
 from gate import check as C
-from gate import allowlist as AL
 from gate import diffguard as G
-from ledger import serial
 from loop import pulled as P
 from profile import unit_verify as V
-from target import branches as B
-
-READY = {"organ_ids": []}   # a ready candidate's package: it is the output of no organ (tohum/26j MF9)
 
 
 class Unusable(ValueError):
@@ -126,10 +112,6 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
     pending = list(unfinished)
     decisions: dict[str, dict] = {}
     merge = None
-    try:
-        closed = [] if P.genesis(art) else AL.reasons(READY, art.organs, serial.rows(art.state[B.STATE_LEDGER]))
-    except (AL.Unusable, serial.Unusable) as exc:
-        raise Unusable("decide: allowlist: %s" % cli.cause(exc)) from None
     for cid in sorted(art.candidates):
         files = art.candidates[cid]
         diff_text = files["diff.patch"].decode("utf-8", "surrogateescape")
@@ -144,7 +126,7 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
             raise Unusable("decide: %s" % cli.cause(exc)) from None
         reasons += _kos_reasons(index.get(cid))
         reasons += _gate(files, results, cid, control, pending + ([merge] if merge else []))
-        reasons = sorted(set(reasons + list(frozen) + closed))
+        reasons = sorted(set(reasons + list(frozen)))
         decisions[cid] = {"decision": "reject" if reasons else "merge", "reasons": reasons}
         if not reasons and merge is None:
             merge = cid

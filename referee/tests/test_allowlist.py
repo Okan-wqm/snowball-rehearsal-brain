@@ -19,22 +19,43 @@ What is proven, each by the test named for it:
   organ; the SHA and the run id are judged only when a row is written; the rows are ledger rows
   ``ledger.schema`` takes, chained by the cycle's own plan.
 
-The wiring is proven where it runs: D5's refusal of every ready candidate outside the genesis cycle in
-``test_loop_yaz`` (``Allowlist``), D6's rows in ``test_loop_write`` (``AcceptRows``), the entry request's
-reading in ``test_loop_cek`` and its carriage in ``test_pulled``.
+The wiring, from the entry request to the written row:
+
+- ``çek`` (``Entry``, ``loop.cek.assemble``): the brain commit's ``accept.json`` reaches ``pulled`` with the
+  commit and the run id handed in; no request is an entry of no organ; a request of another form, of a path that
+  is no file, or naming an id the commit holds no organ of refuses the assembly;
+- ``pulled`` (``Carried``): ``accept.json`` is always listed; ``null`` or exactly ``{brain_sha, run_id,
+  organ_ids}`` of the stated forms, at the write and at the read;
+- ``yaz`` (``AcceptRows``, the job on ``loop.write_cycle``): the entry's rows are in the cycle's one
+  ``brain/state`` commit under its signed root, after the cycle's own rows and before its cost rows; the next
+  cycle's same entry writes none; an entry no row can be written from (no run id) writes nothing at all; without
+  an entry there is no row.
+
+The run id's reading from the signed result is ``test_accepted``'s, the job's passing of it to ``çek``
+``test_loop_cek``'s. Not proven here because it is not wired: D5 does not call ``reasons`` yet (the stage 0
+rule still merges a ready candidate in every cycle).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
 import sys
 import unittest
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
+import git_store as GS  # noqa: E402
+import test_loop_cek as TC  # noqa: E402
+import test_loop_kos as LK  # noqa: E402
+import test_loop_write as TW  # noqa: E402
 from gate import allowlist as A  # noqa: E402
+from loop import cek as C  # noqa: E402
+from loop import pulled as P  # noqa: E402
+from target import branches as B  # noqa: E402
 from ledger import append as LA  # noqa: E402
 from ledger import chain as LC  # noqa: E402
 from ledger import events as LE  # noqa: E402
@@ -408,6 +429,194 @@ class Rows(unittest.TestCase):
         self.assertEqual(accept(b"", [], sha=None, run=None).rows, [])
         held = accept(b"", ["lint.discover"]).content
         self.assertEqual(accept(held, ["lint.discover"], sha=None, run=None).rows, [])
+
+
+ORGAN_DOC = {"organs/lint.discover.json": json.dumps({"entry": ["python", "/in/adapter.py"],
+                                                       "files": ["adapter.py"]}).encode(),
+             "adapter.py": b"print('lint')\n"}
+LINT = {"lint.discover": definitions()["lint.discover"]}
+
+
+class Entry(unittest.TestCase):
+    """``loop.cek.assemble``: the entry request of the brain commit, in ``pulled``."""
+
+    setUp = TC.Brain.setUp
+
+    def assemble(self, run_id=RUN) -> str:
+        objects, commit = TC.target_objects(self.src)
+        brain, brain_commit = GS.store(self.brain)
+        C.assemble(brain.__getitem__, brain_commit, json.dumps(TC.SUMMARY).encode(), TC.POLICY, "t1",
+                   objects.__getitem__, commit, TC.HEADS["brain/state"], TC.state_files(), None, self.out,
+                   run_id=run_id)
+        return brain_commit
+
+    def refused(self) -> list[str]:
+        with self.assertRaises(P.PulledError) as ctx:
+            self.assemble()
+        self.assertFalse(os.path.lexists(self.out))
+        return ctx.exception.reasons
+
+    def test_a_commit_without_a_request_enters_no_organ(self):
+        self.brain.update(ORGAN_DOC)
+        commit = self.assemble()
+        self.assertEqual(P.read(self.out).accept, {"brain_sha": commit, "run_id": RUN, "organ_ids": []})
+
+    def test_the_request_reaches_pulled_with_the_commit_and_the_run(self):
+        self.brain.update(ORGAN_DOC)
+        self.brain[C.ENTRY_REQUEST] = b'{"organ_ids": ["lint.discover"]}'
+        commit = self.assemble()
+        got = P.read(self.out)
+        self.assertEqual(got.accept, {"brain_sha": commit, "run_id": RUN, "organ_ids": ["lint.discover"]})
+        # what yaz writes from the artifact alone: the row of the organ as the commit holds it
+        [row] = A.rows(CYCLE, got.accept, got.organs, [])
+        self.assertEqual(row["payload"], {"organ_id": "lint.discover", "definition_sha256": own("lint.discover"),
+                                          "brain_sha": commit, "evidence_run_ids": [RUN]})
+
+    def test_a_run_id_not_handed_in_is_carried_as_none(self):
+        self.brain[C.ENTRY_REQUEST] = b'{"organ_ids": []}'
+        commit = self.assemble(run_id=None)
+        self.assertEqual(P.read(self.out).accept, {"brain_sha": commit, "run_id": None, "organ_ids": []})
+
+    def test_a_request_of_another_form_refuses_the_assembly(self):
+        self.brain.update(ORGAN_DOC)
+        for name, entry in (("not JSON", b"{"), ("not UTF-8", b"\xff"), ("a list", b'["lint.discover"]'),
+                            ("another key", b'{"organ_ids": ["lint.discover"], "brain_sha": "x"}'),
+                            ("no key", b"{}"), ("ids no list", b'{"organ_ids": "lint.discover"}'),
+                            ("an id twice", b'{"organ_ids": ["lint.discover", "lint.discover"]}'),
+                            ("an empty id", b'{"organ_ids": [""]}'), ("an id no string", b'{"organ_ids": [1]}'),
+                            ("a link", ("120000", b"other.json"))):
+            with self.subTest(name):
+                self.brain[C.ENTRY_REQUEST] = entry
+                self.assertEqual(self.refused(), ["accept_invalid"])
+        del self.brain[C.ENTRY_REQUEST]
+        self.brain[C.ENTRY_REQUEST + "/doc"] = b'{"organ_ids": []}'  # a directory at the request's path
+        self.assertEqual(self.refused(), ["accept_invalid"])
+
+    def test_an_id_the_commit_holds_no_organ_of_refuses_the_assembly(self):
+        self.brain.update(ORGAN_DOC)
+        self.brain[C.ENTRY_REQUEST] = b'{"organ_ids": ["lint.discover", "fixer.range", "x"]}'
+        self.assertEqual(self.refused(), ["accept_unknown:fixer.range", "accept_unknown:x"])
+
+
+class Carried(LK.Base):
+    """``loop.pulled``: ``accept.json`` is always listed and holds ``null`` or an entry of the stated form."""
+
+    GOOD = {"brain_sha": SHA, "run_id": RUN, "organ_ids": ["lint.discover", "fixer.range"]}
+    BAD = (("a list", []), ("no object", "x"), ("a key less", {"brain_sha": SHA, "organ_ids": []}),
+           ("a key more", dict(GOOD, extra=1)), ("a sha in capitals", dict(GOOD, brain_sha=SHA.upper())),
+           ("a short sha", dict(GOOD, brain_sha=SHA[:39])), ("a sha no string", dict(GOOD, brain_sha=None)),
+           ("an empty run", dict(GOOD, run_id="")), ("a run no string", dict(GOOD, run_id=7)),
+           ("ids no list", dict(GOOD, organ_ids="lint.discover")), ("an empty id", dict(GOOD, organ_ids=[""])),
+           ("an id no string", dict(GOOD, organ_ids=[1])), ("an id twice", dict(GOOD, organ_ids=["a", "a"])))
+
+    def test_an_entry_is_carried_as_written(self):
+        for entry in (self.GOOD, dict(self.GOOD, run_id=None), dict(self.GOOD, organ_ids=[])):
+            with self.subTest(entry=entry):
+                manifest = self.write_pulled(accept=entry)
+                self.assertIn(P.ACCEPT, manifest["files"])
+                self.assertEqual(P.read(self.pulled).accept, entry)
+                shutil.rmtree(self.pulled)
+
+    def test_none_is_written_as_no_entry_and_the_file_is_required(self):
+        self.write_pulled()
+        self.assertIsNone(P.read(self.pulled).accept)
+        with open(os.path.join(self.pulled, P.ACCEPT), "rb") as fh:
+            self.assertEqual(json.loads(fh.read()), None)
+        manifest = self.manifest()
+        os.remove(os.path.join(self.pulled, P.ACCEPT))
+        self.assertEqual(self.reasons(), ["file_missing:accept.json"])
+        del manifest["files"][P.ACCEPT]
+        self.set_manifest(manifest)
+        self.assertEqual(self.reasons(), ["missing:accept.json"])
+
+    def test_an_entry_of_another_form_is_refused_at_the_write(self):
+        for name, entry in self.BAD:
+            with self.subTest(name):
+                with self.assertRaises(P.PulledError) as ctx:
+                    self.write_pulled(accept=entry)
+                self.assertEqual(ctx.exception.reasons, ["accept_invalid"])
+                self.assertFalse(os.path.lexists(self.pulled))
+
+    def test_an_entry_of_another_form_is_refused_at_the_read(self):
+        self.write_pulled(accept=self.GOOD)
+        manifest = self.manifest()
+        for name, entry in self.BAD + (("not JSON", ...),):
+            with self.subTest(name):
+                data = b"{" if entry is ... else json.dumps(entry).encode()
+                with open(os.path.join(self.pulled, P.ACCEPT), "wb") as fh:
+                    fh.write(data)
+                manifest["files"][P.ACCEPT] = hashlib.sha256(data).hexdigest()
+                self.set_manifest(manifest)
+                self.assertEqual(self.reasons(), ["json_unreadable:accept.json" if entry is ... else "accept_invalid"])
+
+
+class AcceptRows(TW.StateBase):
+    """``yaz`` on a ``pulled`` that carries an entry: the ``accept`` rows are written by the cycle's own commit."""
+
+    def write_pulled(self, cands=None, **kw) -> dict:
+        return super().write_pulled(cands, **dict({"organs": LINT, "accept": self.accept}, **kw))
+
+    def entered(self, accept, run: str = "301") -> dict:
+        """The ``kos`` and ``yaz`` jobs of cycle ``<run>-1``, the first on ``genesis_state`` and each later one on
+        what the one before wrote, ``pulled`` carrying ``accept`` and the organ ``LINT``; ``yaz``'s line."""
+        self.accept = accept
+        if os.path.lexists(self.pulled):
+            self.next_cycle({}, run)
+        else:
+            self.kos({})
+            self.control(TW.OPEN)
+            self.github()
+        return self.run_yaz(GITHUB_RUN_ID=run)
+
+    def added(self, before: bytes) -> list[dict]:
+        ledger = self.state_file(B.STATE_LEDGER)
+        self.assertTrue(ledger.startswith(before))
+        return TW.rows_of(ledger[len(before):])
+
+    def test_the_entry_s_row_is_in_the_cycle_s_commit_under_its_root(self):
+        before = self.state[B.STATE_LEDGER]
+        out = self.entered(entry(["lint.discover"]))
+        self.assertEqual((out["ok"], out["done"]), (True, ["D5", "D6"]), out)
+        added = self.added(before)
+        self.assertEqual([(r["part"], r["kind"]) for r in added],
+                         [("events", "cycle_start"), ("events", "observation"), ("accept", "accept"),
+                          ("cost", "cost"), ("events", "status")])  # after the cycle's own rows, before its cost
+        self.assertEqual((added[2]["row_id"], added[2]["payload"]), ("301-1:accept:lint.discover", {
+            "organ_id": "lint.discover", "definition_sha256": own("lint.discover"), "brain_sha": SHA,
+            "evidence_run_ids": [RUN]}))
+        self.assertEqual(SC.row_reasons(added[2]), [])
+        # one brain/state commit on the head D1 read; the root signed is over the ledger with the row
+        head = self.gh.refs[B.STATE]
+        self.assertEqual((out["written"]["state_sha"], self.gh.commits[head]["parents"]), (head, [TW.HEADS[B.STATE]]))
+        self.assertEqual(hashlib.sha256(self.signer.payloads[-1]).hexdigest(),
+                         TW.AN.root_of(TW.AN.tips(self.state_file(B.STATE_LEDGER))))
+        # the list as the next reader finds it
+        self.assertEqual(A.listed(TW.rows_of(self.state_file(B.STATE_LEDGER))),
+                         frozenset({("lint.discover", own("lint.discover"))}))
+
+    def test_the_next_cycle_s_same_entry_writes_no_row(self):
+        self.entered(entry(["lint.discover"]))
+        before = self.state_file(B.STATE_LEDGER)
+        out = self.entered(entry(["lint.discover"], OTHER_SHA), run="302")
+        self.assertEqual(out["ok"], True, out)
+        self.assertEqual([(r["part"], r["kind"]) for r in self.added(before)],
+                         [("events", "cycle_start"), ("cost", "cost"), ("events", "status")])
+
+    def test_an_entry_no_row_can_be_written_from_writes_nothing(self):
+        with self.assertRaises(TW.J.Unusable) as ctx:  # as every input of yaz it cannot use (loop.job)
+            self.entered(dict(entry(["lint.discover"]), run_id=None))
+        self.assertEqual(str(ctx.exception),
+                         "yaz: accept: accept lint.discover.evidence_run_ids[0]: not a non-empty string")
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.gh.refs[B.STATE], TW.HEADS[B.STATE])
+
+    def test_without_an_entry_or_with_one_of_no_organ_there_is_no_row(self):
+        for accept in (None, entry([]), dict(entry([]), run_id=None)):
+            with self.subTest(accept=accept):
+                before = self.state_file(B.STATE_LEDGER) if os.path.lexists(self.pulled) else self.state[B.STATE_LEDGER]
+                out = self.entered(accept, run=str(301 + len(self.signer.payloads)))
+                self.assertEqual(out["ok"], True, out)
+                self.assertNotIn("accept", [r["part"] for r in self.added(before)])
 
 
 if __name__ == "__main__":

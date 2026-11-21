@@ -233,6 +233,37 @@ class Artifacts(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assert_reason(dict(row, payload=bad), fragment)
 
+    def test_a_closed_gate_s_reject_carries_no_cause(self):
+        """tohum/26j "Kapalı kapının reddi": a reject whose reasons are all standing ones is written without a
+        cause (``ledger.events.decided``) and conforms without one; one it carries is not refused (the rows written
+        before 26j carry ``unknown``). A reject with one other reason takes its cause from the other reasons, and
+        without a cause does not conform."""
+        cyc = {"cycle_id": "46", "ts": AW.TS, "snapshot_id": AW.SNAP}
+        for reasons in (["merge_paused"], ["sentinel_pending"], ["no_organ"], ["frozen:budget_usd"],
+                        ["organ_unknown:x"], ["organ_not_listed:x"],
+                        ["frozen:regression", "merge_paused", "no_organ", "sentinel_pending"]):
+            with self.subTest(reasons=reasons):
+                [row] = events.decided(cyc, "good", reasons)
+                self.assertNotIn("cause", row)
+                self.assertEqual(schema.row_reasons(stored(row)), [])
+                self.assertEqual(schema.row_reasons(stored(dict(row, cause="unknown"))), [])
+        for reasons, cause in ((["merge_paused", "tests_red"], "test_regression"),
+                               (["no_organ", "ratchet_increase"], "lint_regression"),
+                               (["frozen:budget_usd", "kos:patch_does_not_apply"], "unknown"),
+                               (["merge_paused_"], "unknown"), (["frozen"], "unknown"), (["xfrozen:a"], "unknown")):
+            with self.subTest(reasons=reasons):
+                [row] = events.decided(cyc, "good", reasons)
+                self.assertEqual(row["cause"], cause)
+                self.assertEqual(schema.row_reasons(stored(row)), [])
+                self.assertIn("row.cause: missing",
+                              " ".join(schema.row_reasons(stored({k: v for k, v in row.items() if k != "cause"}))))
+        # reasons that are no list of strings are no closed gate's: the cause is asked for (and the payload refused)
+        [row] = events.decided(cyc, "good", ["merge_paused"])
+        for reasons in ([], ["merge_paused", 1], "merge_paused", None):
+            with self.subTest(reasons=reasons):
+                self.assertIn("row.cause: missing", " ".join(schema.row_reasons(stored(
+                    dict(row, payload=dict(row["payload"], reasons=reasons))))))
+
     def test_merge_row_coverage_record(self):
         """asama-0/08's coverage record on the merge row (``ledger.events.hunk_covered``): one entry per hunk, in the
         hunks' order, each ``unmeasured`` with ``no_coverage_tool`` and the merge's path; an empty record for a diff

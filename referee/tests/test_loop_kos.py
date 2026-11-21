@@ -203,7 +203,8 @@ class Layout(Base):
         self.assertEqual(got.target, TARGET)
         self.assertEqual(got.units, {"units": [recipe()]})
         self.assertEqual(got.candidates, {"good": candidate(GOOD)})
-        self.assertEqual(sorted(manifest["files"]), ["candidates/good/diff.patch", "candidates/good/expect.json",
+        self.assertEqual(sorted(manifest["files"]), ["accept.json", "candidates/good/diff.patch",
+                                                     "candidates/good/expect.json",
                                                      "candidates/good/finding.json", "mutations.json", "organs.json",
                                                      "policy.json", "snapshot.json", "state/chain/root.jsonl", "state/heads.json",
                                                      "state/ledger.jsonl", "tree.tar", "units.json"])

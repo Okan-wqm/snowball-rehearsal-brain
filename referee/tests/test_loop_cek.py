@@ -598,6 +598,25 @@ class CekJob(unittest.TestCase):
         self.assertEqual(os.path.lexists(os.path.join(self.temp, "out", "pulled")), out["ok"])
         return out, commit, tree
 
+    def test_the_entry_request_reaches_pulled_with_the_signed_results_run_id(self):
+        """tohum/26j MF9: the accepted commit's ``accept.json`` is carried with that commit and the id of the
+        bootstrap run that signed the result D1 verified (``loop.accepted.open_state``'s ``run_id``); a commit
+        without a request carries an entry of no organ."""
+        organ = {"organs/lint.discover.json": json.dumps({"entry": ["python", "/in/adapter.py"],
+                                                           "files": ["adapter.py"]}).encode(),
+                 "adapter.py": b"print('lint')\n"}
+        for request, ids in ((None, []), (b'{"organ_ids": ["lint.discover"]}', ["lint.discover"])):
+            with self.subTest(request=request):
+                brain = dict(self.BRAIN, **organ, **({} if request is None else {C.ENTRY_REQUEST: request}))
+                out, commit, _ = self.run_cek(brain=brain)
+                self.assertEqual(out["ok"], True, out)
+                got = P.read(os.path.join(self.temp, "out", "pulled", "t1"))
+                self.assertEqual(got.accept, {"brain_sha": commit, "run_id": self.TA.RUN_ID, "organ_ids": ids})
+                shutil.rmtree(os.path.join(self.temp, "out"))
+                shutil.rmtree(os.path.join(self.temp, "work"))
+        out, _, _ = self.run_cek(brain=dict(self.BRAIN, **{C.ENTRY_REQUEST: b'{"organ_ids": ["lint.discover"]}'}))
+        self.assertEqual(self.stopped(out)["reasons"], ["accept_unknown:lint.discover"])
+
     def assembled(self) -> list[str]:
         """Each ``pulled`` left in the job's work directory (``cek-*/<id>/pulled``): one not handed over."""
         work = os.path.join(self.temp, "work")

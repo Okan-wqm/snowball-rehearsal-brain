@@ -268,6 +268,16 @@ class Verify(unittest.TestCase):
         self.assertEqual(files, {"result.json": GOOD_ZIP["result.json"], "result.json.sigstore.json": b"B"})
         self.assertFalse(os.path.exists(os.path.dirname(argv[-1])))  # the directory is removed after
 
+    def test_the_run_id_is_the_results_run_id_when_a_non_empty_string(self):
+        """``run_id``: the result's ``run.id`` as the bootstrap referee writes it; anything else is ``None`` and
+        refuses nothing (tohum/26j MF9: the reader that needs it, ``gate.allowlist.rows``, refuses then)."""
+        for run, want in ((..., RUN_ID), ({"id": "7"}, "7"), (None, None), ({}, None), ({"id": ""}, None),
+                          ({"id": 7}, None), ({"id": None}, None), ({"id": ["7"]}, None), ("7", None), (["7"], None),
+                          ({"attempt": "7"}, None)):
+            with self.subTest(run=run):
+                out = A.open_state(result(run=run), b"B", REPO, ("sigstore",), verifier=lambda argv: 0)
+                self.assertEqual((out["last_accepted_sha"], out["run_id"]), (SHA, want))
+
     def test_an_unverified_result_is_not_parsed(self):
         for body in (result(), b"not json"):
             with self.assertRaises(A.StateError) as ctx:

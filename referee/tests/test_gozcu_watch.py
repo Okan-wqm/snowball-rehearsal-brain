@@ -404,7 +404,7 @@ class Regression(Watched, Watching):
         self.assertEqual((out["ok"], out["merge"], out["decisions"]),
                          (True, None, {"good": {"decision": "reject", "reasons": ["frozen:regression"]}}))
         [decision] = [r for r in self.added() if r["kind"] == "decision"]
-        self.assertEqual(decision["cause"], "unknown")   # no cause of tohum/26 names a closed gate
+        self.assertNotIn("cause", decision)   # a closed gate's reject carries none (tohum/26j)
         self.assertNotIn("freeze", [r["part"] for r in self.added()])   # in force: not started again
 
     def test_under_min_reverts_the_same_revert_freezes_nothing(self):
