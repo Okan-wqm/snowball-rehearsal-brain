@@ -854,6 +854,12 @@ NET_TYPES_ONLY = {"httpbody.py": {"http.client"}}
 # The modules that may name GitHub's hosts: the writer, and cek's reader (the API, the brain's URL, the bootstrap
 # workflow's certificate identity).
 GITHUB_NAMED = {os.path.join("target", "write.py"), os.path.join("loop", "accepted.py")}
+# The one module that may hold the text ``push`` without being the writer: ``drift.check`` names GitHub's activity
+# types (tohum/01c), ``push`` among them, to judge what the activity API answers. It is data it compares, not a
+# program's argument: ``test_the_module_that_names_the_push_activity_starts_no_program``.
+PUSH_NAMED = {os.path.join("drift", "check.py")}
+STARTS_PROGRAMS = {"subprocess", "pty", "multiprocessing", "os.system", "os.popen", "os.posix_spawn",
+                   "os.posix_spawnp", "os.startfile", "os.fork", "os.forkpty"}
 
 
 def scan(rel, src):
@@ -869,8 +875,30 @@ def scan(rel, src):
                       if m in NET_MODULES and m not in NET_TYPES_ONLY.get(rel, ())]
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and rel != os.path.join("target", "write.py"):
             if ("github.com" in node.value.lower() and rel not in GITHUB_NAMED) \
-                    or node.value in ("push", "send-pack", "receive-pack"):
+                    or node.value in ("send-pack", "receive-pack") \
+                    or (node.value == "push" and rel not in PUSH_NAMED):
                 found.append("%s: %r" % (rel, node.value))
+    return found
+
+
+def starts(src):
+    """What of ``src`` could start a program: an import of a module of ``STARTS_PROGRAMS`` (or a name from it), an
+    ``os`` attribute named there, any ``os.exec*`` or ``os.spawn*``, or an import by a computed name."""
+    found = []
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            found += [a.name for a in node.names
+                      if a.name.split(".")[0] in STARTS_PROGRAMS | {"importlib", "runpy"}]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            found += [node.module + "." + a.name for a in node.names
+                      if node.module.split(".")[0] in STARTS_PROGRAMS or node.module + "." + a.name in STARTS_PROGRAMS
+                      or (node.module == "os" and a.name.startswith(("exec", "spawn")))]
+            found += [node.module for a in node.names if node.module in ("importlib", "runpy")]
+        elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "os" \
+                and ("os." + node.attr in STARTS_PROGRAMS or node.attr.startswith(("exec", "spawn"))):
+            found.append("os." + node.attr)
+        elif isinstance(node, ast.Name) and node.id in ("__import__", "eval", "exec", "importlib", "runpy"):
+            found.append(node.id)
     return found
 
 
@@ -898,6 +926,30 @@ class OneWay(unittest.TestCase):
             "gate/x.py: 'https://API.GitHub.com/repos'", "gate/x.py: 'push'", "gate/x.py: import http",
             "gate/x.py: import http.client", "gate/x.py: import urllib.request"])
         self.assertEqual(scan(os.path.join("runner", "deps_npm.py"), "import urllib.request\n"), [])
+
+    def test_the_module_that_names_the_push_activity_starts_no_program(self):
+        """``PUSH_NAMED``'s width: the text ``push`` is allowed only in a module that can start no program (so it
+        is no argument of git), and there once, among the activity types the writer's bot may do."""
+        self.assertEqual(PUSH_NAMED, {os.path.join("drift", "check.py")})
+        modules = dict(referee_modules())
+        for rel in PUSH_NAMED:
+            self.assertEqual(starts(modules[rel]), [], rel)
+            holders = [node for node in ast.walk(ast.parse(modules[rel])) if isinstance(node, ast.Tuple) and any(
+                isinstance(e, ast.Constant) and e.value == "push" for e in node.elts)]
+            named = [node for node in ast.walk(ast.parse(modules[rel]))
+                     if isinstance(node, ast.Constant) and node.value == "push"]
+            self.assertEqual((len(named), [[e.value for e in t.elts] for t in holders]),
+                             (1, [["push", "branch_creation", "pr_merge"]]), rel)
+        # the same text anywhere else offends still, and the exempt module is held to the rest of the scan
+        self.assertEqual(scan(os.path.join("drift", "other.py"), "X = 'push'\n"), ["drift/other.py: 'push'"])
+        self.assertEqual(scan(os.path.join("drift", "check.py"), "X = ('push', 'send-pack')\nimport socket\n"),
+                         ["drift/check.py: import socket", "drift/check.py: 'send-pack'"])
+        self.assertEqual(sorted(starts("import subprocess\nfrom os import execv, path\nimport os\nos.system('x')\n"
+                                "os.spawnlp(0)\nos.execvp('git', [])\n__import__('subprocess')\nimport pty\n"
+                                "from subprocess import run\nimport importlib\nexec('x')\nos.path.join('a')\n"
+                                "from importlib import import_module\n")),
+                         ["__import__", "exec", "importlib", "importlib", "os.execv", "os.execvp", "os.spawnlp",
+                          "os.system", "pty", "subprocess", "subprocess.run"])
 
     def test_httpbody_imports_http_client_alone_and_opens_nothing(self):
         src = dict(referee_modules())["httpbody.py"]

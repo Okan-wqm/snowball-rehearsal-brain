@@ -1965,6 +1965,51 @@
    "tests": [
     "test_drift.py"
    ]
+  },
+  {
+   "id": "act_check_imports_subprocess",
+   "file": "drift/check.py",
+   "old": "import hashlib\nimport json\nimport os\nimport sys\n",
+   "new": "import hashlib\nimport json\nimport os\nimport subprocess\nimport sys\n",
+   "tests": [
+    "test_write.OneWay.test_the_module_that_names_the_push_activity_starts_no_program"
+   ]
+  },
+  {
+   "id": "act_check_names_push_twice",
+   "file": "drift/check.py",
+   "old": "REF_CHANGE = \"ref_change\"",
+   "new": "REF_CHANGE = \"ref_change\" or \"push\"",
+   "tests": [
+    "test_write.OneWay.test_the_module_that_names_the_push_activity_starts_no_program"
+   ]
+  },
+  {
+   "id": "act_push_text_allowed_everywhere",
+   "file": "tests/test_write.py",
+   "old": "or (node.value == \"push\" and rel not in PUSH_NAMED):",
+   "new": "or (node.value == \"push\" and rel in PUSH_NAMED):",
+   "tests": [
+    "test_write.OneWay"
+   ]
+  },
+  {
+   "id": "act_push_text_never_offends",
+   "file": "tests/test_write.py",
+   "old": "or (node.value == \"push\" and rel not in PUSH_NAMED):",
+   "new": "or (node.value == \"push\" and not rel):",
+   "tests": [
+    "test_write.OneWay"
+   ]
+  },
+  {
+   "id": "act_starts_sees_no_os_call",
+   "file": "tests/test_write.py",
+   "old": "            found.append(\"os.\" + node.attr)",
+   "new": "            pass",
+   "tests": [
+    "test_write.OneWay.test_the_module_that_names_the_push_activity_starts_no_program"
+   ]
   }
  ]
 }
