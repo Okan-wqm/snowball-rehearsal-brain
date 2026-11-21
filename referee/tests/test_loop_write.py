@@ -224,7 +224,7 @@ class StateBase(YazBase):
         with open(os.path.join(self.workspace, *J.SUMMARY.split("/")), "rb") as fh:
             summary = fh.read()
         for tid in ghs:
-            self.assertEqual(DC.check(probe, summary, tid, YW.TS, "acme/" + tid)["reasons"], [])
+            self.assertEqual(DC.check(probe, summary, AW.checkout_hashes(), tid, YW.TS, "acme/" + tid)["reasons"], [])
             ghs[tid].requests[:] = before[tid]
         return probe.calls
 
@@ -368,7 +368,7 @@ class D6(StateBase):
         )
         # the job's first step has read the setup facts (stage 1 MF6); the refused target adds no request to them
         with open(os.path.join(self.workspace, *J.SUMMARY.split("/")), "rb") as fh:
-            DC.check(self.gh, fh.read(), "t1", YW.TS, YW.REPO)
+            DC.check(self.gh, fh.read(), AW.checkout_hashes(), "t1", YW.TS, YW.REPO)
         reads = self.gh.requests[:]
         for make, want in cases:
             with self.subTest(want=want):
@@ -1463,6 +1463,7 @@ class Genesis(StateBase):
                                     identifiers=[])],
                    "drift": AW.baseline({TARGET["id"]: (TARGET["kind"], YW.REPO)})}
         self.security = YW.chained([{"row_id": "sec-1", "part": "security", "kind": "note", "payload": {}}])
+        AW.write_checkout(self.workspace)
         write_tree(self.workspace, {"setup/summary.json": json.dumps(summary), "setup/imports.jsonl":
                                     self.transfer["imports"].decode(), J.SECURITY_LEDGER: self.security.decode()})
         self.gh = None

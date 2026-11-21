@@ -179,8 +179,7 @@ class Flow:
                                PR.result_path(TA.chained([imported])): result.decode(),
                                J.SECURITY_LEDGER: YW.chained([{"row_id": "s1", "part": "security", "kind": "note",
                                                                "payload": {}}]).decode()})
-        with open(os.path.join(self.work, "policy.json"), "wb") as fh:
-            fh.write(POLICY)
+        AW.write_checkout(self.work, dict(AW.CHECKOUT, **{"policy.json": POLICY}))
         write_bootstrap(self.work)
         self.fixtures = ""
         if drill:

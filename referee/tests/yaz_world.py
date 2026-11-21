@@ -131,9 +131,11 @@ def write_summary(workspace: str, targets: list[dict] | None = None) -> None:
 
 
 def write_workspace(base: str) -> str:
-    """The checkout (``$GITHUB_WORKSPACE``) with ``setup/imports.jsonl`` and ``setup/summary.json`` (``summary``)."""
+    """The checkout (``$GITHUB_WORKSPACE``) with ``setup/imports.jsonl``, ``setup/summary.json`` (``summary``) and
+    the operator files its ``drift.hashes`` are over (``activation_world.CHECKOUT``)."""
     root = os.path.join(base, "workspace")
     os.makedirs(os.path.join(root, "setup"), exist_ok=True)
+    AW.write_checkout(root)
     write_summary(root)
     with open(os.path.join(root, "setup", "imports.jsonl"), "wb") as fh:
         fh.write(chained(IMPORTS_ROWS))

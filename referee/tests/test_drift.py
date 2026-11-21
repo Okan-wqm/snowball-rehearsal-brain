@@ -157,7 +157,7 @@ def world(kind: str = "toy", *changes) -> AW.World:
 
 
 def check(w: AW.World, target="toy", repo=None, now=AW.TS) -> dict:
-    return DC.check(w.gh, w.files["summary.json"], target, now, repo)
+    return DC.check(w.gh, w.files["summary.json"], AW.checkout_hashes(), target, now, repo)
 
 
 def recorded(path: str, reason: str) -> list:

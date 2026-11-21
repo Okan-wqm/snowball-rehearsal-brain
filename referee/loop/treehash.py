@@ -94,6 +94,17 @@ def _path_reasons(path: str) -> list[str]:
     return ["%s:%s" % (r, _show(path)) for r in reasons]
 
 
+def line(rel: bytes, data: bytes) -> bytes:
+    """One file's line of the hash: its content's sha256, two spaces, its relative path, LF."""
+    return b"%s  %s\n" % (hashlib.sha256(data).hexdigest().encode(), rel)
+
+
+def joined(lines: Iterable[bytes]) -> str:
+    """The hash of the lines: sorted by their bytes, joined, sha256, lowercase hex (tohum/26c; tohum/01c hashes
+    the operator folders of a checkout by the same recipe, ``drift.check.folder_hash``)."""
+    return hashlib.sha256(b"".join(sorted(lines))).hexdigest()
+
+
 def digest(items: Iterable[tuple[str, str, bytes]]) -> str:
     """The hash of an archive given as ``(path, kind, data)`` triples (``kind`` one of ``KINDS``; ``data`` a file's
     bytes, ignored for other kinds), or ``TreeHashError`` with the reasons above."""
@@ -116,7 +127,7 @@ def digest(items: Iterable[tuple[str, str, bytes]]) -> str:
             prefix = "/".join(parts[:i])
             spellings.setdefault(prefix.casefold(), set()).add(prefix)
         if kind == "file" and not reasons:
-            lines.append(b"%s  %s\n" % (hashlib.sha256(data).hexdigest().encode(), rel.encode("utf-8")))
+            lines.append(line(rel.encode("utf-8"), data))
     for names in spellings.values():
         if len(names) > 1:
             reasons += ["casefold_collision:%s" % _show(n) for n in names]
@@ -124,7 +135,7 @@ def digest(items: Iterable[tuple[str, str, bytes]]) -> str:
         reasons.append("no_files")
     if reasons:
         raise TreeHashError(sorted(set(reasons)))
-    return hashlib.sha256(b"".join(sorted(lines))).hexdigest()
+    return joined(lines)
 
 
 def of_tar(data: bytes) -> str:

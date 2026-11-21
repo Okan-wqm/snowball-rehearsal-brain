@@ -1035,7 +1035,7 @@ def _workspace_file(environ: dict[str, str], path: str) -> bytes:
         raise Unusable("yaz: %s: %s" % (path, cli.cause(exc))) from None
 
 
-SUMMARY = "setup/summary.json"
+SUMMARY = DC.SUMMARY
 
 
 def yaz_drift(environ: dict[str, str], served: list[str], transport: Any = None,
@@ -1044,7 +1044,8 @@ def yaz_drift(environ: dict[str, str], served: list[str], transport: Any = None,
     ``drift.check`` of the checkout's ``setup/summary.json`` for every target of ``served`` whose ``pulled`` is
     read and names a repository, against that repository (the one D6 or the activation would write to):
     ``{checked, drifted, stale}``, the ids checked in the order served, ``{id: reasons}`` of those with a reason and
-    whether the summary's operator check is stale at ``now`` (tohum/01c). Its
+    whether the summary's operator check is stale at ``now`` (tohum/01c). The three hashes compared with the
+    baseline's are the checkout's (``drift.check.held``: ``policy.json``, ``vectors/``, ``seats/``), read once. Its
     own transport (``transport`` ``None``) is ``writer_transport`` with the App's credential, for ``GET /app``."""
     now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
     out: dict[str, Any] = {"checked": [], "drifted": {}, "stale": False}
@@ -1060,9 +1061,13 @@ def yaz_drift(environ: dict[str, str], served: list[str], transport: Any = None,
         if summary is None:  # the first target read: what the reads need, as ``_yaz_inputs`` asks it of D6
             _yaz_env(environ)
             summary = _workspace_file(environ, SUMMARY)
+            try:
+                hashes = DC.held(environ["GITHUB_WORKSPACE"])
+            except DC.Unusable as exc:
+                raise Unusable("yaz: drift: %s" % cli.cause(exc)) from None
         transport = transport or writer_transport(environ, now, app=True)
         try:
-            got = DC.check(transport, summary, tid, now().strftime("%Y-%m-%dT%H:%M:%SZ"), repo)
+            got = DC.check(transport, summary, hashes, tid, now().strftime("%Y-%m-%dT%H:%M:%SZ"), repo)
         except (DC.Unusable, W.ApiError, W.Unusable) as exc:
             raise Unusable("yaz: drift: %s" % cli.cause(exc)) from None
         out["checked"].append(tid)

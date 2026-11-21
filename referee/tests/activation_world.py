@@ -108,13 +108,47 @@ def decided() -> dict:
     return {"decisions": out, "merge": "good"}
 
 
+APP_PERMISSIONS = {"checks": "write", "contents": "write", "metadata": "read", "pull_requests": "write"}
+# The operator files of a referee checkout that tohum/01c's ``drift.hashes`` are over: ``policy.json`` (no float in
+# it: 01c "Politikanın sayıları") and two folders, one with a file below a subfolder.
+CHECKOUT = {"policy.json": test_loop_cagir.policy(),
+            "vectors/cases.json": b'{"cases": []}\n', "vectors/chain/V1.json": b'{"row": 1}\n',
+            "seats/rival.json": b'{"model": "m"}\n'}
+
+
+def checkout_hashes(files: dict[str, bytes] | None = None) -> dict[str, str]:
+    """tohum/01c's three hashes of a checkout's operator files (``CHECKOUT`` when ``None``), by ``hashlib`` and
+    ``json`` alone: the policy's ``constitutional`` holds ASCII strings and integers only, where sorted keys and
+    no spaces is RFC 8785; a folder's hash is the page's ``sha256("".join(sorted(lines)))``."""
+    files = CHECKOUT if files is None else files
+    section = json.loads(files["policy.json"])["constitutional"]
+    out = {"constitutional_sha256": hashlib.sha256(
+        json.dumps(section, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}
+    for folder in ("vectors", "seats"):
+        lines = sorted("%s  %s\n" % (hashlib.sha256(data).hexdigest(), path[len(folder) + 1:])
+                       for path, data in files.items() if path.startswith(folder + "/"))
+        out[folder + "_sha256"] = hashlib.sha256("".join(lines).encode()).hexdigest()
+    return out
+
+
+def write_checkout(root: str, files: dict[str, bytes] | None = None) -> None:
+    """The operator files (``CHECKOUT`` when ``None``) written under the checkout ``root``."""
+    for path, data in (CHECKOUT if files is None else files).items():
+        full = os.path.join(root, *path.split("/"))
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as fh:
+            fh.write(data)
+
+
 def facts(kind: str, repo: str = REPO) -> dict:
     """The GitHub answers genesis reads when every precondition holds (``{(method, path): (status, body)}``)."""
     p = "/repos/%s" % repo
     rule = lambda kind_, ruleset, **params: dict({"type": kind_, "ruleset_id": ruleset},  # noqa: E731
                                                  **({"parameters": params} if params else {}))
     out = {
-        "/app": {"id": APP_ID, "slug": "snowball-writer"},
+        "/app": {"id": APP_ID, "slug": "snowball-writer", "permissions": dict(APP_PERMISSIONS)},
+        p: {"full_name": repo, "visibility": "public", "private": False},
+        p + "/rulesets?per_page=100": [{"id": n, "name": "ruleset-%d" % n} for n in (1, 2, 3)],
         "/installation/repositories": {"total_count": 1, "repositories": [{"full_name": repo}]},
         p + "/rules/branches/brain/state": [rule("deletion", 1), rule("non_fast_forward", 1)],
         p + "/rules/branches/brain/integration": [
@@ -147,11 +181,11 @@ def baseline(targets: dict[str, tuple[str, str]], **over) -> dict:
     """The summary's top-level ``drift`` (tohum/01c) as setup records it for ``{id: (kind, repo)}`` on ``facts``."""
     of = lambda kind, repo: {path.rsplit("/rules/branches/", 1)[1]: rules_sha256(body)  # noqa: E731
                              for (_, path), (_, body) in facts(kind, repo).items() if "/rules/branches/" in path}
-    return dict({"writer_app_id": APP_ID,
+    return dict({"writer_app_id": APP_ID, "writer_app_permissions": dict(APP_PERMISSIONS),
                  "targets": {tid: {"rulesets": [1, 2, 3], "rules": of(kind, repo)}
                              for tid, (kind, repo) in targets.items()},
                  "activity": {"operator_logins": ["operator"], "not_before": CHECKED_AT},
-                 "hashes": {"constitutional_sha256": "a" * 64, "vectors_sha256": "b" * 64, "seats_sha256": "c" * 64},
+                 "hashes": checkout_hashes(),
                  "visibility": {repo: "public" for _, repo in targets.values()},
                  "operator_checked_at": CHECKED_AT}, **over)
 

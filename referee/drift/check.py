@@ -96,10 +96,12 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import os
 import sys
 from typing import Any
 
 from ledger import chain, schema
+from loop import accepted, treehash
 from target import branches, write
 import cli
 
@@ -110,7 +112,13 @@ KINDS = ("toy", "copy")
 BRANCHES = (STATE, INTEGRATION, MAIN)
 STATE_RULES = ("deletion", "non_fast_forward")
 INTEGRATION_RULES = ("deletion", "non_fast_forward", "pull_request", "required_status_checks")
-USAGE = "usage: python -m drift.check check API SUMMARY"
+USAGE = "usage: python -m drift.check check API ROOT"
+SUMMARY = "setup/summary.json"
+POLICY = "policy.json"
+TREES = {"vectors_sha256": "vectors", "seats_sha256": "seats"}  # tohum/01c: operator folders at the checkout's root
+HASH_REASONS = {"constitutional_sha256": "constitutional_hash_mismatch", "vectors_sha256": "vectors_hash_mismatch",
+                "seats_sha256": "seats_hash_mismatch"}
+PAGE = 100  # tohum/01c: the ruleset list is read with per_page=100, every page
 FAULT_LINE = {"ok": False, "hard_stop": True, "reasons": None, "stale": None}
 STALE_AFTER = datetime.timedelta(days=7)  # tohum/01c: an operator check older than this ends the cycle cleanly
 
@@ -194,16 +202,31 @@ def _instant(value: Any, where: str) -> list[str]:
 
 def _branch_hashes(value: Any, where: str) -> list[str]:
     out = schema.map_of(schema.hex64)(value, where)
-    return out or ["%s: key %r is not a branch name" % (where, b) for b in value if not write.branch_syntax(b)]
+    out = out or ["%s: key %r is not a branch name" % (where, b) for b in value if not write.branch_syntax(b)]
+    return out or ["%s: %s is not named" % (where, b) for b in BRANCHES if b not in value]
+
+
+def _repos(value: Any, where: str) -> list[str]:
+    out = schema.map_of(schema.one_of("public", "private"))(value, where)
+    return out or ["%s: key %r is not a repository name" % (where, r) for r in value if not _repo_name(r)]
+
+
+def _repo_name(repo: Any) -> bool:
+    try:
+        return bool(accepted.repo_name(repo))
+    except accepted.StateError:
+        return False
 
 
 BASELINE = schema.shape({
     "writer_app_id": _integer,
-    "targets": schema.map_of(schema.shape({"rulesets": schema.list_of(_integer), "rules": _branch_hashes})),
+    "writer_app_permissions": schema.any_object,
+    "targets": schema.map_of(schema.shape({"rulesets": schema.list_of(_integer, unique_sorted=True),
+                                           "rules": _branch_hashes})),
     "activity": schema.shape({"operator_logins": schema.list_of(schema.text), "not_before": _instant}),
     "hashes": schema.shape({"constitutional_sha256": schema.hex64, "vectors_sha256": schema.hex64,
                             "seats_sha256": schema.hex64}),
-    "visibility": schema.map_of(schema.one_of("public", "private")),
+    "visibility": _repos,
     "operator_checked_at": _instant})
 
 
@@ -214,7 +237,7 @@ def moment(ts: str) -> datetime.datetime:
 
 def baseline(summary: dict, target_id: str) -> dict:
     """The summary's ``drift`` object (tohum/01c); ``Unusable`` unless it is there, at the top level only, of the
-    form and with an entry for ``target_id``."""
+    form, with an entry for ``target_id`` and with the ``repo`` of every ``targets[]`` entry in ``visibility``."""
     if "drift" not in summary:
         raise Unusable("summary.json carries no drift baseline")
     if any(isinstance(t, dict) and "drift" in t for t in summary["targets"]):
@@ -224,7 +247,106 @@ def baseline(summary: dict, target_id: str) -> dict:
         raise Unusable("summary.json: %s" % "; ".join(faults))
     if target_id not in summary["drift"]["targets"]:
         raise Unusable("summary.json: drift.targets has no %r" % target_id)
+    for entry in summary["targets"]:
+        repo = entry.get("repo") if isinstance(entry, dict) else None
+        if not isinstance(repo, str) or repo not in summary["drift"]["visibility"]:
+            raise Unusable("summary.json: drift.visibility does not name the repo of every target")
     return summary["drift"]
+
+
+def _unhashable(value: Any, path: str) -> str | None:
+    """The dotted path of the first value under ``value`` that the canonical form refuses, in key order."""
+    children = sorted(value.items()) if isinstance(value, dict) else \
+        enumerate(value) if isinstance(value, list) else None
+    if children is not None:
+        for key, child in children:
+            found = _unhashable(child, "%s.%s" % (path, key))
+            if found:
+                return found
+        return None
+    try:
+        chain.canonical(value)
+    except chain.ChainError:
+        return path
+    return None
+
+
+def constitutional_hash(policy: bytes) -> str:
+    """tohum/01c's ``constitutional_sha256`` of a ``policy.json``'s bytes: sha256 of the RFC 8785 form of its
+    ``constitutional`` object. ``Unusable`` for bytes that are not JSON or hold no such object, and, naming the
+    path as ``policy_invalid:<path>``, for a value there the canonical form refuses (a JSON float, 01c
+    "Politikanın sayıları")."""
+    doc = read_json(policy, POLICY)
+    section = doc.get("constitutional") if isinstance(doc, dict) else None
+    if not isinstance(section, dict):
+        raise Unusable("%s carries no constitutional object" % POLICY)
+    try:
+        return hashlib.sha256(chain.canonical(section)).hexdigest()
+    except chain.ChainError as exc:
+        raise Unusable("policy_invalid:%s (%s)" % (_unhashable(section, "constitutional") or "constitutional",
+                                                    cli.cause(exc))) from None
+
+
+def _files(root: str, rel: str, out: list[bytes]) -> None:
+    try:
+        entries = sorted(os.scandir(os.path.join(root, *rel.split("/")) if rel else root), key=lambda e: e.name)
+    except OSError as exc:
+        raise Unusable("cannot list %s: %s" % (rel or ".", cli.cause(exc))) from None
+    for entry in entries:
+        path = "%s/%s" % (rel, entry.name) if rel else entry.name
+        if entry.is_dir(follow_symlinks=False):
+            _files(root, path, out)
+        elif entry.is_file(follow_symlinks=False):
+            try:
+                name = path.encode("utf-8")
+            except UnicodeEncodeError:
+                raise Unusable("a path that is not UTF-8 under the folder") from None
+            out.append(treehash.line(name, _read(entry.path)))
+        else:
+            raise Unusable("%s is a link or no regular file" % path.encode("utf-8", "backslashreplace").decode())
+
+
+def folder_hash(root: str) -> str:
+    """tohum/01c's tree hash of a checkout's folder: ``loop.treehash``'s lines (content sha256, two spaces, the
+    path relative to ``root`` with ``/``, LF) of every regular file under it, sorted, joined, sha256. ``Unusable``
+    when ``root`` is not a directory itself (absent, a link, a file), holds a link or an entry that is neither a
+    regular file nor a directory at any depth, a name that is not UTF-8, or cannot be read. A folder without a
+    file has the hash of no line."""
+    if os.path.islink(root) or not os.path.isdir(root):
+        raise Unusable("%s is not a directory of the checkout" % os.path.basename(root))
+    lines: list[bytes] = []
+    _files(root, "", lines)
+    return treehash.joined(lines)
+
+
+def held(root: str) -> dict[str, str]:
+    """The three hashes of 01c's ``drift.hashes`` as the checkout ``root`` of the referee repository holds them
+    now: ``constitutional_hash`` of ``policy.json`` and ``folder_hash`` of ``vectors/`` and ``seats/``."""
+    out = {"constitutional_sha256": constitutional_hash(_read(os.path.join(root, POLICY)))}
+    for key, folder in TREES.items():
+        out[key] = folder_hash(os.path.join(root, folder))
+    return out
+
+
+def rulesets(reads: Reads, repo: str) -> set[int]:
+    """The ids of the repository's ruleset list: ``GET /repos/{repo}/rulesets?per_page=100``, then ``&page=2``
+    and on while a page is full; ``Unusable`` for an item without an integer ``id``."""
+    ids: set[int] = set()
+    page = 1
+    while True:
+        path = "/repos/%s/rulesets?per_page=%d" % (repo, PAGE) + ("&page=%d" % page if page > 1 else "")
+        body = reads.get(path, list)
+        if not all(isinstance(item, dict) and type(item.get("id")) is int for item in body):
+            raise Unusable("GET %s: an item without an integer id" % path)
+        ids.update(item["id"] for item in body)
+        if len(body) < PAGE:
+            return ids
+        page += 1
+
+
+def _same(a: Any, b: Any) -> bool:
+    """Equal as JSON: a boolean is no number and 1 is not 1.0."""
+    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
 def rules_hash(body: list[dict]) -> str:
@@ -236,13 +358,21 @@ def rules_hash(body: list[dict]) -> str:
         raise Unusable("a rule's content has no canonical form: %s" % cli.cause(exc)) from None
 
 
-def recorded(reads: Reads, drift: dict, entry: dict) -> set[str]:
-    """The reasons against the baseline: the writer App's id and the hash of each branch ``drift`` names for the
-    target (``drift`` as ``baseline`` read it)."""
-    reasons = set()
-    app_id = reads.get("/app", dict).get("id")
-    if type(app_id) is not int or app_id != drift["writer_app_id"]:
+def recorded(reads: Reads, drift: dict, entry: dict, hashes: dict[str, str]) -> set[str]:
+    """The reasons against the baseline (``drift`` as ``baseline`` read it; ``hashes`` as ``held`` gives them): the
+    writer App's id and permissions, the three hashes, the target's ruleset list and the hash of each branch
+    ``drift`` names for it, and the visibility of every repository ``drift`` names."""
+    reasons = {reason for key, reason in HASH_REASONS.items() if hashes[key] != drift["hashes"][key]}
+    app = reads.get("/app", dict)
+    if type(app.get("id")) is not int or app["id"] != drift["writer_app_id"]:
         reasons.add("writer_app_changed")
+    if not _same(app.get("permissions"), drift["writer_app_permissions"]):
+        reasons.add("writer_app_permissions_changed")
+    if rulesets(reads, entry["repo"]) != set(drift["targets"][entry["id"]]["rulesets"]):
+        reasons.add("rulesets_changed")
+    for repo, visibility in sorted(drift["visibility"].items()):
+        if reads.get("/repos/%s" % repo, dict).get("visibility") != visibility:
+            reasons.add("visibility_changed:%s" % repo)
     for branch, digest in sorted(drift["targets"][entry["id"]]["rules"].items()):
         found = _rules(reads.get("/repos/%s/rules/branches/%s" % (entry["repo"], branch), list), branch)
         if rules_hash(found) != digest:
@@ -298,20 +428,24 @@ def actions(reads: Reads, entry: dict) -> set[str]:
     return set()
 
 
-def check(transport: Any, summary: bytes, target_id: Any, now: Any, repo: Any = None) -> dict:
-    """``{ok, hard_stop, reasons, stale}`` (see the module docstring); reads only, writes nothing. ``now`` is the
-    caller's clock, ``YYYY-MM-DDTHH:MM:SSZ``; ``repo``, when given, is the repository the caller is about to write
-    to."""
+def check(transport: Any, summary: bytes, hashes: Any, target_id: Any, now: Any, repo: Any = None) -> dict:
+    """``{ok, hard_stop, reasons, stale}`` (see the module docstring); reads only, writes nothing. ``hashes`` are
+    the three of the caller's checkout (``held``); ``now`` is the caller's clock, ``YYYY-MM-DDTHH:MM:SSZ``;
+    ``repo``, when given, is the repository the caller is about to write to."""
     doc = read_json(summary, "summary.json")
     entry = target(doc, target_id)
     drift = baseline(doc, target_id)
+    if schema.shape(dict.fromkeys(HASH_REASONS, schema.hex64))(hashes, "hashes"):
+        raise Unusable("hashes must be the three of the checkout, each 64 lowercase hex")
     if _instant(now, "now"):
         raise Unusable("now must be YYYY-MM-DDTHH:MM:SSZ")
+    if moment(drift["operator_checked_at"]) > moment(now):
+        raise Unusable("summary.json: drift.operator_checked_at is after now")
     stale = moment(now) - moment(drift["operator_checked_at"]) > STALE_AFTER
     if repo is not None and repo != entry["repo"]:
         return {"ok": False, "hard_stop": True, "reasons": ["target_repo_mismatch"], "stale": stale}
     reads = Reads(transport)
-    reasons = sorted(rules(reads, doc, entry) | actions(reads, entry) | recorded(reads, drift, entry))
+    reasons = sorted(rules(reads, doc, entry) | actions(reads, entry) | recorded(reads, drift, entry, hashes))
     return {"ok": not reasons and not stale, "hard_stop": bool(reasons), "reasons": reasons, "stale": stale}
 
 
@@ -328,11 +462,12 @@ def main(argv: list[str]) -> int:
         if len(argv) != 3 or argv[0] != "check":
             raise Unusable(USAGE)
         api = write.Replay(read_json(_read(argv[1]), "the recorded API"))
-        summary = _read(argv[2])
+        summary = _read(os.path.join(argv[2], *SUMMARY.split("/")))
+        hashes = held(argv[2])
         request = read_json(sys.stdin.buffer.read(), "stdin")
         if not isinstance(request, dict) or set(request) != {"target", "now"}:
             raise Unusable('stdin must be {"target", "now"} and nothing else')
-        out = check(api, summary, request["target"], request["now"])
+        out = check(api, summary, hashes, request["target"], request["now"])
         sys.stdout.write(json.dumps(out, sort_keys=True) + "\n")
         return 0 if out["ok"] else 1
     except (Unusable, write.Unusable) as exc:
