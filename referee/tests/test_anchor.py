@@ -3,6 +3,12 @@
 - root: interleaved parts give each part's last stored ``row_hash`` (neither the file's last row nor the part's
   first row); the root is checked against a hand-written canonical text; a new row moves only its part's tip;
   a ledger broken in the middle (where no tip sees it), a row without ``part`` and an empty ledger are unusable;
+- state files (tohum/26j, group ``root_files``): each file with a row adds its name with its last stored
+  ``row_hash`` and leaves the parts' tips as they are; a file with no row adds nothing and the root is the
+  ledger's; the root is the hand-written canonical text's; a file that is no chain (a break before its last row
+  too), a name that is a part, are unusable; ``named`` keys a state path by its name under the state directory;
+  ``judge`` and ``verify`` read the root with the files; the command line takes the files after the ledger by
+  their base names, in any order, and refuses two of one name;
 - anchor: the signer signs the root's hex text as its payload, the entry is ``{uuid, hash: root, identity}``;
   an unavailable signer or one that answers no entry is a hard stop; malformed requests and signers are exit 2;
 - verify: each reason from its own case and alone, the closed order when several hold, ``entry_missing``
@@ -95,6 +101,67 @@ class Root(unittest.TestCase):
                 AN.tips(data)
         with self.assertRaisesRegex(AN.Unusable, "empty ledger"):
             AN.tips(b"")
+
+
+FINDINGS, FH = build([{"finding_id": "f1", "state": "open"}, {"finding_id": "f1", "state": "fixed"}])
+LOST, LH = build([{"finding_id": "f2", "cause": "unknown"}])
+PARTS = {"events": H[5], "cost": H[6], "drill": H[3]}
+
+
+class StateFiles(unittest.TestCase):
+    def test_each_file_with_a_row_adds_its_name_and_its_last_row_hash(self):
+        tips = AN.tips(LEDGER, {"findings.jsonl": FINDINGS, "unresolved.jsonl": LOST})
+        self.assertEqual(tips, dict(PARTS, **{"findings.jsonl": FH[1], "unresolved.jsonl": LH[0]}))
+        self.assertNotEqual(FH[0], FH[1])
+        self.assertEqual(AN.root_of(tips), hand_root(dict(PARTS, **{"findings.jsonl": FH[1], "unresolved.jsonl": LH[0]})))
+        one = AN.tips(LEDGER, {"findings.jsonl": FINDINGS})
+        self.assertEqual(one, dict(PARTS, **{"findings.jsonl": FH[1]}))
+        self.assertEqual(len({AN.root_of(t) for t in (tips, one, AN.tips(LEDGER))}), 3)
+        # the key is the name given, and a row more moves only that key
+        self.assertEqual(AN.tips(LEDGER, {"x.jsonl": LOST}), dict(PARTS, **{"x.jsonl": LH[0]}))
+        more, h2 = build([{"finding_id": "f1", "state": "open"}, {"finding_id": "f1", "state": "fixed"},
+                          {"finding_id": "f1", "state": "reopened"}])
+        self.assertEqual(AN.tips(LEDGER, {"findings.jsonl": more, "unresolved.jsonl": LOST}),
+                         dict(tips, **{"findings.jsonl": h2[2]}))
+
+    def test_a_file_with_no_row_adds_nothing(self):
+        for files in (None, {}, {"findings.jsonl": b""}, {"findings.jsonl": b"", "unresolved.jsonl": b""}):
+            with self.subTest(files=files):
+                self.assertEqual(AN.tips(LEDGER, files), PARTS)
+        self.assertEqual(AN.tips(LEDGER, {"findings.jsonl": b"", "unresolved.jsonl": LOST}),
+                         dict(PARTS, **{"unresolved.jsonl": LH[0]}))
+        with self.assertRaisesRegex(AN.Unusable, "empty ledger"):   # the files do not stand for the ledger
+            AN.tips(b"", {"findings.jsonl": FINDINGS})
+
+    def test_a_file_that_is_no_chain_or_takes_a_parts_name_is_unusable(self):
+        edited = FINDINGS.replace(b'"state":"open"', b'"state":"gone"')    # its last row, the tip, is untouched
+        self.assertEqual(edited.count(b'"state":"gone"'), 1)
+        for bad in (edited, FINDINGS[:-9], b"not json\n", LOST + FINDINGS):
+            with self.subTest(bad=bad[:30]), self.assertRaisesRegex(AN.Unusable, "findings.jsonl is not a valid chain"):
+                AN.tips(LEDGER, {"findings.jsonl": bad, "unresolved.jsonl": LOST})
+        with self.assertRaisesRegex(AN.Unusable, "names a state file and a part"):
+            AN.tips(LEDGER, {"cost": LOST})
+        self.assertEqual(AN.tips(LEDGER, {"cost": b""}), PARTS)
+
+    def test_named_is_the_name_under_the_state_directory(self):
+        self.assertEqual(AN.named({".brain/findings.jsonl": b"a", ".brain/unresolved.jsonl": b"b"}),
+                         {"findings.jsonl": b"a", "unresolved.jsonl": b"b"})
+        self.assertEqual((AN.named(None), AN.named({})), ({}, {}))
+        with self.assertRaises(ValueError):
+            AN.named({"findings.jsonl": b""})
+
+    def test_judge_and_verify_read_the_root_with_the_files(self):
+        files = {"findings.jsonl": FINDINGS}
+        root = AN.root_of(AN.tips(LEDGER, files))
+        roots = roots_file((root, "uuid-1"))
+        got = AN.judge(LEDGER, roots, lambda uuid, r: [] if (uuid, r) == ("uuid-1", root) else ["entry_missing"], files)
+        self.assertEqual((got["valid"], got["root"]), (True, root))
+        for other in (None, {"findings.jsonl": b""}, {"findings.jsonl": FINDINGS, "unresolved.jsonl": LOST}):
+            with self.subTest(other=other):
+                got = AN.judge(LEDGER, roots, lambda uuid, r: [], other)
+                self.assertEqual((got["valid"], got["reasons"]), (False, ["root_mismatch"]))
+        with self.assertRaises(AN.Unusable):
+            AN.judge(LEDGER, roots, lambda uuid, r: [], {"findings.jsonl": FINDINGS[:-9]})
 
 
 class Signer(unittest.TestCase):
@@ -247,6 +314,24 @@ class CommandLine(unittest.TestCase):
         self.assertEqual((code, out), (2, {"tips": None, "root": None}))
         self.assertIn("not a valid chain", err)
         self.assertEqual(self.run_cli(["root", os.path.join(self.tmp.name, "missing")])[:2], (2, {"tips": None, "root": None}))
+
+    def test_root_with_state_files(self):
+        ledger, f, u = self.file("l", LEDGER), self.file("findings.jsonl", FINDINGS), self.file("unresolved.jsonl", LOST)
+        want = dict(PARTS, **{"findings.jsonl": FH[1], "unresolved.jsonl": LH[0]})
+        for args in ([f, u], [u, f]):
+            self.assertEqual(self.run_cli(["root", ledger] + args)[:2], (0, {"tips": want, "root": hand_root(want)}))
+        one = dict(PARTS, **{"unresolved.jsonl": LH[0]})
+        self.assertEqual(self.run_cli(["root", ledger, u])[:2], (0, {"tips": one, "root": hand_root(one)}))
+        # a file's key is its base name, whatever directory it is in; a rowless file adds nothing
+        os.mkdir(os.path.join(self.tmp.name, "d"))
+        empty, again = self.file("d/findings.jsonl", b""), self.file("d/unresolved.jsonl", LOST)
+        self.assertEqual(self.run_cli(["root", ledger, empty])[:2], (0, {"tips": PARTS, "root": hand_root(PARTS)}))
+        self.assertEqual(self.run_cli(["root", ledger, empty, again])[:2], (0, {"tips": one, "root": hand_root(one)}))
+        for bad, said in (([u, again], "two state files of one name"), ([f, os.path.join(self.tmp.name, "missing")], ""),
+                          ([self.file("b", FINDINGS[:-9])], "not a valid chain")):
+            code, out, err = self.run_cli(["root", ledger] + bad)
+            self.assertEqual((code, out), (2, {"tips": None, "root": None}))
+            self.assertIn(said, err)
 
     def test_anchor(self):
         root = "ab" * 32

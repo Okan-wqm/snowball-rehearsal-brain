@@ -62,11 +62,15 @@ def sha(data: bytes) -> str:
 
 
 def plan(ledger=LEDGER, previous=None, roots=b"", previous_roots=None, status=None, rows=None, fx=None, sign=None,
-         root_row_id="r1"):
+         root_row_id="r1", **more):
     return CY.plan(ledger, ledger if previous is None else previous, roots,
                    roots if previous_roots is None else previous_roots, status,
                    [start()] if rows is None else rows, IMPORTS, facts() if fx is None else fx,
-                   signer() if sign is None else sign, root_row_id)
+                   signer() if sign is None else sign, root_row_id, **more)
+
+
+FINDINGS = ledger_with([{"finding_id": "f1", "state": "open"}, {"finding_id": "f1", "state": "fixed"}])
+LOST = ledger_with([{"finding_id": "f2", "cause": "unknown"}])
 
 
 def roots_file(*pairs):
@@ -108,6 +112,51 @@ class Plan(unittest.TestCase):
         self.assertEqual(json.loads(roots)["root"], out["root"])
         self.assertEqual(AN.verify(ledger, roots, {"entries": {"uuid-1": out["entry"]}}, WORKFLOW),
                          {"valid": True, "reasons": []})
+
+    def test_the_registers_are_rooted_and_written_with_the_cycle(self):
+        plain = plan()
+        both = {B.STATE_FINDINGS: FINDINGS, B.STATE_UNRESOLVED: LOST}
+        sign = signer()
+        out = plan(sign=sign, registers=both)
+        ledger = out["files"][B.STATE_LEDGER]
+        self.assertEqual(ledger, plain["files"][B.STATE_LEDGER])
+        self.assertEqual({p: d for p, d in out["files"].items() if p in both}, both)
+        self.assertEqual(set(out["files"]) - set(both), {B.STATE_LEDGER, B.STATE_ROOTS, B.STATE_STATUS,
+                                                         B.state_bundle(out["root"])})
+        tips = AN.tips(ledger, {"findings.jsonl": FINDINGS, "unresolved.jsonl": LOST})
+        self.assertEqual(sorted(set(tips) - set(AN.tips(ledger))), ["findings.jsonl", "unresolved.jsonl"])
+        self.assertEqual(out["root"], AN.root_of(tips))
+        self.assertNotEqual(out["root"], plain["root"])
+        self.assertEqual([sha(p) for p in sign.payloads], [out["root"]])
+        self.assertEqual(json.loads(out["files"][B.STATE_ROOTS].splitlines()[-1])["root"], out["root"])
+        # the next D1 verifies the root only with the files
+        got = AN.judge(ledger, out["files"][B.STATE_ROOTS], lambda uuid, root: [], AN.named(both))
+        self.assertTrue(got["valid"])
+        self.assertEqual(AN.judge(ledger, out["files"][B.STATE_ROOTS], lambda uuid, root: [])["reasons"],
+                         ["root_mismatch"])
+        # a register with no row is neither rooted nor written; none at all is the plan without the argument
+        for registers in ({}, None, {B.STATE_FINDINGS: b"", B.STATE_UNRESOLVED: b""}):
+            with self.subTest(registers=registers):
+                self.assertEqual(plan(registers=registers), plain)
+        one = plan(registers={B.STATE_FINDINGS: b"", B.STATE_UNRESOLVED: LOST})
+        self.assertEqual((B.STATE_FINDINGS in one["files"], one["files"][B.STATE_UNRESOLVED]), (False, LOST))
+        self.assertEqual(one["root"], AN.root_of(AN.tips(ledger, {"unresolved.jsonl": LOST})))
+
+    def test_a_register_that_is_no_chain_signs_nothing(self):
+        sign = signer()
+        for bad in (FINDINGS[:-9], FINDINGS.replace(b'"open"', b'"gone"')):
+            with self.assertRaises(AN.Unusable):
+                plan(sign=sign, registers={B.STATE_FINDINGS: bad})
+        self.assertEqual(sign.payloads, [])
+        self.assertIn(AN.Unusable, CY.FAILURES)
+        state = AP.CountingState()
+        with self.assertRaises(AN.Unusable):
+            CY.commit(state, "m", LEDGER, LEDGER, b"", b"", None, [start()], IMPORTS, facts(), signer(), "r1",
+                      {B.STATE_FINDINGS: FINDINGS[:-9]})
+        self.assertEqual(state.commits, 0)
+        out = CY.commit(state, "m", LEDGER, LEDGER, b"", b"", None, [start()], IMPORTS, facts(), signer(), "r1",
+                        {B.STATE_FINDINGS: FINDINGS})
+        self.assertEqual((state.commits, state.files, state.files[B.STATE_FINDINGS]), (1, out["files"], FINDINGS))
 
     def test_the_next_cycle_chains_onto_this_one(self):
         first = plan()
@@ -260,6 +309,9 @@ class StatePaths(unittest.TestCase):
         self.assertEqual((B.STATE_LEDGER, B.STATE_ROOTS, B.STATE_STATUS),
                          (".brain/ledger.jsonl", ".brain/chain/root.jsonl", ".brain/status.md"))
         self.assertEqual(B.STATE_CHAINS, (".brain/ledger.jsonl", ".brain/chain/root.jsonl"))
+        self.assertEqual((B.STATE_FINDINGS, B.STATE_UNRESOLVED), (".brain/findings.jsonl", ".brain/unresolved.jsonl"))
+        self.assertEqual(B.STATE_REGISTERS, (B.STATE_FINDINGS, B.STATE_UNRESOLVED))
+        self.assertEqual([B.state_name(p) for p in B.STATE_REGISTERS], ["findings.jsonl", "unresolved.jsonl"])
         self.assertEqual(B.state_bundle("ab" * 32), ".brain/chain/" + "ab" * 32 + ".sigstore.json")
         self.assertEqual((AN.LEDGER_PATH, AN.ROOTS_PATH, SB.STATUS_PATH, AN.bundle_path("cd" * 32)),
                          (B.STATE_LEDGER, B.STATE_ROOTS, B.STATE_STATUS, B.state_bundle("cd" * 32)))

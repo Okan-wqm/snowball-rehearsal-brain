@@ -9,7 +9,12 @@ The commits are ``git_store``'s (git's own object format; ``test_gitobj.Parents`
   refusal, each file judged on its own and every reason listed together: a file absent, a link or a tree where the
   file belongs, an empty file, a broken chain (with its line, and no append-only verdict on it), a file the parent
   lacks, and a parent line changed, gone, moved, rewritten into another valid chain or re-serialised with the same
-  canonical row (bytes count, not the canonical form); a missing object of either commit as ``state:``.
+  canonical row (bytes count, not the canonical form); a missing object of either commit as ``state:``;
+- the registers (``Registers``, ``findings.jsonl`` and ``unresolved.jsonl``, tohum/26j): a head and a parent
+  without them are verified as before and ``chains`` names none; a register appended to, new on the head, empty
+  or unchanged is verified with its row count and read by ``chains``; a link or a tree in its place, a register
+  the parent had gone, a broken chain and each rewrite of the parent's lines are each their reason, on either
+  register, listed with the other files' reasons.
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ import git_store as S  # noqa: E402
 from test_accepted import chained  # noqa: E402
 
 LEDGER, ROOTS = ".brain/ledger.jsonl", ".brain/chain/root.jsonl"
+FINDINGS, UNRESOLVED = ".brain/findings.jsonl", ".brain/unresolved.jsonl"
 
 
 def rows(part: str, n: int, start: int = 1) -> list[dict]:
@@ -153,6 +159,74 @@ class Verify(StateTest):
         self.assertEqual(self.refused(head, self.genesis), ["state:object_missing:%s" % blob])
         self.assertEqual(self.refused(self.genesis), ["state:object_missing:%s" % blob])
         self.assertEqual(self.refused(head, "e" * 40), ["state:object_missing:%s" % ("e" * 40)])
+
+
+class Registers(StateTest):
+    def chains(self, head: str) -> dict:
+        return ST.chains(self.objects.__getitem__, head)
+
+    def test_a_state_without_them_reads_none(self):
+        head = self.head(files(3, 2))
+        self.assertEqual(self.verify(head, self.genesis)["rows"], {LEDGER: 3, ROOTS: 2})
+        self.assertEqual(sorted(self.chains(head)), sorted([LEDGER, ROOTS]))
+        self.assertEqual(self.chains(self.head({LEDGER: b"x"})), {LEDGER: b"x", ROOTS: None})
+
+    def test_a_register_new_appended_unchanged_or_empty(self):
+        one, two = chained(rows("f", 1)), chained(rows("f", 3))
+        lost = chained(rows("u", 1))
+        first = self.head(dict(files(3, 2), **{FINDINGS: one}))
+        self.assertEqual(self.verify(first, self.genesis)["rows"], {LEDGER: 3, ROOTS: 2, FINDINGS: 1})
+        self.assertEqual(self.verify(first)["rows"], {LEDGER: 3, ROOTS: 2, FINDINGS: 1})   # a head with no parent
+        self.assertEqual(self.chains(first), dict({p: d for p, d in files(3, 2).items() if p != ".brain/status.md"},
+                                                  **{FINDINGS: one}))
+        for content, counts in (({FINDINGS: two, UNRESOLVED: lost}, {FINDINGS: 3, UNRESOLVED: 1}),
+                                ({FINDINGS: one}, {FINDINGS: 1}), ({FINDINGS: one, UNRESOLVED: b""},
+                                                                   {FINDINGS: 1, UNRESOLVED: 0})):
+            with self.subTest(counts=counts):
+                head = self.head(dict(files(4, 3), **content), (first,))
+                self.assertEqual(self.verify(head, first)["rows"], dict({LEDGER: 4, ROOTS: 3}, **counts))
+                self.assertEqual({p: d for p, d in self.chains(head).items() if p in (FINDINGS, UNRESOLVED)}, content)
+
+    def test_each_refusal_on_either_register(self):
+        old = rows("f", 2)
+        for path in (FINDINGS, UNRESOLVED):
+            parent = self.head(dict(files(3, 2), **{path: chained(old)}))
+            broken = lines(chained(rows("f", 3)))
+            broken[1] = broken[1].replace(b'"n": 2', b'"n": 9')
+            self.assertNotEqual(broken, lines(chained(rows("f", 3))))
+            for name, change, reason in (
+                    ("gone", {path: None}, "file_missing:%s" % path),
+                    ("a link", {path: ("120000", b".brain/status.md")}, "not_a_file:%s" % path),
+                    ("a tree", {path: None, path + "/x": b"1\n"}, "not_a_file:%s" % path),
+                    ("broken", {path: b"".join(broken)}, "chain_broken:%s:2" % path),
+                    ("no json", {path: b"not json\n"}, "chain_broken:%s:1" % path),
+                    ("changed", {path: chained([dict(old[0], payload={"n": 7}), old[1]])}, "not_append_only:%s:1" % path),
+                    ("cut", {path: chained(old[:1])}, "not_append_only:%s:2" % path),
+                    ("emptied", {path: b""}, "not_append_only:%s:1" % path),
+                    ("moved", {path: chained([old[1], old[0], old[1]])}, "not_append_only:%s:1" % path)):
+                with self.subTest(path=path, name=name):
+                    content = {p: d for p, d in dict(files(4, 3), **dict({path: chained(old)}, **change)).items()
+                               if d is not None}
+                    self.assertEqual(self.refused(self.head(content, (parent,)), parent), [reason])
+            # with no parent's file there is nothing to extend: any chain stands, and what is no chain or no file does not
+            for name, data, reason in (("a link", ("120000", b".brain/status.md"), "not_a_file:%s" % path),
+                                       ("broken", b"".join(broken), "chain_broken:%s:2" % path)):
+                with self.subTest(path=path, name=name, parent="without"):
+                    head = self.head(dict(files(3, 2), **{path: data}))
+                    self.assertEqual(self.refused(head, self.genesis), [reason])
+                    self.assertEqual(self.refused(head), [reason])
+        # listed with the other files' reasons, the registers after them
+        parent = self.head(dict(files(3, 2), **{FINDINGS: chained(old), UNRESOLVED: chained(old)}))
+        head = self.head({LEDGER: chained(rows("e", 1)), ROOTS: chained(rows("r", 2)), FINDINGS: chained(old[:1])},
+                         (parent,))
+        self.assertEqual(self.refused(head, parent), ["not_append_only:%s:2" % LEDGER, "not_append_only:%s:2" % FINDINGS,
+                                                      "file_missing:%s" % UNRESOLVED])
+
+    def test_a_missing_object_of_a_register(self):
+        head = self.head(dict(files(3, 2), **{FINDINGS: chained(rows("f", 1))}))
+        blob = G.lookup(self.objects.__getitem__, head, FINDINGS)[1]
+        del self.objects[blob]
+        self.assertEqual(self.refused(head, self.genesis), ["state:object_missing:%s" % blob])
 
 
 if __name__ == "__main__":

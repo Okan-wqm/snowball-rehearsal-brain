@@ -418,6 +418,33 @@ class Layout(Base):
             self.write_pulled(status="text")
         self.assertEqual(ctx.exception.reasons, ["state_incomplete"])
 
+    def test_the_registers_are_carried_when_the_head_has_them(self):
+        """``findings.jsonl`` and ``unresolved.jsonl`` (``STATE_REGISTERS``, tohum/26j): listed and read back only
+        when given, each under its name; held to the manifest like every file."""
+        self.assertEqual(P.REGISTER_FILES, ("state/findings.jsonl", "state/unresolved.jsonl"))
+        for given in ({B.STATE_FINDINGS: b"f\n"}, {B.STATE_UNRESOLVED: b""},
+                      {B.STATE_FINDINGS: b"f\n", B.STATE_UNRESOLVED: b"u\n"}):
+            with self.subTest(given=sorted(given)):
+                manifest = self.write_pulled(state=dict(state_files(), **given))
+                self.assertEqual(sorted(p for p in manifest["files"] if p in P.REGISTER_FILES),
+                                 sorted("state/" + B.state_name(p) for p in given))
+                self.assertEqual(P.read(self.pulled).state, dict(state_files(), **given))
+                shutil.rmtree(self.pulled)
+        self.write_pulled(state=dict(state_files(), **{B.STATE_FINDINGS: b"f\n"}))
+        write_tree(self.pulled, {"state/findings.jsonl": "g\n"})
+        self.assertEqual(self.reasons(), ["hash_mismatch:state/findings.jsonl"])
+        write_tree(self.pulled, {"state/findings.jsonl": "f\n", "state/unresolved.jsonl": "u\n"})
+        self.assertEqual(self.reasons(), ["unlisted:state/unresolved.jsonl"])
+        shutil.rmtree(self.pulled)
+        self.write_pulled()
+        self.assertEqual(sorted(P.read(self.pulled).state), sorted(B.STATE_CHAINS))
+        shutil.rmtree(self.pulled)
+        for state in ({B.STATE_FINDINGS: b""}, dict(state_files(), **{B.STATE_FINDINGS: "text"}),
+                      dict(state_files(), **{".brain/other.jsonl": b""})):
+            with self.assertRaises(P.PulledError) as ctx:
+                self.write_pulled(state=state)
+            self.assertEqual(ctx.exception.reasons, ["state_incomplete"])
+
     def test_the_genesis_cycles_form(self):
         """``brain/state`` null: a target with neither head, whose cycle is its activation (loop.pulled.genesis):
         both chains empty, no status.md, brain/integration the commit the tree was read from; nothing else."""
