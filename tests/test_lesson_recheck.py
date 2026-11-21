@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,16 @@ sys.path.insert(0, os.path.join(ROOT, "tests"))
 
 import lesson_recheck as L  # noqa: E402
 import run_like_referee as R  # noqa: E402
+
+
+def py(code: str) -> str:
+    """A shell text that runs ``code`` in this interpreter: the referee's PATH holds python and nothing else (no
+    sleep, cat, touch, rm), so the checks of these tests are shell builtins and this."""
+    return "%s -c %s" % (shlex.quote(sys.executable), shlex.quote(code))
+
+
+def sleep(seconds: float) -> str:
+    return py("import time; time.sleep(%r)" % seconds)
 
 F = L.F
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "ledger-index-lessons.json")
@@ -254,23 +265,23 @@ class RunOne(Base):
         self.assertEqual((got["status"], got["exit"]), ("failed", 3))
 
     def test_no_command_is_not_run(self):
-        for text in ("none: a habit; touch ran", "", None, 5):
+        for text in ("none: a habit; : > ran", "", None, 5):
             self.assertEqual(self.one(text), {"row_id": "f1", "line": 1, "status": "none", "exit": None, "ms": None})
         self.assertEqual(os.listdir(self.root), [])
-        self.assertEqual(self.one("true none: && touch ran")["status"], "held")
+        self.assertEqual(self.one("true none: && : > ran")["status"], "held")
         self.assertEqual(os.listdir(self.root), ["ran"])
 
     def test_it_runs_as_written_by_the_shell_from_the_root_without_stdin(self):
         with open(os.path.join(self.root, "here"), "w") as f:
             f.write("a\n")
-        self.assertEqual(self.one("cd . && test -f here && cat here | grep -q a && ! grep -q b here")["status"], "held")
+        self.assertEqual(self.one("cd . && test -f here && read x < here && test \"$x\" = a && ! test \"$x\" = b")["status"], "held")
         reader, writer = os.pipe()
         os.write(writer, b"from the caller's stdin\n")
         os.close(writer)
         saved = os.dup(0)
         os.dup2(reader, 0)
         try:
-            self.assertEqual(self.one("test \"$(cat | wc -c)\" -eq 0")["status"], "held")
+            self.assertEqual(self.one("! read x")["status"], "held")
         finally:
             os.dup2(saved, 0)
             os.close(saved)
@@ -286,21 +297,21 @@ class RunOne(Base):
 
     def test_no_exit_in_time_is_a_timeout_and_the_group_is_killed(self):
         start = time.monotonic()
-        got = self.one("sleep 3 & sleep 3", timeout=0.3)
+        got = self.one(sleep(3) + " & " + sleep(3), timeout=0.3)
         self.assertLess(time.monotonic() - start, 2)
         self.assertEqual((got["status"], got["exit"]), ("timeout", None))
         self.assertGreaterEqual(got["ms"], 300)
 
     def test_stated_limits_prose_fails_and_a_command_that_cannot_fail_holds(self):
         self.assertEqual(self.one("the tests (all of them) are green")["status"], "failed")
-        self.assertEqual(self.one("false | tail -1")["status"], "held")
+        self.assertEqual(self.one("false | true")["status"], "held")
 
 
 class Run(Base):
     """Rules 3 to 5, through the command."""
 
     def test_the_answer_counts_each_status_in_ledger_order(self):
-        lessons = [self.lesson(t) for t in ("true", "exit 2", "none: a habit", "sleep 4", "true")]
+        lessons = [self.lesson(t) for t in ("true", "exit 2", "none: a habit", sleep(4), "true")]
         self.script(lessons)
         code, got = self.main("run", "--timeout", "0.5")
         self.assertEqual(code, 1)
@@ -315,7 +326,7 @@ class Run(Base):
         self.script([a, self.lesson("none: a habit")])
         code, got = self.main("run")
         self.assertEqual((code, got["ok"], got["held"], got["none"]), (0, True, 1, 1))
-        for bad, key in (("exit 1", "failed"), ("sleep 4", "timeout")):
+        for bad, key in (("exit 1", "failed"), (sleep(4), "timeout")):
             self.script([a, self.lesson(bad)])
             code, got = self.main("run", "--timeout", "0.5")
             self.assertEqual((code, got["ok"], got[key]), (1, False, 1))
@@ -325,7 +336,7 @@ class Run(Base):
         seen = []
         with mock.patch.object(L, "_emit", side_effect=lambda r: seen.append((r["row_id"], os.path.exists(
                 os.path.join(self.root, "second"))))):
-            lessons.append(self.lesson("touch second"))
+            lessons.append(self.lesson(": > second"))
             self.script(lessons)
             self.main("run")
         self.assertEqual(seen, [(lessons[0]["row_id"], False), (lessons[1]["row_id"], False),
@@ -333,7 +344,7 @@ class Run(Base):
         os.unlink(os.path.join(self.root, "second"))
 
     def test_a_result_reaches_a_pipe_before_the_next_check_ends(self):
-        wait = "i=0; while test ! -e go && test $i -lt 50; do sleep 0.1; i=$((i+1)); done; test -e go"
+        wait = "i=0; while test ! -e go && test $i -lt 50; do %s; i=$((i+1)); done; test -e go" % sleep(0.1)
         self.script([self.lesson("true"), self.lesson(wait)])
         code = ("import sys; sys.path.insert(0, %r); import lesson_recheck as L; "
                 "sys.exit(L.main(['run', '--index', %r, '--ledger', %r], root=%r, git=%r))"
@@ -351,7 +362,8 @@ class Run(Base):
         self.assertEqual([rest[0]["result"]["status"], rest[1]["held"], rest[1]["tree_changed"]], ["held", 2, ["go"]])
 
     def test_one_at_a_time_in_order(self):
-        self.script([self.lesson("test ! -e mark && sleep 0.3 && mkdir mark"), self.lesson("rmdir mark")])
+        self.script([self.lesson("test ! -e mark && %s && : > mark" % sleep(0.3)),
+                     self.lesson("test -e mark && " + py("import os; os.unlink('mark')"))])
         self.assertEqual(self.main("run")[1]["held"], 2)
 
     def test_a_changed_tree_is_named_and_not_ok(self):
@@ -359,7 +371,7 @@ class Run(Base):
             f.write("a\n")
         with open(os.path.join(self.root, "gone"), "w") as f:
             f.write("a\n")
-        self.script([self.lesson("echo b > kept; rm gone; echo c > new")])
+        self.script([self.lesson("echo b > kept; %s; echo c > new" % py("import os; os.unlink('gone')"))])
         code, got = self.main("run")
         self.assertEqual((code, got["ok"], got["held"], got["tree_changed"]), (1, False, 1, ["gone", "kept", "new"]))
 
@@ -384,7 +396,7 @@ class Record(Base):
             return [json.loads(line) for line in f.read().splitlines()]
 
     def test_one_row_with_a_ref_per_lesson_run(self):
-        ids = [self.lesson(t) for t in ("true", "exit 2", "none: a habit", "sleep 4")]
+        ids = [self.lesson(t) for t in ("true", "exit 2", "none: a habit", sleep(4))]
         self.script(ids)
         before = self.rows()
         code, got = self.main("record", "--snapshot", SNAPSHOT, "--ts", TS, "--timeout", "0.5")
