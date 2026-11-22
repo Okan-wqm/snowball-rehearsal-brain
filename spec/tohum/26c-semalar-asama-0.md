@@ -49,8 +49,8 @@ kaydedilmiş plan biçiminde değerlendiricinin çıktısı; çıkışta operat�
 
 **reports/*.json** (beyin): `{id, kind: seed_issue|referee_weakness|spec_issue, ref, evidence_test?, state}`. Önyükleme
 hakemi `pull`'da okur, rakipten gizler; imzalı sonuçta her biri `reports[]`'ta `{id, kind, ref, state, sha256}` (dosya
-baytlarının) olur, açık olanlar operatörü `reports_open:<n>` uyarısıyla uyarır; bir vektörü adlandıran `seed_issue` onu
-`disputed` yapar (en çok iki açık itiraz). Spec ve tohum sorunlarını operatör tohum dönemiyle kapatır, Kurucu teyit eder.
+baytlarının) olur, açık olanlar `reports_open:<n>` ya da `reports_unconfirmed:<n>` uyarısıyla uyarır; bir vektörü adlandıran `seed_issue` onu
+`disputed` yapar (en çok iki açık itiraz). Spec ve tohum sorunlarını operatör tohum dönemiyle yanıtlar, Kurucu teyit eder; durumların kapalı kümesi, operatörün tipli yanıtı, teyidin kanıtı ve zamanı ile `reports_open` ve `reports_unconfirmed` sayımları `26l`'dedir.
 
 **Hazır aday** (`candidates/<hedef>/<cid>/`, beyin): `finding.json` `{rule_id, path, line, fix_range, tool_output_sha256}` (hakemin
 yayımladığı araç çıktısından); `diff.patch` (birleşik diff, yalnız düz dosya); `expect.json` `{decision: merge|reject, reason?}`; `reason`

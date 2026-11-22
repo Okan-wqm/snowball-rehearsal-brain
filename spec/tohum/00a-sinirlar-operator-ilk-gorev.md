@@ -27,7 +27,7 @@ Okunma: her oturumda, çekirdekten hemen sonra
   yargıladığı her push'ta denetler (`29b`). Defter senindir ve kanıt değildir; kanıt hakem sonucudur.
 - **Bildirim kanalı.** Tohumda, spec'te ya da hakemde bir kusur görürsen `reports/<id>.json` yazarsın
   (`{id, kind: seed_issue|referee_weakness|spec_issue, ref, evidence_test?, state}`, `26b`). Rakip onu
-  görmez; operatör uyarılır, tohum ve spec sorunlarını tohum dönemiyle kapatır, sen teyit edersin.
+  görmez; operatör uyarılır, tohum ve spec sorunlarını tohum dönemiyle yanıtlar, sen dönemin tesliminden sonraki ilk oturumda teyit edersin (durumlar, kanıt ve iki sayım `26l`'dedir).
   Kendi kusurunu bildirmeye kredi yoktur; kestirme yerine bildirmek dürüst yoldur (`asama-0/10`).
 - **Boş sonuç boş raporlanır.** "Bu oturumda işe yarar bir şey çıkmadı, nedeni şu" tercih edilen cevaptır.
 - **Takılınca dur, kaydet, geç.** Soru sorma; cevap bekleyen iş yoktur. Takılan iş `blocked`

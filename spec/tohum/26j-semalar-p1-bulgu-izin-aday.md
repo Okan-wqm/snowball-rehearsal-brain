@@ -38,7 +38,7 @@ ile Aşama 1'in MF1, MF5, MF6'sı arasında parti yoktur: o ilk okuyucuların ha
   Liste `(organ_id, definition_sha256)` çiftiyle anahtarlanır. Aşama 1'de listeden çıkaran satır yoktur (gevşetme L1,
   seed-087). `accept` satır türü P1'den defter şemasındadır.
 - **Bitti.** MF9, kuralları ve bağlantısı kanıtlandığında ve ret canlı koştuğunda biter; ilk gerçek `accept` satırı
-  Aşama 1 MF5/MF6'dadır.
+  Aşama 1 MF5/MF6'dadır. seed-087'nin kalanları sayfanın sonundadır.
 
 **Kapalı kapının reddi** (seed-085 j; sahip kararı (2026-11-21), gevşetme L-j). Bütün nedenleri duran nedenlerden olan
 ret (`frozen:<trigger>`, `merge_paused`, `sentinel_pending`, `no_organ`, `organ_unknown:<id>`, `organ_not_listed:<id>`)
@@ -63,3 +63,18 @@ Testler §0.9'un numaralarının devamıdır (`26e`). `26e`'nin tablosu ve `stag
 modülün adı olamaz (`sys.stdlib_module_names`; `profile/` varken `import cProfile` düşer): böyle satırı olan tablo
 yüklenmez. Hakem komutu `referee/`'yi `sys.path`'te önde koşar; Aşama 0'ın donmuş `profile`'ı o tablo yeniden açılana
 kadar kalır ve hakemin hiçbir komutu `cProfile`'ı çağırmaz (`26e`).
+
+**İzin listesi, MF9: seed-087'nin kalanları** (rapor masası uzlaşısı (2026-11-22), operatör kararı, sahibin yetkisiyle).
+- **(i) Giriş isteği** beyin kökünde `accept.json`'dur (yalnız bir organ girerken): tam olarak `{organ_ids: [farklı, boş
+  olmayan dizgiler]}` taşıyan düz bir dosya; başka biçim `accept_invalid`, o SHA'da tanımı olmayan kimlik
+  `accept_unknown:<id>` ile reddedilir. Onu Kurucu commit'ler; kayıt da istek dosyası da değildir, onu değiştiren push kod
+  isteğidir (`29b`). Yalnız kabul edilmiş SHA'dan etki eder; girmiş `(organ_id, definition_sha256)` çifti için bir şey
+  yazmaz. Önyükleme hakeminin kabul ettiği hiçbir SHA döngünün reddedeceği bir `accept.json` taşımaz.
+- **(ii) Koşu kimliği.** Önyükleme hakeminin imzalı sonucu `run: {id, attempt}` taşır, ikisi de ondalık rakam dizgisi
+  (Actions koşusu ve denemesi); `evidence_run_ids` `[run.id]`'dir. `run.id`'si olmayan, boş ya da yalnız rakam olmayan
+  (`local`) sonuç `accept` satırına dayanak olamaz: giriş isteği bir organ adlandırıyorsa devir kullanılamaz.
+- **(iii)** P1'de merge, nöbetçi, geri alma, tatbikat ve PASS yolları canlı olarak yalnız genesis merge'ünden koşar. Merge
+  mekaniğinin testleri gerçek bir `accept` satırı ve gerçek bir tanımla kurulan açık kapının arkasında durabilir; bu yer
+  tutucu yalnız testlerdedir, canlı yoldan ulaşılamaz. **(g)** Listelenmiş çift sonraki SHA'larda listede kalır (L1). **(h)** Kapının tanımları kabul edilmiş SHA'daki organlardır (`26a`).
+- **(iv)** `accept.json` için aşama koruması yoktur: P1 çıkış dönemine ertelendi, seed-073'ün (a), (c), (d)'siyle (organ
+  dosya düzeni, `pulled`'a taşınma, organın imajı); o zamana kadar Kurucu'nun okuması geçerlidir.

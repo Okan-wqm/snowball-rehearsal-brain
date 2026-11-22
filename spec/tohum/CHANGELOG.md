@@ -4,13 +4,13 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-22, E694–E696; tohum dönemi AD, raporların yaşam döngüsü, seed-087'nin kalanları, yeni `26l`): `CHANGELOG-13.md`; başında **İlk iş**.
 - 2.2 (2026-11-21, E685–E690; tohum dönemi AB, seed-085–087, yeni `26j`): `CHANGELOG-11.md`; başında **İlk iş**.
 - 2.2 (2026-11-21, E691–E693; tohum dönemi AC, seed-088, yeni `26k` ve `00e`): `CHANGELOG-12.md`; başında **İlk iş**.
 - 2.2 (2026-11-21, E680–E684; dönem AA, yeni `26i`, `28a`): `CHANGELOG-10.md`; girdinin başında **İlk iş** listesi vardır.
 - 2.2 (2026-11-20, E655–E678; Y ve Z dönemleri, yeni `01c`, `29za` ve `26h`, Aşama 1'in ilk dilimi): `CHANGELOG-9.md`.
 - 2.2 (2026-11-20, E654; sahibin ipucu): yeni `00d`, derslerin kendiliğinden yeniden sınanması: `CHANGELOG-9.md`.
-- 2.2 (2026-11-19, E651–E653): sahibin ilkesi ve iki ipucu, `00c`: `CHANGELOG-8.md`.
-- 2.2 (2026-11-19, E647–E650): ölçüm aynası ve sahibin üç ipucu, yeni `00c`: `CHANGELOG-8.md`.
+- 2.2 (2026-11-19, E647–E653): ölçüm aynası, sahibin ilkesi ve beş ipucu, yeni `00c`: `CHANGELOG-8.md`.
 - 2.2 (2026-11-18 – 2026-11-19, E634–E645; bağımsız inceleme ekibi kararı, sahip kararları ve Kurucu raporları): Kurucu'nun dört
   raporunu iki bağımsız inceleyici (Opus ve Sonnet) ayrı ayrı yargıladı; bu yolla karara bağlanan ilk dönem. Sahip
   kararları: `13` "Rekor'a yazılamama" (E636; `28:36`): imzalama programının başarısız tek çağrısı yazılamama değildir,

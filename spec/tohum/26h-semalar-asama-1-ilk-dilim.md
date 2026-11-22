@@ -27,7 +27,7 @@ organ merge'ünden öncedir. Eski MF8 aşağıda ertelenmiştir; MF1–MF7'nin n
   dosyalarından tek hash fonksiyonuyla kendi hesapladığıdır (`26e` "Organ tanımının hash'i"), aday paketinin
   `definition_sha256[]` beyanı değildir. Test 55 §0.9'un numaralarının devamıdır (53 `30d`'nin, 54 `29za`'nınkidir):
   tanım hash'i hiçbir `accept` satırında olmayan organın adayı kapıda reddedilir; o hash için `accept` satırı
-  yazılınca aynı aday aynı koşulda geçer; adayın beyan ettiği hash kararı değiştirmez.
+  yazılınca aynı aday aynı koşulda geçer; adayın beyan ettiği hash kararı değiştirmez. Giriş isteği `accept.json` ve imzalı sonucun koşu kimliği `26j`'dedir (seed-087).
 `26e`'nin tablosu ve `stages/stage1-P1.json` bu iki satırı ve `26j`'nin MF10–MF12'sini taşır. §0.9'un donmuş tablosunda 52'nin partisi `P1`
 yazılı kalır; bu sayfa ondan üstündür (`02`).
 
