@@ -21,7 +21,7 @@ ile Aşama 1'in MF1, MF5, MF6'sı arasında parti yoktur: o ilk okuyucuların ha
 - **Kararlar.** `unresolved` satırının `snapshot_id`'si kararın verildiği tabandır. Son satırı `unresolved` olan bulgu
   başka bir tabanda gözlenince bir `open` satırıyla yeniden açılır (`reopened` sayılmaz); aynı tabanda hiçbir şey
   yazılmaz. Bir dosyanın eşit iki satırı aynı kuralı çiğniyorsa tek bulgudur. Bilinmeyen bir bulguyu adlandıran
-  karar o adayın reddidir, devrin değil.
+  karar o adayın reddidir, devrin değil. Durumların yazıcıları `26k`'dedir (seed-088).
 - **Kap.** Önerinin kabı organın çıktı listesidir: koşu sonuçlarında (`results`) tutulur, `yaz` onu hash'iyle okur.
   `proposed_by` hakemin o çağrıya dair kendi kaydındaki organ kimliğidir, listenin bir alanı değildir.
 - **Bitti.** MF8, `yaz`'a bağlandığında ve her canlı devirde boş girdiyle koştuğunda biter; ilk gerçek girdi Aşama 1
@@ -56,6 +56,7 @@ inceleyicinin bulduğu eksiktir, Kurucu'nun bir raporundan gelmez). Çalışma-z
   aday hazır aday gibi koşar (üç lint koşusu, test koşusu, kırmızı kontrol); yeniden koşusu olmayan aday kapıya ulaşmaz.
 - **MF12, `yaz`'ın aday okuması** (modül `loop/candidates.py`; test 58). `yaz` `candidates/<id>/`'yi sonuçlardan
   hash'iyle okur. Test 58: `organ_ids` kapıya, `finding` bulgu yazıcısına gider; biçimsiz paket yalnız o adayı reddeder.
+  MF12'nin sözleşmeleri T1 ve T2 `26k`'dedir (seed-088).
 Testler §0.9'un numaralarının devamıdır (`26e`). `26e`'nin tablosu ve `stages/stage1-P1.json` bu üç satırı taşır.
 
 **Modül adı** (`26e`'nin kuralı). Modülün ilk adı (paketi ya da `.py`'siz dosyası) Python'un standart kütüphanesinde bir

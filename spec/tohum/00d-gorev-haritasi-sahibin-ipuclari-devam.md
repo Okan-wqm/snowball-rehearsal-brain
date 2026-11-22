@@ -66,3 +66,5 @@ Okunma: her oturumda, görev seçilirken (`00c`'nin devamı)
 - İpucu: bu sınıfı kod kusurlarını kapattığın gibi doğru katmanda kapat: defter satırı eklenmeden önce koşan ve ağaçta
   olmayan bir referansı reddeden bir denetim. Ölç: bu tür düzeltmelerin sayısı, önce ve sonra. Nasıl kurulacağı
   senindir.
+
+Sahibin 2026-11-21'den sonraki ipuçları (E692'den başlayarak) `00e`'dedir.
