@@ -177,6 +177,7 @@ class Store(unittest.TestCase):
         # bytes under their own hash that are no manifest: a kept file, and documents of other shapes
         self.assertEqual(self.refused(sha(FILES["findings.json"])), ["output_unusable"])
         for doc in (b"\xff", b"{", b"[]\n", b'{"files":[]}\n', b'{"files":{},"more":1}\n', b"{}\n",
+                    b'{"files":' + b"[" * 100000 + b"]" * 100000 + b"}\n",     # deeper than ``cli.loads`` reads
                     b'{"files":{"a":"%s"}}\n' % (b"A" * 64), b'{"files":{"a":7}}\n',
                     b'{"files":{"a":"%s\\n"}}\n' % (b"a" * 64)):
             with self.subTest(doc=doc):

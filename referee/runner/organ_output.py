@@ -29,7 +29,8 @@ as the contained run took it after the container ended, ``read(path)`` the bytes
 ``read(sha, read)`` (``yaz``'s side; ``read(path)`` the bytes of a regular file of the results or ``None``)
 returns ``{path: bytes}`` or raises ``Refused`` with its ``reasons``: ``output_hash_invalid`` (``sha`` is not 64
 lowercase hex), ``output_missing:manifest``, ``output_changed:manifest`` (the bytes at ``o/<sha>`` do not hash to
-``sha``), ``output_unusable`` (bytes of that hash that are no manifest: not UTF-8 JSON of the shape above),
+``sha``), ``output_unusable`` (bytes of that hash that are no manifest: not UTF-8 JSON of the shape above, read with
+``cli.loads``, so nested deeper than its limit too),
 ``output_missing:file`` and ``output_changed:file`` (the same two for a file the manifest names; sorted, once
 each). Every byte returned is under a hash that leads back to ``sha``: one changed byte of the manifest or of any
 file refuses the whole output, and nothing of it is returned.
@@ -47,6 +48,8 @@ import json
 import os
 import re
 from typing import Any, Callable
+
+import cli
 
 STORE = "o"
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -109,7 +112,7 @@ def keep(entries: dict[str, dict], read: Read, out: str) -> dict:
 def _files(doc: bytes) -> dict[str, str]:
     """The ``files`` of manifest bytes; ``Refused`` when they are no manifest."""
     try:
-        got: Any = json.loads(doc.decode("utf-8"))
+        got: Any = cli.loads(doc.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         raise Refused(["output_unusable"]) from None
     if not (isinstance(got, dict) and set(got) == {"files"} and isinstance(got["files"], dict)

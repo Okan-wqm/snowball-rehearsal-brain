@@ -1621,10 +1621,10 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
         if "reason" in d5:
             return dict(d5, ok=False)
         cases = yaz_cases(environ, tid, art)
-        harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten
         organs = yaz_organs(environ, tid)
+        harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten
         written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)
-        return dict(written, cases=cases, harness=harness, organs=organs)
+        return dict(written, organs=organs, cases=cases, harness=harness)
     except OF.Online as exc:
         return {"ok": False, "reason": "harness_online", "reasons": exc.reasons}
 

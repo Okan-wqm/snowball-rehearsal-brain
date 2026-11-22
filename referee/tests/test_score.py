@@ -787,7 +787,7 @@ class Live(LY.YazBase):
         yaz = self.yaz_after_kos()
         (built,) = yaz["cases"]["cases"]
         harness = yaz["harness"]
-        # no organ's output is kept yet: the cycle has no finding, its one case is a miss
+        # no organ's output is read as findings yet: the cycle has no finding, its one case is a miss
         self.assertEqual((harness["hits"], harness["counts"]["given"], harness["verdict_reason"]), (0, 0, "misses"))
         report = harness["report"]
         self.assertEqual((report["snapshot_id"], report["n"], report["n_groups"], report["recall"], report["recall_lb"],

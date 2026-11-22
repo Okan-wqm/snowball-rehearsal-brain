@@ -1,0 +1,139 @@
+{
+ "mutants": [
+  {
+   "id": "keep_takes_any_entry",
+   "file": "runner/organ_output.py",
+   "old": "    if reasons:\n        return {\"sha256\": None, \"reasons\": reasons}\n    blobs",
+   "new": "    if False:\n        return {\"sha256\": None, \"reasons\": reasons}\n    blobs",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "keep_passes_unreadable",
+   "file": "runner/organ_output.py",
+   "old": "for e in entries.values() if e.get(\"unreadable\") or e[\"type\"] not in (\"file\", \"dir\")}",
+   "new": "for e in entries.values() if e[\"type\"] not in (\"file\", \"dir\", \"unknown\")}",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "keep_trusts_the_run_s_hash",
+   "file": "runner/organ_output.py",
+   "old": "if data is None or sha256(data) != entry[\"sha256\"]:",
+   "new": "if data is None:",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "keep_names_by_own_hash",
+   "file": "runner/organ_output.py",
+   "old": "if data is None or sha256(data) != entry[\"sha256\"]:\n            return {\"sha256\": None, \"reasons\": [\"output_changed\"]}\n        blobs[entry[\"sha256\"]] = data\n        files[rel] = entry[\"sha256\"]",
+   "new": "if data is None:\n            return {\"sha256\": None, \"reasons\": [\"output_changed\"]}\n        blobs[sha256(data)] = data\n        files[rel] = sha256(data)",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "read_trusts_the_stored_bytes",
+   "file": "runner/organ_output.py",
+   "old": "    if sha256(data) != sha:\n        raise Refused([\"output_changed:\" + what])",
+   "new": "    if False:\n        raise Refused([\"output_changed:\" + what])",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "read_takes_any_string_as_hash",
+   "file": "runner/organ_output.py",
+   "old": "if not (isinstance(sha, str) and SHA256.match(sha)):",
+   "new": "if not isinstance(sha, str):",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "read_returns_what_it_could_read",
+   "file": "runner/organ_output.py",
+   "old": "            reasons.update(exc.reasons)",
+   "new": "            pass",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "read_manifest_values_unchecked",
+   "file": "runner/organ_output.py",
+   "old": "\n            and all(isinstance(v, str) and SHA256.match(v) for v in got[\"files\"].values())):",
+   "new": "):",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "read_manifest_extra_keys",
+   "file": "runner/organ_output.py",
+   "old": "set(got) == {\"files\"}",
+   "new": "\"files\" in got",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "kos_keeps_an_invalid_run",
+   "file": "runner/kos.py",
+   "old": "    if got[\"valid\"]:\n        made",
+   "new": "    if True:\n        made",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "kos_keeps_no_output",
+   "file": "runner/kos.py",
+   "old": "        kept = OO.keep(main[\"outputs\"], lambda path: D._read_regular(made, path), out)",
+   "new": "        kept = {\"sha256\": OO.sha256(OO.manifest({})), \"reasons\": []}",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "kos_removes_the_run_first",
+   "file": "runner/kos.py",
+   "old": "    kept = {\"sha256\": None, \"reasons\": [\"run_invalid\"]}\n    if got[\"valid\"]:",
+   "new": "    shutil.rmtree(main[\"run_root\"], ignore_errors=True)\n    kept = {\"sha256\": None, \"reasons\": [\"run_invalid\"]}\n    if got[\"valid\"]:",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "yaz_reads_no_output",
+   "file": "loop/job.py",
+   "old": "        organs = yaz_organs(environ, tid)",
+   "new": "        organs = {}",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "yaz_reads_by_no_hash",
+   "file": "loop/job.py",
+   "old": "            files = OO.read(sha, read)",
+   "new": "            files = OO.read(sha, lambda path: read(path) if path != OO.path(sha) else OO.manifest({}))",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "yaz_reports_refused_as_read",
+   "file": "loop/job.py",
+   "old": "            line[oid] = {\"read\": False, \"reasons\": exc.reasons}",
+   "new": "            line[oid] = {\"read\": True, \"sha256\": sha, \"files\": 0, \"bytes\": 0}",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  }
+ ]
+}
