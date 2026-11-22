@@ -283,11 +283,11 @@ def run_one(brain: str, mutant: dict[str, Any], limit: list[float]) -> str:
     return {"red": "killed", "green": "survived"}.get(verdict, verdict)
 
 
-def touched(brain: str, rev: str) -> set[str]:
+def touched(brain: str, rev: str, program: str = "git") -> set[str]:
     """The paths changed since ``rev``, relative to the brain (rules in the module docstring); a ``rev`` git
-    cannot read raises ``ValueError``."""
+    cannot read raises ``ValueError``. ``program`` is the git asked (``tests/prepush.py`` hands its own)."""
     def git(*args: str) -> list[str]:
-        done = subprocess.run(["git", "-C", brain, *args], capture_output=True, text=True)
+        done = subprocess.run([program, "-C", brain, *args], capture_output=True, text=True)
         if done.returncode != 0:
             raise ValueError("git %s: %s" % (" ".join(args), done.stderr.strip()))
         return [line for line in done.stdout.splitlines() if line]
@@ -325,18 +325,27 @@ def closure_of(brain: str, changed: set[str], spaces: tuple[str, ...]) -> Callab
     return closure
 
 
+def test_files(brain: str, root: str) -> list[str]:
+    """The ``.py`` files under ``root``'s own ``tests/`` (its first import space, discover's start directory),
+    brain-relative, sorted."""
+    return sorted(ROOTS[root][0] + rel for rel in depmap.python_modules(os.path.join(brain, ROOTS[root][0])).values())
+
+
+def named(files: list[str], pattern: str) -> list[str]:
+    """Those of ``files`` whose name ``pattern`` matches by ``fnmatch`` (discover runs these or fewer)."""
+    return [t for t in files if fnmatch(os.path.basename(t), pattern)]
+
+
 def reach(brain: str, roots: set[str], changed: set[str]) -> Callable[[dict[str, Any]], tuple[list[str], set[str]]]:
     """``mutant -> (starts, reached)`` for mutants of ``roots`` (module docstring, ``--touched``): ``starts`` the
     mutant's ``file`` and the test files its ``tests`` entries name, ``reached`` the import closure of ``starts``;
     brain-relative paths. ``changed`` only names the removed modules ``closure_of`` still reaches."""
     closures = {root: closure_of(brain, changed, ROOTS[root]) for root in roots}
-    # A root's first import space is its own tests/ (discover's start directory).
-    tests = {root: sorted(ROOTS[root][0] + rel for rel in depmap.python_modules(os.path.join(brain, ROOTS[root][0]))
-                          .values()) for root in roots}
+    tests = {root: test_files(brain, root) for root in roots}
 
     def of(m: dict[str, Any]) -> tuple[list[str], set[str]]:
         starts = [os.path.normpath(os.path.join(m["root"], m["file"]))] + [
-            t for t in tests[m["root"]] if any(fnmatch(os.path.basename(t), test_file(e)) for e in m["tests"])]
+            t for t in tests[m["root"]] if any(named([t], test_file(e)) for e in m["tests"])]
         return starts, closures[m["root"]](starts)
     return of
 

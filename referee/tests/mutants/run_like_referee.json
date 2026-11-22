@@ -93,8 +93,17 @@
   },
   {
    "id": "shared_copy",
-   "old": "own = tempfile.mkdtemp(prefix=\"%s-\" % test[\"id\"], dir=work)",
+   "old": "own = tempfile.mkdtemp(prefix=\"cmd-\", dir=work)",
    "new": "own = os.path.join(work, \"shared\"); os.makedirs(own, exist_ok=True)",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.py"
+   ]
+  },
+  {
+   "id": "id_in_the_copys_path",
+   "old": "own = tempfile.mkdtemp(prefix=\"cmd-\", dir=work)",
+   "new": "own = tempfile.mkdtemp(prefix=\"%s-\" % test[\"id\"], dir=work)",
    "file": "tests/run_like_referee.py",
    "tests": [
     "test_run_like_referee.py"

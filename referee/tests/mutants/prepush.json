@@ -297,6 +297,168 @@
    "tests": [
     "test_prepush.py"
    ]
+  },
+  {
+   "id": "quick_ledger_changed",
+   "file": "tests/prepush.py",
+   "old": "return M.touched(root, since, git) - {LEDGER}",
+   "new": "return M.touched(root, since, git)",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_removed_path_unchanged",
+   "file": "tests/prepush.py",
+   "old": "for n in set(now) | set(stamp[\"files\"]) if",
+   "new": "for n in set(now) if",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_added_path_unchanged",
+   "file": "tests/prepush.py",
+   "old": "for n in set(now) | set(stamp[\"files\"]) if",
+   "new": "for n in set(stamp[\"files\"]) if",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_since_ignored",
+   "file": "tests/prepush.py",
+   "old": "if since is not None:\n        try:",
+   "new": "if since is not None and read_stamp(path) is None:\n        try:",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_unreadable_rev_raises_through",
+   "file": "tests/prepush.py",
+   "old": "raise R.Unreadable(\"rev_unreadable\") from None",
+   "new": "raise",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_nameless_part_dropped",
+   "file": "tests/prepush.py",
+   "old": "if reached or not named:",
+   "new": "if reached:",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_every_part_selected",
+   "file": "tests/prepush.py",
+   "old": "if reached or not named:",
+   "new": "if True:",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_unseen_not_kept",
+   "file": "tests/prepush.py",
+   "old": "seen |= reached\n",
+   "new": "pass\n",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_plan_runs",
+   "file": "tests/prepush.py",
+   "old": "if plan or not selected:",
+   "new": "if not selected:",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_other_command_not_run",
+   "file": "tests/prepush.py",
+   "old": "total += 1\n            selected.append(test)\n",
+   "new": "total += 1\n",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_step_prefix_matched",
+   "file": "tests/prepush.py",
+   "old": "found = DISCOVER.fullmatch(step)",
+   "new": "found = DISCOVER.match(step)",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_no_step_is_of_the_grammar",
+   "file": "tests/prepush.py",
+   "old": "return list(out.values()) or None",
+   "new": "return list(out.values())",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_unknown_step_skipped",
+   "file": "tests/prepush.py",
+   "old": "        else:\n            return None\n    return list(out.values())",
+   "new": "    return list(out.values())",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_part_runs_at_the_root",
+   "file": "tests/prepush.py",
+   "old": "\"cmd\": (\"\" if cwd == \".\" else \"cd %s && \" % cwd) + step",
+   "new": "\"cmd\": step",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_cd_back_stays",
+   "file": "tests/prepush.py",
+   "old": "(\"referee\", \"cd ..\"): \".\"",
+   "new": "(\"referee\", \"cd ..\"): \"referee\"",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_step_named_twice_runs_twice",
+   "file": "tests/prepush.py",
+   "old": "out.setdefault(name, {",
+   "new": "out.setdefault(name + str(len(out)), {",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_red_part_green",
+   "file": "tests/prepush.py",
+   "old": "return result | {\"ok\": not reasons,",
+   "new": "return result | {\"ok\": True,",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_since_taken_by_run",
+   "file": "tests/prepush.py",
+   "old": "if args.command != \"quick\" and (args.since is not None or args.plan):",
+   "new": "if False:",
+   "tests": [
+    "test_prepush.py"
+   ]
   }
  ]
 }

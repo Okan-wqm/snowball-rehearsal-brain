@@ -7,7 +7,10 @@ that changes only `reports/` or the ledger is read by tests too (71f64f0 was rej
 line of a report pushed without a run; founder ledger f1359 onward).
 
 1. Finish every edit that is not a ledger row first: code, tests, `snowball-tests.json`, `reports/`, `docs/`,
-   `exit-request.json`. Rows that describe the run come after the run.
+   `exit-request.json`. Rows that describe the run come after the run. While editing,
+   `python3 tests/prepush.py quick --since <last accepted SHA> -j 3` runs only the manifest's discover steps whose
+   test files reach a changed path by import; it writes no stamp and stands in for no step below, and the paths
+   it prints as `unseen` are the ones no step was chosen for.
 2. If `referee/` or the map's inputs changed: from `referee/`, `python -m status.depmap brain .` must equal
    `docs/map/brain.md` (regenerate it in the same push); if code under `referee/` changed,
    `python3 tests/vec_compare.py --before <last accepted SHA>` and read every difference.

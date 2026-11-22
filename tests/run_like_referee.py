@@ -322,8 +322,8 @@ def run_one(test: dict, root: str, names: list[str], path: str, work: str, timeo
     ``watch`` (names of regular files in ``names``), the result carries ``read``: the watched files whose bytes the
     command read from its copy, by access time (``unread`` before the command, ``was_read`` after it; meaningful
     only where ``atime_moves``). Not seen: a read with ``O_NOATIME``, a command that sets the times itself, and the
-    same bytes read from anywhere but the copy."""
-    own = tempfile.mkdtemp(prefix="%s-" % test["id"], dir=work)
+    same bytes read from anywhere but the copy. The id is data: it names the result and is no part of any path."""
+    own = tempfile.mkdtemp(prefix="cmd-", dir=work)
     try:
         tree, tmp = os.path.join(own, "brain"), os.path.join(own, "tmp")
         stage(root, names, tree)

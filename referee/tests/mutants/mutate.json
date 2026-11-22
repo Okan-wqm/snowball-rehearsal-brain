@@ -121,8 +121,8 @@
   {
    "id": "patterns_not_globbed",
    "file": "tests/mutate.py",
-   "old": "fnmatch(os.path.basename(t), test_file(e))",
-   "new": "os.path.basename(t) == test_file(e)",
+   "old": "fnmatch(os.path.basename(t), pattern)",
+   "new": "os.path.basename(t) == pattern",
    "tests": [
     "test_mutate.Order.test_plan_only_counts_each_file_and_runs_nothing"
    ]

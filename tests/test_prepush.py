@@ -24,11 +24,13 @@ sys.path.insert(0, os.path.join(ROOT, "tests"))
 import prepush as P  # noqa: E402
 import run_like_referee as R  # noqa: E402
 
-# Answers by subcommand (the first argument after ``-C <root>``) from a JSON file: {subcommand: [stdout, exit]}.
+# Answers by subcommand (the first argument after ``-C <root>``) from a JSON file: {subcommand: [stdout, exit]};
+# a key of the subcommand and the argument after it ("ls-files --others") answers before the subcommand's own.
 FAKE_GIT = """#!%s
 import json, sys
 with open(%r) as f:
-    out, code = json.load(f)[sys.argv[3]]
+    answers = json.load(f)
+out, code = answers.get(" ".join(sys.argv[3:5])) or answers[sys.argv[3]]
 sys.stdout.write(out)
 sys.exit(code)
 """
@@ -56,6 +58,7 @@ class Base(unittest.TestCase):
             f.write(FAKE_GIT % (sys.executable, self.answers))
         os.chmod(self.git, 0o755)
         self.dirty = ""
+        self.git_says: dict = {}  # more answers of the fake git, over ``call``'s own
 
     def moving_access_times(self) -> None:
         self.assertTrue(R.atime_moves(self.work), "this test needs a file system where access times move")
@@ -81,7 +84,7 @@ class Base(unittest.TestCase):
                  for top, _, ns in os.walk(self.root) for n in ns]
         with open(self.answers, "w") as f:
             json.dump({"ls-files": ["\0".join(names), 0], "status": [self.dirty, 0],
-                       "rev-parse": [os.path.dirname(self.stamp) + "\n", 0]}, f)
+                       "rev-parse": [os.path.dirname(self.stamp) + "\n", 0]} | self.git_says, f)
         self.lines: list[str] = []
         return fn(self.root, self.git, self.stamp, 2, 60.0, emit=self.lines.append, **kw)
 
@@ -306,6 +309,197 @@ class Main(Base):
         self.assertEqual((code, json.loads(buf.getvalue())), (2, {"ok": False, "reason": "git_failed:rev-parse:128"}))
 
 
+def discover(pattern: str) -> str:
+    return "python -m unittest discover -s tests -p '%s'" % pattern
+
+
+def value_test(module: str, value: int, path: str = "") -> str:
+    """A test file's text: ``<module>.VALUE`` is ``value``; ``path`` a line that puts ``referee/`` on the path."""
+    return ("import unittest\n%simport %s\n\n\nclass T(unittest.TestCase):\n    def test_value(self):\n"
+            "        self.assertEqual(%s.VALUE, %d)\n" % (path, module, module, value))
+
+
+REFEREE_ON_PATH = ("import os, sys\nsys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname("
+                   "os.path.abspath(__file__))), 'referee'))\n")
+MOD, OTHER, ROOT_TEST = "T0:referee/tests/test_mod.py", "T0:referee/tests/test_other.py", "T0:tests/test_root.py"
+
+
+class Parts(unittest.TestCase):
+    def test_a_command_of_the_grammar_is_one_part_per_discover_step_in_its_directory(self):
+        cmd = " && ".join(["cd referee", discover("test_a.py"), discover("test_b*.py"), discover("test_a.py"),
+                           "cd ..", discover("test_a.py"), "cd referee", discover("test_c.py")])
+        self.assertEqual(P.parts({"id": "T7", "cmd": cmd}), [
+            {"id": "T7:referee/tests/test_a.py", "root": "referee", "pattern": "test_a.py",
+             "cmd": "cd referee && " + discover("test_a.py")},
+            {"id": "T7:referee/tests/test_b*.py", "root": "referee", "pattern": "test_b*.py",
+             "cmd": "cd referee && " + discover("test_b*.py")},
+            {"id": "T7:tests/test_a.py", "root": ".", "pattern": "test_a.py", "cmd": discover("test_a.py")},
+            {"id": "T7:referee/tests/test_c.py", "root": "referee", "pattern": "test_c.py",
+             "cmd": "cd referee && " + discover("test_c.py")}])
+
+    def test_any_other_command_is_not_of_the_grammar(self):
+        ok = discover("test_a.py")
+        for cmd in ("python -c pass", "cd referee", "cd .. && " + ok, "cd referee && cd referee && " + ok,
+                    "cd tests && " + ok, ok + " --failfast", ok + "; true", ok + " && true", ok + " || true",
+                    " " + ok, ok + " ", discover("a'b"), discover("a\\b"), discover(""),
+                    "python -m unittest discover -s tests", "python3 -m unittest discover -s tests -p 'test_a.py'",
+                    "python -m unittest discover -s other -p 'test_a.py'", ""):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(P.parts({"id": "T7", "cmd": cmd}))
+
+
+class Quick(Base):
+    """``quick``'s rules on a small brain: two modules and a module under them in ``referee/``, a test file of
+    each under ``referee/tests`` and one root test that reaches ``referee/mod.py``."""
+
+    def tree(self, *more: str) -> None:
+        self.world(" && ".join(["cd referee", discover("test_mod.py"), discover("test_other.py"), "cd ..",
+                                discover("test_root.py")]), *more)
+        self.put("referee/deep.py", "VALUE = 1\n")
+        self.put("referee/mod.py", "from deep import VALUE\n")
+        self.put("referee/other.py", "VALUE = 2\n")
+        self.put("referee/tests/test_mod.py", value_test("mod", 1))
+        self.put("referee/tests/test_other.py", value_test("other", 2))
+        self.put("tests/test_root.py", value_test("mod", 1, REFEREE_ON_PATH))
+
+    def quick(self, **kw) -> dict:
+        return self.call(P.quick, **kw)
+
+    def since(self, diff: str, others: str = "", **kw) -> dict:
+        """``quick --since REV`` where git names ``diff`` as changed since REV and ``others`` as untracked."""
+        self.git_says = {"diff": [diff, 0], "ls-files --others": [others, 0]}
+        return self.quick(since="REV", **kw)
+
+    def ran(self) -> list[str]:
+        return [json.loads(line)["id"] for line in self.lines]
+
+    def test_a_changed_module_runs_the_parts_that_reach_it_and_only_them(self):
+        self.tree()
+        self.assertTrue(self.green()["ok"])
+        with open(self.stamp, "rb") as f:
+            stamped = f.read()
+        self.put("referee/deep.py", "VALUE = 3\n")  # reached through mod's import, from both test directories
+        got = self.quick()
+        self.assertEqual(got, {"ok": False, "reasons": ["test_failed:" + MOD, "test_failed:" + ROOT_TEST],
+                               "changed": 1, "parts": 3, "selected": [MOD, ROOT_TEST], "unseen": [], "ran": True})
+        self.assertEqual(self.ran(), [MOD, ROOT_TEST])
+        with open(self.stamp, "rb") as f:
+            self.assertEqual(f.read(), stamped)
+        self.put("referee/tests/test_mod.py", value_test("mod", 3))
+        self.put("tests/test_root.py", value_test("mod", 3, REFEREE_ON_PATH))
+        got = self.quick()
+        self.assertEqual((got["ok"], got["reasons"], got["changed"], got["selected"]), (True, [], 3, [MOD, ROOT_TEST]))
+        with open(self.stamp, "rb") as f:
+            self.assertEqual(f.read(), stamped)  # a green quick pass stamps nothing
+
+    def test_the_stamped_tree_selects_and_runs_nothing(self):
+        self.tree()
+        self.assertTrue(self.green()["ok"])
+        self.assertEqual(self.quick(), {"ok": True, "reasons": [], "changed": 0, "parts": 3, "selected": [],
+                                        "unseen": [], "ran": False})
+        self.assertEqual(self.lines, [])
+
+    def test_without_a_stamp_and_without_since_nothing_is_known_or_run(self):
+        self.tree()
+        self.assertEqual(self.quick(), {"ok": False, "reasons": ["no_green_run"], "changed": None, "parts": None,
+                                        "selected": [], "unseen": [], "ran": False})
+        self.assertEqual(self.lines, [])
+        self.assertFalse(os.path.exists(self.stamp))
+
+    def test_a_removed_and_an_added_file_are_changed_paths_of_the_stamp(self):
+        self.tree()
+        self.assertTrue(self.green()["ok"])
+        os.remove(os.path.join(self.root, "referee/other.py"))
+        self.put("referee/new.py", "VALUE = 9\n")
+        got = self.quick()
+        self.assertEqual((got["reasons"], got["changed"], got["selected"], got["unseen"]),
+                         (["test_failed:" + OTHER], 2, [OTHER], ["referee/new.py"]))
+
+    def test_since_takes_gits_changed_paths_and_not_the_stamps(self):
+        self.tree()
+        self.assertTrue(self.green()["ok"])
+        self.put("referee/mod.py", "VALUE = 1\n")  # changed against the stamp; git does not name it
+        got = self.since("referee/other.py\n")
+        self.assertEqual((got["ok"], got["changed"], got["selected"], got["unseen"]), (True, 1, [OTHER], []))
+        self.assertEqual(self.ran(), [OTHER])
+        os.remove(self.stamp)
+        self.assertEqual(self.since("", "referee/tests/test_mod.py\n", plan=True)["selected"], [MOD])
+
+    def test_the_ledger_is_never_a_changed_path(self):
+        self.tree()
+        got = self.since("%s\nreferee/other.py\n" % P.LEDGER, plan=True)
+        self.assertEqual((got["changed"], got["selected"], got["unseen"]), (1, [OTHER], []))
+        self.assertTrue(self.green()["ok"])
+        self.put(P.LEDGER, "row1\nrow2\n")
+        self.assertEqual((self.quick()["changed"], self.lines), (0, []))
+
+    def test_a_changed_path_no_part_reaches_is_unseen(self):
+        self.tree()
+        self.put("referee/tests/test_unlisted.py", value_test("other", 2))
+        got = self.since("a.txt\nreferee/other.py\nsnowball-tests.json\n",
+                         "referee/lonely.py\nreferee/tests/test_unlisted.py\n", plan=True)
+        self.assertEqual((got["changed"], got["selected"]), (5, [OTHER]))
+        self.assertEqual(got["unseen"], ["a.txt", "referee/lonely.py", "referee/tests/test_unlisted.py",
+                                         "snowball-tests.json"])
+
+    def test_plan_selects_and_runs_nothing(self):
+        self.tree()
+        got = self.since("referee/deep.py\n", plan=True)
+        self.assertEqual(got, {"ok": True, "reasons": [], "changed": 1, "parts": 3, "selected": [MOD, ROOT_TEST],
+                               "unseen": [], "ran": False})
+        self.assertEqual(self.lines, [])
+
+    def test_a_command_not_of_the_grammar_runs_whole_every_time(self):
+        self.tree("python -c pass", "python -c \"raise SystemExit(1)\"")
+        got = self.since("")
+        self.assertEqual((got["ok"], got["reasons"], got["parts"], got["selected"], got["ran"]),
+                         (False, ["test_failed:T2"], 5, ["T1", "T2"], True))
+        self.assertEqual(self.ran(), ["T1", "T2"])
+
+    def test_a_part_that_names_no_test_file_is_selected(self):
+        self.tree(discover("test_gone.py"), "cd referee && " + discover("test_root.py"))
+        got = self.since("", plan=True)
+        self.assertEqual((got["parts"], got["selected"]),
+                         (5, ["T1:tests/test_gone.py", "T2:referee/tests/test_root.py"]))
+
+    def test_a_part_runs_in_its_directory_as_its_command_does(self):
+        # The root test passes only from the brain's root's tests/, the referee tests only from referee/.
+        self.tree()
+        got = self.since("referee/deep.py\nreferee/other.py\n")
+        self.assertEqual((got["ok"], self.ran()), (True, [MOD, OTHER, ROOT_TEST]))
+        self.assertEqual([json.loads(line)["ok"] for line in self.lines], [True, True, True])
+
+    def test_main_takes_since_and_plan_for_quick_only(self):
+        self.tree()
+        self.git_says = {"diff": ["referee/other.py\n", 0], "ls-files --others": ["", 0]}
+        self.call(lambda *a, **kw: {})  # writes git's answers
+        for argv, code, selected in ((["quick", "--since", "REV", "--plan"], 0, [OTHER]),
+                                     (["quick", "--since", "REV"], 0, [OTHER]),
+                                     (["quick"], 1, [])):
+            with self.subTest(argv=argv):
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    self.assertEqual(P.main(argv + ["--stamp", self.stamp], root=self.root, git=self.git), code)
+                self.assertEqual(json.loads(buf.getvalue().splitlines()[-1])["selected"], selected)
+        for argv in (["run", "--since", "REV"], ["check", "--plan"]):
+            with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    P.main(argv + ["--stamp", self.stamp], root=self.root, git=self.git)
+                self.assertEqual(raised.exception.code, 2)
+        self.assertFalse(os.path.exists(self.stamp))
+
+    def test_a_rev_git_cannot_read_is_unreadable(self):
+        self.tree()
+        self.git_says = {"rev-parse": ["", 128], "diff": ["", 0], "ls-files --others": ["", 0]}
+        with self.assertRaises(R.Unreadable) as raised:
+            self.quick(since="REV")
+        self.assertEqual(str(raised.exception), "rev_unreadable")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = P.main(["quick", "--since", "REV", "--stamp", self.stamp], root=self.root, git=self.git)
+        self.assertEqual((code, json.loads(buf.getvalue())), (2, {"ok": False, "reason": "rev_unreadable"}))
+
+
 class Skill(unittest.TestCase):
     """tohum/24a "Ajan ve skill tanımları": between ``---`` lines one ``<key>: <value>`` per line, the keys
     ``name`` and ``description`` and no other, then text that is not empty. Bound here for every skill of the
@@ -335,7 +529,7 @@ class Skill(unittest.TestCase):
 
     def test_the_push_skill_names_commands_that_exist(self):
         _, body = self.parse("push")
-        for command in ("run", "check"):
+        for command in ("run -j 3", "check -j 3", "quick --since <last accepted SHA> -j 3"):
             self.assertIn("python3 tests/prepush.py %s" % command, body)
         for path in ("tests/prepush.py", "tests/run_like_referee.py", "tests/vec_compare.py", "docs/map/brain.md",
                      "referee/ledger/founder.py", "referee/status/depmap.py"):

@@ -8,6 +8,10 @@ bytes: a push is checked against a stamp that only a whole green run writes. Two
     python3 tests/prepush.py run [-j N] [--timeout S] [--stamp FILE]
     python3 tests/prepush.py check [-j N] [--timeout S] [--stamp FILE]
 
+and a third for the work between two whole runs, which stamps nothing and is no part of that comparison:
+
+    python3 tests/prepush.py quick [--since REV] [--plan] [-j N] [--timeout S] [--stamp FILE]
+
 Rules, each bound by ``tests/test_prepush.py``:
 
 - **run** runs every command of the manifest with ``run_like_referee`` (its rules and its out-of-scope list are
@@ -27,10 +31,34 @@ Rules, each bound by ``tests/test_prepush.py``:
   either as stamped or the stamped bytes followed by more (else ``ledger_rewritten``). When the ledger has grown,
   the stamped ``readers`` are run again on the tree as it is, and each one not ok is ``test_failed:<id>``; they
   are not run when another reason already stands. One JSON line ``{ok, reasons, reran}``; exit 0 ok, 1 not ok.
+- **quick** runs the parts of the manifest whose test files reach a changed path, and no other part.
+  *Changed paths*: with ``--since REV``, the paths ``mutate.touched`` names (git's diff of REV against the work
+  tree and git's untracked files; a REV git cannot read is exit 2, ``rev_unreadable``); without it, every path
+  whose ``state`` differs from the stamp's (added, removed, changed), and ``no_green_run`` when there is no
+  stamp. The ledger is never a changed path. *Parts*: a command made only of the steps ``cd referee`` (from the
+  root), ``cd ..`` (from ``referee``) and ``python -m unittest discover -s tests -p '<pattern>'`` (no quote or
+  backslash in the pattern), joined by `` && ``, is one part per discover step, in the directory the steps
+  before it reached, with the id ``<test id>:<that directory's tests/><pattern>``; a step named twice in one
+  directory is one part. A part is selected when a changed path is in the import closure of the test files its
+  pattern names (``mutate.named`` over ``mutate.test_files``, ``mutate.closure_of``: the rules and import spaces
+  ``mutate.py --touched`` reads by, one reader), those files included, or when its pattern names no file. A
+  command of any other form is run whole every time, under its own id. The selected run as ``run``'s commands do
+  (``run_like_referee``), a part by its step alone from its directory; each not ok is ``test_failed:<id>``.
+  ``--plan`` selects and runs nothing. One JSON line ``{ok, reasons, changed, parts, selected, unseen, ran}``:
+  ``changed`` and ``parts`` are counts, ``unseen`` the changed paths in no part's closure, ``ran`` whether
+  anything was run. Exit 0 ok, 1 not ok. It never writes or removes the stamp.
 - Exit 2 with ``{ok: false, reason}`` when the manifest, the file list or git's answers cannot be read.
 
 The ledger is the one exception because its rows are written after the run they describe: a row cannot hold the
 result of a run that has already read it.
+
+What a green ``quick`` does not say, stated: that a whole run is green. It follows import statements only, so
+it does not see what ``mutate.py --touched`` does not see (a changed file that is not Python: a fixture, a JSON,
+a page, a report, the manifest; a file a test opens by path, starts as a subprocess or imports by a built name; the
+imports of a file that does not parse), nor a test that reads the ledger, nor what a part's earlier steps would
+have left for it. ``unseen`` names the changed paths it followed to no part, as a list to read, not as a verdict:
+a changed path that one part reaches by import and another only by path is not in it. The whole ``run`` before
+the push is the check; ``quick`` only orders the work before it.
 
 Out of scope, stated: a green stamp is this machine's run, not the referee's verdict (``run_like_referee``'s
 list); the referee's vectors, the map and the generality read are other commands (``skills/push/SKILL.md`` names
@@ -45,6 +73,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -52,6 +81,10 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import run_like_referee as R  # noqa: E402
+
+sys.path.insert(0, os.path.join(R.ROOT, "referee", "tests"))
+
+import mutate as M  # noqa: E402  (what changed since a REV, a test file's import closure: one reader of each)
 
 LEDGER = "founder-ledger.jsonl"
 STAMP = "snowball-prepush.json"
@@ -186,16 +219,94 @@ def check(root: str, git: str, path: str, jobs: int, timeout: float, emit=print)
     return {"ok": not reasons, "reasons": reasons, "reran": reran}
 
 
+DISCOVER = re.compile(r"python -m unittest discover -s tests -p '([^'\\]+)'")
+CD = {(".", "cd referee"): "referee", ("referee", "cd .."): "."}  # (directory, step) -> the directory after it
+
+
+def parts(test: dict) -> list[dict] | None:
+    """A manifest command's parts (module docstring, ``quick``): ``{id, cmd, root, pattern}`` per discover step,
+    a step named twice in one directory once; ``None`` for a command that is not of the grammar."""
+    out, cwd = {}, "."
+    for step in test["cmd"].split(" && "):
+        found = DISCOVER.fullmatch(step)
+        if found:
+            name = ("" if cwd == "." else cwd + "/") + "tests/" + found.group(1)
+            out.setdefault(name, {"id": "%s:%s" % (test["id"], name), "root": cwd, "pattern": found.group(1),
+                                  "cmd": ("" if cwd == "." else "cd %s && " % cwd) + step})
+        elif (cwd, step) in CD:
+            cwd = CD[(cwd, step)]
+        else:
+            return None
+    return list(out.values()) or None
+
+
+def changed_since(root: str, git: str, path: str, since: str | None) -> set[str] | None:
+    """The paths ``quick`` takes as changed (module docstring), the ledger never among them; ``None`` when there
+    is neither a ``since`` nor a stamp."""
+    if since is not None:
+        try:
+            return M.touched(root, since, git) - {LEDGER}
+        except ValueError:
+            raise R.Unreadable("rev_unreadable") from None
+    stamp = read_stamp(path)
+    if stamp is None:
+        return None
+    now = _others(root, git)
+    return {n for n in set(now) | set(stamp["files"]) if now.get(n) != stamp["files"].get(n)}
+
+
+def quick(root: str, git: str, path: str, jobs: int, timeout: float, emit=print, since: str | None = None,
+          plan: bool = False) -> dict:
+    """The ``quick`` command, as the module says; it reads the stamp at ``path`` and never writes or removes it."""
+    changed = changed_since(root, git, path, since)
+    if changed is None:
+        return {"ok": False, "reasons": ["no_green_run"], "changed": None, "parts": None, "selected": [],
+                "unseen": [], "ran": False}
+    spaces: dict[str, tuple] = {}
+    selected, seen, total = [], set(), 0
+    for test in R.manifest(root):
+        found = parts(test)
+        if found is None:  # not of the grammar: what it reads is not known, so it runs whole, every time
+            total += 1
+            selected.append(test)
+            continue
+        for part in found:
+            total += 1
+            if part["root"] not in spaces:
+                spaces[part["root"]] = (M.closure_of(root, changed, M.ROOTS[part["root"]]),
+                                        M.test_files(root, part["root"]))
+            closure, files = spaces[part["root"]]
+            named = M.named(files, part["pattern"])
+            reached = closure(named) & changed
+            seen |= reached
+            if reached or not named:  # no file of that name: the step is red as written, and is shown so
+                selected.append({"id": part["id"], "cmd": part["cmd"]})
+    result = {"ok": True, "reasons": [], "changed": len(changed), "parts": total,
+              "selected": [t["id"] for t in selected], "unseen": sorted(changed - seen), "ran": False}
+    if plan or not selected:
+        return result
+    summary = R.run(root, selected, R.files(root, git), jobs, timeout, emit=emit)
+    reasons = ["test_failed:%s" % i for i in summary["failed"]]
+    return result | {"ok": not reasons, "reasons": reasons, "ran": True}
+
+
 def main(argv: list[str] | None = None, root: str = R.ROOT, git: str = "git") -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("command", choices=("run", "check"))
+    ap.add_argument("command", choices=("run", "check", "quick"))
     ap.add_argument("-j", "--jobs", type=int, default=1)
     ap.add_argument("--timeout", type=float, default=R.TIMEOUT)
     ap.add_argument("--stamp")
+    ap.add_argument("--since", metavar="REV", help="quick: the paths changed since REV, not since the stamp")
+    ap.add_argument("--plan", action="store_true", help="quick: select and run nothing")
     args = ap.parse_args(argv)
+    if args.command != "quick" and (args.since is not None or args.plan):
+        ap.error("--since and --plan are quick's")
     try:
         path = args.stamp or stamp_path(root, git)
-        result = (green if args.command == "run" else check)(root, git, path, args.jobs, args.timeout)
+        if args.command == "quick":
+            result = quick(root, git, path, args.jobs, args.timeout, since=args.since, plan=args.plan)
+        else:
+            result = (green if args.command == "run" else check)(root, git, path, args.jobs, args.timeout)
     except R.Unreadable as e:
         print(json.dumps({"ok": False, "reason": str(e)}))
         return 2

@@ -134,6 +134,14 @@ class Tree(Base):
                                "python -c \"import os,sys; sys.exit(os.path.exists('new.txt'))\"")
         self.assertEqual([(r["ok"], r["wrote"]) for r in out], [(False, ["new.txt"]), (True, [])])
 
+    def test_an_id_is_no_part_of_the_copys_path(self):
+        lines: list[str] = []
+        ids = ["T0:referee/tests/test_a*.py", "../../out", "/abs"]
+        summary = R.run(self.root, [{"id": i, "cmd": "python -c pass"} for i in ids], [self.put("a.txt")], 1, 60.0,
+                        emit=lines.append)
+        self.assertEqual((summary["failed"], [json.loads(l)["id"] for l in lines]), ([], ids))
+        self.assertEqual((sorted(os.listdir(self.tmp)), os.listdir(self.work)), (["root", "work"], []))
+
 
 class Writes(Base):
     def setUp(self):
