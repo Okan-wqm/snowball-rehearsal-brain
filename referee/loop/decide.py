@@ -29,10 +29,9 @@ the same ledger; tohum/28, 27a).
 - in every cycle but the genesis cycle (``loop.pulled.genesis``), the reasons of ``gate.allowlist.reasons``
   (P1 MF9, tohum/26j "İzin listesi, MF9") for the candidate's package, against ``art.organs`` (the organ
   definitions of the accepted SHA) and the ``accept`` rows of ``pulled``'s ``brain/state`` ledger (the ledger
-  the cycle started from: rows this cycle writes open the gate from the next). The candidates judged here are
-  the ready candidates of ``candidates/<target>/``, whose package names no organ (``READY``), so each carries
-  ``no_organ`` and no cycle after the genesis cycle merges one (26j: "Aşama 0'ın hazır adayları P1'in
-  aktarımıyla biter"); the genesis cycle keeps stage 0's rule. A ledger ``ledger.serial`` or the allowlist
+  the cycle started from: rows this cycle writes open the gate from the next). A ready candidate of
+  ``candidates/<target>/`` has the package that names no organ (``READY``), so each carries ``no_organ`` and
+  no cycle after the genesis cycle merges one (26j: "Aşama 0'ın hazır adayları P1'in aktarımıyla biter"); the genesis cycle keeps stage 0's rule. A ledger ``ledger.serial`` or the allowlist
   cannot read is ``Unusable`` for the whole cycle;
 - merges are serial: the first candidate with no reason is the cycle's merge; every later one is judged with that
   candidate in ``unfinished_sentinels`` (its merge is written in D6 and its sentinel runs in the next cycle's D7),
@@ -116,15 +115,11 @@ def _bytes_or_none(path: str) -> bytes | None:
         return None
 
 
-def _index(results: str) -> dict:
-    raw = _bytes_or_none(os.path.join(results, "index.json"))
-    try:
-        doc = cli.loads(raw) if raw is not None else {}
-    except ValueError:
-        doc = {}
-    cands = doc.get("candidates") if isinstance(doc, dict) else None
+def _kos(index: Any) -> dict:
+    """``koş``'s entries of the ready candidates in the results' index (``loop.candidates.index``), ``{}`` when it
+    holds none."""
+    cands = index.get("candidates") if isinstance(index, dict) else None
     return cands if isinstance(cands, dict) else {}
-
 
 def _kos_reasons(entry: Any) -> list[str]:
     if not isinstance(entry, dict):
@@ -164,19 +159,18 @@ def _ready(files: dict[str, bytes], results: str, cid: str) -> tuple[Any, dict[s
         return None, run        # no object: ``gate.check.finding`` refuses it (``candidate_unusable``)
 
 
-def _runtime(art: P.Pulled, tree: str, results: str) -> tuple[dict[str, Any], "dict[str, dict] | None"]:
-    """``({id: loop.candidates.Candidate | its Refused}, the registry's last rows)`` of the cycle's run-time
-    candidates: none in the genesis cycle; the rows are ``None`` when the findings file is no valid chain."""
+def _runtime(art: P.Pulled, tree: str, results: str, read: LC.Read,
+             index: Any) -> tuple[dict[str, Any], "dict[str, dict] | None"]:
+    """``({id: loop.candidates.Candidate | its Refused's reasons}, the registry's last rows)`` of the cycle's
+    run-time candidates: none in the genesis cycle; the rows are ``None`` when the findings file is no valid chain."""
     if P.genesis(art):
         return {}, None
-    read = LC.reader(results)
-    index = LC.index(read)
     got: dict[str, Any] = {}
     for cid in LC.ids(results, index):
         try:
             got[cid] = LC.read(index, cid, read, lambda path: D._read_regular(tree, path))
         except LC.Refused as exc:
-            got[cid] = exc
+            got[cid] = exc.reasons
     try:
         return got, FW.last(art.state.get(B.STATE_FINDINGS, b""))
     except append.HardStop:
@@ -210,7 +204,9 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
            unfinished: list[str], frozen: list[str]) -> dict[str, Any]:
     """D5 over every candidate; see the module docstring."""
     profile = V.guard_profile(tree, art.target, art.policy)
-    index = _index(results)
+    read = LC.reader(results)
+    whole = LC.index(read)      # the one reading of the results' index of this D5
+    index = _kos(whole)
     control = control if isinstance(control, dict) else {}
     pending = list(unfinished)
     decisions: dict[str, dict] = {}
@@ -222,14 +218,14 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
         closed = [] if rows is None else AL.reasons(READY, art.organs, rows)
     except (AL.Unusable, serial.Unusable) as exc:
         raise Unusable("decide: allowlist: %s" % cli.cause(exc)) from None
-    runtime, registry = _runtime(art, tree, results)
+    runtime, registry = _runtime(art, tree, results, read, whole)
     for cid in sorted(set(art.candidates) | set(runtime)):
         cand = runtime.get(cid)
         if cand is not None and cid in art.candidates:
             decisions[cid] = {"decision": "reject", "reasons": [TWICE]}
             continue
-        if isinstance(cand, LC.Refused):
-            decisions[cid] = {"decision": "reject", "reasons": cand.reasons}
+        if isinstance(cand, list):
+            decisions[cid] = {"decision": "reject", "reasons": cand}
             continue
         if cand is None:
             diff_text = art.candidates[cid]["diff.patch"].decode("utf-8", "surrogateescape")

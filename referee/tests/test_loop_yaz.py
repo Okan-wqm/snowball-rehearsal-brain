@@ -150,7 +150,7 @@ class OneCycle(Cycle):
 
     def test_no_candidates(self):
         self.kos({})
-        self.assertEqual(self.decide(), {"decisions": {}, "merge": None})
+        self.assertEqual(self.decide(), {"decisions": {}, "merge": None, "finding_decisions": []})
 
 
 class Criteria(Cycle):

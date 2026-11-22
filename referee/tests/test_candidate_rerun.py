@@ -15,7 +15,7 @@ What is measured:
   byte of the package was changed in the results.
 
 Not run here: a real docker, the artifact's upload and download, a gate decision of the loop on a run-time
-candidate (nothing hands one to ``loop.decide`` yet, MF12), a brain that holds an organ.
+candidate (test 58, test_candidates.py), a brain that holds an organ.
 """
 
 from __future__ import annotations

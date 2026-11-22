@@ -1,8 +1,9 @@
 """``gate.allowlist``: the gate's allowlist of organ definitions and the ``accept`` rows it is built from
 (P1 MF9, test 55 of tohum/26h, tohum/26j "İzin listesi, MF9"). ``rows`` is called by D6
 (``loop.write_cycle``) and ``request`` by ``çek`` (``loop.cek``). ``reasons`` is called by D5 (``loop.decide``) in every
-cycle but the genesis cycle, on the ready candidates' package, which names no organ: bound at the job by
-test_loop_yaz's ``ClosedGate``, not yet seen in a live cycle (26j: MF9 is done when the reject has run live), so
+cycle but the genesis cycle, on the ready candidates' package, which names no organ, and on each run-time
+candidate's package (``loop.candidates``, which reads its ``organ_ids`` with ``request``; test 58): bound at the
+job by test_loop_yaz's ``ClosedGate``, not yet seen in a live cycle (26j: MF9 is done when the reject has run live), so
 MF9 is not in ``done_mf``.
 
 Rules: tohum/26h MF9 (the gate refuses the candidate of an organ whose definition hash is in no ``accept`` row;
@@ -67,8 +68,8 @@ the request's organ ids at that SHA; ``None`` is no entry), the definitions of t
 Nothing here writes or chains: the rows enter the ledger in the cycle's one plan (``loop.write_cycle``), and a
 candidate is judged against the ledger the cycle started from, so an entry opens the gate from the next cycle.
 
-Out of scope, stated: the run-time package's reading (``candidates/<id>/package.json`` of ``koş``'s output tree,
-tohum/26j: P1 MF12, ``loop/candidates.py``). Taking an entry off the list: no row does in stage 1 (26j, L1), so tohum/12's DEGRADED and 12a's planted
+Out of scope, stated: the run-time package's reading (``candidates/<id>/package.json`` of ``koş``'s output tree:
+``loop.candidates``'s). Taking an entry off the list: no row does in stage 1 (26j, L1), so tohum/12's DEGRADED and 12a's planted
 organs are not answered here. An organ's ``state`` (tohum/26b). Whether ``brain_sha`` holds that organ and
 whether ``run_id`` is that result's run: the caller hands them (``loop.cek`` reads the definitions and the
 request at the accepted SHA; ``loop.accepted`` reads the run id from the signed result). The package's other

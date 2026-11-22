@@ -287,6 +287,15 @@
    "tests": [
     "test_candidates.Live.test_organ_ids_is_what_the_allowlist_judges"
    ]
+  },
+  {
+   "id": "d6_changed_package_not_caught",
+   "file": "loop/job.py",
+   "old": "    except LC.Unusable as exc:\n        raise Unusable(\"yaz: %s\" % cli.cause(exc)) from None\n",
+   "new": "    except LC.Unusable as exc:\n        raise\n",
+   "tests": [
+    "test_candidates.Live.test_a_package_changed_between_d5_and_d6_stops_the_job_and_nothing_is_written"
+   ]
   }
  ]
 }

@@ -12,7 +12,8 @@ What is measured:
   ``fixed`` on ``brain/state``; ``organ_ids`` is what the allowlist judges (each of its reasons); the finding's
   reasons before the merge is chosen (T1), two candidates of one finding (T2); a malformed package, a package of
   which one byte changed, a missing rerun file and an id held by a ready candidate too reject that candidate
-  beside one that merges; the genesis cycle reads none.
+  beside one that merges; a package changed between D5 and D6 stops the job (``Unusable``) with nothing written;
+  the genesis cycle reads none.
 
 Not run here: a real docker, the artifact's upload and download, an organ's output read as a proposal (the
 registry of these tests is written by ``findings.write.observe`` beforehand), a brain that holds an organ.
@@ -26,6 +27,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
@@ -38,6 +40,7 @@ from gate import allowlist as AL  # noqa: E402
 from ledger import append  # noqa: E402
 from loop import candidates as LC  # noqa: E402
 from loop import decide as E  # noqa: E402
+from loop import job as J  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from runner import candidate_rerun as CR  # noqa: E402
 from target import branches as B  # noqa: E402
@@ -187,6 +190,23 @@ class Live(LiveBase):
         self.change("candidates", "rt", "package.json")
         with self.assertRaisesRegex(LC.Unusable, "rt: rerun_missing"):
             LC.merge_diff(self.results(), "rt", sha)
+
+    def test_a_package_changed_between_d5_and_d6_stops_the_job_and_nothing_is_written(self):
+        self.world({"rt": package()})
+        self.github()
+        decide = E.decide
+
+        def then_changed(*args, **kw):
+            got = decide(*args, **kw)
+            self.assertEqual(got["merge"], "rt")
+            self.change("candidates", "rt", "package.json")
+            return got
+
+        with mock.patch.object(E, "decide", then_changed):
+            with self.assertRaisesRegex(J.Unusable, "^yaz: candidate rt: rerun_missing$"):
+                self.run_yaz()
+        self.assertEqual(self.gh.read_file(B.INTEGRATION, "pkg/a.js"), A_JS.encode())
+        self.assertIsNone(self.gh.read_file(B.STATE, B.STATE_FINDINGS))
 
     def test_a_reject_of_the_gate_goes_to_the_finding_writer_with_its_reasons(self):
         self.world({"rt": package(BREAKS_TEST)})
