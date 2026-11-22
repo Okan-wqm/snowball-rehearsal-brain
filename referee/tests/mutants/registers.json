@@ -157,7 +157,7 @@
   {
    "id": "decide_unknown_refuses_all",
    "file": "findings/write.py",
-   "old": "            refused.append({\"index\": index, \"reasons\": [\"finding_unknown\" if row is None else \"finding_not_open\"]})\n            continue",
+   "old": "            refused.append({\"index\": index, \"reasons\": [refusal(row)]})\n            continue",
    "new": "            raise Unusable(\"decision %d names no open finding\" % index)",
    "tests": [
     "test_findings_write.Decisions",
@@ -167,8 +167,8 @@
   {
    "id": "decide_refusal_one_name",
    "file": "findings/write.py",
-   "old": "[\"finding_unknown\" if row is None else \"finding_not_open\"]",
-   "new": "[\"finding_unknown\"]",
+   "old": "return None if row[\"state\"] in DECIDABLE else \"finding_not_open\"",
+   "new": "return None if row[\"state\"] in DECIDABLE else \"finding_unknown\"",
    "tests": [
     "test_findings_write.Decisions"
    ]

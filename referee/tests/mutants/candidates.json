@@ -10,10 +10,10 @@
    ]
   },
   {
-   "id": "package_diff_encoding_unchecked",
+   "id": "package_strings_encoding_unchecked",
    "file": "loop/candidates.py",
-   "old": "        doc[\"diff\"].encode(\"utf-8\")\n",
-   "new": "        doc[\"diff\"]\n",
+   "old": "        json.dumps(doc, ensure_ascii=False).encode(\"utf-8\")     # UnicodeEncodeError: a string with no encoding\n",
+   "new": "",
    "tests": [
     "test_candidates.Form"
    ]
@@ -88,24 +88,6 @@
    "new": "FW.fingerprint(doc[\"finding\"], read_)",
    "tests": [
     "test_candidates.Live.test_a_listed_organ_s_candidate_for_an_open_finding_merges_and_its_finding_is_fixed"
-   ]
-  },
-  {
-   "id": "ids_without_rerun_keys",
-   "file": "loop/candidates.py",
-   "old": "return sorted(names | set(reruns if isinstance(reruns, dict) else ()))",
-   "new": "return sorted(names)",
-   "tests": [
-    "test_candidates.Live.test_a_candidate_is_read_by_the_hash_of_its_rerun"
-   ]
-  },
-  {
-   "id": "ids_without_directory_names",
-   "file": "loop/candidates.py",
-   "old": "return sorted(names | set(reruns if isinstance(reruns, dict) else ()))",
-   "new": "return sorted(set(reruns if isinstance(reruns, dict) else ()))",
-   "tests": [
-    "test_candidates.Live.test_a_candidate_is_read_by_the_hash_of_its_rerun"
    ]
   },
   {
@@ -259,6 +241,51 @@
    "new": "reasons = sorted(set(reasons + (list(frozen) if cand is None else [])))",
    "tests": [
     "test_candidates.Live.test_a_freeze_and_the_serial_rule_hold_for_a_run_time_candidate"
+   ]
+  },
+  {
+   "id": "ids_of_any_name",
+   "file": "loop/candidates.py",
+   "old": "return [name for name in names(results, index_) if K.CANDIDATE_ID.fullmatch(name)]",
+   "new": "return names(results, index_)",
+   "tests": [
+    "test_candidates.Form"
+   ]
+  },
+  {
+   "id": "ids_of_any_name_live",
+   "file": "loop/candidates.py",
+   "old": "return [name for name in names(results, index_) if K.CANDIDATE_ID.fullmatch(name)]",
+   "new": "return names(results, index_)",
+   "tests": [
+    "test_candidates.Live.test_a_candidate_is_read_by_the_hash_of_its_rerun"
+   ]
+  },
+  {
+   "id": "organ_unusable_hides_the_other_ids",
+   "file": "loop/decide.py",
+   "old": "reasons += _named(cand.package, art.organs, rows) + [ORGAN_UNUSABLE]",
+   "new": "reasons += [ORGAN_UNUSABLE]",
+   "tests": [
+    "test_candidates.Live.test_organ_ids_is_what_the_allowlist_judges"
+   ]
+  },
+  {
+   "id": "organ_unusable_not_given",
+   "file": "loop/decide.py",
+   "old": "reasons += _named(cand.package, art.organs, rows) + [ORGAN_UNUSABLE]",
+   "new": "reasons += _named(cand.package, art.organs, rows)",
+   "tests": [
+    "test_candidates.Live.test_organ_ids_is_what_the_allowlist_judges"
+   ]
+  },
+  {
+   "id": "organ_unusable_stops_the_cycle",
+   "file": "loop/decide.py",
+   "old": "            except AL.Unusable:     # the rows were read above",
+   "new": "            except ZeroDivisionError:     # the rows were read above",
+   "tests": [
+    "test_candidates.Live.test_organ_ids_is_what_the_allowlist_judges"
    ]
   }
  ]

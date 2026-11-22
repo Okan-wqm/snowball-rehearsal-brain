@@ -24,6 +24,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import unittest
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -36,12 +37,14 @@ from findings import write as FW  # noqa: E402
 from gate import allowlist as AL  # noqa: E402
 from ledger import append  # noqa: E402
 from loop import candidates as LC  # noqa: E402
+from loop import decide as E  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from runner import candidate_rerun as CR  # noqa: E402
 from target import branches as B  # noqa: E402
 from test_candidate_rerun import organ  # noqa: E402
 from test_kos import A_JS, BREAKS_TEST, GOOD, diff as kos_diff  # noqa: E402
-from test_loop_kos import HEADS, candidate, state_files  # noqa: E402
+from test_loop_kos import HEADS, candidate, recipe, state_files  # noqa: E402
+from test_loop_yaz import OPEN  # noqa: E402
 from test_organ_output import LiveBase  # noqa: E402
 
 OID = "lint.discover"
@@ -93,12 +96,30 @@ class Form(unittest.TestCase):
             "finding with a written field": package(finding=dict(VAR, state="open")),
             "finding leaving the tree": package(finding=TFW.lint(1, path="../a.js")),
             "a K0 finding without rule_id": package(finding=TFW.lint(1, rule_id=None)),
+            # a string no ledger row can hold and no host can name: anywhere in the package
+            "a finding path with a lone surrogate": package(finding=TFW.lint(1, path="\ud800")),
+            "a claim with a lone surrogate": package(finding=dict(VAR, claim="a \udc00 var")),
+            "an organ id with a lone surrogate": package(organ_ids=["x\ud800"]),
         }
         for name, raw in bad.items():
             with self.subTest(name):
                 with self.assertRaises(LC.Refused) as caught:
                     LC.parsed(raw)
                 self.assertEqual(caught.exception.reasons, ["package_invalid"])
+
+    def test_the_candidates_are_the_candidate_ids_among_the_names_and_the_rerun_keys(self):
+        results = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, results)
+        for name in ("b", "bad id", ".hidden", "x" * 129):
+            os.makedirs(os.path.join(results, "candidates", name))
+        index = {"reruns": {"a": {}, "b": {}, "caf\udce9": {}, "": {}, "../a": {}, "x" * 128: {}}}
+        self.assertEqual(LC.names(results, index), sorted(["a", "b", "bad id", ".hidden", "x" * 129, "caf\udce9", "",
+                                                            "../a", "x" * 128]))
+        # an id kos gives no package a place under (runner.kos.CANDIDATE_ID) is no candidate: no decision names it
+        self.assertEqual(LC.ids(results, index), ["a", "b", "x" * 128])
+        self.assertEqual((LC.names(results, None), LC.names(results, {"reruns": ["a"]})), (sorted(os.listdir(
+            os.path.join(results, "candidates"))),) * 2)
+        self.assertEqual(LC.names(os.path.join(results, "none"), index), sorted(index["reruns"]))
 
     def test_the_gate_s_finding_is_derived_from_the_proposed_one(self):
         self.assertEqual(LC.found(VAR), {"rule_id": "no-var", "path": "pkg/a.js", "line": 1})
@@ -187,6 +208,12 @@ class Live(LiveBase):
         self.assertEqual(self.judged()[1]["rt"], [closed, "organ_not_listed:" + OID])
         self.rewrite(organs={})
         self.assertEqual(self.judged()[1]["rt"], [closed, "organ_unknown:" + OID])
+        # a definition the allowlist cannot hash is the reject of the candidates that name it, not the cycle's
+        # (tohum/26k T2); pulled carries only definitions it could read, so the artifact's object is set here
+        art = P.read(self.pulled)._replace(organs={OID: {"entry": {}, "files": {}}})
+        got = E.decide(art, recipe(), self.tree(), self.results(), OPEN, [], [])
+        self.assertEqual(self.reasons(got), {"rt": [closed, "organ_unusable"], "none": [closed, "no_organ"],
+                                             "other": [closed, "organ_unknown:x.y", "organ_unusable"]})
         self.world({"rt": package()}, listed=False)
         self.assertEqual(self.judged(), (None, {"rt": ["organ_not_listed:" + OID]},
                                          [{"fingerprint": PRINT, "reasons": ["organ_not_listed:" + OID]}]))
@@ -283,6 +310,9 @@ class Live(LiveBase):
         self.assertEqual(self.judged()[1]["rt"], ["package_missing"])
         os.rmdir(self.results("candidates", "rt"))
         self.assertEqual(self.judged()[1]["rt"], ["package_missing"])
+        index = json.loads(self.change("index.json"))
+        index["reruns"]["caf\udce9"] = index["reruns"]["bad id"] = {"verdict": "refused", "reasons": ["candidate_id_invalid"]}
+        self.change("index.json", to=json.dumps(index).encode())
         os.mkdir(self.results("candidates", "stray"))
         with open(self.results("candidates", "stray", "package.json"), "wb") as fh:
             fh.write(package())

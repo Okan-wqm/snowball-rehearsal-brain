@@ -49,7 +49,9 @@ ready ones.
 - Otherwise its reasons are the path reasons of its package's ``diff`` (``diff_unusable`` as above), the reasons
   of ``gate.check.decide`` on the three files of its rerun (``r/<id>/``, handed out by
   ``runner.candidate_rerun.reran``) with the finding ``loop.candidates.found`` derives, ``frozen``, the reasons
-  of ``gate.allowlist.reasons`` for the package itself (its ``organ_ids``; never ``READY``), and its finding's:
+  of ``gate.allowlist.reasons`` for the package itself (its ``organ_ids``; never ``READY``; when it names a
+  definition of ``pulled`` the allowlist cannot hash, ``organ_unusable`` beside the reasons of the ids it can
+  judge: the package chose the definition, so it is that candidate's reject, 26k T2), and its finding's:
   ``no_line`` (the finding has no fingerprint on the cycle's tree), ``registry_unusable`` (``pulled``'s
   ``findings.jsonl`` is no valid chain: D6 stops on the same file), ``findings.write.refusal`` of the finding's
   last row in that file (``finding_unknown``, ``finding_not_open``: tohum/26k T1, given before the merge is
@@ -62,14 +64,15 @@ ready ones.
 
 ``decision`` is ``merge`` only with no reason. Output ``{decisions: {cid: {decision, reasons, package_sha256?}},
 merge: cid | None, finding_decisions}``.
-A recipe whose ``inputs`` is not a list of strings, a tree ``profile.derive`` refuses, or an organ definition of
-``pulled`` the allowlist cannot hash, is ``Unusable`` for the whole cycle (no candidate is judged). Nothing here
+A recipe whose ``inputs`` is not a list of strings, or a tree ``profile.derive`` refuses, is ``Unusable`` for
+the whole cycle (no candidate is judged). Nothing here
 writes: the ``events`` rows of the reasons, the merge, the registry's rows and the ledger are D6's
 (``loop.write_cycle``).
 
 Out of scope, stated: a finding proposed in the same cycle (no job hands ``yaz`` a proposal: the registry read
 here is the one the cycle started from; reports/seed-100), so live every run-time candidate's finding is one the
-registry does not hold until a proposal is read; ``kos:`` reasons for a run-time candidate (one not verified is
+registry does not hold until a proposal is read; a ``reopened`` row when a run-time merge is reverted
+(tohum/26k "Geri alma"; not built, ``loop.candidates``); ``kos:`` reasons for a run-time candidate (one not verified is
 not handed out). An operator excluded path written as a glob is judged by ``gate.diffguard`` as written
 (29f coverage), not as a pattern; the staging (``derive``'s pattern rule) leaves such files out of the worktree, so
 ``kos`` refuses a diff that changes one (``kos:base_file_missing``). Criterion 1's "applies to ``brain/integration``'s
@@ -98,6 +101,7 @@ READY = {"organ_ids": []}   # a ready candidate's package: it is the output of n
 TWICE = "candidate_id_twice"
 DECIDED = "finding_decided"
 REGISTRY = "registry_unusable"
+ORGAN_UNUSABLE = "organ_unusable"
 
 
 class Unusable(ValueError):
@@ -179,6 +183,17 @@ def _runtime(art: P.Pulled, tree: str, results: str) -> tuple[dict[str, Any], "d
         return got, None
 
 
+def _named(package: dict, definitions: Any, rows: list[dict]) -> list[str]:
+    """The allowlist's reasons for each organ id of ``package`` alone, those it can judge."""
+    out: list[str] = []
+    for organ_id in package["organ_ids"]:
+        try:
+            out += AL.reasons({"organ_ids": [organ_id]}, definitions, rows)
+        except AL.Unusable:
+            pass
+    return out
+
+
 def _finding_reasons(cand: LC.Candidate, registry: "dict[str, dict] | None", named: set[str]) -> list[str]:
     """Why the candidate's finding takes no decision of this cycle (tohum/26k T1, T2), or ``[]``."""
     if cand.fingerprint is None:
@@ -239,8 +254,8 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
             reasons += _gate(cand.found, diff_text, results, dict(cand.files), control, serial_)
             try:
                 reasons += AL.reasons(cand.package, art.organs, rows)
-            except AL.Unusable as exc:
-                raise Unusable("decide: allowlist: %s" % cli.cause(exc)) from None
+            except AL.Unusable:     # the rows were read above: a definition the package names cannot be hashed
+                reasons += _named(cand.package, art.organs, rows) + [ORGAN_UNUSABLE]
             reasons += _finding_reasons(cand, registry, named)
         reasons = sorted(set(reasons + list(frozen)))
         decisions[cid] = {"decision": "reject" if reasons else "merge", "reasons": reasons}

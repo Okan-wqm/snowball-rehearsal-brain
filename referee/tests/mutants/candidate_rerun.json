@@ -362,27 +362,27 @@
   },
   {
    "id": "yaz_reruns_index_only",
-   "file": "loop/job.py",
-   "old": "        ids = set(os.listdir(os.path.join(_dir(environ, \"in\", \"results\", tid), \"candidates\")))",
-   "new": "        ids = set()",
+   "file": "loop/candidates.py",
+   "old": "        held = set(os.listdir(os.path.join(results, \"candidates\")))",
+   "new": "        held = set()",
    "tests": [
     "test_candidate_rerun.py"
    ]
   },
   {
    "id": "yaz_reruns_packages_only",
-   "file": "loop/job.py",
-   "old": "    for cid in sorted(ids | set(reruns if isinstance(reruns, dict) else ())):",
-   "new": "    for cid in sorted(ids):",
+   "file": "loop/candidates.py",
+   "old": "return sorted(held | set(reruns if isinstance(reruns, dict) else ()))",
+   "new": "return sorted(held)",
    "tests": [
     "test_candidate_rerun.py"
    ]
   },
   {
    "id": "yaz_reruns_unsorted",
-   "file": "loop/job.py",
-   "old": "    for cid in sorted(ids | set(reruns if isinstance(reruns, dict) else ())):",
-   "new": "    for cid in sorted(ids | set(reruns if isinstance(reruns, dict) else ()), reverse=True):",
+   "file": "loop/candidates.py",
+   "old": "return sorted(held | set(reruns if isinstance(reruns, dict) else ()))",
+   "new": "return sorted(held | set(reruns if isinstance(reruns, dict) else ()), reverse=True)",
    "tests": [
     "test_candidate_rerun.py"
    ]

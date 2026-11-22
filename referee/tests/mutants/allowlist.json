@@ -614,8 +614,8 @@
   {
    "id": "decide_gate_never_asked",
    "file": "loop/decide.py",
-   "old": "closed = [] if P.genesis(art) else",
-   "new": "closed = [] if True else",
+   "old": "closed = [] if rows is None else AL.reasons(READY, art.organs, rows)",
+   "new": "closed = []",
    "tests": [
     "test_loop_yaz.ClosedGate.test_after_the_genesis_cycle_every_ready_candidate_is_refused_with_no_organ"
    ]
@@ -623,8 +623,8 @@
   {
    "id": "decide_genesis_judged_too",
    "file": "loop/decide.py",
-   "old": "[] if P.genesis(art) else AL.reasons",
-   "new": "[] if False else AL.reasons",
+   "old": "rows = None if P.genesis(art) else serial.rows(art.state[B.STATE_LEDGER])",
+   "new": "rows = serial.rows(art.state[B.STATE_LEDGER])",
    "tests": [
     "test_loop_yaz.ClosedGate.test_the_genesis_cycle_keeps_stage_0_s_rule"
    ]
@@ -641,8 +641,8 @@
   {
    "id": "decide_accept_rows_unread",
    "file": "loop/decide.py",
-   "old": "art.organs, serial.rows(art.state[B.STATE_LEDGER]))",
-   "new": "art.organs, [])",
+   "old": "closed = [] if rows is None else AL.reasons(READY, art.organs, rows)",
+   "new": "closed = [] if rows is None else AL.reasons(READY, art.organs, [])",
    "tests": [
     "test_loop_yaz.ClosedGate.test_a_named_organ_opens_the_gate_only_with_its_definition_and_its_accept_row"
    ]
@@ -650,8 +650,8 @@
   {
    "id": "decide_gate_reasons_dropped",
    "file": "loop/decide.py",
-   "old": "+ list(frozen) + closed",
-   "new": "+ list(frozen)",
+   "old": "            reasons += closed\n",
+   "new": "            reasons += []\n",
    "tests": [
     "test_loop_yaz.ClosedGate.test_after_the_genesis_cycle_every_ready_candidate_is_refused_with_no_organ"
    ]

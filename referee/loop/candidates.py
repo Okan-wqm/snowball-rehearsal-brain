@@ -2,8 +2,11 @@
 "Aday yolu": "``yaz`` ``candidates/<id>/``'yi sonuçlardan hash'iyle okur. ``organ_ids`` kapıya, ``finding`` bulgu
 yazıcısına gider; biçimsiz paket yalnız o adayı reddeder", test 58; tohum/26k T1, T2).
 
-**The candidates** (``ids``): every name under the results' ``candidates/`` and every key of the index's
-``reruns`` (the set ``yaz``'s ``reruns`` line names).
+**The candidates** (``ids``): the candidate ids (``runner.kos.CANDIDATE_ID``, the rule a ready candidate's id
+and ``koş``'s packages stand under) among ``names``: every name under the results' ``candidates/`` and every key
+of the index's ``reruns`` (``names`` is the set ``yaz``'s ``reruns`` line shows). Any other name is no candidate
+and takes no decision: ``koş`` puts no package under it, and a decision row could not carry every such name (one
+that is not UTF-8 has no place in the ledger).
 
 **Read by its hash** (``read``). A candidate's package and the gate's three files are taken from
 ``runner.candidate_rerun.reran`` and from nowhere else: the package is the bytes whose sha256 the index's rerun
@@ -12,7 +15,9 @@ reason (``package_missing``, ``rerun_missing``, ``rerun_not_verified``, ``rerun_
 it is read.
 
 **The package's form** (``parsed``; tohum/26a: ``{finding, diff, organ_ids, definition_sha256[]}``). The package
-is UTF-8 JSON (``cli.loads``), an object of exactly these four keys: ``diff`` a string, ``organ_ids`` what
+is UTF-8 JSON (``cli.loads``) in which no string, key or value at any depth, lacks a UTF-8 encoding (a lone
+surrogate written as an escape: no ledger row can hold it and no host can name it as a path), an object of
+exactly these four keys: ``diff`` a string, ``organ_ids`` what
 ``gate.allowlist.request`` reads (a list of distinct non-empty strings), ``definition_sha256`` a list of 64
 lowercase hex strings (read by nothing: the gate hashes the definitions itself, tohum/26h), ``finding`` an object
 ``findings.write.proposal_reasons`` accepts. Anything else is ``Refused`` ``package_invalid``: that candidate's
@@ -32,12 +37,14 @@ Caller: ``loop.decide`` (each cycle but the genesis cycle; its rules for a run-t
 
 Out of scope, stated: how a finding comes to be a row of the registry (an organ's output is read as a proposal by
 no job: reports/seed-098, reports/seed-100; until it is, a live candidate's finding is one the registry does not
-hold); that the diff fixes the finding it names beyond the gate's criteria; the number of candidates of a cycle
+hold); a ``reopened`` row for the finding of a merge that is reverted (tohum/26k "Geri alma": nothing
+records which finding a merge fixed, and D6's revert writes no finding row; not built); that the diff fixes the finding it names beyond the gate's criteria; the number of candidates of a cycle
 (reports/seed-099); who may write the results between ``koş`` and ``yaz``.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -48,6 +55,7 @@ from gate import allowlist as AL
 from ledger import schema as S
 from profile import derive as D
 from runner import candidate_rerun as CR
+from runner import kos as K
 
 KEYS = ("finding", "diff", "organ_ids", "definition_sha256")
 INVALID = "package_invalid"
@@ -85,7 +93,7 @@ def reader(results: str) -> Read:
 
 def index(read: Read) -> Any:
     """The results' ``index.json`` as JSON, ``None`` when absent or not JSON."""
-    raw = read("index.json")
+    raw = read(K.INDEX)
     try:
         return cli.loads(raw.decode("utf-8")) if raw is not None else None
     except (ValueError, RecursionError):
@@ -93,26 +101,32 @@ def index(read: Read) -> Any:
 
 
 def ids(results: str, index_: Any) -> list[str]:
-    """The ids of the results' run-time candidates, in code-point order."""
+    """The ids of the results' run-time candidates, in code-point order ("The candidates")."""
+    return [name for name in names(results, index_) if K.CANDIDATE_ID.fullmatch(name)]
+
+
+def names(results: str, index_: Any) -> list[str]:
+    """Every name under the results' ``candidates/`` and every key of the index's ``reruns``, in code-point
+    order."""
     reruns = index_.get("reruns") if isinstance(index_, dict) else None
     try:
-        names = set(os.listdir(os.path.join(results, "candidates")))
+        held = set(os.listdir(os.path.join(results, "candidates")))
     except OSError:     # no such directory: no package stands in the results
-        names = set()
-    return sorted(names | set(reruns if isinstance(reruns, dict) else ()))
+        held = set()
+    return sorted(held | set(reruns if isinstance(reruns, dict) else ()))
 
 
 def parsed(package: bytes) -> dict:
     """The package as an object of 26a's form, or ``Refused`` ``package_invalid`` ("The package's form")."""
     try:
         doc: Any = cli.loads(package.decode("utf-8"))
+        json.dumps(doc, ensure_ascii=False).encode("utf-8")     # UnicodeEncodeError: a string with no encoding
         if not (isinstance(doc, dict) and set(doc) == set(KEYS) and isinstance(doc["diff"], str)):
             raise ValueError
-        doc["diff"].encode("utf-8")
         AL.request({"organ_ids": doc["organ_ids"]})
         if S.list_of(S.hex64)(doc["definition_sha256"], "definition_sha256") or FW.proposal_reasons(doc["finding"]):
             raise ValueError
-    except (ValueError, RecursionError):   # AL.Unusable and a string with no UTF-8 encoding are ValueErrors
+    except (ValueError, RecursionError):   # AL.Unusable and UnicodeEncodeError are ValueErrors
         raise Refused(INVALID) from None
     return doc
 

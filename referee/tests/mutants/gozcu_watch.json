@@ -255,8 +255,8 @@
   {
    "id": "decide_frozen_unread",
    "file": "loop/decide.py",
-   "old": "reasons + list(frozen) + closed",
-   "new": "reasons + closed",
+   "old": "reasons = sorted(set(reasons + list(frozen)))",
+   "new": "reasons = sorted(set(reasons))",
    "tests": [
     "test_gozcu_watch.Decide.test_a_frozen_gate_merges_nothing"
    ]

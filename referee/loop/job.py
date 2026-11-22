@@ -188,13 +188,13 @@ refused tree is ``pulled_invalid``). Then:
   organ not called, a run not valid, an output not kept; else ``organ_output``'s reasons: missing, changed,
   unusable). The bytes read are dropped: ``yaz`` has no consumer of them (the packages among them
   stand in the results by ``kos``'s hand, below, and are read there), and a refused output stops nothing today.
-  The reruns (P1 MF11, ``yaz_reruns``; right after the organs' outputs): for every run-time candidate of the
-  results (every name under their ``candidates/`` and every key of the index's ``reruns``),
+  The reruns (P1 MF11, ``yaz_reruns``; right after the organs' outputs): for every name under the
+  results' ``candidates/`` and every key of the index's ``reruns`` (``loop.candidates.names``),
   ``runner.candidate_rerun.reran`` is asked for the package and the gate's files, which it hands out only for a
   package ``kos`` reran and verified ("Before the gate" there); the target's line has ``reruns``, per id
   ``{reran: true, package_sha256}`` or ``{reran: false, reasons}`` (``package_missing``, ``rerun_missing``,
-  ``rerun_not_verified``, ``rerun_files_missing``). The line is a report: D5 (``loop.decide``, P1 MF12) reads the same candidates
-  itself through ``loop.candidates`` in every cycle but the genesis cycle, a candidate that was not rerun is
+  ``rerun_not_verified``, ``rerun_files_missing``). The line is a report: D5 (``loop.decide``, P1 MF12) reads those of them that
+  are candidate ids itself through ``loop.candidates`` in every cycle but the genesis cycle, a candidate that was not rerun is
   that candidate's reject there, and D6 gets D5's ``finding_decisions`` and, for a run-time merge, its diff
   read again under the package hash D5 decided on (``loop.candidates.merge_diff``; a package changed in between
   is ``Unusable``).
@@ -858,16 +858,8 @@ def yaz_cases(environ: dict[str, str], tid: str, art: Any) -> dict[str, Any]:
 def _results(environ: dict[str, str], tid: str) -> tuple[Any, Any]:
     """``(index, read)`` of ``$RUNNER_TEMP/in/results/<tid>``: ``read(path)`` the bytes of a regular file with no
     link on its way, else ``None``; ``index`` its ``index.json`` as JSON, ``None`` when absent or not JSON."""
-    results = _dir(environ, "in", "results", tid)
-
-    def read(path: str) -> bytes | None:
-        return D._read_regular(results, path)
-
-    raw = read(K.INDEX)
-    try:
-        return (cli.loads(raw.decode("utf-8")) if raw is not None else None), read
-    except (UnicodeDecodeError, ValueError, RecursionError):
-        return None, read
+    read = LC.reader(_dir(environ, "in", "results", tid))
+    return LC.index(read), read
 
 
 def yaz_organs(environ: dict[str, str], tid: str) -> dict[str, Any]:
@@ -897,13 +889,8 @@ def yaz_reruns(environ: dict[str, str], tid: str) -> dict[str, Any]:
     under the results' ``candidates/`` and per key of the index's ``reruns``: ``{reran: true, package_sha256}``
     when ``runner.candidate_rerun.reran`` hands out the package and its files, else ``{reran: false, reasons}``."""
     index, read = _results(environ, tid)
-    reruns = index.get("reruns") if isinstance(index, dict) else None
-    try:
-        ids = set(os.listdir(os.path.join(_dir(environ, "in", "results", tid), "candidates")))
-    except OSError:     # no such directory: no package stands in the results
-        ids = set()
     line: dict[str, Any] = {}
-    for cid in sorted(ids | set(reruns if isinstance(reruns, dict) else ())):
+    for cid in LC.names(_dir(environ, "in", "results", tid), index):
         try:
             package, _ = CR.reran(index, cid, read)
         except CR.NotRerun as exc:

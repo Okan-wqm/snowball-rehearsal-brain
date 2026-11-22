@@ -210,8 +210,8 @@
   {
    "id": "decide_any_state",
    "file": "findings/write.py",
-   "old": "if row is None or row[\"state\"] not in DECIDABLE:",
-   "new": "if row is None:",
+   "old": "return None if row[\"state\"] in DECIDABLE else \"finding_not_open\"",
+   "new": "return None",
    "tests": [
     "test_findings_write.Decisions.test_refused_decisions_write_nothing"
    ]
