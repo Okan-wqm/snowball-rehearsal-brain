@@ -278,8 +278,15 @@ class Live(LiveBase):
         # a run file changed after the rerun: the gate's own criterion, as for a ready candidate
         self.change("r", "rt", "cand.jsonl")
         self.assertEqual(self.judged()[1], {"rt": ["artefact_hash_mismatch"], "z": ["finding_decided"]})
+        # the candidates are the names under candidates/ and the keys of the index's reruns, each alone
         os.remove(self.results("candidates", "rt", "package.json"))
         self.assertEqual(self.judged()[1]["rt"], ["package_missing"])
+        os.rmdir(self.results("candidates", "rt"))
+        self.assertEqual(self.judged()[1]["rt"], ["package_missing"])
+        os.mkdir(self.results("candidates", "stray"))
+        with open(self.results("candidates", "stray", "package.json"), "wb") as fh:
+            fh.write(package())
+        self.assertEqual(self.judged()[:2], ("z", {"rt": ["package_missing"], "stray": ["rerun_missing"], "z": []}))
 
     def test_a_freeze_and_the_serial_rule_hold_for_a_run_time_candidate(self):
         self.world({"rt": package()})

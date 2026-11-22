@@ -1,0 +1,265 @@
+{
+ "mutants": [
+  {
+   "id": "package_extra_keys_pass",
+   "file": "loop/candidates.py",
+   "old": "set(doc) == set(KEYS)",
+   "new": "set(doc) >= set(KEYS)",
+   "tests": [
+    "test_candidates.Form"
+   ]
+  },
+  {
+   "id": "package_diff_encoding_unchecked",
+   "file": "loop/candidates.py",
+   "old": "        doc[\"diff\"].encode(\"utf-8\")\n",
+   "new": "        doc[\"diff\"]\n",
+   "tests": [
+    "test_candidates.Form"
+   ]
+  },
+  {
+   "id": "package_organ_ids_unchecked",
+   "file": "loop/candidates.py",
+   "old": "        AL.request({\"organ_ids\": doc[\"organ_ids\"]})\n",
+   "new": "        doc[\"organ_ids\"]\n",
+   "tests": [
+    "test_candidates.Form"
+   ]
+  },
+  {
+   "id": "package_definition_hashes_unchecked",
+   "file": "loop/candidates.py",
+   "old": "S.list_of(S.hex64)(doc[\"definition_sha256\"], \"definition_sha256\") or ",
+   "new": "",
+   "tests": [
+    "test_candidates.Form"
+   ]
+  },
+  {
+   "id": "package_finding_unchecked",
+   "file": "loop/candidates.py",
+   "old": " or FW.proposal_reasons(doc[\"finding\"]):",
+   "new": " and FW.proposal_reasons(doc[\"finding\"]):",
+   "tests": [
+    "test_candidates.Form"
+   ]
+  },
+  {
+   "id": "found_first_ref_of_any_file",
+   "file": "loop/candidates.py",
+   "old": "ref = next((r for r in finding[\"evidence_refs\"] if r[\"path\"] == finding[\"file\"]), None)\n    return",
+   "new": "ref = next((r for r in finding[\"evidence_refs\"]), None)\n    return",
+   "tests": [
+    "test_candidates.Form"
+   ]
+  },
+  {
+   "id": "found_line_end",
+   "file": "loop/candidates.py",
+   "old": "ref and ref[\"line_start\"]",
+   "new": "ref and ref[\"line_end\"]",
+   "tests": [
+    "test_candidates.Form"
+   ]
+  },
+  {
+   "id": "refused_reason_lost",
+   "file": "loop/candidates.py",
+   "old": "raise Refused(exc.reasons[0]) from None",
+   "new": "raise Refused(INVALID) from None",
+   "tests": [
+    "test_candidates.Live.test_a_candidate_is_read_by_the_hash_of_its_rerun"
+   ]
+  },
+  {
+   "id": "merge_diff_of_any_package",
+   "file": "loop/candidates.py",
+   "old": "if CR.key(package) != package_sha256:",
+   "new": "if False:",
+   "tests": [
+    "test_candidates.Live.test_a_listed_organ_s_candidate_for_an_open_finding_merges_and_its_finding_is_fixed"
+   ]
+  },
+  {
+   "id": "fingerprint_on_the_results",
+   "file": "loop/candidates.py",
+   "old": "FW.fingerprint(doc[\"finding\"], tree_read)",
+   "new": "FW.fingerprint(doc[\"finding\"], read_)",
+   "tests": [
+    "test_candidates.Live.test_a_listed_organ_s_candidate_for_an_open_finding_merges_and_its_finding_is_fixed"
+   ]
+  },
+  {
+   "id": "ids_without_rerun_keys",
+   "file": "loop/candidates.py",
+   "old": "return sorted(names | set(reruns if isinstance(reruns, dict) else ()))",
+   "new": "return sorted(names)",
+   "tests": [
+    "test_candidates.Live.test_a_candidate_is_read_by_the_hash_of_its_rerun"
+   ]
+  },
+  {
+   "id": "ids_without_directory_names",
+   "file": "loop/candidates.py",
+   "old": "return sorted(names | set(reruns if isinstance(reruns, dict) else ()))",
+   "new": "return sorted(set(reruns if isinstance(reruns, dict) else ()))",
+   "tests": [
+    "test_candidates.Live.test_a_candidate_is_read_by_the_hash_of_its_rerun"
+   ]
+  },
+  {
+   "id": "id_twice_judged",
+   "file": "loop/decide.py",
+   "old": "if cand is not None and cid in art.candidates:",
+   "new": "if False:",
+   "tests": [
+    "test_candidates.Live.test_a_malformed_package_rejects_only_that_candidate"
+   ]
+  },
+  {
+   "id": "runtime_judged_as_ready_package",
+   "file": "loop/decide.py",
+   "old": "reasons += AL.reasons(cand.package, art.organs, rows)",
+   "new": "reasons += AL.reasons(READY, art.organs, rows)",
+   "tests": [
+    "test_candidates.Live.test_a_listed_organ_s_candidate_for_an_open_finding_merges_and_its_finding_is_fixed"
+   ]
+  },
+  {
+   "id": "runtime_allowlist_skipped",
+   "file": "loop/decide.py",
+   "old": "reasons += AL.reasons(cand.package, art.organs, rows)",
+   "new": "reasons += []",
+   "tests": [
+    "test_candidates.Live.test_organ_ids_is_what_the_allowlist_judges"
+   ]
+  },
+  {
+   "id": "finding_reasons_not_given",
+   "file": "loop/decide.py",
+   "old": "reasons += _finding_reasons(cand, registry, named)",
+   "new": "reasons += []",
+   "tests": [
+    "test_candidates.Live.test_a_finding_the_registry_refuses_is_a_reason_before_the_merge_is_chosen"
+   ]
+  },
+  {
+   "id": "finding_decided_twice",
+   "file": "loop/decide.py",
+   "old": "return [DECIDED] if cand.fingerprint in named else []",
+   "new": "return []",
+   "tests": [
+    "test_candidates.Live.test_two_candidates_of_one_finding_reject_the_later_and_the_cycle_goes_on"
+   ]
+  },
+  {
+   "id": "standing_reject_names_the_finding",
+   "file": "loop/decide.py",
+   "old": "if not events.standing(reasons):\n                    named.add",
+   "new": "if True:\n                    named.add",
+   "tests": [
+    "test_candidates.Live.test_two_candidates_of_one_finding_reject_the_later_and_the_cycle_goes_on"
+   ]
+  },
+  {
+   "id": "refused_finding_sent_to_the_writer",
+   "file": "loop/decide.py",
+   "old": "if not _finding_reasons(cand, registry, named):\n                finding_decisions.append",
+   "new": "if True:\n                finding_decisions.append",
+   "tests": [
+    "test_candidates.Live.test_a_finding_the_registry_refuses_is_a_reason_before_the_merge_is_chosen"
+   ]
+  },
+  {
+   "id": "no_line_sent_to_the_writer",
+   "file": "loop/decide.py",
+   "old": "if cand.fingerprint is None:\n        return [LC.NO_LINE]",
+   "new": "if cand.fingerprint is None:\n        return []",
+   "tests": [
+    "test_candidates.Live.test_a_finding_without_a_fingerprint_or_a_line_takes_no_decision"
+   ]
+  },
+  {
+   "id": "genesis_reads_runtime",
+   "file": "loop/decide.py",
+   "old": "if P.genesis(art):\n        return {}, None",
+   "new": "if False:\n        return {}, None",
+   "tests": [
+    "test_candidates.Live.test_the_genesis_cycle_reads_no_run_time_candidate"
+   ]
+  },
+  {
+   "id": "package_sha256_not_carried",
+   "file": "loop/decide.py",
+   "old": "decisions[cid][\"package_sha256\"] = cand.package_sha256",
+   "new": "decisions[cid][\"package_sha256\"] = None",
+   "tests": [
+    "test_candidates.Live.test_a_listed_organ_s_candidate_for_an_open_finding_merges_and_its_finding_is_fixed"
+   ]
+  },
+  {
+   "id": "runtime_gate_skipped",
+   "file": "loop/decide.py",
+   "old": "reasons += _gate(cand.found, diff_text, results, dict(cand.files), control, serial_)",
+   "new": "reasons += []",
+   "tests": [
+    "test_candidates.Live.test_a_reject_of_the_gate_goes_to_the_finding_writer_with_its_reasons"
+   ]
+  },
+  {
+   "id": "runtime_not_serial",
+   "file": "loop/decide.py",
+   "old": "reasons += _gate(cand.found, diff_text, results, dict(cand.files), control, serial_)",
+   "new": "reasons += _gate(cand.found, diff_text, results, dict(cand.files), control, pending)",
+   "tests": [
+    "test_candidates.Live.test_a_candidate_is_read_by_the_hash_of_its_rerun"
+   ]
+  },
+  {
+   "id": "registry_unverified_is_empty",
+   "file": "loop/decide.py",
+   "old": "    except append.HardStop:\n        return got, None",
+   "new": "    except append.HardStop:\n        return got, {}",
+   "tests": [
+    "test_candidates.Live.test_a_finding_the_registry_refuses_is_a_reason_before_the_merge_is_chosen"
+   ]
+  },
+  {
+   "id": "refusal_never_not_open",
+   "file": "findings/write.py",
+   "old": "return None if row[\"state\"] in DECIDABLE else \"finding_not_open\"",
+   "new": "return None",
+   "tests": [
+    "test_candidates.Live.test_a_finding_the_registry_refuses_is_a_reason_before_the_merge_is_chosen"
+   ]
+  },
+  {
+   "id": "refusal_never_unknown",
+   "file": "findings/write.py",
+   "old": "    if row is None:\n        return \"finding_unknown\"\n",
+   "new": "    if row is None:\n        return None\n",
+   "tests": [
+    "test_candidates.Live.test_a_finding_the_registry_refuses_is_a_reason_before_the_merge_is_chosen"
+   ]
+  },
+  {
+   "id": "finding_decisions_not_passed",
+   "file": "loop/job.py",
+   "old": "finding_decisions=d5[\"finding_decisions\"]",
+   "new": "finding_decisions=None",
+   "tests": [
+    "test_candidates.Live.test_a_listed_organ_s_candidate_for_an_open_finding_merges_and_its_finding_is_fixed"
+   ]
+  },
+  {
+   "id": "runtime_frozen_ignored",
+   "file": "loop/decide.py",
+   "old": "reasons = sorted(set(reasons + list(frozen)))",
+   "new": "reasons = sorted(set(reasons + (list(frozen) if cand is None else [])))",
+   "tests": [
+    "test_candidates.Live.test_a_freeze_and_the_serial_rule_hold_for_a_run_time_candidate"
+   ]
+  }
+ ]
+}
