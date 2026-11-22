@@ -1,0 +1,8 @@
+{
+  "id": "seed-093-integration-comparison-point-before-the-toys-first-merge-is-open",
+  "kind": "seed_issue",
+  "ref": "spec/tohum/13-memory-ve-zincir.md:55",
+  "state": "open",
+  "evidence_test": "sed -n 54,57p spec/tohum/13-memory-ve-zincir.md; sed -n 45,46p spec/tohum/29o-vektor-arayuzleri-mf14-18-son.md; grep -n 'integration_unnamed' referee/loop/integration.py  # Left of seed-078 after its answer was judged by tohum/26l on 2026-11-22 (the old report is superseded by this one). Answered there and not asked again: the revert row carries head_sha and the merge row merge_sha (26f:17-18, 26d:35), the naming row is merge, revert or the cut row's base_sha (13:54-56), and before the watcher cek refuses the cycle with hard_stop and writes nothing (13:56-57). Open: 13:55-56 itself says that before the toy's first merge base_sha is null and the comparison point 'is not yet named (open, 29o)', and 29o:45-46 only records that the toy's base is empty at setup. Asked: what brain/integration's head is compared with for a target whose cut row carries a null base_sha and that has no merge yet. Built today: a verified ledger with no naming row is refused (integration_unnamed, referee/loop/integration.py); the live toy has merges, so the case is not on the live path now, and it returns with every new toy.",
+  "derived_from": "seed-078-revert-row-does-not-name-its-commit-and-stage-0-has-no-watcher"
+}
