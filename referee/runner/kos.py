@@ -92,8 +92,8 @@ removed, and ``sha256`` is its hash, whatever the entry point's exit code; a run
 nothing (``sha256`` null, ``run_invalid``), nor does an output ``organ_output.keep`` refuses (its reasons: an
 entry under ``/out`` that is no regular file or directory, a file whose bytes are not the ones hashed). An organ
 that was not called has no ``output`` key. ``loop.job``'s ``yaz`` reads each kept output by that hash
-(``yaz_organs``); nothing here or after reads an entry or an output to decide: what is done with an adapter's
-output comes with MF11 and MF12; until the brain holds an organ, ``organs`` is ``{}``. The
+(``yaz_organs``); the one reader of a kept output here is the rerun of its packages ("A run-time candidate"
+below, MF11), and no gate decides on an entry or an output before MF12; until the brain holds an organ, ``organs`` is ``{}``. The
 image is a choice made here (the organ runs in the unit's toolchain image); no seed page fixes it
 (reports/seed-073), nor how an adapter gets its tool when the snapshot has no installed directory
 (reports/seed-074).

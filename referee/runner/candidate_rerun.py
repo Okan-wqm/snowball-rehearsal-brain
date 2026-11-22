@@ -37,7 +37,7 @@ run-time candidate (``FILES``) are handed out by this function and it hands them
 ``(package, {name: bytes})`` when ``candidates/<cid>/package.json`` is a regular file of the results, the index's
 ``reruns`` has an entry under ``cid`` whose ``package_sha256`` is the sha256 of that file's bytes and whose
 ``verdict`` is ``verified``, and the three files are regular files under ``r/<cid>/``; else it raises
-``NotRerun`` with one reason: ``package_missing`` (no such file, or a ``cid`` that is not one path part),
+``NotRerun`` with one reason: ``package_missing`` (no such file, or a ``cid`` that is not one path part the host can name),
 ``rerun_missing`` (no ``reruns`` object, no entry that is an object under ``cid``, or an entry of other bytes: so
 also a package of which one byte differs from the one rerun), ``rerun_not_verified`` (an entry of another
 verdict: a diff that did not apply, a run that told nothing, a package without a diff) or
@@ -56,6 +56,7 @@ reports/seed-099); who may write the results between ``koş`` and ``yaz``.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from typing import Any, Callable
 
@@ -126,10 +127,21 @@ def rerun(outputs: list[str], read: Read,
     return reruns
 
 
+def _one_part(cid: Any) -> bool:
+    """Whether ``cid`` is one part of a path the host can name: a string, not ``.`` or ``..``, without ``/`` or
+    NUL, with an encoding as a file name."""
+    if not (isinstance(cid, str) and cid != "." and cid != ".." and PACKAGE.match(path(cid)) and "\x00" not in cid):
+        return False
+    try:
+        os.fsencode(cid)
+    except UnicodeError:
+        return False
+    return True
+
+
 def reran(index: Any, cid: Any, read: Read) -> tuple[bytes, dict[str, bytes]]:
     """Candidate ``cid``'s package and its gate's files, or ``NotRerun`` (see "Before the gate")."""
-    one_part = isinstance(cid, str) and cid not in (".", "..") and PACKAGE.match(path(cid)) and "\x00" not in cid
-    package = read(path(cid)) if one_part else None
+    package = read(path(cid)) if _one_part(cid) else None
     if package is None:
         raise NotRerun("package_missing")
     reruns = index.get("reruns") if isinstance(index, dict) else None

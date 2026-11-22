@@ -181,42 +181,6 @@
    ]
   },
   {
-   "id": "reran_any_path",
-   "file": "runner/candidate_rerun.py",
-   "old": "    package = read(path(cid)) if one_part else None",
-   "new": "    package = read(path(cid)) if isinstance(cid, str) and \"\\x00\" not in cid else None",
-   "tests": [
-    "test_candidate_rerun.py"
-   ]
-  },
-  {
-   "id": "reran_dots",
-   "file": "runner/candidate_rerun.py",
-   "old": "cid not in (\".\", \"..\") and ",
-   "new": "",
-   "tests": [
-    "test_candidate_rerun.py"
-   ]
-  },
-  {
-   "id": "reran_nul",
-   "file": "runner/candidate_rerun.py",
-   "old": " and \"\\x00\" not in cid\n",
-   "new": "\n",
-   "tests": [
-    "test_candidate_rerun.py"
-   ]
-  },
-  {
-   "id": "reran_not_a_string",
-   "file": "runner/candidate_rerun.py",
-   "old": "    one_part = isinstance(cid, str) and ",
-   "new": "    one_part = ",
-   "tests": [
-    "test_candidate_rerun.py"
-   ]
-  },
-  {
    "id": "reran_package_not_read",
    "file": "runner/candidate_rerun.py",
    "old": "    if package is None:\n        raise NotRerun(\"package_missing\")",
@@ -428,6 +392,69 @@
    "file": "loop/job.py",
    "old": "        reruns = yaz_reruns(environ, tid)",
    "new": "        reruns = {}",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_dot",
+   "file": "runner/candidate_rerun.py",
+   "old": "cid != \".\" and ",
+   "new": "",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_dotdot",
+   "file": "runner/candidate_rerun.py",
+   "old": "cid != \"..\" and ",
+   "new": "",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_nul",
+   "file": "runner/candidate_rerun.py",
+   "old": " and \"\\x00\" not in cid):",
+   "new": "):",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_not_a_string",
+   "file": "runner/candidate_rerun.py",
+   "old": "    if not (isinstance(cid, str) and ",
+   "new": "    if not (",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_slash",
+   "file": "runner/candidate_rerun.py",
+   "old": "PACKAGE.match(path(cid)) and ",
+   "new": "",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_unnameable",
+   "file": "runner/candidate_rerun.py",
+   "old": "    except UnicodeError:\n        return False",
+   "new": "    except UnicodeError:\n        return True",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_any_path",
+   "file": "runner/candidate_rerun.py",
+   "old": "    package = read(path(cid)) if _one_part(cid) else None",
+   "new": "    package = read(path(cid)) if isinstance(cid, str) and \"\\x00\" not in cid else None",
    "tests": [
     "test_candidate_rerun.py"
    ]

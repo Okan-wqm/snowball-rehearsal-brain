@@ -180,12 +180,15 @@ class Unit(unittest.TestCase):
         os.makedirs(os.path.join(self.out, "candidates", "c1", "package.json"))        # a directory is no package
         self.assertEqual(self.refused(index), ["package_missing"])
         self.write("c1", pkg)
-        with open(os.path.join(self.out, "candidates", "package.json"), "wb") as fh:    # what "candidates/./" names
-            fh.write(pkg)
+        for at in ("candidates", "."):      # what "candidates/./package.json" and "candidates/../package.json" name
+            with open(os.path.join(self.out, at, "package.json"), "wb") as fh:
+                fh.write(pkg)
+        index["reruns"].update({cid: self.entry(pkg) for cid in ("\ud800", "\udc00x", "c\udfff")})
         os.makedirs(os.path.join(self.out, "a"))
         os.symlink(os.path.join(self.out, "candidates", "c1"), os.path.join(self.out, "candidates", "link"))
         index["reruns"]["link"] = self.entry(pkg)
-        for cid in ("..", ".", "a/b", "", "../candidates/c1", "c1/../c1", "c1\x00", "link", "c2", None, 1, ["c1"]):
+        for cid in ("..", ".", "a/b", "", "../candidates/c1", "c1/../c1", "c1\x00", "link", "c2", None, 1, ["c1"],
+                    "\ud800", "\udc00x", "c\udfff"):
             with self.subTest(cid=cid):
                 self.assertEqual(self.refused(index, cid), ["package_missing"])
         self.assertEqual(CR.reran(index, "c1", self.read)[0], pkg)
