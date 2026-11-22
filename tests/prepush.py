@@ -33,9 +33,9 @@ Rules, each bound by ``tests/test_prepush.py``:
   are not run when another reason already stands. One JSON line ``{ok, reasons, reran}``; exit 0 ok, 1 not ok.
 - **quick** runs the parts of the manifest whose test files reach a changed path, and no other part.
   *Changed paths*: with ``--since REV``, the paths ``mutate.touched`` names (git's diff of REV against the work
-  tree and git's untracked files; a REV git cannot read is exit 2, ``rev_unreadable``); without it, every path
-  whose ``state`` differs from the stamp's (added, removed, changed), and ``no_green_run`` when there is no
-  stamp. The ledger is never a changed path. *Parts*: a command made only of the steps ``cd referee`` (from the
+  tree and git's untracked files; a REV git cannot read is exit 2, ``rev_unreadable``, and so is any other
+  failure of git there; no git to ask is ``git_unavailable``); without it, every path whose ``state`` differs
+  from the stamp's (added, removed, changed), and ``no_green_run`` when there is no stamp. The ledger is never a changed path. *Parts*: a command made only of the steps ``cd referee`` (from the
   root), ``cd ..`` (from ``referee``) and ``python -m unittest discover -s tests -p '<pattern>'`` (no quote or
   backslash in the pattern), joined by `` && ``, is one part per discover step, in the directory the steps
   before it reached, with the id ``<test id>:<that directory's tests/><pattern>``; a step named twice in one
@@ -248,6 +248,8 @@ def changed_since(root: str, git: str, path: str, since: str | None) -> set[str]
             return M.touched(root, since, git) - {LEDGER}
         except ValueError:
             raise R.Unreadable("rev_unreadable") from None
+        except OSError:
+            raise R.Unreadable("git_unavailable") from None
     stamp = read_stamp(path)
     if stamp is None:
         return None

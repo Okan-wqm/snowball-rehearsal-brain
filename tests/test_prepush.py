@@ -22,6 +22,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 
 import prepush as P  # noqa: E402
+import agent_run as A  # noqa: E402
 import run_like_referee as R  # noqa: E402
 
 # Answers by subcommand (the first argument after ``-C <root>``) from a JSON file: {subcommand: [stdout, exit]};
@@ -499,24 +500,28 @@ class Quick(Base):
             code = P.main(["quick", "--since", "REV", "--stamp", self.stamp], root=self.root, git=self.git)
         self.assertEqual((code, json.loads(buf.getvalue())), (2, {"ok": False, "reason": "rev_unreadable"}))
 
+    def test_since_without_a_git_to_ask_is_unreadable(self):
+        self.tree()
+        os.remove(self.git)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = P.main(["quick", "--since", "REV", "--stamp", self.stamp], root=self.root, git=self.git)
+        self.assertEqual((code, json.loads(buf.getvalue())), (2, {"ok": False, "reason": "git_unavailable"}))
+
 
 class Skill(unittest.TestCase):
     """tohum/24a "Ajan ve skill tanımları": between ``---`` lines one ``<key>: <value>`` per line, the keys
-    ``name`` and ``description`` and no other, then text that is not empty. Bound here for every skill of the
-    brain, with one more rule of this brain: ``name`` is the directory's name."""
+    ``name`` and ``description`` and no other, then text that is not empty (``agent_run.front_matter``, the one
+    reader of the form here). Bound here for every skill of the brain, with one more rule of this brain: ``name``
+    is the directory's name."""
 
     def skills(self) -> list[str]:
         top = os.path.join(ROOT, "skills")
         return sorted(os.listdir(top))
 
     def parse(self, name: str) -> tuple[dict, str]:
-        with open(os.path.join(ROOT, "skills", name, "SKILL.md"), encoding="utf-8") as f:
-            lines = f.read().split("\n")
-        self.assertEqual(lines[0], "---")
-        end = lines.index("---", 1)
-        pairs = [line.split(": ", 1) for line in lines[1:end]]
-        self.assertTrue(all(len(p) == 2 and p[1].strip() for p in pairs), pairs)
-        return dict(pairs), "\n".join(lines[end + 1:])
+        with open(os.path.join(ROOT, "skills", name, "SKILL.md"), "rb") as f:
+            return A.front_matter(f.read(), A.SKILL_KEYS)
 
     def test_every_skill_has_the_seeds_form(self):
         self.assertIn("push", self.skills())

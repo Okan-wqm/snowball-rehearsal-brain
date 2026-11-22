@@ -1,0 +1,374 @@
+{
+ "root": ".",
+ "mutants": [
+  {
+   "id": "unknown_key_taken",
+   "file": "tests/agent_run.py",
+   "old": "if key not in keys:",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "repeated_key_taken",
+   "file": "tests/agent_run.py",
+   "old": "if key in fields:",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "quoted_value_taken",
+   "file": "tests/agent_run.py",
+   "old": "if value[0] in \"\\\"'\":",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "empty_body_taken",
+   "file": "tests/agent_run.py",
+   "old": "if not body.strip():",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "name_not_the_files",
+   "file": "tests/agent_run.py",
+   "old": "if fields[\"name\"] != name:",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "any_model",
+   "file": "tests/agent_run.py",
+   "old": "if fields[\"model\"] not in MODELS:",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "haiku_allowed",
+   "file": "tests/agent_run.py",
+   "old": "MODELS = (\"sonnet\", \"opus\")",
+   "new": "MODELS = (\"sonnet\", \"opus\", \"haiku\")",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "out_in_a_subdirectory_of_the_brain",
+   "file": "tests/agent_run.py",
+   "old": "if real == top or real.startswith(top + os.sep):",
+   "new": "if real == top:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "out_through_a_link_into_the_brain",
+   "file": "tests/agent_run.py",
+   "old": "real, top = os.path.realpath(out), os.path.realpath(root)",
+   "new": "real, top = out, root",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "out_holding_files_taken",
+   "file": "tests/agent_run.py",
+   "old": "if os.path.lexists(out) and (not os.path.isdir(out) or os.listdir(out)):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "diff_sha_of_nothing",
+   "file": "tests/agent_run.py",
+   "old": "\"diff_sha256\": hashlib.sha256(diff).hexdigest()",
+   "new": "\"diff_sha256\": hashlib.sha256(b\"\").hexdigest()",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "definition_sha_of_nothing",
+   "file": "tests/agent_run.py",
+   "old": "\"sha256\": hashlib.sha256(data).hexdigest()}",
+   "new": "\"sha256\": hashlib.sha256(b\"\").hexdigest()}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "changed_diff_recorded",
+   "file": "tests/agent_run.py",
+   "old": "if digest != doc[\"diff_sha256\"]:",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "unknown_without_reason_taken",
+   "file": "tests/agent_run.py",
+   "old": "if run[\"not_measured\"] is None and any(",
+   "new": "if False and any(",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "caught_without_evidence",
+   "file": "tests/agent_run.py",
+   "old": "and (_text(f[\"evidence\"]) or (f[\"evidence\"] is None and f[\"verdict\"] == UNJUDGED)))",
+   "new": "and (_text(f[\"evidence\"]) or f[\"evidence\"] is None))",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "any_verdict",
+   "file": "tests/agent_run.py",
+   "old": "and f[\"verdict\"] in VERDICTS",
+   "new": "and _text(f[\"verdict\"])",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "findings_out_of_order",
+   "file": "tests/agent_run.py",
+   "old": "and f[\"n\"] == i",
+   "new": "and _count(f[\"n\"])",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_file_not_checked",
+   "file": "tests/agent_run.py",
+   "old": "    check_run(run)\n    refs",
+   "new": "    refs",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "extra_run_key_taken",
+   "file": "tests/agent_run.py",
+   "old": "if extra or missing:",
+   "new": "if missing:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "tools_in_the_summary",
+   "file": "tests/agent_run.py",
+   "old": "if k != \"tools\"}",
+   "new": "if k != \"base\"}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "refused_row_reported_written",
+   "file": "tests/agent_run.py",
+   "old": "    if reasons:\n        raise Fault(\"row_refused:%s\" % \";\".join(reasons))\n    return row[\"row_id\"]",
+   "new": "    return row[\"row_id\"]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "amend_changes_nothing",
+   "file": "tests/agent_run.py",
+   "old": "runs[fields[\"amends\"]][\"findings\"] = fields[\"findings\"]",
+   "new": "pass",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "amend_of_no_run_taken",
+   "file": "tests/agent_run.py",
+   "old": "if fields[\"amends\"] not in runs:",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "tagged_row_of_another_form_skipped",
+   "file": "tests/agent_run.py",
+   "old": "raise Fault(\"run_row_unreadable:%s\" % row_id) from None",
+   "new": "continue",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "session_counted_at_its_end",
+   "file": "tests/agent_run.py",
+   "old": "if kind == \"session_start\":",
+   "new": "if kind == \"session_end\":",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "any_agents_rows_counted",
+   "file": "tests/agent_run.py",
+   "old": "TAG + name not in refs",
+   "new": "not any(str(r).startswith(TAG) for r in refs)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "retire_after_six",
+   "file": "tests/agent_run.py",
+   "old": "\"retire_due\": sessions >= RETIRE_AFTER and count[CAUGHT] == 0}",
+   "new": "\"retire_due\": sessions > RETIRE_AFTER and count[CAUGHT] == 0}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "retire_with_a_catch",
+   "file": "tests/agent_run.py",
+   "old": "\"retire_due\": sessions >= RETIRE_AFTER and count[CAUGHT] == 0}",
+   "new": "\"retire_due\": sessions >= RETIRE_AFTER}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "unknown_cost_summed_as_known",
+   "file": "tests/agent_run.py",
+   "old": "\"cost_unknown\": len(found) - len(known[\"cost_usd_micros\"]),",
+   "new": "\"cost_unknown\": 0,",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "fault_exits_zero",
+   "file": "tests/agent_run.py",
+   "old": "        print(json.dumps({\"ok\": False, \"reason\": str(e)}))\n        return 2",
+   "new": "        print(json.dumps({\"ok\": False, \"reason\": str(e)}))\n        return 0",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "reviewer_may_run_commands",
+   "file": "agents/push-reviewer.md",
+   "old": "tools: Read, Grep, Glob",
+   "new": "tools: Read, Grep, Glob, Bash",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "reviewer_on_the_writers_model",
+   "file": "agents/push-reviewer.md",
+   "old": "model: opus",
+   "new": "model: sonnet",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "reviewer_without_origin",
+   "file": "agents/push-reviewer.md",
+   "old": "Origin. Gap: ",
+   "new": "Gap: ",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "skill_starts_another_agent",
+   "file": "skills/push/SKILL.md",
+   "old": "start the agent `brain:push-reviewer`",
+   "new": "start the agent `brain:reviewer`",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "skill_lets_the_agent_stand_in",
+   "file": "skills/push/SKILL.md",
+   "old": "The agent adds a check and stands in for none:",
+   "new": "The agent adds a check:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "finding_number_of_another_type",
+   "file": "tests/agent_run.py",
+   "old": "type(f[\"n\"]) is int and f[\"n\"] == i",
+   "new": "f[\"n\"] == i and not isinstance(f[\"n\"], bool)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "amends_not_asked_of_the_ledger",
+   "file": "tests/agent_run.py",
+   "old": "if run.get(\"amends\", None) not in (None, *runs(data, pack[\"agent\"])):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "amends_of_any_agents_run",
+   "file": "tests/agent_run.py",
+   "old": "if run.get(\"amends\", None) not in (None, *runs(data, pack[\"agent\"])):",
+   "new": "if run.get(\"amends\", None) not in (None, *[json.loads(r)[\"row_id\"] for r in data.splitlines()]):",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_key_hides_the_packets",
+   "file": "tests/agent_run.py",
+   "old": "RUN_KEYS = (\"invoked_as\", \"model_served\",",
+   "new": "RUN_KEYS = (\"invoked_as\", \"model\",",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "row_sums_of_any_type",
+   "file": "tests/agent_run.py",
+   "old": "if not _count(sums[\"wall_ms\"]) or not all(sums[k] is None or _count(sums[k]) for k in MAY_BE_SUMMED):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "row_wall_time_of_any_type",
+   "file": "tests/agent_run.py",
+   "old": "if not _count(sums[\"wall_ms\"]) or not",
+   "new": "if not",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  }
+ ]
+}

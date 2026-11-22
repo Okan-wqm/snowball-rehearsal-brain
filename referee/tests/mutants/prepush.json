@@ -256,8 +256,8 @@
   {
    "id": "skill_names_another_tool",
    "file": "skills/push/SKILL.md",
-   "old": "5. Commit. Then `python3 tests/prepush.py check -j 3`",
-   "new": "5. Commit. Then `python3 tests/prepush.py verify -j 3`",
+   "old": "6. Commit. Then `python3 tests/prepush.py check -j 3`",
+   "new": "6. Commit. Then `python3 tests/prepush.py verify -j 3`",
    "tests": [
     "test_prepush.py"
    ]
@@ -456,6 +456,15 @@
    "file": "tests/prepush.py",
    "old": "if args.command != \"quick\" and (args.since is not None or args.plan):",
    "new": "if False:",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "quick_since_without_git_is_a_traceback",
+   "file": "tests/prepush.py",
+   "old": "raise R.Unreadable(\"rev_unreadable\") from None\n        except OSError:",
+   "new": "raise R.Unreadable(\"rev_unreadable\") from None\n        except RecursionError:",
    "tests": [
     "test_prepush.py"
    ]
