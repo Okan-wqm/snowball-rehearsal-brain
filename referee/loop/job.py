@@ -188,7 +188,13 @@ refused tree is ``pulled_invalid``). Then:
   organ not called, a run not valid, an output not kept; else ``organ_output``'s reasons: missing, changed,
   unusable). The bytes read are dropped: no consumer exists before MF11 and MF12, and a refused output stops
   nothing today.
-  Nothing reads ``cases``, ``harness`` or ``organs`` to decide and nothing is written from them: no merge, row or exit code
+  The reruns (P1 MF11, ``yaz_reruns``; right after the organs' outputs): for every package
+  (``candidates/<id>/package.json``) of every output read as above, ``runner.candidate_rerun.reran`` is asked for
+  the gate's files of the candidate, which it hands out only for a package ``kos`` reran and verified ("Before
+  the gate" there); the target's line has ``reruns``, per package sha256 ``{reran: true}`` or ``{reran: false,
+  reasons}`` (``rerun_missing``, ``rerun_not_verified``, ``rerun_files_missing``). The files are dropped: no gate
+  judges a run-time candidate before MF12, and a candidate that was not rerun stops nothing today.
+  Nothing reads ``cases``, ``harness``, ``organs`` or ``reruns`` to decide and nothing is written from them: no merge, row or exit code
   depends on a case or a report (``<state_root>/cases/`` is not written yet, reports/seed-075). Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
   ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it), read
   before the tree is judged; a ledger it cannot read is ``state_refused`` with its reasons (exit 1), nothing decided. A
@@ -415,6 +421,7 @@ from loop import watch as WT
 from loop import write_cycle as WC
 from profile import derive as D
 from profile import unit_verify as U
+from runner import candidate_rerun as CR
 from runner import deps_npm as N
 from runner import kos as K
 from runner import organ_output as OO
@@ -878,6 +885,29 @@ def yaz_organs(environ: dict[str, str], tid: str) -> dict[str, Any]:
         else:
             line[oid] = {"read": True, "sha256": sha, "files": len(files), "bytes": sum(map(len, files.values()))}
     return line
+
+
+def yaz_reruns(environ: dict[str, str], tid: str) -> dict[str, Any]:
+    """The reruns of target ``tid``'s run-time candidates (P1 MF11; see the module docstring): one entry per
+    package of the organs' outputs ``yaz`` reads, under the package's sha256: ``{reran: true}`` when
+    ``runner.candidate_rerun.reran`` hands out its files, else ``{reran: false, reasons}``."""
+    index, read = _results(environ, tid)
+    organs = index.get("organs") if isinstance(index, dict) else None
+    line: dict[str, Any] = {}
+    for entry in organs.values() if isinstance(organs, dict) else ():
+        kept = entry.get("output") if isinstance(entry, dict) else None
+        try:
+            found = CR.packages(OO.read(kept.get("sha256") if isinstance(kept, dict) else None, read))
+        except OO.Refused:      # ``yaz_organs`` has the reasons on the organ's line
+            continue
+        for name, package in found.items():
+            try:
+                CR.reran(index, package, read)
+            except CR.NotRerun as exc:
+                line[name] = {"reran": False, "reasons": exc.reasons}
+            else:
+                line[name] = {"reran": True}
+    return dict(sorted(line.items()))
 
 
 FINDINGS: list = []   # the cycle's findings: none, until an organ's output is read as findings (MF11, MF12)
@@ -1623,9 +1653,10 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
             return dict(d5, ok=False)
         cases = yaz_cases(environ, tid, art)
         organs = yaz_organs(environ, tid)
+        reruns = yaz_reruns(environ, tid)
         harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten
         written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)
-        return dict(written, organs=organs, cases=cases, harness=harness)
+        return dict(written, organs=organs, reruns=reruns, cases=cases, harness=harness)
     except OF.Online as exc:
         return {"ok": False, "reason": "harness_online", "reasons": exc.reasons}
 

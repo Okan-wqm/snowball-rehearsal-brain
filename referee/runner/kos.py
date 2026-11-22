@@ -19,11 +19,15 @@ decide`` (MF8) and ``activate`` (MF18) read; it decides nothing.
     c/<cid>/hashes.json                 {"base.jsonl", "cand.jsonl", "checks.json"}: sha256 of the bytes written
     m/<mid>/mut.jsonl                   three lint runs of the base worktree with mutation <mid> applied
     o/<sha256>                          an organ's kept output: bytes named by their sha256 (runner.organ_output)
+    r/<package sha256>/                 a run-time candidate's rerun: the three files of c/<cid>/
+                                        (runner.candidate_rerun)
     sentinel.json                       {merge_sha, runs, verdict, red, flaky}: only when a merge is watched
     index.json                          {base: {verdict, reasons, lint_stdout_extra?, lint_failed?}, base_run_sha256,
                                          candidates: {cid: {verdict, reasons, lint_stdout_extra?, lint_failed?}},
                                          sentinel: null | {merge_sha, verdict, reasons, sha256},
                                          organs: {oid: {called, reasons, ...}},
+                                         reruns: {<package sha256>: {verdict, reasons, lint_stdout_extra?,
+                                                                     lint_failed?}},
                                          mutations: {mid: {verdict, reasons, run_sha256, lint_stdout_extra?,
                                                            lint_failed?}}}
 
@@ -107,6 +111,18 @@ exited 0 or 1 and converts, the three files are written; ``red_control`` is ``pa
 passed (the gate's criterion 7 rejects it; the index says ``red_control_green``). Any other reason of a contained
 run (a limit, ``red_control_fault``, ``runner_fault``, ``breach:``, ``unreadable_output``) writes no file.
 
+**A run-time candidate** (P1 MF11, tohum/26j; ``runner.candidate_rerun``, which says what one is: a package an
+organ's kept output holds, named by the sha256 of its bytes). After the ready candidates and before the mutations,
+every package of every output kept in this run is rerun, in the order of the package hashes, through
+``candidate_rerun.rerun``: the outputs are read back from ``o/`` by the hashes the organs' entries name (one not
+read back is unusable input: the store this process wrote does not hold what it hashed). A package without a diff
+is ``refused`` ``package_unusable``; without ``base.jsonl`` nothing runs (``base_unavailable``); otherwise the diff
+is given to the code of "A candidate" above, the same function with ``r/<package sha256>/`` as the directory of
+its three files: the same refusals of a diff, the same three lint runs and one test run, each with the red
+control, the same entry. The index's ``reruns`` has one entry per package, ``{}`` when no kept output holds one.
+``loop.job``'s ``yaz`` asks ``candidate_rerun.reran`` for each (``yaz_reruns``); no gate reads the files yet
+(MF12).
+
 **A mutation** ``mid`` (asama-1/13a: the tool runs on the tree with the mutation, in ``koş``; ``mutations``:
 ``{mid: diff bytes}``, ``cases.build``'s proposal as ``loop.job``'s ``kos`` reads it from ``pulled``). After the
 candidates, in the order of the ids, each is treated as a candidate's diff up to its lint runs, by the same
@@ -170,6 +186,7 @@ from gate import diffguard
 from gate import sentinel as S
 from profile import derive as D
 from profile import unit_verify as U
+from runner import candidate_rerun as CR
 from runner import contained as C
 from runner import lint_record as R
 from runner import organ_output as OO
@@ -392,7 +409,10 @@ def _mutation(mid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx:
 
 
 def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx: dict, runner: C.Runner,
-               root: str, out: str, base_run: bytes) -> dict:
+               root: str, out: str, base_run: bytes, kind: str = "c") -> dict:
+    """The index entry of one candidate's diff and its three files under ``<out>/<kind>/<cid>/`` (see the module
+    docstring, "A candidate"; ``kind`` is ``c`` for a ready candidate, ``candidate_rerun.RUNS`` for a run-time
+    one)."""
     def then(reasons: list, records: list, extra: dict, worktree: str, work_root: str) -> dict:
         test = U._one(recipe["test_cmd"], red, recipe["env_image"], worktree, ctx["operating"], runner, work_root,
                       ctx["values"]["test_total_s"])
@@ -404,7 +424,7 @@ def _candidate(cid: str, diff: bytes, recipe: dict, red: list, staging: str, ctx
                  "checks.json": checks(stdout, test["exit"], "red_control_green" in reasons)}
         files["hashes.json"] = _dump({"base.jsonl": sha256(base_run), "cand.jsonl": sha256(files["cand.jsonl"]),
                                       "checks.json": sha256(files["checks.json"])})
-        directory = os.path.join(out, "c", cid)
+        directory = os.path.join(out, kind, cid)
         os.makedirs(directory)
         for name, data in files.items():
             with open(os.path.join(directory, name), "xb") as fh:
@@ -469,6 +489,21 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
                 got = _candidate(cid, candidates[cid], recipe, red_control["cmd"], ctx["staging"], ctx, runner,
                                  root, out, base_run)
             index["candidates"][cid] = got
+
+        def rerun(name: str, diff: bytes | None) -> dict:
+            if diff is None:
+                return _verdict([CR.UNUSABLE])
+            if index["base_run_sha256"] is None:
+                return _verdict(["base_unavailable"])
+            return _candidate(name, diff, recipe, red_control["cmd"], ctx["staging"], ctx, runner, root, out,
+                              base_run, CR.RUNS)
+
+        try:
+            index["reruns"] = CR.rerun(sorted({e["output"]["sha256"] for e in index["organs"].values()
+                                               if e.get("output", {}).get("sha256")}),
+                                       lambda path: D._read_regular(out, path), rerun)
+        except OO.Refused as exc:
+            raise KosError("a kept output is not read back: %s" % ", ".join(exc.reasons)) from None
         index["mutations"] = {}
         for mid in sorted(mutations):
             if not CANDIDATE_ID.fullmatch(mid):
