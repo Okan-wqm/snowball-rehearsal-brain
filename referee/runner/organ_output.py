@@ -46,7 +46,7 @@ Out of scope, stated: who may write the results between ``koş`` and ``yaz`` (th
 on size, in ``keep`` and in ``read`` (the contained run's ``output_bytes`` bounds the sum of the files' bytes of a
 valid run; the number of entries and the length of their names are bounded by nothing here, so neither is the
 manifest, and ``read`` loads whatever the hashes lead to); files under ``o/`` that no manifest names (they are not
-read); and what is done with an output (nothing decides on it yet: MF11 and MF12 read it).
+read); and what is done with an output (``runner.candidate_rerun`` reruns its packages; ``loop.decide`` judges them).
 """
 
 from __future__ import annotations

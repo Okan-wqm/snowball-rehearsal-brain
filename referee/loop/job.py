@@ -186,15 +186,18 @@ refused tree is ``pulled_invalid``). Then:
   back to that hash; the target's line has ``organs``, per organ ``{read: true, sha256, files, bytes}`` (how many
   files and bytes were read) or ``{read: false, reasons}`` (``output_not_kept`` when the entry names no hash: an
   organ not called, a run not valid, an output not kept; else ``organ_output``'s reasons: missing, changed,
-  unusable). The bytes read are dropped: ``yaz`` has no consumer of them before MF12 (the packages among them
-  stand in the results by ``kos``'s hand, below), and a refused output stops nothing today.
+  unusable). The bytes read are dropped: ``yaz`` has no consumer of them (the packages among them
+  stand in the results by ``kos``'s hand, below, and are read there), and a refused output stops nothing today.
   The reruns (P1 MF11, ``yaz_reruns``; right after the organs' outputs): for every run-time candidate of the
   results (every name under their ``candidates/`` and every key of the index's ``reruns``),
   ``runner.candidate_rerun.reran`` is asked for the package and the gate's files, which it hands out only for a
   package ``kos`` reran and verified ("Before the gate" there); the target's line has ``reruns``, per id
   ``{reran: true, package_sha256}`` or ``{reran: false, reasons}`` (``package_missing``, ``rerun_missing``,
-  ``rerun_not_verified``, ``rerun_files_missing``). What is handed out is dropped: no gate judges a run-time
-  candidate before MF12, and a candidate that was not rerun stops nothing today.
+  ``rerun_not_verified``, ``rerun_files_missing``). The line is a report: D5 (``loop.decide``, P1 MF12) reads the same candidates
+  itself through ``loop.candidates`` in every cycle but the genesis cycle, a candidate that was not rerun is
+  that candidate's reject there, and D6 gets D5's ``finding_decisions`` and, for a run-time merge, its diff
+  read again under the package hash D5 decided on (``loop.candidates.merge_diff``; a package changed in between
+  is ``Unusable``).
   Nothing reads ``cases``, ``harness``, ``organs`` or ``reruns`` to decide and nothing is written from them: no merge, row or exit code
   depends on a case or a report (``<state_root>/cases/`` is not written yet, reports/seed-075). Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
   ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it), read
@@ -406,6 +409,7 @@ from ledger import serial as SE
 import activate as AC
 from loop import accepted as A
 from loop import cagir as CG
+from loop import candidates as LC
 from loop import cek as C
 from loop import decide as E
 from loop import drill as DR
@@ -909,7 +913,7 @@ def yaz_reruns(environ: dict[str, str], tid: str) -> dict[str, Any]:
     return line
 
 
-FINDINGS: list = []   # the cycle's findings: none, until an organ's output is read as findings (MF11, MF12)
+FINDINGS: list = []   # the cycle's findings: none, until an organ's output is read as findings (reports/seed-100)
 
 
 CODE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))    # the directory ``loop/`` is in
@@ -1084,8 +1088,13 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
                                                                     "ts"))
     seen = len(_sign_calls(signer))
     try:
+        sha = d5["decisions"][d5["merge"]].get("package_sha256") if d5["merge"] is not None else None
+        diff = None if sha is None else LC.merge_diff(_dir(environ, "in", "results", tid), d5["merge"], sha)
         return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill,
-                                    gate, passed), "sign_calls": _sign_calls(signer, seen)}
+                                    gate, passed, finding_decisions=d5["finding_decisions"], merge_diff=diff),
+                "sign_calls": _sign_calls(signer, seen)}
+    except LC.Unusable as exc:
+        raise Unusable("yaz: %s" % cli.cause(exc)) from None
     except WC.Refused as exc:
         return {"reason": "write_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:

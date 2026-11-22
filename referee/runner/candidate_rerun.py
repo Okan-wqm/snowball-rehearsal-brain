@@ -13,7 +13,7 @@ Every other file of an output is not read here.
 **Its diff** (``diff``): the package must be UTF-8 JSON (``cli.loads``, so not nested deeper than its limit), an
 object whose ``diff`` is a string that has a UTF-8 encoding; the diff is those bytes. Anything else has no diff
 (``None``). The package's other keys (``finding``, ``organ_ids``, ``definition_sha256``, tohum/26a) are not read
-here, present or absent: they are the gate's and the finding writer's (MF12, not built).
+here, present or absent: they are the gate's and the finding writer's (``loop.candidates``, P1 MF12).
 
 **The rerun** (``rerun(outputs, read, run)``; ``koş``'s side). ``outputs`` are the hashes of the outputs kept in
 this run, ``read(path)`` the bytes of a regular file of the results or ``None``. Each output is read back by its
@@ -46,9 +46,8 @@ verdict: a diff that did not apply, a run that told nothing, a package without a
 
 Caller: ``runner.kos.results`` (``rerun``), and ``loop.job``'s ``yaz`` (``yaz_reruns``, each cycle, for every
 name under the results' ``candidates/`` and every key of the index's ``reruns``: ``reran``'s answer is on the
-target's line). Out of scope, stated: no gate is called with these files yet and nothing decides on them (MF12,
-``loop/candidates.py``, hands the candidate to ``loop.decide``; until then ``reran`` is the only way the code
-hands the files out, and no test forbids a later reader of ``r/`` that would go round it); the number of packages
+target's line). ``loop.candidates.read`` (P1 MF12) takes the package and the files from ``reran`` for ``loop.decide``.
+Out of scope, stated: no test forbids a later reader of ``r/`` that would go round ``reran``; the number of packages
 of an output and so of reruns of a job, bounded by nothing here (each contained run has its own limits;
 reports/seed-099); who may write the results between ``koş`` and ``yaz``.
 """

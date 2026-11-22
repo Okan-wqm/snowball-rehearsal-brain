@@ -3,13 +3,13 @@
 Since P1 MF9 (tohum/26j "İzin listesi, MF9") ``loop.decide`` judges every candidate's package with
 ``gate.allowlist.reasons`` in every cycle but the genesis cycle, and the package of the candidates it reads (the
 ready candidates) is ``loop.decide.READY``, which names no organ: live, none merges (bound without this world by
-test_loop_yaz's ``ClosedGate``). The package of a run-time candidate is read by no job before P1 MF12
-(``loop/candidates.py``), so no input of a job can name an organ yet. The tests of the merge's mechanics (D5's
+test_loop_yaz's ``ClosedGate``). A run-time candidate's package names its organs itself (P1 MF12, ``loop.candidates``;
+test_candidates runs one through ``kos`` and ``yaz`` without ``name_organ``). The older tests of the merge's mechanics (D5's
 serial rule and criteria, D6's writes, D7, D8's wait, Gözcü's triggers over a merge) therefore stand in a world
 whose three parts open the gate the way a listed organ's candidate would:
 
 - ``name_organ``: ``loop.decide.READY`` replaced, for one test, by a package naming ``ORGAN``. This is the one
-  stand-in: it takes the place of the package MF12 will read, and of nothing else;
+  stand-in: it lets a ready candidate pass where only a run-time candidate's package would, and nothing else;
 - ``ORGANS``: ``ORGAN``'s definition, carried in ``pulled`` as the accepted SHA's (``organs``);
 - ``accept_rows`` / ``listed``: ``ORGAN``'s accept row, as ``gate.allowlist.rows`` builds it, in the ledger of
   ``brain/state`` the cycle starts from.

@@ -29,8 +29,9 @@ rows; an entry the allowlist cannot write is ``Unusable`` with nothing written; 
 before stage 1 MF6 (no entry request is committed);
 ``proposals`` (a list of ``(proposed_by, proposal)``) and ``finding_decisions`` (a list of ``{fingerprint,
 reasons}``), the cycle's input to the finding registry (``findings.write.cycle``, P1 MF8, tohum/26j): both empty
-unless given, and ``loop.job`` gives neither (no proposal and no finding decision exists before P1 MF10-MF12 and
-stage 1 MF1), so every live cycle runs the registry on empty input.
+unless given; ``loop.job`` gives D5's ``finding_decisions`` (P1 MF12, ``loop.decide``) and no proposal (no job
+reads an organ's output as one); ``merge_diff``, the diff of a merge that is a run-time candidate (``None`` for
+a ready one, whose ``diff.patch`` ``pulled`` holds).
 
 **Order.** Nothing is written on the target before every check holds, and nothing is signed before the rows are
 planned:
@@ -112,7 +113,7 @@ unmeasured}``). A hard stop in it (this cycle's freeze passed ``soft_freeze_limi
 written, with the freeze, and the caller ends red.
 
 Out of scope, stated: a row of the ledger for what the registry wrote or refused, and a refused proposal's
-element (``findings.write.Observed.refused`` is not returned: its reader comes with MF12); what a freeze closes besides D5's merges (``kos`` and ``cagir`` ran before this job, and
+element (``findings.write.Observed.refused`` is not returned: nothing gives a proposal yet); what a freeze closes besides D5's merges (``kos`` and ``cagir`` ran before this job, and
 this cycle's revert, drill and rows are written under a freeze); a record of the hard stop or of the operator's
 restart (the stop is read off the freeze rows each cycle); which drill step is due (``loop.drill``); whether GitHub's ruleset accepts the writes (``target.write``'s known limits); the signer's program (``loop.sign``).
 """
@@ -165,12 +166,16 @@ class _Dry:
 DRY = _Dry()
 
 
-def merge_change(art: P.Pulled, tree: str, merge: str | None) -> dict | None:
+def merge_change(art: P.Pulled, tree: str, merge: str | None, diff: str | None = None) -> dict | None:
     """D5's merge applied to the tree (``target.land.applied``): ``{reasons: [], path, content}``, ``None`` with no
-    merge; a reason means D5 chose a candidate that cannot be written (``Unusable``). Shared with ``activate``."""
+    merge; a reason means D5 chose a candidate that cannot be written (``Unusable``). The merge's diff is ``diff``
+    (a run-time candidate's, ``loop.candidates.merge_diff``) or, when ``None``, the ready candidate's
+    ``diff.patch``. Shared with ``activate``."""
     if merge is None:
         return None
-    change = land.applied(tree, art.candidates[merge]["diff.patch"].decode("utf-8", "surrogateescape"))
+    if diff is None:
+        diff = art.candidates[merge]["diff.patch"].decode("utf-8", "surrogateescape")
+    change = land.applied(tree, diff)
     if change["reasons"]:
         raise Unusable("merge %s cannot be written: %s" % (merge, ", ".join(change["reasons"])))
     return change
@@ -202,7 +207,7 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
           imports: bytes, cycle_id: str, ts: str, base_lint: dict | None = None,
           end: dict | None = None, drill: dict | None = None, gate: dict | None = None,
           passed: dict | None = None, proposals: list | None = None,
-          finding_decisions: list | None = None) -> dict[str, Any]:
+          finding_decisions: list | None = None, merge_diff: str | None = None) -> dict[str, Any]:
     """D6, D7's end of a sentinel, D8's step, the gate's and the PASS row (see the module docstring)."""
     cyc = {"cycle_id": cycle_id, "ts": ts, "snapshot_id": art.heads[B.INTEGRATION]}
     merge = decided["merge"]
@@ -216,7 +221,7 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
     if merge is not None or planted:
         if base_lint is None:
             raise Unusable("merge %s: the base's lint totals are unreadable" % (merge or "planted"))
-    change = merge_change(art, tree, merge)
+    change = merge_change(art, tree, merge, merge_diff)
     cause = red = None
     if end is not None:
         if merge is not None or end["merge_sha"] != art.heads[B.INTEGRATION]:

@@ -62,8 +62,8 @@ strings: empty is a merge, anything else a reject (``ledger.events.decided``'s r
 
 **A cycle** (``cycle``), what ``yaz`` calls once per cycle: each ``(proposed_by, proposal)`` of ``proposals`` in
 order through ``observe``, then ``decisions`` through ``decide`` on the cycle's base; both files are verified
-against themselves as read (rule 10) also when both lists are empty, which is every cycle of P1: no proposal
-and no finding decision reaches ``yaz`` before the candidate path of P1 MF10-MF12 and stage 1 MF1.
+against themselves as read (rule 10) also when both lists are empty. No proposal reaches ``yaz`` yet (no job
+reads an organ's output as one); the decisions are ``loop.decide``'s on the cycle's run-time candidates (P1 MF12).
 
 **The files.**
 
@@ -75,8 +75,8 @@ and no finding decision reaches ``yaz`` before the candidate path of P1 MF10-MF1
 
 Out of scope, stated: writing the files to ``brain/state`` and their keys in the signed root
 (``loop.write_cycle``, ``ledger.cycle``, ``ledger.anchor.tips``); where a proposal and a decision's fingerprint
-come from (P1 MF10-MF12); turning a ``refused`` decision into its candidate's reject row (the caller's, with
-MF12); two decisions of one finding in one cycle; who writes ``verified`` and ``withdrawn`` (no page names the
+come from (``loop.candidates``, ``loop.decide``: the gate asks ``refusal`` of ``last`` before it chooses a
+merge, tohum/26k T1, and sends one decision per finding, T2); who writes ``verified`` and ``withdrawn`` (no page names the
 trigger; they are read here, never written); retrying a ``blocked`` finding; whether a ref exists in the snapshot
 (``harness.score.sift``); the per-class ``op`` sets of ``policy.json``; that a re-derived fingerprint equals a
 stored row's (form 2 needs the tree of that row's snapshot).
@@ -304,6 +304,20 @@ def observe(findings: bytes, previous: bytes, proposal: Any, proposed_by: str, r
 
 # ---------------------------------------------------------------- the gate's decisions
 
+def last(findings: bytes) -> dict[str, dict]:
+    """``{fingerprint: its last row}`` of the findings file ``findings``, a valid chain
+    (``ledger.append.HardStop`` otherwise)."""
+    return _last(_verified(findings, findings, "findings"))
+
+
+def refusal(row: dict | None) -> str | None:
+    """Why the finding whose last row is ``row`` (``None``: the file holds none) takes no decision (rule 8):
+    ``finding_unknown``, ``finding_not_open``, or ``None`` when it takes one."""
+    if row is None:
+        return "finding_unknown"
+    return None if row["state"] in DECIDABLE else "finding_not_open"
+
+
 @dataclass
 class Decided:
     findings: bytes             # the findings file after the decisions
@@ -337,8 +351,8 @@ def decide(findings: bytes, previous: bytes, unresolved: bytes, unresolved_previ
             raise Unusable("decision %d: a fingerprint decided twice" % index)
         named.add(print_)
         row = last.get(print_)
-        if row is None or row["state"] not in DECIDABLE:
-            refused.append({"index": index, "reasons": ["finding_unknown" if row is None else "finding_not_open"]})
+        if refusal(row):
+            refused.append({"index": index, "reasons": [refusal(row)]})
             continue
         if not decision["reasons"]:
             rows.append(_restated(row, "fixed"))

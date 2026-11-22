@@ -93,7 +93,7 @@ nothing (``sha256`` null, ``run_invalid``), nor does an output ``organ_output.ke
 entry under ``/out`` that is no regular file or directory, a file whose bytes are not the ones hashed). An organ
 that was not called has no ``output`` key. ``loop.job``'s ``yaz`` reads each kept output by that hash
 (``yaz_organs``); the one reader of a kept output here is the rerun of its packages ("A run-time candidate"
-below, MF11), and no gate decides on an entry or an output before MF12; until the brain holds an organ, ``organs`` is ``{}``. The
+below, MF11), whose candidates ``loop.decide`` judges (P1 MF12); until the brain holds an organ, ``organs`` is ``{}``. The
 image is a choice made here (the organ runs in the unit's toolchain image); no seed page fixes it
 (reports/seed-073), nor how an adapter gets its tool when the snapshot has no installed directory
 (reports/seed-074).
@@ -123,8 +123,8 @@ package without a diff is ``refused`` ``package_unusable``; without ``base.jsonl
 ``r/<id>/`` as the directory of its three files: the same refusals of a diff, the same three lint runs and one
 test run, each with the red control, the same entry. The index's ``reruns`` has one entry per ``<id>``, the
 function's with ``package_sha256`` (the sha256 of the package; ``null`` for an id held twice), ``{}`` when no kept
-output holds a package. ``loop.job``'s ``yaz`` asks ``candidate_rerun.reran`` for each (``yaz_reruns``); no gate
-reads the files yet (MF12).
+output holds a package. ``loop.job``'s ``yaz`` asks ``candidate_rerun.reran`` for each (``yaz_reruns``), and D5 reads
+them through ``loop.candidates`` (P1 MF12).
 
 **A mutation** ``mid`` (asama-1/13a: the tool runs on the tree with the mutation, in ``koş``; ``mutations``:
 ``{mid: diff bytes}``, ``cases.build``'s proposal as ``loop.job``'s ``kos`` reads it from ``pulled``). After the
