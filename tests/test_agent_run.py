@@ -320,6 +320,11 @@ class Record(Base):
                      F.spec_kinds())
 
 
+# A packet's fields as ``record`` carries them, for rows written here without a packet directory.
+PACK = {"agent": "one", "model": "opus", "definition_sha256": "d" * 64, "base": "B", "head": "H",
+        "diff_sha256": "e" * 64, "bytes": 1, "files": 1}
+
+
 class Measure(Base):
     def test_no_run_is_all_zero_and_not_due(self):
         self.assertEqual(A.measure(self.data, "one"), {
@@ -374,7 +379,7 @@ class Measure(Base):
         start = json.loads(self.data.splitlines()[0])["row_id"]
         for name in (start, "f999"):
             data = self.data
-            row = F.next_row(data, "build", A.summary({"agent": "one"}, run_file(amends=name)),
+            row = F.next_row(data, "build", A.summary(PACK, run_file(amends=name)),
                              ["agent_run:one"], SNAPSHOT, TS)
             with self.subTest(name=name), self.faults("amends_no_run:%s" % row["row_id"]):
                 A.measure(data + F.line_of(row), "one")
@@ -386,7 +391,17 @@ class Measure(Base):
                      A.FORM + json.dumps({"findings": [], "tokens": "1", "cost_usd_micros": 1, "wall_ms": 1}),
                      A.FORM + json.dumps({"findings": [], "tokens": 1, "cost_usd_micros": 1.5, "wall_ms": 1}),
                      A.FORM + json.dumps({"findings": [], "tokens": 1, "cost_usd_micros": 1, "wall_ms": None}),
-                     A.FORM + json.dumps({"findings": [], "tokens": 1, "cost_usd_micros": 1, "wall_ms": True})):
+                     A.FORM + json.dumps({"findings": [], "tokens": 1, "cost_usd_micros": 1, "wall_ms": True}),
+                     # the sums and findings alone are not the form: the packet's and the run file's fields are
+                     A.FORM + json.dumps({"findings": [], "tokens": 1, "cost_usd_micros": 1, "wall_ms": 1}),
+                     A.summary(dict(PACK, agent="two"), run_file()),
+                     A.summary({k: v for k, v in PACK.items() if k != "diff_sha256"}, run_file()),
+                     A.summary(PACK, {k: v for k, v in run_file().items() if k != "invoked_as"}),
+                     A.summary(PACK, dict(run_file(), more=1)),
+                     A.summary(PACK, dict(run_file(), effort=7)),
+                     A.summary(PACK, dict(run_file(), amends=[])),
+                     A.summary(PACK, dict(run_file(), amends={"f1": 1})),
+                     A.summary(PACK, dict(run_file(), amends="the first"))):
             row = F.next_row(self.data, "build", text, ["agent_run:one"], SNAPSHOT, TS)
             with self.subTest(text=text), self.faults("run_row_unreadable:%s" % row["row_id"]):
                 A.measure(self.data + F.line_of(row), "one")

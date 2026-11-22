@@ -47,8 +47,11 @@ The rules, each bound by ``tests/test_agent_run.py``:
    takes no further run. A row the writer refuses and a ledger it cannot extend are faults; the file is left as
    it was.
 6. **measure** folds the ledger's rows that carry the ref ``agent_run:<name>``, in file order. Such a row whose
-   summary is not rule 5's form, or whose ``wall_ms`` is not a count or ``tokens`` or ``cost_usd_micros`` neither
-   a count nor null, is a fault, never skipped. A row with ``amends`` replaces the findings of the
+   summary is not rule 5's form is a fault, never skipped: the form is ``agent_run/1 `` and one JSON object that
+   has every field of the packet but ``tools``, ``agent`` being ``<name>``, and beside them a run file by rule 4
+   and no other key (so a ``wall_ms`` that is no count, ``tokens`` or ``cost_usd_micros`` neither a count nor
+   null, and an ``amends`` that is no row id are faults). The packet fields' own values, ``agent`` apart, are
+   not judged. A row with ``amends`` replaces the findings of the
    earlier run row it names (a later reading of the same findings: the rival's or the referee's answer comes
    after the push) and is not a run; naming anything else is a fault. The answer: ``runs``; ``sessions``, the
    distinct ``session_start`` rows last seen before each run (a run before any such row counts as one more);
@@ -299,10 +302,11 @@ def runs(data: bytes, name: str) -> dict[str, dict]:
             if not isinstance(text, str) or not text.startswith(FORM):
                 raise ValueError
             fields = json.loads(text[len(FORM):])
-            check_findings(fields["findings"])
-            sums = {k: fields[k] for k in ("tokens", "cost_usd_micros", "wall_ms")}
-            if not _count(sums["wall_ms"]) or not all(sums[k] is None or _count(sums[k]) for k in MAY_BE_SUMMED):
+            carried = [k for k in PACKET_KEYS if k != "tools"]
+            if fields["agent"] != name or any(k not in fields for k in carried):
                 raise ValueError
+            check_run({k: v for k, v in fields.items() if k not in carried})
+            sums = {k: fields[k] for k in ("tokens", "cost_usd_micros", "wall_ms")}
         except (ValueError, KeyError, TypeError, Fault):
             raise Fault("run_row_unreadable:%s" % row_id) from None
         if "amends" in fields:

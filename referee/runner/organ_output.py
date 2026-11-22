@@ -2,15 +2,21 @@
 organın çıktısını koşu sonuçlarında tutar", test 56: the output stands in the results with its hash, ``yaz`` reads
 it by that hash, an output with one byte changed is not read).
 
-**What the output is** (this module's reading; no seed page says it, reports/seed-098): the regular files the
-organ's contained run left under its ``/out``, each by its path there. Its stdout is not part of it (the index
-entry of ``runner.kos`` has its hash, the bytes are not kept), nor an empty directory, nor a file's mode or times.
+**What the output is** (this module's reading, reports/seed-098: tohum/26a's table names an organ's output, a
+findings file for ``lint.discover``, a candidate package under ``candidates/<id>/`` for ``candidate.publish``, and
+no page says how an entry point hands it over): the regular files the organ's contained run left under its
+``/out``, each by its path there. Its stdout is not part of it (the index entry of ``runner.kos`` has its hash, the
+bytes are not kept), nor an empty directory, nor a file's mode or times. A package an organ wrote at
+``candidates/<id>/package.json`` is therefore one file of its output, under that key of the manifest; reading it
+from there (26j MF12, ``loop/candidates.py``) is not built, and nothing here puts a ``candidates/`` directory in
+the results.
 
 **The store.** Under the results directory, ``o/<sha256>`` holds bytes whose sha256 is the file's name, and
 nothing else is under ``o/``: one file per distinct content, whatever organ wrote it and under whatever name. An
 output is one such file, its *manifest*: ``{"files": {<path under /out>: <sha256 of the file's bytes>}}`` as JSON
 with sorted keys, no spaces and a final newline; the output's hash is the manifest's. So a name a container chose
-is a key inside a JSON document and never a path of the results.
+is a key inside a JSON document and never a path of the results. A key is a path as a directory listing gives
+it: not empty, its parts between ``/`` none of them empty, ``.`` or ``..``.
 
 ``keep(entries, read, out)`` (``koş``'s side; ``entries`` is ``runner.contained.hash_tree`` of the run's ``/out``
 as the contained run took it after the container ended, ``read(path)`` the bytes of a regular file under it or
@@ -29,16 +35,18 @@ as the contained run took it after the container ended, ``read(path)`` the bytes
 ``read(sha, read)`` (``yaz``'s side; ``read(path)`` the bytes of a regular file of the results or ``None``)
 returns ``{path: bytes}`` or raises ``Refused`` with its ``reasons``: ``output_hash_invalid`` (``sha`` is not 64
 lowercase hex), ``output_missing:manifest``, ``output_changed:manifest`` (the bytes at ``o/<sha>`` do not hash to
-``sha``), ``output_unusable`` (bytes of that hash that are no manifest: not UTF-8 JSON of the shape above, read with
-``cli.loads``, so nested deeper than its limit too),
+``sha``), ``output_unusable`` (bytes of that hash that are no manifest: not UTF-8 JSON read with ``cli.loads``, so nested
+deeper than its limit too; not the object above; a key that is no such path; or bytes other than the ones
+``keep`` writes for those files, so other spacing, key order, escapes, a key twice or no final newline),
 ``output_missing:file`` and ``output_changed:file`` (the same two for a file the manifest names; sorted, once
 each). Every byte returned is under a hash that leads back to ``sha``: one changed byte of the manifest or of any
 file refuses the whole output, and nothing of it is returned.
 
-Out of scope, stated: who may write the results between ``koş`` and ``yaz`` (the artifact's transport), a bound on
-what ``read`` loads (``koş`` keeps only a valid run's ``/out``, which the contained run bounds by
-``output_bytes``; ``read`` trusts no size), files under ``o/`` that no manifest names (they are not read), and what
-is done with an output (nothing decides on it yet: MF11 and MF12 read it).
+Out of scope, stated: who may write the results between ``koş`` and ``yaz`` (the artifact's transport); any bound
+on size, in ``keep`` and in ``read`` (the contained run's ``output_bytes`` bounds the sum of the files' bytes of a
+valid run; the number of entries and the length of their names are bounded by nothing here, so neither is the
+manifest, and ``read`` loads whatever the hashes lead to); files under ``o/`` that no manifest names (they are not
+read); and what is done with an output (nothing decides on it yet: MF11 and MF12 read it).
 """
 
 from __future__ import annotations
@@ -115,8 +123,10 @@ def _files(doc: bytes) -> dict[str, str]:
         got: Any = cli.loads(doc.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         raise Refused(["output_unusable"]) from None
-    if not (isinstance(got, dict) and set(got) == {"files"} and isinstance(got["files"], dict)
-            and all(isinstance(v, str) and SHA256.match(v) for v in got["files"].values())):
+    if not (isinstance(got, dict) and isinstance(got.get("files"), dict)     # no other key: the bytes below
+            and all(isinstance(v, str) and SHA256.match(v) for v in got["files"].values())
+            and all(k and not {"", ".", ".."} & set(k.split("/")) for k in got["files"])
+            and manifest(got["files"]) == doc):
         raise Refused(["output_unusable"])
     return got["files"]
 

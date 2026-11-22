@@ -179,7 +179,8 @@ refused tree is ``pulled_invalid``). Then:
   how many modules the reading reached). The report above, the copy's genesis gate, the PASS judgement and
   D8's judgement (``loop.drill``) run inside ``harness.offline.run``, and a socket or a child process one of them
   asks for refuses the target (``harness_online``, reasons ``event:<audit event>``) before D6 writes ``brain/state``.
-  Then the organs' outputs (P1 MF10, ``yaz_organs``): for every organ in the results' ``index.json`` (``organs``;
+  The organs' outputs (P1 MF10, ``yaz_organs``; read after the dev cases are built and before the harness report
+  runs): for every organ in the results' ``index.json`` (``organs``;
   an index that is absent, not JSON or without that object has none) the output ``kos`` kept is read by the hash
   its entry names (``output.sha256``) with ``runner.organ_output.read``, which returns no byte that does not lead
   back to that hash; the target's line has ``organs``, per organ ``{read: true, sha256, files, bytes}`` (how many

@@ -353,19 +353,28 @@
    ]
   },
   {
-   "id": "row_sums_of_any_type",
+   "id": "fold_takes_another_agents_row",
    "file": "tests/agent_run.py",
-   "old": "if not _count(sums[\"wall_ms\"]) or not all(sums[k] is None or _count(sums[k]) for k in MAY_BE_SUMMED):",
-   "new": "if False:",
+   "old": "if fields[\"agent\"] != name or any(k not in fields for k in carried):",
+   "new": "if any(k not in fields for k in carried):",
    "tests": [
     "test_agent_run.py"
    ]
   },
   {
-   "id": "row_wall_time_of_any_type",
+   "id": "fold_takes_a_row_without_packet_fields",
    "file": "tests/agent_run.py",
-   "old": "if not _count(sums[\"wall_ms\"]) or not",
-   "new": "if not",
+   "old": "if fields[\"agent\"] != name or any(k not in fields for k in carried):",
+   "new": "if fields[\"agent\"] != name:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "fold_does_not_check_the_run_fields",
+   "file": "tests/agent_run.py",
+   "old": "            check_run({k: v for k, v in fields.items() if k not in carried})\n",
+   "new": "            check_findings(fields[\"findings\"])\n",
    "tests": [
     "test_agent_run.py"
    ]

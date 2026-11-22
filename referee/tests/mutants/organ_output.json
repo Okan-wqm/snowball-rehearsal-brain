@@ -66,17 +66,8 @@
   {
    "id": "read_manifest_values_unchecked",
    "file": "runner/organ_output.py",
-   "old": "\n            and all(isinstance(v, str) and SHA256.match(v) for v in got[\"files\"].values())):",
-   "new": "):",
-   "tests": [
-    "test_organ_output.py"
-   ]
-  },
-  {
-   "id": "read_manifest_extra_keys",
-   "file": "runner/organ_output.py",
-   "old": "set(got) == {\"files\"}",
-   "new": "\"files\" in got",
+   "old": "\n            and all(isinstance(v, str) and SHA256.match(v) for v in got[\"files\"].values())",
+   "new": "",
    "tests": [
     "test_organ_output.py"
    ]
@@ -131,6 +122,24 @@
    "file": "loop/job.py",
    "old": "            line[oid] = {\"read\": False, \"reasons\": exc.reasons}",
    "new": "            line[oid] = {\"read\": True, \"sha256\": sha, \"files\": 0, \"bytes\": 0}",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "read_takes_any_bytes_of_the_object",
+   "file": "runner/organ_output.py",
+   "old": "\n            and manifest(got[\"files\"]) == doc):",
+   "new": "):",
+   "tests": [
+    "test_organ_output.py"
+   ]
+  },
+  {
+   "id": "read_takes_any_key",
+   "file": "runner/organ_output.py",
+   "old": "            and all(k and not {\"\", \".\", \"..\"} & set(k.split(\"/\")) for k in got[\"files\"])\n",
+   "new": "",
    "tests": [
     "test_organ_output.py"
    ]

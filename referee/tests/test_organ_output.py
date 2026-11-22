@@ -48,9 +48,12 @@ def by_hand(files: dict) -> bytes:
     return ('{"files":{%s}}\n' % ",".join('%s:"%s"' % (json.dumps(n), sha(files[n])) for n in sorted(files))).encode()
 
 
+E = hashlib.sha256(b"").hexdigest().encode()     # the hash of no bytes: FILES holds such a file, so it is stored
+
 # A tree an organ may leave: a nested file, two files of the same bytes, an empty file, names a shell would not like.
 FILES = {"findings.json": b'[{"rule": "no-var"}]\n', "candidates/c1/package.json": b'{"organ_ids": []}\n',
-         "copy.json": b'[{"rule": "no-var"}]\n', "empty": b"", "we ird\n$(x);'.txt": b"\x00\xff\n", "o/x": b"o"}
+         "copy.json": b'[{"rule": "no-var"}]\n', "empty": b"", "we ird\n$(x);'.txt": b"\x00\xff\n", "o/x": b"o",
+         "caf\udce9": b"a name that is not UTF-8, as the host lists it"}
 
 
 class Store(unittest.TestCase):
@@ -179,7 +182,16 @@ class Store(unittest.TestCase):
         for doc in (b"\xff", b"{", b"[]\n", b'{"files":[]}\n', b'{"files":{},"more":1}\n', b"{}\n",
                     b'{"files":' + b"[" * 100000 + b"]" * 100000 + b"}\n",     # deeper than ``cli.loads`` reads
                     b'{"files":{"a":"%s"}}\n' % (b"A" * 64), b'{"files":{"a":7}}\n',
-                    b'{"files":{"a":"%s\\n"}}\n' % (b"a" * 64)):
+                    b'{"files":{"a":"%s\\n"}}\n' % (b"a" * 64),
+                    # a manifest's object in other bytes than keep's: spacing, no final newline, key order, an
+                    # escape json does not write, a key twice
+                    b'{"files": {}}\n', b'{"files":{}}', b'{"files":{}}\n\n', b' {"files":{}}\n',
+                    b'{"files":{"b":"%s","a":"%s"}}\n' % (E, E), b'{"files":{"\\u0061":"%s"}}\n' % E,
+                    b'{"files":{"a":"%s","a":"%s"}}\n' % (E, E),
+                    # keys that are no path of a listing
+                    b'{"files":{"":"%s"}}\n' % E, b'{"files":{"../x":"%s"}}\n' % E, b'{"files":{"a/../x":"%s"}}\n' % E,
+                    b'{"files":{"/a":"%s"}}\n' % E, b'{"files":{"a//b":"%s"}}\n' % E, b'{"files":{"a/":"%s"}}\n' % E,
+                    b'{"files":{".":"%s"}}\n' % E, b'{"files":{"a/.":"%s"}}\n' % E):
             with self.subTest(doc=doc):
                 with open(os.path.join(self.out, "o", sha(doc)), "wb") as fh:
                     fh.write(doc)
