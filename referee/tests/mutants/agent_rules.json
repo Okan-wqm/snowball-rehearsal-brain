@@ -1,0 +1,545 @@
+{
+ "root": ".",
+ "mutants": [
+  {
+   "id": "any_schema",
+   "file": "tests/agent_rules.py",
+   "old": "if sorted(doc) != [\"rules\", \"schema\"] or doc[\"schema\"] != SCHEMA or not isinstance(rules, list):",
+   "new": "if sorted(doc) != [\"rules\", \"schema\"] or not isinstance(rules, list):",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "more_keys_in_the_file",
+   "file": "tests/agent_rules.py",
+   "old": "if sorted(doc) != [\"rules\", \"schema\"] or doc[\"schema\"] != SCHEMA",
+   "new": "if doc.get(\"schema\") != SCHEMA",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "rule_with_an_empty_text",
+   "file": "tests/agent_rules.py",
+   "old": "all(A._text(v) for v in rule.values())",
+   "new": "True",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "rule_with_other_keys",
+   "file": "tests/agent_rules.py",
+   "old": "isinstance(rule, dict) and sorted(rule) == sorted(RULE_KEYS) and",
+   "new": "isinstance(rule, dict) and set(RULE_KEYS) <= set(rule) and",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "rule_id_twice_taken",
+   "file": "tests/agent_rules.py",
+   "old": "if len({r[\"id\"] for r in rules}) != len(rules):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "check_without_a_rule_taken",
+   "file": "tests/agent_rules.py",
+   "old": "if {r[\"check\"] for r in rules} != set(CHECKS):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "task_calls_not_seen",
+   "file": "tests/agent_rules.py",
+   "old": "item.get(\"name\") in TOOLS",
+   "new": "item.get(\"name\") == \"Agent\"",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "any_tool_is_a_call",
+   "file": "tests/agent_rules.py",
+   "old": "item.get(\"type\") == \"tool_use\" and item.get(\"name\") in TOOLS",
+   "new": "item.get(\"type\") == \"tool_use\"",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "any_item_is_a_call",
+   "file": "tests/agent_rules.py",
+   "old": "isinstance(item, dict) and item.get(\"type\") == \"tool_use\" and",
+   "new": "isinstance(item, dict) and",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "calls_of_any_line",
+   "file": "tests/agent_rules.py",
+   "old": "if row.get(\"type\") == \"assistant\" and isinstance(message, dict) else None",
+   "new": "if isinstance(message, dict) else None",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "broken_line_skipped",
+   "file": "tests/agent_rules.py",
+   "old": "            if i == len(lines) - 1:\n                continue\n            raise Fault(\"log_unreadable\") from None",
+   "new": "            continue",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "no_origin_taken",
+   "file": "tests/agent_rules.py",
+   "old": "if not body.startswith(\"Origin. Gap: \") or \"Measure: \" not in body:",
+   "new": "if \"Measure: \" not in body:",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "origin_anywhere",
+   "file": "tests/agent_rules.py",
+   "old": "if not body.startswith(\"Origin. Gap: \")",
+   "new": "if \"Origin. Gap: \" not in body",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "no_measure_taken",
+   "file": "tests/agent_rules.py",
+   "old": "if not body.startswith(\"Origin. Gap: \") or \"Measure: \" not in body:",
+   "new": "if not body.startswith(\"Origin. Gap: \"):",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "no_tools_taken",
+   "file": "tests/agent_rules.py",
+   "old": "if agent[\"tools\"] is None or not set(agent[\"tools\"]) <= set(READ_ONLY):",
+   "new": "if agent[\"tools\"] is not None and not set(agent[\"tools\"]) <= set(READ_ONLY):",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "bash_reads_only",
+   "file": "tests/agent_rules.py",
+   "old": "READ_ONLY = (\"Read\", \"Grep\", \"Glob\")",
+   "new": "READ_ONLY = (\"Read\", \"Grep\", \"Glob\", \"Bash\")",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "run_before_the_rules_is_a_row",
+   "file": "tests/agent_rules.py",
+   "old": "if r[\"form\"] == 2 and r[\"session\"] is not None and r[\"session\"] == ctx[\"session\"]]",
+   "new": "if r[\"session\"] is not None and r[\"session\"] == ctx[\"session\"]]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "row_of_an_earlier_session",
+   "file": "tests/agent_rules.py",
+   "old": "if r[\"form\"] == 2 and r[\"session\"] is not None and r[\"session\"] == ctx[\"session\"]]",
+   "new": "if r[\"form\"] == 2]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "row_of_no_session",
+   "file": "tests/agent_rules.py",
+   "old": "if r[\"form\"] == 2 and r[\"session\"] is not None and r[\"session\"] == ctx[\"session\"]]",
+   "new": "if r[\"form\"] == 2 and r[\"session\"] == ctx[\"session\"]]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "sendmessage_not_seen",
+   "file": "tests/agent_rules.py",
+   "old": "TOOLS = (*STARTS, \"SendMessage\")",
+   "new": "TOOLS = STARTS",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "sendmessage_prompt_is_a_message",
+   "file": "tests/agent_rules.py",
+   "old": "if isinstance(prompt, str) and item[\"name\"] in STARTS else None",
+   "new": "if isinstance(prompt, str) else None",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "sendmessage_type_is_a_type",
+   "file": "tests/agent_rules.py",
+   "old": "kind if isinstance(kind, str) and item[\"name\"] in STARTS else None",
+   "new": "kind if isinstance(kind, str) else None",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "non_md_file_not_seen",
+   "file": "tests/agent_rules.py",
+   "old": "            if not file.endswith(MD):\n                raise Fault(\"not_a_definition_file\")\n",
+   "new": "",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "removed_agents_runs_not_read",
+   "file": "tests/agent_rules.py",
+   "old": "for name in sorted({*names, *others})}",
+   "new": "for name in names}",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "removed_agent_still_judged",
+   "file": "tests/agent_rules.py",
+   "old": "for name in ctx[\"agents\"]}",
+   "new": "for name in ctx[\"runs\"]}",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "unlistable_agents_is_none",
+   "file": "tests/agent_rules.py",
+   "old": "raise Fault(\"agents_unreadable\") from None",
+   "new": "return []",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "caught_per_finding_not_per_run",
+   "file": "tests/agent_rules.py",
+   "old": "_lower(before[A.CAUGHT], before[\"runs\"], under[A.CAUGHT], under[\"runs\"])",
+   "new": "_lower(before[A.CAUGHT], before[\"findings\"], under[A.CAUGHT], under[\"findings\"])",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "fewer_caught_a_run_is_more",
+   "file": "tests/agent_rules.py",
+   "old": "_lower(before[A.CAUGHT], before[\"runs\"], under[A.CAUGHT], under[\"runs\"])",
+   "new": "_lower(under[A.CAUGHT], under[\"runs\"], before[A.CAUGHT], before[\"runs\"])",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "one_row_for_many_calls",
+   "file": "tests/agent_rules.py",
+   "old": "            free[name].remove(call[\"sha256\"])",
+   "new": "            pass",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "row_of_any_agent",
+   "file": "tests/agent_rules.py",
+   "old": "if name in free and call[\"sha256\"] in free[name]:\n            free[name].remove(call[\"sha256\"])",
+   "new": "if any(call[\"sha256\"] in v for v in free.values()):\n            [v.remove(call[\"sha256\"]) for v in free.values() if call[\"sha256\"] in v]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "call_of_any_type",
+   "file": "tests/agent_rules.py",
+   "old": "BRAIN = \"brain:\"",
+   "new": "BRAIN = \"\"",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "unjudged_of_no_session_left",
+   "file": "tests/agent_rules.py",
+   "old": "(run[\"session\"] is None or run[\"session\"] != ctx[\"session\"])",
+   "new": "run[\"session\"] != ctx[\"session\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "unjudged_in_its_own_session_refutes",
+   "file": "tests/agent_rules.py",
+   "old": "(run[\"session\"] is None or run[\"session\"] != ctx[\"session\"])",
+   "new": "True",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "session_is_the_last_end",
+   "file": "tests/agent_rules.py",
+   "old": "            if row[\"kind\"] == \"session_start\":",
+   "new": "            if row[\"kind\"] == \"session_end\":",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "one_repeat_in_ten_holds",
+   "file": "tests/agent_rules.py",
+   "old": "10 * under[\"repeats\"] >= under[\"findings\"]",
+   "new": "10 * under[\"repeats\"] > under[\"findings\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "repeats_over_every_run",
+   "file": "tests/agent_rules.py",
+   "old": "under = m[\"under_rules\"]\n        state = NOT_DUE if not under[\"findings\"]",
+   "new": "under = m\n        state = NOT_DUE if not under[\"findings\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "repeats_due_with_no_finding",
+   "file": "tests/agent_rules.py",
+   "old": "state = NOT_DUE if not under[\"findings\"] else REFUTED",
+   "new": "state = REFUTED",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "as_many_false_alarms_refutes",
+   "file": "tests/agent_rules.py",
+   "old": "under[A.FALSE_ALARM] > under[A.CAUGHT]",
+   "new": "under[A.FALSE_ALARM] >= under[A.CAUGHT] > 0 or under[A.FALSE_ALARM] > under[A.CAUGHT]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "retire_due_holds",
+   "file": "tests/agent_rules.py",
+   "old": "REFUTED if m[\"retire_due\"] or under[A.FALSE_ALARM]",
+   "new": "REFUTED if under[A.FALSE_ALARM]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "false_alarms_hold",
+   "file": "tests/agent_rules.py",
+   "old": "REFUTED if m[\"retire_due\"] or under[A.FALSE_ALARM] > under[A.CAUGHT] else HELD)",
+   "new": "REFUTED if m[\"retire_due\"] else HELD)",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "earns_due_with_no_run",
+   "file": "tests/agent_rules.py",
+   "old": "state = (NOT_DUE if not m[\"runs\"] else",
+   "new": "state = (NOT_DUE if False else",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "earns_over_every_run",
+   "file": "tests/agent_rules.py",
+   "old": "under = m[\"under_rules\"]\n        state = (NOT_DUE",
+   "new": "under = m\n        state = (NOT_DUE",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_due_after_six",
+   "file": "tests/agent_rules.py",
+   "old": "if under[\"sessions\"] < AFTER_SESSIONS:",
+   "new": "if under[\"sessions\"] <= AFTER_SESSIONS:",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_due_at_once",
+   "file": "tests/agent_rules.py",
+   "old": "if under[\"sessions\"] < AFTER_SESSIONS:",
+   "new": "if False:",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_needs_both",
+   "file": "tests/agent_rules.py",
+   "old": "seen[\"caught_per_run_higher\"] or seen[\"tokens_per_caught_lower\"]",
+   "new": "seen[\"caught_per_run_higher\"] and seen[\"tokens_per_caught_lower\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_by_repeats_too",
+   "file": "tests/agent_rules.py",
+   "old": "seen[\"caught_per_run_higher\"] or seen[\"tokens_per_caught_lower\"]",
+   "new": "seen[\"caught_per_run_higher\"] or seen[\"repeats_lower\"] or seen[\"tokens_per_caught_lower\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_not_by_catches",
+   "file": "tests/agent_rules.py",
+   "old": "seen[\"caught_per_run_higher\"] or seen[\"tokens_per_caught_lower\"]",
+   "new": "seen[\"tokens_per_caught_lower\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_not_by_tokens",
+   "file": "tests/agent_rules.py",
+   "old": "seen[\"caught_per_run_higher\"] or seen[\"tokens_per_caught_lower\"]",
+   "new": "seen[\"caught_per_run_higher\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "equal_is_lower",
+   "file": "tests/agent_rules.py",
+   "old": "return per_a > 0 and per_b > 0 and a * per_b < b * per_a",
+   "new": "return per_a > 0 and per_b > 0 and a * per_b <= b * per_a",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "nothing_to_divide_by_is_lower",
+   "file": "tests/agent_rules.py",
+   "old": "return per_a > 0 and per_b > 0 and a * per_b < b * per_a",
+   "new": "return a * per_b < b * per_a",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "tokens_per_finding_not_per_caught",
+   "file": "tests/agent_rules.py",
+   "old": "_lower(under[\"tokens\"], under[\"caught_tokens_known\"], before[\"tokens\"],\n                                                  before[\"caught_tokens_known\"])",
+   "new": "_lower(under[\"tokens\"], under[\"findings\"], before[\"tokens\"],\n                                                  before[\"findings\"])",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "tokens_per_caught_of_every_run",
+   "file": "tests/agent_rules.py",
+   "old": "_lower(under[\"tokens\"], under[\"caught_tokens_known\"], before[\"tokens\"],\n                                                  before[\"caught_tokens_known\"])",
+   "new": "_lower(under[\"tokens\"], under[A.CAUGHT], before[\"tokens\"],\n                                                  before[A.CAUGHT])",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "held_hides_refuted",
+   "file": "tests/agent_rules.py",
+   "old": "state = REFUTED if REFUTED in states else HELD if HELD in states else NOT_DUE",
+   "new": "state = HELD if HELD in states else REFUTED if REFUTED in states else NOT_DUE",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "not_due_hides_held",
+   "file": "tests/agent_rules.py",
+   "old": "state = REFUTED if REFUTED in states else HELD if HELD in states else NOT_DUE",
+   "new": "state = REFUTED if REFUTED in states else NOT_DUE if NOT_DUE in states else HELD",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "refuted_is_ok",
+   "file": "tests/agent_rules.py",
+   "old": "ok = all(rule[\"state\"] != REFUTED for rule in rules)",
+   "new": "ok = True",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "no_log_not_heeded",
+   "file": "tests/agent_rules.py",
+   "old": "log = None if args.no_log else args.log or newest(logs)",
+   "new": "log = args.log or newest(logs)",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "named_log_not_heeded",
+   "file": "tests/agent_rules.py",
+   "old": "log = None if args.no_log else args.log or newest(logs)",
+   "new": "log = None if args.no_log else newest(logs)",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "oldest_log",
+   "file": "tests/agent_rules.py",
+   "old": "return found[-1] if found else None",
+   "new": "return found[0] if found else None",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "any_file_of_the_logs",
+   "file": "tests/agent_rules.py",
+   "old": "\"session-*.jsonl\"",
+   "new": "\"*.jsonl\"",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "fault_exits_zero",
+   "file": "tests/agent_rules.py",
+   "old": "        print(json.dumps({\"ok\": False, \"reason\": str(e)}))\n        return 2",
+   "new": "        print(json.dumps({\"ok\": False, \"reason\": str(e)}))\n        return 0",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  }
+ ]
+}

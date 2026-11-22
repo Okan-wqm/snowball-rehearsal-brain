@@ -1,0 +1,41 @@
+{
+ "schema": "agent_rules/1",
+ "rules": [
+  {
+   "id": "defined",
+   "check": "definitions",
+   "says": "An agent is a definition under agents/, written before its first run: its text starts with its origin (the gap it was born for and how it is measured), it states its tools, and its tools only read. An agent adds a check to the Founder's own reading, the whole prepush, the bootstrap referee and the rival, and stands in for none of them.",
+   "expects": "Every file of agents/ is such a definition. A file that is not, or an agent that needs a tool that writes or runs, refutes the rule: the rule is rewritten with the check that agent's output then needs before the agent runs."
+  },
+  {
+   "id": "recorded",
+   "check": "calls_are_rows",
+   "says": "An agent is started only as brain:<name>, with the message tests/agent_run.py packet wrote and nothing else, so what it was given (the task, the scope, the lessons in force, its own memory) is in the packet, and each run has one row that names that message by its sha256.",
+   "expects": "In the session's log, every Agent or Task call is of a brain:<name> type and its prompt is the message of one run row of that agent written in this session, one row a call. A call with no row (a run under another type, a prompt written by hand, a run not recorded, a row of an earlier session, a call an agent made itself) refutes it, and so does a text sent to an agent with SendMessage."
+  },
+  {
+   "id": "judged",
+   "check": "no_unjudged_left",
+   "says": "Each finding is read against the code by the Founder in the session of its run and takes a verdict: caught (a test red before the repair and green after, or the rival's or the referee's confirmation), false_alarm (refused, with the reason), or carried (true as read and not repaired by this push; it names the report or the ledger row that keeps it open). unjudged is a state of the session that ran the agent only.",
+   "expects": "No finding of a run of an earlier session is unjudged, whether the agent's definition is still under agents/ or was removed. One that is refutes it; it is closed by an amending row."
+  },
+  {
+   "id": "remembers",
+   "check": "repeats_rare",
+   "says": "An agent is given its memory: the findings of its earlier runs that were refused, are carried or are not judged yet, so it does not spend a run on what is already known. A finding that says an earlier one again carries repeat_of.",
+   "expects": "Under the rules fewer than one finding in ten is a repeat (the under_rules fold of tests/agent_run.py measure). One in ten or more refutes it: the memory did not reach the agent or the agent did not use it, and which of the two is written with the redesign."
+  },
+  {
+   "id": "earns",
+   "check": "earns",
+   "says": "An agent stays while it catches: it is retired or redesigned when five sessions of its runs caught nothing (tohum/00e E692, condition 4), or when under the rules it raises more false alarms than it catches.",
+   "expects": "No agent with a run is retire_due or has more false_alarm than caught under the rules. An agent that is refutes it: its definition is rewritten or removed in the push that sees it, with a decision row naming the runs."
+  },
+  {
+   "id": "improves",
+   "check": "improves",
+   "says": "The rules are kept only while the runs under them are better than the runs before them (tohum/00e E697, condition 3).",
+   "expects": "After five sessions with runs under the rules, an agent catches more findings a run than before the rules, or its tokens per caught finding are fewer (rework is not measured; the share of repeats is the rule remembers' and decides nothing here). Neither refutes it: that is recorded and the rules are designed again."
+  }
+ ]
+}

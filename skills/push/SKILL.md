@@ -17,12 +17,16 @@ line of a report pushed without a run; founder ledger f1359 onward).
 3. If the change holds more than records (anything outside `founder-ledger.jsonl` and `reports/`): commit it to
    the work branch, then `python3 tests/agent_run.py packet --agent push-reviewer --base <last accepted SHA> --head
    <that commit's SHA> --out <a new directory outside the brain>` and start the agent `brain:push-reviewer` with
-   effort `high` and that directory as its message (a SHA and a stated effort, so the run's row names the commit
-   that was read and the effort it was read at). Read each finding against the code. A true one is repaired with a test that is red before the repair
-   and green after (verdict `caught`); a wrong one is refused with its reason (`false_alarm`); one not yet judged
-   is `unjudged`. The agent adds a check and stands in for none: the steps below run whole whatever it found.
-   Its row is written in step 5 with `python3 tests/agent_run.py record --packet <directory> --run <the run's
-   file> --snapshot <HEAD's SHA>`; the run file's fields are in the tool's docstring.
+   effort `high` and the bytes of that directory's `message.txt` as its whole message (a SHA and a stated
+   effort, so the run's row names the commit that was read and the effort it was read at; the message as
+   written, so the row names what the agent was given). Read each finding against the code. A true one is
+   repaired with a test that is red before the repair and green after (verdict `caught`); a wrong one is refused
+   with its reason (`false_alarm`); a true one this push does not repair is `carried` and names the report or
+   the ledger row that keeps it open; one not yet judged is `unjudged`, and no finding leaves the session so.
+   The agent adds a check and stands in for none: the steps below run whole whatever it found. Its row is
+   written in step 5 with `python3 tests/agent_run.py record --packet <directory> --run <the run's file>
+   --snapshot <HEAD's SHA>`; the run file's fields are in the tool's docstring. The skill `brain:agents` is the
+   whole order of an agent's run and the rules it is measured by.
 4. `python3 tests/prepush.py run -j 3`. It runs the whole manifest as `tests/run_like_referee.py` does and writes
    a stamp only when every command is green on a tree that did not change during the run. Red: repair the cause,
    then run again; do not push.

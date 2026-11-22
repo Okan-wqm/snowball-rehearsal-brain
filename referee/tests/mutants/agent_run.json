@@ -94,8 +94,8 @@
   {
    "id": "diff_sha_of_nothing",
    "file": "tests/agent_run.py",
-   "old": "\"diff_sha256\": hashlib.sha256(diff).hexdigest()",
-   "new": "\"diff_sha256\": hashlib.sha256(b\"\").hexdigest()",
+   "old": "files[\"diff.patch\"] = diff",
+   "new": "files[\"diff.patch\"] = b\"\"",
    "tests": [
     "test_agent_run.py"
    ]
@@ -112,8 +112,8 @@
   {
    "id": "changed_diff_recorded",
    "file": "tests/agent_run.py",
-   "old": "if digest != doc[\"diff_sha256\"]:",
-   "new": "if False:",
+   "old": "        if digest != doc[key]:",
+   "new": "        if False:",
    "tests": [
     "test_agent_run.py"
    ]
@@ -139,8 +139,8 @@
   {
    "id": "any_verdict",
    "file": "tests/agent_run.py",
-   "old": "and f[\"verdict\"] in VERDICTS",
-   "new": "and _text(f[\"verdict\"])",
+   "old": "_text(f[\"ref\"])) and f[\"verdict\"] in VERDICTS",
+   "new": "_text(f[\"ref\"])) and _text(f[\"verdict\"])",
    "tests": [
     "test_agent_run.py"
    ]
@@ -157,8 +157,8 @@
   {
    "id": "run_file_not_checked",
    "file": "tests/agent_run.py",
-   "old": "    check_run(run)\n    refs",
-   "new": "    refs",
+   "old": "    check_run2(run)\n    return _append(pack",
+   "new": "    return _append(pack",
    "tests": [
     "test_agent_run.py"
    ]
@@ -238,8 +238,8 @@
   {
    "id": "retire_after_six",
    "file": "tests/agent_run.py",
-   "old": "\"retire_due\": sessions >= RETIRE_AFTER and count[CAUGHT] == 0}",
-   "new": "\"retire_due\": sessions > RETIRE_AFTER and count[CAUGHT] == 0}",
+   "old": "\"retire_due\": whole[\"sessions\"] >= RETIRE_AFTER and whole[CAUGHT] == 0}",
+   "new": "\"retire_due\": whole[\"sessions\"] > RETIRE_AFTER and whole[CAUGHT] == 0}",
    "tests": [
     "test_agent_run.py"
    ]
@@ -247,8 +247,8 @@
   {
    "id": "retire_with_a_catch",
    "file": "tests/agent_run.py",
-   "old": "\"retire_due\": sessions >= RETIRE_AFTER and count[CAUGHT] == 0}",
-   "new": "\"retire_due\": sessions >= RETIRE_AFTER}",
+   "old": "\"retire_due\": whole[\"sessions\"] >= RETIRE_AFTER and whole[CAUGHT] == 0}",
+   "new": "\"retire_due\": whole[\"sessions\"] >= RETIRE_AFTER}",
    "tests": [
     "test_agent_run.py"
    ]
@@ -295,7 +295,7 @@
    "old": "Origin. Gap: ",
    "new": "Gap: ",
    "tests": [
-    "test_agent_run.py"
+    "test_agent_rules.py"
    ]
   },
   {
@@ -328,7 +328,7 @@
   {
    "id": "amends_not_asked_of_the_ledger",
    "file": "tests/agent_run.py",
-   "old": "if run.get(\"amends\", None) not in (None, *runs(data, pack[\"agent\"])):",
+   "old": "if amends is not None and amends not in found:",
    "new": "if False:",
    "tests": [
     "test_agent_run.py"
@@ -337,8 +337,8 @@
   {
    "id": "amends_of_any_agents_run",
    "file": "tests/agent_run.py",
-   "old": "if run.get(\"amends\", None) not in (None, *runs(data, pack[\"agent\"])):",
-   "new": "if run.get(\"amends\", None) not in (None, *[json.loads(r)[\"row_id\"] for r in data.splitlines()]):",
+   "old": "if amends is not None and amends not in found:",
+   "new": "if amends is not None and amends not in [json.loads(r)[\"row_id\"] for r in data.splitlines()]:",
    "tests": [
     "test_agent_run.py"
    ]
@@ -355,8 +355,8 @@
   {
    "id": "fold_takes_another_agents_row",
    "file": "tests/agent_run.py",
-   "old": "if fields[\"agent\"] != name or any(k not in fields for k in carried):",
-   "new": "if any(k not in fields for k in carried):",
+   "old": "    if fields[\"agent\"] != name:",
+   "new": "    if False:",
    "tests": [
     "test_agent_run.py"
    ]
@@ -364,8 +364,8 @@
   {
    "id": "fold_takes_a_row_without_packet_fields",
    "file": "tests/agent_run.py",
-   "old": "if fields[\"agent\"] != name or any(k not in fields for k in carried):",
-   "new": "if fields[\"agent\"] != name:",
+   "old": "    if any(k not in fields for k in carried):",
+   "new": "    if False:",
    "tests": [
     "test_agent_run.py"
    ]
@@ -373,8 +373,377 @@
   {
    "id": "fold_does_not_check_the_run_fields",
    "file": "tests/agent_run.py",
-   "old": "            check_run({k: v for k, v in fields.items() if k not in carried})\n",
-   "new": "            check_findings(fields[\"findings\"])\n",
+   "old": "    (check_run, check_run2)[form - 1]({k: v for k, v in fields.items() if k not in carried})",
+   "new": "    (check_findings, check_findings2)[form - 1](fields[\"findings\"])",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "packet_of_the_files_definition",
+   "file": "tests/agent_run.py",
+   "old": "agent = loaded(record, name)",
+   "new": "agent = definition(root, name)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "agent_not_loaded_taken",
+   "file": "tests/agent_run.py",
+   "old": "raise Fault(\"definition_not_loaded\")",
+   "new": "return {\"model\": \"opus\", \"tools\": [], \"sha256\": \"\"}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "load_record_of_any_model",
+   "file": "tests/agent_run.py",
+   "old": "if (agent.get(\"model\") in MODELS and",
+   "new": "if (True and",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "load_record_tools_not_a_list",
+   "file": "tests/agent_run.py",
+   "old": "and isinstance(agent.get(\"tools\"), list) and",
+   "new": "and",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "lessons_cut",
+   "file": "tests/agent_run.py",
+   "old": "json.loads(lines[r[\"line\"] - 1])[\"payload\"][\"summary\"]}",
+   "new": "json.loads(lines[r[\"line\"] - 1])[\"payload\"][\"summary\"][:500]}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "memory_holds_the_caught",
+   "file": "tests/agent_run.py",
+   "old": "if f[\"verdict\"] != CAUGHT and f.get(\"repeat_of\") is None]",
+   "new": "if f.get(\"repeat_of\") is None]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "memory_holds_the_repeats",
+   "file": "tests/agent_run.py",
+   "old": "if f[\"verdict\"] != CAUGHT and f.get(\"repeat_of\") is None]",
+   "new": "if f[\"verdict\"] != CAUGHT]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "message_sha_of_nothing",
+   "file": "tests/agent_run.py",
+   "old": "doc[key] = hashlib.sha256(files[file]).hexdigest()",
+   "new": "doc[key] = hashlib.sha256(b\"\").hexdigest()",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "rules_sha_of_nothing",
+   "file": "tests/agent_run.py",
+   "old": "\"rules_sha256\": hashlib.sha256(rules).hexdigest()",
+   "new": "\"rules_sha256\": hashlib.sha256(b\"\").hexdigest()",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "message_names_a_relative_directory",
+   "file": "tests/agent_run.py",
+   "old": "files[\"message.txt\"] = (MESSAGE % os.path.abspath(out)).encode()",
+   "new": "files[\"message.txt\"] = (MESSAGE % out).encode()",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "place_on_a_finding_not_carried",
+   "file": "tests/agent_run.py",
+   "old": "if f[\"verdict\"] == CARRIED else place is None)",
+   "new": "if f[\"verdict\"] == CARRIED else True)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "carried_without_a_place",
+   "file": "tests/agent_run.py",
+   "old": "if f[\"verdict\"] == CARRIED else place is None)",
+   "new": "if place is not None else place is None)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "carried_in_any_path",
+   "file": "tests/agent_run.py",
+   "old": "bool(REPORT.fullmatch(place) or ROW_ID.fullmatch(place))",
+   "new": "bool(place)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "repeat_of_any_text",
+   "file": "tests/agent_run.py",
+   "old": "(isinstance(again, str) and FINDING_ID.fullmatch(again))",
+   "new": "isinstance(again, str)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "absent_report_taken",
+   "file": "tests/agent_run.py",
+   "old": "and not os.path.isfile(os.path.join(root, place)):",
+   "new": "and False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "report_that_is_a_directory_taken",
+   "file": "tests/agent_run.py",
+   "old": "and not os.path.isfile(os.path.join(root, place)):",
+   "new": "and not os.path.exists(os.path.join(root, place)):",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "absent_row_taken",
+   "file": "tests/agent_run.py",
+   "old": "            if place not in ids:",
+   "new": "            if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "repeat_of_a_later_run",
+   "file": "tests/agent_run.py",
+   "old": "found = dict(found[:[row_id for row_id, _ in found].index(amends)] if amends is not None else found)",
+   "new": "found = dict(found)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "repeat_of_a_finding_the_run_has_not",
+   "file": "tests/agent_run.py",
+   "old": "if row_id not in found or int(n) > len(found[row_id][\"findings\"]):",
+   "new": "if row_id not in found:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "effort_null_under_the_rules",
+   "file": "tests/agent_run.py",
+   "old": "if run[\"effort\"] is None or run[\"tokens\"] is None or \"amends\" in run:",
+   "new": "if run[\"tokens\"] is None or \"amends\" in run:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "tokens_null_under_the_rules",
+   "file": "tests/agent_run.py",
+   "old": "if run[\"effort\"] is None or run[\"tokens\"] is None or \"amends\" in run:",
+   "new": "if run[\"effort\"] is None or \"amends\" in run:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_under_the_rules_with_amends",
+   "file": "tests/agent_run.py",
+   "old": "if run[\"effort\"] is None or run[\"tokens\"] is None or \"amends\" in run:",
+   "new": "if run[\"effort\"] is None or run[\"tokens\"] is None:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "amend_with_other_findings",
+   "file": "tests/agent_run.py",
+   "old": "if amends is not None and len(findings) != len(found[amends][\"findings\"]):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "amend_findings_not_checked",
+   "file": "tests/agent_run.py",
+   "old": "    check_findings2(run[\"findings\"])\n    text = FORM2",
+   "new": "    text = FORM2",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "amend_with_more_keys",
+   "file": "tests/agent_run.py",
+   "old": "if sorted(run) != sorted(AMEND_KEYS[1:]) or not (isinstance(run[\"amends\"], str)",
+   "new": "if \"amends\" not in run or \"findings\" not in run or not (isinstance(run[\"amends\"], str)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "row_written_in_the_old_form",
+   "file": "tests/agent_run.py",
+   "old": "return FORM2 + json.dumps(fields",
+   "new": "return FORM + json.dumps(fields",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "before_rules_is_every_run",
+   "file": "tests/agent_run.py",
+   "old": "\"before_rules\": fold([r for r in found if r[\"form\"] == 1]),",
+   "new": "\"before_rules\": fold(found),",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "under_rules_is_every_run",
+   "file": "tests/agent_run.py",
+   "old": "\"under_rules\": fold([r for r in found if r[\"form\"] == 2]),",
+   "new": "\"under_rules\": fold(found),",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "repeats_not_counted",
+   "file": "tests/agent_run.py",
+   "old": "\"repeats\": sum(f.get(\"repeat_of\") is not None for f in findings),",
+   "new": "\"repeats\": 0,",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "carried_not_counted",
+   "file": "tests/agent_run.py",
+   "old": "for v in VERDICTS2}",
+   "new": "for v in VERDICTS}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "packet_and_agent_both_taken",
+   "file": "tests/agent_run.py",
+   "old": "if (args.packet is None) == (args.agent is None):",
+   "new": "if args.packet is None and args.agent is None:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "packet_of_other_keys_taken",
+   "file": "tests/agent_run.py",
+   "old": "if sorted(doc) != sorted(PACKET_KEYS2):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "old_form_with_the_rules_fields",
+   "file": "tests/agent_run.py",
+   "old": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS2)[form - 1] if k != \"tools\"]",
+   "new": "carried = [k for k in (PACKET_KEYS2, PACKET_KEYS2)[form - 1] if k != \"tools\"]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "new_form_without_the_rules_fields",
+   "file": "tests/agent_run.py",
+   "old": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS2)[form - 1] if k != \"tools\"]",
+   "new": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS)[form - 1] if k != \"tools\"]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "amend_keys_in_the_old_form",
+   "file": "tests/agent_run.py",
+   "old": "if form == 2 and sorted(fields) == sorted(AMEND_KEYS):",
+   "new": "if sorted(fields) == sorted(AMEND_KEYS):",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "amend_row_with_any_amends",
+   "file": "tests/agent_run.py",
+   "old": "        if not ROW_ID.fullmatch(fields[\"amends\"]):\n            raise ValueError\n        check_findings2",
+   "new": "        check_findings2",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_without_its_message",
+   "file": "tests/agent_run.py",
+   "old": "\"message_sha256\": fields.get(\"message_sha256\"),",
+   "new": "\"message_sha256\": None,",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "default_load_record_not_passed",
+   "file": "tests/agent_run.py",
+   "old": "packet(root, args.agent, args.base, args.head, args.out, git, args.loaded,",
+   "new": "packet(root, args.agent, args.base, args.head, args.out, git, LOADED,",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "load_record_agents_not_a_list",
+   "file": "tests/agent_run.py",
+   "old": "    if not isinstance(listed, list):\n        raise Fault(\"load_record_unreadable\")\n    for agent in listed:",
+   "new": "    for agent in listed or ():",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "only_the_diff_pinned",
+   "file": "tests/agent_run.py",
+   "old": "for file, key in PINNED:\n        try:",
+   "new": "for file, key in PINNED[:1]:\n        try:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "caught_of_runs_with_unknown_tokens_counted",
+   "file": "tests/agent_run.py",
+   "old": "sum(f[\"verdict\"] == CAUGHT for run in found if run[\"tokens\"] is not None",
+   "new": "sum(f[\"verdict\"] == CAUGHT for run in found if True",
    "tests": [
     "test_agent_run.py"
    ]
