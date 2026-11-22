@@ -18,6 +18,7 @@ decide`` (MF8) and ``activate`` (MF18) read; it decides nothing.
     c/<cid>/checks.json                 {red_control: pass|fail, tests: [{id, status: pass|fail}]}
     c/<cid>/hashes.json                 {"base.jsonl", "cand.jsonl", "checks.json"}: sha256 of the bytes written
     m/<mid>/mut.jsonl                   three lint runs of the base worktree with mutation <mid> applied
+    o/<sha256>                          an organ's kept output: bytes named by their sha256 (runner.organ_output)
     sentinel.json                       {merge_sha, runs, verdict, red, flaky}: only when a merge is watched
     index.json                          {base: {verdict, reasons, lint_stdout_extra?, lint_failed?}, base_run_sha256,
                                          candidates: {cid: {verdict, reasons, lint_stdout_extra?, lint_failed?}},
@@ -79,10 +80,16 @@ on the snapshot; so not the unit's worktree: no installed dependency is in it, a
 false, reasons: [<runner.organs' reason>]}`` for one refused (no container started for it); ``{called: false,
 reasons: <the staging's>}`` for every organ when the base did not stage (none is called: the staging makes the
 host hold the image and gives the limits); else ``{called: true,
-definition_sha256, valid, reasons, status, exit, stdout_sha256, outputs_sha256}``, the contained run's own
-(``valid`` false with ``red_control_green`` or the run's status among the reasons). Nothing here or after reads
-an entry to decide, and an organ's output is not kept: what ``koş`` does with an adapter's output comes with
-its first organ (stage 1's ``lint.discover``); until the brain holds an organ, ``organs`` is ``{}``. The
+definition_sha256, valid, reasons, status, exit, stdout_sha256, outputs_sha256, output}``, the contained run's
+own (``valid`` false with ``red_control_green`` or the run's status among the reasons). ``output`` (P1 MF10,
+``runner.organ_output``, "The store" there) is ``{sha256, reasons}``: the output of a called organ whose run is
+``valid`` is kept under ``o/`` from the files the run left under its ``/out``, before the run's directory is
+removed, and ``sha256`` is its hash, whatever the entry point's exit code; a run that is not ``valid`` keeps
+nothing (``sha256`` null, ``run_invalid``), nor does an output ``organ_output.keep`` refuses (its reasons: an
+entry under ``/out`` that is no regular file or directory, a file whose bytes are not the ones hashed). An organ
+that was not called has no ``output`` key. ``loop.job``'s ``yaz`` reads each kept output by that hash
+(``yaz_organs``); nothing here or after reads an entry or an output to decide: what is done with an adapter's
+output comes with MF11 and MF12; until the brain holds an organ, ``organs`` is ``{}``. The
 image is a choice made here (the organ runs in the unit's toolchain image); no seed page fixes it
 (reports/seed-073), nor how an adapter gets its tool when the snapshot has no installed directory
 (reports/seed-074).
@@ -165,6 +172,7 @@ from profile import derive as D
 from profile import unit_verify as U
 from runner import contained as C
 from runner import lint_record as R
+from runner import organ_output as OO
 from runner import organs as O
 from runner import test_results as T
 import cli
@@ -290,18 +298,23 @@ def _sentinel(watch: str, recipe: dict, red: list, staging: str, ctx: dict, runn
 
 
 def _organ(oid: Any, organs: dict, recipe: dict, red: list, operating: dict, runner: C.Runner,
-           root: str) -> dict:
-    """One organ's call through ``runner.organs`` and its index entry (see the module docstring, "The organs")."""
+           root: str, out: str) -> dict:
+    """One organ's call through ``runner.organs``, its output kept under ``out`` and its index entry (see the
+    module docstring, "The organs")."""
     got = O.call(organs["accepted"], oid, organs["definitions"][oid],
                  {"image": recipe["env_image"], "tree": organs["tree"], "env": dict(U.ENV)}, red, operating, runner, root)
     if not got["called"]:
         return {"called": False, "reasons": got["reasons"]}
     main = got["result"]
-    for run in (main, got["red_control"]):      # the entry carries the hashes; nothing reads the runs' copies
+    kept = {"sha256": None, "reasons": ["run_invalid"]}
+    if got["valid"]:
+        made = os.path.join(main["run_root"], C.MOUNT_SUBDIR["/out"])
+        kept = OO.keep(main["outputs"], lambda path: D._read_regular(made, path), out)
+    for run in (main, got["red_control"]):      # the output is kept and the entry carries the hashes
         shutil.rmtree(run["run_root"], ignore_errors=True)
     return {"called": True, "definition_sha256": got["definition_sha256"], "valid": got["valid"],
             "reasons": got["reasons"], "status": main["status"], "exit": main["exit"],
-            "stdout_sha256": main.get("stdout_sha256"), "outputs_sha256": main["outputs_sha256"]}
+            "stdout_sha256": main.get("stdout_sha256"), "outputs_sha256": main["outputs_sha256"], "output": kept}
 
 
 def _patch(worktree: str, diff: bytes) -> list[str]:
@@ -442,7 +455,7 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
             index["base_run_sha256"] = sha256(base_run)
         index["base"] = dict(_verdict(reasons), **extra)
         index["organs"] = {oid: {"called": False, "reasons": bad} if bad else
-                           _organ(oid, organs, recipe, red_control["cmd"], ctx["operating"], runner, root)
+                           _organ(oid, organs, recipe, red_control["cmd"], ctx["operating"], runner, root, out)
                            for oid in sorted(organs["definitions"])}
         if watch is not None:
             index["sentinel"] = ({"merge_sha": watch, "verdict": None, "reasons": bad, "sha256": None} if bad else

@@ -168,7 +168,7 @@ refused tree is ``pulled_invalid``). Then:
   cycle's findings against those cases on ``pulled``'s ``snapshot.json`` document and the extracted tree, and the
   target's line has ``harness`` (``{report, hits, matched, missed_rules, refused, counts, verdict_reason}``, "The
   report" there; ``{reason: "harness_refused", reasons}`` when the scorer refuses the document or the cases). The
-  cycle's findings are none (``FINDINGS``) until an organ's output is kept, so every case of a cycle is a miss
+  cycle's findings are none (``FINDINGS``) until an organ's output is read as findings, so every case of a cycle is a miss
   today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``window``
   and ``ref_max_lines`` are ``harness.params.score`` of ``pulled``'s policy (tohum/29v's paths of stage 1; all
   three are there and in form, or the job stopped at ``yaz_policy`` below before this target was served).
@@ -179,7 +179,15 @@ refused tree is ``pulled_invalid``). Then:
   how many modules the reading reached). The report above, the copy's genesis gate, the PASS judgement and
   D8's judgement (``loop.drill``) run inside ``harness.offline.run``, and a socket or a child process one of them
   asks for refuses the target (``harness_online``, reasons ``event:<audit event>``) before D6 writes ``brain/state``.
-  Nothing reads ``cases`` or ``harness`` to decide and nothing is written from them: no merge, row or exit code
+  Then the organs' outputs (P1 MF10, ``yaz_organs``): for every organ in the results' ``index.json`` (``organs``;
+  an index that is absent, not JSON or without that object has none) the output ``kos`` kept is read by the hash
+  its entry names (``output.sha256``) with ``runner.organ_output.read``, which returns no byte that does not lead
+  back to that hash; the target's line has ``organs``, per organ ``{read: true, sha256, files, bytes}`` (how many
+  files and bytes were read) or ``{read: false, reasons}`` (``output_not_kept`` when the entry names no hash: an
+  organ not called, a run not valid, an output not kept; else ``organ_output``'s reasons: missing, changed,
+  unusable). The bytes read are dropped: no consumer exists before MF11 and MF12, and a refused output stops
+  nothing today.
+  Nothing reads ``cases``, ``harness`` or ``organs`` to decide and nothing is written from them: no merge, row or exit code
   depends on a case or a report (``<state_root>/cases/`` is not written yet, reports/seed-075). Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
   ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it), read
   before the tree is judged; a ledger it cannot read is ``state_refused`` with its reasons (exit 1), nothing decided. A
@@ -408,6 +416,7 @@ from profile import derive as D
 from profile import unit_verify as U
 from runner import deps_npm as N
 from runner import kos as K
+from runner import organ_output as OO
 from snapshot import make as SM
 from target import app_jwt as AJ
 from target import branches as B
@@ -829,6 +838,13 @@ def yaz_cases(environ: dict[str, str], tid: str, art: Any) -> dict[str, Any]:
     """The dev cases of target ``tid``'s cycle (P1 MF3; see the module docstring): ``cases.build.build`` of
     ``pulled``'s mutations on ``$RUNNER_TEMP/in/results/<tid>``, each file a regular file with no link on its way
     (else absent); an index that is absent or not JSON is an empty one (every mutation ``kos:missing``)."""
+    index, read = _results(environ, tid)
+    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read)
+
+
+def _results(environ: dict[str, str], tid: str) -> tuple[Any, Any]:
+    """``(index, read)`` of ``$RUNNER_TEMP/in/results/<tid>``: ``read(path)`` the bytes of a regular file with no
+    link on its way, else ``None``; ``index`` its ``index.json`` as JSON, ``None`` when absent or not JSON."""
     results = _dir(environ, "in", "results", tid)
 
     def read(path: str) -> bytes | None:
@@ -836,13 +852,34 @@ def yaz_cases(environ: dict[str, str], tid: str, art: Any) -> dict[str, Any]:
 
     raw = read(K.INDEX)
     try:
-        index = cli.loads(raw.decode("utf-8")) if raw is not None else None
+        return (cli.loads(raw.decode("utf-8")) if raw is not None else None), read
     except (UnicodeDecodeError, ValueError, RecursionError):
-        index = None
-    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read)
+        return None, read
 
 
-FINDINGS: list = []   # the cycle's findings: none, until an organ's output is kept (stage 1's ``lint.discover``)
+def yaz_organs(environ: dict[str, str], tid: str) -> dict[str, Any]:
+    """The organs' outputs of target ``tid``'s cycle, read by their hashes (P1 MF10; see the module docstring):
+    one entry per organ of the results' index, ``{read: true, sha256, files, bytes}`` when
+    ``runner.organ_output.read`` gave the output under the hash the index names, else ``{read: false, reasons}``."""
+    index, read = _results(environ, tid)
+    organs = index.get("organs") if isinstance(index, dict) else None
+    line: dict[str, Any] = {}
+    for oid, entry in sorted(organs.items()) if isinstance(organs, dict) else ():
+        kept = entry.get("output") if isinstance(entry, dict) else None
+        sha = kept.get("sha256") if isinstance(kept, dict) else None
+        if sha is None:
+            line[oid] = {"read": False, "reasons": ["output_not_kept"]}
+            continue
+        try:
+            files = OO.read(sha, read)
+        except OO.Refused as exc:
+            line[oid] = {"read": False, "reasons": exc.reasons}
+        else:
+            line[oid] = {"read": True, "sha256": sha, "files": len(files), "bytes": sum(map(len, files.values()))}
+    return line
+
+
+FINDINGS: list = []   # the cycle's findings: none, until an organ's output is read as findings (MF11, MF12)
 
 
 CODE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))    # the directory ``loop/`` is in
@@ -1585,8 +1622,9 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
             return dict(d5, ok=False)
         cases = yaz_cases(environ, tid, art)
         harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten
+        organs = yaz_organs(environ, tid)
         written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)
-        return dict(written, cases=cases, harness=harness)
+        return dict(written, cases=cases, harness=harness, organs=organs)
     except OF.Online as exc:
         return {"ok": False, "reason": "harness_online", "reasons": exc.reasons}
 

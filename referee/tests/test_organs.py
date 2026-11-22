@@ -406,7 +406,7 @@ class LivePath(LK.Base):
         self.assertEqual((out["ok"], line["done"]), (True, ["D3"]))
         entry = line["index"]["organs"]["lint.discover"]
         self.assertEqual(sorted(line["index"]["organs"]), ["lint.discover"])
-        self.assertEqual({k: v for k, v in entry.items() if k != "outputs_sha256"},
+        self.assertEqual({k: v for k, v in entry.items() if k not in ("outputs_sha256", "output")},     # output: test 56
                          {"called": True, "definition_sha256": by_hand(live_entry(), LIVE_FILES), "valid": True,
                           "reasons": [], "status": "ok", "exit": 0, "stdout_sha256": hashlib.sha256(b"").hexdigest()})
         self.assertNotEqual(entry["outputs_sha256"], contained.tree_sha256({}))     # it wrote a file
