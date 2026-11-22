@@ -252,14 +252,15 @@ def organ(mode: str = "ok") -> dict:
     return {"entry": ["python3", "/in/adapters/lint/main.py", "/out", mode], "files": {"adapters/lint/main.py": MAIN}}
 
 
-class Live(LY.YazBase):
-    """``kos`` then ``yaz`` on a ``pulled`` artifact whose accepted organs are ``carried``."""
+class LiveBase(LY.YazBase):
+    """``kos`` then ``yaz`` on a ``pulled`` artifact whose accepted organs are ``carried`` (the helpers; test 57's
+    live half stands on them too)."""
 
-    def cycle(self, carried: dict, accepted: dict | None = None, runner=None) -> dict:
-        """The ``kos`` job with ``carried`` (all accepted unless ``accepted`` is given), handed over to ``yaz``'s
-        ``in/results``; returns the index's ``organs``."""
+    def cycle(self, carried: dict, accepted: dict | None = None, runner=None, cands: dict | None = None) -> dict:
+        """The ``kos`` job with ``carried`` (all accepted unless ``accepted`` is given) and the ready candidates
+        ``cands``, handed over to ``yaz``'s ``in/results``; returns the index's ``organs``."""
         accepted = {o: organs.definition_sha256(d) for o, d in carried.items()} if accepted is None else accepted
-        self.write_pulled({}, accepted=accepted, organs=carried)
+        self.write_pulled(cands or {}, accepted=accepted, organs=carried)
         out = J.run("kos", {"RUNNER_TEMP": self.temp}, runner=runner or RedAs())
         self.assertTrue(out["ok"], out)
         os.makedirs(os.path.dirname(self.results()), exist_ok=True)
@@ -269,12 +270,12 @@ class Live(LY.YazBase):
         with open(self.results("index.json")) as fh:
             return json.load(fh)["organs"]
 
-    def yaz(self) -> dict:
-        """The ``organs`` of the target's line of a ``yaz`` job that ended ``ok``."""
+    def yaz(self, key: str = "organs") -> dict:
+        """The ``organs`` (or ``key``) of the target's line of a ``yaz`` job that ended ``ok``."""
         self.github()
         line = self.line(self.run_yaz())
         self.assertTrue(line["ok"], line)
-        return line["organs"]
+        return line[key]
 
     def store(self) -> dict:
         if not os.path.lexists(self.results("o")):
@@ -285,6 +286,9 @@ class Live(LY.YazBase):
                 got[name] = fh.read()
         return got
 
+
+
+class Live(LiveBase):
     def test_kos_keeps_the_output_and_yaz_reads_it_by_its_hash(self):
         index = self.cycle({"lint.discover": organ()})
         manifest = by_hand(WROTE)

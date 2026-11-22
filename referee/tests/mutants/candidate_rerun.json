@@ -1,0 +1,283 @@
+{
+ "mutants": [
+  {
+   "id": "package_id_of_many_parts",
+   "file": "runner/candidate_rerun.py",
+   "old": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json\\Z\")",
+   "new": "PACKAGE = re.compile(r\"candidates/.+/package\\.json\\Z\")",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "package_id_empty",
+   "file": "runner/candidate_rerun.py",
+   "old": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json\\Z\")",
+   "new": "PACKAGE = re.compile(r\"candidates/[^/]*/package\\.json\\Z\")",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "package_path_prefix_only",
+   "file": "runner/candidate_rerun.py",
+   "old": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json\\Z\")",
+   "new": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json\")",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "package_path_before_newline",
+   "file": "runner/candidate_rerun.py",
+   "old": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json\\Z\")",
+   "new": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json$\")",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "package_anywhere_in_the_output",
+   "file": "runner/candidate_rerun.py",
+   "old": "if PACKAGE.match(path)}",
+   "new": "if PACKAGE.search(path)}",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "package_named_by_its_path",
+   "file": "runner/candidate_rerun.py",
+   "old": "return {key(data): data for path, data in files.items() if PACKAGE.match(path)}",
+   "new": "return {key(path.encode()): data for path, data in files.items() if PACKAGE.match(path)}",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "diff_of_any_json_value",
+   "file": "runner/candidate_rerun.py",
+   "old": "return text.encode(\"utf-8\") if isinstance(text, str) else None",
+   "new": "return (text if isinstance(text, str) else json.dumps(text)).encode(\"utf-8\") if text is not None else None",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "diff_with_surrogates",
+   "file": "runner/candidate_rerun.py",
+   "old": "return text.encode(\"utf-8\") if isinstance(text, str) else None",
+   "new": "return text.encode(\"utf-8\", \"surrogatepass\") if isinstance(text, str) else None",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "diff_lenient_utf8",
+   "file": "runner/candidate_rerun.py",
+   "old": "cli.loads(package.decode(\"utf-8\"))",
+   "new": "cli.loads(package.decode(\"utf-8\", \"replace\"))",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "diff_error_escapes",
+   "file": "runner/candidate_rerun.py",
+   "old": "    except ValueError:      #",
+   "new": "    except KeyError:      #",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "diff_depth_unbounded",
+   "file": "runner/candidate_rerun.py",
+   "old": "got: Any = cli.loads(package.decode(\"utf-8\"))",
+   "new": "got: Any = __import__(\"json\").loads(package.decode(\"utf-8\"))",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "rerun_in_found_order",
+   "file": "runner/candidate_rerun.py",
+   "old": "for name in sorted(found)}",
+   "new": "for name in found}",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "rerun_first_output_only",
+   "file": "runner/candidate_rerun.py",
+   "old": "    for sha in outputs:\n",
+   "new": "    for sha in outputs[:1]:\n",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "rerun_unread_output_skipped",
+   "file": "runner/candidate_rerun.py",
+   "old": "        found.update(packages(OO.read(sha, read)))",
+   "new": "        try:\n            found.update(packages(OO.read(sha, read)))\n        except OO.Refused:\n            pass",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "rerun_diffless_not_run",
+   "file": "runner/candidate_rerun.py",
+   "old": "return {name: run(name, diff(found[name])) for name in sorted(found)}",
+   "new": "return {name: run(name, diff(found[name])) for name in sorted(found) if diff(found[name]) is not None}",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_any_entry",
+   "file": "runner/candidate_rerun.py",
+   "old": "    if not isinstance(entry, dict):\n        raise NotRerun(\"rerun_missing\")",
+   "new": "    if entry is None:\n        raise NotRerun(\"rerun_missing\")",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_any_verdict",
+   "file": "runner/candidate_rerun.py",
+   "old": "if entry.get(\"verdict\") != \"verified\":",
+   "new": "if entry.get(\"verdict\") is None:",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_unverified_handed_out",
+   "file": "runner/candidate_rerun.py",
+   "old": "if entry.get(\"verdict\") != \"verified\":",
+   "new": "if False:",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_some_files",
+   "file": "runner/candidate_rerun.py",
+   "old": "if any(data is None for data in files.values()):",
+   "new": "if all(data is None for data in files.values()):",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_ready_candidate_files",
+   "file": "runner/candidate_rerun.py",
+   "old": "read(\"/\".join((RUNS, name, f)))",
+   "new": "read(\"/\".join((\"c\", name, f)))",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_entry_not_carried",
+   "file": "runner/candidate_rerun.py",
+   "old": "raise NotRerun(\"rerun_not_verified\", entry)",
+   "new": "raise NotRerun(\"rerun_not_verified\")",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_first_entry",
+   "file": "runner/candidate_rerun.py",
+   "old": "entry = reruns.get(name) if isinstance(reruns, dict) else None",
+   "new": "entry = next(iter(reruns.values()), None) if isinstance(reruns, dict) else None",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "kos_rerun_under_c",
+   "file": "runner/kos.py",
+   "old": "                              base_run, CR.RUNS)",
+   "new": "                              base_run)",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "kos_rerun_without_base",
+   "file": "runner/kos.py",
+   "old": "            if index[\"base_run_sha256\"] is None:\n                return _verdict([\"base_unavailable\"])\n            return _candidate(name, diff, recipe",
+   "new": "            return _candidate(name, diff, recipe",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "kos_diffless_verified",
+   "file": "runner/kos.py",
+   "old": "                return _verdict([CR.UNUSABLE])",
+   "new": "                return {\"verdict\": \"verified\", \"reasons\": []}",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "kos_reruns_not_run",
+   "file": "runner/kos.py",
+   "old": "lambda path: D._read_regular(out, path), rerun)",
+   "new": "lambda path: D._read_regular(out, path), lambda name, diff: _verdict([CR.UNUSABLE]))",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "kos_unread_output_goes_on",
+   "file": "runner/kos.py",
+   "old": "            raise KosError(\"a kept output is not read back: %s\" % \", \".join(exc.reasons)) from None",
+   "new": "            index[\"reruns\"] = {}",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "kos_rerun_dir_ignores_kind",
+   "file": "runner/kos.py",
+   "old": "        directory = os.path.join(out, kind, cid)",
+   "new": "        directory = os.path.join(out, \"c\", cid)",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "yaz_reruns_always_reran",
+   "file": "loop/job.py",
+   "old": "                line[name] = {\"reran\": False, \"reasons\": exc.reasons}",
+   "new": "                line[name] = {\"reran\": True}",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "yaz_reruns_not_asked",
+   "file": "loop/job.py",
+   "old": "                CR.reran(index, package, read)",
+   "new": "                pass",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "yaz_line_without_reruns",
+   "file": "loop/job.py",
+   "old": "        reruns = yaz_reruns(environ, tid)",
+   "new": "        reruns = {}",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  }
+ ]
+}

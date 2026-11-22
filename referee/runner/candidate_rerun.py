@@ -88,7 +88,7 @@ def diff(package: bytes) -> bytes | None:
         got: Any = cli.loads(package.decode("utf-8"))
         text = got.get("diff") if isinstance(got, dict) else None
         return text.encode("utf-8") if isinstance(text, str) else None
-    except (UnicodeError, ValueError, RecursionError):
+    except ValueError:      # not UTF-8, not JSON, nested too deeply, a string with no UTF-8 encoding
         return None
 
 
