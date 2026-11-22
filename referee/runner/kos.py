@@ -19,15 +19,15 @@ decide`` (MF8) and ``activate`` (MF18) read; it decides nothing.
     c/<cid>/hashes.json                 {"base.jsonl", "cand.jsonl", "checks.json"}: sha256 of the bytes written
     m/<mid>/mut.jsonl                   three lint runs of the base worktree with mutation <mid> applied
     o/<sha256>                          an organ's kept output: bytes named by their sha256 (runner.organ_output)
-    r/<package sha256>/                 a run-time candidate's rerun: the three files of c/<cid>/
-                                        (runner.candidate_rerun)
+    candidates/<id>/package.json        a run-time candidate's package, as an organ's kept output holds it
+    r/<id>/                             its rerun: the three files of c/<cid>/ (runner.candidate_rerun)
     sentinel.json                       {merge_sha, runs, verdict, red, flaky}: only when a merge is watched
     index.json                          {base: {verdict, reasons, lint_stdout_extra?, lint_failed?}, base_run_sha256,
                                          candidates: {cid: {verdict, reasons, lint_stdout_extra?, lint_failed?}},
                                          sentinel: null | {merge_sha, verdict, reasons, sha256},
                                          organs: {oid: {called, reasons, ...}},
-                                         reruns: {<package sha256>: {verdict, reasons, lint_stdout_extra?,
-                                                                     lint_failed?}},
+                                         reruns: {<id>: {verdict, reasons, package_sha256, lint_stdout_extra?,
+                                                         lint_failed?}},
                                          mutations: {mid: {verdict, reasons, run_sha256, lint_stdout_extra?,
                                                            lint_failed?}}}
 
@@ -111,17 +111,20 @@ exited 0 or 1 and converts, the three files are written; ``red_control`` is ``pa
 passed (the gate's criterion 7 rejects it; the index says ``red_control_green``). Any other reason of a contained
 run (a limit, ``red_control_fault``, ``runner_fault``, ``breach:``, ``unreadable_output``) writes no file.
 
-**A run-time candidate** (P1 MF11, tohum/26j; ``runner.candidate_rerun``, which says what one is: a package an
-organ's kept output holds, named by the sha256 of its bytes). After the ready candidates and before the mutations,
-every package of every output kept in this run is rerun, in the order of the package hashes, through
-``candidate_rerun.rerun``: the outputs are read back from ``o/`` by the hashes the organs' entries name (one not
-read back is unusable input: the store this process wrote does not hold what it hashed). A package without a diff
-is ``refused`` ``package_unusable``; without ``base.jsonl`` nothing runs (``base_unavailable``); otherwise the diff
-is given to the code of "A candidate" above, the same function with ``r/<package sha256>/`` as the directory of
-its three files: the same refusals of a diff, the same three lint runs and one test run, each with the red
-control, the same entry. The index's ``reruns`` has one entry per package, ``{}`` when no kept output holds one.
-``loop.job``'s ``yaz`` asks ``candidate_rerun.reran`` for each (``yaz_reruns``); no gate reads the files yet
-(MF12).
+**A run-time candidate** (P1 MF11, tohum/26j; ``runner.candidate_rerun``, which says what one is: the package
+an organ's kept output holds at ``candidates/<id>/package.json``). Every package of every output kept in this run
+is rerun, in the order of the ids, through ``candidate_rerun.rerun``: the outputs are read back from ``o/`` by the
+hashes the organs' entries name (one not read back is unusable input: the store this process wrote does not hold
+what it hashed). An ``<id>`` two outputs hold with different bytes is ``refused`` ``package_id_twice`` and one that
+is no ``CANDIDATE_ID`` ``candidate_id_invalid``, and nothing is written for either. Else the package is written
+at ``candidates/<id>/package.json`` of ``OUT`` (tohum/26a: the package stands there in ``koş``'s output tree). A
+package without a diff is ``refused`` ``package_unusable``; without ``base.jsonl`` nothing runs
+(``base_unavailable``); otherwise the diff is given to the code of "A candidate" above, the same function with
+``r/<id>/`` as the directory of its three files: the same refusals of a diff, the same three lint runs and one
+test run, each with the red control, the same entry. The index's ``reruns`` has one entry per ``<id>``, the
+function's with ``package_sha256`` (the sha256 of the package; ``null`` for an id held twice), ``{}`` when no kept
+output holds a package. ``loop.job``'s ``yaz`` asks ``candidate_rerun.reran`` for each (``yaz_reruns``); no gate
+reads the files yet (MF12).
 
 **A mutation** ``mid`` (asama-1/13a: the tool runs on the tree with the mutation, in ``koş``; ``mutations``:
 ``{mid: diff bytes}``, ``cases.build``'s proposal as ``loop.job``'s ``kos`` reads it from ``pulled``). After the
@@ -490,12 +493,19 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
                                  root, out, base_run)
             index["candidates"][cid] = got
 
-        def rerun(name: str, diff: bytes | None) -> dict:
+        def rerun(cid: str, package: bytes | None, diff: bytes | None) -> dict:
+            if package is None:
+                return _verdict([CR.TWICE])
+            if not CANDIDATE_ID.fullmatch(cid):
+                return _verdict(["candidate_id_invalid"])
+            os.makedirs(os.path.dirname(os.path.join(out, CR.path(cid))))
+            with open(os.path.join(out, CR.path(cid)), "xb") as fh:
+                fh.write(package)
             if diff is None:
                 return _verdict([CR.UNUSABLE])
             if index["base_run_sha256"] is None:
                 return _verdict(["base_unavailable"])
-            return _candidate(name, diff, recipe, red_control["cmd"], ctx["staging"], ctx, runner, root, out,
+            return _candidate(cid, diff, recipe, red_control["cmd"], ctx["staging"], ctx, runner, root, out,
                               base_run, CR.RUNS)
 
         try:

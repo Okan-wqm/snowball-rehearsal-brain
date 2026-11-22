@@ -7,9 +7,9 @@ findings file for ``lint.discover``, a candidate package under ``candidates/<id>
 no page says how an entry point hands it over): the regular files the organ's contained run left under its
 ``/out``, each by its path there. Its stdout is not part of it (the index entry of ``runner.kos`` has its hash, the
 bytes are not kept), nor an empty directory, nor a file's mode or times. A package an organ wrote at
-``candidates/<id>/package.json`` is therefore one file of its output, under that key of the manifest; reading it
-from there (26j MF12, ``loop/candidates.py``) is not built, and nothing here puts a ``candidates/`` directory in
-the results.
+``candidates/<id>/package.json`` is therefore one file of its output, under that key of the manifest; this module
+puts no ``candidates/`` directory in the results (``runner.kos`` writes the package there from the kept output,
+P1 MF11, ``runner.candidate_rerun``).
 
 **The store.** Under the results directory, ``o/<sha256>`` holds bytes whose sha256 is the file's name, and
 nothing else is under ``o/``: one file per distinct content, whatever organ wrote it and under whatever name. An

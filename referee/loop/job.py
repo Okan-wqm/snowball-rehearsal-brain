@@ -186,14 +186,15 @@ refused tree is ``pulled_invalid``). Then:
   back to that hash; the target's line has ``organs``, per organ ``{read: true, sha256, files, bytes}`` (how many
   files and bytes were read) or ``{read: false, reasons}`` (``output_not_kept`` when the entry names no hash: an
   organ not called, a run not valid, an output not kept; else ``organ_output``'s reasons: missing, changed,
-  unusable). The bytes read are dropped: no consumer exists before MF11 and MF12, and a refused output stops
-  nothing today.
-  The reruns (P1 MF11, ``yaz_reruns``; right after the organs' outputs): for every package
-  (``candidates/<id>/package.json``) of every output read as above, ``runner.candidate_rerun.reran`` is asked for
-  the gate's files of the candidate, which it hands out only for a package ``kos`` reran and verified ("Before
-  the gate" there); the target's line has ``reruns``, per package sha256 ``{reran: true}`` or ``{reran: false,
-  reasons}`` (``rerun_missing``, ``rerun_not_verified``, ``rerun_files_missing``). The files are dropped: no gate
-  judges a run-time candidate before MF12, and a candidate that was not rerun stops nothing today.
+  unusable). The bytes read are dropped: ``yaz`` has no consumer of them before MF12 (the packages among them
+  stand in the results by ``kos``'s hand, below), and a refused output stops nothing today.
+  The reruns (P1 MF11, ``yaz_reruns``; right after the organs' outputs): for every run-time candidate of the
+  results (every name under their ``candidates/`` and every key of the index's ``reruns``),
+  ``runner.candidate_rerun.reran`` is asked for the package and the gate's files, which it hands out only for a
+  package ``kos`` reran and verified ("Before the gate" there); the target's line has ``reruns``, per id
+  ``{reran: true, package_sha256}`` or ``{reran: false, reasons}`` (``package_missing``, ``rerun_missing``,
+  ``rerun_not_verified``, ``rerun_files_missing``). What is handed out is dropped: no gate judges a run-time
+  candidate before MF12, and a candidate that was not rerun stops nothing today.
   Nothing reads ``cases``, ``harness``, ``organs`` or ``reruns`` to decide and nothing is written from them: no merge, row or exit code
   depends on a case or a report (``<state_root>/cases/`` is not written yet, reports/seed-075). Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
   ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it), read
@@ -888,26 +889,24 @@ def yaz_organs(environ: dict[str, str], tid: str) -> dict[str, Any]:
 
 
 def yaz_reruns(environ: dict[str, str], tid: str) -> dict[str, Any]:
-    """The reruns of target ``tid``'s run-time candidates (P1 MF11; see the module docstring): one entry per
-    package of the organs' outputs ``yaz`` reads, under the package's sha256: ``{reran: true}`` when
-    ``runner.candidate_rerun.reran`` hands out its files, else ``{reran: false, reasons}``."""
+    """The reruns of target ``tid``'s run-time candidates (P1 MF11; see the module docstring): one entry per name
+    under the results' ``candidates/`` and per key of the index's ``reruns``: ``{reran: true, package_sha256}``
+    when ``runner.candidate_rerun.reran`` hands out the package and its files, else ``{reran: false, reasons}``."""
     index, read = _results(environ, tid)
-    organs = index.get("organs") if isinstance(index, dict) else None
+    reruns = index.get("reruns") if isinstance(index, dict) else None
+    try:
+        ids = set(os.listdir(os.path.join(_dir(environ, "in", "results", tid), "candidates")))
+    except OSError:     # no such directory: no package stands in the results
+        ids = set()
     line: dict[str, Any] = {}
-    for entry in organs.values() if isinstance(organs, dict) else ():
-        kept = entry.get("output") if isinstance(entry, dict) else None
+    for cid in sorted(ids | set(reruns if isinstance(reruns, dict) else ())):
         try:
-            found = CR.packages(OO.read(kept.get("sha256") if isinstance(kept, dict) else None, read))
-        except OO.Refused:      # ``yaz_organs`` has the reasons on the organ's line
-            continue
-        for name, package in found.items():
-            try:
-                CR.reran(index, package, read)
-            except CR.NotRerun as exc:
-                line[name] = {"reran": False, "reasons": exc.reasons}
-            else:
-                line[name] = {"reran": True}
-    return dict(sorted(line.items()))
+            package, _ = CR.reran(index, cid, read)
+        except CR.NotRerun as exc:
+            line[cid] = {"reran": False, "reasons": exc.reasons}
+        else:
+            line[cid] = {"reran": True, "package_sha256": CR.key(package)}
+    return line
 
 
 FINDINGS: list = []   # the cycle's findings: none, until an organ's output is read as findings (MF11, MF12)

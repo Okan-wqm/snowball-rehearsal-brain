@@ -3,17 +3,17 @@
   {
    "id": "package_id_of_many_parts",
    "file": "runner/candidate_rerun.py",
-   "old": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json\\Z\")",
-   "new": "PACKAGE = re.compile(r\"candidates/.+/package\\.json\\Z\")",
+   "old": "PACKAGE = re.compile(r\"candidates/([^/]+)/package\\.json\\Z\")",
+   "new": "PACKAGE = re.compile(r\"candidates/(.+)/package\\.json\\Z\")",
    "tests": [
     "test_candidate_rerun.py"
    ]
   },
   {
-   "id": "package_id_empty",
+   "id": "package_without_directory",
    "file": "runner/candidate_rerun.py",
-   "old": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json\\Z\")",
-   "new": "PACKAGE = re.compile(r\"candidates/[^/]*/package\\.json\\Z\")",
+   "old": "PACKAGE = re.compile(r\"candidates/([^/]+)/package\\.json\\Z\")",
+   "new": "PACKAGE = re.compile(r\"(?:candidates/)?([^/]+)/package\\.json\\Z\")",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -21,8 +21,8 @@
   {
    "id": "package_path_prefix_only",
    "file": "runner/candidate_rerun.py",
-   "old": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json\\Z\")",
-   "new": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json\")",
+   "old": "PACKAGE = re.compile(r\"candidates/([^/]+)/package\\.json\\Z\")",
+   "new": "PACKAGE = re.compile(r\"candidates/([^/]+)/package\\.json\")",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -30,8 +30,8 @@
   {
    "id": "package_path_before_newline",
    "file": "runner/candidate_rerun.py",
-   "old": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json\\Z\")",
-   "new": "PACKAGE = re.compile(r\"candidates/[^/]+/package\\.json$\")",
+   "old": "PACKAGE = re.compile(r\"candidates/([^/]+)/package\\.json\\Z\")",
+   "new": "PACKAGE = re.compile(r\"candidates/([^/]+)/package\\.json$\")",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -39,17 +39,44 @@
   {
    "id": "package_anywhere_in_the_output",
    "file": "runner/candidate_rerun.py",
-   "old": "if PACKAGE.match(path)}",
-   "new": "if PACKAGE.search(path)}",
+   "old": "            held = PACKAGE.match(name)",
+   "new": "            held = PACKAGE.search(name)",
    "tests": [
     "test_candidate_rerun.py"
    ]
   },
   {
-   "id": "package_named_by_its_path",
+   "id": "found_last_bytes_win",
    "file": "runner/candidate_rerun.py",
-   "old": "return {key(data): data for path, data in files.items() if PACKAGE.match(path)}",
-   "new": "return {key(path.encode()): data for path, data in files.items() if PACKAGE.match(path)}",
+   "old": "got[cid] = data if cid not in got or got[cid] == data else None",
+   "new": "got[cid] = data",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "found_first_bytes_win",
+   "file": "runner/candidate_rerun.py",
+   "old": "got[cid] = data if cid not in got or got[cid] == data else None",
+   "new": "got[cid] = got.get(cid, data)",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "found_twice_forgotten",
+   "file": "runner/candidate_rerun.py",
+   "old": "got[cid] = data if cid not in got or got[cid] == data else None",
+   "new": "got[cid] = data if got.get(cid) in (None, data) else None",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "found_same_bytes_twice_refused",
+   "file": "runner/candidate_rerun.py",
+   "old": "got[cid] = data if cid not in got or got[cid] == data else None",
+   "new": "got[cid] = data if cid not in got else None",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -58,7 +85,7 @@
    "id": "diff_of_any_json_value",
    "file": "runner/candidate_rerun.py",
    "old": "return text.encode(\"utf-8\") if isinstance(text, str) else None",
-   "new": "return (text if isinstance(text, str) else json.dumps(text)).encode(\"utf-8\") if text is not None else None",
+   "new": "return (text if isinstance(text, str) else __import__(\"json\").dumps(text)).encode(\"utf-8\") if text is not None else None",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -102,17 +129,44 @@
   {
    "id": "rerun_in_found_order",
    "file": "runner/candidate_rerun.py",
-   "old": "for name in sorted(found)}",
-   "new": "for name in found}",
+   "old": "    for cid in sorted(packages):",
+   "new": "    for cid in packages:",
    "tests": [
     "test_candidate_rerun.py"
    ]
   },
   {
-   "id": "rerun_first_output_only",
+   "id": "rerun_twice_not_named",
    "file": "runner/candidate_rerun.py",
-   "old": "    for sha in outputs:\n",
-   "new": "    for sha in outputs[:1]:\n",
+   "old": "            reruns[cid] = dict(run(cid, None, None), package_sha256=None)",
+   "new": "            continue",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "rerun_twice_run",
+   "file": "runner/candidate_rerun.py",
+   "old": "        if package is None:\n            reruns[cid]",
+   "new": "        if False:\n            reruns[cid]",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "rerun_entry_without_hash",
+   "file": "runner/candidate_rerun.py",
+   "old": "            reruns[cid] = dict(run(cid, package, diff(package)), package_sha256=key(package))",
+   "new": "            reruns[cid] = dict(run(cid, package, diff(package)))",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "rerun_hash_from_run",
+   "file": "runner/candidate_rerun.py",
+   "old": "            reruns[cid] = dict(run(cid, package, diff(package)), package_sha256=key(package))",
+   "new": "            reruns[cid] = dict({\"package_sha256\": key(package)}, **run(cid, package, diff(package)))",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -120,17 +174,53 @@
   {
    "id": "rerun_unread_output_skipped",
    "file": "runner/candidate_rerun.py",
-   "old": "        found.update(packages(OO.read(sha, read)))",
-   "new": "        try:\n            found.update(packages(OO.read(sha, read)))\n        except OO.Refused:\n            pass",
+   "old": "        for name, data in OO.read(sha, read).items():",
+   "new": "        try:\n            files = OO.read(sha, read)\n        except OO.Refused:\n            continue\n        for name, data in files.items():",
    "tests": [
     "test_candidate_rerun.py"
    ]
   },
   {
-   "id": "rerun_diffless_not_run",
+   "id": "reran_any_path",
    "file": "runner/candidate_rerun.py",
-   "old": "return {name: run(name, diff(found[name])) for name in sorted(found)}",
-   "new": "return {name: run(name, diff(found[name])) for name in sorted(found) if diff(found[name]) is not None}",
+   "old": "    package = read(path(cid)) if one_part else None",
+   "new": "    package = read(path(cid)) if isinstance(cid, str) and \"\\x00\" not in cid else None",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_dots",
+   "file": "runner/candidate_rerun.py",
+   "old": "cid not in (\".\", \"..\") and ",
+   "new": "",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_nul",
+   "file": "runner/candidate_rerun.py",
+   "old": " and \"\\x00\" not in cid\n",
+   "new": "\n",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_not_a_string",
+   "file": "runner/candidate_rerun.py",
+   "old": "    one_part = isinstance(cid, str) and ",
+   "new": "    one_part = ",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_package_not_read",
+   "file": "runner/candidate_rerun.py",
+   "old": "    if package is None:\n        raise NotRerun(\"package_missing\")",
+   "new": "    if package is None:\n        package = b\"\"",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -138,8 +228,26 @@
   {
    "id": "reran_any_entry",
    "file": "runner/candidate_rerun.py",
-   "old": "    if not isinstance(entry, dict):\n        raise NotRerun(\"rerun_missing\")",
-   "new": "    if entry is None:\n        raise NotRerun(\"rerun_missing\")",
+   "old": "    if not isinstance(entry, dict) or entry.get(\"package_sha256\") != key(package):",
+   "new": "    if entry is None or entry.get(\"package_sha256\") != key(package):",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_other_bytes",
+   "file": "runner/candidate_rerun.py",
+   "old": "    if not isinstance(entry, dict) or entry.get(\"package_sha256\") != key(package):",
+   "new": "    if not isinstance(entry, dict):",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "reran_hash_absent_passes",
+   "file": "runner/candidate_rerun.py",
+   "old": "entry.get(\"package_sha256\") != key(package):",
+   "new": "entry.get(\"package_sha256\", key(package)) != key(package):",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -174,17 +282,8 @@
   {
    "id": "reran_ready_candidate_files",
    "file": "runner/candidate_rerun.py",
-   "old": "read(\"/\".join((RUNS, name, f)))",
-   "new": "read(\"/\".join((\"c\", name, f)))",
-   "tests": [
-    "test_candidate_rerun.py"
-   ]
-  },
-  {
-   "id": "reran_entry_not_carried",
-   "file": "runner/candidate_rerun.py",
-   "old": "raise NotRerun(\"rerun_not_verified\", entry)",
-   "new": "raise NotRerun(\"rerun_not_verified\")",
+   "old": "read(\"/\".join((RUNS, cid, f)))",
+   "new": "read(\"/\".join((\"c\", cid, f)))",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -192,7 +291,7 @@
   {
    "id": "reran_first_entry",
    "file": "runner/candidate_rerun.py",
-   "old": "entry = reruns.get(name) if isinstance(reruns, dict) else None",
+   "old": "entry = reruns.get(cid) if isinstance(reruns, dict) else None",
    "new": "entry = next(iter(reruns.values()), None) if isinstance(reruns, dict) else None",
    "tests": [
     "test_candidate_rerun.py"
@@ -210,8 +309,8 @@
   {
    "id": "kos_rerun_without_base",
    "file": "runner/kos.py",
-   "old": "            if index[\"base_run_sha256\"] is None:\n                return _verdict([\"base_unavailable\"])\n            return _candidate(name, diff, recipe",
-   "new": "            return _candidate(name, diff, recipe",
+   "old": "            if index[\"base_run_sha256\"] is None:\n                return _verdict([\"base_unavailable\"])\n            return _candidate(cid, diff, recipe",
+   "new": "            return _candidate(cid, diff, recipe",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -229,7 +328,7 @@
    "id": "kos_reruns_not_run",
    "file": "runner/kos.py",
    "old": "lambda path: D._read_regular(out, path), rerun)",
-   "new": "lambda path: D._read_regular(out, path), lambda name, diff: _verdict([CR.UNUSABLE]))",
+   "new": "lambda path: D._read_regular(out, path), lambda cid, package, diff: _verdict([CR.UNUSABLE]))",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -253,19 +352,73 @@
    ]
   },
   {
-   "id": "yaz_reruns_always_reran",
-   "file": "loop/job.py",
-   "old": "                line[name] = {\"reran\": False, \"reasons\": exc.reasons}",
-   "new": "                line[name] = {\"reran\": True}",
+   "id": "kos_twice_published",
+   "file": "runner/kos.py",
+   "old": "            if package is None:\n                return _verdict([CR.TWICE])",
+   "new": "            if package is None:\n                package = b\"\"",
    "tests": [
     "test_candidate_rerun.py"
    ]
   },
   {
-   "id": "yaz_reruns_not_asked",
+   "id": "kos_any_id_published",
+   "file": "runner/kos.py",
+   "old": "            if not CANDIDATE_ID.fullmatch(cid):\n                return _verdict([\"candidate_id_invalid\"])\n            os.makedirs",
+   "new": "            if \"\\udce9\" in cid:\n                return _verdict([\"candidate_id_invalid\"])\n            os.makedirs",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "kos_package_not_written",
+   "file": "runner/kos.py",
+   "old": "            with open(os.path.join(out, CR.path(cid)), \"xb\") as fh:\n                fh.write(package)",
+   "new": "            with open(os.path.join(out, CR.path(cid)), \"xb\") as fh:\n                fh.write(b\"\")",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "kos_unusable_not_published",
+   "file": "runner/kos.py",
+   "old": "            os.makedirs(os.path.dirname(os.path.join(out, CR.path(cid))))\n            with open(os.path.join(out, CR.path(cid)), \"xb\") as fh:\n                fh.write(package)\n            if diff is None:\n                return _verdict([CR.UNUSABLE])",
+   "new": "            if diff is None:\n                return _verdict([CR.UNUSABLE])\n            os.makedirs(os.path.dirname(os.path.join(out, CR.path(cid))))\n            with open(os.path.join(out, CR.path(cid)), \"xb\") as fh:\n                fh.write(package)",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "yaz_reruns_always_reran",
    "file": "loop/job.py",
-   "old": "                CR.reran(index, package, read)",
-   "new": "                pass",
+   "old": "            line[cid] = {\"reran\": False, \"reasons\": exc.reasons}",
+   "new": "            line[cid] = {\"reran\": True}",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "yaz_reruns_index_only",
+   "file": "loop/job.py",
+   "old": "        ids = set(os.listdir(os.path.join(_dir(environ, \"in\", \"results\", tid), \"candidates\")))",
+   "new": "        ids = set()",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "yaz_reruns_packages_only",
+   "file": "loop/job.py",
+   "old": "    for cid in sorted(ids | set(reruns if isinstance(reruns, dict) else ())):",
+   "new": "    for cid in sorted(ids):",
+   "tests": [
+    "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "yaz_reruns_unsorted",
+   "file": "loop/job.py",
+   "old": "    for cid in sorted(ids | set(reruns if isinstance(reruns, dict) else ())):",
+   "new": "    for cid in sorted(ids | set(reruns if isinstance(reruns, dict) else ()), reverse=True):",
    "tests": [
     "test_candidate_rerun.py"
    ]

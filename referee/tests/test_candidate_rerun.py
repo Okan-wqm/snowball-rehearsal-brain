@@ -3,15 +3,16 @@
 
 What is measured:
 
-- ``Unit`` (``runner.candidate_rerun`` alone): which paths of an output are packages, the diff of a package over a
-  table of documents, ``rerun``'s order and its one call per package on a store ``organ_output.keep`` wrote, and
-  ``reran``'s every reason (no index, no entry, one byte of the package changed, each other verdict, each of the
-  three files missing or a link);
-- ``Live`` (the jobs, as test 56 runs them: ``loop.job.run("kos")`` on a ``pulled`` artifact carrying an accepted
-  organ whose entry point writes the packages and the same diffs as ready candidates, then ``loop.job.run("yaz")``):
-  the rerun's entry and files against the ready candidate's of the same diff, the count of contained runs and of
-  red controls, MF8's command (``gate.check decide``) on the rerun's files, ``yaz``'s line, and that line again
-  after the rerun was removed from the results.
+- ``Unit`` (``runner.candidate_rerun`` alone): which paths of the kept outputs are packages and what an id held
+  twice is, the diff of a package over a table of documents, ``rerun``'s order and its one call per id on a store
+  ``organ_output.keep`` wrote, and ``reran``'s every reason (no package, no index, no entry, one byte of the
+  package changed, each other verdict, each of the three files missing or a link);
+- ``Live`` (the jobs, as test 56 runs them: ``loop.job.run("kos")`` on a ``pulled`` artifact carrying accepted
+  organs whose entry points write the packages and the same diffs as ready candidates, then
+  ``loop.job.run("yaz")``): the packages at ``candidates/<id>/package.json`` of the results, the rerun's entry and
+  files against the ready candidate's of the same diff, the count of contained runs and of red controls, MF8's
+  command (``gate.check decide``) on the rerun's files, ``yaz``'s line, and that line again after the rerun or one
+  byte of the package was changed in the results.
 
 Not run here: a real docker, the artifact's upload and download, a gate decision of the loop on a run-time
 candidate (nothing hands one to ``loop.decide`` yet, MF12), a brain that holds an organ.
@@ -71,14 +72,29 @@ class Unit(unittest.TestCase):
         return kept["sha256"]
 
     def test_the_packages_of_an_output_are_the_files_at_the_page_s_path(self):
-        files = {"candidates/c1/package.json": b"1", "candidates/c 2\n/package.json": b"2",
-                 "candidates/package.json": b"no id", "candidates/a/b/package.json": b"two parts",
-                 "x/candidates/c1/package.json": b"not at the root", "candidates/c1/package.json\n": b"a newline",
-                 "candidates/c1/package.jsonx": b"longer", "candidates//package.json": b"empty id",
-                 "candidates/c1/finding.json": b"another file", "candidates/c3/package.json": b"1"}
-        self.assertEqual(CR.packages(files), {sha(b"1"): b"1", sha(b"2"): b"2"})
-        self.assertEqual(CR.packages({}), {})
+        output = self.keep({
+            "candidates/c1/package.json": b"1", "candidates/c 2\n/package.json": b"2",
+            "candidates/package.json": b"no id", "candidates/a/b/package.json": b"two parts",
+            "x/candidates/c4/package.json": b"not at the root", "candidates/c5/package.json\n": b"a newline",
+            "candidates/c6/package.jsonx": b"longer", "candidates/c1/finding.json": b"another file",
+            "candidates/c3/package.json": b"1", "package.json": b"no directory"})
+        self.assertEqual(CR.found([output], self.read), {"c1": b"1", "c 2\n": b"2", "c3": b"1"})
+        self.assertEqual(CR.found([self.keep({"findings.json": b"[]"})], self.read), {})
+        self.assertEqual(CR.found([], self.read), {})
+        self.assertEqual(CR.path("c1"), "candidates/c1/package.json")
         self.assertEqual(CR.key(b"1"), "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b")
+
+    def test_an_id_two_outputs_hold_with_different_bytes_is_no_package(self):
+        one = self.keep({"candidates/same/package.json": b"1", "candidates/twice/package.json": b"1",
+                         "candidates/thrice/package.json": b"1", "candidates/back/package.json": b"1"})
+        two = self.keep({"candidates/same/package.json": b"1", "candidates/twice/package.json": b"2",
+                         "candidates/thrice/package.json": b"2", "candidates/back/package.json": b"2", "x": b"x"})
+        three = self.keep({"candidates/thrice/package.json": b"3", "candidates/back/package.json": b"1",
+                           "candidates/own/package.json": b"3"})
+        want = {"same": b"1", "twice": None, "thrice": None, "back": None, "own": b"3"}
+        for outputs in ([one, two, three], [three, two, one], [two, three, one], [one, three, two]):
+            self.assertEqual(CR.found(outputs, self.read), want)
+        self.assertEqual(CR.found([one, one], self.read)["twice"], b"1")
 
     def test_the_diff_of_a_package(self):
         table = [(b'{"diff": "a\\nb\\n"}', b"a\nb\n"), (b'{"diff": ""}', b""), (b'{"diff": "\\u00e9"}', b"\xc3\xa9"),
@@ -92,29 +108,33 @@ class Unit(unittest.TestCase):
             with self.subTest(doc[:40]):
                 self.assertEqual(CR.diff(doc), want)
 
-    def test_rerun_calls_run_once_for_each_package_in_the_order_of_the_hashes(self):
+    def test_rerun_calls_run_once_for_each_id_in_the_order_of_the_ids(self):
         a, b, c = package(GOOD), package(None), package(BREAKS_TEST)
-        first = self.keep({"candidates/1/package.json": a, "candidates/2/package.json": b, "findings.json": c})
-        second = self.keep({"candidates/1/package.json": c, "candidates/other/package.json": a})
+        first = self.keep({"candidates/2/package.json": a, "candidates/1/package.json": b, "findings.json": c,
+                           "candidates/twice/package.json": a})
+        second = self.keep({"candidates/3/package.json": c, "candidates/other/package.json": a,
+                            "candidates/twice/package.json": c})
         third = self.keep({"findings.json": b"[]"})
         calls: list = []
 
-        def run(name, diff):
-            calls.append((name, diff))
-            return {"n": len(calls)}
+        def run(*args):
+            calls.append(args)
+            return {"n": len(calls), "package_sha256": "run's own is not the entry's"}
 
-        want = sorted([(sha(a), GOOD), (sha(b), None), (sha(c), BREAKS_TEST)])
+        want = [("1", b, None), ("2", a, GOOD), ("3", c, BREAKS_TEST), ("other", a, GOOD), ("twice", None, None)]
         for outputs in ([first, second, third], [third, second, first]):
             del calls[:]
             got = CR.rerun(outputs, self.read, run)
             self.assertEqual(calls, want)
-            self.assertEqual(list(got.items()), [(name, {"n": n + 1}) for n, (name, _) in enumerate(want)])
+            self.assertEqual(list(got.items()), [
+                (cid, {"n": n + 1, "package_sha256": None if pkg is None else sha(pkg)})
+                for n, (cid, pkg, _) in enumerate(want)])
         del calls[:]
         self.assertEqual((CR.rerun([third], self.read, run), CR.rerun([], self.read, run), calls), ({}, {}, []))
 
     def test_rerun_runs_nothing_when_a_kept_output_is_not_read_back(self):
         first = self.keep({"candidates/1/package.json": package(GOOD)})
-        second = self.keep({"candidates/1/package.json": package(BREAKS_TEST)})
+        second = self.keep({"candidates/2/package.json": package(BREAKS_TEST)})
         os.remove(os.path.join(self.out, OO.STORE, sha(package(BREAKS_TEST))))
         calls: list = []
         for outputs in ([first, second], [second, first], [first, "0" * 64], [first, None]):
@@ -123,83 +143,115 @@ class Unit(unittest.TestCase):
                     CR.rerun(outputs, self.read, lambda *a: calls.append(a))
         self.assertEqual(calls, [])
 
-    def write(self, name: str, files=CR.FILES) -> None:
-        shutil.rmtree(os.path.join(self.out, "r"), ignore_errors=True)
-        os.makedirs(os.path.join(self.out, "r", name))
+    def write(self, cid: str, pkg: bytes | None, files=CR.FILES) -> None:
+        """The results with ``pkg`` as ``cid``'s package (none when ``None``) and ``files`` as its rerun's."""
+        for part in ("r", "candidates"):
+            shutil.rmtree(os.path.join(self.out, part), ignore_errors=True)
+        os.makedirs(os.path.join(self.out, "r", cid))
         for f in files:
-            with open(os.path.join(self.out, "r", name, f), "wb") as fh:
+            with open(os.path.join(self.out, "r", cid, f), "wb") as fh:
                 fh.write(f.encode())
+        if pkg is not None:
+            os.makedirs(os.path.join(self.out, "candidates", cid))
+            with open(os.path.join(self.out, "candidates", cid, "package.json"), "wb") as fh:
+                fh.write(pkg)
 
-    def refused(self, index, pkg: bytes) -> tuple:
+    def refused(self, index, cid="c1") -> list:
         with self.assertRaises(CR.NotRerun) as caught:
-            CR.reran(index, pkg, self.read)
-        return caught.exception.reasons, caught.exception.entry
+            CR.reran(index, cid, self.read)
+        return caught.exception.reasons
 
-    def test_reran_hands_out_the_three_files_of_a_verified_rerun(self):
+    def entry(self, pkg: bytes, verdict="verified") -> dict:
+        return {"verdict": verdict, "reasons": [], "package_sha256": sha(pkg)}
+
+    def test_reran_hands_out_the_package_and_the_three_files_of_a_verified_rerun(self):
         pkg = package(GOOD)
-        entry = {"verdict": "verified", "reasons": []}
-        self.write(sha(pkg))
+        self.write("c1", pkg)
         self.assertEqual(CR.FILES, ("cand.jsonl", "checks.json", "hashes.json"))
-        self.assertEqual(CR.reran({"reruns": {sha(pkg): entry}}, pkg, self.read),
-                         {"cand.jsonl": b"cand.jsonl", "checks.json": b"checks.json", "hashes.json": b"hashes.json"})
+        self.assertEqual(CR.reran({"reruns": {"c1": self.entry(pkg)}}, "c1", self.read), (
+            pkg, {"cand.jsonl": b"cand.jsonl", "checks.json": b"checks.json", "hashes.json": b"hashes.json"}))
+
+    def test_reran_refuses_a_candidate_whose_package_is_not_in_the_results(self):
+        pkg = package(GOOD)
+        index = {"reruns": {"c1": self.entry(pkg), "..": self.entry(pkg), ".": self.entry(pkg),
+                            "a/b": self.entry(pkg), "": self.entry(pkg), "../candidates/c1": self.entry(pkg)}}
+        self.write("c1", None)
+        self.assertEqual(self.refused(index), ["package_missing"])
+        os.makedirs(os.path.join(self.out, "candidates", "c1", "package.json"))        # a directory is no package
+        self.assertEqual(self.refused(index), ["package_missing"])
+        self.write("c1", pkg)
+        with open(os.path.join(self.out, "candidates", "package.json"), "wb") as fh:    # what "candidates/./" names
+            fh.write(pkg)
+        os.makedirs(os.path.join(self.out, "a"))
+        os.symlink(os.path.join(self.out, "candidates", "c1"), os.path.join(self.out, "candidates", "link"))
+        index["reruns"]["link"] = self.entry(pkg)
+        for cid in ("..", ".", "a/b", "", "../candidates/c1", "c1/../c1", "c1\x00", "link", "c2", None, 1, ["c1"]):
+            with self.subTest(cid=cid):
+                self.assertEqual(self.refused(index, cid), ["package_missing"])
+        self.assertEqual(CR.reran(index, "c1", self.read)[0], pkg)
 
     def test_reran_refuses_a_package_that_was_not_rerun(self):
         pkg = package(GOOD)
-        entry = {"verdict": "verified", "reasons": []}
-        self.write(sha(pkg))
-        for index in (None, [], {}, {"reruns": None}, {"reruns": []}, {"reruns": {}}, {"reruns": {sha(pkg): None}},
-                      {"reruns": {sha(pkg): "verified"}}, {"reruns": {sha(b"other"): entry}},
-                      {"candidates": {sha(pkg): entry}}):
+        entry = self.entry(pkg)
+        self.write("c1", pkg)
+        for index in (None, [], {}, {"reruns": None}, {"reruns": []}, {"reruns": {}}, {"reruns": {"c1": None}},
+                      {"reruns": {"c1": "verified"}}, {"reruns": {"c2": entry}}, {"candidates": {"c1": entry}},
+                      {"reruns": {"c1": {"verdict": "verified", "reasons": []}}},
+                      {"reruns": {"c1": dict(entry, package_sha256=None)}},
+                      {"reruns": {"c1": dict(entry, package_sha256=sha(pkg).upper())}}):
             with self.subTest(index=index):
-                self.assertEqual(self.refused(index, pkg), (["rerun_missing"], None))
-        # the rerun is of the package's bytes: no byte of it changes and the files are still handed out
-        index = {"reruns": {sha(pkg): entry}}
-        for i in range(len(pkg)):
-            changed = pkg[:i] + bytes([pkg[i] ^ 1]) + pkg[i + 1:]
-            self.assertEqual(self.refused(index, changed), (["rerun_missing"], None), i)
-        self.assertEqual(self.refused(index, pkg + b"\n"), (["rerun_missing"], None))
-        self.assertEqual(self.refused(index, pkg[:-1]), (["rerun_missing"], None))
+                self.assertEqual(self.refused(index), ["rerun_missing"])
+        # the rerun is of the package's bytes: no byte of the package changes and it is still handed out
+        index = {"reruns": {"c1": entry}}
+        for changed in [pkg[:i] + bytes([pkg[i] ^ 1]) + pkg[i + 1:] for i in range(len(pkg))] + [pkg + b"\n", pkg[:-1], b""]:
+            self.write("c1", changed)
+            self.assertEqual(self.refused(index), ["rerun_missing"], changed)
 
     def test_reran_refuses_a_rerun_that_is_not_verified(self):
         pkg = package(GOOD)
-        self.write(sha(pkg))
-        for entry in ({"verdict": "refused", "reasons": ["patch_does_not_apply"]}, {"verdict": "no_verdict", "reasons": []},
-                      {"verdict": "refused", "reasons": [CR.UNUSABLE]}, {}, {"verdict": None}, {"verdict": True},
-                      {"verdict": ["verified"]}, {"verdict": "Verified"}, {"reasons": ["verified"]}):
-            with self.subTest(entry=entry):
-                self.assertEqual(self.refused({"reruns": {sha(pkg): entry}}, pkg), (["rerun_not_verified"], entry))
+        self.write("c1", pkg)
+        for verdict in ("refused", "no_verdict", None, True, ["verified"], "Verified", ""):
+            with self.subTest(verdict=verdict):
+                self.assertEqual(self.refused({"reruns": {"c1": self.entry(pkg, verdict)}}), ["rerun_not_verified"])
+        entry = self.entry(pkg)
+        del entry["verdict"]
+        self.assertEqual(self.refused({"reruns": {"c1": entry}}), ["rerun_not_verified"])
 
     def test_reran_refuses_a_rerun_whose_files_are_not_all_there(self):
         pkg = package(GOOD)
-        entry = {"verdict": "verified", "reasons": []}
-        index = {"reruns": {sha(pkg): entry}}
+        index = {"reruns": {"c1": self.entry(pkg), "c2": self.entry(pkg)}}
         for gone in CR.FILES:
             with self.subTest(gone=gone):
-                self.write(sha(pkg), [f for f in CR.FILES if f != gone])
-                self.assertEqual(self.refused(index, pkg), (["rerun_files_missing"], entry))
-                os.symlink(os.path.join(self.out, "r", sha(pkg), CR.FILES[0 if gone != CR.FILES[0] else 1]),
-                           os.path.join(self.out, "r", sha(pkg), gone))        # a link is not the file
-                self.assertEqual(self.refused(index, pkg), (["rerun_files_missing"], entry))
-                os.remove(os.path.join(self.out, "r", sha(pkg), gone))
-                os.mkdir(os.path.join(self.out, "r", sha(pkg), gone))            # nor is a directory
-                self.assertEqual(self.refused(index, pkg), (["rerun_files_missing"], entry))
-        self.write(sha(b"another package"))     # the files of another rerun are not this one's
-        self.assertEqual(self.refused(index, pkg), (["rerun_files_missing"], entry))
+                self.write("c1", pkg, [f for f in CR.FILES if f != gone])
+                self.assertEqual(self.refused(index), ["rerun_files_missing"])
+                os.symlink(os.path.join(self.out, "r", "c1", CR.FILES[0 if gone != CR.FILES[0] else 1]),
+                           os.path.join(self.out, "r", "c1", gone))        # a link is not the file
+                self.assertEqual(self.refused(index), ["rerun_files_missing"])
+                os.remove(os.path.join(self.out, "r", "c1", gone))
+                os.mkdir(os.path.join(self.out, "r", "c1", gone))            # nor is a directory
+                self.assertEqual(self.refused(index), ["rerun_files_missing"])
+        self.write("c1", pkg)
+        shutil.move(os.path.join(self.out, "r", "c1"), os.path.join(self.out, "r", "c2"))
+        self.assertEqual(self.refused(index), ["rerun_files_missing"])      # another candidate's files are not c1's
 
 
 NO_APPLY = kos_diff("pkg/a.js", ["no such line"], ["x"])
 PACKAGES = {"good": package(GOOD), "breaks": package(BREAKS_TEST), "noapply": package(NO_APPLY),
-            "nodiff": package(None), "not json": b"\xff{", "again": package(GOOD)}
+            "nodiff": package(None), "notjson": b"\xff{", "again": package(GOOD), "twice": package(GOOD),
+            "bad id": package(GOOD), b"caf\xe9": package(GOOD)}
+BAD = {"bad id", "caf\udce9"}      # no candidate ids (the second as the host lists a name that is not UTF-8)
 
 
-def organ(packages: dict) -> dict:
+def organ(packages: dict, name: str = "lint") -> dict:
     """An organ whose entry point writes ``packages`` (``{id: bytes}``) at ``candidates/<id>/package.json``."""
     main = ("import os, sys\n"
             "for cid, data in %r.items():\n"
-            "    os.makedirs(os.path.join(sys.argv[1], 'candidates', cid))\n"
-            "    with open(os.path.join(sys.argv[1], 'candidates', cid, 'package.json'), 'wb') as fh:\n"
+            "    at = os.path.join(os.fsencode(sys.argv[1]), b'candidates', os.fsencode(cid))\n"
+            "    os.makedirs(at)\n"
+            "    with open(os.path.join(at, b'package.json'), 'wb') as fh:\n"
             "        fh.write(data)\n" % (packages,)).encode()
-    return {"entry": ["python3", "/in/adapters/lint/main.py", "/out"], "files": {"adapters/lint/main.py": main}}
+    path = "adapters/%s/main.py" % name
+    return {"entry": ["python3", "/in/" + path, "/out"], "files": {path: main}}
 
 
 class RedFor(RedAs):
@@ -241,88 +293,117 @@ class Live(LiveBase):
 
     def test_a_run_time_candidate_runs_as_the_ready_candidate_of_the_same_diff(self):
         runner = RedAs()
-        self.cycle({"lint.discover": organ(PACKAGES)}, runner=runner,
+        self.cycle({"lint.discover": organ(PACKAGES), "candidate.publish": organ({"twice": package(BREAKS_TEST),
+                                                                                  "good": package(GOOD)}, "publish")},
+                   runner=runner,
                    cands={"good": candidate(GOOD), "breaks": candidate(BREAKS_TEST), "noapply": candidate(NO_APPLY)})
         index = self.index()
-        name = {cid: sha(pkg) for cid, pkg in PACKAGES.items()}
-        self.assertEqual(name["again"], name["good"])       # the same bytes under two ids: one candidate
-        self.assertEqual(sorted(index["reruns"]), sorted(set(name.values())))
-        self.assertEqual(list(index["reruns"]), sorted(index["reruns"]))
+        named = {os.fsdecode(cid): pkg for cid, pkg in PACKAGES.items()}
+        self.assertEqual(list(index["reruns"]), sorted(named))
+        self.assertEqual({cid: e["package_sha256"] for cid, e in index["reruns"].items()},
+                         dict({cid: sha(pkg) for cid, pkg in named.items()}, twice=None))
+        entries = {cid: {k: v for k, v in e.items() if k != "package_sha256"} for cid, e in index["reruns"].items()}
         for cid in ("good", "breaks", "noapply"):
             with self.subTest(cid):
-                self.assertEqual(index["reruns"][name[cid]], index["candidates"][cid])
-        self.assertEqual(index["reruns"][name["good"]]["verdict"], "verified")
-        self.assertEqual(index["reruns"][name["breaks"]]["verdict"], "verified")
-        self.assertEqual(index["reruns"][name["noapply"]], {"verdict": "refused", "reasons": ["patch_does_not_apply"]})
+                self.assertEqual(entries[cid], index["candidates"][cid])
+        self.assertEqual((entries["good"]["verdict"], entries["breaks"]["verdict"], entries["again"]),
+                         ("verified", "verified", entries["good"]))
+        self.assertEqual(entries["noapply"], {"verdict": "refused", "reasons": ["patch_does_not_apply"]})
         unusable = {"verdict": "refused", "reasons": ["package_unusable"]}
-        self.assertEqual((index["reruns"][name["nodiff"]], index["reruns"][name["not json"]]), (unusable, unusable))
+        self.assertEqual((entries["nodiff"], entries["notjson"]), (unusable, unusable))
+        self.assertEqual(entries["twice"], {"verdict": "refused", "reasons": ["package_id_twice"]})
+        for cid in BAD:
+            self.assertEqual(entries[cid], {"verdict": "refused", "reasons": ["candidate_id_invalid"]})
+        # the packages: at the page's path of the results, the bytes the organ wrote; none for an id held twice or
+        # one that is no candidate id
+        self.assertEqual(sorted(os.listdir(self.results("candidates"))), sorted(set(named) - BAD - {"twice"}))
+        for cid in os.listdir(self.results("candidates")):
+            self.assertEqual(os.listdir(self.results("candidates", cid)), ["package.json"])
+            self.assertEqual(self.file("candidates", cid, "package.json"), named[cid])
         # the files: byte for byte the ready candidate's of the same diff, and no directory for what did not run
-        self.assertEqual(sorted(os.listdir(self.results("r"))), sorted([name["good"], name["breaks"]]))
-        for cid in ("good", "breaks"):
+        self.assertEqual(sorted(os.listdir(self.results("r"))), ["again", "breaks", "good"])
+        for cid, ready in (("good", "good"), ("breaks", "breaks"), ("again", "good")):
             with self.subTest(cid):
-                self.assertEqual(sorted(os.listdir(self.results("r", name[cid]))), sorted(CR.FILES))
+                self.assertEqual(sorted(os.listdir(self.results("r", cid))), sorted(CR.FILES))
                 for f in ("cand.jsonl", "checks.json"):
-                    self.assertEqual(self.file("r", name[cid], f), self.file("c", cid, f), f)
-                hashes = json.loads(self.file("r", name[cid], "hashes.json"))
-                self.assertEqual(hashes, json.loads(self.file("c", cid, "hashes.json")))
+                    self.assertEqual(self.file("r", cid, f), self.file("c", ready, f), f)
+                hashes = json.loads(self.file("r", cid, "hashes.json"))
+                self.assertEqual(hashes, json.loads(self.file("c", ready, "hashes.json")))
                 self.assertEqual({f: hashes[f] for f in ("cand.jsonl", "checks.json")},
-                                 {f: sha(self.file("r", name[cid], f)) for f in ("cand.jsonl", "checks.json")})
-        # the runs: 3 base lint, the organ, 3 lint + 1 test for each of the two ready candidates and the two reruns
-        # whose diff applied; every one of them a contained run with the job's red control
-        self.assertEqual(runner.red_seen, 3 + 1 + 4 * 2 + 4 * 2)
-        self.assertEqual(len(runner.calls), 2 * (3 + 1 + 4 * 2 + 4 * 2))
+                                 {f: sha(self.file("r", cid, f)) for f in ("cand.jsonl", "checks.json")})
+        # the runs: 3 base lint, the two organs, 3 lint + 1 test for each of the two ready candidates and the three
+        # reruns whose diff applied; every one of them a contained run with the job's red control
+        self.assertEqual(runner.red_seen, 3 + 2 + 4 * 2 + 4 * 3)
+        self.assertEqual(len(runner.calls), 2 * (3 + 2 + 4 * 2 + 4 * 3))
         # MF8's command takes the rerun's files as it takes a ready candidate's
-        self.assertEqual(self.decide(GOOD, "r/" + name["good"]), self.decide(GOOD, "c/good"))
-        self.assertEqual(self.decide(GOOD, "r/" + name["good"])["decision"], "merge")
-        got = self.decide(BREAKS_TEST, "r/" + name["breaks"])
+        self.assertEqual(self.decide(GOOD, "r/good"), self.decide(GOOD, "c/good"))
+        self.assertEqual(self.decide(GOOD, "r/good")["decision"], "merge")
+        got = self.decide(BREAKS_TEST, "r/breaks")
         self.assertEqual((got["decision"], got["reasons"]), ("reject", ["tests_red"]))
-        # yaz: each package of the output it reads, asked of reran
-        self.assertEqual(self.yaz("reruns"), dict(sorted({
-            name["good"]: {"reran": True}, name["breaks"]: {"reran": True},
-            name["noapply"]: {"reran": False, "reasons": ["rerun_not_verified"]},
-            name["nodiff"]: {"reran": False, "reasons": ["rerun_not_verified"]},
-            name["not json"]: {"reran": False, "reasons": ["rerun_not_verified"]}}.items())))
+        # yaz: every candidate of the results, asked of reran
+        not_verified = {"reran": False, "reasons": ["rerun_not_verified"]}
+        no_package = {"reran": False, "reasons": ["package_missing"]}
+        line = self.yaz("reruns")
+        self.assertEqual(list(line), sorted(named))
+        self.assertEqual(line, dict(
+            {cid: {"reran": True, "package_sha256": sha(named[cid])} for cid in ("good", "breaks", "again")},
+            noapply=not_verified, nodiff=not_verified, notjson=not_verified, twice=no_package,
+            **{cid: no_package for cid in BAD}))
 
     def test_a_candidate_whose_rerun_is_not_in_the_results_is_not_handed_out(self):
-        self.cycle({"lint.discover": organ({"good": package(GOOD), "breaks": package(BREAKS_TEST)})})
-        good, breaks = sha(package(GOOD)), sha(package(BREAKS_TEST))
-        self.assertEqual(self.yaz("reruns"), {k: {"reran": True} for k in sorted([good, breaks])})
-        os.remove(self.results("r", good, "checks.json"))
+        self.cycle({"lint.discover": organ({"good": package(GOOD), "breaks": package(BREAKS_TEST),
+                                            "other": package(GOOD), "kept": package(GOOD)})})
+        reran = {"reran": True, "package_sha256": sha(package(GOOD))}
+        self.assertEqual(self.yaz("reruns"), {
+            "breaks": {"reran": True, "package_sha256": sha(package(BREAKS_TEST))}, "good": reran, "kept": reran,
+            "other": reran})
+        os.remove(self.results("r", "good", "checks.json"))
         index = self.index()
-        del index["reruns"][breaks]
+        del index["reruns"]["breaks"]
         with open(self.results("index.json"), "w") as fh:
             json.dump(index, fh)
-        self.assertEqual(self.yaz("reruns"), dict(sorted({
-            good: {"reran": False, "reasons": ["rerun_files_missing"]},
-            breaks: {"reran": False, "reasons": ["rerun_missing"]}}.items())))
-        # the ready candidate's files of the same diff are not the rerun's
+        with open(self.results("candidates", "other", "package.json"), "ab") as fh:
+            fh.write(b" ")      # one byte more than the package that was rerun
+        os.makedirs(self.results("candidates", "new"))
+        with open(self.results("candidates", "new", "package.json"), "wb") as fh:
+            fh.write(package(GOOD))     # a package no rerun is of
+        self.assertEqual(self.yaz("reruns"), {
+            "breaks": {"reran": False, "reasons": ["rerun_missing"]},
+            "good": {"reran": False, "reasons": ["rerun_files_missing"]}, "kept": reran,
+            "new": {"reran": False, "reasons": ["rerun_missing"]},
+            "other": {"reran": False, "reasons": ["rerun_missing"]}})
+        # the ready candidate's files of the same name are not the rerun's; a package taken away is missing
         shutil.rmtree(self.results("r"))
-        os.makedirs(self.results("c", good))
+        shutil.rmtree(self.results("candidates", "kept"))
+        os.makedirs(self.results("c", "good"))
         for f in CR.FILES:
-            with open(self.results("c", good, f), "wb") as fh:
+            with open(self.results("c", "good", f), "wb") as fh:
                 fh.write(b"{}")
-        self.assertEqual(self.yaz("reruns")[good], {"reran": False, "reasons": ["rerun_files_missing"]})
+        line = self.yaz("reruns")
+        self.assertEqual((line["good"], line["kept"]), ({"reran": False, "reasons": ["rerun_files_missing"]},
+                                                        {"reran": False, "reasons": ["package_missing"]}))
 
     def test_a_rerun_whose_red_control_is_green_is_not_verified(self):
         runner = RedFor(range(1, 3 + 1 + 2 + 1))      # red for the base, the organ and the rerun's first two lint runs
         self.cycle({"lint.discover": organ({"good": package(GOOD)})}, runner=runner)
-        good = sha(package(GOOD))
         index = self.index()
         self.assertEqual(index["base"]["verdict"], "verified")
-        self.assertEqual(index["reruns"][good]["verdict"], "no_verdict")
+        self.assertEqual((index["reruns"]["good"]["verdict"], index["reruns"]["good"]["package_sha256"]),
+                         ("no_verdict", sha(package(GOOD))))
         self.assertEqual(runner.red_seen, 3 + 1 + 4)
-        self.assertEqual(self.yaz("reruns"), {good: {"reran": False, "reasons": ["rerun_not_verified"]}})
+        self.assertEqual(self.yaz("reruns"), {"good": {"reran": False, "reasons": ["rerun_not_verified"]}})
 
     def test_without_a_base_run_nothing_is_rerun(self):
         runner = RedFor([1, 4])     # red for the first base lint and for the organ only
         self.cycle({"lint.discover": organ({"good": package(GOOD), "nodiff": package(None)})}, runner=runner)
         index = self.index()
         self.assertNotEqual(index["base"]["verdict"], "verified")
-        self.assertEqual(index["reruns"], dict(sorted({
-            sha(package(GOOD)): {"verdict": "no_verdict", "reasons": ["base_unavailable"]},
-            sha(package(None)): {"verdict": "refused", "reasons": ["package_unusable"]}}.items())))
+        self.assertEqual(index["reruns"], {
+            "good": {"verdict": "no_verdict", "reasons": ["base_unavailable"], "package_sha256": sha(package(GOOD))},
+            "nodiff": {"verdict": "refused", "reasons": ["package_unusable"], "package_sha256": sha(package(None))}})
         self.assertEqual(runner.red_seen, 3 + 1)
         self.assertFalse(os.path.lexists(self.results("r")))
+        self.assertEqual(sorted(os.listdir(self.results("candidates"))), ["good", "nodiff"])
 
     def test_a_kept_output_that_is_not_read_back_stops_the_run(self):
         test = self
@@ -345,18 +426,13 @@ class Live(LiveBase):
             J.run("kos", {"RUNNER_TEMP": self.temp}, runner=runner)
         self.assertEqual(str(caught.exception), "kos: a kept output is not read back: output_missing:manifest")
         self.assertEqual(runner.red_seen, 3 + 1 + 4)        # the ready candidate ran; nothing ran for the package
+        self.assertFalse(os.path.lexists(os.path.join(self.temp, "out", "results", "t1", "candidates")))
 
-    def test_without_an_organ_nothing_is_rerun(self):
+    def test_without_a_package_nothing_is_rerun(self):
         self.cycle({})
-        self.assertEqual((self.index()["reruns"], os.path.lexists(self.results("r"))), ({}, False))
+        self.assertEqual((self.index()["reruns"], os.path.lexists(self.results("r")),
+                          os.path.lexists(self.results("candidates"))), ({}, False, False))
         self.assertEqual(self.yaz("reruns"), {})
-
-    def test_the_packages_of_an_output_yaz_does_not_read_are_not_on_the_line(self):
-        self.cycle({"lint.discover": organ({"good": package(GOOD)})})
-        os.remove(self.results("o", self.index()["organs"]["lint.discover"]["output"]["sha256"]))
-        self.github()
-        line = self.line(self.run_yaz())
-        self.assertEqual((line["organs"]["lint.discover"]["read"], line["reruns"]), (False, {}))
 
 
 if __name__ == "__main__":

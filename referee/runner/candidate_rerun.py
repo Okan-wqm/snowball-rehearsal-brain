@@ -3,12 +3,12 @@ adayını kapıdan önce yeniden koşar", tohum/26a: the referee trusts no candi
 candidate runs as a ready candidate does, three lint runs, a test run, the red control, and a candidate without a
 rerun does not reach the gate).
 
-**A run-time candidate** (this module's reading; tohum/26j puts its package in ``koş``'s output tree at
-``candidates/<id>/package.json`` and no page says whose tree, reports/seed-098): a file of an organ's kept output
-(``runner.organ_output``) whose path there is ``candidates/<id>/package.json``, ``<id>`` one path part. Its
-*package* is that file's bytes; the candidate is named here by their sha256 and by nothing else, so neither
-``<id>`` nor the organ's id becomes a path of the results, and the same bytes under two ids or from two organs are
-one candidate, rerun once. Every other file of an output is not read here.
+**A run-time candidate** ``<id>`` is the file ``candidates/<id>/package.json`` of ``koş``'s results (tohum/26a:
+"``koş`` işinin çıktı ağacındaki ``candidates/<id>/package.json``'a yazılır"; tohum/26j "Paket"); its *package* is
+that file's bytes. The pages do not say how a package an organ made comes to stand there (reports/seed-098,
+reports/seed-099); here ``koş`` writes it: a file of an organ's kept output (``runner.organ_output``) whose path
+in that output is ``candidates/<id>/package.json``, ``<id>`` one path part, is the package of candidate ``<id>``.
+Every other file of an output is not read here.
 
 **Its diff** (``diff``): the package must be UTF-8 JSON (``cli.loads``, so not nested deeper than its limit), an
 object whose ``diff`` is a string that has a UTF-8 encoding; the diff is those bytes. Anything else has no diff
@@ -17,33 +17,40 @@ here, present or absent: they are the gate's and the finding writer's (MF12, not
 
 **The rerun** (``rerun(outputs, read, run)``; ``koş``'s side). ``outputs`` are the hashes of the outputs kept in
 this run, ``read(path)`` the bytes of a regular file of the results or ``None``. Each output is read back by its
-hash with ``organ_output.read``, so what is rerun is what ``yaz`` can read under the same hash; an output just kept
-that is not read back raises ``organ_output.Refused`` (the caller's fault to name: nothing is rerun from bytes
-that do not lead to the hash). For every package found, in the order of the package hashes,
-``run(<package sha256>, <its diff or None>)`` is called once and what it returns is the candidate's entry; the
-answer is ``{<package sha256>: entry}``. ``run`` is ``runner.kos``'s (``results``, "A run-time candidate" there):
-a package without a diff is ``refused`` ``package_unusable`` and nothing runs for it; otherwise the diff goes
-through the function a ready candidate's ``diff.patch`` goes through (``runner.kos._candidate``: a fresh copy of
-the base worktree, the diff applied in place, ``lint_cmd`` three times and ``test_cmd`` once, each its own
-contained run with the red control) and its three files stand under ``r/<package sha256>/`` (``RUNS``) as a
-ready candidate's stand under ``c/<cid>/``. The index's ``reruns`` holds the entries.
+hash with ``organ_output.read``, so a package is bytes that lead to the hash in the organ's entry; an output just
+kept that is not read back raises ``organ_output.Refused`` before anything is run (the caller's fault to name).
+For every ``<id>`` found (``found``), in the order of the ids, ``run(<id>, <package>, <its diff or None>)`` is
+called once and what it returns, with ``package_sha256`` (the sha256 of the package), is the candidate's entry;
+an ``<id>`` that two of the outputs hold with different bytes is no candidate: ``run(<id>, None, None)`` and
+``package_sha256`` ``None`` (the same bytes twice are one package). The answer is ``{<id>: entry}``. ``run`` is
+``runner.kos``'s (``results``, "A run-time candidate" there): it refuses an ``<id>`` held twice
+(``package_id_twice``) and one that is no candidate id (``candidate_id_invalid``; nothing is written under such a
+name); it writes the package at ``candidates/<id>/package.json`` of the results; a package without a diff is
+``refused`` ``package_unusable`` and nothing runs for it; otherwise the diff goes through the function a ready
+candidate's ``diff.patch`` goes through (``runner.kos._candidate``: a fresh copy of the base worktree, the diff
+applied in place, ``lint_cmd`` three times and ``test_cmd`` once, each its own contained run with the red control)
+and its three files stand under ``r/<id>/`` (``RUNS``) as a ready candidate's stand under ``c/<cid>/``. The
+index's ``reruns`` holds the entries.
 
-**Before the gate** (``reran(index, package, read)``; ``yaz``'s side). The gate's three files of a candidate
-(``FILES``) are handed out by this function and it hands them out only for a rerun: it returns ``{name: bytes}``
-when the index's ``reruns`` has an entry under the sha256 of ``package`` whose ``verdict`` is ``verified`` and
-the three files are regular files under ``r/<that hash>/``; else it raises ``NotRerun`` with one reason,
-``rerun_missing`` (no ``reruns`` object, or no entry that is an object under that hash: so also a package of which
-one byte differs from the one rerun), ``rerun_not_verified`` (an entry of another verdict: a diff that did not
-apply, a run that told nothing, a package without a diff) or ``rerun_files_missing``, and with the entry
-(``entry``, ``None`` when missing). It does not compare the files with ``hashes.json``: that is the gate's own
-criterion (``gate.check``, ``artefact_hash_mismatch``), as for a ready candidate.
+**Before the gate** (``reran(index, cid, read)``; ``yaz``'s side). The package and the gate's three files of a
+run-time candidate (``FILES``) are handed out by this function and it hands them out only for a rerun: it returns
+``(package, {name: bytes})`` when ``candidates/<cid>/package.json`` is a regular file of the results, the index's
+``reruns`` has an entry under ``cid`` whose ``package_sha256`` is the sha256 of that file's bytes and whose
+``verdict`` is ``verified``, and the three files are regular files under ``r/<cid>/``; else it raises
+``NotRerun`` with one reason: ``package_missing`` (no such file, or a ``cid`` that is not one path part),
+``rerun_missing`` (no ``reruns`` object, no entry that is an object under ``cid``, or an entry of other bytes: so
+also a package of which one byte differs from the one rerun), ``rerun_not_verified`` (an entry of another
+verdict: a diff that did not apply, a run that told nothing, a package without a diff) or
+``rerun_files_missing``. It does not compare the files with ``hashes.json``: that is the gate's own criterion
+(``gate.check``, ``artefact_hash_mismatch``), as for a ready candidate.
 
-Caller: ``runner.kos.results`` (``rerun``), and ``loop.job``'s ``yaz`` (``yaz_reruns``, each cycle, over every
-package of every organ's output it reads: ``reran``'s answer is on the target's line). Out of scope, stated: no
-gate is called with these files yet and nothing decides on them (MF12, ``loop/candidates.py``, hands the candidate
-to ``loop.decide``; until then ``reran`` is the only way the code hands the files out, and no test forbids a later
-reader of ``r/`` that would go round it); the number of packages of an output and so of reruns of a job, bounded
-by nothing here (each contained run has its own limits); who may write the results between ``koş`` and ``yaz``.
+Caller: ``runner.kos.results`` (``rerun``), and ``loop.job``'s ``yaz`` (``yaz_reruns``, each cycle, for every
+name under the results' ``candidates/`` and every key of the index's ``reruns``: ``reran``'s answer is on the
+target's line). Out of scope, stated: no gate is called with these files yet and nothing decides on them (MF12,
+``loop/candidates.py``, hands the candidate to ``loop.decide``; until then ``reran`` is the only way the code
+hands the files out, and no test forbids a later reader of ``r/`` that would go round it); the number of packages
+of an output and so of reruns of a job, bounded by nothing here (each contained run has its own limits;
+reports/seed-099); who may write the results between ``koş`` and ``yaz``.
 """
 
 from __future__ import annotations
@@ -57,29 +64,42 @@ from runner import organ_output as OO
 
 RUNS = "r"
 FILES = ("cand.jsonl", "checks.json", "hashes.json")
-PACKAGE = re.compile(r"candidates/[^/]+/package\.json\Z")
+PACKAGE = re.compile(r"candidates/([^/]+)/package\.json\Z")
 UNUSABLE = "package_unusable"
+TWICE = "package_id_twice"
 
 Read = Callable[[str], "bytes | None"]
 
 
 class NotRerun(Exception):
-    """A candidate whose files are not handed out; ``reasons`` says why, ``entry`` is the index's entry or ``None``."""
+    """A candidate whose package and files are not handed out; ``reasons`` says why."""
 
-    def __init__(self, reason: str, entry: Any = None) -> None:
+    def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reasons = [reason]
-        self.entry = entry
 
 
 def key(package: bytes) -> str:
-    """The name of the candidate whose package is ``package``: the sha256 of the bytes."""
+    """The sha256 of a package's bytes: what binds a rerun to the package it is of."""
     return hashlib.sha256(package).hexdigest()
 
 
-def packages(files: dict[str, bytes]) -> dict[str, bytes]:
-    """``{key: package}`` of the run-time candidates among an output's ``files`` (``organ_output.read``'s)."""
-    return {key(data): data for path, data in files.items() if PACKAGE.match(path)}
+def path(cid: str) -> str:
+    """Where candidate ``cid``'s package stands in the results (tohum/26a)."""
+    return "candidates/%s/package.json" % cid
+
+
+def found(outputs: list[str], read: Read) -> dict[str, "bytes | None"]:
+    """``{id: package}`` of the run-time candidates in the kept outputs ``outputs``; ``None`` for an id that two
+    of them hold with different bytes."""
+    got: dict[str, bytes | None] = {}
+    for sha in outputs:
+        for name, data in OO.read(sha, read).items():
+            held = PACKAGE.match(name)
+            if held:
+                cid = held.group(1)
+                got[cid] = data if cid not in got or got[cid] == data else None
+    return got
 
 
 def diff(package: bytes) -> bytes | None:
@@ -92,24 +112,33 @@ def diff(package: bytes) -> bytes | None:
         return None
 
 
-def rerun(outputs: list[str], read: Read, run: Callable[[str, "bytes | None"], dict]) -> dict[str, dict]:
+def rerun(outputs: list[str], read: Read,
+          run: Callable[[str, "bytes | None", "bytes | None"], dict]) -> dict[str, dict]:
     """The index's ``reruns`` for the kept outputs ``outputs`` (see the module docstring, "The rerun")."""
-    found: dict[str, bytes] = {}
-    for sha in outputs:
-        found.update(packages(OO.read(sha, read)))
-    return {name: run(name, diff(found[name])) for name in sorted(found)}
+    packages = found(outputs, read)
+    reruns = {}
+    for cid in sorted(packages):
+        package = packages[cid]
+        if package is None:
+            reruns[cid] = dict(run(cid, None, None), package_sha256=None)
+        else:
+            reruns[cid] = dict(run(cid, package, diff(package)), package_sha256=key(package))
+    return reruns
 
 
-def reran(index: Any, package: bytes, read: Read) -> dict[str, bytes]:
-    """The gate's files of the candidate whose package is ``package``, or ``NotRerun`` (see "Before the gate")."""
-    name = key(package)
+def reran(index: Any, cid: Any, read: Read) -> tuple[bytes, dict[str, bytes]]:
+    """Candidate ``cid``'s package and its gate's files, or ``NotRerun`` (see "Before the gate")."""
+    one_part = isinstance(cid, str) and cid not in (".", "..") and PACKAGE.match(path(cid)) and "\x00" not in cid
+    package = read(path(cid)) if one_part else None
+    if package is None:
+        raise NotRerun("package_missing")
     reruns = index.get("reruns") if isinstance(index, dict) else None
-    entry = reruns.get(name) if isinstance(reruns, dict) else None
-    if not isinstance(entry, dict):
+    entry = reruns.get(cid) if isinstance(reruns, dict) else None
+    if not isinstance(entry, dict) or entry.get("package_sha256") != key(package):
         raise NotRerun("rerun_missing")
     if entry.get("verdict") != "verified":
-        raise NotRerun("rerun_not_verified", entry)
-    files = {f: read("/".join((RUNS, name, f))) for f in FILES}
+        raise NotRerun("rerun_not_verified")
+    files = {f: read("/".join((RUNS, cid, f))) for f in FILES}
     if any(data is None for data in files.values()):
-        raise NotRerun("rerun_files_missing", entry)
-    return files  # type: ignore[return-value]
+        raise NotRerun("rerun_files_missing")
+    return package, files  # type: ignore[return-value]
