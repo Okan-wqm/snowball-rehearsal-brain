@@ -4,6 +4,7 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-22, E697; tohum dönemi AE, sahibin ipucu: ajanlar Kurucu'nun kurallarıyla, `00e`): `CHANGELOG-14.md`; başında **İlk iş**.
 - 2.2 (2026-11-22, E694–E696; tohum dönemi AD, raporların yaşam döngüsü, seed-087'nin kalanları, yeni `26l`): `CHANGELOG-13.md`; başında **İlk iş**.
 - 2.2 (2026-11-21, E685–E690; tohum dönemi AB, seed-085–087, yeni `26j`): `CHANGELOG-11.md`; başında **İlk iş**.
 - 2.2 (2026-11-21, E691–E693; tohum dönemi AC, seed-088, yeni `26k` ve `00e`): `CHANGELOG-12.md`; başında **İlk iş**.
@@ -47,9 +48,8 @@ Okunma: bir sayfanın geçmişi aranırken
   E631), `29j:59-60` (`build_ok`'un ve lint toplamının üreticisi Kurucu'nun hakem kodudur). Sahip kararı:
   `25a` "Dış kesinti" (E633; `ETKINLESTIRME.md` 7. adım): yalnız adı konmuş dış kesintiden kırmızı (B) koşusu o devir
   için bir kez yeniden tetiklenir, insan dokunuşu olarak kaydedilir; yeni kod denetimi yok.
-- 2.2 (2026-11-17, E609–E611; sahip kararı): yeni `26g`, Kurucu'nun dersi, başlatıcının ders dizini ve sahibin
-  hedefi: `CHANGELOG-8.md`.
-- 2.2 (2026-11-16 – 2026-11-17, E606–E608; Kurucu raporları, olgu): `seed-061`, `seed-062`, `seed-063`: `CHANGELOG-7.md`.
+- 2.2 (2026-11-16 – 2026-11-17, E606–E611; Kurucu raporları, olgu, sahip kararı): `seed-061`, `seed-062`, `seed-063`:
+  `CHANGELOG-7.md`; yeni `26g`, Kurucu'nun dersi, başlatıcının ders dizini ve sahibin hedefi: `CHANGELOG-8.md`.
 - 2.2 (2026-11-16, E600–E605; Kurucu raporları, sahibin onayı): yeni `29z`. Önyükleme hakemi çıkış isteğinde ayrı,
   sırsız ve izinsiz `kanarya` işinde beynin `python -m runner.contained run`'ını konteynerin dışında, oyuncağın birim
   tarifinin imajında bir kez koşturur; geçerli olmayan ya da kırmızı kanarya `exit.missing`'de `canary:<durum>`, iş

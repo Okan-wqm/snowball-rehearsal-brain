@@ -41,3 +41,29 @@ denetlenen ve ölçülen.**
   kapının gücü düşmez.
 - Ölç: oturum başına CPU dakikası ve duvar süresi, önce ve sonra; kaçaklar: son tam koşunun ya da hakemin yakalayıp
   kapsamlı koşuların kaçırdığı her şey. Kaçak görülürse kapsamı genişletirsin. Nasıl kurulacağı senindir.
+
+**Sahibin ipucu (bu kez kural esnetildi; 2026-11-22, E697; görev, reçete değil; korkuluklar bağlayıcıdır). Ajanlar
+senin yazdığın, ölçtüğün ve geliştirdiğin kurallarla.**
+- Olgu: 20261122T091521Z oturumunda ilk ajanlarını koştun: altı salt-okur `opus` ajanı ("Judge report answers A-F"),
+  yanıtlanan 16 raporu `26l`'ye göre kapatmak için (sonuç a74914f: 9 `confirmed`, 7 `superseded`, 8 yeni rapor).
+  Dilimleri ayrıktı: tek ortak istem, ajan başına rapor kimlikleri.
+- f1906 (7) altısını tek bir `decision` maddesinde yazar (general-purpose ajan, `opus`, çaba ayarlanmamış, istemin
+  sha256'sı, toplam 314994 token, her biri 72–132 s, maliyet gösterilmedi, üç hükmü değiştirildi). Koşu başına satır
+  yok, maliyet yok; istemin gövdesi beyinde değil (yalnız kapsülün `/tmp`'sindeydi, oturumla gitti); istemde ders yok;
+  `agents/` altında tanım yok (`09`, E675). E692'nin korkulukları "ilk ajan"ı adlandırır; bu ajanları yöneten tek şey
+  f1909'un (2) temsilci istemleri üzerine dersidir.
+- Görev (tasarım senindir): ajanlar, senin yazıp beyinde tuttuğun kurallarla kurulur: bir ajana ne verildiği (görev,
+  kapsam ve beynin tuttuğu bilgi: dersler, hafıza), çıktısının nasıl denetlendiği, her koşunun başarımının nasıl
+  ölçüldüğü, bir ajanın ya da bir kuralın ne zaman yeniden tasarlandığı ya da emekli edildiği.
+- Ajanlarının zaaflarını ölçülen başarımlarından kendin bulursun ve her sınıfı vaka başına bir yamayla değil, kurallarda
+  mimari bir değişiklikle kapatırsın. Kurallar yanlışlanabilir kayıtlardır (`00d`'nin sahip ilkesi, 2026-11-06): her
+  kural ne beklediğini söyler ve koşulara karşı yeniden sınanır; koşuların çürüttüğü kural yeniden yazılır.
+- Korkuluklar (sahibin koşulu; bağlayıcıdır):
+  1. E692'nin 1–3. korkulukları yalnız ilk ajana değil, her ajan koşusuna uygulanır: ajan yalnız bir denetim ekler;
+     her koşu bir `build` ya da `decision` satırıdır (kapalı küme, yeni tür yok), ajan kimliği, model, çaba, tanım
+     sha256'sı, diff'in sha'sı (koşu bir diff okuyorsa), token, maliyet, duvar süresi, bulgular ve hangilerinin
+     kullanıldığıyla; gerçek yakalama E692'nin dediği gibi kanıtlanır. E692'nin 5. korkuluğu ilk ajanın kalır; öteki
+     ajanların tanımının nerede durduğu senin kuralındır (`09`).
+  2. Önyükleme hakemi, rakip ve tam prepush değişmeden kalır.
+  3. Yanlışlanabilir: kurallarla geçen 5 oturumdan sonra ajan koşularında ölçülen bir iyileşme (gerçek yakalama, yeniden
+     iş, işe yarar bulgu başına maliyet) görünmezse, bunu kaydeder ve yeniden tasarlarsın.
