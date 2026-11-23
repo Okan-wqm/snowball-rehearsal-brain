@@ -39,7 +39,7 @@ for row in rows:
 """
 ZERO = {"runs": 0, "sessions": 0, "findings": 0, "caught": 0, "false_alarm": 0, "unjudged": 0, "carried": 0,
         "repeats": 0, "tokens": 0, "tokens_unknown": 0, "cost_usd_micros": 0, "cost_unknown": 0, "wall_ms": 0,
-        "caught_tokens_known": 0}
+        "caught_tokens_known": 0, "caught_cost_known": 0, "cost_floor_usd_micros": 0, "cost_floor_runs": 0}
 
 
 def old_finding(n: int, verdict: str = A.UNJUDGED, evidence=None) -> dict:
@@ -569,7 +569,8 @@ class Measure(Base):
         got = A.measure(self.data, "one")
         fold = {"runs": 3, "sessions": 2, "findings": 5, "caught": 2, "false_alarm": 1, "unjudged": 1, "carried": 1,
                 "repeats": 1, "tokens": 3600, "tokens_unknown": 0, "cost_usd_micros": 680000, "cost_unknown": 1,
-                "wall_ms": 90006, "caught_tokens_known": 2}
+                "wall_ms": 90006, "caught_tokens_known": 2, "caught_cost_known": 1, "cost_floor_usd_micros": 0,
+                "cost_floor_runs": 0}
         self.assertEqual(got, {"ok": True, "agent": "one", **fold, "before_rules": ZERO, "under_rules": fold,
                                "retire_due": False})
 
@@ -705,6 +706,14 @@ class Measure(Base):
             A.FORM2 + json.dumps({"agent": "one", "amends": "f1", "findings": [], "tokens": 1}),
             A.FORM2 + json.dumps({"agent": "one", "amends": "f1"})))
 
+    def test_an_eight_digit_count_of_tokens_is_refused_by_the_ledgers_row_scan(self):
+        self.record(run_file(tokens=9999999))
+        before = self.data
+        with self.assertRaisesRegex(A.Fault, "^row_refused:row_scan:secret-assignment:"):
+            self.record(run_file(tokens=10000000))
+        self.read()
+        self.assertEqual(self.data, before)
+
     def test_a_ledger_line_that_is_no_row_is_a_fault(self):
         for line in (b"not json\n", b"[1]\n", b'{"kind": "build"}\n'):
             with self.subTest(line=line), self.faults("ledger_unreadable"):
@@ -738,6 +747,328 @@ class Measure(Base):
         self.assertFalse(A.measure(self.data, "one")["retire_due"])
 
 
+def call(wall_ms=90000, **over) -> dict:
+    """An entry of a session's ``runs`` in the mirror, as tohum/26o lists its fields."""
+    entry = {"tool_use_id": "toolu_01A", "subagent_type": "brain:one", "model": "claude-opus-5-5", "effort": "high",
+             "parent": None, "status": "completed", "wall_ms": wall_ms, "out_from": "cli_model_line",
+             "tokens": {"in": 5, "cache_read": 70000000, "cache_write_5m": 9, "cache_write_1h": 0, "out": 11},
+             "cost_usd_micros": 500, "cost_floor_usd_micros": 400, "cost_basis": "derived:price_table",
+             "not_measured": None}
+    entry.update(over)
+    return entry
+
+
+def unlogged(wall_ms=90000, **over) -> dict:
+    """An entry whose output tokens the log does not hold: the floor stands, the cost is null."""
+    return call(wall_ms, **{"cost_usd_micros": None, "not_measured": "output_tokens_unlogged", **over})
+
+
+def cost_fields(row_id: str, stamp: str, entry: dict, name: str = "one") -> dict:
+    return {"agent": name, "cost_of": row_id, "source": "mirror.json", "stamp": stamp, "usage": entry["tokens"],
+            **{k: entry[k] for k in A.COPIED}}
+
+
+NOW = "20261122T150000Z"
+S1, S2, S3 = "20261122T120000Z", "20261122T130000Z", "20261122T140000Z"
+
+
+class Cost(Base):
+    def mirror(self, sessions: dict, stamp=NOW) -> str:
+        doc = {"stamp": stamp, "delegation": {"sessions": [{"stamp": k, "runs": v} for k, v in sessions.items()]}}
+        return self.put("mirror.json", json.dumps(doc).encode())
+
+    def at(self, ts: str, **over) -> str:
+        """A run under the rules whose row is written at ``ts``."""
+        if not os.path.isdir(self.out):
+            self.packet()
+        row_id = A.record(A.read_packet(self.out), run_file(**over), self.ledger, SNAPSHOT, ts, F.spec_kinds(),
+                          self.root)
+        self.read()
+        return row_id
+
+    def cost(self, mirror: str, kinds=None) -> dict:
+        try:
+            return A.cost("one", mirror, self.ledger, SNAPSHOT, TS, F.spec_kinds() if kinds is None else kinds)
+        finally:
+            self.read()
+
+    def rows(self, count: int) -> list[dict]:
+        return [json.loads(line) for line in self.data.splitlines()[-count:]] if count else []
+
+    def test_the_row_names_the_mirror_the_stamp_and_the_call_and_copies_the_entry(self):
+        run = self.at("2026-11-22T12:30:00Z", cost_usd_micros=None, not_measured="none shown")
+        before = self.data
+        got = self.cost(self.mirror({S1: [call(7, tool_use_id="toolu_other"), call()]}))
+        self.assertEqual(got, {"recorded": ["f3"], "unchanged": 0, "unpaired": {}})
+        self.assertTrue(self.data.startswith(before))
+        row, = self.rows(1)
+        self.assertEqual((row["row_id"], row["kind"], row["derivation"], row["trust"], row["snapshot_id"], row["ts"]),
+                         ("f3", "build", "llm_inference", "inferred", SNAPSHOT, TS))
+        self.assertEqual(row["payload"]["refs"], ["agents/one.md", "agent_run:one"])
+        text = row["payload"]["summary"]
+        self.assertTrue(text.startswith("agent_run/2 {"))
+        fields = json.loads(text[len(A.FORM2):])
+        self.assertEqual(fields, {
+            "agent": "one", "cost_of": run, "source": "mirror.json", "stamp": S1, "tool_use_id": "toolu_01A",
+            "subagent_type": "brain:one", "model": "claude-opus-5-5", "effort": "high",
+            "usage": {"in": 5, "cache_read": 70000000, "cache_write_5m": 9, "cache_write_1h": 0, "out": 11},
+            "cost_usd_micros": 500, "cost_floor_usd_micros": 400, "cost_basis": "derived:price_table",
+            "not_measured": None})
+        self.assertEqual(F.refusals(before, self.data[len(before):], F.spec_kinds()), [])
+        self.assertEqual((A.MIRROR, A.SOURCE), ("/work/logs/mirror.json", "mirror.json"))
+
+    def test_a_runs_session_is_the_latest_stamp_not_after_its_rows_ts(self):
+        between = self.at("2026-11-22T13:59:59Z")
+        on = self.at("2026-11-22T14:00:00Z")
+        mirror = self.mirror({S3: [call(tool_use_id="toolu_3")], S1: [call(tool_use_id="toolu_1")],
+                              S2: [call(tool_use_id="toolu_2")]})
+        self.assertEqual(self.cost(mirror), {"recorded": ["f4", "f5"], "unchanged": 0, "unpaired": {}})
+        found = A.runs(self.data, "one")
+        self.assertEqual([(found[r]["cost"]["stamp"], found[r]["cost"]["tool_use_id"]) for r in (between, on)],
+                         [(S2, "toolu_2"), (S3, "toolu_3")])
+
+    def test_a_run_before_every_session_or_not_before_the_mirrors_own_stamp_has_no_session(self):
+        early = self.at("2026-11-22T11:59:59Z")
+        last = self.at("2026-11-22T14:59:59Z", wall_ms=3)
+        now = self.at("2026-11-22T15:00:00Z")
+        later = self.at("2026-11-23T09:00:00Z")
+        got = self.cost(self.mirror({S1: [call(), call(3, tool_use_id="toolu_3")]}))
+        self.assertEqual(got, {"recorded": ["f6"], "unchanged": 0,
+                               "unpaired": {r: "session_not_in_mirror" for r in (early, now, later)}})
+        self.assertEqual(A.runs(self.data, "one")[last]["cost"]["tool_use_id"], "toolu_3")
+        got = self.cost(self.mirror({}))
+        self.assertEqual(got, {"recorded": [], "unchanged": 0,
+                               "unpaired": {r: "session_not_in_mirror" for r in (early, last, now, later)}})
+
+    def test_a_row_ts_that_is_no_time_of_the_form_has_no_session(self):
+        now, sessions = A.mirror(self.mirror({S1: [call()]}))
+        for ts in ("2026-11-22T12:30:00", "2026-11-22 12:30:00Z", "2026-11-31T12:30:00Z", "20261122T123000Z", "2026-11-22T12:30:0Z",
+                   7,
+                   None):
+            run = {"ts": ts, "wall_ms": 90000, "form": 2, "cost": None}
+            with self.subTest(ts=ts):
+                self.assertEqual(A.pair({"f9": run}, now, sessions, "one"), ({}, {"f9": "session_not_in_mirror"}))
+        good = {"ts": "2026-11-22T12:30:00Z", "wall_ms": 90000, "form": 2, "cost": None}
+        self.assertEqual(A.pair({"f9": good}, now, sessions, "one"), ({"f9": cost_fields("f9", S1, call())}, {}))
+
+    def test_a_runs_call_has_its_wall_ms_and_under_the_rules_the_agents_type(self):
+        run = self.at("2026-11-22T12:30:00Z")
+        for entries in ([], [call(90001)], [call("unfinished")], [call(None)], [call(90000.0)],
+                        [call(subagent_type="brain:two")], [call(subagent_type="general-purpose")],
+                        [call(subagent_type=None)], [call(subagent_type="one")]):
+            with self.subTest(entries=entries):
+                self.assertEqual(self.cost(self.mirror({S1: entries})),
+                                 {"recorded": [], "unchanged": 0, "unpaired": {run: "no_call"}})
+        other = self.at("2026-11-22T12:31:00Z", wall_ms=1)
+        got = self.cost(self.mirror({S1: [call(True), call(subagent_type="brain:two"), call(90000)],
+                                     S2: [call(1)]}))
+        self.assertEqual(got, {"recorded": ["f4"], "unchanged": 0, "unpaired": {other: "no_call"}})
+
+    def test_a_run_before_the_rules_is_tied_by_wall_ms_whatever_the_type(self):
+        old = self.old_run(run_file(old_finding(1)))
+        entry = call(subagent_type="general-purpose", effort=None)
+        self.assertEqual(self.cost(self.mirror({S1: [entry]})), {"recorded": ["f3"], "unchanged": 0, "unpaired": {}})
+        self.assertEqual(A.runs(self.data, "one")[old]["cost"], cost_fields(old, S1, entry))
+        self.assertEqual(A.measure(self.data, "one")["before_rules"]["cost_usd_micros"], 500)
+
+    def test_two_calls_or_two_runs_of_one_session_and_wall_ms_are_ambiguous_and_none_is_written(self):
+        first = self.at("2026-11-22T12:30:00Z")
+        apart = self.at("2026-11-22T12:31:00Z", wall_ms=4)
+        mirror = self.mirror({S1: [call(), call(tool_use_id="toolu_again"), call(4, tool_use_id="toolu_4")]})
+        self.assertEqual(self.cost(mirror), {"recorded": ["f4"], "unchanged": 0, "unpaired": {first: "ambiguous"}})
+        self.assertEqual(A.runs(self.data, "one")[apart]["cost"]["tool_use_id"], "toolu_4")
+        second = self.at("2026-11-22T12:32:00Z")
+        other = self.at("2026-11-22T13:32:00Z")
+        got = self.cost(self.mirror({S1: [call(), call(4, tool_use_id="toolu_4")], S2: [call()]}))
+        self.assertEqual(got, {"recorded": ["f7"], "unchanged": 1,
+                               "unpaired": {first: "ambiguous", second: "ambiguous"}})
+        self.assertEqual(A.runs(self.data, "one")[other]["cost"]["stamp"], S2)
+
+    def test_a_second_command_writes_nothing_and_a_changed_entry_writes_the_row_that_then_stands(self):
+        run = self.at("2026-11-22T12:30:00Z")
+        mirror = self.mirror({S1: [unlogged()]})
+        self.assertEqual(self.cost(mirror)["recorded"], ["f3"])
+        before = self.data
+        self.assertEqual(self.cost(mirror), {"recorded": [], "unchanged": 1, "unpaired": {}})
+        self.assertEqual(self.data, before)
+        self.assertEqual(A.runs(self.data, "one")[run]["cost_usd_micros"], None)
+        self.assertEqual(self.cost(self.mirror({S1: [call()]})), {"recorded": ["f4"], "unchanged": 0, "unpaired": {}})
+        self.assertEqual(A.runs(self.data, "one")[run]["cost"], cost_fields(run, S1, call()))
+        self.assertEqual(A.runs(self.data, "one")[run]["cost_usd_micros"], 500)
+
+    def test_the_fold_takes_a_runs_cost_from_its_last_cost_row_and_sums_the_floors_of_the_runs_left_unknown(self):
+        none = dict(cost_usd_micros=None, not_measured="none shown")
+        known = self.at("2026-11-22T12:01:00Z", findings=[finding(1, A.CAUGHT, "t"), finding(2)], wall_ms=1, **none)
+        floor = self.at("2026-11-22T12:02:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=2, **none)
+        self.at("2026-11-22T12:03:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=3, **none)
+        self.at("2026-11-22T12:04:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=4, **none)
+        written = self.at("2026-11-22T12:05:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=5)
+        old = self.old_run(run_file(old_finding(1, A.CAUGHT, "t"), wall_ms=6, **none))
+        got = A.measure(self.data, "one")
+        self.assertEqual([got[k] for k in ("cost_usd_micros", "cost_unknown", "caught_cost_known",
+                                           "cost_floor_usd_micros", "cost_floor_runs")], [340000, 5, 1, 0, 0])
+        mirror = self.mirror({S1: [call(1, tool_use_id="toolu_1", cost_usd_micros=1000),
+                                   unlogged(2, tool_use_id="toolu_2", cost_floor_usd_micros=30),
+                                   unlogged(3, tool_use_id="toolu_3", cost_floor_usd_micros=None,
+                                            not_measured="no_usage"),
+                                   unlogged(5, tool_use_id="toolu_5", cost_floor_usd_micros=7)],
+                              S2: [unlogged(6, tool_use_id="toolu_6", cost_floor_usd_micros=200)]})
+        self.assertEqual(self.cost(mirror)["recorded"], ["f%d" % n for n in range(8, 13)])
+        got = A.measure(self.data, "one")
+        under = {"runs": 5, "cost_usd_micros": 1000, "cost_unknown": 4, "caught_cost_known": 1,
+                 "cost_floor_usd_micros": 37, "cost_floor_runs": 2}
+        self.assertEqual({k: got["under_rules"][k] for k in under}, under)
+        before = {"runs": 1, "cost_usd_micros": 0, "cost_unknown": 1, "caught_cost_known": 0,
+                  "cost_floor_usd_micros": 200, "cost_floor_runs": 1}
+        self.assertEqual({k: got["before_rules"][k] for k in before}, before)
+        self.assertEqual([got[k] for k in ("cost_usd_micros", "cost_unknown", "caught_cost_known",
+                                           "cost_floor_usd_micros", "cost_floor_runs", "caught", "tokens")],
+                         [1000, 5, 1, 237, 3, 6, 7200])
+        found = A.runs(self.data, "one")
+        self.assertEqual((found[known]["cost_usd_micros"], found[floor]["cost_usd_micros"],
+                          found[written]["cost_usd_micros"], found[old]["cost"]["stamp"]), (1000, None, None, S2))
+
+    def test_a_cost_row_and_an_amending_row_of_one_run_leave_each_other_standing(self):
+        run = self.at("2026-11-22T12:30:00Z", findings=[finding(1)])
+        mirror = self.mirror({S1: [call()]})
+        self.cost(mirror)
+        self.amend(run, finding(1, A.CAUGHT, "t"))
+        self.assertEqual(self.cost(mirror)["unchanged"], 1)
+        got = A.runs(self.data, "one")[run]
+        self.assertEqual((got["cost_usd_micros"], got["findings"][0]["verdict"]), (500, A.CAUGHT))
+        again = self.at("2026-11-22T12:31:00Z", findings=[finding(1, repeat_of=run + "#1")], wall_ms=2)
+        self.assertEqual(list(A.runs(self.data, "one")), [run, again])
+        self.assertEqual(A.memory(self.data, "one"), [])
+
+    def test_a_cost_row_that_names_no_earlier_run_of_the_agent_is_a_fault(self):
+        run = self.at("2026-11-22T12:30:00Z")
+        amending = self.amend(run)
+        start = json.loads(self.data.splitlines()[0])["row_id"]
+        self.assertEqual(A.measure(self.data + self.line(cost_fields(run, S1, call())), "one")["cost_usd_micros"], 500)
+        for name in (start, amending, "f999", "f4"):
+            row = F.next_row(self.data, "build", A.FORM2 + json.dumps(cost_fields(name, S1, call())),
+                             ["agent_run:one"], SNAPSHOT, TS)
+            with self.subTest(name=name), self.faults("cost_no_run:%s" % row["row_id"]):
+                A.measure(self.data + F.line_of(row), "one")
+
+    def line(self, fields: dict, form: str = A.FORM2) -> bytes:
+        return F.line_of(F.next_row(self.data, "build", form + json.dumps(fields), ["agent_run:one"], SNAPSHOT, TS))
+
+    BREAKS = (("cost_of", "the run"), ("cost_of", None), ("source", "mirror"), ("source", "/work/logs/mirror.json"),
+              ("stamp", "2026-11-22T12:00:00Z"), ("stamp", "20261131T120000Z"), ("stamp", "20261122T12000Z"),
+              ("stamp", 20261122),
+              ("tool_use_id", "toolu_"), ("tool_use_id", "call_01A"), ("tool_use_id", None), ("tool_use_id", 7),
+              ("subagent_type", ""), ("subagent_type", 7), ("model", None), ("model", " "), ("effort", 7),
+              ("usage", None), ("usage", {"in": 1}), ("usage", [1, 2, 3, 4, 5]),
+              ("usage", {"in": 5, "cache_read": 7, "cache_write_5m": 9, "cache_write_1h": 0, "out": 1.5}),
+              ("usage", {"in": 5, "cache_read": 7, "cache_write_5m": 9, "cache_write_1h": True, "out": 1}),
+              ("usage", {"in": 5, "cache_read": 7, "cache_write_5m": 9, "cache_write_1h": 0, "out": 1, "all": 22}),
+              ("cost_usd_micros", 1.5), ("cost_usd_micros", -1), ("cost_usd_micros", "500"), ("cost_usd_micros", True),
+              ("cost_usd_micros", None), ("cost_floor_usd_micros", "400"), ("cost_floor_usd_micros", -1),
+              ("cost_basis", 7), ("not_measured", ""), ("not_measured", 7))
+
+    def test_each_break_of_a_cost_rows_form_is_a_fault_never_skipped(self):
+        run = self.at("2026-11-22T12:30:00Z")
+        good = cost_fields(run, S1, call())
+        for fields in (good, cost_fields(run, S1, unlogged(effort=None, subagent_type=None, cost_basis=None,
+                                                           cost_floor_usd_micros=None)),
+                       {**good, "usage": dict.fromkeys(A.TOKEN_KINDS)}):
+            self.assertEqual(A.measure(self.data + self.line(fields), "one")["runs"], 1)
+        row = "f%d" % (len(self.data.splitlines()) + 1)
+        broken = [{**good, key: value} for key, value in self.BREAKS]
+        broken += [{k: v for k, v in good.items() if k != key} for key in good if key != "cost_of"]
+        broken += [{**good, "more": 1}, {**good, "agent": "two"}, {**good, "findings": []}, {**good, "amends": run}]
+        for fields in broken:
+            with self.subTest(fields=fields), self.faults("run_row_unreadable:%s" % row):
+                A.measure(self.data + self.line(fields), "one")
+        with self.faults("run_row_unreadable:%s" % row):
+            A.measure(self.data + self.line(good, A.FORM), "one")
+
+    def test_an_entry_of_a_call_that_gives_no_cost_row_is_an_unreadable_mirror_and_no_row_is_written(self):
+        self.at("2026-11-22T12:29:00Z", wall_ms=1)
+        self.at("2026-11-22T12:30:00Z")
+        before = self.data
+        broken = [{**call(), "tokens" if key == "usage" else key: value}
+                  for key, value in self.BREAKS if key not in ("cost_of", "source", "stamp", "subagent_type")]
+        broken += [{k: v for k, v in call().items() if k != key} for key in (*A.COPIED, "tokens")
+                   if key != "subagent_type"]
+        for entry in broken:
+            mirror = self.mirror({S1: [call(1, tool_use_id="toolu_1"), entry]})
+            with self.subTest(entry=entry), self.faults("mirror_unreadable"):
+                self.cost(mirror)
+            self.assertEqual(self.data, before)
+        got = self.cost(self.mirror({S1: [call(1, tool_use_id="toolu_1"), {"wall_ms": 5}, {}]}))
+        self.assertEqual(got, {"recorded": ["f4"], "unchanged": 0, "unpaired": {"f3": "no_call"}})
+
+    def test_each_break_of_the_mirrors_form_is_a_fault(self):
+        self.at("2026-11-22T12:30:00Z")
+        before = self.data
+        session = {"stamp": S1, "runs": [call()]}
+
+        def doc(sessions, stamp=NOW):
+            return {"stamp": stamp, "delegation": {"sessions": sessions}}
+        good = self.put("mirror.json", json.dumps(doc([session])).encode())
+        self.assertEqual(A.mirror(good)[1], [(A._time(S1, A.STAMP), S1, [call()])])
+        for text in (b"not json", b"[1]", b"7", json.dumps({"stamp": NOW}).encode(),
+                     json.dumps({"stamp": NOW, "delegation": []}).encode(),
+                     json.dumps({"stamp": NOW, "delegation": {}}).encode(),
+                     json.dumps({"delegation": {"sessions": [session]}}).encode(),
+                     *(json.dumps(doc(sessions)).encode() for sessions in (
+                         None, 7, "runs", {"stamp": S1, "runs": []}, [[S1, []]], [{"runs": []}], [{"stamp": S1}],
+                         [{"stamp": "2026-11-22", "runs": []}], [{"stamp": 20261122, "runs": []}],
+                         [{"stamp": S1, "runs": None}], [{"stamp": S1, "runs": {}}], [{"stamp": S1, "runs": "ab"}],
+                         [{"stamp": S1, "runs": [call(), 7]}], [session, {"stamp": S1, "runs": []}],
+                         [{"stamp": NOW, "runs": []}], [{"stamp": "20261123T000000Z", "runs": []}])),
+                     *(json.dumps(doc([session], stamp)).encode() for stamp in (
+                         None, 7, "2026-11-22T15:00:00Z", "20261131T150000Z", "20261122T150000", S1))):
+            with self.subTest(text=text), self.faults("mirror_unreadable"):
+                self.cost(self.put("mirror.json", text))
+            self.assertEqual(self.data, before)
+        with self.faults("mirror_unreadable"):
+            self.cost(os.path.join(self.tmp, "absent.json"))
+
+    def test_a_row_the_writer_refuses_stops_the_command_and_the_rows_before_it_stay(self):
+        self.at("2026-11-22T12:29:00Z", wall_ms=1)
+        self.at("2026-11-22T12:30:00Z")
+        before = self.data
+        mirror = self.mirror({S1: [call(1, tool_use_id="toolu_1"), call()]})
+        with self.assertRaisesRegex(A.Fault, "^row_refused:"):
+            self.cost(mirror, frozenset())
+        self.assertEqual(self.data, before)
+        key = "AKIA" + "IOSFODNN7EXAMPLE"
+        with self.assertRaisesRegex(A.Fault, "^row_refused:row_scan:"):
+            self.cost(self.mirror({S1: [call(1, tool_use_id="toolu_1"), call(not_measured=key)]}))
+        self.assertEqual(self.data[:len(before)], before)
+        row, = self.rows(len(self.data.splitlines()) - len(before.splitlines()))
+        self.assertEqual(json.loads(row["payload"]["summary"][len(A.FORM2):])["tool_use_id"], "toolu_1")
+        mirror = self.mirror({S1: [call(1, tool_use_id="toolu_1"), call()]})
+        self.assertEqual(self.cost(mirror), {"recorded": ["f5"], "unchanged": 1, "unpaired": {}})
+
+    def test_a_ledger_that_cannot_be_read_takes_no_cost_row(self):
+        mirror = self.mirror({S1: [call()]})
+        with self.assertRaisesRegex(A.Fault, "^ledger_unusable:"):
+            A.cost("one", mirror, os.path.join(self.tmp, "absent"), SNAPSHOT, TS, F.spec_kinds())
+        with open(self.ledger, "wb") as f:
+            f.write(self.data + b"not a row\n")
+        with self.faults("ledger_unreadable"):
+            self.cost(mirror)
+
+    def test_another_agents_runs_get_no_row_of_this_agents_command(self):
+        self.agent(GOOD.replace(b"name: one", b"name: two"), "two")
+        A.record(self.packet("two", self.out + "-two"), run_file(invoked_as="brain:two"), self.ledger, SNAPSHOT,
+                 "2026-11-22T12:30:00Z", F.spec_kinds(), self.root)
+        mine = self.at("2026-11-22T12:31:00Z")
+        mirror = self.mirror({S1: [call(subagent_type="brain:two", tool_use_id="toolu_2"), call()]})
+        self.assertEqual(self.cost(mirror), {"recorded": ["f4"], "unchanged": 0, "unpaired": {}})
+        self.assertEqual(A.runs(self.data, "one")[mine]["cost"]["tool_use_id"], "toolu_01A")
+        self.assertEqual([r["cost"] for r in A.runs(self.data, "two").values()], [None])
+        got = A.cost("two", mirror, self.ledger, SNAPSHOT, TS, F.spec_kinds())
+        self.read()
+        self.assertEqual(got["recorded"], ["f5"])
+        self.assertEqual([r["cost"]["tool_use_id"] for r in A.runs(self.data, "two").values()], ["toolu_2"])
+        self.assertEqual(self.rows(1)[0]["payload"]["refs"], ["agents/two.md", "agent_run:two"])
+
+
 class Main(Base):
     def main(self, *argv: str) -> tuple[int, dict]:
         buf = io.StringIO()
@@ -766,6 +1097,33 @@ class Main(Base):
         self.assertEqual((code, out), (0, {"ok": True, "recorded": "f3"}))
         code, out = self.main("measure", "--agent", "one", "--ledger", self.ledger)
         self.assertEqual((code, out["runs"], out["unjudged"], out["caught"]), (0, 1, 0, 1))
+
+    def test_cost_writes_the_rows_and_its_default_mirror_is_the_capsules(self):
+        self.packet()
+        A.record(A.read_packet(self.out), run_file(), self.ledger, SNAPSHOT, "2026-11-22T12:30:00Z", F.spec_kinds(),
+                 self.root)
+        doc = {"stamp": NOW, "delegation": {"sessions": [{"stamp": S1, "runs": [call()]}]}}
+        mirror = self.put("mirror.json", json.dumps(doc).encode())
+        argv = ("cost", "--agent", "one", "--snapshot", "b" * 40, "--ledger", self.ledger)
+        code, out = self.main(*argv, "--mirror", mirror, "--ts", "2026-11-23T08:00:00Z")
+        self.assertEqual((code, out), (0, {"ok": True, "recorded": ["f3"], "unchanged": 0, "unpaired": {}}))
+        with open(self.ledger, "rb") as f:
+            row = json.loads(f.read().splitlines()[-1])
+        self.assertEqual((row["snapshot_id"], row["ts"]), ("b" * 40, "2026-11-23T08:00:00Z"))
+        code, out = self.main(*argv, "--mirror", mirror)
+        self.assertEqual((code, out), (0, {"ok": True, "recorded": [], "unchanged": 1, "unpaired": {}}))
+        code, out = self.main("measure", "--agent", "one", "--ledger", self.ledger)
+        self.assertEqual((code, out["cost_usd_micros"], out["cost_unknown"]), (0, 500, 0))
+        self.assertEqual(self.main(*argv, "--mirror", self.put("mirror.json", b"{}")),
+                         (2, {"ok": False, "reason": "mirror_unreadable"}))
+        seen = []
+        real = A.cost
+        A.cost = lambda *args: seen.append(args) or {"recorded": []}
+        self.addCleanup(setattr, A, "cost", real)
+        self.assertEqual(self.main("cost", "--agent", "one", "--snapshot", "b" * 40, "--ts", TS),
+                         (0, {"ok": True, "recorded": []}))
+        self.assertEqual(seen, [("one", "/work/logs/mirror.json", os.path.join(self.root, "founder-ledger.jsonl"),
+                                 "b" * 40, TS, F.spec_kinds())])
 
     def test_the_default_ledger_is_the_roots(self):
         os.replace(self.ledger, os.path.join(self.root, "founder-ledger.jsonl"))
@@ -830,6 +1188,14 @@ class Brain(unittest.TestCase):
                       "stands in for none", *("`%s`" % v for v in A.VERDICTS2), "no finding leaves the session so",
                       "The skill `brain:agents`"):
             self.assertIn(named, " ".join(text.split()))
+
+    def test_the_agents_skill_names_the_cost_command_before_a_run_and_no_longer_calls_the_cost_unshown(self):
+        with open(os.path.join(ROOT, "skills", "agents", "SKILL.md"), encoding="utf-8") as f:
+            text = " ".join(f.read().split())
+        before, _, after = text.partition("One run (rule `recorded`):")
+        self.assertIn("python3 tests/agent_run.py cost --agent <name> --snapshot <HEAD's SHA>", before)
+        self.assertNotIn("tests/agent_run.py cost", after)
+        self.assertNotIn("while the session is shown none", text)
 
 
 if __name__ == "__main__":

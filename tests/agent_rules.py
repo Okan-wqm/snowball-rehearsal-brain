@@ -60,8 +60,9 @@ are the call's is not checked. The tools of ``TOOLS`` are the ones this capsule 
 address an agent; a tool of another name that did so would not be seen. That an agent changed nothing is its
 definition's tools (``READ_ONLY``), which the capsule enforces, not this tool. ``improves`` compares two folds
 of rows the session wrote: of the owner's three measures (E697, condition 3) it reads true catches as
-``caught`` per run and cost per useful finding as tokens per ``caught`` (the cost in money is shown to no
-session); rework is not measured, and the
+``caught`` per run and cost per useful finding as tokens per ``caught`` (the cost in money is in the rows of
+``agent_run.py cost``, for the runs the launcher's mirror can cost, and no rule here reads it yet); rework is
+not measured, and the
 comparison of sessions with and without an agent (E692's third condition) is not here.
 """
 
