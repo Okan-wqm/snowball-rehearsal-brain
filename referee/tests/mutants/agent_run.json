@@ -238,8 +238,8 @@
   {
    "id": "retire_after_six",
    "file": "tests/agent_run.py",
-   "old": "\"retire_due\": whole[\"sessions\"] >= RETIRE_AFTER and whole[CAUGHT] == 0}",
-   "new": "\"retire_due\": whole[\"sessions\"] > RETIRE_AFTER and whole[CAUGHT] == 0}",
+   "old": "\"retire_due\": whole[\"sessions\"] >= RETIRE_AFTER and",
+   "new": "\"retire_due\": whole[\"sessions\"] > RETIRE_AFTER and",
    "tests": [
     "test_agent_run.py"
    ]
@@ -247,8 +247,8 @@
   {
    "id": "retire_with_a_catch",
    "file": "tests/agent_run.py",
-   "old": "\"retire_due\": whole[\"sessions\"] >= RETIRE_AFTER and whole[CAUGHT] == 0}",
-   "new": "\"retire_due\": whole[\"sessions\"] >= RETIRE_AFTER}",
+   "old": "and (whole[CAUGHT] == 0 or over)}",
+   "new": "and (True or over)}",
    "tests": [
     "test_agent_run.py"
    ]
@@ -744,6 +744,294 @@
    "file": "tests/agent_run.py",
    "old": "sum(f[\"verdict\"] == CAUGHT for run in found if run[\"tokens\"] is not None",
    "new": "sum(f[\"verdict\"] == CAUGHT for run in found if True",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_row_stamp_not_round_tripped",
+   "file": "tests/agent_run.py",
+   "old": "time if time.strftime(form) == text else None",
+   "new": "time",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_row_any_source",
+   "file": "tests/agent_run.py",
+   "old": "fields[\"source\"] == SOURCE",
+   "new": "True",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_row_any_call_id",
+   "file": "tests/agent_run.py",
+   "old": "fields[\"tool_use_id\"].startswith(CALL_ID)",
+   "new": "True",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_row_usage_of_any_kinds",
+   "file": "tests/agent_run.py",
+   "old": "sorted(tokens) == sorted(TOKEN_KINDS)",
+   "new": "True",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_row_null_cost_without_reason",
+   "file": "tests/agent_run.py",
+   "old": "and (fields[\"cost_usd_micros\"] is not None or fields[\"not_measured\"] is not None))",
+   "new": "and True)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_row_keys_not_checked",
+   "file": "tests/agent_run.py",
+   "old": "if sorted(fields) != sorted(COST_KEYS):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "mirror_session_at_its_own_stamp_taken",
+   "file": "tests/agent_run.py",
+   "old": "time is not None and time < now and isinstance(found, list)",
+   "new": "time is not None and time <= now and isinstance(found, list)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "mirror_two_sessions_of_one_stamp_taken",
+   "file": "tests/agent_run.py",
+   "old": "if len({stamp for _, stamp, _ in sessions}) != len(sessions):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "mirror_sessions_left_unsorted",
+   "file": "tests/agent_run.py",
+   "old": "return now, sorted(sessions, key=lambda s: s[0])",
+   "new": "return now, sessions",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_at_the_mirrors_stamp_paired",
+   "file": "tests/agent_run.py",
+   "old": "ts is not None and ts < now and s[0] <= ts]",
+   "new": "ts is not None and ts <= now and s[0] <= ts]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_at_a_sessions_stamp_not_its",
+   "file": "tests/agent_run.py",
+   "old": "ts is not None and ts < now and s[0] <= ts]",
+   "new": "ts is not None and ts < now and s[0] < ts]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_paired_with_the_first_session",
+   "file": "tests/agent_run.py",
+   "old": "(earlier[-1], run[\"wall_ms\"])",
+   "new": "(earlier[0], run[\"wall_ms\"])",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_under_rules_paired_without_its_type",
+   "file": "tests/agent_run.py",
+   "old": "(run[\"form\"] == 1 or m.get(\"subagent_type\") == BRAIN + name)",
+   "new": "True",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "two_calls_of_one_wall_ms_paired",
+   "file": "tests/agent_run.py",
+   "old": "elif len(calls) > 1 or sum(",
+   "new": "elif sum(",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_row_written_again_unchanged",
+   "file": "tests/agent_run.py",
+   "old": "if found[row_id][\"cost\"] != fields:",
+   "new": "if True:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "changed_cost_not_written",
+   "file": "tests/agent_run.py",
+   "old": "if found[row_id][\"cost\"] != fields:",
+   "new": "if found[row_id][\"cost\"] is None:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_row_of_no_run_skipped",
+   "file": "tests/agent_run.py",
+   "old": "            if fields[\"cost_of\"] not in runs:\n                raise Fault(\"cost_no_run:%s\" % row_id)",
+   "new": "            if fields[\"cost_of\"] not in runs:\n                continue",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_row_does_not_give_the_cost",
+   "file": "tests/agent_run.py",
+   "old": "runs[fields[\"cost_of\"]].update(cost=fields, cost_usd_micros=fields[\"cost_usd_micros\"])",
+   "new": "runs[fields[\"cost_of\"]].update(cost=fields)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_row_read_unchecked",
+   "file": "tests/agent_run.py",
+   "old": "        check_cost(fields)\n        return form, fields",
+   "new": "        return form, fields",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "floor_of_a_costed_run_summed",
+   "file": "tests/agent_run.py",
+   "old": "if run[\"cost_usd_micros\"] is None and run[\"cost\"] is not None\n",
+   "new": "if run[\"cost\"] is not None\n",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_default_mirror_not_the_capsules",
+   "file": "tests/agent_run.py",
+   "old": "c.add_argument(\"--mirror\", default=MIRROR)",
+   "new": "c.add_argument(\"--mirror\", default=\"mirror.json\")",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_file_cost_count_taken",
+   "file": "tests/agent_run.py",
+   "old": "    if run[\"cost_usd_micros\"] is not None:\n        raise Fault(\"cost_not_null\")\n",
+   "new": "",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "old_run_rows_own_cost_summed",
+   "file": "tests/agent_run.py",
+   "old": "\"cost\": None, \"cost_usd_micros\": None,\n",
+   "new": "\"cost\": None, \"cost_usd_micros\": fields[\"cost_usd_micros\"],\n",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "session_cost_of_any_kind_of_row",
+   "file": "tests/agent_run.py",
+   "old": "if kind == \"cost\" and isinstance(text, str) else None",
+   "new": "if isinstance(text, str) else None",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "session_cost_found_anywhere_in_the_text",
+   "file": "tests/agent_run.py",
+   "old": "said = SESSION_COST.match(text)",
+   "new": "said = SESSION_COST.search(text)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "session_cost_upper_median",
+   "file": "tests/agent_run.py",
+   "old": "session = costs[(len(costs) - 1) // 2] if costs else None",
+   "new": "session = costs[len(costs) // 2] if costs else None",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "session_costs_unsorted",
+   "file": "tests/agent_run.py",
+   "old": "    return sorted(costs)\n",
+   "new": "    return costs\n",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "cost_equal_to_gain_is_over",
+   "file": "tests/agent_run.py",
+   "old": "over = session is not None and least > whole[CAUGHT] * session",
+   "new": "over = session is not None and least >= whole[CAUGHT] * session",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "floors_left_out_of_the_least_cost",
+   "file": "tests/agent_run.py",
+   "old": "least = whole[\"cost_usd_micros\"] + whole[\"cost_floor_usd_micros\"]",
+   "new": "least = whole[\"cost_usd_micros\"]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "retirement_not_due_by_cost",
+   "file": "tests/agent_run.py",
+   "old": "and (whole[CAUGHT] == 0 or over)}",
+   "new": "and (whole[CAUGHT] == 0)}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "retirement_by_cost_before_five_sessions",
+   "file": "tests/agent_run.py",
+   "old": "\"retire_due\": whole[\"sessions\"] >= RETIRE_AFTER and (whole[CAUGHT] == 0 or over)}",
+   "new": "\"retire_due\": whole[\"sessions\"] >= RETIRE_AFTER and whole[CAUGHT] == 0 or over}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "gain_counted_under_the_rules_only",
+   "file": "tests/agent_run.py",
+   "old": "least > whole[CAUGHT] * session",
+   "new": "least > fold([r for r in found if r[\"form\"] == 2])[CAUGHT] * session",
    "tests": [
     "test_agent_run.py"
    ]

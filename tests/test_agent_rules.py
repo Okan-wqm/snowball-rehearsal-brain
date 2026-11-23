@@ -296,17 +296,17 @@ class RepeatsRare(Base):
 class Earns(Base):
     def test_an_agent_with_no_run_is_not_due_and_one_that_catches_holds(self):
         self.assertEqual(self.state("earns"), ("not_due", {"one": {
-            "state": "not_due", "retire_due": False, "caught": 0, "false_alarm": 0}}))
+            "state": "not_due", "retire_due": False, "cost_over_gain": False, "caught": 0, "false_alarm": 0}}))
         self.run_under(finding(1, A.CAUGHT, "t"), finding(2, A.FALSE_ALARM, "why"))
         self.assertEqual(self.state("earns"), ("held", {"one": {
-            "state": "held", "retire_due": False, "caught": 1, "false_alarm": 1}}))
+            "state": "held", "retire_due": False, "cost_over_gain": False, "caught": 1, "false_alarm": 1}}))
 
     def test_more_false_alarms_than_catches_under_the_rules_refutes(self):
         self.old_run(run_file(old_finding(1, A.FALSE_ALARM, "why"), old_finding(2, A.FALSE_ALARM, "why")))
         self.assertEqual(self.state("earns")[0], "held")
         self.run_under(finding(1, A.CAUGHT, "t"), finding(2, A.FALSE_ALARM, "why"), finding(3, A.FALSE_ALARM, "why"))
         self.assertEqual(self.state("earns"), ("refuted", {"one": {
-            "state": "refuted", "retire_due": False, "caught": 1, "false_alarm": 2}}))
+            "state": "refuted", "retire_due": False, "cost_over_gain": False, "caught": 1, "false_alarm": 2}}))
 
     def test_an_agent_due_to_retire_refutes(self):
         for _ in range(4):
@@ -315,7 +315,18 @@ class Earns(Base):
         self.assertEqual(self.state("earns")[0], "held")
         self.old_run(run_file(old_finding(1)))
         self.assertEqual(self.state("earns"), ("refuted", {"one": {
-            "state": "refuted", "retire_due": True, "caught": 0, "false_alarm": 0}}))
+            "state": "refuted", "retire_due": True, "cost_over_gain": False, "caught": 0, "false_alarm": 0}}))
+
+    def test_an_agent_whose_cost_is_over_what_it_can_have_saved_refutes_at_five_sessions(self):
+        self.row("cost", TA.SESSION % 1000)
+        for n in range(5):
+            run = self.run_under(finding(1, A.CAUGHT, "t"))
+            self.row("build", A.FORM2 + json.dumps(TA.cost_fields(run, TA.S1, TA.call(cost_usd_micros=1001))),
+                     ["agents/one.md", A.TAG + "one"])
+            self.assertEqual(self.state("earns"), ("refuted" if n == 4 else "held", {"one": {
+                "state": "refuted" if n == 4 else "held", "retire_due": n == 4, "cost_over_gain": True,
+                "caught": n + 1, "false_alarm": 0}}))
+            self.row("session_start")
 
     def test_one_agent_refuting_refutes_the_rule_and_one_not_due_does_not_hide_one_that_holds(self):
         self.agent(GOOD.replace(b"name: one", b"name: two"), "two")

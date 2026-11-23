@@ -34,7 +34,8 @@ What it does, each rule bound by ``tests/test_agent_rules.py``:
    - ``repeats_rare``: over each agent's runs under the rules, ``not_due`` with no finding, ``refuted`` when
      ten times the findings that carry ``repeat_of`` reach the findings, else ``held``.
    - ``earns``: ``not_due`` for an agent with no run; ``refuted`` when ``agent_run.measure`` says
-     ``retire_due`` or, under the rules, more findings are ``false_alarm`` than ``caught``; else ``held``.
+     ``retire_due`` (five sessions with nothing caught, or with a cost over what it can have saved) or,
+     under the rules, more findings are ``false_alarm`` than ``caught``; else ``held``.
    - ``improves``: ``not_due`` while an agent has fewer than ``AFTER_SESSIONS`` sessions under the rules; then
      ``held`` when, against its runs before the rules, the ``caught`` findings per run are more or the tokens
      per ``caught`` finding are fewer (over the runs whose tokens are a count, ``caught_tokens_known``; a side
@@ -61,7 +62,8 @@ address an agent; a tool of another name that did so would not be seen. That an 
 definition's tools (``READ_ONLY``), which the capsule enforces, not this tool. ``improves`` compares two folds
 of rows the session wrote: of the owner's three measures (E697, condition 3) it reads true catches as
 ``caught`` per run and cost per useful finding as tokens per ``caught`` (the cost in money is in the rows of
-``agent_run.py cost``, for the runs the launcher's mirror can cost, and no rule here reads it yet); rework is
+``agent_run.py cost``, for the runs the launcher's mirror can cost, and ``earns`` reads it through ``retire_due``,
+from one side only: see that tool's docstring); rework is
 not measured, and the
 comparison of sessions with and without an agent (E692's third condition) is not here.
 """
@@ -86,7 +88,6 @@ READ_ONLY = ("Read", "Grep", "Glob")
 STARTS = ("Agent", "Task")
 TOOLS = (*STARTS, "SendMessage")
 MD = ".md"
-BRAIN = "brain:"
 LOGS = "/work/logs"
 AFTER_SESSIONS = 5
 HELD, REFUTED, NOT_DUE = "held", "refuted", "not_due"
@@ -193,7 +194,7 @@ def calls_are_rows(ctx: dict) -> tuple[str, dict]:
     made = calls(ctx["log"])
     unrecorded = []
     for call in made:
-        name = call["type"][len(BRAIN):] if (call["type"] or "").startswith(BRAIN) else None
+        name = call["type"][len(A.BRAIN):] if (call["type"] or "").startswith(A.BRAIN) else None
         if name in free and call["sha256"] in free[name]:
             free[name].remove(call["sha256"])
         else:
@@ -229,7 +230,8 @@ def earns(ctx: dict) -> tuple[str, dict]:
         under = m["under_rules"]
         state = (NOT_DUE if not m["runs"] else
                  REFUTED if m["retire_due"] or under[A.FALSE_ALARM] > under[A.CAUGHT] else HELD)
-        return state, {"retire_due": m["retire_due"], "caught": under[A.CAUGHT], "false_alarm": under[A.FALSE_ALARM]}
+        return state, {"retire_due": m["retire_due"], "cost_over_gain": m["cost_over_gain"],
+                       "caught": under[A.CAUGHT], "false_alarm": under[A.FALSE_ALARM]}
     return _each(ctx, judge)
 
 

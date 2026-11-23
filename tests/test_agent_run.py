@@ -42,6 +42,11 @@ ZERO = {"runs": 0, "sessions": 0, "findings": 0, "caught": 0, "false_alarm": 0, 
         "caught_tokens_known": 0, "caught_cost_known": 0, "cost_floor_usd_micros": 0, "cost_floor_runs": 0}
 
 
+NO_SESSION = {"session_cost_usd_micros": None, "session_costs": 0, "cost_over_gain": False}
+SESSION = ("session 20261101T045525Z: exit 0, 59.6 min, turns 119, cost_usd_micros %s, CLI result success, model m, "
+           "tokens in 1 out 2, per model: m in 1 out 2 cost_usd_micros 999, basis list")
+
+
 def old_finding(n: int, verdict: str = A.UNJUDGED, evidence=None) -> dict:
     """A finding in the form of ``agent_run/1``."""
     return {"n": n, "class": "promise", "claim": "a claim", "ref": "a.py:3", "verdict": verdict,
@@ -54,7 +59,8 @@ def finding(n: int, verdict: str = A.UNJUDGED, evidence=None, carried_in=None, r
 
 def run_file(*findings: dict, **over) -> dict:
     run = {"invoked_as": "brain:one", "model_served": "claude-opus-5-5", "effort": "medium", "tokens": 1200,
-           "cost_usd_micros": 340000, "wall_ms": 90000, "not_measured": None, "findings": list(findings)}
+           "cost_usd_micros": None, "wall_ms": 90000, "not_measured": "the cost: the mirror's",
+           "findings": list(findings)}
     run.update(over)
     return run
 
@@ -479,7 +485,9 @@ class Record(Base):
                 (run_file(tokens=None, not_measured="none shown"), "bad_run_field"),
                 (run_file(cost_usd_micros=1.5), "bad_run_field"),
                 (run_file(not_measured=" "), "bad_run_field"),
-                (run_file(cost_usd_micros=None), "unknown_without_reason"),
+                (run_file(not_measured=None), "unknown_without_reason"),
+                (run_file(cost_usd_micros=340000), "cost_not_null"),
+                (run_file(cost_usd_micros=0), "cost_not_null"),
                 (run_file(amends="1912"), "bad_amends"),
                 (run_file(amends="f1"), "bad_run_field"),
                 (run_file(findings={}), "findings_not_a_list"),
@@ -557,7 +565,7 @@ def old_text(pack: dict, run: dict) -> str:
 class Measure(Base):
     def test_no_run_is_all_zero_and_not_due(self):
         self.assertEqual(A.measure(self.data, "one"), {"ok": True, "agent": "one", **ZERO, "before_rules": ZERO,
-                                                       "under_rules": ZERO, "retire_due": False})
+                                                       "under_rules": ZERO, **NO_SESSION, "retire_due": False})
 
     def test_runs_sessions_verdicts_and_sums(self):
         self.record(run_file(finding(1, A.CAUGHT, "t"), finding(2)))
@@ -565,30 +573,30 @@ class Measure(Base):
         self.row("session_end")
         start = self.row("session_start")
         self.record(run_file(finding(1, A.CARRIED, "true", start), finding(2, A.CAUGHT, "t", repeat_of="f2#2"),
-                             cost_usd_micros=None, not_measured="none shown", wall_ms=1))
+                             wall_ms=1))
         got = A.measure(self.data, "one")
         fold = {"runs": 3, "sessions": 2, "findings": 5, "caught": 2, "false_alarm": 1, "unjudged": 1, "carried": 1,
-                "repeats": 1, "tokens": 3600, "tokens_unknown": 0, "cost_usd_micros": 680000, "cost_unknown": 1,
-                "wall_ms": 90006, "caught_tokens_known": 2, "caught_cost_known": 1, "cost_floor_usd_micros": 0,
+                "repeats": 1, "tokens": 3600, "tokens_unknown": 0, "cost_usd_micros": 0, "cost_unknown": 3,
+                "wall_ms": 90006, "caught_tokens_known": 2, "caught_cost_known": 0, "cost_floor_usd_micros": 0,
                 "cost_floor_runs": 0}
         self.assertEqual(got, {"ok": True, "agent": "one", **fold, "before_rules": ZERO, "under_rules": fold,
-                               "retire_due": False})
+                               **NO_SESSION, "retire_due": False})
 
     def test_the_runs_before_the_rules_are_still_read_and_folded_apart_from_the_runs_under_them(self):
         old = self.old_run(run_file(old_finding(1, A.CAUGHT, "t"), old_finding(2), effort=None, tokens=None,
                                     cost_usd_micros=None, not_measured="none shown"))
-        self.old_run(run_file(old_finding(1)))
+        self.old_run(run_file(old_finding(1), cost_usd_micros=340000, not_measured=None))
         self.row("session_start")
         self.record(run_file(finding(1, A.FALSE_ALARM, "why", repeat_of=old + "#2"), wall_ms=7))
         got = A.measure(self.data, "one")
         before = {**ZERO, "runs": 2, "sessions": 1, "findings": 3, "caught": 1, "unjudged": 2, "tokens": 1200,
-                  "tokens_unknown": 1, "cost_usd_micros": 340000, "cost_unknown": 1, "wall_ms": 180000}
+                  "tokens_unknown": 1, "cost_usd_micros": 0, "cost_unknown": 2, "wall_ms": 180000}
         under = {**ZERO, "runs": 1, "sessions": 1, "findings": 1, "false_alarm": 1, "repeats": 1, "tokens": 1200,
-                 "cost_usd_micros": 340000, "wall_ms": 7}
+                 "cost_usd_micros": 0, "cost_unknown": 1, "wall_ms": 7}
         self.assertEqual((got["before_rules"], got["under_rules"]), (before, under))
         self.assertEqual({k: got[k] for k in ZERO}, {
             **ZERO, "runs": 3, "sessions": 2, "findings": 4, "caught": 1, "false_alarm": 1, "unjudged": 2,
-            "repeats": 1, "tokens": 2400, "tokens_unknown": 1, "cost_usd_micros": 680000, "cost_unknown": 1,
+            "repeats": 1, "tokens": 2400, "tokens_unknown": 1, "cost_usd_micros": 0, "cost_unknown": 3,
             "wall_ms": 180007})
         self.assertEqual([r["message_sha256"] for r in A.runs(self.data, "one").values()],
                          [None, None, A.read_packet(self.out)["message_sha256"]])
@@ -746,6 +754,82 @@ class Measure(Base):
         self.old_run(run_file(old_finding(1, A.CAUGHT, "t")))
         self.assertFalse(A.measure(self.data, "one")["retire_due"])
 
+    def test_a_sessions_cost_is_the_lower_median_of_the_cost_rows_that_state_one(self):
+        def got() -> tuple:
+            m = A.measure(self.data, "one")
+            return m["session_cost_usd_micros"], m["session_costs"]
+        self.assertEqual(got(), (None, 0))
+        self.row("cost", SESSION % 300)
+        self.row("cost", SESSION % 100)
+        self.assertEqual((got(), A.session_costs(self.data)), ((100, 2), [100, 300]))
+        self.row("cost", SESSION % 200)
+        self.assertEqual(got(), (200, 3))
+        self.row("cost", SESSION % 0)
+        self.assertEqual(got(), (100, 4))
+        self.row("cost", SESSION % 250)
+        self.assertEqual(got(), (200, 5))
+        for kind, text in (("cost", SESSION % "unknown"), ("build", SESSION % 1), ("cost", SESSION % "1.5"),
+                           ("cost", SESSION % "-1"), ("cost", "a " + SESSION % 1),
+                           ("cost", (SESSION % 1).replace("T045525Z", "T04552Z")),
+                           ("cost", (SESSION % 1).replace("exit 0, ", "")),
+                           ("cost", (SESSION % 1).replace(" min", " h")),
+                           ("cost", (SESSION % 1).replace("turns 119, ", "")),
+                           ("cost", "cost_usd_micros 1, of the session"), ("cost", "a row of the test")):
+            with self.subTest(kind=kind, text=text):
+                self.row(kind, text)
+                self.assertEqual(got(), (200, 5))
+
+    def test_a_ledger_whose_line_is_no_row_has_no_session_costs(self):
+        for data in (b"{", b"[]", b'{"kind": "cost"}', b'{"kind": "cost", "payload": 1}'):
+            with self.subTest(data=data), self.faults("ledger_unreadable"):
+                A.session_costs(self.data + data + b"\n")
+
+    def costed(self, *findings: dict, **entry) -> str:
+        """A run under the rules and its cost row."""
+        run = self.record(run_file(*findings))
+        return self.cost_row(run, **entry)
+
+    def cost_row(self, run: str, **entry) -> str:
+        self.row("build", A.FORM2 + json.dumps(cost_fields(run, S1, call(**entry))), ["agents/one.md", A.TAG + "one"])
+        return run
+
+    def over(self) -> bool:
+        return A.measure(self.data, "one")["cost_over_gain"]
+
+    def test_the_cost_is_over_the_gain_when_it_is_more_than_a_session_for_each_caught_finding(self):
+        run = self.costed(finding(1, A.CAUGHT, "t"), finding(2, A.CAUGHT, "t"), finding(3), cost_usd_micros=2001)
+        self.assertFalse(self.over())  # no session's cost is known
+        self.row("cost", SESSION % 1000)
+        self.assertTrue(self.over())
+        self.cost_row(run, cost_usd_micros=2000)
+        self.assertFalse(self.over())
+        self.costed(finding(1), cost_usd_micros=None, cost_floor_usd_micros=1, not_measured="output_tokens_unlogged")
+        self.assertTrue(self.over())  # a floor is part of the least the agent cost
+        self.old_run(run_file(old_finding(1, A.CAUGHT, "t")))
+        self.assertFalse(self.over())  # a catch before the rules is a catch
+        self.assertFalse(A.measure(self.data, "one")["retire_due"])
+
+    def test_nothing_spent_is_not_over_nothing_caught(self):
+        self.row("cost", SESSION % 1000)
+        self.record(run_file(finding(1)))
+        self.assertFalse(self.over())
+        self.costed(finding(1), cost_usd_micros=1)
+        self.assertTrue(self.over())
+
+    def test_retirement_is_due_at_five_sessions_with_a_cost_over_the_gain(self):
+        def sessions(count: int, cost: int) -> dict:
+            self.data = b""
+            self.row("cost", SESSION % 1000)
+            for _ in range(count):
+                self.row("session_start")
+                self.costed(finding(1, A.CAUGHT, "t"), cost_usd_micros=cost)
+            return A.measure(self.data, "one")
+        for count, cost, due in ((4, 1001, False), (5, 1001, True), (5, 1000, False)):
+            with self.subTest(count=count, cost=cost):
+                got = sessions(count, cost)
+                self.assertEqual((got["sessions"], got["caught"], got["cost_over_gain"], got["retire_due"]),
+                                 (count, count, cost > 1000, due))
+
 
 def call(wall_ms=90000, **over) -> dict:
     """An entry of a session's ``runs`` in the mirror, as tohum/26o lists its fields."""
@@ -842,7 +926,8 @@ class Cost(Base):
 
     def test_a_row_ts_that_is_no_time_of_the_form_has_no_session(self):
         now, sessions = A.mirror(self.mirror({S1: [call()]}))
-        for ts in ("2026-11-22T12:30:00", "2026-11-22 12:30:00Z", "2026-11-31T12:30:00Z", "20261122T123000Z", "2026-11-22T12:30:0Z",
+        for ts in ("2026-11-22T12:30:00", "2026-11-22 12:30:00Z", "2026-11-31T12:30:00Z", "20261122T123000Z",
+                   "2026-11-22T12:30:0Z",
                    7,
                    None):
             run = {"ts": ts, "wall_ms": 90000, "form": 2, "cost": None}
@@ -906,7 +991,7 @@ class Cost(Base):
         old = self.old_run(run_file(old_finding(1, A.CAUGHT, "t"), wall_ms=6, **none))
         got = A.measure(self.data, "one")
         self.assertEqual([got[k] for k in ("cost_usd_micros", "cost_unknown", "caught_cost_known",
-                                           "cost_floor_usd_micros", "cost_floor_runs")], [340000, 5, 1, 0, 0])
+                                           "cost_floor_usd_micros", "cost_floor_runs")], [0, 6, 0, 0, 0])
         mirror = self.mirror({S1: [call(1, tool_use_id="toolu_1", cost_usd_micros=1000),
                                    unlogged(2, tool_use_id="toolu_2", cost_floor_usd_micros=30),
                                    unlogged(3, tool_use_id="toolu_3", cost_floor_usd_micros=None,
@@ -1196,6 +1281,25 @@ class Brain(unittest.TestCase):
         self.assertIn("python3 tests/agent_run.py cost --agent <name> --snapshot <HEAD's SHA>", before)
         self.assertNotIn("tests/agent_run.py cost", after)
         self.assertNotIn("while the session is shown none", text)
+        self.assertIn("the cost is null there", text)
+        self.assertIn("`cost_over_gain`", text)
+        self.assertNotIn("still read by hand", text)
+
+    def test_every_cost_row_of_this_brains_ledger_states_its_sessions_cost_or_says_unknown(self):
+        with open(os.path.join(ROOT, A.LEDGER), "rb") as f:
+            data = f.read()
+        rows = [json.loads(line) for line in data.splitlines()]
+        texts = [row["payload"]["summary"] for row in rows if row["kind"] == "cost"]
+        unknown = [text for text in texts if ", cost_usd_micros unknown, " in text.partition(" per model:")[0]]
+        self.assertEqual(len(A.session_costs(data)), len(texts) - len(unknown))
+        self.assertGreater(len(texts), len(unknown))
+
+    def test_the_prefix_of_this_brains_agent_types_is_written_once(self):
+        texts = []
+        for name in ("agent_run.py", "agent_rules.py"):
+            with open(os.path.join(ROOT, "tests", name), encoding="utf-8") as f:
+                texts.append(f.read())
+        self.assertEqual(("".join(texts).count('"brain:"'), texts[0].count('BRAIN = "brain:"')), (1, 1))
 
 
 if __name__ == "__main__":

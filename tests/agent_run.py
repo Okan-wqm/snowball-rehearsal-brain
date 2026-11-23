@@ -47,8 +47,9 @@ The rules, each bound by ``tests/test_agent_run.py``:
    It prints ``packet.json``'s object with ``out``. A fault writes nothing.
 4. **The run file** is a JSON object the session writes after the run, with exactly the keys ``invoked_as``
    (text: the agent type the Agent tool was given), ``model_served`` (text: the model as the session saw it
-   served, or the alias when it saw none), ``effort`` (text), ``tokens`` (a count), ``cost_usd_micros`` (a count
-   or null), ``wall_ms`` (a count), ``not_measured`` (text or null; text when ``cost_usd_micros`` is null) and
+   served, or the alias when it saw none), ``effort`` (text), ``tokens`` (a count), ``cost_usd_micros`` (null:
+   a run's cost is a fact of its session's end and comes by rule 7, tohum/26o; a count is the fault
+   ``cost_not_null``), ``wall_ms`` (a count), ``not_measured`` (text: why the cost is not here) and
    ``findings``. A finding has exactly ``n`` (the integers 1, 2, ... in order), ``class``, ``claim`` (texts),
    ``ref`` (text or null), ``verdict`` (one of ``VERDICTS2``), ``evidence`` (text or null; text unless the
    verdict is ``unjudged``: for ``caught`` the test that was red before the repair and green after, or the
@@ -77,23 +78,35 @@ The rules, each bound by ``tests/test_agent_run.py``:
 6. **measure** folds the ledger's rows that carry the ref ``agent_run:<name>``, in file order. Such a row whose
    summary is not a form below is a fault, never skipped. ``agent_run/2 `` and one JSON object: either
    ``agent``, ``amends`` and ``findings`` by rule 4, or every field of rule 3's packet but ``tools`` and beside
-   them a run file by rule 4 and no other key, or a cost row by rule 7. ``agent_run/1 `` and one JSON object, the form of the runs before
+   them a run file by rule 4 and no other key, or a cost row by rule 7. ``agent_run/1 `` and one JSON object, the form
+   of the runs before
    the rules, still read and no longer written: the packet's first nine fields but ``tools``, and beside them
    the run file's keys with ``effort`` and ``tokens`` null too under a ``not_measured``, findings without
    ``carried_in`` and ``repeat_of`` and with a verdict of ``VERDICTS``, and optionally ``amends`` (such a row
    amends and is no run). In each form ``agent`` is ``<name>``; the packet fields' other values are not judged.
    An amending row replaces the findings of the earlier run row it names; naming anything else is a fault. A
+   run's ``cost_usd_micros`` is null until a cost row names it: the count a run row of the form ``agent_run/1``
+   may carry is the session's own and is not read. A
    cost row gives the earlier run row it names (of either form) its ``cost_usd_micros`` and its floor, the last
-   such row of a run standing; naming anything else is a fault (``cost_no_run:<row id>``). The answer: ``runs``; ``sessions``, the distinct ``session_start`` rows last seen before each run (a run before
+   such row of a run standing; naming anything else is a fault (``cost_no_run:<row id>``). The answer:
+   ``runs``; ``sessions``, the distinct ``session_start`` rows last seen before each run (a run before
    any such row counts as one more); ``findings`` and the count of each verdict; ``repeats``, the findings that
    carry a ``repeat_of``; the sums ``tokens``, ``cost_usd_micros`` and ``wall_ms`` over the runs that carry a
-   count, with ``tokens_unknown`` and ``cost_unknown`` the runs that carry null, and ``caught_tokens_known`` and
+   count (the cost: from a cost row), with ``tokens_unknown`` and ``cost_unknown`` the runs that carry null,
+   and ``caught_tokens_known`` and
    ``caught_cost_known`` the ``caught`` findings of the runs whose tokens, and whose cost, are a count;
    ``cost_floor_usd_micros``, the sum of ``cost_floor_usd_micros`` over the runs whose cost is null and whose
    cost row carries a floor that is a count, and ``cost_floor_runs``, how many those are; ``before_rules`` and
    ``under_rules``, the same counts and sums over the runs of the form ``agent_run/1`` and of ``agent_run/2``
-   alone; and ``retire_due``: true when ``sessions`` is at least ``RETIRE_AFTER`` and ``caught`` is 0 (E692's
-   fourth condition, its first half).
+   alone; ``session_cost_usd_micros``, the lower median of what the ledger's ``cost`` rows say a session cost
+   (a row of the kind ``cost`` whose summary begins ``session <stamp>: exit <..>, <..> min, turns <..>,
+   cost_usd_micros <count>,``, the launcher's form, tohum/26o; a row that says anything else there, ``unknown``
+   too, states none), or null when none states one, and ``session_costs``, how many do; ``cost_over_gain``:
+   true when a session's cost is known and ``cost_usd_micros`` plus ``cost_floor_usd_micros`` is more than
+   ``caught`` times it; and ``retire_due``: true when ``sessions`` is at least ``RETIRE_AFTER`` and ``caught``
+   is 0 or ``cost_over_gain`` is true (E692's fourth condition, tohum/00e: a rejected push costs about a
+   session, so a ``caught`` finding saved one at most, and an agent whose least possible cost is more than the
+   most it can have saved costs more than it saves).
 7. **cost** reads what a run cost from the launcher's mirror (tohum/26o "Ajan koşusunun maliyeti": the facts of
    a session's end, readable from the next session on) and writes it beside the run, naming the mirror, the
    session's stamp and the call's ``tool_use_id`` as that page asks.
@@ -138,8 +151,12 @@ far are of six digits), that a ``caught`` finding's test exists or was ever red,
 place speaks of it, or that a ``repeat_of`` is the same claim. That the agent was given ``message.txt`` and
 nothing else is read from the session's log by ``tests/agent_rules.py``, not here. The diff is ``push_size``'s,
 not the referee's prompt (which is ``--binary`` and adds pages). The packet is of a diff: an agent whose task
-is no diff has no packet form yet. ``retire_due`` is the first half of the owner's fourth condition only; "its
-cost is more than the minutes it saved" is the session's reading of the sums: the minutes are measured nowhere here. The capsule's loader
+is no diff has no packet form yet. ``retire_due`` reads the owner's fourth condition from one side only: it is true
+when the
+agent cannot have earned its cost and says nothing of an agent below that line, since what a ``caught`` finding
+saved is measured nowhere (not every one would have been a rejection); the cost it weighs leaves out every run
+with neither a cost nor a floor, the wall time is not weighed, and a session's cost is the median over every
+session of the ledger, of any length and price. The capsule's loader
 (``brain_defs.py``) is the judge of what a session loads; rules 1 and 2 are tohum/24a's sentence and this
 brain's narrower choice of models, and a definition that passes here can still be dropped there (its limits on
 length and its name pattern are not copied).
@@ -176,6 +193,8 @@ FORM = "agent_run/1 "
 FORM2 = "agent_run/2 "
 TAG = "agent_run:"
 RETIRE_AFTER = 5
+SESSION_COST = re.compile(r"session \d{8}T\d{6}Z: exit [^,]+, [^,]+ min, turns [^,]+, "
+                          r"cost_usd_micros (\d+),")
 FENCE = "---"
 PACKET_KEYS = ("agent", "model", "tools", "definition_sha256", "base", "head", "diff_sha256", "bytes", "files")
 RUN_KEYS = ("invoked_as", "model_served", "effort", "tokens", "cost_usd_micros", "wall_ms", "not_measured", "findings")
@@ -196,6 +215,7 @@ SOURCE = "mirror.json"
 STAMP = "%Y%m%dT%H%M%SZ"
 ROW_TS = "%Y-%m-%dT%H:%M:%SZ"
 CALL_ID = "toolu_"
+BRAIN = "brain:"
 TOKEN_KINDS = ("in", "cache_read", "cache_write_5m", "cache_write_1h", "out")
 COPIED = ("tool_use_id", "subagent_type", "model", "effort", "cost_usd_micros", "cost_floor_usd_micros",
           "cost_basis", "not_measured")
@@ -422,6 +442,8 @@ def check_run2(run: dict) -> None:
     check_run({**run, "findings": []})
     if run["effort"] is None or run["tokens"] is None or "amends" in run:
         raise Fault("bad_run_field")
+    if run["cost_usd_micros"] is not None:
+        raise Fault("cost_not_null")
     check_findings2(run["findings"])
 
 
@@ -505,7 +527,7 @@ def pair(found: dict[str, dict], now: datetime.datetime, sessions: list, name: s
             continue
         (_, stamp, made), wall = place[row_id]
         calls = [m for m in made if _count(m.get("wall_ms")) and m["wall_ms"] == wall
-                 and (run["form"] == 1 or m.get("subagent_type") == "brain:" + name)]
+                 and (run["form"] == 1 or m.get("subagent_type") == BRAIN + name)]
         if not calls:
             unpaired[row_id] = "no_call"
         elif len(calls) > 1 or sum(p is not None and p[0][1] == stamp and p[1] == wall for p in place.values()) > 1:
@@ -625,7 +647,7 @@ def runs(data: bytes, name: str) -> dict[str, dict]:
             continue
         try:
             form, fields = _fields(text, name)
-            sums = {k: fields[k] for k in ("tokens", "cost_usd_micros", "wall_ms") if "invoked_as" in fields}
+            sums = {k: fields[k] for k in ("tokens", "wall_ms") if "invoked_as" in fields}
         except (ValueError, KeyError, TypeError, Fault):
             raise Fault("run_row_unreadable:%s" % row_id) from None
         if "cost_of" in fields:
@@ -637,7 +659,7 @@ def runs(data: bytes, name: str) -> dict[str, dict]:
                 raise Fault("amends_no_run:%s" % row_id)
             runs[fields["amends"]]["findings"] = fields["findings"]
         else:
-            runs[row_id] = {"session": session, "form": form, "ts": ts, "cost": None,
+            runs[row_id] = {"session": session, "form": form, "ts": ts, "cost": None, "cost_usd_micros": None,
                             "message_sha256": fields.get("message_sha256"), "findings": fields["findings"], **sums}
     return runs
 
@@ -686,14 +708,35 @@ def fold(found: list[dict]) -> dict:
             "wall_ms": sum(run["wall_ms"] for run in found)}
 
 
+def session_costs(data: bytes) -> list[int]:
+    """Rule 6: what each ``cost`` row of the ledger's bytes says its session cost, sorted; a row that states
+    none is left out."""
+    costs = []
+    for raw in data.splitlines():
+        try:
+            row = json.loads(raw)
+            kind, text = row["kind"], row["payload"]["summary"]
+        except (ValueError, KeyError, TypeError):
+            raise Fault("ledger_unreadable") from None
+        said = SESSION_COST.match(text) if kind == "cost" and isinstance(text, str) else None
+        if said:
+            costs.append(int(said.group(1)))
+    return sorted(costs)
+
+
 def measure(data: bytes, name: str) -> dict:
-    """Rule 6: the fold of ``name``'s runs."""
+    """Rule 6: the fold of ``name``'s runs and whether its retirement is due."""
     found = list(runs(data, name).values())
     whole = fold(found)
+    costs = session_costs(data)
+    session = costs[(len(costs) - 1) // 2] if costs else None
+    least = whole["cost_usd_micros"] + whole["cost_floor_usd_micros"]
+    over = session is not None and least > whole[CAUGHT] * session
     return {"ok": True, "agent": name, **whole,
             "before_rules": fold([r for r in found if r["form"] == 1]),
             "under_rules": fold([r for r in found if r["form"] == 2]),
-            "retire_due": whole["sessions"] >= RETIRE_AFTER and whole[CAUGHT] == 0}
+            "session_cost_usd_micros": session, "session_costs": len(costs), "cost_over_gain": over,
+            "retire_due": whole["sessions"] >= RETIRE_AFTER and (whole[CAUGHT] == 0 or over)}
 
 
 def _now() -> str:

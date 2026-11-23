@@ -63,6 +63,8 @@ never only the number that failed.
 
 What these rules do not reach, stated: an agent whose task is no diff has no packet form yet; a run's cost is
 the launcher's derived figure, known a session later and only for a run the mirror can cost (of two runs of
-one model in one session it gives a floor each, summed apart by `measure`); the minutes an agent saves are
-measured nowhere yet, so E692's "costs more than it saves" is still read by hand; a comparison of sessions with and
+one model in one session it gives a floor each, summed apart by `measure`); what a
+`caught` finding saved is measured nowhere, so `measure` reads E692's "costs more than it saves" from one side
+only (`cost_over_gain`: the agent's least cost against one median session per `caught` finding; `earns` is
+refuted by it after five sessions) and an agent under that line is not shown to earn; a comparison of sessions with and
 without an agent is not measured here.
