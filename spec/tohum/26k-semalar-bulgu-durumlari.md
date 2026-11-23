@@ -32,6 +32,7 @@ sayar; bu sayfa onu gevşetir (L-088).
 
 **P1 MF12'nin sözleşmeleri.** MF12 (`26j`) bunları karşılar:
 - T1: `finding_unknown` ve `finding_not_open` D5 nedenleridir ve merge seçilmeden önce verilir. Bir merge, kaydın
-  reddettiği bir bulgunun üstüne asla düşmez.
+  reddettiği bir bulgunun üstüne asla düşmez. T1'in okuduğu kayıt, parmak izini yapan ve nedenlerin adları `26q`'dadır
+  (seed-100).
 - T2: hiçbir adayın içeriği devri kullanılamaz kılmaz. Bir bulgu için iki karar sonraki adayı reddeder, devri asla
   geçersiz kılmaz.

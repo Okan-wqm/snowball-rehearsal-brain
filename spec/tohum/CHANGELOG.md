@@ -4,6 +4,7 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-23, E730–E732; tohum dönemi AH, rapor masası uzlaşısı: seed-100 ve seed-101, yeni `26q`, `26m` "Puanlama" düzeltildi, gevşetme L-AH1): `CHANGELOG-17.md`; başında **İlk iş**.
 - 2.2 (2026-11-22, E720–E724; tohum dönemi AG, rapor masası uzlaşısı: seed-097–099 ve başlatıcının üç düzeltmesi, yeni `26o` ve `26p`): `CHANGELOG-16.md`; başında **İlk iş**.
 - 2.2 (2026-11-22, E698–E703; tohum dönemi AF, rapor masası uzlaşısı: seed-089–096, yeni `26m` ve `26n`): `CHANGELOG-15.md`; başında **İlk iş**.
 - 2.2 (2026-11-22, E697; tohum dönemi AE, sahibin ipucu: ajanlar Kurucu'nun kurallarıyla, `00e`): `CHANGELOG-14.md`; başında **İlk iş**.
