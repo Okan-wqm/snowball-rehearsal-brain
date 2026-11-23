@@ -698,6 +698,26 @@ class D7(Watching):
         self.assertEqual(SE.unfinished(new), [])
         self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [heads[B.STATE]])
 
+    def test_a_revert_whose_merge_is_answered_405_once_is_still_merged(self):
+        """Loop run 45268983995 as the fake models it: the revert's merge, sent right after its check, is answered
+        405 once (``FakeGitHub.merge_lag``); the job's own writer sends it again and the cycle ends as any D7."""
+        first, heads = self.merged_then_watched(RED_AT_HEAD)
+        merge_sha = first["merge"]["merge_sha"]
+        pull = len(self.gh.pulls) + 1  # the number the revert's pull request gets
+        self.gh.merge_lag[pull] = 1
+        pauses = []
+        with mock.patch.object(W.Writer.__init__, "__defaults__", (pauses.append,)):  # the job's writer, not slept
+            out = self.run_yaz(GITHUB_RUN_ID="10")
+        self.assertEqual((out["ok"], "reason" in out, out["done"]), (True, False, ["D5", "D6", "D7"]), out)
+        revert = out["written"]["revert"]
+        self.assertEqual((revert["reverted"], revert["pull"]), (merge_sha, pull))
+        self.assertEqual(self.gh.refs[B.INTEGRATION], revert["merge_sha"])
+        self.assertEqual(self.gh.read_file(B.INTEGRATION, "pkg/a.js"), A_JS.encode())
+        merge = ("PUT", "/repos/%s/pulls/%d/merge" % (YW.REPO, pull))
+        self.assertEqual(self.writes().count(merge), 2)
+        self.assertEqual(pauses, [W.MERGE_RESEND_PAUSE_S])
+        self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [])
+
     def test_a_green_merge_is_ended_and_the_next_cycle_merges(self):
         write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})  # the next candidate's finding
         first, heads = self.merged_then_watched(GOOD)

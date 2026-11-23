@@ -15,6 +15,10 @@ It models what the writer depends on and the target's rulesets (tohum/25a row 3)
   job computes it (my reading of the documentation, not observed live; how many reads that lasts is not
   documented). Modelled only for a pull a test names in ``mergeable_pending`` (number -> reads still answered
   ``null``, then ``true``); any other pull's read carries no ``mergeable`` key, and a merge does not look at it;
+- a merge sent right after its check: observed live once (loop run 45268983995: 405 "Required status check ...
+  is expected" for a head whose ``success`` check run had been accepted two seconds before; the pull read open
+  and clean afterwards). Modelled only for a pull a test names in ``merge_lag`` (number -> merges still answered
+  that 405 although the check is there); how long GitHub does this is not known;
 - a commit's tree must already be known (from a seeded commit or ``POST git/trees``), its parents must exist;
 - blobs hold bytes and trees map paths to blobs (``base_tree`` entries kept, the new ones set on top), so
   ``read_file`` gives a branch's file content back.
@@ -67,6 +71,7 @@ class FakeGitHub:
         self.required_check = required_check
         self.overrides: dict[tuple, tuple] = {}
         self.mergeable_pending: dict[int, int] = {}
+        self.merge_lag: dict[int, int] = {}
 
     # ---- seeding
     def seed_commit(self, tree_name: str, parents=(), msg="seed", files=None) -> str:
@@ -238,6 +243,9 @@ class FakeGitHub:
             if p["base"] in self.direct_push_denied and not any(
                     c["head_sha"] == head and c["name"] == self.required_check and c["conclusion"] == "success"
                     for c in self.checks):
+                return 405, {"message": "Required status check is expected"}
+            if self.merge_lag.get(int(m.group(1)), 0) > 0:
+                self.merge_lag[int(m.group(1))] -= 1
                 return 405, {"message": "Required status check is expected"}
             base_head = self.refs[p["base"]]
             if base_head not in self.ancestors(head):

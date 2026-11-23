@@ -301,11 +301,18 @@ class WriterLoop(unittest.TestCase):
         self.assertTrue(all(path.startswith(P) for _, path, _ in gh.requests))
 
     def test_the_ruleset_still_holds_without_the_check(self):
-        gh, wr, _ = world()
+        gh, _, root = world()
+        pauses = []
+        wr = W.Writer(REPO, gh, pause=pauses.append)
         n, sha = candidate(gh, wr)
         with self.assertRaises(W.ApiError) as ctx:
             wr.merge(n, sha)
         self.assertEqual(ctx.exception.status, 405)
+        self.assertIn("Required status check is expected", str(ctx.exception))
+        self.assertEqual(self.pull_calls(gh, n), ["GET", "PUT"] * W.MERGE_SENDS)  # every send refused, then it ends
+        self.assertEqual(pauses, [W.MERGE_RESEND_PAUSE_S] * (W.MERGE_SENDS - 1))
+        self.assertEqual(gh.refs["brain/integration"], root)
+        self.assertEqual(wr.written, ["refs/heads/brain/c/1"])
 
     def test_brain_state_update_is_a_fast_forward(self):
         gh, wr, root = world()
@@ -443,6 +450,98 @@ class WriterLoop(unittest.TestCase):
         self.assertEqual(ctx.exception.reasons, ["ref_outside_brain"])
         self.assertEqual(self.pull_calls(gh, n), ["GET"] * 3)
         self.assertEqual(gh.refs["main"], root)
+
+    def lagging(self, lag):
+        """``waiting`` with a target that answers the next ``lag`` merges 405 although the check is there."""
+        gh, wr, n, sha, pauses = self.waiting()
+        gh.merge_lag[n] = lag
+        return gh, wr, n, sha, pauses
+
+    def merges(self, gh, n):
+        return [body for m, path, body in gh.requests if (m, path) == ("PUT", P + "pulls/%d/merge" % n)]
+
+    def test_a_merge_answered_405_is_sent_again_after_a_pause_and_a_read(self):
+        for lag in (1, 2, W.MERGE_SENDS - 1):
+            with self.subTest(lag=lag):
+                gh, wr, n, sha, pauses = self.lagging(lag)
+                root = gh.refs["brain/integration"]
+                merged = wr.merge(n, sha)
+                self.assertEqual(gh.refs["brain/integration"], merged)
+                self.assertEqual(gh.commits[merged]["parents"], [root, sha])
+                self.assertEqual(self.pull_calls(gh, n), ["GET", "PUT"] * (lag + 1))
+                self.assertEqual(pauses, [W.MERGE_RESEND_PAUSE_S] * lag)
+                self.assertEqual(self.merges(gh, n), [{"sha": sha, "merge_method": "merge"}] * (lag + 1))
+                self.assertEqual(wr.written.count("refs/heads/brain/integration"), 1)
+
+    def test_a_merge_answered_405_every_time_ends_after_the_last_send(self):
+        for lag in (W.MERGE_SENDS, W.MERGE_SENDS + 4):
+            with self.subTest(lag=lag):
+                gh, wr, n, sha, pauses = self.lagging(lag)
+                root = gh.refs["brain/integration"]
+                with self.assertRaises(W.ApiError) as ctx:
+                    wr.merge(n, sha)
+                self.assertEqual(ctx.exception.status, 405)
+                self.assertEqual(self.pull_calls(gh, n), ["GET", "PUT"] * W.MERGE_SENDS)
+                self.assertEqual(pauses, [W.MERGE_RESEND_PAUSE_S] * (W.MERGE_SENDS - 1))
+                self.assertEqual(gh.refs["brain/integration"], root)
+                self.assertNotIn("refs/heads/brain/integration", wr.written)
+        self.assertGreater(W.MERGE_SENDS, 1)
+        self.assertGreater(W.MERGE_RESEND_PAUSE_S, 0)
+
+    def test_a_merge_refused_with_another_status_is_not_sent_again(self):
+        for status in (403, 404, 409, 422, 500, 502, None):
+            with self.subTest(status=status):
+                gh, wr, n, sha, pauses = self.waiting()
+                gh.overrides[("PUT", P + "pulls/%d/merge" % n)] = (status, {"message": "no"})
+                with self.assertRaises(W.ApiError) as ctx:
+                    wr.merge(n, sha)
+                self.assertEqual(ctx.exception.status, status)
+                self.assertEqual(self.pull_calls(gh, n), ["GET", "PUT"])
+                self.assertEqual(pauses, [])
+
+    def test_a_merge_is_not_sent_again_to_a_pull_that_closed_or_moved(self):
+        def close(gh, n, sha):
+            gh.pulls[n]["state"] = "closed"
+
+        def move(gh, n, sha):
+            newer = gh.seed_commit("t9", [sha])
+            gh.checks.append({"head_sha": newer, "name": GATE, "conclusion": "success"})
+            gh.refs["brain/c/1"] = newer
+
+        for change in (close, move):
+            with self.subTest(change=change.__name__):
+                gh, wr, n, sha, pauses = self.lagging(1)
+                root = gh.refs["brain/integration"]
+                wr.pause = lambda seconds, gh=gh, n=n, sha=sha, change=change: change(gh, n, sha)
+                with self.assertRaises(W.ApiError) as ctx:
+                    wr.merge(n, sha)
+                self.assertEqual(ctx.exception.status, 405)  # the refusal GitHub gave, not a new one
+                self.assertEqual(self.pull_calls(gh, n), ["GET", "PUT", "GET"])
+                self.assertEqual(gh.refs["brain/integration"], root)
+
+    def test_a_pull_retargeted_to_main_before_a_merge_is_sent_again_is_refused(self):
+        gh, wr, n, sha, pauses = self.lagging(1)
+        root = gh.refs["main"]
+
+        def pause(seconds):
+            gh.pulls[n]["base"] = "main"
+        wr.pause = pause
+        with self.assertRaises(W.Refused) as ctx:
+            wr.merge(n, sha)
+        self.assertEqual(ctx.exception.reasons, ["ref_outside_brain"])
+        self.assertEqual(self.pull_calls(gh, n), ["GET", "PUT", "GET"])
+        self.assertEqual(gh.refs["main"], root)
+
+    def test_a_read_that_fails_before_a_merge_is_sent_again_raises_its_own_error(self):
+        gh, wr, n, sha, pauses = self.lagging(1)
+
+        def pause(seconds):
+            gh.overrides[("GET", P + "pulls/%d" % n)] = (502, {"message": "bad gateway"})
+        wr.pause = pause
+        with self.assertRaises(W.ApiError) as ctx:
+            wr.merge(n, sha)
+        self.assertEqual(ctx.exception.status, 502)
+        self.assertEqual(self.pull_calls(gh, n), ["GET", "PUT", "GET"])
 
     def test_the_pause_is_the_clock_unless_one_is_given(self):
         self.assertIs(W.Writer(REPO, W.Replay({})).pause, time.sleep)

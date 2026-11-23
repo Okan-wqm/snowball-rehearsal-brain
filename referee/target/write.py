@@ -61,7 +61,23 @@ a read whose body carries the key ``mergeable`` with ``null`` is repeated after 
 ``false``, or no ``mergeable`` key, the form of tohum/29i's recorded reads), or after the last read; it is pinned
 to the head sha of the last read, and every read passes the guard's pull rules again. Outside: what GitHub
 answers to a merge sent while ``mergeable`` is still ``null`` or is ``false`` (the ``PUT`` is sent and its answer
-is taken as any other, a non-2xx is an ``ApiError``), and a refused ``PUT`` is never sent again.
+is taken as any other).
+
+Merge send (``Writer.merge``). The target's ruleset wants the gate's check on the head, and the writer posts
+that check right before it merges (``land._checked_merge``: candidate, drill plant, revert). Observed live once
+(loop run 45268983995, the sentinel's revert pull on the rehearsal toy): the ``PUT`` was answered 405 "Required
+status check ... is expected" about two seconds after the pull was opened and the check posted; read afterwards,
+the pull was open and clean with the check ``success`` on its head, and three earlier reverts had merged the
+same way. Read as: GitHub's merge did not yet see the check it had just accepted (my reading of one event, not
+a documented rule). Rules, each with a test in ``test_write``: a ``PUT`` answered 405 is sent again after
+``MERGE_RESEND_PAUSE_S`` seconds and a new read of the pull, at most ``MERGE_SENDS`` sends in all; each send
+carries the same pinned sha; when that read shows the pull not open or its head off the pin, the 405 is raised
+and nothing more is sent; a read that fails raises its own error; every read passes the guard's pull rules
+again (a base outside ``brain/`` is ``Refused``); any other status is raised at once; after the last send the
+405 is raised as it came. Outside: why GitHub answered 405 is not read from its message (any 405 is sent again,
+also a missing check or a conflict, which then costs the pauses and ends in the same 405); both numbers are
+chosen, not measured (one event shows only that two seconds after the check were not enough once); a merge that
+GitHub did carry out while answering 405 would be read as "not open" and end in that 405.
 
 State commit (``commit_files``, caller ``ledger.append``, MF10): one direct commit on a ``brain/`` branch
 (``brain/state`` takes no pull request, tohum/01b) whose parent is the head the caller read its files at:
@@ -385,6 +401,8 @@ def revert_commit(commits: dict, head: str, merge: str) -> tuple[list[str], dict
 
 MERGE_READS = 10  # reads of a pull request before its merge is sent while GitHub answers mergeable: null
 MERGE_PAUSE_S = 1.0  # seconds between two of those reads
+MERGE_SENDS = 5  # sends of one merge while GitHub answers 405 (module docstring, "Merge send")
+MERGE_RESEND_PAUSE_S = 3.0  # seconds before a merge answered 405 is sent again
 
 
 class Writer:
@@ -521,7 +539,7 @@ class Writer:
     def merge(self, number: int, head_sha: str | None = None) -> str:
         """Read pull ``number``, then merge it pinned to the head sha read (and to ``head_sha`` when given);
         return the merge commit. A read that answers ``mergeable: null`` is repeated (module docstring, "Merge
-        read")."""
+        read"); a merge answered 405 is sent again, bounded (module docstring, "Merge send")."""
         data = self._call("GET", "pulls/%d" % number)
         reads = 1
         while isinstance(data, dict) and "mergeable" in data and data["mergeable"] is None and reads < MERGE_READS:
@@ -531,7 +549,21 @@ class Writer:
         pinned = self.guard.pulls[number]["head_sha"]
         if head_sha is not None and head_sha != pinned:
             raise Refused(["merge_head_moved"])
-        data = self._call("PUT", "pulls/%d/merge" % number, {"sha": pinned, "merge_method": "merge"})
+        sends = 1
+        while True:
+            try:
+                data = self._call("PUT", "pulls/%d/merge" % number, {"sha": pinned, "merge_method": "merge"})
+                break
+            except ApiError as exc:
+                if exc.status != 405 or sends >= MERGE_SENDS:
+                    raise
+                refused = exc
+            self.pause(MERGE_RESEND_PAUSE_S)
+            self._call("GET", "pulls/%d" % number)
+            now = self.guard.pulls[number]
+            if now["state"] != "open" or now["head_sha"] != pinned:
+                raise refused
+            sends += 1
         sha = data.get("sha") if isinstance(data, dict) else None
         if not isinstance(data, dict) or data.get("merged") is not True or not _sha(sha):
             raise ApiError(None, "merge response without merged true and a sha")
