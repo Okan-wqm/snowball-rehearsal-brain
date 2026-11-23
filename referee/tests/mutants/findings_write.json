@@ -267,7 +267,7 @@
    "old": "    out[\"state\"] = state\n    return out",
    "new": "    out[\"state\"] = state\n    out[\"fingerprint\"] = hashlib.sha256(state.encode()).hexdigest()\n    return out",
    "tests": [
-    "test_findings_write.Scored.test_two_runs_of_a_shifted_file_are_counted_once"
+    "test_findings_write.Scored.test_a_state_row_carries_its_finding_s_fingerprint"
    ]
   },
   {
