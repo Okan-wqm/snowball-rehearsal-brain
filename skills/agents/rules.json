@@ -28,8 +28,8 @@
   {
    "id": "earns",
    "check": "earns",
-   "says": "An agent stays while it catches: it is retired or redesigned when five sessions of its runs caught nothing (tohum/00e E692, condition 4), or when under the rules it raises more false alarms than it catches.",
-   "expects": "No agent with a run is retire_due or has more false_alarm than caught under the rules. An agent that is refutes it: its definition is rewritten or removed in the push that sees it, with a decision row naming the runs."
+   "says": "An agent stays while it catches and can have saved what it cost: it is retired or redesigned when five sessions of its runs caught nothing, or when after five sessions its least cost (what its runs cost, a floor where only a floor is known) is more than one median session for each finding it caught (tohum/00e E692, condition 4; cost_over_gain of tests/agent_run.py measure), or when under the rules it raises more false alarms than it catches.",
+   "expects": "No agent with a run is retire_due (by nothing caught or by cost_over_gain) or has more false_alarm than caught under the rules. An agent that is refutes it: its definition is rewritten or removed in the push that sees it, with a decision row naming the runs."
   },
   {
    "id": "improves",

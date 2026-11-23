@@ -39,7 +39,7 @@ for row in rows:
 """
 ZERO = {"runs": 0, "sessions": 0, "findings": 0, "caught": 0, "false_alarm": 0, "unjudged": 0, "carried": 0,
         "repeats": 0, "tokens": 0, "tokens_unknown": 0, "cost_usd_micros": 0, "cost_unknown": 0, "wall_ms": 0,
-        "caught_tokens_known": 0, "caught_cost_known": 0, "cost_floor_usd_micros": 0, "cost_floor_runs": 0}
+        "caught_tokens_known": 0, "cost_floor_usd_micros": 0, "cost_floor_runs": 0}
 
 
 NO_SESSION = {"session_cost_usd_micros": None, "session_costs": 0, "cost_over_gain": False}
@@ -577,7 +577,7 @@ class Measure(Base):
         got = A.measure(self.data, "one")
         fold = {"runs": 3, "sessions": 2, "findings": 5, "caught": 2, "false_alarm": 1, "unjudged": 1, "carried": 1,
                 "repeats": 1, "tokens": 3600, "tokens_unknown": 0, "cost_usd_micros": 0, "cost_unknown": 3,
-                "wall_ms": 90006, "caught_tokens_known": 2, "caught_cost_known": 0, "cost_floor_usd_micros": 0,
+                "wall_ms": 90006, "caught_tokens_known": 2, "cost_floor_usd_micros": 0,
                 "cost_floor_runs": 0}
         self.assertEqual(got, {"ok": True, "agent": "one", **fold, "before_rules": ZERO, "under_rules": fold,
                                **NO_SESSION, "retire_due": False})
@@ -764,11 +764,10 @@ class Measure(Base):
         self.assertEqual((got(), A.session_costs(self.data)), ((100, 2), [100, 300]))
         self.row("cost", SESSION % 200)
         self.assertEqual(got(), (200, 3))
-        self.row("cost", SESSION % 0)
-        self.assertEqual(got(), (100, 4))
         self.row("cost", SESSION % 250)
-        self.assertEqual(got(), (200, 5))
-        for kind, text in (("cost", SESSION % "unknown"), ("build", SESSION % 1), ("cost", SESSION % "1.5"),
+        self.assertEqual(got(), (200, 4))
+        for kind, text in (("cost", SESSION % "unknown"), ("cost", SESSION % 0), ("cost", SESSION % "00"),
+                           ("cost", SESSION % "01"), ("build", SESSION % 1), ("cost", SESSION % "1.5"),
                            ("cost", SESSION % "-1"), ("cost", "a " + SESSION % 1),
                            ("cost", (SESSION % 1).replace("T045525Z", "T04552Z")),
                            ("cost", (SESSION % 1).replace("exit 0, ", "")),
@@ -777,7 +776,7 @@ class Measure(Base):
                            ("cost", "cost_usd_micros 1, of the session"), ("cost", "a row of the test")):
             with self.subTest(kind=kind, text=text):
                 self.row(kind, text)
-                self.assertEqual(got(), (200, 5))
+                self.assertEqual(got(), (200, 4))
 
     def test_a_ledger_whose_line_is_no_row_has_no_session_costs(self):
         for data in (b"{", b"[]", b'{"kind": "cost"}', b'{"kind": "cost", "payload": 1}'):
@@ -883,7 +882,7 @@ class Cost(Base):
         run = self.at("2026-11-22T12:30:00Z", cost_usd_micros=None, not_measured="none shown")
         before = self.data
         got = self.cost(self.mirror({S1: [call(7, tool_use_id="toolu_other"), call()]}))
-        self.assertEqual(got, {"recorded": ["f3"], "unchanged": 0, "unpaired": {}})
+        self.assertEqual(got, {"kept": 0, "recorded": ["f3"], "unchanged": 0, "unpaired": {}})
         self.assertTrue(self.data.startswith(before))
         row, = self.rows(1)
         self.assertEqual((row["row_id"], row["kind"], row["derivation"], row["trust"], row["snapshot_id"], row["ts"]),
@@ -906,7 +905,7 @@ class Cost(Base):
         on = self.at("2026-11-22T14:00:00Z")
         mirror = self.mirror({S3: [call(tool_use_id="toolu_3")], S1: [call(tool_use_id="toolu_1")],
                               S2: [call(tool_use_id="toolu_2")]})
-        self.assertEqual(self.cost(mirror), {"recorded": ["f4", "f5"], "unchanged": 0, "unpaired": {}})
+        self.assertEqual(self.cost(mirror), {"kept": 0, "recorded": ["f4", "f5"], "unchanged": 0, "unpaired": {}})
         found = A.runs(self.data, "one")
         self.assertEqual([(found[r]["cost"]["stamp"], found[r]["cost"]["tool_use_id"]) for r in (between, on)],
                          [(S2, "toolu_2"), (S3, "toolu_3")])
@@ -917,12 +916,12 @@ class Cost(Base):
         now = self.at("2026-11-22T15:00:00Z")
         later = self.at("2026-11-23T09:00:00Z")
         got = self.cost(self.mirror({S1: [call(), call(3, tool_use_id="toolu_3")]}))
-        self.assertEqual(got, {"recorded": ["f6"], "unchanged": 0,
+        self.assertEqual(got, {"recorded": ["f6"], "unchanged": 0, "kept": 0,
                                "unpaired": {r: "session_not_in_mirror" for r in (early, now, later)}})
         self.assertEqual(A.runs(self.data, "one")[last]["cost"]["tool_use_id"], "toolu_3")
         got = self.cost(self.mirror({}))
-        self.assertEqual(got, {"recorded": [], "unchanged": 0,
-                               "unpaired": {r: "session_not_in_mirror" for r in (early, last, now, later)}})
+        self.assertEqual(got, {"recorded": [], "unchanged": 0, "kept": 1,
+                               "unpaired": {r: "session_not_in_mirror" for r in (early, now, later)}})
 
     def test_a_row_ts_that_is_no_time_of_the_form_has_no_session(self):
         now, sessions = A.mirror(self.mirror({S1: [call()]}))
@@ -943,16 +942,17 @@ class Cost(Base):
                         [call(subagent_type=None)], [call(subagent_type="one")]):
             with self.subTest(entries=entries):
                 self.assertEqual(self.cost(self.mirror({S1: entries})),
-                                 {"recorded": [], "unchanged": 0, "unpaired": {run: "no_call"}})
+                                 {"kept": 0, "recorded": [], "unchanged": 0, "unpaired": {run: "no_call"}})
         other = self.at("2026-11-22T12:31:00Z", wall_ms=1)
         got = self.cost(self.mirror({S1: [call(True), call(subagent_type="brain:two"), call(90000)],
                                      S2: [call(1)]}))
-        self.assertEqual(got, {"recorded": ["f4"], "unchanged": 0, "unpaired": {other: "no_call"}})
+        self.assertEqual(got, {"kept": 0, "recorded": ["f4"], "unchanged": 0, "unpaired": {other: "no_call"}})
 
     def test_a_run_before_the_rules_is_tied_by_wall_ms_whatever_the_type(self):
         old = self.old_run(run_file(old_finding(1)))
         entry = call(subagent_type="general-purpose", effort=None)
-        self.assertEqual(self.cost(self.mirror({S1: [entry]})), {"recorded": ["f3"], "unchanged": 0, "unpaired": {}})
+        self.assertEqual(self.cost(self.mirror({S1: [entry]})),
+                         {"kept": 0, "recorded": ["f3"], "unchanged": 0, "unpaired": {}})
         self.assertEqual(A.runs(self.data, "one")[old]["cost"], cost_fields(old, S1, entry))
         self.assertEqual(A.measure(self.data, "one")["before_rules"]["cost_usd_micros"], 500)
 
@@ -960,12 +960,13 @@ class Cost(Base):
         first = self.at("2026-11-22T12:30:00Z")
         apart = self.at("2026-11-22T12:31:00Z", wall_ms=4)
         mirror = self.mirror({S1: [call(), call(tool_use_id="toolu_again"), call(4, tool_use_id="toolu_4")]})
-        self.assertEqual(self.cost(mirror), {"recorded": ["f4"], "unchanged": 0, "unpaired": {first: "ambiguous"}})
+        self.assertEqual(self.cost(mirror),
+                         {"kept": 0, "recorded": ["f4"], "unchanged": 0, "unpaired": {first: "ambiguous"}})
         self.assertEqual(A.runs(self.data, "one")[apart]["cost"]["tool_use_id"], "toolu_4")
         second = self.at("2026-11-22T12:32:00Z")
         other = self.at("2026-11-22T13:32:00Z")
         got = self.cost(self.mirror({S1: [call(), call(4, tool_use_id="toolu_4")], S2: [call()]}))
-        self.assertEqual(got, {"recorded": ["f7"], "unchanged": 1,
+        self.assertEqual(got, {"recorded": ["f7"], "unchanged": 1, "kept": 0,
                                "unpaired": {first: "ambiguous", second: "ambiguous"}})
         self.assertEqual(A.runs(self.data, "one")[other]["cost"]["stamp"], S2)
 
@@ -974,12 +975,29 @@ class Cost(Base):
         mirror = self.mirror({S1: [unlogged()]})
         self.assertEqual(self.cost(mirror)["recorded"], ["f3"])
         before = self.data
-        self.assertEqual(self.cost(mirror), {"recorded": [], "unchanged": 1, "unpaired": {}})
+        self.assertEqual(self.cost(mirror), {"kept": 0, "recorded": [], "unchanged": 1, "unpaired": {}})
         self.assertEqual(self.data, before)
         self.assertEqual(A.runs(self.data, "one")[run]["cost_usd_micros"], None)
-        self.assertEqual(self.cost(self.mirror({S1: [call()]})), {"recorded": ["f4"], "unchanged": 0, "unpaired": {}})
+        self.assertEqual(self.cost(self.mirror({S1: [call()]})),
+                         {"kept": 0, "recorded": ["f4"], "unchanged": 0, "unpaired": {}})
         self.assertEqual(A.runs(self.data, "one")[run]["cost"], cost_fields(run, S1, call()))
         self.assertEqual(A.runs(self.data, "one")[run]["cost_usd_micros"], 500)
+
+    def test_a_costed_run_without_a_call_is_kept_and_only_a_run_with_no_cost_row_is_unpaired(self):
+        costed = self.at("2026-11-22T12:30:00Z")
+        twin = self.at("2026-11-22T12:31:00Z", wall_ms=2)
+        self.assertEqual(self.cost(self.mirror({S1: [call(), call(2, tool_use_id="toolu_2")]}))["recorded"],
+                         ["f4", "f5"])
+        bare = self.at("2026-11-22T12:32:00Z", wall_ms=3)
+        before = self.data
+        for mirror, why in (({}, "session_not_in_mirror"), ({S1: []}, "no_call"),
+                            ({S1: [call(), call(), call(2), call(2), call(3), call(3)]}, "ambiguous")):
+            with self.subTest(why=why):
+                self.assertEqual(self.cost(self.mirror(mirror)),
+                                 {"kept": 2, "recorded": [], "unchanged": 0, "unpaired": {bare: why}})
+                self.assertEqual(self.data, before)
+        self.assertEqual([A.runs(self.data, "one")[r]["cost"]["tool_use_id"] for r in (costed, twin)],
+                         ["toolu_01A", "toolu_2"])
 
     def test_the_fold_takes_a_runs_cost_from_its_last_cost_row_and_sums_the_floors_of_the_runs_left_unknown(self):
         none = dict(cost_usd_micros=None, not_measured="none shown")
@@ -990,8 +1008,8 @@ class Cost(Base):
         written = self.at("2026-11-22T12:05:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=5)
         old = self.old_run(run_file(old_finding(1, A.CAUGHT, "t"), wall_ms=6, **none))
         got = A.measure(self.data, "one")
-        self.assertEqual([got[k] for k in ("cost_usd_micros", "cost_unknown", "caught_cost_known",
-                                           "cost_floor_usd_micros", "cost_floor_runs")], [0, 6, 0, 0, 0])
+        self.assertEqual([got[k] for k in ("cost_usd_micros", "cost_unknown",
+                                           "cost_floor_usd_micros", "cost_floor_runs")], [0, 6, 0, 0])
         mirror = self.mirror({S1: [call(1, tool_use_id="toolu_1", cost_usd_micros=1000),
                                    unlogged(2, tool_use_id="toolu_2", cost_floor_usd_micros=30),
                                    unlogged(3, tool_use_id="toolu_3", cost_floor_usd_micros=None,
@@ -1000,15 +1018,15 @@ class Cost(Base):
                               S2: [unlogged(6, tool_use_id="toolu_6", cost_floor_usd_micros=200)]})
         self.assertEqual(self.cost(mirror)["recorded"], ["f%d" % n for n in range(8, 13)])
         got = A.measure(self.data, "one")
-        under = {"runs": 5, "cost_usd_micros": 1000, "cost_unknown": 4, "caught_cost_known": 1,
+        under = {"runs": 5, "cost_usd_micros": 1000, "cost_unknown": 4,
                  "cost_floor_usd_micros": 37, "cost_floor_runs": 2}
         self.assertEqual({k: got["under_rules"][k] for k in under}, under)
-        before = {"runs": 1, "cost_usd_micros": 0, "cost_unknown": 1, "caught_cost_known": 0,
+        before = {"runs": 1, "cost_usd_micros": 0, "cost_unknown": 1,
                   "cost_floor_usd_micros": 200, "cost_floor_runs": 1}
         self.assertEqual({k: got["before_rules"][k] for k in before}, before)
-        self.assertEqual([got[k] for k in ("cost_usd_micros", "cost_unknown", "caught_cost_known",
+        self.assertEqual([got[k] for k in ("cost_usd_micros", "cost_unknown",
                                            "cost_floor_usd_micros", "cost_floor_runs", "caught", "tokens")],
-                         [1000, 5, 1, 237, 3, 6, 7200])
+                         [1000, 5, 237, 3, 6, 7200])
         found = A.runs(self.data, "one")
         self.assertEqual((found[known]["cost_usd_micros"], found[floor]["cost_usd_micros"],
                           found[written]["cost_usd_micros"], found[old]["cost"]["stamp"]), (1000, None, None, S2))
@@ -1083,7 +1101,7 @@ class Cost(Base):
                 self.cost(mirror)
             self.assertEqual(self.data, before)
         got = self.cost(self.mirror({S1: [call(1, tool_use_id="toolu_1"), {"wall_ms": 5}, {}]}))
-        self.assertEqual(got, {"recorded": ["f4"], "unchanged": 0, "unpaired": {"f3": "no_call"}})
+        self.assertEqual(got, {"kept": 0, "recorded": ["f4"], "unchanged": 0, "unpaired": {"f3": "no_call"}})
 
     def test_each_break_of_the_mirrors_form_is_a_fault(self):
         self.at("2026-11-22T12:30:00Z")
@@ -1127,7 +1145,7 @@ class Cost(Base):
         row, = self.rows(len(self.data.splitlines()) - len(before.splitlines()))
         self.assertEqual(json.loads(row["payload"]["summary"][len(A.FORM2):])["tool_use_id"], "toolu_1")
         mirror = self.mirror({S1: [call(1, tool_use_id="toolu_1"), call()]})
-        self.assertEqual(self.cost(mirror), {"recorded": ["f5"], "unchanged": 1, "unpaired": {}})
+        self.assertEqual(self.cost(mirror), {"kept": 0, "recorded": ["f5"], "unchanged": 1, "unpaired": {}})
 
     def test_a_ledger_that_cannot_be_read_takes_no_cost_row(self):
         mirror = self.mirror({S1: [call()]})
@@ -1144,7 +1162,7 @@ class Cost(Base):
                  "2026-11-22T12:30:00Z", F.spec_kinds(), self.root)
         mine = self.at("2026-11-22T12:31:00Z")
         mirror = self.mirror({S1: [call(subagent_type="brain:two", tool_use_id="toolu_2"), call()]})
-        self.assertEqual(self.cost(mirror), {"recorded": ["f4"], "unchanged": 0, "unpaired": {}})
+        self.assertEqual(self.cost(mirror), {"kept": 0, "recorded": ["f4"], "unchanged": 0, "unpaired": {}})
         self.assertEqual(A.runs(self.data, "one")[mine]["cost"]["tool_use_id"], "toolu_01A")
         self.assertEqual([r["cost"] for r in A.runs(self.data, "two").values()], [None])
         got = A.cost("two", mirror, self.ledger, SNAPSHOT, TS, F.spec_kinds())
@@ -1191,12 +1209,12 @@ class Main(Base):
         mirror = self.put("mirror.json", json.dumps(doc).encode())
         argv = ("cost", "--agent", "one", "--snapshot", "b" * 40, "--ledger", self.ledger)
         code, out = self.main(*argv, "--mirror", mirror, "--ts", "2026-11-23T08:00:00Z")
-        self.assertEqual((code, out), (0, {"ok": True, "recorded": ["f3"], "unchanged": 0, "unpaired": {}}))
+        self.assertEqual((code, out), (0, {"kept": 0, "ok": True, "recorded": ["f3"], "unchanged": 0, "unpaired": {}}))
         with open(self.ledger, "rb") as f:
             row = json.loads(f.read().splitlines()[-1])
         self.assertEqual((row["snapshot_id"], row["ts"]), ("b" * 40, "2026-11-23T08:00:00Z"))
         code, out = self.main(*argv, "--mirror", mirror)
-        self.assertEqual((code, out), (0, {"ok": True, "recorded": [], "unchanged": 1, "unpaired": {}}))
+        self.assertEqual((code, out), (0, {"kept": 0, "ok": True, "recorded": [], "unchanged": 1, "unpaired": {}}))
         code, out = self.main("measure", "--agent", "one", "--ledger", self.ledger)
         self.assertEqual((code, out["cost_usd_micros"], out["cost_unknown"]), (0, 500, 0))
         self.assertEqual(self.main(*argv, "--mirror", self.put("mirror.json", b"{}")),
@@ -1285,13 +1303,15 @@ class Brain(unittest.TestCase):
         self.assertIn("`cost_over_gain`", text)
         self.assertNotIn("still read by hand", text)
 
-    def test_every_cost_row_of_this_brains_ledger_states_its_sessions_cost_or_says_unknown(self):
+    def test_every_cost_row_of_this_brains_ledger_states_its_sessions_cost_or_says_unknown_or_0(self):
         with open(os.path.join(ROOT, A.LEDGER), "rb") as f:
             data = f.read()
         rows = [json.loads(line) for line in data.splitlines()]
         texts = [row["payload"]["summary"] for row in rows if row["kind"] == "cost"]
         unknown = [text for text in texts if ", cost_usd_micros unknown, " in text.partition(" per model:")[0]]
-        self.assertEqual(len(A.session_costs(data)), len(texts) - len(unknown))
+        free = [text for text in texts if ", cost_usd_micros 0, " in text.partition(" per model:")[0]]
+        self.assertEqual(len(A.session_costs(data)), len(texts) - len(unknown) - len(free))
+        self.assertGreater(len(free), 0)
         self.assertGreater(len(texts), len(unknown))
 
     def test_the_prefix_of_this_brains_agent_types_is_written_once(self):

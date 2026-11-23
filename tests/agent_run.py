@@ -93,15 +93,16 @@ The rules, each bound by ``tests/test_agent_run.py``:
    any such row counts as one more); ``findings`` and the count of each verdict; ``repeats``, the findings that
    carry a ``repeat_of``; the sums ``tokens``, ``cost_usd_micros`` and ``wall_ms`` over the runs that carry a
    count (the cost: from a cost row), with ``tokens_unknown`` and ``cost_unknown`` the runs that carry null,
-   and ``caught_tokens_known`` and
-   ``caught_cost_known`` the ``caught`` findings of the runs whose tokens, and whose cost, are a count;
+   and ``caught_tokens_known`` the ``caught`` findings of the runs whose tokens are a count;
    ``cost_floor_usd_micros``, the sum of ``cost_floor_usd_micros`` over the runs whose cost is null and whose
    cost row carries a floor that is a count, and ``cost_floor_runs``, how many those are; ``before_rules`` and
    ``under_rules``, the same counts and sums over the runs of the form ``agent_run/1`` and of ``agent_run/2``
    alone; ``session_cost_usd_micros``, the lower median of what the ledger's ``cost`` rows say a session cost
    (a row of the kind ``cost`` whose summary begins ``session <stamp>: exit <..>, <..> min, turns <..>,
-   cost_usd_micros <count>,``, the launcher's form, tohum/26o; a row that says anything else there, ``unknown``
-   too, states none), or null when none states one, and ``session_costs``, how many do; ``cost_over_gain``:
+   cost_usd_micros <count>,``, the launcher's form, tohum/26o, with a count above 0; a row that says anything
+   else there, ``unknown`` or ``0`` too, states none: a launch that cost nothing called no model, as the
+   launches against a used-up quota do, which tohum/26o counts an outage and no session), or null when none
+   states one, and ``session_costs``, how many do; ``cost_over_gain``:
    true when a session's cost is known and ``cost_usd_micros`` plus ``cost_floor_usd_micros`` is more than
    ``caught`` times it; and ``retire_due``: true when ``sessions`` is at least ``RETIRE_AFTER`` and ``caught``
    is 0 or ``cost_over_gain`` is true (E692's fourth condition, tohum/00e: a rejected push costs about a
@@ -133,8 +134,10 @@ The rules, each bound by ``tests/test_agent_run.py``:
      an object is ``mirror_unreadable``, and then no row is written; an entry that is no run's call is not
      judged. A run whose last cost row already is that
      object gets none (``unchanged``), so a second run of the command writes nothing.
-   - It prints ``recorded`` (the new rows' ids), ``unchanged`` (a count) and ``unpaired`` (the reason of each
-     run without a call, by row id). Each row is appended alone: a fault of the writer stops the command and the
+   - It prints ``recorded`` (the new rows' ids), ``unchanged`` (a count), ``unpaired`` (the reason of each
+     run that has no call and no cost row, by row id) and ``kept`` (a count: the runs without a call whose
+     earlier cost row stands, as every costed run is once its session has left the mirror; their reasons are
+     not printed). Each row is appended alone: a fault of the writer stops the command and the
      rows appended before it stay.
 8. One JSON line; exit 0, or 2 with ``{"ok": false, "reason"}`` on a fault.
 
@@ -156,7 +159,7 @@ when the
 agent cannot have earned its cost and says nothing of an agent below that line, since what a ``caught`` finding
 saved is measured nowhere (not every one would have been a rejection); the cost it weighs leaves out every run
 with neither a cost nor a floor, the wall time is not weighed, and a session's cost is the median over every
-session of the ledger, of any length and price. The capsule's loader
+session of the ledger that cost anything, of any length and price. The capsule's loader
 (``brain_defs.py``) is the judge of what a session loads; rules 1 and 2 are tohum/24a's sentence and this
 brain's narrower choice of models, and a definition that passes here can still be dropped there (its limits on
 length and its name pattern are not copied).
@@ -194,7 +197,7 @@ FORM2 = "agent_run/2 "
 TAG = "agent_run:"
 RETIRE_AFTER = 5
 SESSION_COST = re.compile(r"session \d{8}T\d{6}Z: exit [^,]+, [^,]+ min, turns [^,]+, "
-                          r"cost_usd_micros (\d+),")
+                          r"cost_usd_micros ([1-9]\d*),")
 FENCE = "---"
 PACKET_KEYS = ("agent", "model", "tools", "definition_sha256", "base", "head", "diff_sha256", "bytes", "files")
 RUN_KEYS = ("invoked_as", "model_served", "effort", "tokens", "cost_usd_micros", "wall_ms", "not_measured", "findings")
@@ -553,7 +556,9 @@ def cost(name: str, path: str, ledger: str, snapshot: str, ts: str, kinds: froze
         if found[row_id]["cost"] != fields:
             recorded.append(_write(name, FORM2 + json.dumps(fields, ensure_ascii=False, sort_keys=True), ledger,
                                    _read(ledger), snapshot, ts, kinds))
-    return {"recorded": recorded, "unchanged": len(paired) - len(recorded), "unpaired": unpaired}
+    left = {row_id: why for row_id, why in unpaired.items() if found[row_id]["cost"] is None}
+    return {"recorded": recorded, "unchanged": len(paired) - len(recorded), "unpaired": left,
+            "kept": len(unpaired) - len(left)}
 
 
 def read_packet(directory: str) -> dict:
@@ -702,8 +707,6 @@ def fold(found: list[dict]) -> dict:
                                        for f in run["findings"]),
             "cost_usd_micros": sum(known["cost_usd_micros"]),
             "cost_unknown": len(found) - len(known["cost_usd_micros"]),
-            "caught_cost_known": sum(f["verdict"] == CAUGHT for run in found if run["cost_usd_micros"] is not None
-                                     for f in run["findings"]),
             "cost_floor_usd_micros": sum(floors), "cost_floor_runs": len(floors),
             "wall_ms": sum(run["wall_ms"] for run in found)}
 

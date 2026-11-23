@@ -488,6 +488,18 @@ class Brain(unittest.TestCase):
             self.assertIn(r["state"], (R.HELD, R.REFUTED, R.NOT_DUE), r)
         self.assertEqual({r["check"]: r["state"] for r in got}["definitions"], R.HELD)
 
+    def test_the_rule_earns_and_the_skill_name_each_way_its_check_refutes(self):
+        rule = {r["check"]: r for r in R.load(ROOT)}["earns"]
+        with open(os.path.join(ROOT, "skills", "agents", "SKILL.md"), encoding="utf-8") as f:
+            refuted = " ".join(f.read().split()).partition("When a rule is refuted: `earns` (")[2].partition(")")[0]
+        for text in (rule["says"], rule["expects"], refuted):
+            with self.subTest(text=text):
+                self.assertIn("cost_over_gain", text)
+        for said in ("five sessions of its runs caught nothing", "more false alarms than it catches"):
+            self.assertIn(said, rule["says"])
+        for said in ("five sessions with nothing caught", "more false alarms than catches"):
+            self.assertIn(said, refuted)
+
     def test_the_skill_names_every_rule_and_the_commands_of_a_run(self):
         with open(os.path.join(ROOT, "skills", "agents", "SKILL.md"), "rb") as f:
             fields, body = A.front_matter(f.read(), A.SKILL_KEYS)

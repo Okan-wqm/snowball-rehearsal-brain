@@ -1035,6 +1035,33 @@
    "tests": [
     "test_agent_run.py"
    ]
+  },
+  {
+   "id": "zero_cost_launch_counted_a_session",
+   "file": "tests/agent_run.py",
+   "old": "r\"cost_usd_micros ([1-9]\\d*),\")",
+   "new": "r\"cost_usd_micros (\\d+),\")",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "costed_run_without_a_call_listed_unpaired",
+   "file": "tests/agent_run.py",
+   "old": "if found[row_id][\"cost\"] is None}",
+   "new": "if True}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "kept_runs_not_counted",
+   "file": "tests/agent_run.py",
+   "old": "\"kept\": len(unpaired) - len(left)}",
+   "new": "\"kept\": 0}",
+   "tests": [
+    "test_agent_run.py"
+   ]
   }
  ]
 }

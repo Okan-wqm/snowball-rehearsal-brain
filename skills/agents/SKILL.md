@@ -54,8 +54,9 @@ It is loaded by the session after the push that adds it, so its first run is in 
 would write or run commands is not added under these rules: the rule is rewritten first, with the check its
 output then needs.
 
-When a rule is refuted: `earns` (five sessions with nothing caught, or more false alarms than catches under the
-rules) rewrites or removes the definition in that push; `remembers` (one finding in ten or more is a repeat) and
+When a rule is refuted: `earns` (five sessions with nothing caught, or five sessions and a cost over what the
+agent can have saved, `cost_over_gain`, or more false alarms than catches under the rules) rewrites or removes
+the definition in that push; `remembers` (one finding in ten or more is a repeat) and
 `improves` (after five sessions under the rules, neither more caught findings a run nor fewer tokens per
 caught finding than before them) are recorded in a `decision` row with the measure's output,
 and the rule is designed again: its `says`, its `expects` or its check changes in `skills/agents/rules.json`,
