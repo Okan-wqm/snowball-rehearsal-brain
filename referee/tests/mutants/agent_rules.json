@@ -273,7 +273,7 @@
   },
   {
    "id": "call_of_any_type",
-   "file": "tests/agent_rules.py",
+   "file": "tests/agent_run.py",
    "old": "BRAIN = \"brain:\"",
    "new": "BRAIN = \"\"",
    "tests": [
