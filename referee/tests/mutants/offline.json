@@ -256,15 +256,6 @@
    ]
   },
   {
-   "id": "scorer_unguarded",
-   "file": "loop/job.py",
-   "old": "        return OF.run(lambda: HS.report(FINDINGS, cases[\"cases\"], art.snapshot,\n                                        lambda path: D._read_regular(tree, path),\n                                        census=CC.rules(art.target.get(\"kind\")), **params))",
-   "new": "        return (lambda: HS.report(FINDINGS, cases[\"cases\"], art.snapshot,\n                                        lambda path: D._read_regular(tree, path),\n                                        census=CC.rules(art.target.get(\"kind\")), **params))()",
-   "tests": [
-    "test_offline.Live.test_the_scorer_going_online_stops_the_genesis"
-   ]
-  },
-  {
    "id": "gate_unguarded",
    "file": "loop/job.py",
    "old": "        got = OF.run(lambda: PR.gate(_state(art), _expectations(art), drill, imports))",
@@ -289,15 +280,6 @@
    "new": "dict(RD.judge(ledger, answer), key=answer)",
    "tests": [
     "test_offline.Live.test_the_drills_judge_going_online_stops_the_cycle"
-   ]
-  },
-  {
-   "id": "scorer_after_the_write",
-   "file": "loop/job.py",
-   "old": "        harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten\n        written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)\n",
-   "new": "        written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)\n        harness = yaz_harness(art, tree, cases)\n",
-   "tests": [
-    "test_offline.Live.test_the_scorer_going_online_stops_the_genesis"
    ]
   },
   {

@@ -30,7 +30,7 @@
   {
    "id": "harness_report_not_on_the_line",
    "file": "loop/job.py",
-   "old": "cases=cases, harness=harness)\n",
+   "old": "cases=cases, harness=dict(NO_HUNTER_RUN))\n",
    "new": "cases=cases, harness={})\n",
    "tests": [
     "test_state_root.py"

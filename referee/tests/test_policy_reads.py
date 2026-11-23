@@ -34,6 +34,7 @@ from fractions import Fraction  # noqa: E402
 from dispatcher import llm_call as L  # noqa: E402
 from gozcu import evaluate as G  # noqa: E402
 from harness import params as HP  # noqa: E402
+from harness import score as HS  # noqa: E402
 from policy import reads as P  # noqa: E402
 from profile import derive as D  # noqa: E402
 from profile import unit_verify as U  # noqa: E402
@@ -512,7 +513,7 @@ class Harness(unittest.TestCase):
 
     def test_score_reads_its_three_paths_and_nothing_else(self):
         log: list = []
-        got = HP.score(wrap(sectioned(), (), log))
+        got = HS.params(wrap(sectioned(), (), log))
         self.assertEqual(got, {"alpha": Fraction(1, 5), "window": 16, "ref_max_lines": 31})
         self.assertIs(type(got["alpha"]), Fraction)
         self.assertEqual(off_paths(log), [])
@@ -587,8 +588,8 @@ class Harness(unittest.TestCase):
                            ("0.100000", Fraction(1, 10))):
             for path in HP.FRACTIONS:
                 self.assertEqual(HP.fraction(put({}, path, text), path), want)
-            self.assertEqual(HP.alpha({"constitutional": {"confidence_level": text}}), 1 - want)
-        self.assertEqual(HP.alpha({"constitutional": {"confidence_level": "0.900000"}}), Fraction(1, 10))
+            self.assertEqual(HS.alpha_of({"constitutional": {"confidence_level": text}}), 1 - want)
+        self.assertEqual(HS.alpha_of({"constitutional": {"confidence_level": "0.900000"}}), Fraction(1, 10))
 
     def test_no_object_on_the_way_is_invalid(self):
         for policy in ([], None, {"constitutional": []}, {"constitutional": {"stage_params": 5}}):
@@ -606,7 +607,7 @@ class Harness(unittest.TestCase):
         policy["constitutional"]["stage_params"].update(census_min_groups=0, evidence_ref_max_lines="30")
         del policy["constitutional"]["stage_params"]["match_window_lines"]
         with self.assertRaises(HP.Invalid) as ctx:
-            HP.score(policy)
+            HS.params(policy)
         self.assertEqual(ctx.exception.reasons, ["policy_invalid:constitutional.confidence_level",
                                                  "policy_invalid:constitutional.stage_params.match_window_lines",
                                                  "policy_invalid:constitutional.stage_params.evidence_ref_max_lines"])

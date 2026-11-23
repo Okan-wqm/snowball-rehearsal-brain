@@ -21,14 +21,11 @@ Rules (each bound by a test in ``tests/test_policy_reads.py``, class ``Harness``
 3. ``check(policy)``: rule 2 on every path of ``JUDGED``, in that order; the reasons of all that fail (``[]``
    when none). ``usable(policy)`` raises ``Invalid`` with them. This is the whole policy's judgement the loop
    makes before it writes (``loop.cek.assemble`` and ``loop.job.yaz_policy``).
-4. ``alpha(policy)`` is ``1 - fraction`` of ``constitutional.confidence_level``, exact (alpha of ``"0.900000"``
-   is 1/10: tohum/19, one-sided). ``score(policy)``: the three keyword arguments ``harness.score.report`` takes
-   from the policy: ``alpha``, ``window`` (``match_window_lines``) and ``ref_max_lines``
-   (``evidence_ref_max_lines``). ``Invalid`` carries every reason that holds, in that order.
-5. ``planted_max_cases(policy)``: rule 2 on its path; ``snapshot.make``'s ``max_cases``.
+4. ``planted_max_cases(policy)``: rule 2 on its path; ``snapshot.make``'s ``max_cases``.
 
-The readers: ``loop.job.yaz_harness`` (``score``), ``loop.cek.assemble`` (``usable``, ``planted_max_cases``),
-``loop.job.yaz_policy`` (``check``) and ``gozcu.evaluate.thresholds`` (``value`` on its thirteen paths: one rule
+The readers: ``loop.cek.assemble`` (``usable``, ``planted_max_cases``), ``loop.job.yaz_policy`` (``check``),
+``harness.score.params`` (``fraction`` and ``count`` on the scorer's three paths: the scorer's arguments from a
+policy live with the scorer, which is off the live path today, tohum/26q (6)) and ``gozcu.evaluate.thresholds`` (``value`` on its thirteen paths: one rule
 for a count and for a fraction of the policy, not a second copy there).
 
 Outside, stated: the word for an absent required path is ``policy_invalid:<path>``, the one reason the seed gives
@@ -47,7 +44,6 @@ from typing import Any
 
 from policy import reads as R
 
-SCORE = (("window", R.MATCH_WINDOW_LINES), ("ref_max_lines", R.EVIDENCE_REF_MAX_LINES))
 JUDGED = R.HARNESS_PATHS + R.GOZCU_PATHS
 FRACTIONS = (R.CONFIDENCE_LEVEL, R.REGRESSION_REVERT_RATE, R.DRIFT_BOUND, R.SEAT_SIMILARITY)
 _FRACTION = re.compile(r"0\.[0-9]{6}", re.ASCII)
@@ -121,25 +117,6 @@ def usable(policy: Any) -> None:
         raise Invalid(reasons)
 
 
-def alpha(policy: Any) -> Fraction:
-    """``1 - confidence_level``, exact (rule 4)."""
-    return 1 - fraction(policy, R.CONFIDENCE_LEVEL)
-
-
-def score(policy: Any) -> dict[str, Any]:
-    """``{alpha, window, ref_max_lines}`` for ``harness.score.report`` (rule 4)."""
-    out: dict[str, Any] = {}
-    reasons: list[str] = []
-    for name, read in (("alpha", alpha),) + tuple((n, lambda p, path=path: count(p, path)) for n, path in SCORE):
-        try:
-            out[name] = read(policy)
-        except Invalid as exc:
-            reasons += exc.reasons
-    if reasons:
-        raise Invalid(reasons)
-    return out
-
-
 def planted_max_cases(policy: Any) -> int:
-    """``snapshot.make``'s ``max_cases`` (rule 5)."""
+    """``snapshot.make``'s ``max_cases`` (rule 4)."""
     return count(policy, R.PLANTED_MAX_CASES)

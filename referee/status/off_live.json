@@ -1,4 +1,16 @@
 {
+  "cases.census": {
+    "kind": "unwired",
+    "why": "a target kind's census rule set, the scorer's denominator (tohum/26q (10)); its one caller in the loop was the report loop.job no longer scores (see harness.score); run by tests/test_cases.py and tests/test_score.py"
+  },
+  "harness.score": {
+    "kind": "unwired",
+    "why": "the scorer of P1 MF4, caller removed by tohum/26q (6): no cycle has a hunter run on its cases' snapshot, so no harness report is scored and loop.job calls no scorer; the caller comes back with the first hunter (lint.discover, 26q (4)); run by tests 1, 6, 7, 12 and 28 (tests/test_score.py) and by the match vectors' two-file command"
+  },
+  "harness.stats": {
+    "kind": "unwired",
+    "why": "read by harness.score only, which is off the live path (see it); run by test 28 (tests/test_score.py) and by the stats vectors' command"
+  },
   "ledger.founder": {
     "kind": "session_tool",
     "why": "the founder ledger's rules and its append command, run by a session and by test 14 (tests/test_founder_ledger.py); the loop never writes founder rows"

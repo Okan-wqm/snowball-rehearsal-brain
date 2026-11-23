@@ -681,26 +681,31 @@ class Files(unittest.TestCase):
 
 
 class Scored(unittest.TestCase):
-    """The writer's rows under ``harness.score.sift``: one identity, counted once."""
+    """The writer's fingerprint under ``harness.score.sift``: one identity, counted once. The rows are two runs'
+    proposals, never the register's: ``findings.jsonl`` is no scorer input (tohum/26q (3); refused in
+    ``test_score``, "the register's rows as a list")."""
 
     def test_two_runs_of_a_shifted_file_are_counted_once(self):
         first = observe(b"", [lint(2), lint(4), named(1)])
         second = observe(first.content, [lint(4), lint(6), named(3), lint(1)], SHIFTED)
         self.assertEqual(len(second.rows), 1)                      # only "// header" is new
         rows = stored(second.content)
-        accepted, refused, reobserved, _ = HS.sift(rows)
-        self.assertEqual((len(accepted), refused, reobserved), (4, [], 0))
         # the two runs' proposals, each given the writer's fingerprint: the scorer folds the second run
         runs = [dict(f, fingerprint=W.fingerprint(f, reader(tree)))
                 for tree, run in ((TREE, [lint(2), lint(4), named(1)]), (SHIFTED, [lint(4), lint(6), named(3)]))
                 for f in run]
-        accepted, refused, reobserved, _ = HS.sift(copy.deepcopy(runs))
+        accepted, refused, reobserved = HS.sift(copy.deepcopy(runs))
         self.assertEqual((len(accepted), refused, reobserved), (3, [], 3))
         self.assertEqual([f["fingerprint"] for f in accepted], [row["fingerprint"] for row in rows[:3]])
-        # a state row of the same finding is the same identity to the scorer, never a conflict
-        fixed = W.decide(second.content, second.content, b"", b"", [{"fingerprint": rows[0]["fingerprint"], "reasons": []}], BASE)
-        accepted, refused, reobserved, _ = HS.sift(stored(fixed.findings))
-        self.assertEqual((len(accepted), refused, reobserved), (4, [], 1))
+
+    def test_a_state_row_carries_its_finding_s_fingerprint(self):
+        made = observe(b"", [lint(2), lint(4)])
+        rows = stored(made.content)
+        fixed = W.decide(made.content, made.content, b"", b"", [{"fingerprint": rows[0]["fingerprint"], "reasons": []}], BASE)
+        after = stored(fixed.findings)
+        self.assertEqual(len(after), 3)
+        self.assertEqual((after[2]["fingerprint"], after[2]["finding_id"], after[2]["state"]),
+                         (rows[0]["fingerprint"], rows[0]["finding_id"], "fixed"))
 
 
 if __name__ == "__main__":

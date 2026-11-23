@@ -498,8 +498,8 @@
   {
    "id": "job_yaz_builds_no_case",
    "file": "loop/job.py",
-   "old": "    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read)",
-   "new": "    return CB.build(art.heads[B.INTEGRATION], {}, index, read)",
+   "old": "    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read,\n",
+   "new": "    return CB.build(art.heads[B.INTEGRATION], {}, index, read,\n",
    "tests": [
     "test_cases.LivePath"
    ]
@@ -507,8 +507,8 @@
   {
    "id": "job_yaz_base_sha_is_the_state_s",
    "file": "loop/job.py",
-   "old": "    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read)",
-   "new": "    return CB.build(art.heads[B.STATE], art.mutations, index, read)",
+   "old": "    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read,\n",
+   "new": "    return CB.build(art.heads[B.STATE], art.mutations, index, read,\n",
    "tests": [
     "test_cases.LivePath"
    ]
@@ -773,6 +773,69 @@
    "new": "=.*;)[ \\t]*$",
    "tests": [
     "test_cases.Census"
+   ]
+  },
+  {
+   "id": "twin_not_compared",
+   "file": "cases/build.py",
+   "old": "            if fingerprint(other, lambda asked: mutated if asked == path else None) == planted:\n",
+   "new": "            if False:\n",
+   "tests": [
+    "test_cases.Twins"
+   ]
+  },
+  {
+   "id": "twin_looked_for_on_the_planted_line_too",
+   "file": "cases/build.py",
+   "old": "        if v[\"path\"] == path and v[\"line\"] != line:\n",
+   "new": "        if v[\"path\"] == path:\n",
+   "tests": [
+    "test_cases.py"
+   ]
+  },
+  {
+   "id": "twin_looked_for_in_other_files",
+   "file": "cases/build.py",
+   "old": "        if v[\"path\"] == path and v[\"line\"] != line:\n",
+   "new": "        if v[\"line\"] != line:\n",
+   "tests": [
+    "test_cases.Twins"
+   ]
+  },
+  {
+   "id": "twin_unmade_fingerprint_passes",
+   "file": "cases/build.py",
+   "old": "    if planted is None:\n        return [\"fingerprint_unmade\"]\n",
+   "new": "    if planted is None:\n        return []\n",
+   "tests": [
+    "test_cases.Twins"
+   ]
+  },
+  {
+   "id": "twin_fingerprint_on_the_base_file",
+   "file": "cases/build.py",
+   "old": "fingerprint(oracle, lambda asked: mutated if asked == path else None)",
+   "new": "fingerprint(oracle, lambda asked: old if asked == path else None)",
+   "tests": [
+    "test_cases.Twins"
+   ]
+  },
+  {
+   "id": "twin_not_asked",
+   "file": "cases/build.py",
+   "old": "    reasons = _shared(block, oracle, mut_run, source, fingerprint)\n",
+   "new": "    reasons = []\n",
+   "tests": [
+    "test_cases.Twins"
+   ]
+  },
+  {
+   "id": "job_yaz_fingerprint_not_the_writer_s",
+   "file": "loop/job.py",
+   "old": "lambda path: D._read_regular(tree, path), FW.fingerprint)",
+   "new": "lambda path: D._read_regular(tree, path), lambda finding, read: \"\")",
+   "tests": [
+    "test_cases.LivePath"
    ]
   }
  ]

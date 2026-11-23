@@ -4,7 +4,7 @@
 tree; ``Guard`` binds ``run`` (each refused event with the real call that raises it, the swallowed event, the nested
 run, the guard idle outside); ``Command`` the command's exits; ``Live`` the loop's use of both on the rehearsal's
 world (``test_rehearsal.Flow``): a harness that imports the client refuses the job before ``pulled`` or anything of a target is read,
-and each of the four judgements, made to open a socket and go on, stops its target with ``harness_online`` and
+and each of the three judgements, made to open a socket and go on, stops its target with ``harness_online`` and
 leaves ``brain/state`` where it was (each in the first run of the rehearsal that makes that judgement).
 ``CostData`` binds the move that made the brain's tree pass (the cost section's data is ``ledger.cost``'s, the
 client only names it).
@@ -461,9 +461,6 @@ class Live(Trees):
         self.assertEqual(stopped, {"job": "yaz", "target": "t1", "reason": "harness_online",
                                    "reasons": ["event:socket.__new__"]})
         self.assertEqual(flow.state_heads[-1], flow.state_heads[-2] if run > 1 else None)
-
-    def test_the_scorer_going_online_stops_the_genesis(self):
-        self.judged_online(R.J.HS, "report", 1)
 
     def test_the_copys_gate_going_online_stops_the_cycle(self):
         self.judged_online(R.PR, "gate", 2)

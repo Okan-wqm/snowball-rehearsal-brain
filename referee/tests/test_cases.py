@@ -41,9 +41,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from cases import build as CB  # noqa: E402
 from cases import census as CC  # noqa: E402
+from findings import write as FW  # noqa: E402
 from gate import diffguard  # noqa: E402
 from loop import cek as C  # noqa: E402
 from loop import pulled as P  # noqa: E402
+from profile import derive as D  # noqa: E402
 from runner import kos as K  # noqa: E402
 from runner import lint_record as R  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
@@ -476,9 +478,12 @@ class World(TK.Base):
         full = os.path.join(self.out, path)
         return TK.read(full) if os.path.isfile(full) else None
 
+    def source(self, path: str) -> bytes | None:
+        return D._read_regular(self.tree, path)
+
     def build(self, mutations: dict, index=None, read=None) -> dict:
         index = json.loads(self.read("index.json")) if index is None else index
-        return CB.build(SEED, mutations, index, read or self.read)
+        return CB.build(SEED, mutations, index, read or self.read, self.source, FW.fingerprint)
 
 
 class Oracle(World):
@@ -679,7 +684,7 @@ class Built(World):
         index = {"base_run_sha256": sha(run()), "mutations": {"x": {"verdict": "verified", "reasons": [],
                                                                      "run_sha256": sha(run(v("no-var", 1, "a.js")))}}}
         files = {"base.jsonl": run(), "m/x/mut.jsonl": run(v("no-var", 1, "a.js"))}
-        (case,) = CB.build(SEED, {"x": m}, index, files.get)["cases"]
+        (case,) = CB.build(SEED, {"x": m}, index, files.get, {"a.js": b"const b = 2;\n"}.get, FW.fingerprint)["cases"]
         self.assertEqual((case["group"], case["touched_paths"]), (".", [{"path": "a.js", "hunks": [{"start": 1, "end": 1}]}]))
 
     def test_what_kos_refused_is_no_case(self):
@@ -700,7 +705,7 @@ class Built(World):
         index["mutations"][NO_VAR_2] = {"verdict": "no_verdict", "reasons": [], "run_sha256": None}
         self.assertEqual(self.build({NO_VAR_2: ALL[NO_VAR_2]}, index)["refused"], {NO_VAR_2: ["kos:no_verdict"]})
         for index in ({}, {"mutations": []}, [], None):
-            self.assertEqual(CB.build(SEED, {NO_VAR_2: ALL[NO_VAR_2]}, index, self.read)["refused"],
+            self.assertEqual(CB.build(SEED, {NO_VAR_2: ALL[NO_VAR_2]}, index, self.read, self.source, FW.fingerprint)["refused"],
                              {NO_VAR_2: ["kos:missing"]})
 
     def test_a_run_file_is_read_under_its_hash_only(self):
@@ -726,7 +731,91 @@ class Built(World):
 
     def test_mutations_that_are_no_object(self):
         for mutations in (None, [], "x"):
-            self.assertEqual(CB.build(SEED, mutations, {}, lambda p: None), {"cases": [], "oracle": {}, "refused": {}})
+            self.assertEqual(CB.build(SEED, mutations, {}, lambda p: None, lambda p: None, FW.fingerprint),
+                             {"cases": [], "oracle": {}, "refused": {}})
+
+
+class Twins(unittest.TestCase):
+    """tohum/26q (7): a case whose planted violation has the fingerprint of another violation in the same file
+    of the case's tree is refused; the fingerprint is ``findings.write``'s."""
+
+    PATH = "pkg/t.js"
+    # line 1 breaks no-var as it stands; the mutation makes line 3 ``var a = 1;``
+    TREE = {PATH: b"var  a\t= 1;\nlet c = 3;\nconst a = 1;\nvar a = 2;\n", "pkg/u.js": b"var a = 1;\n"}
+    M = mutation(one_line(PATH, 3, "const a = 1;", "var a = 1;"), path=PATH, line=3)
+    BASE = (v("no-var", 1, PATH), v("no-var", 4, PATH), v("no-var", 1, "pkg/u.js"))
+
+    def built(self, mut_run: bytes, tree=None, m=None, fingerprint=FW.fingerprint) -> dict:
+        base = run(*self.BASE)
+        index = {"base_run_sha256": sha(base),
+                 "mutations": {"x": {"verdict": "verified", "reasons": [], "run_sha256": sha(mut_run)}}}
+        files = {"base.jsonl": base, "m/x/mut.jsonl": mut_run}
+        return CB.build(SEED, {"x": m or self.M}, index, files.get, (self.TREE if tree is None else tree).get, fingerprint)
+
+    def test_another_line_of_the_same_text_and_rule_shares_the_fingerprint(self):
+        mut_run = run(*self.BASE, v("no-var", 3, self.PATH))
+        self.assertEqual(CB.judge(self.M, run(*self.BASE), mut_run), ([], {"line": 3, "hunk": {"start": 3, "end": 3}}))
+        # line 1 differs from the planted line only in how long its runs of blanks are: one fingerprint
+        # (``findings.write.normalize``)
+        self.assertEqual(self.built(mut_run), {"cases": [], "oracle": {}, "refused": {"x": ["fingerprint_shared"]}})
+        twin = {"file": self.PATH, "rule_id": "no-var"}
+        mutated = self.TREE[self.PATH].replace(b"const a = 1;", b"var a = 1;")
+        prints = [FW.fingerprint(dict(twin, evidence_refs=[{"path": self.PATH, "line_start": n, "line_end": n}]),
+                                 {self.PATH: mutated}.get) for n in (1, 3, 4)]
+        self.assertEqual((prints[0] == prints[1], prints[1] == prints[2]), (True, False))
+
+    def test_what_shares_nothing(self):
+        planted = v("no-var", 3, self.PATH)
+        for name, tree, base_extra in (
+                ("the same rule on a line of other text", dict(self.TREE, **{self.PATH: b"var b = 1;\nlet c = 3;\nconst a = 1;\nvar a = 2;\n"}), ()),
+                ("the same words with no blank where the planted line has one",
+                 dict(self.TREE, **{self.PATH: b"var a=1;\nlet c = 3;\nconst a = 1;\nvar a = 2;\n"}), ()),
+                ("the same text in another file", dict(self.TREE, **{self.PATH: b"var a = 9;\nlet c = 3;\nconst a = 1;\nvar a = 2;\n"}), ()),
+                ("the same text breaking another rule only",
+                 dict(self.TREE, **{self.PATH: b"var a = 1;\nlet c = 3;\nconst a = 1;\nvar a = 2;\n"}), "other-rule")):
+            with self.subTest(name):
+                base = self.BASE if base_extra != "other-rule" else (v("no-eval", 1, self.PATH),) + self.BASE[1:]
+                index_base = run(*base)
+                mut_run = run(*base, planted)
+                index = {"base_run_sha256": sha(index_base),
+                         "mutations": {"x": {"verdict": "verified", "reasons": [], "run_sha256": sha(mut_run)}}}
+                got = CB.build(SEED, {"x": self.M}, index, {"base.jsonl": index_base, "m/x/mut.jsonl": mut_run}.get,
+                               tree.get, FW.fingerprint)
+                self.assertEqual((got["refused"], [c["case_id"] for c in got["cases"]]), ({}, ["k0-x"]))
+
+    def test_a_planted_violation_without_a_fingerprint_is_no_case(self):
+        mut_run = run(v("no-var", 4, self.PATH), v("no-var", 3, self.PATH), v("no-var", 1, "pkg/u.js"))
+        alone = dict(self.TREE, **{self.PATH: b"let z = 0;\nlet c = 3;\nconst a = 1;\nvar a = 2;\n"})
+        base = run(*self.BASE[1:])
+
+        def built(tree, fingerprint=FW.fingerprint) -> dict:
+            index = {"base_run_sha256": sha(base),
+                     "mutations": {"x": {"verdict": "verified", "reasons": [], "run_sha256": sha(mut_run)}}}
+            return CB.build(SEED, {"x": self.M}, index, {"base.jsonl": base, "m/x/mut.jsonl": mut_run}.get, tree.get,
+                            fingerprint)["refused"]
+
+        self.assertEqual(built(alone), {})
+        for name, tree in (("no such file in the tree", {"pkg/u.js": b"var a = 1;\n"}),
+                           ("the diff does not apply to the tree's file", dict(alone, **{self.PATH: b"let z = 0;\nlet c = 3;\nconst a = 2;\nvar a = 2;\n"})),
+                           ("the file is not UTF-8", dict(alone, **{self.PATH: b"let z = 0; // \xff\nlet c = 3;\nconst a = 1;\nvar a = 2;\n"}))):
+            with self.subTest(name):
+                self.assertEqual(built(tree), {"x": ["fingerprint_unmade"]})
+        self.assertEqual(built(alone, lambda finding, read: None), {"x": ["fingerprint_unmade"]})
+
+    def test_the_fingerprint_is_the_function_s_and_is_made_on_the_mutated_file(self):
+        mut_run = run(*self.BASE, v("no-var", 3, self.PATH))
+        asked = []
+
+        def by_line(finding, read):
+            asked.append((finding["rule_id"], finding["evidence_refs"], read(finding["file"]), read("pkg/u.js")))
+            return "line-%d" % finding["evidence_refs"][0]["line_start"]
+
+        self.assertEqual(self.built(mut_run, fingerprint=by_line)["refused"], {})      # this function tells them apart
+        mutated = self.TREE[self.PATH].replace(b"const a = 1;", b"var a = 1;")
+        self.assertEqual(asked, [("no-var", [{"path": self.PATH, "line_start": n, "line_end": n}], mutated, None)
+                                 for n in (3, 1, 4)])
+        self.assertEqual(self.built(mut_run, fingerprint=lambda finding, read: "one")["refused"],
+                         {"x": ["fingerprint_shared"]})
 
 
 class GreenAfter:
