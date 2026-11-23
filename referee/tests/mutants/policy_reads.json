@@ -312,7 +312,7 @@
    "old": "        found = R.at(policy, path)\n    except R.Malformed:",
    "new": "        found = R.at(policy, path)\n        if found is R.ABSENT and isinstance(policy, dict):\n            found = policy.get(path[-1], found)\n    except R.Malformed:",
    "tests": [
-    "test_score.FromPolicy.test_a_value_elsewhere_in_the_policy_is_not_read"
+    "test_score.Composed.test_a_value_elsewhere_in_the_policy_is_not_read"
    ]
   },
   {

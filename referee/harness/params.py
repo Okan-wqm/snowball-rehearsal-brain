@@ -27,7 +27,8 @@ Rules (each bound by a test in ``tests/test_policy_reads.py``, class ``Harness``
    (``evidence_ref_max_lines``). ``Invalid`` carries every reason that holds, in that order.
 5. ``planted_max_cases(policy)``: rule 2 on its path; ``snapshot.make``'s ``max_cases``.
 
-The readers: ``loop.job.yaz_harness`` (``score``), ``loop.cek.assemble`` (``usable``, ``planted_max_cases``),
+The readers: no caller in the loop for ``score`` today (the scorer is off the live path, tohum/26q (6);
+``tests/test_score.Composed`` composes it with the report), ``loop.cek.assemble`` (``usable``, ``planted_max_cases``),
 ``loop.job.yaz_policy`` (``check``) and ``gozcu.evaluate.thresholds`` (``value`` on its thirteen paths: one rule
 for a count and for a fraction of the policy, not a second copy there).
 
