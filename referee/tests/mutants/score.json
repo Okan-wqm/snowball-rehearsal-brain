@@ -320,8 +320,8 @@
   {
    "id": "ref_length_not_given_to_sift",
    "file": "harness/score.py",
-   "old": "sift(findings, snapshot, read, ref_max_lines)",
-   "new": "sift(findings, snapshot, read)",
+   "old": "sift(rows, snapshot, read, ref_max_lines)",
+   "new": "sift(rows, snapshot, read)",
    "tests": [
     "test_score.RefLength"
    ]
