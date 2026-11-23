@@ -383,12 +383,12 @@
    ]
   },
   {
-   "id": "another_run_s_row_a_finding_of_a_clean_run",
+   "id": "re_observation_a_finding_of_a_clean_run",
    "file": "harness/score.py",
    "old": "len(accepted) + len(refused)\n",
-   "new": "len(accepted) + len(refused) + other_runs\n",
+   "new": "len(accepted) + len(refused) + reobserved\n",
    "tests": [
-    "test_score.Runs"
+    "test_score.Fingerprint"
    ]
   },
   {
@@ -578,6 +578,33 @@
    "new": "NO_HUNTER_RUN = {\"reason\": \"harness_refused\"}",
    "tests": [
     "test_score.Live"
+   ]
+  },
+  {
+   "id": "run_fingerprint_form_not_checked",
+   "file": "harness/score.py",
+   "old": "        elif isinstance(row.get(\"fingerprint\"), str) and S.hex64(row[\"fingerprint\"], \"\"):\n",
+   "new": "        elif False:\n",
+   "tests": [
+    "test_score.Runs"
+   ]
+  },
+  {
+   "id": "run_fingerprint_any_hex_taken",
+   "file": "harness/score.py",
+   "old": "        elif isinstance(row.get(\"fingerprint\"), str) and S.hex64(row[\"fingerprint\"], \"\"):\n",
+   "new": "        elif isinstance(row.get(\"fingerprint\"), str) and not __import__(\"re\").match(\"[0-9a-fA-F]{63,}\", row[\"fingerprint\"]):\n",
+   "tests": [
+    "test_score.Runs"
+   ]
+  },
+  {
+   "id": "run_empty_fingerprint_left_to_sift",
+   "file": "harness/score.py",
+   "old": "        elif isinstance(row.get(\"fingerprint\"), str) and S.hex64(row[\"fingerprint\"], \"\"):\n",
+   "new": "        elif row.get(\"fingerprint\") and isinstance(row[\"fingerprint\"], str) and S.hex64(row[\"fingerprint\"], \"\"):\n",
+   "tests": [
+    "test_score.Runs"
    ]
   }
  ]

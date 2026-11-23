@@ -209,9 +209,9 @@
   },
   {
    "id": "hp_alpha_is_the_level",
-   "file": "harness/params.py",
-   "old": "    return 1 - fraction(policy, R.CONFIDENCE_LEVEL)",
-   "new": "    return fraction(policy, R.CONFIDENCE_LEVEL)",
+   "file": "harness/score.py",
+   "old": "    return 1 - HP.fraction(policy, R.CONFIDENCE_LEVEL)",
+   "new": "    return HP.fraction(policy, R.CONFIDENCE_LEVEL)",
    "tests": [
     "test_policy_reads.Harness"
    ]
@@ -317,16 +317,16 @@
   },
   {
    "id": "hp_window_and_ref_bound_swapped",
-   "file": "harness/params.py",
-   "old": "SCORE = ((\"window\", R.MATCH_WINDOW_LINES), (\"ref_max_lines\", R.EVIDENCE_REF_MAX_LINES))",
-   "new": "SCORE = ((\"window\", R.EVIDENCE_REF_MAX_LINES), (\"ref_max_lines\", R.MATCH_WINDOW_LINES))",
+   "file": "harness/score.py",
+   "old": "POLICY = ((\"window\", R.MATCH_WINDOW_LINES), (\"ref_max_lines\", R.EVIDENCE_REF_MAX_LINES))",
+   "new": "POLICY = ((\"window\", R.EVIDENCE_REF_MAX_LINES), (\"ref_max_lines\", R.MATCH_WINDOW_LINES))",
    "tests": [
     "test_policy_reads.Harness.test_score_reads_its_three_paths_and_nothing_else"
    ]
   },
   {
    "id": "hp_first_invalid_only",
-   "file": "harness/params.py",
+   "file": "harness/score.py",
    "old": "            reasons += exc.reasons\n    if reasons:",
    "new": "            reasons = reasons or exc.reasons\n    if reasons:",
    "tests": [

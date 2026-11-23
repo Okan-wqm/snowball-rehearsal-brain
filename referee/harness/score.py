@@ -54,14 +54,16 @@ findings nor on that of the cases. Which of several largest sets is returned is 
 ``findings`` is **the observation list of one run** (tohum/26q: a run is one hunter organ's run on one
 snapshot, and referee code writes its list: every observation in the organ's order, re-observations and
 findings the target's register already holds among them). It is a list of objects each carrying the document's
-``snapshot_id``; the list is ``sift``'s, in its order, the fingerprint as each row holds it (tohum/26m
+``snapshot_id``; the list is ``sift``'s, in its order, the fingerprint the one each row holds (tohum/26m
 "Puanlama" 1). A list that is not that is ``Unusable`` and no row of it is skipped, every reason listed in the
 rows' order: ``observations_invalid`` (not a list; the bytes of a ``findings.jsonl`` are not one: the target's
 register is no run, 26q (3)); ``observation_invalid:<index>`` (a row that is not an object);
 ``observation_state_row:<index>`` (an object with a ``state`` key: a row of the register);
 ``observation_decision_row:<index>`` (an object with a ``decision`` key and no ``state``);
 ``observation_other_snapshot:<index>`` (any other object whose ``snapshot_id`` is not the document's, or that has
-none). The page says the list carries no state and no decision row and defers the row's form (26q (4): the epoch
+none); ``observation_fingerprint:<index>`` (any other object whose ``fingerprint`` is a string that is not 64
+lowercase hex: no string ``findings.write.fingerprint`` gives, and only the two-file command takes a fingerprint
+as given, tohum/26q (8); a row with no ``fingerprint`` string is ``sift``'s ``finding_invalid``). The page says the list carries no state and no decision row and defers the row's form (26q (4): the epoch
 of stage 1 MF1); that the two keys are what tells such a row is this module's reading until then, and a row
 without them is read as an observation whatever else it holds. ``report`` holds exactly tohum/26b's fields:
 
@@ -100,7 +102,14 @@ both ``null`` without a set), ``counts`` ``{given, distinct, reobserved, refused
 (``given`` is the sum of the other three). The same arguments
 give the same output: nothing here reads a clock, the environment, or a file other than through ``read``.
 
-**In the loop**: nothing calls ``report`` today. No cycle has a hunter run on its cases' snapshot (the first
+**The policy's values** (``params(policy)``; tohum/26h "Harness'in politika değerleri"): the three keyword
+arguments ``report`` takes from a policy, ``{alpha, window, ref_max_lines}``: ``alpha`` is ``alpha_of(policy)``,
+``1 - harness.params.fraction`` of ``constitutional.confidence_level``, exact (alpha of ``"0.900000"`` is 1/10:
+tohum/19, one-sided); ``window`` and ``ref_max_lines`` are ``harness.params.count`` of
+``stage_params.match_window_lines`` and ``stage_params.evidence_ref_max_lines``. ``harness.params.Invalid``
+carries every reason that holds, in that order (``tests/test_policy_reads.py``, class ``Harness``).
+
+**In the loop**: nothing calls ``report`` or ``params`` today. No cycle has a hunter run on its cases' snapshot (the first
 hunter is stage 1 MF1's), so no report is scored (tohum/26q (6)): ``loop.job`` puts ``{reason: "no_hunter_run"}``
 on the target's line and this module is in the register of the off-live (``status/off_live.json``).
 
@@ -108,14 +117,14 @@ Out of scope, stated:
 
 - writing a run's list, its place, its name and its row's form (tohum/26q (4): deferred to the epoch of
   stage 1 MF1), and with them whether a row's fingerprint is the one ``findings.write.fingerprint`` gives on
-  the snapshot's tree: a row's fingerprint is scored as it stands (deriving it again: the epoch of the first
-  LLM hunter, spec/tohum/CHANGELOG-18.md), and its ``run_id`` is not compared with ``meta``'s;
+  the snapshot's tree: a row's fingerprint of the writer's form (64 lowercase hex) is scored as it stands
+  (deriving it again: the epoch of the first LLM hunter, spec/tohum/CHANGELOG-18.md), and its ``run_id`` is not compared with ``meta``'s;
 - ``precision``, ``precision_lb``, ``unresolved`` (they need the triage of findings that hit no case: the panel
   and the oracle, later parties), ``cost_usd``, ``value_per_usd`` (the cost of a hunter's run: P2);
 - the census of K4 (tohum/26m "Puanlama" 4: stage 3's);
 - which rule set is a target's (``cases.census``), and whether the library can make a case of each of its
   rules (``cases.build produce``): nothing here reads the library's catalog;
-- where ``alpha``, ``window`` and ``ref_max_lines`` come from: the caller's (``harness.params.score`` reads
+- where ``alpha``, ``window`` and ``ref_max_lines`` come from: the caller's (``params(policy)`` below reads
   them from a policy); ``stage_params.census_min_groups`` (tohum/26h: the exit sample's,
   ``exit.sample``, not built; nothing here reads it);
 - the views of 13e (which of these fields an agent may see) and writing the report anywhere.
@@ -146,7 +155,10 @@ from typing import Any, Callable
 
 import cli
 from cases import build as CB
+from harness import params as HP
 from harness import stats
+from ledger import schema as S
+from policy import reads as R
 from profile import derive as D
 from snapshot import make as SM
 
@@ -298,6 +310,28 @@ def match(accepted: list[dict], cases: list[dict], window: int | None = None) ->
 
 # ---------------------------------------------------------------- the report
 
+POLICY = (("window", R.MATCH_WINDOW_LINES), ("ref_max_lines", R.EVIDENCE_REF_MAX_LINES))
+
+
+def alpha_of(policy: Any) -> Fraction:
+    """``1 - confidence_level``, exact (see "The policy's values")."""
+    return 1 - HP.fraction(policy, R.CONFIDENCE_LEVEL)
+
+
+def params(policy: Any) -> dict[str, Any]:
+    """``{alpha, window, ref_max_lines}`` for ``report`` (see "The policy's values")."""
+    out: dict[str, Any] = {}
+    reasons: list[str] = []
+    for name, read in (("alpha", alpha_of),) + tuple((n, lambda p, path=path: HP.count(p, path)) for n, path in POLICY):
+        try:
+            out[name] = read(policy)
+        except HP.Invalid as exc:
+            reasons += exc.reasons
+    if reasons:
+        raise HP.Invalid(reasons)
+    return out
+
+
 def _run(observations: Any, snapshot: dict) -> list[dict]:
     """The observation list of a run on ``snapshot``, or ``Unusable`` (see "The report")."""
     if not isinstance(observations, list):
@@ -312,6 +346,8 @@ def _run(observations: Any, snapshot: dict) -> list[dict]:
             reasons.append("observation_decision_row:%d" % index)
         elif row.get("snapshot_id") != snapshot["snapshot_id"]:
             reasons.append("observation_other_snapshot:%d" % index)
+        elif isinstance(row.get("fingerprint"), str) and S.hex64(row["fingerprint"], ""):
+            reasons.append("observation_fingerprint:%d" % index)
     if reasons:
         raise Unusable(reasons)
     return observations

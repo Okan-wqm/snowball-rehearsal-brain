@@ -108,7 +108,8 @@ violation's rule and one reference at its line. ``fingerprint_unmade``: the plan
 gives no file, the diff does not apply to it, or ``fingerprint`` gives ``None``); nothing more is judged.
 ``fingerprint_shared``: another violation's equals the planted one's: the scorer could not tell the two
 findings apart. With the writer's function that is another line of the file breaking the same rule whose text
-differs from the planted line's in blanks only or not at all; a violation in another file, of another rule, or
+is the planted line's, or differs from it only in how long its runs of blanks are and in blanks at its ends
+(``findings.write.normalize``; ``var a=1;`` and ``var a = 1;`` are two texts); a violation in another file, of another rule, or
 on a line of other text shares nothing. A valid mutation with neither reason is the
 tohum/26 case ``{case_id: "k0-<mid>", class_level: "K0", property: "lint", provenance: "mutation", base_sha,
 mutation_id, touched_paths: [{path, hunks: [{start, end}]}], tool, rule_id, validity_evidence: {kind:

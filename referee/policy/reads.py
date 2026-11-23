@@ -27,9 +27,9 @@ Rules (each bound by a test in ``tests/test_policy_reads.py``):
    "deps_bytes")``), ``profile.derive`` (``SECURITY_KEYWORDS``), ``profile.unit_verify`` (``operating``; from it
    ``runner.contained`` and ``runner.kos`` get their limits), ``dispatcher.llm_call.policy_usd`` (the path its
    caller names; ``loop.cagir`` and ``loop.write_cycle`` name ``CANARY_USD``), ``harness.params`` (``HARNESS_PATHS``
-   and ``GOZCU_PATHS``: ``check`` for ``loop.cek.assemble`` and ``loop.job.yaz_policy``; ``score`` with no
-   caller in the loop today (tohum/26q (6)), ``planted_max_cases`` for ``loop.cek.assemble``, which hands it to
-   ``snapshot.make``; the snapshot ``çek`` makes is a clean one, and a clean snapshot's rules do not use the
+   and ``GOZCU_PATHS``: ``check`` for ``loop.cek.assemble`` and ``loop.job.yaz_policy``; ``planted_max_cases`` for ``loop.cek.assemble``, which hands it to
+   ``snapshot.make``; ``fraction`` and ``count`` for ``harness.score.params``, the scorer's three values, off the
+   live path with the scorer; the snapshot ``çek`` makes is a clean one, and a clean snapshot's rules do not use the
    number), ``gozcu.evaluate.thresholds`` (``GOZCU_PATHS``, through ``harness.params.value``; ``loop.write_cycle``
    calls it through ``gozcu.watch.judge`` with ``pulled``'s policy). ``tests/test_policy_reads.py``'s
    ``Readers`` runs each of these functions on a policy that records every key looked up in it and finds no

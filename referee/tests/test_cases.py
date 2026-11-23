@@ -755,7 +755,8 @@ class Twins(unittest.TestCase):
     def test_another_line_of_the_same_text_and_rule_shares_the_fingerprint(self):
         mut_run = run(*self.BASE, v("no-var", 3, self.PATH))
         self.assertEqual(CB.judge(self.M, run(*self.BASE), mut_run), ([], {"line": 3, "hunk": {"start": 3, "end": 3}}))
-        # line 1 differs from the planted line in blanks only: one fingerprint (``findings.write.normalize``)
+        # line 1 differs from the planted line only in how long its runs of blanks are: one fingerprint
+        # (``findings.write.normalize``)
         self.assertEqual(self.built(mut_run), {"cases": [], "oracle": {}, "refused": {"x": ["fingerprint_shared"]}})
         twin = {"file": self.PATH, "rule_id": "no-var"}
         mutated = self.TREE[self.PATH].replace(b"const a = 1;", b"var a = 1;")
@@ -767,6 +768,8 @@ class Twins(unittest.TestCase):
         planted = v("no-var", 3, self.PATH)
         for name, tree, base_extra in (
                 ("the same rule on a line of other text", dict(self.TREE, **{self.PATH: b"var b = 1;\nlet c = 3;\nconst a = 1;\nvar a = 2;\n"}), ()),
+                ("the same words with no blank where the planted line has one",
+                 dict(self.TREE, **{self.PATH: b"var a=1;\nlet c = 3;\nconst a = 1;\nvar a = 2;\n"}), ()),
                 ("the same text in another file", dict(self.TREE, **{self.PATH: b"var a = 9;\nlet c = 3;\nconst a = 1;\nvar a = 2;\n"}), ()),
                 ("the same text breaking another rule only",
                  dict(self.TREE, **{self.PATH: b"var a = 1;\nlet c = 3;\nconst a = 1;\nvar a = 2;\n"}), "other-rule")):

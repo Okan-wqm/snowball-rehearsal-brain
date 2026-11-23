@@ -5,7 +5,7 @@
   },
   "harness.score": {
     "kind": "unwired",
-    "why": "no cycle has a hunter run on its cases' snapshot, so no harness report is scored and loop.job calls no scorer (tohum/26q (6)); the caller comes with the first hunter, stage 1 MF1 (lint.discover); run by tests 1, 6, 7, 12 and 28 (tests/test_score.py) and by the match vectors' two-file command"
+    "why": "the scorer of P1 MF4, caller removed by tohum/26q (6): no cycle has a hunter run on its cases' snapshot, so no harness report is scored and loop.job calls no scorer; the caller comes back with the first hunter (lint.discover, 26q (4)); run by tests 1, 6, 7, 12 and 28 (tests/test_score.py) and by the match vectors' two-file command"
   },
   "harness.stats": {
     "kind": "unwired",

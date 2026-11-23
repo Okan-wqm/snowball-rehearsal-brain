@@ -20,7 +20,7 @@
   ``match`` vectors through the command line; the command's refusals;
 - ``Report``: the fields, the census over the rule set the caller gives (none: no count and never ``PASS``),
   the verdicts in their order, the cases refused;
-- ``Composed``: ``harness.params.score`` of a policy and ``cases.census.rules`` of a target kind are
+- ``Composed``: ``harness.score.params`` of a policy and ``cases.census.rules`` of a target kind are
   ``report``'s arguments;
 - ``Live``: from ``çek`` through ``koş`` to ``yaz``'s line: ``harness`` is ``{reason: "no_hunter_run"}`` with
   a case and without (tohum/26q (6)).
@@ -359,14 +359,14 @@ class RefLength(Base):
 
 
 class Composed(Base):
-    """``harness.params.score`` of a policy and ``cases.census.rules`` of a target kind as ``report``'s arguments
+    """``harness.score.params`` of a policy and ``cases.census.rules`` of a target kind as ``report``'s arguments
     (no job composes them today: ``Live``)."""
 
     K3 = {"class_level": "K3", "property": "p"}
 
     def harness(self, policy, findings: list, cases: list, kind: str = "toy") -> dict:
         return HS.report(observed(self.stamped(findings)), cases, self.snapshot, self.read, census=CC.rules(kind),
-                         **HP.score(policy))
+                         **HS.params(policy))
 
     def policy(self, level="0.900000", **params) -> dict:
         params = dict({"match_window_lines": 1, "evidence_ref_max_lines": 30}, **params)
@@ -694,8 +694,29 @@ class Runs(Base):
         out = HS.report(rows, [case("c1", 2), case("c2", 1, path="pkg/b.js")], self.snapshot, self.read)
         self.assertEqual((out["hits"], out["matched"], out["refused"]), (2, {"c1": prints[0], "c2": prints[2]}, []))
         self.assertEqual(out["counts"], {"given": 3, "distinct": 3, "reobserved": 0, "refused": 0})
-        renamed = HS.report([dict(rows[0], fingerprint="fp-f1")], [case("c1", 2)], self.snapshot, self.read)
-        self.assertEqual(renamed["matched"], {"c1": "fp-f1"})
+        # of the writer's form and not the function's on this tree: scored as held (deriving it again is deferred)
+        other = HS.report([dict(rows[0], fingerprint=fp("other"))], [case("c1", 2)], self.snapshot, self.read)
+        self.assertEqual(other["matched"], {"c1": fp("other")})
+
+    def test_a_fingerprint_no_writer_makes_is_no_observation(self):
+        """tohum/26q (8): only the two-file command takes a fingerprint as given (``fp-f1``, a label)."""
+        row = observed(self.stamped([finding("x", 2)]))[0]
+        self.assertEqual(row["fingerprint"], fp("x"))
+        for label in ("fp-f1", fp("y").upper(), fp("y")[:63], fp("y") + "0", fp("y") + "\n", " " + fp("y"), ""):
+            with self.subTest(label=label):
+                self.assertEqual(self.unusable([row, dict(row, fingerprint=label)]), ["observation_fingerprint:1"])
+                self.assertEqual(self.unusable([row, dict(row, fingerprint=label)], []), ["observation_fingerprint:1"])
+        # another snapshot's row is named as that, and a row with no fingerprint string stays sift's to refuse
+        self.assertEqual(self.unusable([dict(row, fingerprint="fp-f1", snapshot_id=OLD)]), ["observation_other_snapshot:0"])
+        absent = HS.report([row, dict(row, fingerprint=None)], [case("c1", 2)], self.snapshot, self.read)
+        self.assertEqual((absent["hits"], absent["refused"]), (1, [{"index": 1, "reasons": ["finding_invalid"]}]))
+        # the two-file form still takes the label (the match vectors' findings)
+        accepted, refused, _ = HS.sift([dict(row, fingerprint="fp-f1")])
+        self.assertEqual(([f["fingerprint"] for f in accepted], refused), (["fp-f1"], []))
+        listed, cases = self.file("l.json", [dict(row, fingerprint="fp-f1")]), self.file("c.json", [case("c1", 2)])
+        self.assertEqual(self.command(listed, cases), (0, '{"hits": 1}\n'))
+        code, text = self.command(listed, cases, "--snapshot", self.file("s.json", self.snapshot), "--tree", self.tree)
+        self.assertEqual((code, json.loads(text)["error"]), (2, "unusable input: observation_fingerprint:0"))
 
     def test_the_command_reads_a_list_in_its_second_form(self):
         cases, snapshot = self.file("c.json", [case("c1", 2)]), self.file("s.json", self.snapshot)
