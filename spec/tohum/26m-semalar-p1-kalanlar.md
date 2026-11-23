@@ -59,16 +59,17 @@ arayüz yapar (`26j:17`'nin emsali): sonraki bir değişikliği yeni bir biçimd
 - (1) Parmak izini yalnız hakem kodu yapar: `findings.jsonl`'un yazıcısının tek fonksiyonu (`findings/write.py`, MF8).
   Biçimi kurulduğu gibi benimsendi: RFC 8785 biçiminin sha256'sı, 64 küçük onaltılık, `["symbol", property, file,
   symbol, normalize(claim)]` ya da `["line", rule_id, file, normalize(content)]` (`normalize` `26j:17-19`). Puanlayıcı
-  yalnız bu fonksiyonun yaptığı parmak izini puanlar ve onu hakemin yazıcısının dosyasından yazıldığı gibi okur; bir
-  ajanın dosyasındaki parmak izini hiçbir zaman almaz. Sıkılaştırma.
-- (2) Bir koşuda birden çok görülen parmak izi tek bulgudur: dosya sırasındaki ilk gözlem puanlanır; sonrakiler raporda
-  sayılan yeniden gözlemlerdir, ne isabet ne yanlış pozitif (`26k:16-18`'in kuralı, puanlayıcıda).
+  yalnız bu fonksiyonun yaptığı parmak izini puanlar ve onu koşunun gözlem listesinden (`26q`; `findings.jsonl`
+  değil) yazıldığı gibi okur; bir ajanın dosyasındaki parmak izini hiçbir zaman almaz. Sıkılaştırma; istisnası L-AH1.
+- (2) Bir koşuda (`26q`: bir avcı koşusu) birden çok görülen parmak izi tek bulgudur: listenin sırasındaki ilk gözlem
+  puanlanır; sonrakiler raporda sayılan yeniden gözlemlerdir, ne isabet ne yanlış pozitif (`26k:16-18`'in kuralı).
 - (3) Hüküm: vaka yoksa ya da sınıf sayımın (K0–K2) dışındaysa `UNMEASURABLE`; isabet almayan bir vaka varsa `FAIL`;
-  yoksa `rules_total`'ın (`26e:72-73`: aracın kataloğunda vaka üretilebilen kurallar) koşuda vakası olmayan bir kuralı
+  yoksa `rules_total`'ın (`29za:9-22`: hedefin `census` vektörünün kural kümesi, `26q`) koşuda vakası olmayan bir kuralı
   varsa `UNMEASURABLE`; yoksa `PASS`. `PASS` her kuralın kapsanmasını ve sıfır kaçırmayı ister (`asama-1/13e:22`);
   `UNMEASURABLE` asla `PASS` gibi davranmaz (`19:12-13`). Dev raporunun grup tabanı yoktur (`26h:67-68`). `19:24`'ün
   `min(45, mevcut)`'u çıkış ölçüsünündür: `exit.sample` onu çekildiği sayıyla verir; verilmezse çıkış hükmü `PASS`
   olmaz. Sıkılaştırma: kendi vakalarıyla yetinen hiçbir koşu `PASS` almaz.
 - (4) K4'ün sayımı Aşama 3'e ertelendi (K4 orada gelir, `03:63`); o zamana kadar bir K4 raporu `UNMEASURABLE`'dır.
 
-Açıkça ertelenenler ve test 9, test 11, sürükleme etkinliği, Aşama 1'in bulgu başı frenleri `26n`'dedir.
+Açıkça ertelenenler ve test 9, test 11, sürükleme etkinliği, Aşama 1'in bulgu başı frenleri `26n`'dedir. Koşunun
+tanımı, gözlem listesi, payda ve iki dosyalı komutun gevşetmesi L-AH1 `26q`'dadır (seed-101).

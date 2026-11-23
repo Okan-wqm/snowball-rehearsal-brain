@@ -70,7 +70,7 @@ Kurucu'nundur. Kalanları (seed-089–092, seed-094; rapor masası uzlaşısı, 
   önerilen vaka sayısı Kurucu'nun seçimidir; inceleyicilerden biri sabit bir sayı istedi, muhalefet kayıtlıdır.
 - **Puanlama** (`harness.score`; seed-076): test 6, bulgunun bir `evidence_refs` yolu snapshot manifestinde yoksa ya
   da o yolun baytlarının hash'i manifesttekine uymuyorsa bulgunun reddedilip raporda adlandırılmasıdır. `rules_total`
-  aracın kataloğunda vaka üretilebilen kuralların sayısıdır, yalnız puanlanan vakalardakiler değil. Vektör
+  hedefin `census` vektörünün kural kümesidir (`29za:9-22`, `26q`), yalnız puanlanan vakalardakiler değil. Vektör
   karşılaştırması tablonun basamağına yarım yukarı yuvarlar (`29a`). İmza `26a`'dadır. `confidence_level` ve
   `stage_params`'ın `census_min_groups`, `planted_max_cases`, `evidence_ref_max_lines`, `match_window_lines`
   anahtarları Y'nin tesliminden okunması zorunlu yollardır: beynin politika okuması onları adlandırana kadar

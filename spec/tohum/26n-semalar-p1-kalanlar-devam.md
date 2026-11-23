@@ -56,7 +56,7 @@ sahip anahtarlara karar verince biter ve o dönemden sonra hiçbir `spec.lint` b
 - K4'ün sayımı (seed-091 (4)) → Aşama 3: K4 orada gelir (`03:63`).
 - `cases/dev.jsonl`'un hash zinciri (seed-090 (1)) → P1 çıkış dönemi: bugün yalnız ekleme önek kuralıyla yargılanır.
 - Puanlayıcıda parmak izinin snapshot baytlarından yeniden türetilmesi (seed-091 (1)) → P1 çıkış dönemi: bugün puanlanan
-  her parmak izini hakemin kendi yazıcısı yapar.
+  her parmak izini hakemin kendi yazıcısı yapar (L-AH1 dışında, `26q`).
 - Test 11'in tam yol listesi (seed-092 (4)) → P1 çıkış dönemi: bugün yukarıdaki kural yeter.
 - Özel bir hedefin etkinlik okumasının kimliği ve izni (seed-094 (3)) → ilk özel hedefin dönemi: Aşama 1'in hedefleri açık.
   Sayfalar özel hedefe bir aşama vermez (`01a:23-25`, `25` 0 ve 5: önce hakem reposu özel olur, okuyucu App'i kurulur);
