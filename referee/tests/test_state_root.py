@@ -53,8 +53,8 @@ class StateRoot(unittest.TestCase):
             lines = flow.run()
             line = lines["yaz"]["targets"][0]
             self.assertTrue(lines["yaz"]["ok"], lines["yaz"])
-            # the harness: the scorer's report on the target's line, the offline reading of the running code on the job's
-            self.assertIn("report", line["harness"])
+            # the harness: no report without a hunter run on the target's line, the offline reading of the running code on the job's
+            self.assertEqual(line["harness"], {"reason": "no_hunter_run"})
             self.assertEqual(lines["yaz"]["offline"], {"modules": OF.check(REFEREE)["modules"]})
             sha = hub.refs[B.STATE]
             self.assertEqual(hub.commits[sha]["parents"], [head] if head else [], run)   # orphan, then one line

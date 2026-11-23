@@ -164,24 +164,19 @@ refused tree is ``pulled_invalid``). Then:
   judges ``pulled``'s ``mutations.json`` against the results (``index.json``'s ``mutations`` and ``base_run_sha256``,
   ``base.jsonl`` and each ``m/<mid>/mut.jsonl`` read under its hash) with ``brain/integration``'s head as
   ``base_sha``; the target's line has ``cases`` (``{cases, oracle, refused}``, "The case" there) whatever the
-  steps after D5 gave. Then the harness report (P1 MF4, ``yaz_harness``): ``harness.score.report`` scores the
-  cycle's findings against those cases on ``pulled``'s ``snapshot.json`` document and the extracted tree, and the
-  target's line has ``harness`` (``{report, hits, matched, missed_rules, uncased_rules, outside_rules, refused, counts,
-  verdict_reason}``, "The report" there; the census rule set is ``cases.census.rules`` of the target's ``kind``: the toy's seven
-  rules, none for a copy, whose report has no count and is never ``PASS``; ``{reason: "harness_refused", reasons}`` when the scorer refuses the findings file, the document or the cases). The
-  cycle's findings file is the writer's with no row (``FINDINGS``) until an organ's output is read as findings, so every case of a cycle is a miss
-  today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``window``
-  and ``ref_max_lines`` are ``harness.params.score`` of ``pulled``'s policy (tohum/29v's paths of stage 1; all
-  three are there and in form, or the job stopped at ``yaz_policy`` below before this target was served).
+  steps after D5 gave; ``build`` makes each planted violation's fingerprint with ``findings.write.fingerprint``
+  on the extracted tree with the mutation applied (tohum/26q (7)). No harness report is scored (P1 MF4,
+  tohum/26q (6)): no cycle has a hunter run on its cases' snapshot (the first hunter is stage 1 MF1's), so the
+  target's line has ``harness`` ``{reason: "no_hunter_run"}`` (``NO_HUNTER_RUN``) in every cycle, with a case and
+  without: no report, no verdict, and ``harness.score`` is called by nothing here (``status/off_live.json``).
   The harness reaches no model (P1 MF5, ``harness.offline``): the job's first step, before ``pulled`` is opened
   and before MF6's reads below (``run``), is ``yaz_offline``, which reads the import statements of the running
   code's harness (``CODE_ROOT``); a reason there refuses the job, not a target (``harness_online`` with the
   reasons, ``targets`` ``[]``, no ``target``, exit 1), and the job's line otherwise has ``offline`` (``{modules}``,
-  how many modules the reading reached). The report above, the copy's genesis gate, the PASS judgement and
+  how many modules the reading reached). The copy's genesis gate, the PASS judgement and
   D8's judgement (``loop.drill``) run inside ``harness.offline.run``, and a socket or a child process one of them
   asks for refuses the target (``harness_online``, reasons ``event:<audit event>``) before D6 writes ``brain/state``.
-  The organs' outputs (P1 MF10, ``yaz_organs``; read after the dev cases are built and before the harness report
-  runs): for every organ in the results' ``index.json`` (``organs``;
+  The organs' outputs (P1 MF10, ``yaz_organs``; read after the dev cases are built): for every organ in the results' ``index.json`` (``organs``;
   an index that is absent, not JSON or without that object has none) the output ``kos`` kept is read by the hash
   its entry names (``output.sha256``) with ``runner.organ_output.read``, which returns no byte that does not lead
   back to that hash; the target's line has ``organs``, per organ ``{read: true, sha256, files, bytes}`` (how many
@@ -395,7 +390,7 @@ import tempfile
 from typing import Any, NamedTuple
 
 from cases import build as CB
-from cases import census as CC
+from findings import write as FW
 from dispatcher import llm_call as LL
 from drift import check as DC
 from gate import revert as RV
@@ -403,7 +398,6 @@ from gozcu import watch as GW
 from harness import offline as OF
 from harness import params as HP
 from harness import pass_row as PR
-from harness import score as HS
 from ledger import anchor as AN
 from ledger import append as LA
 from ledger import schema as SC
@@ -849,12 +843,14 @@ def yaz_d5(environ: dict[str, str], tid: str) -> tuple[dict[str, Any], Any, str 
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 
 
-def yaz_cases(environ: dict[str, str], tid: str, art: Any) -> dict[str, Any]:
+def yaz_cases(environ: dict[str, str], tid: str, art: Any, tree: str) -> dict[str, Any]:
     """The dev cases of target ``tid``'s cycle (P1 MF3; see the module docstring): ``cases.build.build`` of
     ``pulled``'s mutations on ``$RUNNER_TEMP/in/results/<tid>``, each file a regular file with no link on its way
-    (else absent); an index that is absent or not JSON is an empty one (every mutation ``kos:missing``)."""
+    (else absent); an index that is absent or not JSON is an empty one (every mutation ``kos:missing``). The
+    tree the mutations are applied to for their fingerprints is the extracted ``tree``, read the same way."""
     index, read = _results(environ, tid)
-    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read)
+    return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read,
+                    lambda path: D._read_regular(tree, path), FW.fingerprint)
 
 
 def _results(environ: dict[str, str], tid: str) -> tuple[Any, Any]:
@@ -902,7 +898,7 @@ def yaz_reruns(environ: dict[str, str], tid: str) -> dict[str, Any]:
     return line
 
 
-FINDINGS = b""   # the cycle's findings file (``findings.write``'s): no row, until an organ's output is read as findings (reports/seed-100)
+NO_HUNTER_RUN = {"reason": "no_hunter_run"}   # ``harness`` on the target's line: no report is scored (tohum/26q (6))
 
 
 CODE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))    # the directory ``loop/`` is in
@@ -912,22 +908,6 @@ def yaz_offline() -> dict[str, Any]:
     """The static reading of the running harness (P1 MF5, ``harness.offline.check`` of ``CODE_ROOT``, the code this
     process runs): ``{roots, modules, reasons}``; see the module docstring."""
     return OF.check(CODE_ROOT)
-
-
-def yaz_harness(art: Any, tree: str, cases: dict[str, Any]) -> dict[str, Any]:
-    """The harness report of the cycle (P1 MF4; see the module docstring): ``harness.score.report`` of
-    ``FINDINGS`` against the dev cases ``yaz_cases`` built, on ``pulled``'s snapshot document and the extracted
-    tree, with ``harness.params.score`` of ``pulled``'s policy (``alpha``, ``window``, ``ref_max_lines``; the
-    policy is one ``yaz_policy`` found usable, so no value is absent or invalid here) and the census rule set of
-    the target's kind (``cases.census.rules``; tohum/26q (10));
-    ``{reason: "harness_refused", reasons}`` when the scorer refuses the findings file, the document or the cases."""
-    params = HP.score(art.policy)
-    try:
-        return OF.run(lambda: HS.report(FINDINGS, cases["cases"], art.snapshot,
-                                        lambda path: D._read_regular(tree, path),
-                                        census=CC.rules(art.target.get("kind")), **params))
-    except HS.Unusable as exc:
-        return {"reason": "harness_refused", "reasons": exc.reasons}
 
 
 def yaz_d7(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any], dict | None, dict | None]:
@@ -1650,12 +1630,11 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
         d5, art, tree = yaz_d5(environ, tid)
         if "reason" in d5:
             return dict(d5, ok=False)
-        cases = yaz_cases(environ, tid, art)
+        cases = yaz_cases(environ, tid, art, tree)
         organs = yaz_organs(environ, tid)
         reruns = yaz_reruns(environ, tid)
-        harness = yaz_harness(art, tree, cases)     # before D6 and D7: the scorer online stops the target unwritten
         written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)
-        return dict(written, organs=organs, reruns=reruns, cases=cases, harness=harness)
+        return dict(written, organs=organs, reruns=reruns, cases=cases, harness=dict(NO_HUNTER_RUN))
     except OF.Online as exc:
         return {"ok": False, "reason": "harness_online", "reasons": exc.reasons}
 

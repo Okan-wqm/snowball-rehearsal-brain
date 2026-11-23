@@ -89,13 +89,27 @@ judged:
 
 Valid (no reason) gives the violation's line and the hunk that holds it.
 
-**The case** (``build(base_sha, mutations, index, read)``: ``index`` is the ``results`` artifact's ``index.json``
-parsed, ``read(path)`` the bytes of one of its files or ``None``). For each mutation, in id order:
+**The case** (``build(base_sha, mutations, index, read, source, fingerprint)``: ``index`` is the ``results``
+artifact's ``index.json`` parsed, ``read(path)`` the bytes of one of its files or ``None``; ``source(path)`` the
+bytes of a file of the tree the mutations were proposed on or ``None``, and ``fingerprint(finding, read)`` the
+function that makes a finding's fingerprint, both the caller's: ``loop.job`` gives ``findings.write.fingerprint``,
+which this module cannot import, since that module imports this one). For each mutation, in id order:
 ``mutation_unusable`` (the judgement's); ``kos:<reason>`` for each reason the index's ``mutations`` entry gives a
 mutation ``koş`` did not verify (``kos:<verdict>`` without reasons, ``kos:missing`` without an entry; the same
 words ``loop.decide`` gives a candidate); ``artefact_hash_mismatch`` when ``base.jsonl`` or
 ``m/<mid>/mut.jsonl`` is absent or its sha256 is not the index's (``base_run_sha256``, the entry's
-``run_sha256``): a run file is read only under its hash; then the judgement's reasons. A valid mutation is the
+``run_sha256``): a run file is read only under its hash; then the judgement's reasons; then, for a mutation
+the judgement found valid, **the planted violation's fingerprint** (tohum/26q (7); the reason names are this
+module's). The case's tree holds the mutated file: ``source(path)`` with the mutation's diff applied
+(``gate.diffguard.apply``, at its own line or not at all). The planted violation's fingerprint is
+``fingerprint`` of the oracle finding below, read on that file; that of every other violation of the mutated
+run in the same ``path`` on another line is ``fingerprint`` of ``{file, rule_id, evidence_refs}`` with the
+violation's rule and one reference at its line. ``fingerprint_unmade``: the planted one has none (``source``
+gives no file, the diff does not apply to it, or ``fingerprint`` gives ``None``); nothing more is judged.
+``fingerprint_shared``: another violation's equals the planted one's: the scorer could not tell the two
+findings apart. With the writer's function that is another line of the file breaking the same rule whose text
+differs from the planted line's in blanks only or not at all; a violation in another file, of another rule, or
+on a line of other text shares nothing. A valid mutation with neither reason is the
 tohum/26 case ``{case_id: "k0-<mid>", class_level: "K0", property: "lint", provenance: "mutation", base_sha,
 mutation_id, touched_paths: [{path, hunks: [{start, end}]}], tool, rule_id, validity_evidence: {kind:
 "tool_diff", ref: "m/<mid>/mut.jsonl", output_sha256}, split: "dev", group}``: the hunk is the mutated side of the
@@ -117,12 +131,12 @@ violation's line. Output ``{cases: [case], oracle: {case_id: finding}, refused: 
   ``stage_params.match_window_lines``; ``None`` leaves the symbol alone to decide).
 
 Anything of another shape is no hit. That a finding takes at most one case and a case counts once in a run is
-the scorer's rule (``harness.score.match``), not this function's; the scorer is this function's caller in the
-loop (``yaz``, on the cases ``build`` gave), ``build`` itself does not call it.
+the scorer's rule (``harness.score.match``), not this function's; the scorer is this function's caller,
+``build`` itself does not call it.
 
 Out of scope, stated: writing the dev set to ``<state_root>/cases/`` (13a). No page gives that directory's
-layout, its file format or how an append-only set is carried between cycles (tohum/01b); ``harness.score``
-reads the cases from ``yaz``'s line, where they are rebuilt each cycle (reports/seed-075). Also: 13a's first source (history, ``human_fix``); a mutation of more than one line or of a
+layout, its file format or how an append-only set is carried between cycles (tohum/01b); the cases are on
+``yaz``'s line, rebuilt each cycle (reports/seed-075). Also: 13a's first source (history, ``human_fix``); a mutation of more than one line or of a
 file that is not UTF-8; tools other than ESLint; the exit sample (``exit.sample``).
 
 **The command**, run from ``referee/`` (tohum/29za's ``census`` vectors)::
@@ -398,9 +412,34 @@ def _under_hash(read: Callable[[str], "bytes | None"], path: str, want: Any) -> 
     return data
 
 
-def _one(base_sha: str, mid: str, mutation: Any, index: dict, read: Callable[[str], "bytes | None"]) -> tuple:
+def _shared(block: dict, oracle: dict, mut_run: bytes, source: Callable[[str], "bytes | None"],
+            fingerprint: Callable[[dict, Callable[[str], "bytes | None"]], "str | None"]) -> list[str]:
+    """Why the planted violation of a valid mutation cannot be told from another (``fingerprint_unmade``,
+    ``fingerprint_shared``), or ``[]``; see the module docstring, "The case"."""
+    path, line = oracle["file"], oracle["evidence_refs"][0]["line_start"]
+    old = source(path)
+    try:
+        mutated = None if old is None else diffguard.apply(block, old)
+    except diffguard.DiffError:
+        mutated = None
+    planted = None if mutated is None else fingerprint(oracle, lambda asked: mutated if asked == path else None)
+    if planted is None:
+        return ["fingerprint_unmade"]
+    run, _ = GC.run_file(mut_run, "mut.jsonl")
+    for v in run["violations"]:
+        if v["path"] == path and v["line"] != line:
+            other = {"file": path, "rule_id": v["rule_id"],
+                     "evidence_refs": [{"path": path, "line_start": v["line"], "line_end": v["line"]}]}
+            if fingerprint(other, lambda asked: mutated if asked == path else None) == planted:
+                return ["fingerprint_shared"]
+    return []
+
+
+def _one(base_sha: str, mid: str, mutation: Any, index: dict, read: Callable[[str], "bytes | None"],
+         source: Callable[[str], "bytes | None"], fingerprint: Callable) -> tuple:
     """``(reasons, case, oracle)`` of one mutation."""
-    if _block(mutation) is None:
+    block = _block(mutation)
+    if block is None:
         return ["mutation_unusable"], None, None
     entries = index.get("mutations")
     entry = entries.get(mid) if isinstance(entries, dict) else None
@@ -425,16 +464,20 @@ def _one(base_sha: str, mid: str, mutation: Any, index: dict, read: Callable[[st
     oracle = {"class_level": "K0", "property": "lint", "file": path, "tool": mutation["tool"],
               "rule_id": mutation["rule_id"],
               "evidence_refs": [{"path": path, "line_start": found["line"], "line_end": found["line"]}]}
+    reasons = _shared(block, oracle, mut_run, source, fingerprint)
+    if reasons:
+        return reasons, None, None
     return [], case, oracle
 
 
-def build(base_sha: str, mutations: Any, index: Any, read: Callable[[str], "bytes | None"]) -> dict[str, Any]:
+def build(base_sha: str, mutations: Any, index: Any, read: Callable[[str], "bytes | None"],
+          source: Callable[[str], "bytes | None"], fingerprint: Callable) -> dict[str, Any]:
     """``{cases, oracle, refused}`` of the proposed ``mutations`` (``{mid: mutation}``; any other value is no
     mutation) from ``koş``'s results; see the module docstring, "The case"."""
     out: dict[str, Any] = {"cases": [], "oracle": {}, "refused": {}}
     index = index if isinstance(index, dict) else {}
     for mid in sorted(mutations if isinstance(mutations, dict) else {}):
-        reasons, case, oracle = _one(base_sha, mid, mutations[mid], index, read)
+        reasons, case, oracle = _one(base_sha, mid, mutations[mid], index, read, source, fingerprint)
         if reasons:
             out["refused"][mid] = reasons
         else:
