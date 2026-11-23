@@ -30,7 +30,7 @@ defter satırınınkidir (`26`). Üç tür:
 
 `01c`'nin ve `13`'ün durma satırı `hard_stop`'tur: `drift.check` yalnız okur ve hiçbir şey yazmaz, duruşu Gözcü yazar.
 Etkinlik API'sinin aykırı girdileri için `trigger` `ref_change`'tir ve kanıt o girdileri adlandırır; `drift.check`'in
-öbür nedenleri için `drift`'tir.
+öbür nedenleri için `drift`'tir. Etkinlik okumasının kalanları (seed-094: zaman biçimi, izin, eski denetim) `26n`'dedir.
 
 **Kapsamın okunuşu** (`27a` "Merge kapanır"). Yürürlükteki bir dondurmanın kapsamında bir sınıf varsa kapı o sınıfın
 adayını merge etmez. Kapsamda `loop` varsa hiçbir aday merge edilmez; hakemin okuma işleri sürer (`28`). Dondurma

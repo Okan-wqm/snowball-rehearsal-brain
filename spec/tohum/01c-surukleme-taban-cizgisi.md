@@ -22,7 +22,7 @@ Arayüz olgularıdır; kodun nasıl yazılacağı Kurucu'nundur.
 App'ler (kullanıcıya ait bir repoda bunun REST okuması yoktur); madde 3, hakem reposunun iş akışı izni (döngünün
 hiçbir kimliğinde `administration` yoktur); `bypass_actors` (`29o`'nun genesis için kabul ettiği gibi).
 `operator_checked_at` 7 günden eskiyse döngü sert duruşla değil, temiz bir duruşla biter ("operator check stale"):
-hiçbir şey yazılmaz, operatör görünür bir uyarı alır ve iş kırmızı değildir.
+hiçbir şey yazılmaz, operatör görünür bir uyarı alır ve iş kırmızı değildir (uyarının kanalı ve komutun satırı `26n`).
 
 **Taban: `setup/summary.json`'un `drift` nesnesi.** Üst düzeydedir, asla `targets[]`'in içinde değildir. `drift`'siz
 bir özet kullanılamaz girdidir ve döngü durur; `drift.check` bugünkü nedenlerine asla geri düşmez. `drift` varken

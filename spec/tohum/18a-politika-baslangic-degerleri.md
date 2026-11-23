@@ -59,7 +59,7 @@ Anahtar sütunu her anahtarı bölümüyle, tam yoluyla yazar; başka sayfada b�
 | `constitutional.stage_budgets.asama_0.rival_usd` | Başlangıç fren değeri 25 USD; 2026-11-05'ten 1000 USD (sahibin kararı: rakip `claude` CLI aboneliğiyle koşar, USD freni yalnız kaçak frenidir) | önyükleme hakemi (`29b`), `asama-0/12` |
 | `constitutional.stage_budgets.asama_0.canary_usd` | Başlangıç fren değeri 1 USD; çağrı başına ayrıca `--max-budget-usd` | `llm.call`, `asama-0/12` |
 | `constitutional.stage_budgets.asama_1.rival_usd`, `founder_usd`, `runtime_llm_usd` | Her biri 10.000 USD (sahip kararı, 2026-11-20: harcama frenleri sistemi hiçbir zaman durdurmaz; yalnız kaçak freni; spec-071). `rival_usd` 2026-11-19'dan beri 10.000'dir (hakem `33c01cb`; önce 1000, 2026-11-05); koşu başına rakip tavanı 3 USD kalır; harcama kilidin açılışından sayılır, kilit `rival_usd`'siz açılmaz (`26e`) | önyükleme hakemi (`29b`), `stage-open`, başlatıcı (`24`), `asama-1/10` |
-| `constitutional.stage_params.fix_acceptance_min`, `live_merge_min` | 0,80 (dosyada `"0.800000"`; Aşama 1 çıkışında düzeltme adaylarının kabul oranı) ve 10 (çıkışın canlı merge sayısı min(bu değer, uygun borç)'tur); spec-071 | `asama-1/08`, Aşama 1 çıkışı |
+| `constitutional.stage_params.fix_acceptance_min`, `live_merge_min` | 0,80 (dosyada `"0.800000"`; Aşama 1 çıkışında düzeltme adaylarının kabul oranı) ve 10 (çıkışın canlı merge sayısı min(bu değer, uygun borç)'tur); spec-071. `asama-1/10`'un bulgu başı frenlerinin anahtarları `fixer.llm`'in dönemine ertelendi (`26n`, seed-095) | `asama-1/08`, Aşama 1 çıkışı |
 
 ## İşletim sınırları (`operating`)
 

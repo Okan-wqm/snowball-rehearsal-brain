@@ -57,7 +57,7 @@ donmuş tablosunda 22'nin partisi `P2` yazılı kalır, bu sayfa ondan üstünd�
 
 **P1'in arayüz olguları** (bağımsız inceleme ekibi kararı, 2026-11-20; Kurucu raporları seed-073–077). Aşama
 sayfalarının (`asama-1/13a`, `13c`, `13e`, `asama-0/09`) bıraktığı arayüz olgularıdır; kodun nasıl yazılacağı
-Kurucu'nundur.
+Kurucu'nundur. Kalanları (seed-089–092, seed-094; rapor masası uzlaşısı, 2026-11-22) `26m` ve `26n`'dedir.
 - **Organ tanımının hash'i** (`26b` `definition_sha256`; seed-073): organın okuyabildiği her beyin dosyasını kapsar;
   hakemde tek bir hash fonksiyonu vardır ve her organ onu kullanır; LLM organı ayrıca prompt'unu, modelini ve
   araçlarını hash'e katar (`11`: tanım hash'i prompt hash'i, model ve araç yüzeyidir).

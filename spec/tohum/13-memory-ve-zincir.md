@@ -23,8 +23,7 @@ Okunma: yeni memory açarken ve her defter yazımında
   yazdığı aday kenar, statik analiz ya da test onu `trust: verified` yapana kadar hiçbir avcıya verilmez; exit
   koşularından önce harita dondurulur.
 - **Harita açılana kadar** etki kümesi profildeki etkilenen-test komutudur. Merge sonrası kırmızının nedeni bu kümenin
-  dışındaysa `impact_miss` yazılır; bu, haritanın doğum sinyalidir (`17`) ve bir öğrenme organının hata ölçüsüdür
-  (Y5).
+  dışındaysa `impact_miss` yazılır; bu, haritanın doğum sinyalidir (`17`) ve bir öğrenme organının hata ölçüsüdür (Y5).
 - **Kapsama bir görünümdür:** her döngünün her dosyaya yazdığı kader (hangi basamak gördü, hiçbiri görmedi, kaba)
   defterden kurulur. Görülmeyen dosya payı birinci sınıf sayıdır; ilk okuyucusu boşluk formülüdür (`17`).
 - Memory'de duran hiçbir şey kanıt değildir (Y1). Memory nereye bakılacağını söyler.
@@ -52,8 +51,9 @@ geçer (`29a`).
   adlandırdığı commit'ten başka bir `brain/integration` başı (E637) ya da Rekor'a yazılamama kurcalama kanıtıdır:
   Gözcü sert duruş yazar (`28`), defter salt okunur olur, kırığın satırı ve commit'i raporlanır. Adlandıran satır
   (bağımsız inceleme ekibi kararı, 2026-11-20, seed-078): merge satırının `merge_sha`'sı, geri alma satırının
-  `head_sha`'sı (`26d`, `26f`) ya da hedefin ilk merge'ünden önce kesim satırının `base_sha`'sı; oyuncağın ilk
-  merge'ünden önce `base_sha` `null`'dır ve karşılaştırma noktası henüz adlandırılmamıştır (açık, `29o`). Gözcü P1'le
+  `head_sha`'sı (`26d`, `26f`) ya da hedefin ilk merge'ünden önce kesim satırının `base_sha`'sı (oyuncakta API'deki
+  `main`'in `object.sha`'sı, `29o:45`; seed-093); `null` ise dal yok demektir, her `brain/integration` başı kırıktır.
+  Adlandıran satırı olmayan doğrulanmış defter reddedilir (`integration_unnamed`, kurulduğu gibi benimsendi). Gözcü P1'le
   gelir; ondan önce `çek` kırık bulursa döngüyü `hard_stop` ile reddeder ve hiçbir şey yazmaz. Kırık düzeltilmez;
   kırığın kendisi yeni bir satırdır; bu kırığı (B)'de yalnız `25a` Başarısızlık onarır.
 - **Rekor'a yazılamama** (sahip kararı, 2026-11-18, E636). İmzalama programının başarısız tek çağrısı henüz yazılamama

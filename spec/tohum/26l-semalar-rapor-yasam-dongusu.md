@@ -38,14 +38,23 @@ Girdiyi yalnız operatör yazar; tek kaynaktır.
 nedeni değildir: teyit yanıtı yargılar, yapımı değil; kuralın kurulduğunu `done_mf`, testler ve defter gösterir.
 
 **Teyidin kanıtı** (`confirmed` ve `declined` için tipli alanlar, serbest metnin yanında):
-- `epoch`: okunan dönemin `setup/summary.json` `seed_epochs[]` satırının tam `commit`'i (40 küçük onaltılık);
+- `epoch`: okunan dönemin `setup/summary.json` `seed_epochs[]` satırının tam `commit`'i (40 küçük onaltılık). Bu
+  commit beyin reposunundur (seed-096): dönemin `spec/tohum`'unu beynin `main`'ine getiren teslim commit'i (`25` 10b),
+  konusu `Tohum dönemi: snowball-mcp <7 hane>`, değişikliği yalnız `spec/tohum/` altında; hiçbir zaman bir
+  `snowball-mcp` commit'i değildir (konudaki yedi hane odur, tam hâli hiçbir alanda istenmez). Oturum onu kendi beyin
+  klonunun geçmişinden okur: yanıtı getiren dönemin teslim commit'inin tam SHA'sıdır; teslimden sonraki ilk oturumda
+  bu, oturumun başladığı beyin başının geçmişindeki en yeni `Tohum dönemi:` commit'idir (dönem AD'ninki
+  `d5114fe85095b9626b3903c2792ec81066da9872`). Yeni bir okuma yeri gerekmez;
 - `answered_by`: yanıt olarak okunan sayfa başvurularının boş olmayan listesi (en çok 50), her biri `<sayfa>`,
   `<sayfa>:<satır>` ya da `<sayfa>:<satır>-<satır>` (`26k:12-36`, `asama-1/13d:19`);
 - `check`: beyin kökünden koşan ve 0 ile çıkan bir komut, en çok 500 karakter;
 - `check_kind`: `test` (yanıtı bağlayan bir test koşar) ya da `read` (yalnız sayfaları okur, yanıt henüz kurulmamıştır;
   gevşetme L-AD1).
-Hakem bu alanların biçimini okur, komutu koşmaz; komut Kurucu'nun kanıtıdır, herkes yeniden koşabilir. Alanlar
-sonradan da eklenebilir; durum değişmez. `update_*` anahtarları ve "Recheck:" notları veridir, kanıt değildir (`00a`).
+Hakem bu alanların biçimini okur, komutu koşmaz; komut Kurucu'nun kanıtıdır, herkes yeniden koşabilir. Dönem AF'den
+(seed-096, sıkılaştırma) hakem ve başlatıcı `epoch`'un özetin `seed_epochs[].commit` değerlerinden biri olduğunu da
+denetler: olmayan `epoch` teyidi kapatmaz, rapor `open` sayılır (aşağıdaki sayımlarda; uyarı, hiçbir zaman neden
+değil). Alanlar sonradan da eklenebilir; durum değişmez. `update_*` anahtarları ve "Recheck:" notları veridir,
+kanıt değildir (`00a`).
 
 **Kalanlar ve yanlış yanıtlar.** Bir yanıtın açık bıraktığı ya da yanlış yanıtladığı soru `derived_from: <eski id>`
 taşıyan yeni bir rapordur; eski rapor `superseded` olur. Aynı `id` içinde yeniden sorulmaz ve hiçbir rapor büyüyen bir
