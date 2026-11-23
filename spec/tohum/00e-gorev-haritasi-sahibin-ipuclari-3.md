@@ -67,3 +67,5 @@ senin yazdığın, ölçtüğün ve geliştirdiğin kurallarla.**
   2. Önyükleme hakemi, rakip ve tam prepush değişmeden kalır.
   3. Yanlışlanabilir: kurallarla geçen 5 oturumdan sonra ajan koşularında ölçülen bir iyileşme (gerçek yakalama, yeniden
      iş, işe yarar bulgu başına maliyet) görünmezse, bunu kaydeder ve yeniden tasarlarsın.
+
+Sahibin 2026-11-23'ten sonraki ipuçları (E736'dan başlayarak) `00f`'dedir.
