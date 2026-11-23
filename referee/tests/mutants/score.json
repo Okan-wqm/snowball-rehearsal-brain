@@ -66,8 +66,8 @@
   {
    "id": "reobservation_counted_again",
    "file": "harness/score.py",
-   "old": "        if finding[\"fingerprint\"] in seen:\n            reobserved += 1\n            continue",
-   "new": "        if False:\n            reobserved += 1\n            continue",
+   "old": "            if identity in seen:\n                reobserved += 1\n                continue",
+   "new": "            if False:\n                reobserved += 1\n                continue",
    "tests": [
     "test_score.Fingerprint"
    ]
@@ -374,8 +374,8 @@
   {
    "id": "refused_first_gives_its_fingerprint_away",
    "file": "harness/score.py",
-   "old": "        seen.add(finding[\"fingerprint\"])\n        reasons = []\n        primary = finding[\"evidence_refs\"][0]\n        if ref_max_lines is not None and primary[\"line_end\"] - primary[\"line_start\"] + 1 > ref_max_lines:\n            reasons.append(\"ref_over_max_lines\")\n        if snapshot is not None:\n            reasons += _ref_reasons(finding, snapshot, read)\n        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n        else:\n            accepted.append(finding)\n",
-   "new": "        reasons = []\n        primary = finding[\"evidence_refs\"][0]\n        if ref_max_lines is not None and primary[\"line_end\"] - primary[\"line_start\"] + 1 > ref_max_lines:\n            reasons.append(\"ref_over_max_lines\")\n        if snapshot is not None:\n            reasons += _ref_reasons(finding, snapshot, read)\n        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n        else:\n            seen.add(finding[\"fingerprint\"])\n            accepted.append(finding)\n",
+   "old": "            seen.add(identity)\n        if not _shaped(finding):\n            refused.append({\"index\": index, \"reasons\": [\"finding_invalid\"]})\n            continue\n        reasons = []\n        primary = finding[\"evidence_refs\"][0]\n        if ref_max_lines is not None and primary[\"line_end\"] - primary[\"line_start\"] + 1 > ref_max_lines:\n            reasons.append(\"ref_over_max_lines\")\n        if snapshot is not None:\n            reasons += _ref_reasons(finding, snapshot, read)\n        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n        else:\n",
+   "new": "        if not _shaped(finding):\n            refused.append({\"index\": index, \"reasons\": [\"finding_invalid\"]})\n            continue\n        reasons = []\n        primary = finding[\"evidence_refs\"][0]\n        if ref_max_lines is not None and primary[\"line_end\"] - primary[\"line_start\"] + 1 > ref_max_lines:\n            reasons.append(\"ref_over_max_lines\")\n        if snapshot is not None:\n            reasons += _ref_reasons(finding, snapshot, read)\n        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n        else:\n            seen.add(identity)\n",
    "tests": [
     "test_score.Fingerprint"
    ]
@@ -451,6 +451,25 @@
    "new": "FINDINGS = []   # the cycle's findings file",
    "tests": [
     "test_score.Live"
+   ]
+  },
+  {
+   "id": "invalid_first_gives_its_fingerprint_away",
+   "file": "harness/score.py",
+   "old": "            seen.add(identity)\n        if not _shaped(finding):\n            refused.append({\"index\": index, \"reasons\": [\"finding_invalid\"]})\n            continue\n",
+   "new": "        if not _shaped(finding):\n            refused.append({\"index\": index, \"reasons\": [\"finding_invalid\"]})\n            continue\n        seen.add(identity)\n",
+   "tests": [
+    "test_score.Fingerprint",
+    "test_score.Refs"
+   ]
+  },
+  {
+   "id": "empty_fingerprint_is_an_identity",
+   "file": "harness/score.py",
+   "old": "        if isinstance(identity, str) and identity:\n",
+   "new": "        if isinstance(identity, str):\n",
+   "tests": [
+    "test_score.Refs"
    ]
   }
  ]

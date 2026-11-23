@@ -166,8 +166,8 @@ refused tree is ``pulled_invalid``). Then:
   ``base_sha``; the target's line has ``cases`` (``{cases, oracle, refused}``, "The case" there) whatever the
   steps after D5 gave. Then the harness report (P1 MF4, ``yaz_harness``): ``harness.score.report`` scores the
   cycle's findings against those cases on ``pulled``'s ``snapshot.json`` document and the extracted tree, and the
-  target's line has ``harness`` (``{report, hits, matched, missed_rules, refused, counts, verdict_reason}``, "The
-  report" there; ``{reason: "harness_refused", reasons}`` when the scorer refuses the document or the cases). The
+  target's line has ``harness`` (``{report, hits, matched, missed_rules, uncased_rules, refused, counts, verdict_reason}``, "The
+  report" there; ``{reason: "harness_refused", reasons}`` when the scorer refuses the findings file, the document or the cases). The
   cycle's findings file is the writer's with no row (``FINDINGS``) until an organ's output is read as findings, so every case of a cycle is a miss
   today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``window``
   and ``ref_max_lines`` are ``harness.params.score`` of ``pulled``'s policy (tohum/29v's paths of stage 1; all
@@ -917,7 +917,7 @@ def yaz_harness(art: Any, tree: str, cases: dict[str, Any]) -> dict[str, Any]:
     ``FINDINGS`` against the dev cases ``yaz_cases`` built, on ``pulled``'s snapshot document and the extracted
     tree, with ``harness.params.score`` of ``pulled``'s policy (``alpha``, ``window``, ``ref_max_lines``; the
     policy is one ``yaz_policy`` found usable, so no value is absent or invalid here);
-    ``{reason: "harness_refused", reasons}`` when the scorer refuses the document or the cases."""
+    ``{reason: "harness_refused", reasons}`` when the scorer refuses the findings file, the document or the cases."""
     params = HP.score(art.policy)
     try:
         return OF.run(lambda: HS.report(FINDINGS, cases["cases"], art.snapshot,

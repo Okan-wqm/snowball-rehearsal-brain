@@ -19,10 +19,11 @@ judged:
 1. ``finding_invalid``: not an object, ``fingerprint`` not a non-empty string, or ``evidence_refs`` not a
    non-empty list of ``{path: string, line_start, line_end: integers, 1 <= line_start <= line_end}``.
 2. The identity of a finding is its ``fingerprint`` string. The first finding of the list that carries a
-   fingerprint (and is not ``finding_invalid``) is the one judged: accepted, or refused by 3 and 4. Every later
-   one carrying it is a **re-observation**: counted in ``reobserved``, nothing else of it is read, so it is
-   neither matched nor refused nor counted as a finding of a clean run (tohum/26m "Puanlama" 2), whatever its
-   file, rule or line, and also when the first one was refused.
+   fingerprint is the one judged: accepted, or refused by 1, 3 and 4. Every later one carrying it is a
+   **re-observation**: counted in ``reobserved``, nothing else of it is read, so it is neither matched nor
+   refused nor counted as a finding of a clean run (tohum/26m "Puanlama" 2), whatever its file, rule, line or
+   shape, and also when the first one was refused (so a writer's row without an evidence reference, a symbol
+   finding's, is one ``finding_invalid`` however many rows its fingerprint has).
 3. With ``ref_max_lines`` (a positive integer, ``stage_params.evidence_ref_max_lines``; another value that is not
    ``None`` is ``Unusable``, ``ref_max_lines_invalid``): ``ref_over_max_lines``: the finding's **primary**
    reference, ``evidence_refs[0]``, spans more lines than it (a reference spans ``line_end - line_start + 1``
@@ -196,13 +197,15 @@ def sift(findings: list, snapshot: dict | None = None, read: Callable[[str], "by
     seen: set[str] = set()
     reobserved = 0
     for index, finding in enumerate(findings):
+        identity = finding.get("fingerprint") if isinstance(finding, dict) else None
+        if isinstance(identity, str) and identity:
+            if identity in seen:
+                reobserved += 1
+                continue
+            seen.add(identity)
         if not _shaped(finding):
             refused.append({"index": index, "reasons": ["finding_invalid"]})
             continue
-        if finding["fingerprint"] in seen:
-            reobserved += 1
-            continue
-        seen.add(finding["fingerprint"])
         reasons = []
         primary = finding["evidence_refs"][0]
         if ref_max_lines is not None and primary["line_end"] - primary["line_start"] + 1 > ref_max_lines:

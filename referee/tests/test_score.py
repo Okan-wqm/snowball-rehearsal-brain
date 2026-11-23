@@ -238,20 +238,19 @@ class Refs(Base):
                          [{"index": 0, "reasons": ["snapshot_mismatch", "ref_outside_manifest", "ref_line_missing"]}])
 
     def test_what_is_no_finding(self):
-        shapes = [None, "x", {}, finding(""), dict(finding("x", 2), fingerprint=7), finding("x"),
-                  dict(finding("x", 2), evidence_refs={}), dict(finding("x", 2), evidence_refs=[None]),
-                  dict(finding("x", 2), evidence_refs=[{"path": 1, "line_start": 2, "line_end": 2}]),
-                  dict(finding("x", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": 0, "line_end": 2}]),
-                  dict(finding("x", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": 3, "line_end": 2}]),
-                  dict(finding("x", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": True, "line_end": 2}]),
-                  dict(finding("x", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": 2, "line_end": 2.0}])]
-        # none of them is a row the writer's file can hold: ``sift`` is what judges a list
+        shapes = [None, "x", {}, finding(""), finding(""), dict(finding("x", 2), fingerprint=7), finding("a"),
+                  dict(finding("b", 2), evidence_refs={}), dict(finding("c", 2), evidence_refs=[None]),
+                  dict(finding("d", 2), evidence_refs=[{"path": 1, "line_start": 2, "line_end": 2}]),
+                  dict(finding("e", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": 0, "line_end": 2}]),
+                  dict(finding("f", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": 3, "line_end": 2}]),
+                  dict(finding("g", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": True, "line_end": 2}]),
+                  dict(finding("h", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": 2, "line_end": 2.0}])]
         for snapshot in (None, self.snapshot):
             self.assertEqual(HS.sift(shapes, snapshot, self.read),
                              ([], [{"index": i, "reasons": ["finding_invalid"]} for i in range(len(shapes))], 0))
-        # and a fingerprint is not taken by one of them: the shaped finding after it is the first
+        # one that carries a fingerprint is its first observation: the shaped finding after it is not read
         accepted, refused, reobserved = HS.sift([dict(finding("x", 2), evidence_refs=[None]), finding("x", 2)])
-        self.assertEqual((accepted, [r["index"] for r in refused], reobserved), ([finding("x", 2)], [0], 0))
+        self.assertEqual((accepted, [r["index"] for r in refused], reobserved), ([], [0], 1))
 
     def test_the_index_is_the_place_in_the_list_and_the_others_are_scored(self):
         out = self.report([finding("x", 2, path="nowhere.js"), finding("y", 2), finding("z", 2, snapshot_id="other")],
@@ -554,6 +553,14 @@ class Fingerprint(Base):
         turned = self.report([finding("x", 2), finding("x", 2, path="nowhere.js")], [case("c1", 2)])
         self.assertEqual((turned["hits"], turned["refused"]), (1, []))
         self.assertEqual(turned["counts"], {"given": 2, "distinct": 1, "reobserved": 1, "refused": 0})
+
+    def test_a_fingerprint_whose_first_row_has_no_reference_is_refused_once(self):
+        bare = dict(finding("x", 2), evidence_refs=[])
+        out = self.report([bare, dict(bare, state="fixed"), finding("x", 2), finding("y", 3)], [case("c1", 2)])
+        self.assertEqual((out["hits"], out["refused"]), (0, [{"index": 0, "reasons": ["finding_invalid"]}]))
+        self.assertEqual(out["counts"], {"given": 4, "distinct": 1, "reobserved": 2, "refused": 1})
+        self.assertEqual(HS.sift([finding("x", 2), bare, "x", {"fingerprint": ""}])[1:],
+                         ([{"index": 2, "reasons": ["finding_invalid"]}, {"index": 3, "reasons": ["finding_invalid"]}], 1))
 
     def test_without_a_snapshot_too(self):
         accepted, refused, reobserved = HS.sift([finding("x", 2), finding("x", 3), finding("x", 1, path="pkg/b.js")])
