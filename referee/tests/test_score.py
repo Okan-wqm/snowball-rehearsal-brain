@@ -1019,7 +1019,7 @@ class Report(Base):
 
     def test_a_census_that_is_no_rule_set_is_refused(self):
         for census in ([], set(), {}, {"eslint": "no-var"}, "eslint", b"eslint", 3, [("eslint",)], [("eslint", "a", "b")],
-                       [("eslint", 1)], ["eslint:no-var"], [None], SET + [SET[0]], [["eslint", "no-var"], ("eslint", "no-var")]):
+                       [("eslint", 1)], ["eslint:no-var"], [None], SET + [SET[0]], SET + [("ruff", "E501")], [["eslint", "no-var"], ("eslint", "no-var")]):
             for cases in (FULL, []):
                 with self.subTest(census=census, cases=len(cases)):
                     with self.assertRaises(HS.Unusable) as caught:

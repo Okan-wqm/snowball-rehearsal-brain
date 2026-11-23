@@ -79,8 +79,9 @@ snapshot, or a line equal to one already found) is in no run, so a case only it 
 - ``census``, for the classes the hit rule matches by tool and rule (``cases.build.DETERMINISTIC``: K0, K1,
   K2; a rule is a (``tool``, ``rule_id``) pair of strings, a case without one is ``case_invalid:<index>``):
   ``{rules_total, rules_covered, misses}``, counted over ``census``, the rule set of the target's ``census``
-  vectors (tohum/26q (10); the caller's: a list or set of distinct pairs of strings, at least one, else ``Unusable`` ``census_invalid``: a set
-  of no rule would be a ``PASS`` with nothing counted;
+  vectors (tohum/26q (10); the caller's: a list or set of distinct pairs of strings, at least one and all of one tool, else ``Unusable``
+  ``census_invalid``: a set of no rule would be a ``PASS`` with nothing counted, and the page's denominator is
+  per tool while 26b's ``census`` holds one count, so a set of two tools has no stated report;
   ``loop.job`` gives ``cases.census.rules`` of the target's kind). ``rules_total`` is the size of that set;
   ``rules_covered`` its rules with a case and no case missed; ``misses`` the cases not hit, of any rule. A case
   of a rule outside the set adds nothing to ``rules_total`` or ``rules_covered`` and is a case everywhere else
@@ -268,6 +269,8 @@ def _census(census: Any) -> "set[tuple[str, str]] | None":
     pairs = [tuple(rule) if isinstance(rule, (list, tuple)) else None for rule in census]
     if not pairs or len(set(pairs)) != len(pairs) \
             or any(pair is None or len(pair) != 2 or not all(isinstance(part, str) for part in pair) for pair in pairs):
+        raise Unusable(["census_invalid"])
+    if len({tool for tool, _ in pairs}) != 1:                           # type: ignore[misc]
         raise Unusable(["census_invalid"])
     return set(pairs)                                                   # type: ignore[arg-type]
 

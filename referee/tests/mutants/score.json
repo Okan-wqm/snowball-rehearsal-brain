@@ -633,6 +633,15 @@
    "tests": [
     "test_score.FromPolicy"
    ]
+  },
+  {
+   "id": "census_of_two_tools_accepted",
+   "file": "harness/score.py",
+   "old": "    if len({tool for tool, _ in pairs}) != 1:",
+   "new": "    if False:",
+   "tests": [
+    "test_score.Report"
+   ]
   }
  ]
 }
