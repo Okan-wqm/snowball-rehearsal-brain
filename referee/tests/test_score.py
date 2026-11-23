@@ -18,8 +18,8 @@ through the loop (``yaz``).
   the report;
 - ``Match`` and ``Vectors``: one finding takes one case, one case counts once; the shapes of tohum/29a's
   ``match`` vectors through the command line; the command's refusals;
-- ``Report``: the fields, the census over ``cases.build.rules()``, the verdicts in their order, the cases
-  refused;
+- ``Report``: the fields, the census over the rule set the caller gives (none: no count and never ``PASS``),
+  the verdicts in their order, the cases refused;
 - ``Live``: from ``çek`` through ``koş`` to ``yaz``'s line (``harness``).
 """
 
@@ -1020,7 +1020,7 @@ class Report(Base):
 
     def test_a_census_that_is_no_rule_set_is_refused(self):
         for census in ([], set(), {}, {"eslint": "no-var"}, "eslint", b"eslint", 3, [("eslint",)], [("eslint", "a", "b")],
-                       [("eslint", 1)], ["eslint:no-var"], [None], SET + [SET[0]], SET + [("ruff", "E501")], [["eslint", "no-var"], ("eslint", "no-var")]):
+                       [("eslint", 1)], [["eslint", ["no-var"]]], [[["eslint"], "no-var"]], [["eslint", {}]], ["eslint:no-var"], [None], SET + [SET[0]], SET + [("ruff", "E501")], [["eslint", "no-var"], ("eslint", "no-var")]):
             for cases in (FULL, []):
                 with self.subTest(census=census, cases=len(cases)):
                     with self.assertRaises(HS.Unusable) as caught:

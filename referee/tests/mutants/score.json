@@ -583,8 +583,8 @@
   {
    "id": "census_rule_twice_accepted",
    "file": "harness/score.py",
-   "old": "    if len(set(pairs)) != len(pairs) \\\n            or any(",
-   "new": "    if any(",
+   "old": "    if len(set(pairs)) != len(pairs) or len({tool",
+   "new": "    if len({tool",
    "tests": [
     "test_score.Report"
    ]
@@ -628,8 +628,17 @@
   {
    "id": "census_of_two_tools_accepted",
    "file": "harness/score.py",
-   "old": "    if len({tool for tool, _ in pairs}) != 1:",
-   "new": "    if False:",
+   "old": " or len({tool for tool, _ in pairs}) != 1:",
+   "new": ":",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "census_parts_of_any_type",
+   "file": "harness/score.py",
+   "old": " or not all(isinstance(part, str) for part in pair) for pair in pairs):",
+   "new": " for pair in pairs):",
    "tests": [
     "test_score.Report"
    ]

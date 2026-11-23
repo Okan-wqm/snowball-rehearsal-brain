@@ -253,6 +253,10 @@ class Census(unittest.TestCase):
                 ("yoda", "if (a.b !== 'x' && c == 1) {}", "if ('x' !== a.b && c == 1) {}"),
                 ("yoda", "  return n===-1.5;", "  return -1.5===n;"),
                 ("yoda", "ok = flag == null;", "ok = null == flag;"),
+                ("yoda", "x = nullable === 1 || typeof_ === 2;", "x = 1 === nullable || typeof_ === 2;"),
+                ("yoda", "x = f(1) === 1 && $typeof.a != 'b';", "x = f(1) === 1 && 'b' != $typeof.a;"),
+                ("yoda", "x = typeof_(a) && b === 1;", "x = typeof_(a) && 1 === b;"),
+                ("yoda", "x = my$typeof + mytypeof(a) || b.c != 'd';", "x = my$typeof + mytypeof(a) || 'd' != b.c;"),
         ):
             with self.subTest(operator=operator, line=line):
                 self.assertEqual(rewritten(operator, line), new)
@@ -269,7 +273,12 @@ class Census(unittest.TestCase):
                 ("prefer-template", "import a from './a.js';"), ("prefer-template", "// f('a')"),
                 ("prefer-template", "x = {a: 1, 'k': 2};"), ("prefer-template", "x = 'a\\n';"), ("prefer-template", "'use strict';"),
                 ("yoda", "if (a === b) {}"), ("yoda", "if (typeof a === 'string') {}"), ("yoda", "if (1 === a) {}"),
+                ("operator-assignment", "let a = 1, b = 2;"), ("operator-assignment", "let a = 1; f();"),
+                ("operator-assignment", "let a = f(1, 2);"),
                 ("yoda", "if (f(a) === 1) {}"), ("yoda", "if (a < 1) {}"),
+                ("yoda", "if (typeof  a === 'string') {}"), ("yoda", "if (typeof\ta.b === 'string') {}"),
+                ("yoda", "if (typeof a === 'string' && b === 1) {}"),
+                ("yoda", "if (null === null) {}"), ("yoda", "x = true == 1;"), ("yoda", "x = false != 'a';"),
         ):
             with self.subTest(operator=operator, line=line):
                 self.assertIsNone(rewritten(operator, line))

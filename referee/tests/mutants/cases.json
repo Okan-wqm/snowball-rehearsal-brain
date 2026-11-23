@@ -670,8 +670,8 @@
   {
    "id": "yoda_operator_keeps_the_sides",
    "file": "cases/build.py",
-   "old": "\"replace\": r\"\\5\\2\\3\\4\\1\"",
-   "new": "\"replace\": r\"\\1\\2\\3\\4\\5\"",
+   "old": "\"replace\": r\"\\1\\6\\3\\4\\5\\2\"",
+   "new": "\"replace\": r\"\\1\\2\\3\\4\\5\\6\"",
    "tests": [
     "test_cases.Census"
    ]
@@ -726,6 +726,51 @@
    "file": "cases/census.py",
    "old": "    return RULES.get(kind) if isinstance(kind, str) else None",
    "new": "    return RULES[\"toy\"]",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "yoda_after_typeof",
+   "file": "cases/build.py",
+   "old": "r\"^((?:(?!(?<![\\w$])typeof(?![\\w$])).)*?)",
+   "new": "r\"^(.*?)",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "yoda_typeof_inside_a_name",
+   "file": "cases/build.py",
+   "old": "(?!(?<![\\w$])typeof(?![\\w$]))",
+   "new": "(?!typeof)",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "yoda_keyword_on_the_left",
+   "file": "cases/build.py",
+   "old": "(?!(?:true|false|null)(?![\\w$]))\"",
+   "new": "\"",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "yoda_name_starting_like_a_keyword",
+   "file": "cases/build.py",
+   "old": "(?!(?:true|false|null)(?![\\w$]))\"",
+   "new": "(?!(?:true|false|null))\"",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "operator_assignment_of_many_names",
+   "file": "cases/build.py",
+   "old": "=[^,;\\n]*;)[ \\t]*$",
+   "new": "=.*;)[ \\t]*$",
    "tests": [
     "test_cases.Census"
    ]

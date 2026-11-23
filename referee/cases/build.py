@@ -30,13 +30,14 @@ first non-blank text is not ``import``, ``//``, ``/*`` or ``*``:
 - ``object-shorthand``: on a code line, the first ``name.`` that starts a member chain (not after a word
   character, ``.``, ``)``, ``]`` or a quote; not ``this``, ``super``, ``import``, ``new``) becomes
   ``({ name: name }).name.``;
-- ``operator-assignment``: a line that is a ``let`` or ``var`` declaration of one name ending in ``;`` gets
-  `` name = name + 0;`` after it, on the same line;
+- ``operator-assignment``: a line that is a ``let`` or ``var`` declaration of one name ending in ``;``, with
+  no ``,`` and no other ``;`` after its ``=``, gets `` name = name + 0;`` after it, on the same line;
 - ``prefer-template``: on a code line, the first one-line ``"..."`` or ``'...'`` with no backslash that follows
   ``(``, ``[``, ``,``, ``=`` or ``:`` and is not followed by ``:`` becomes ``("..." + [])``;
 - ``yoda``: the first ``name == literal`` (``===``, ``!==``, ``==``, ``!=``; the left side a name or a dotted
-  chain of names not under ``typeof``; the literal a number, a one-line string with no backslash, ``true``,
-  ``false`` or ``null``) becomes ``literal == name``.
+  chain of names that does not start with ``true``, ``false`` or ``null``; the literal a number, a one-line
+  string with no backslash, ``true``, ``false`` or ``null``) on a line with no word ``typeof`` before it
+  becomes ``literal == name``.
 
 An operator reads text, not syntax, and nothing here says a mutation keeps the program's meaning (13a asks for
 a violation, not for an equivalent program): a match inside a comment or a string plants nothing or breaks the
@@ -162,13 +163,14 @@ CATALOG = (
      "match": _CODE + r"(.*?)(?<![\w$.)\]\"'`])(?!(?:this|super|import|new)\.)(" + _NAME + r")\.(?=[A-Za-z_$])",
      "replace": r"\1({ \2: \2 }).\2."},
     {"id": "operator-assignment", "tool": TOOL, "rule_id": "operator-assignment",
-     "match": r"^([ \t]*(?:let|var)[ \t]+(" + _NAME + r")[ \t]*=.*;)[ \t]*$", "replace": r"\1 \2 = \2 + 0;"},
+     "match": r"^([ \t]*(?:let|var)[ \t]+(" + _NAME + r")[ \t]*=[^,;\n]*;)[ \t]*$", "replace": r"\1 \2 = \2 + 0;"},
     {"id": "prefer-template", "tool": TOOL, "rule_id": "prefer-template",
      "match": _CODE + r"(.*?[(\[,=:][ \t]*)([\"'])((?:(?!\2)[^\\\n])*)\2(?![ \t]*:)", "replace": r"\1(\2\3\2 + [])"},
     {"id": "yoda", "tool": TOOL, "rule_id": "yoda",
-     "match": r"(?<![\w$.])(?<!typeof )(" + _NAME + r"(?:\." + _NAME + r")*)([ \t]*)(===|!==|==|!=)([ \t]*)"
+     "match": r"^((?:(?!(?<![\w$])typeof(?![\w$])).)*?)(?<![\w$.])(?!(?:true|false|null)(?![\w$]))"
+              r"(" + _NAME + r"(?:\." + _NAME + r")*)([ \t]*)(===|!==|==|!=)([ \t]*)"
               r"(-?\d+(?:\.\d+)?|\"[^\"\\\n]*\"|'[^'\\\n]*'|true|false|null)(?![\w$.])",
-     "replace": r"\5\2\3\4\1"},
+     "replace": r"\1\6\3\4\5\2"},
 )
 SUFFIXES = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts")
 PLAIN_PATH = re.compile(r"[A-Za-z0-9._/@+\-\[\]()]+\Z")

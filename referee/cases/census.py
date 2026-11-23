@@ -10,7 +10,9 @@ copy today): the scorer (``harness.score.report``) then gives no count and never
 
 The seed's vector file (``/vec/cases.json``'s ``census.*`` cases, each one ``cases.build produce TOOL RULE``) is
 not read at run time: no page says where a running referee finds it or which target a case of it is of. The
-tests read it (``tests/test_cases.py``): the toy's set here is exactly the rules those cases ask for.
+tests (``tests/test_cases.py``) hold the toy's set here to the seven rules written there by hand; only on a
+machine that has that vector file does one more test read it and hold the set to exactly the rules its cases ask
+for (it is skipped elsewhere: the file is the seed's, not this tree's).
 
 Out of scope, stated: which rules the toy's own config enables at a commit (the set is the seed's, not read
 from the target, so a target cannot shrink its own denominator); a set for any other target.
