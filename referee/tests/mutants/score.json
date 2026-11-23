@@ -28,15 +28,6 @@
    ]
   },
   {
-   "id": "snapshot_id_not_compared",
-   "file": "harness/score.py",
-   "old": "    if finding.get(\"snapshot_id\") != snapshot[\"snapshot_id\"]:",
-   "new": "    if False:",
-   "tests": [
-    "test_score.Refs"
-   ]
-  },
-  {
    "id": "ref_line_not_judged",
    "file": "harness/score.py",
    "old": "        elif ref[\"line_end\"] > _lines(data):",
@@ -338,8 +329,8 @@
   {
    "id": "ref_length_cli_option_dropped",
    "file": "harness/score.py",
-   "old": "            accepted, refused, _ = sift(_list(argv[0]), ref_max_lines=longest)",
-   "new": "            accepted, refused, _ = sift(_list(argv[0]))",
+   "old": "            accepted, refused, _, _ = sift(_list(argv[0]), ref_max_lines=longest)",
+   "new": "            accepted, refused, _, _ = sift(_list(argv[0]))",
    "tests": [
     "test_score.RefLength.test_the_command_s_option_in_both_forms"
    ]
@@ -470,6 +461,78 @@
    "new": "        if isinstance(identity, str):\n",
    "tests": [
     "test_score.Refs"
+   ]
+  },
+  {
+   "id": "another_run_s_row_read",
+   "file": "harness/score.py",
+   "old": "        if snapshot is not None and isinstance(finding, dict) \\\n                and finding.get(\"snapshot_id\") != snapshot[\"snapshot_id\"]:\n",
+   "new": "        if False:\n",
+   "tests": [
+    "test_score.Runs"
+   ]
+  },
+  {
+   "id": "another_run_s_row_takes_the_fingerprint",
+   "file": "harness/score.py",
+   "old": "            other_runs += 1\n            continue\n",
+   "new": "            other_runs += 1\n            seen.add(finding.get(\"fingerprint\"))\n            continue\n",
+   "tests": [
+    "test_score.Runs"
+   ]
+  },
+  {
+   "id": "another_run_s_row_not_counted",
+   "file": "harness/score.py",
+   "old": "            other_runs += 1\n",
+   "new": "            pass\n",
+   "tests": [
+    "test_score.Runs"
+   ]
+  },
+  {
+   "id": "another_run_s_row_counted_as_a_re_observation",
+   "file": "harness/score.py",
+   "old": "            other_runs += 1\n",
+   "new": "            reobserved += 1\n",
+   "tests": [
+    "test_score.Runs"
+   ]
+  },
+  {
+   "id": "another_run_s_row_a_finding_of_a_clean_run",
+   "file": "harness/score.py",
+   "old": "len(accepted) + len(refused)\n",
+   "new": "len(accepted) + len(refused) + other_runs\n",
+   "tests": [
+    "test_score.Runs"
+   ]
+  },
+  {
+   "id": "another_run_told_by_a_missing_id_only",
+   "file": "harness/score.py",
+   "old": "                and finding.get(\"snapshot_id\") != snapshot[\"snapshot_id\"]:\n",
+   "new": "                and finding.get(\"snapshot_id\") is None:\n",
+   "tests": [
+    "test_score.Runs"
+   ]
+  },
+  {
+   "id": "the_run_cut_without_a_snapshot_too",
+   "file": "harness/score.py",
+   "old": "        if snapshot is not None and isinstance(finding, dict) \\\n                and finding.get(\"snapshot_id\") != snapshot[\"snapshot_id\"]:\n",
+   "new": "        if isinstance(finding, dict) \\\n                and finding.get(\"snapshot_id\") != (snapshot or {}).get(\"snapshot_id\"):\n",
+   "tests": [
+    "test_score.Runs"
+   ]
+  },
+  {
+   "id": "report_s_other_runs_not_given",
+   "file": "harness/score.py",
+   "old": "\"other_runs\": other_runs}}",
+   "new": "\"other_runs\": 0}}",
+   "tests": [
+    "test_score.Runs"
    ]
   }
  ]

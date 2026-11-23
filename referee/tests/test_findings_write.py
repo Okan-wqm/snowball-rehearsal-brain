@@ -688,18 +688,18 @@ class Scored(unittest.TestCase):
         second = observe(first.content, [lint(4), lint(6), named(3), lint(1)], SHIFTED)
         self.assertEqual(len(second.rows), 1)                      # only "// header" is new
         rows = stored(second.content)
-        accepted, refused, reobserved = HS.sift(rows)
+        accepted, refused, reobserved, _ = HS.sift(rows)
         self.assertEqual((len(accepted), refused, reobserved), (4, [], 0))
         # the two runs' proposals, each given the writer's fingerprint: the scorer folds the second run
         runs = [dict(f, fingerprint=W.fingerprint(f, reader(tree)))
                 for tree, run in ((TREE, [lint(2), lint(4), named(1)]), (SHIFTED, [lint(4), lint(6), named(3)]))
                 for f in run]
-        accepted, refused, reobserved = HS.sift(copy.deepcopy(runs))
+        accepted, refused, reobserved, _ = HS.sift(copy.deepcopy(runs))
         self.assertEqual((len(accepted), refused, reobserved), (3, [], 3))
         self.assertEqual([f["fingerprint"] for f in accepted], [row["fingerprint"] for row in rows[:3]])
         # a state row of the same finding is the same identity to the scorer, never a conflict
         fixed = W.decide(second.content, second.content, b"", b"", [{"fingerprint": rows[0]["fingerprint"], "reasons": []}], BASE)
-        accepted, refused, reobserved = HS.sift(stored(fixed.findings))
+        accepted, refused, reobserved, _ = HS.sift(stored(fixed.findings))
         self.assertEqual((len(accepted), refused, reobserved), (4, [], 1))
 
 

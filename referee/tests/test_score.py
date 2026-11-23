@@ -8,9 +8,10 @@ through the loop (``yaz``).
 - test 7 (``Determinism``): the same input twice gives the same bytes (two processes with different hash seeds);
   the number of hits does not depend on the order of the findings or of the cases (``Match``: the largest
   matching, where taking cases greedily would give one hit fewer);
-- test 12 (``Fingerprint``): the same finding in two runs is counted once; the same finding on a shifted line is
-  the same finding; the first row of a fingerprint is the one scored and a later one is never read, whatever it
-  says and also after a refused first; ``Writer``: the report reads the writer's file and nothing else (a file
+- test 12 (``Fingerprint``): the same finding in two runs is counted once, on one snapshot and on two (``Runs``:
+  the run scored is the file's rows of the document's snapshot; a row of another snapshot is counted and never
+  read); the same finding on a shifted line is the same finding; the first row of a fingerprint in the run is the
+  one scored and a later one is never read, whatever it says and also after a refused first; ``Writer``: the report reads the writer's file and nothing else (a file
   ``findings.write`` made is scored under the fingerprint it gave; a list, a broken chain, a row that is not the
   writer's are ``Unusable``);
 - test 28 (``Statistics``): tohum/29a's tables through the command line, and ``x_eff`` and ``recall_lb`` through
@@ -154,7 +155,7 @@ class Empty(Base):
         out = self.report([], [case("c1", 2), case("c2", 3)], alpha=TENTH)
         self.assertEqual(out["hits"], 0)
         self.assertEqual(out["refused"], [])
-        self.assertEqual(out["counts"], {"given": 0, "distinct": 0, "reobserved": 0, "refused": 0})
+        self.assertEqual(out["counts"], {"given": 0, "distinct": 0, "reobserved": 0, "refused": 0, "other_runs": 0})
         report = out["report"]
         self.assertEqual((report["n"], report["n_groups"], report["recall"], report["x_eff"], report["recall_lb"]),
                          (2, 1, "0.000000", "0.000000", "0.000000"))
@@ -214,13 +215,11 @@ class Refs(Base):
         os.remove(os.path.join(self.tree, "pkg/a.js"))
         self.assertEqual(self.refused([finding("x", 2)]), [{"index": 0, "reasons": ["ref_hash_mismatch"]}])
 
-    def test_another_snapshot(self):
-        other = finding("x", 2, snapshot_id="0" * 64)
-        self.assertEqual(self.refused([other]), [{"index": 0, "reasons": ["snapshot_mismatch"]}])
-        absent = finding("x", 2)     # a finding of no snapshot: no row of the writer, so through ``sift``
-        self.assertEqual(HS.sift([absent], self.snapshot, self.read)[1:],
-                         ([{"index": 0, "reasons": ["snapshot_mismatch"]}], 0))
-        self.assertEqual(HS.sift(self.stamped([absent]), self.snapshot, self.read)[1:], ([], 0))
+    def test_a_finding_of_another_snapshot_is_not_refused(self):
+        # it is of another run (``Runs``): no reason is given for it, whatever its references are
+        for other in (finding("x", 2, snapshot_id="0" * 64), finding("x", 2, path="nowhere.js", snapshot_id="other")):
+            out = self.report([other], [case("c1", 2)])
+            self.assertEqual((out["hits"], out["refused"], out["counts"]["other_runs"]), (0, [], 1))
 
     def test_a_line_the_file_does_not_have(self):
         # pkg/a.js has five lines; lib/c.js two, the last without a newline
@@ -232,10 +231,14 @@ class Refs(Base):
                          [{"index": 0, "reasons": ["ref_line_missing"]}])
 
     def test_every_reason_in_its_order_each_once(self):
-        bad = finding("x", 9, 9, snapshot_id="other")
+        bad = finding("x", 9, 9)
         bad["evidence_refs"] += [{"path": "nowhere.js", "line_start": 1, "line_end": 1}] * 2
-        self.assertEqual(self.refused([bad]),
-                         [{"index": 0, "reasons": ["snapshot_mismatch", "ref_outside_manifest", "ref_line_missing"]}])
+        self.assertEqual(self.refused([bad]), [{"index": 0, "reasons": ["ref_outside_manifest", "ref_line_missing"]}])
+        with open(os.path.join(self.tree, "pkg/b.js"), "ab") as fh:
+            fh.write(b"var w = 1;\n")
+        bad["evidence_refs"].insert(0, {"path": "pkg/b.js", "line_start": 1, "line_end": 1})
+        self.assertEqual(self.refused([bad]), [{"index": 0, "reasons": ["ref_outside_manifest", "ref_hash_mismatch",
+                                                                        "ref_line_missing"]}])
 
     def test_what_is_no_finding(self):
         shapes = [None, "x", {}, finding(""), finding(""), dict(finding("x", 2), fingerprint=7), finding("a"),
@@ -245,26 +248,26 @@ class Refs(Base):
                   dict(finding("f", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": 3, "line_end": 2}]),
                   dict(finding("g", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": True, "line_end": 2}]),
                   dict(finding("h", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": 2, "line_end": 2.0}])]
-        for snapshot in (None, self.snapshot):
-            self.assertEqual(HS.sift(shapes, snapshot, self.read),
-                             ([], [{"index": i, "reasons": ["finding_invalid"]} for i in range(len(shapes))], 0))
+        for snapshot, given in ((None, shapes), (self.snapshot, self.stamped(shapes))):
+            self.assertEqual(HS.sift(given, snapshot, self.read),
+                             ([], [{"index": i, "reasons": ["finding_invalid"]} for i in range(len(shapes))], 0, 0))
         # one that carries a fingerprint is its first observation: the shaped finding after it is not read
-        accepted, refused, reobserved = HS.sift([dict(finding("x", 2), evidence_refs=[None]), finding("x", 2)])
+        accepted, refused, reobserved, _ = HS.sift([dict(finding("x", 2), evidence_refs=[None]), finding("x", 2)])
         self.assertEqual((accepted, [r["index"] for r in refused], reobserved), ([], [0], 1))
 
     def test_the_index_is_the_place_in_the_list_and_the_others_are_scored(self):
-        out = self.report([finding("x", 2, path="nowhere.js"), finding("y", 2), finding("z", 2, snapshot_id="other")],
-                          [case("c1", 2)])
+        out = self.report([finding("x", 2, path="nowhere.js"), finding("y", 2), finding("z", 9)], [case("c1", 2)])
         self.assertEqual((out["hits"], out["matched"]), (1, {"c1": fp("y")}))
         self.assertEqual(out["refused"], [{"index": 0, "reasons": ["ref_outside_manifest"]},
-                                          {"index": 2, "reasons": ["snapshot_mismatch"]}])
-        self.assertEqual(out["counts"], {"given": 3, "distinct": 1, "reobserved": 0, "refused": 2})
-        # the index is the row's place in the file, a re-observation before it counted in
-        out = self.report([finding("y", 2), finding("y", 3), finding("x", 2, path="nowhere.js")], [case("c1", 2)])
-        self.assertEqual(out["refused"], [{"index": 2, "reasons": ["ref_outside_manifest"]}])
+                                          {"index": 2, "reasons": ["ref_line_missing"]}])
+        self.assertEqual(out["counts"], {"given": 3, "distinct": 1, "reobserved": 0, "refused": 2, "other_runs": 0})
+        # the index is the row's place in the file: a re-observation and a row of another run before it count in
+        out = self.report([finding("y", 2), finding("y", 3), finding("w", 2, snapshot_id="other"),
+                           finding("x", 2, path="nowhere.js")], [case("c1", 2)])
+        self.assertEqual(out["refused"], [{"index": 3, "reasons": ["ref_outside_manifest"]}])
 
     def test_a_refused_finding_is_counted_in_a_clean_run(self):
-        mixed = [finding("x", 2, path="nowhere.js"), finding("y", 2), finding("z", 2, snapshot_id="other")]
+        mixed = [finding("x", 2, path="nowhere.js"), finding("y", 2), finding("z", 9)]
         out = self.report(mixed, [])
         self.assertEqual(out["report"]["clean_findings"], 3)
         # each identity once: a later row of a fingerprint is no finding more, the refused one's neither
@@ -307,7 +310,7 @@ class RefLength(Base):
         self.assertEqual((at_bound["hits"], at_bound["refused"]), (1, []))
         over = self.report([span("x", (2, 5))], cases, ref_max_lines=3)
         self.assertEqual((over["hits"], over["refused"]), (0, [{"index": 0, "reasons": ["ref_over_max_lines"]}]))
-        self.assertEqual(over["counts"], {"given": 1, "distinct": 0, "reobserved": 0, "refused": 1})
+        self.assertEqual(over["counts"], {"given": 1, "distinct": 0, "reobserved": 0, "refused": 1, "other_runs": 0})
         one_line = self.report([span("x", (2, 2))], cases, ref_max_lines=1)
         self.assertEqual((one_line["hits"], one_line["refused"]), (1, []))
 
@@ -333,7 +336,7 @@ class RefLength(Base):
         self.assertEqual(out["refused"], [{"index": 2, "reasons": ["ref_over_max_lines", "ref_outside_manifest"]}])
 
     def test_without_a_snapshot_too(self):
-        accepted, refused, _ = HS.sift([span("x", (1, 5)), span("y", (1, 2))], ref_max_lines=2)
+        accepted, refused, _, _ = HS.sift([span("x", (1, 5)), span("y", (1, 2))], ref_max_lines=2)
         self.assertEqual(([f["fingerprint"] for f in accepted], refused),
                          (["y"], [{"index": 0, "reasons": ["ref_over_max_lines"]}]))
 
@@ -486,7 +489,7 @@ class Determinism(Base):
         self.assertEqual((out["hits"], out["report"]["recall"], out["missed_rules"]),
                          (2, "0.666667", [["eslint", "no-eval"]]))
         self.assertEqual((out["counts"], out["uncased_rules"]),
-                         ({"given": 4, "distinct": 2, "reobserved": 1, "refused": 1}, [["eslint", "eqeqeq"], ["eslint", "prefer-const"]]))
+                         ({"given": 4, "distinct": 2, "reobserved": 1, "refused": 1, "other_runs": 0}, [["eslint", "eqeqeq"], ["eslint", "prefer-const"]]))
         self.assertEqual(self.command(listed, cases, seed="1"), self.command(listed, cases, seed="2"))
         self.assertEqual(json.loads(self.command(listed, cases)[1])["hits"], 2)
 
@@ -510,7 +513,7 @@ class Fingerprint(Base):
         once, twice = self.report(run, []), self.report(run + copy.deepcopy(run), [])
         self.assertEqual(once["report"]["clean_findings"], 2)
         self.assertEqual(twice["report"]["clean_findings"], 2)
-        self.assertEqual(twice["counts"], {"given": 4, "distinct": 2, "reobserved": 2, "refused": 0})
+        self.assertEqual(twice["counts"], {"given": 4, "distinct": 2, "reobserved": 2, "refused": 0, "other_runs": 0})
         # against cases too: the second run's copies take no second case
         cases = [case("c1", 2), case("c2", 2, end=3)]
         self.assertEqual(self.report([finding("x", 2)] * 2, cases)["hits"], 1)
@@ -535,11 +538,11 @@ class Fingerprint(Base):
         for index, other in enumerate([finding("x", 1, path="pkg/b.js"), finding("x", 3, rule="no-eval"),
                                        dict(finding("x", 2), property="other"), dict(finding("x", 2), symbol="f"),
                                        dict(finding("x", 2), tool="ruff"), finding("x", 2, path="nowhere.js"),
-                                       finding("x", 99), finding("x", 2, snapshot_id="other"), span("x", (1, 5))]):
+                                       finding("x", 99), dict(finding("x", 2), evidence_refs=[]), span("x", (1, 5))]):
             with self.subTest(index=index):
                 out = self.report([finding("x", 2), other], cases, ref_max_lines=2)
                 self.assertEqual((out["hits"], out["matched"], out["refused"]), (1, {"c1": fp("x")}, []))
-                self.assertEqual(out["counts"], {"given": 2, "distinct": 1, "reobserved": 1, "refused": 0})
+                self.assertEqual(out["counts"], {"given": 2, "distinct": 1, "reobserved": 1, "refused": 0, "other_runs": 0})
                 self.assertEqual(self.report([finding("x", 2), other], [])["report"]["clean_findings"], 1)
                 # the control: under its own fingerprint the same row is read
                 apart = self.report([finding("x", 2), dict(other, fingerprint="y")], cases, ref_max_lines=2)
@@ -549,25 +552,112 @@ class Fingerprint(Base):
     def test_the_first_observation_is_the_one_scored_also_when_it_is_refused(self):
         out = self.report([finding("x", 2, path="nowhere.js"), finding("x", 2)], [case("c1", 2)])
         self.assertEqual((out["hits"], out["refused"]), (0, [{"index": 0, "reasons": ["ref_outside_manifest"]}]))
-        self.assertEqual(out["counts"], {"given": 2, "distinct": 0, "reobserved": 1, "refused": 1})
+        self.assertEqual(out["counts"], {"given": 2, "distinct": 0, "reobserved": 1, "refused": 1, "other_runs": 0})
         turned = self.report([finding("x", 2), finding("x", 2, path="nowhere.js")], [case("c1", 2)])
         self.assertEqual((turned["hits"], turned["refused"]), (1, []))
-        self.assertEqual(turned["counts"], {"given": 2, "distinct": 1, "reobserved": 1, "refused": 0})
+        self.assertEqual(turned["counts"], {"given": 2, "distinct": 1, "reobserved": 1, "refused": 0, "other_runs": 0})
 
     def test_a_fingerprint_whose_first_row_has_no_reference_is_refused_once(self):
         bare = dict(finding("x", 2), evidence_refs=[])
         out = self.report([bare, dict(bare, state="fixed"), finding("x", 2), finding("y", 3)], [case("c1", 2)])
         self.assertEqual((out["hits"], out["refused"]), (0, [{"index": 0, "reasons": ["finding_invalid"]}]))
-        self.assertEqual(out["counts"], {"given": 4, "distinct": 1, "reobserved": 2, "refused": 1})
+        self.assertEqual(out["counts"], {"given": 4, "distinct": 1, "reobserved": 2, "refused": 1, "other_runs": 0})
         self.assertEqual(HS.sift([finding("x", 2), bare, "x", {"fingerprint": ""}])[1:],
-                         ([{"index": 2, "reasons": ["finding_invalid"]}, {"index": 3, "reasons": ["finding_invalid"]}], 1))
+                         ([{"index": 2, "reasons": ["finding_invalid"]}, {"index": 3, "reasons": ["finding_invalid"]}], 1, 0))
 
     def test_without_a_snapshot_too(self):
-        accepted, refused, reobserved = HS.sift([finding("x", 2), finding("x", 3), finding("x", 1, path="pkg/b.js")])
-        self.assertEqual((accepted, refused, reobserved), ([finding("x", 2)], [], 2))
-        accepted, refused, reobserved = HS.sift([span("x", (1, 5)), finding("x", 3), finding("y", 3)], ref_max_lines=2)
-        self.assertEqual((accepted, refused, reobserved),
-                         ([finding("y", 3)], [{"index": 0, "reasons": ["ref_over_max_lines"]}], 1))
+        found = HS.sift([finding("x", 2), finding("x", 3), finding("x", 1, path="pkg/b.js")])
+        self.assertEqual(found, ([finding("x", 2)], [], 2, 0))
+        found = HS.sift([span("x", (1, 5)), finding("x", 3), finding("y", 3)], ref_max_lines=2)
+        self.assertEqual(found, ([finding("y", 3)], [{"index": 0, "reasons": ["ref_over_max_lines"]}], 1, 0))
+
+
+OLD, OLDER = "0" * 64, "1" * 64
+
+
+class Runs(Base):
+    """Test 12, over a file that holds more than one run (the rival's refutation d9c8cb31952bfb5f of 1c8b68a): the
+    run scored is the rows of the document's snapshot."""
+
+    def test_a_finding_first_written_on_an_earlier_snapshot_is_counted_once(self):
+        out = self.report([finding("x", 2, snapshot_id=OLD), finding("x", 2)], [case("c1", 2)])
+        self.assertEqual((out["hits"], out["matched"], out["refused"]), (1, {"c1": fp("x")}, []))
+        self.assertEqual(out["counts"], {"given": 2, "distinct": 1, "reobserved": 0, "refused": 0, "other_runs": 1})
+        # once: it takes one case of two it would hit, and is one finding of a clean run
+        both = [case("c1", 2), case("c2", 2, end=3)]
+        self.assertEqual(self.report([finding("x", 2, snapshot_id=OLD), finding("x", 2)], both)["hits"], 1)
+        self.assertEqual(self.report([finding("x", 2, snapshot_id=OLD), finding("x", 2)], [])["report"]["clean_findings"], 1)
+
+    def test_wherever_the_other_run_s_rows_stand(self):
+        mine, cases = finding("x", 2), [case("c1", 2)]
+        earlier = [finding("x", 2, snapshot_id=OLDER), finding("x", 3, snapshot_id=OLD), finding("x", 2, snapshot_id=OLD)]
+        for name, rows, counts in (
+                ("before", earlier + [mine], (4, 1, 0, 0, 3)), ("after", [mine] + earlier, (4, 1, 0, 0, 3)),
+                ("around", earlier[:1] + [mine] + earlier[1:], (4, 1, 0, 0, 3)),
+                ("between two of the run", [mine, earlier[0], finding("x", 3)], (3, 1, 1, 0, 1))):
+            with self.subTest(name):
+                out = self.report(rows, cases)
+                self.assertEqual((out["hits"], out["refused"]), (1, []))
+                self.assertEqual(tuple(out["counts"][k] for k in ("given", "distinct", "reobserved", "refused",
+                                                                   "other_runs")), counts)
+
+    def test_a_row_of_another_run_is_never_read(self):
+        """Neither a hit, nor a refusal, nor the first of its fingerprint, nor a finding of a clean run, whatever
+        it says."""
+        cases = [case("c1", 2), case("c2", 3)]
+        for index, other in enumerate([finding("x", 2), finding("y", 3), finding("x", 2, path="nowhere.js"),
+                                       finding("x", 99), dict(finding("x", 2), evidence_refs=[]), span("x", (1, 5))]):
+            with self.subTest(index=index):
+                rows = [dict(other, snapshot_id=OLD), finding("x", 2)]
+                out = self.report(rows, cases, ref_max_lines=2)
+                self.assertEqual((out["hits"], out["matched"], out["refused"]), (1, {"c1": fp("x")}, []))
+                self.assertEqual(out["counts"], {"given": 2, "distinct": 1, "reobserved": 0, "refused": 0, "other_runs": 1})
+                self.assertEqual(self.report(rows, [])["report"]["clean_findings"], 1)
+        # the control: the same row on the document's snapshot is read (a hit of c2 that the other run's is not)
+        self.assertEqual(self.report([finding("y", 3, snapshot_id=OLD), finding("x", 2)], cases)["hits"], 1)
+        self.assertEqual(self.report([finding("y", 3), finding("x", 2)], cases)["hits"], 2)
+
+    def test_a_file_of_other_runs_only_is_a_run_with_no_finding(self):
+        out = self.report([finding("x", 2, snapshot_id=OLD), finding("y", 3, snapshot_id=OLDER)], [case("c1", 2)])
+        self.assertEqual((out["hits"], out["refused"], out["report"]["recall"]), (0, [], "0.000000"))
+        self.assertEqual(out["counts"], {"given": 2, "distinct": 0, "reobserved": 0, "refused": 0, "other_runs": 2})
+        clean = self.report([finding("x", 2, snapshot_id=OLD)], [])
+        self.assertEqual(clean["report"]["clean_findings"], 0)
+
+    def test_the_counts_add_up(self):
+        rows = [finding("x", 2, snapshot_id=OLD), finding("x", 2), finding("x", 3), finding("y", 9),
+                finding("z", 3, snapshot_id=OLDER), finding("y", 2)]
+        counts = self.report(rows, [case("c1", 2)])["counts"]
+        self.assertEqual(counts, {"given": 6, "distinct": 1, "reobserved": 2, "refused": 1, "other_runs": 2})
+        self.assertEqual(counts["given"], sum(v for k, v in counts.items() if k != "given"))
+
+    def test_the_run_is_told_by_the_snapshot_id_alone(self):
+        # ``sift``: an object without the field is of no run of this snapshot; what is no object is no finding
+        found = HS.sift([finding("x", 2), dict(finding("y", 2), snapshot_id=None), "x"], self.snapshot, self.read)
+        self.assertEqual(found, ([], [{"index": 2, "reasons": ["finding_invalid"]}], 0, 2))
+        # without a snapshot the list is the run, whatever ids its findings carry
+        found = HS.sift([finding("x", 2, snapshot_id=OLD), finding("x", 3, snapshot_id=OLDER)])
+        self.assertEqual((len(found[0]), found[1:]), (1, ([], 1, 0)))
+
+    def test_the_writer_s_file_over_two_snapshots(self):
+        """The writer's own rows: a finding fixed on one snapshot and seen again on the next is a ``reopened`` row
+        of the new snapshot, and that row is the one scored there."""
+        first = FW.observe(b"", b"", [TFW.lint(2, snapshot_id=OLD)], "hunter-1", self.read)
+        fixed = FW.decide(first.content, first.content, b"", b"", [{"fingerprint": first.rows[0]["fingerprint"],
+                                                                   "reasons": []}], "base-1")
+        again = FW.observe(fixed.findings, fixed.findings, [TFW.lint(2, snapshot_id=self.snapshot["snapshot_id"])],
+                           "hunter-1", self.read)
+        self.assertEqual(TFW.states(again.content), ["open", "fixed", "reopened"])
+        out = HS.report(again.content, [case("c1", 2)], self.snapshot, self.read)
+        self.assertEqual((out["hits"], out["refused"]), (1, []))
+        self.assertEqual(out["counts"], {"given": 3, "distinct": 1, "reobserved": 0, "refused": 0, "other_runs": 2})
+        # the stated limit: while the finding is open the writer writes no row for the second snapshot's
+        # observation (findings.write rule 7), so the file holds none of this run and the case is a miss
+        still = FW.observe(first.content, first.content, [TFW.lint(2, snapshot_id=self.snapshot["snapshot_id"])],
+                           "hunter-1", self.read)
+        self.assertEqual((still.rows, len(still.reobserved)), ([], 1))
+        out = HS.report(still.content, [case("c1", 2)], self.snapshot, self.read)
+        self.assertEqual((out["hits"], out["counts"]["other_runs"]), (0, 1))
 
 
 class Writer(Base):
@@ -584,7 +674,7 @@ class Writer(Base):
         prints = [FW.fingerprint(p, self.read) for p in proposals]
         self.assertEqual(len(set(prints)), 3)
         self.assertEqual((out["hits"], out["matched"], out["refused"]), (2, {"c1": prints[0], "c2": prints[2]}, []))
-        self.assertEqual(out["counts"], {"given": 3, "distinct": 3, "reobserved": 0, "refused": 0})
+        self.assertEqual(out["counts"], {"given": 3, "distinct": 3, "reobserved": 0, "refused": 0, "other_runs": 0})
 
     def test_a_decision_s_row_is_a_re_observation_of_the_finding(self):
         made = FW.observe(b"", b"", [self.proposal(2), self.proposal(3)], "hunter-1", self.read)
@@ -592,7 +682,7 @@ class Writer(Base):
                           [{"fingerprint": made.rows[0]["fingerprint"], "reasons": []}], "base-1")
         self.assertEqual(TFW.states(fixed.findings), ["open", "open", "fixed"])
         out = HS.report(fixed.findings, [case("c1", 2), case("c2", 3)], self.snapshot, self.read)
-        self.assertEqual((out["hits"], out["counts"]), (2, {"given": 3, "distinct": 2, "reobserved": 1, "refused": 0}))
+        self.assertEqual((out["hits"], out["counts"]), (2, {"given": 3, "distinct": 2, "reobserved": 1, "refused": 0, "other_runs": 0}))
 
     def test_what_is_not_the_writer_s_file_is_unusable(self):
         good = written(self.stamped([finding("x", 2), finding("y", 3)]))

@@ -4,7 +4,7 @@ tests 1, 6, 7, 12 and, with ``harness.stats``, 28).
 Rules: asama-1/13e (match-rule v2: a finding takes at most one case, a case counts at most once in a run; the
 metrics ``census``, ``recall``, ``recall_lb``, ``clean_findings``, ``verdict``), tohum/19 (three verdicts;
 ``x_eff = recall * G``), tohum/26m "Puanlama" (the fingerprint is read from the referee's writer's file; a
-fingerprint seen again is a counted re-observation; the verdict), tohum/07 and asama-1/13d (a finding's identity
+fingerprint seen again in a run is a counted re-observation; the verdict), tohum/07 and asama-1/13d (a finding's identity
 is its fingerprint; an evidence reference must be in the manifest), tohum/26b (the report's fields; no float),
 tohum/26a (``harness.score``: job ``yaz``, in: the findings and the snapshot, out: the report), tohum/29a (the
 command line of the ``match`` vectors), asama-0/09 (the tests).
@@ -12,14 +12,18 @@ command line of the ``match`` vectors), asama-0/09 (the tests).
 Whether one finding hits one case is ``cases.build.hit`` (the one hit rule, not written again here).
 
 **The findings** (``sift(findings, snapshot, read, ref_max_lines)``). ``findings`` is a list, read in its order;
-the answer is ``(accepted, refused, reobserved)``: ``refused`` is ``[{index, reasons}]``, ``index`` the finding's
-place in the list. Every reason that holds is listed, in this order; with ``finding_invalid`` nothing more is
-judged:
+the answer is ``(accepted, refused, reobserved, other_runs)``: ``refused`` is ``[{index, reasons}]``, ``index`` the
+finding's place in the list. First **the run**: with a snapshot (``snapshot`` the ``snapshot.make`` document), the
+run scored is the objects of the list whose ``snapshot_id`` is the document's. An object with another
+``snapshot_id``, or with none, is of **another run**: counted in ``other_runs`` and nothing else of it is read, so
+it is no first observation of its fingerprint, no re-observation, not refused, not matched and no finding of a
+clean run, wherever it stands in the list. Without a snapshot the whole list is the run. Then, over the run,
+every reason that holds is listed, in this order; with ``finding_invalid`` nothing more is judged:
 
 1. ``finding_invalid``: not an object, ``fingerprint`` not a non-empty string, or ``evidence_refs`` not a
    non-empty list of ``{path: string, line_start, line_end: integers, 1 <= line_start <= line_end}``.
-2. The identity of a finding is its ``fingerprint`` string. The first finding of the list that carries a
-   fingerprint is the one judged: accepted, or refused by 1, 3 and 4. Every later one carrying it is a
+2. The identity of a finding is its ``fingerprint`` string. The first finding of the run that carries a
+   fingerprint is the one judged: accepted, or refused by 1, 3 and 4. Every later one of the run carrying it is a
    **re-observation**: counted in ``reobserved``, nothing else of it is read, so it is neither matched nor
    refused nor counted as a finding of a clean run (tohum/26m "Puanlama" 2), whatever its file, rule, line or
    shape, and also when the first one was refused (so a writer's row without an evidence reference, a symbol
@@ -28,9 +32,8 @@ judged:
    ``None`` is ``Unusable``, ``ref_max_lines_invalid``): ``ref_over_max_lines``: the finding's **primary**
    reference, ``evidence_refs[0]``, spans more lines than it (a reference spans ``line_end - line_start + 1``
    lines, both ends counted; tohum/26h). No other reference is bounded in length, whatever the first one is.
-4. With a snapshot (``snapshot`` the ``snapshot.make`` document, ``read(path)`` the bytes of a file of the tree
-   the document was made of, or ``None``): ``snapshot_mismatch``: the finding's ``snapshot_id`` is not the
-   document's; for its references, each reason once: ``ref_outside_manifest``: a ``path`` that is not a file of
+4. With a snapshot (``read(path)`` the bytes of a file of the tree the document was made of, or ``None``), for
+   the finding's references, each reason once: ``ref_outside_manifest``: a ``path`` that is not a file of
    the document's manifest; ``ref_hash_mismatch``: a path of the manifest whose bytes are absent or do not hash
    (sha256) to the manifest's value; ``ref_line_missing``: ``line_end`` beyond the file's last line (lines are
    counted by ``\\n``; a last line without one is a line).
@@ -56,10 +59,14 @@ file with no row), and nothing else is scored: what is not ``bytes`` is ``Unusab
 so is a file ``findings.write.findings_reasons`` finds a reason in (each reason prefixed ``findings:``: a broken
 chain, a row that is not the writer's row, a ``finding_id`` that is not ``f-`` and the fingerprint). Its rows in
 the file's order are the list ``sift`` reads, the fingerprint as the row holds it (tohum/26m "Puanlama" 1);
-every row of the file is read as an observation, also a row a decision restated (a finding's ``fixed`` row is a
-re-observation of its ``open`` one), and a row of another snapshot is the first of its fingerprint like any other
-(then refused, ``snapshot_mismatch``): the file is the run, no page says where a run ends in it
-(reports/seed-101). ``report`` holds exactly tohum/26b's fields:
+the run is its rows of the document's snapshot ("the run" above): the file is one chain over every cycle of a
+target, so a finding first written on an earlier snapshot has its earlier rows in other runs, and its first row
+of this snapshot is the one judged. Every row of the run is read as an observation, also a row a decision
+restated (a finding's ``fixed`` row carries its ``open`` row's ``snapshot_id`` and is a re-observation of it).
+What the rows cannot tell is not told here: two runs on one snapshot are one run (a row carries no run id), and
+an observation the writer wrote no row for (``findings.write`` rule 7: a finding still open from an earlier
+snapshot, or a line equal to one already found) is in no run, so a case only it would hit is a miss
+(reports/seed-101: no page gives a run its bounds in the file). ``report`` holds exactly tohum/26b's fields:
 
 - ``snapshot_id``: the document's (``snapshot.make.check`` must accept it, else ``Unusable`` with its reasons
   prefixed ``snapshot:``); ``match_rule_version``: ``v2``; ``run_id``, ``spec_version``, ``hunter_id``,
@@ -86,7 +93,8 @@ re-observation of its ``open`` one), and a row of another snapshot is the first 
 
 ``matched`` is ``{case_id: the finding's fingerprint}``, ``missed_rules`` the sorted ``[tool, rule_id]`` of the
 rules with a missed case and ``uncased_rules`` those of ``cases.build.rules()`` with no case (both ``null``
-without census), ``counts`` ``{given, distinct, reobserved, refused}`` over the file's rows. The same arguments
+without census), ``counts`` ``{given, distinct, reobserved, refused, other_runs}`` over the file's rows (``given`` is the sum of the
+other four). The same arguments
 give the same output: nothing here reads a clock, the environment, or a file other than through ``read``.
 
 **In the loop** (``loop.job``, ``yaz``): after the dev cases are built, ``report`` runs on them with the cycle's
@@ -170,8 +178,6 @@ def _lines(data: bytes) -> int:
 
 def _ref_reasons(finding: dict, snapshot: dict, read: Callable[[str], "bytes | None"]) -> list[str]:
     found = set()
-    if finding.get("snapshot_id") != snapshot["snapshot_id"]:
-        found.add("snapshot_mismatch")
     for ref in finding["evidence_refs"]:
         want = snapshot["files"].get(ref["path"])
         if want is None:
@@ -182,21 +188,25 @@ def _ref_reasons(finding: dict, snapshot: dict, read: Callable[[str], "bytes | N
             found.add("ref_hash_mismatch")
         elif ref["line_end"] > _lines(data):
             found.add("ref_line_missing")
-    return [r for r in ("snapshot_mismatch", "ref_outside_manifest", "ref_hash_mismatch", "ref_line_missing")
-            if r in found]
+    return [r for r in ("ref_outside_manifest", "ref_hash_mismatch", "ref_line_missing") if r in found]
 
 
 def sift(findings: list, snapshot: dict | None = None, read: Callable[[str], "bytes | None"] | None = None,
-         ref_max_lines: int | None = None) -> tuple[list[dict], list[dict], int]:
-    """``(accepted, refused, reobserved)``: see the module docstring, "The findings"; ``reobserved`` counts the
-    findings whose fingerprint an earlier one of the list carried."""
+         ref_max_lines: int | None = None) -> tuple[list[dict], list[dict], int, int]:
+    """``(accepted, refused, reobserved, other_runs)``: see the module docstring, "The findings"; ``reobserved``
+    counts the findings of the run whose fingerprint an earlier one of the run carried, ``other_runs`` the
+    objects of another snapshot than the document's."""
     if ref_max_lines is not None and (type(ref_max_lines) is not int or ref_max_lines < 1):
         raise Unusable(["ref_max_lines_invalid"])
     accepted: list[dict] = []
     refused: list[dict] = []
     seen: set[str] = set()
-    reobserved = 0
+    reobserved = other_runs = 0
     for index, finding in enumerate(findings):
+        if snapshot is not None and isinstance(finding, dict) \
+                and finding.get("snapshot_id") != snapshot["snapshot_id"]:
+            other_runs += 1
+            continue
         identity = finding.get("fingerprint") if isinstance(finding, dict) else None
         if isinstance(identity, str) and identity:
             if identity in seen:
@@ -216,7 +226,7 @@ def sift(findings: list, snapshot: dict | None = None, read: Callable[[str], "by
             refused.append({"index": index, "reasons": reasons})
         else:
             accepted.append(finding)
-    return accepted, refused, reobserved
+    return accepted, refused, reobserved, other_runs
 
 
 # ---------------------------------------------------------------- the cases and the match
@@ -289,7 +299,7 @@ def report(findings: Any, cases: Any, snapshot: Any, read: Callable[[str], "byte
         raise Unusable(["findings:%s" % reason for reason in found])
     rows = FW.rows(findings)
     ordered = _checked(cases)
-    accepted, refused, reobserved = sift(rows, snapshot, read, ref_max_lines)
+    accepted, refused, reobserved, other_runs = sift(rows, snapshot, read, ref_max_lines)
     matched = match(accepted, ordered, window)
     n, groups, hits = len(ordered), len({case["group"] for case in ordered}), len(matched)
     out: dict[str, Any] = {name: (meta or {}).get(name) for name in META}
@@ -326,7 +336,7 @@ def report(findings: Any, cases: Any, snapshot: Any, read: Callable[[str], "byte
     return {"report": out, "hits": hits, "matched": {cid: accepted[f]["fingerprint"] for cid, f in matched.items()},
             "missed_rules": missed_rules, "uncased_rules": uncased_rules, "refused": refused, "verdict_reason": why,
             "counts": {"given": len(rows), "distinct": len(accepted), "reobserved": reobserved,
-                       "refused": len(refused)}}
+                       "refused": len(refused), "other_runs": other_runs}}
 
 
 # ---------------------------------------------------------------- the command
@@ -366,7 +376,7 @@ def main(argv: list[str]) -> int:
         longest = int(stats._number(options[MAX], stats.INTEGER)) if MAX in options else None
         cases = _list(argv[1])
         if "--snapshot" not in options:
-            accepted, refused, _ = sift(_list(argv[0]), ref_max_lines=longest)
+            accepted, refused, _, _ = sift(_list(argv[0]), ref_max_lines=longest)
             line: dict[str, Any] = {"hits": len(match(accepted, cases, window))}
             if refused:
                 line["refused"] = refused
