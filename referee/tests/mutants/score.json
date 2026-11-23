@@ -57,8 +57,8 @@
   {
    "id": "refused_finding_still_hits",
    "file": "harness/score.py",
-   "old": "        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n        elif earlier",
-   "new": "        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n            accepted.append(finding)\n        elif earlier",
+   "old": "        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n        else:",
+   "new": "        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n            accepted.append(finding)\n        else:",
    "tests": [
     "test_score.Refs"
    ]
@@ -66,17 +66,8 @@
   {
    "id": "reobservation_counted_again",
    "file": "harness/score.py",
-   "old": "        elif earlier is not None:\n            reobserved += 1",
-   "new": "        elif False:\n            reobserved += 1",
-   "tests": [
-    "test_score.Fingerprint"
-   ]
-  },
-  {
-   "id": "fingerprint_conflict_folded",
-   "file": "harness/score.py",
-   "old": "        if earlier is not None and any(finding.get(k) != earlier.get(k) for k in IDENTITY_FIELDS):",
-   "new": "        if False:",
+   "old": "        if finding[\"fingerprint\"] in seen:\n            reobserved += 1\n            continue",
+   "new": "        if False:\n            reobserved += 1\n            continue",
    "tests": [
     "test_score.Fingerprint"
    ]
@@ -167,8 +158,8 @@
   {
    "id": "pass_with_a_miss",
    "file": "harness/score.py",
-   "old": "verdict, why = (\"FAIL\", \"misses\") if hits < n else (\"PASS\", None)",
-   "new": "verdict, why = (\"PASS\", None)",
+   "old": "            if hits < n:\n                verdict, why = \"FAIL\", \"misses\"\n            elif uncased:",
+   "new": "            if False:\n                verdict, why = \"FAIL\", \"misses\"\n            elif uncased:",
    "tests": [
     "test_score.Report"
    ]
@@ -275,8 +266,8 @@
   {
    "id": "yaz_scores_no_case",
    "file": "loop/job.py",
-   "old": "HS.report(list(FINDINGS), cases[\"cases\"], art.snapshot,",
-   "new": "HS.report(list(FINDINGS), [], art.snapshot,",
+   "old": "HS.report(FINDINGS, cases[\"cases\"], art.snapshot,",
+   "new": "HS.report(FINDINGS, [], art.snapshot,",
    "tests": [
     "test_score.Live"
    ]
@@ -347,8 +338,8 @@
   {
    "id": "ref_length_cli_option_dropped",
    "file": "harness/score.py",
-   "old": "            accepted, refused, _ = sift(findings, ref_max_lines=longest)",
-   "new": "            accepted, refused, _ = sift(findings)",
+   "old": "            accepted, refused, _ = sift(_list(argv[0]), ref_max_lines=longest)",
+   "new": "            accepted, refused, _ = sift(_list(argv[0]))",
    "tests": [
     "test_score.RefLength.test_the_command_s_option_in_both_forms"
    ]
@@ -378,6 +369,88 @@
    "new": "    try:\n        params = HP.score(art.policy)\n    except HP.Invalid:\n        params = {}\n",
    "tests": [
     "test_score.FromPolicy.test_a_policy_missing_or_off_a_value_is_no_report_and_no_line"
+   ]
+  },
+  {
+   "id": "refused_first_gives_its_fingerprint_away",
+   "file": "harness/score.py",
+   "old": "        seen.add(finding[\"fingerprint\"])\n        reasons = []\n        primary = finding[\"evidence_refs\"][0]\n        if ref_max_lines is not None and primary[\"line_end\"] - primary[\"line_start\"] + 1 > ref_max_lines:\n            reasons.append(\"ref_over_max_lines\")\n        if snapshot is not None:\n            reasons += _ref_reasons(finding, snapshot, read)\n        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n        else:\n            accepted.append(finding)\n",
+   "new": "        reasons = []\n        primary = finding[\"evidence_refs\"][0]\n        if ref_max_lines is not None and primary[\"line_end\"] - primary[\"line_start\"] + 1 > ref_max_lines:\n            reasons.append(\"ref_over_max_lines\")\n        if snapshot is not None:\n            reasons += _ref_reasons(finding, snapshot, read)\n        if reasons:\n            refused.append({\"index\": index, \"reasons\": reasons})\n        else:\n            seen.add(finding[\"fingerprint\"])\n            accepted.append(finding)\n",
+   "tests": [
+    "test_score.Fingerprint"
+   ]
+  },
+  {
+   "id": "pass_with_a_rule_without_a_case",
+   "file": "harness/score.py",
+   "old": "            elif uncased:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"\n            else:",
+   "new": "            elif False:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"\n            else:",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "rule_without_case_before_the_miss",
+   "file": "harness/score.py",
+   "old": "            if hits < n:\n                verdict, why = \"FAIL\", \"misses\"\n            elif uncased:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"",
+   "new": "            if uncased:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"\n            elif hits < n:\n                verdict, why = \"FAIL\", \"misses\"",
+   "tests": [
+    "test_score.Report",
+    "test_score.Empty"
+   ]
+  },
+  {
+   "id": "rules_total_of_the_cases_alone",
+   "file": "harness/score.py",
+   "old": "{\"rules_total\": len(rules | uncased),",
+   "new": "{\"rules_total\": len(rules),",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "rules_total_of_the_library_alone",
+   "file": "harness/score.py",
+   "old": "{\"rules_total\": len(rules | uncased),",
+   "new": "{\"rules_total\": len(CB.rules()),",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "findings_file_not_checked",
+   "file": "harness/score.py",
+   "old": "    found = FW.findings_reasons(findings)\n",
+   "new": "    found = []\n",
+   "tests": [
+    "test_score.Writer"
+   ]
+  },
+  {
+   "id": "findings_file_chain_only",
+   "file": "harness/score.py",
+   "old": "    found = FW.findings_reasons(findings)\n",
+   "new": "    found = [r for r in FW.findings_reasons(findings) if r.startswith(\"chain\")]\n",
+   "tests": [
+    "test_score.Writer"
+   ]
+  },
+  {
+   "id": "findings_list_taken",
+   "file": "harness/score.py",
+   "old": "    if not isinstance(findings, bytes):\n        raise Unusable([\"findings_invalid\"])\n    found = FW.findings_reasons(findings)\n    if found:\n        raise Unusable([\"findings:%s\" % reason for reason in found])\n    rows = FW.rows(findings)",
+   "new": "    if isinstance(findings, list):\n        rows = findings\n    elif not isinstance(findings, bytes):\n        raise Unusable([\"findings_invalid\"])\n    else:\n        found = FW.findings_reasons(findings)\n        if found:\n            raise Unusable([\"findings:%s\" % reason for reason in found])\n        rows = FW.rows(findings)",
+   "tests": [
+    "test_score.Writer"
+   ]
+  },
+  {
+   "id": "yaz_scores_a_list",
+   "file": "loop/job.py",
+   "old": "FINDINGS = b\"\"   # the cycle's findings file",
+   "new": "FINDINGS = []   # the cycle's findings file",
+   "tests": [
+    "test_score.Live"
    ]
   }
  ]

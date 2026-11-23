@@ -258,8 +258,8 @@
   {
    "id": "scorer_unguarded",
    "file": "loop/job.py",
-   "old": "        return OF.run(lambda: HS.report(list(FINDINGS), cases[\"cases\"], art.snapshot,\n                                        lambda path: D._read_regular(tree, path), **params))",
-   "new": "        return (lambda: HS.report(list(FINDINGS), cases[\"cases\"], art.snapshot,\n                                        lambda path: D._read_regular(tree, path), **params))()",
+   "old": "        return OF.run(lambda: HS.report(FINDINGS, cases[\"cases\"], art.snapshot,\n                                        lambda path: D._read_regular(tree, path), **params))",
+   "new": "        return (lambda: HS.report(FINDINGS, cases[\"cases\"], art.snapshot,\n                                        lambda path: D._read_regular(tree, path), **params))()",
    "tests": [
     "test_offline.Live.test_the_scorer_going_online_stops_the_genesis"
    ]

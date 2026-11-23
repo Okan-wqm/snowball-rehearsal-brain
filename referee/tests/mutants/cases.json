@@ -3,8 +3,8 @@
   {
    "id": "hit_k0_any_line_of_the_file",
    "file": "cases/build.py",
-   "old": "            and any(_inside(r, t, 0) for r, t in pairs)",
-   "new": "            and bool(pairs)",
+   "old": "            and any(_inside(primary, t, 0) for t in _touched(case) if t[\"path\"] == primary[\"path\"])",
+   "new": "            and any(t[\"path\"] == primary[\"path\"] for t in _touched(case))",
    "tests": [
     "test_cases.Hit",
     "test_cases.Oracle"
@@ -41,8 +41,8 @@
   {
    "id": "hit_k0_window_widens",
    "file": "cases/build.py",
-   "old": "            and any(_inside(r, t, 0) for r, t in pairs)",
-   "new": "            and any(_inside(r, t, window or 0) for r, t in pairs)",
+   "old": "            and any(_inside(primary, t, 0) for t in _touched(case) if t[\"path\"] == primary[\"path\"])",
+   "new": "            and any(_inside(primary, t, window or 0) for t in _touched(case) if t[\"path\"] == primary[\"path\"])",
    "tests": [
     "test_cases.Hit"
    ]
@@ -132,8 +132,8 @@
   {
    "id": "hit_reversed_ref_kept",
    "file": "cases/build.py",
-   "old": "\n            and r[\"line_start\"] <= r[\"line_end\"]]",
-   "new": "]",
+   "old": "\n            and r[\"line_start\"] <= r[\"line_end\"] else None for r in refs]",
+   "new": " else None for r in refs]",
    "tests": [
     "test_cases.Hit"
    ]
@@ -575,6 +575,42 @@
    "new": "                line += text.count(\"\\n\", at, found.start()) and 1",
    "tests": [
     "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "hit_k0_any_reference",
+   "file": "cases/build.py",
+   "old": "            and primary is not None \\\n            and any(_inside(primary, t, 0) for t in _touched(case) if t[\"path\"] == primary[\"path\"])",
+   "new": "            and any(_inside(r, t, 0) for r in refs if r is not None for t in _touched(case) if t[\"path\"] == r[\"path\"])",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k0_first_valid_reference",
+   "file": "cases/build.py",
+   "old": "        primary = refs[0] if refs else None",
+   "new": "        primary = next((r for r in refs if r is not None), None)",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "hit_k3_primary_only",
+   "file": "cases/build.py",
+   "old": "    pairs = [(r, t) for r in refs if r is not None for t in _touched(case) if r[\"path\"] == t[\"path\"]]",
+   "new": "    pairs = [(r, t) for r in refs[:1] if r is not None for t in _touched(case) if r[\"path\"] == t[\"path\"]]",
+   "tests": [
+    "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "rules_one_per_operator",
+   "file": "cases/build.py",
+   "old": "    return sorted({(op[\"tool\"], op[\"rule_id\"]) for op in CATALOG})",
+   "new": "    return sorted([(op[\"tool\"], op[\"rule_id\"]) for op in CATALOG])",
+   "tests": [
+    "test_cases.Hit"
    ]
   }
  ]
