@@ -97,10 +97,21 @@ def written(findings: list) -> bytes:
     return TFW.chained(rows) if rows else b""
 
 
-# one case of every rule of the operator library and the finding that hits it: what a PASS needs
+# the census rule set of these tests (tohum/26q (10): the caller's; three rules, by hand), then one case of every
+# rule of it and the finding that hits it: what a PASS needs
+SET = [("eslint", "eqeqeq"), ("eslint", "no-var"), ("eslint", "prefer-const")]
 FULL = [{"case_id": "r%d" % n, "class_level": "K0", "property": "lint", "provenance": "mutation",
          "touched_paths": [{"path": "pkg/a.js", "hunks": [{"start": n + 1, "end": n + 1}]}],
-         "tool": tool, "rule_id": rule, "split": "dev", "group": "pkg"} for n, (tool, rule) in enumerate(CB.rules())]
+         "tool": tool, "rule_id": rule, "split": "dev", "group": "pkg"} for n, (tool, rule) in enumerate(SET)]
+
+
+# tohum/29za: the toy's census rules as the page lists them, one case of each and the finding that hits it
+TOY_RULES = ("dot-notation", "no-var", "object-shorthand", "operator-assignment", "prefer-const", "prefer-template", "yoda")
+TOY = [("eslint", rule) for rule in TOY_RULES]
+TOY_PLACES = [("pkg/a.js", n) for n in range(1, 6)] + [("pkg/b.js", 1), ("lib/c.js", 1)]      # lines of ``TREE``
+TOY_FULL = [dict(FULL[0], case_id="t%d" % n, rule_id=rule,
+                 touched_paths=[{"path": TOY_PLACES[n][0], "hunks": [{"start": TOY_PLACES[n][1], "end": TOY_PLACES[n][1]}]}])
+            for n, rule in enumerate(TOY_RULES)]
 
 
 class Base(unittest.TestCase):
@@ -122,7 +133,8 @@ class Base(unittest.TestCase):
                 else f for f in findings]
 
     def report(self, findings: list, cases: list, **kw) -> dict:
-        return HS.report(written(self.stamped(findings)), cases, self.snapshot, self.read, **kw)
+        """``report`` over ``SET`` unless the test gives a census (``None``: a target with no census vector)."""
+        return HS.report(written(self.stamped(findings)), cases, self.snapshot, self.read, **dict({"census": SET}, **kw))
 
     def full_hit(self) -> list:
         """The findings that hit ``FULL``, one each."""
@@ -368,8 +380,8 @@ class FromPolicy(Base):
 
     K3 = {"class_level": "K3", "property": "p"}
 
-    def harness(self, policy, findings: list, cases: list) -> dict:
-        art = types.SimpleNamespace(snapshot=self.snapshot, policy=policy)
+    def harness(self, policy, findings: list, cases: list, kind: str = "toy") -> dict:
+        art = types.SimpleNamespace(snapshot=self.snapshot, policy=policy, target={"id": "t1", "kind": kind})
         with mock.patch.object(J, "FINDINGS", written(self.stamped(findings))):
             return J.yaz_harness(art, self.tree, {"cases": cases})
 
@@ -377,10 +389,35 @@ class FromPolicy(Base):
         params = dict({"match_window_lines": 1, "evidence_ref_max_lines": 30}, **params)
         return {"constitutional": {"confidence_level": level, "stage_params": params}}
 
+    def toy_hit(self) -> tuple[list, list]:
+        """A case of each rule of the toy's census in two groups, and the findings that hit them."""
+        cases = [dict(TOY_FULL[0], group="lib")] + TOY_FULL[1:]
+        return cases, [finding(c["case_id"], c["touched_paths"][0]["hunks"][0]["start"], rule=c["rule_id"],
+                               path=c["touched_paths"][0]["path"]) for c in cases]
+
+    def test_the_census_is_the_target_kinds(self):
+        cases, findings = self.toy_hit()
+        toy = self.harness(self.policy(), findings, cases)
+        self.assertEqual((toy["report"]["census"], toy["report"]["verdict"], toy["uncased_rules"], toy["outside_rules"]),
+                         ({"rules_total": 7, "rules_covered": 7, "misses": 0}, "PASS", [], []))
+        # a case of ``eqeqeq``, which the library makes and the toy's set does not hold, is named and not counted
+        more = self.harness(self.policy(), findings + self.full_hit()[:1], cases + [FULL[0]])
+        self.assertEqual((more["report"]["census"], more["outside_rules"], more["report"]["n"]),
+                         ({"rules_total": 7, "rules_covered": 7, "misses": 0}, [["eslint", "eqeqeq"]], 8))
+        fewer = self.harness(self.policy(), findings, cases[1:])
+        self.assertEqual((fewer["report"]["verdict"], fewer["verdict_reason"], fewer["uncased_rules"]),
+                         ("UNMEASURABLE", "rule_without_case", [["eslint", "dot-notation"]]))
+        # a copy has no census vector (tohum/26q (10)): the same cases and findings, no count and no PASS
+        for kind in ("copy", "other", None):
+            copy = self.harness(self.policy(), findings, cases, kind=kind)
+            self.assertEqual((copy["hits"], copy["report"]["census"], copy["report"]["verdict"], copy["verdict_reason"]),
+                             (7, None, "UNMEASURABLE", "census_vector_absent"), kind)
+            self.assertEqual(self.harness(self.policy(), findings[1:], cases, kind=kind)["report"]["verdict"], "FAIL")
+
     def test_each_value_reaches_the_report(self):
-        cases, findings = [FULL[0], dict(FULL[1], group="lib"), FULL[2]], self.full_hit()
+        cases, findings = self.toy_hit()
         got = self.harness(self.policy(), findings, cases)
-        self.assertEqual(got, self.report(findings, cases, alpha=TENTH, window=1, ref_max_lines=30))
+        self.assertEqual(got, self.report(findings, cases, alpha=TENTH, window=1, ref_max_lines=30, census=TOY))
         self.assertEqual((got["report"]["recall_lb"], got["report"]["verdict"]),
                          (ST.fixed6(ST.cp_lower(Fraction(2), 2, TENTH)), "PASS"))
         other = self.harness(self.policy(level="0.500000"), findings, cases)
@@ -388,7 +425,7 @@ class FromPolicy(Base):
         self.assertNotEqual(other["report"]["recall_lb"], got["report"]["recall_lb"])
 
     def test_the_group_floor_of_the_policy_changes_nothing_of_the_dev_report(self):
-        cases, findings = [FULL[0], dict(FULL[1], group="lib"), FULL[2]], self.full_hit()
+        cases, findings = self.toy_hit()
         plain = self.harness(self.policy(), findings, cases)
         for floor in (1, 2, 3, 40, 10 ** 6):     # tohum/26h: under, at and over G; the exit sample's, not this report's
             with self.subTest(floor=floor):
@@ -414,7 +451,7 @@ class FromPolicy(Base):
                        "performance": self.policy(level="0.500000", match_window_lines=9)["constitutional"]})
         cases, findings = [case("c1", 2)], [finding("x", 2)]
         self.assertEqual(self.harness(policy, findings, cases),
-                         self.report(findings, cases, alpha=TENTH, window=1, ref_max_lines=30))
+                         self.report(findings, cases, alpha=TENTH, window=1, ref_max_lines=30, census=TOY))
         del policy["constitutional"]["confidence_level"]     # at the root and in another section only: not that key
         del policy["constitutional"]["stage_params"]["match_window_lines"]
         with self.assertRaises(HP.Invalid) as ctx:
@@ -480,16 +517,27 @@ class Determinism(Base):
         run = [WIDE, NARROW, finding("z", 9), finding("wide", 4)]
         findings, listed = self.registry("f.jsonl", run), self.file("f.json", run + [None])
         cases = self.file("c.json", TWO + [case("c3", 1, path="pkg/b.js", rule="no-eval", group="other")])
-        args = (findings, cases, "--snapshot", self.file("s.json", self.snapshot), "--tree", self.tree,
-                "--alpha", "0.10")
+        plain = (findings, cases, "--snapshot", self.file("s.json", self.snapshot), "--tree", self.tree,
+                 "--alpha", "0.10")
+        args = plain + ("--census", self.file("r.json", SET))
         first, second = self.command(*args, seed="1"), self.command(*args, seed="2")
         self.assertEqual(first, second)
         self.assertEqual(first[0], 0)
         out = json.loads(first[1])
         self.assertEqual((out["hits"], out["report"]["recall"], out["missed_rules"]),
                          (2, "0.666667", [["eslint", "no-eval"]]))
-        self.assertEqual((out["counts"], out["uncased_rules"]),
-                         ({"given": 4, "distinct": 2, "reobserved": 1, "refused": 1, "other_runs": 0}, [["eslint", "eqeqeq"], ["eslint", "prefer-const"]]))
+        self.assertEqual((out["counts"], out["uncased_rules"], out["outside_rules"], out["report"]["census"]),
+                         ({"given": 4, "distinct": 2, "reobserved": 1, "refused": 1, "other_runs": 0},
+                          [["eslint", "eqeqeq"], ["eslint", "prefer-const"]], [["eslint", "no-eval"]],
+                          {"rules_total": 3, "rules_covered": 1, "misses": 1}))
+        # without --census the report has no count; the set is read as the list the file holds
+        bare = json.loads(self.command(*plain)[1])
+        self.assertEqual((bare["report"]["census"], bare["uncased_rules"], bare["outside_rules"], bare["verdict_reason"],
+                          bare["hits"]), (None, None, None, "misses", 2))
+        for name, value in (("no.json", {"eslint": "no-var"}), ("pair.json", [["eslint"]]), ("none.json", [])):
+            code, text = self.command(*plain, "--census", self.file(name, value))
+            self.assertEqual((code, json.loads(text)["ok"]), (2, False), name)
+        self.assertEqual(self.command(findings, cases, "--census", self.file("r.json", SET))[0], 2)
         self.assertEqual(self.command(listed, cases, seed="1"), self.command(listed, cases, seed="2"))
         self.assertEqual(json.loads(self.command(listed, cases)[1])["hits"], 2)
 
@@ -903,8 +951,8 @@ class Report(Base):
     def test_the_fields_are_26b_s(self):
         meta = {"run_id": "r1", "spec_version": "2.2", "hunter_id": "h", "prompt_sha256": "p", "rung": 1, "n": 99}
         out = self.report(self.full_hit(), FULL, alpha=TENTH, meta=meta)
-        self.assertEqual(set(out), {"report", "hits", "matched", "missed_rules", "uncased_rules", "refused", "counts",
-                                    "verdict_reason"})
+        self.assertEqual(set(out), {"report", "hits", "matched", "missed_rules", "uncased_rules", "outside_rules",
+                                    "refused", "counts", "verdict_reason"})
         self.assertEqual(out["report"], {
             "run_id": "r1", "snapshot_id": self.snapshot["snapshot_id"], "spec_version": "2.2",
             "match_rule_version": "v2", "hunter_id": "h", "prompt_sha256": "p", "rung": 1, "n": 3, "n_groups": 1,
@@ -925,29 +973,62 @@ class Report(Base):
     def test_the_census(self):
         cases = [case("c1", 2), case("c2", 3), case("c3", 4, rule="no-eval"), case("c4", 1, path="pkg/b.js", rule="eqeqeq")]
         out = self.report([finding("x", 2), finding("y", 4, rule="no-eval")], cases)
-        # no-var has one case hit and one missed: a rule with a miss is not covered
-        # the library's three rules and no-eval, which it does not hold; prefer-const has no case
-        self.assertEqual(out["report"]["census"], {"rules_total": 4, "rules_covered": 1, "misses": 2})
+        # no-var has one case hit and one missed: a rule with a miss is not covered. no-eval is outside the set:
+        # its case, hit, is no rule of the total and none covered; prefer-const has no case
+        self.assertEqual(out["report"]["census"], {"rules_total": 3, "rules_covered": 0, "misses": 2})
         self.assertEqual(out["missed_rules"], [["eslint", "eqeqeq"], ["eslint", "no-var"]])
         self.assertEqual(out["uncased_rules"], [["eslint", "prefer-const"]])
-        # the same rule id of another tool is another rule
+        self.assertEqual(out["outside_rules"], [["eslint", "no-eval"]])
+        self.assertEqual((out["report"]["n"], out["hits"], out["report"]["recall"]), (4, 2, "0.500000"))
+        # the same rule id of another tool is another rule: outside this set
         out = self.report([], [case("c1", 2), case("c2", 3, tool="ruff")])
-        self.assertEqual(out["report"]["census"]["rules_total"], 4)
-        self.assertEqual(out["uncased_rules"], [["eslint", "eqeqeq"], ["eslint", "prefer-const"]])
-        # the total is the library's rules whatever the cases: one case, or one of each rule
+        self.assertEqual(out["report"]["census"], {"rules_total": 3, "rules_covered": 0, "misses": 2})
+        self.assertEqual((out["uncased_rules"], out["outside_rules"]),
+                         ([["eslint", "eqeqeq"], ["eslint", "prefer-const"]], [["ruff", "no-var"]]))
+        # the total is the set's size whatever the cases: one case, or one of each rule
         self.assertEqual(self.report([], FULL[:1])["report"]["census"], {"rules_total": 3, "rules_covered": 0, "misses": 1})
         full = self.report(self.full_hit()[1:], FULL)
-        self.assertEqual((full["report"]["census"], full["uncased_rules"]),
-                         ({"rules_total": 3, "rules_covered": 2, "misses": 1}, []))
-        # an operator more in the library is a rule more in the total
-        with mock.patch.object(CB, "CATALOG", CB.CATALOG + ({"tool": "eslint", "rule_id": "yoda"},)):
-            more = self.report(self.full_hit(), FULL)
-        self.assertEqual((more["report"]["census"], more["uncased_rules"], more["report"]["verdict"]),
-                         ({"rules_total": 4, "rules_covered": 3, "misses": 0}, [["eslint", "yoda"]], "UNMEASURABLE"))
+        self.assertEqual((full["report"]["census"], full["uncased_rules"], full["outside_rules"]),
+                         ({"rules_total": 3, "rules_covered": 2, "misses": 1}, [], []))
+        # a rule more in the set is a rule more in the total, as a list of lists (a JSON file's) or a set of pairs
+        for more_rules in (SET + [("eslint", "yoda")], [list(rule) for rule in SET] + [["eslint", "yoda"]],
+                           frozenset(SET) | {("eslint", "yoda")}):
+            more = self.report(self.full_hit(), FULL, census=more_rules)
+            self.assertEqual((more["report"]["census"], more["uncased_rules"], more["report"]["verdict"]),
+                             ({"rules_total": 4, "rules_covered": 3, "misses": 0}, [["eslint", "yoda"]], "UNMEASURABLE"))
+        # the set is the caller's and not the operator library's: another catalog gives the same report
+        with mock.patch.object(CB, "CATALOG", CB.CATALOG[:1] + ({"tool": "eslint", "rule_id": "other"},)):
+            self.assertEqual(self.report(self.full_hit(), FULL), self.report(self.full_hit(), FULL, census=SET[::-1]))
+        self.assertEqual(self.report(self.full_hit(), FULL)["report"]["verdict"], "PASS")
+
+    def test_without_a_census_set_no_count_and_never_pass(self):
+        # tohum/26q (10): a target with no census vector has no count and is never PASS
+        out = self.report(self.full_hit(), FULL, census=None)
+        self.assertEqual((out["hits"], out["report"]["recall"], out["report"]["census"], out["uncased_rules"],
+                          out["outside_rules"], out["missed_rules"], out["report"]["verdict"], out["verdict_reason"]),
+                         (3, "1.000000", None, None, None, [], "UNMEASURABLE", "census_vector_absent"))
+        self.assertEqual(out, HS.report(written(self.stamped(self.full_hit())), FULL, self.snapshot, self.read))
+        # a miss is a FAIL there too (26m "Puanlama" 3: the miss comes before the census)
+        missed = self.report(self.full_hit()[1:], FULL, census=None)
+        self.assertEqual((missed["report"]["census"], missed["missed_rules"], missed["report"]["verdict"],
+                          missed["verdict_reason"]), (None, [list(SET[0])], "FAIL", "misses"))
+        # and the earlier verdicts stand: no case, a class outside the census
+        self.assertEqual(self.report([], [], census=None)["verdict_reason"], "no_cases")
+        self.assertEqual(self.report([], [case("c1", 2, class_level="K3")], census=None)["verdict_reason"],
+                         "class_without_census")
+
+    def test_a_census_that_is_no_rule_set_is_refused(self):
+        for census in ([], set(), {}, {"eslint": "no-var"}, "eslint", b"eslint", 3, [("eslint",)], [("eslint", "a", "b")],
+                       [("eslint", 1)], ["eslint:no-var"], [None], SET + [SET[0]], [["eslint", "no-var"], ("eslint", "no-var")]):
+            for cases in (FULL, []):
+                with self.subTest(census=census, cases=len(cases)):
+                    with self.assertRaises(HS.Unusable) as caught:
+                        self.report([], cases, census=census)
+                    self.assertEqual(caught.exception.reasons, ["census_invalid"])
 
     def test_the_verdicts(self):
         hit, cases = self.full_hit(), [FULL[0], dict(FULL[1], group="g2"), FULL[2]]
-        # a case of every rule of the library, each hit, is PASS, whatever the number of groups (tohum/26h)
+        # a case of every rule of the set, each hit, is PASS, whatever the number of groups (tohum/26h)
         out = self.report(hit, cases)
         self.assertEqual((out["report"]["n_groups"], out["report"]["verdict"], out["verdict_reason"], out["uncased_rules"]),
                          (2, "PASS", None, []))
@@ -955,16 +1036,26 @@ class Report(Base):
         self.assertEqual((one["report"]["n_groups"], one["report"]["verdict"], one["verdict_reason"]), (1, "PASS", None))
         with self.assertRaises(TypeError):     # the report takes no floor of groups
             self.report(hit, cases, min_groups=2)
-        # a case more, of a rule the library does not hold, changes nothing when it is hit too
+        # a case more, of a rule outside the set, changes no count and no verdict when it is hit too: it is named
         beside = self.report(hit + [finding("e", 5, rule="no-eval")], FULL + [case("c9", 5, rule="no-eval")])
-        self.assertEqual((beside["report"]["census"], beside["report"]["verdict"]),
-                         ({"rules_total": 4, "rules_covered": 4, "misses": 0}, "PASS"))
+        self.assertEqual((beside["report"]["census"], beside["report"]["verdict"], beside["outside_rules"], beside["report"]["n"]),
+                         ({"rules_total": 3, "rules_covered": 3, "misses": 0}, "PASS", [["eslint", "no-eval"]], 4))
+        # ... and missed it is a miss and a FAIL, though every rule of the set is covered
+        lost = self.report(hit, FULL + [case("c9", 5, rule="no-eval")])
+        self.assertEqual((lost["report"]["census"], lost["report"]["recall"], lost["report"]["verdict"],
+                          lost["verdict_reason"], lost["missed_rules"], lost["outside_rules"]),
+                         ({"rules_total": 3, "rules_covered": 3, "misses": 1}, "0.750000", "FAIL", "misses",
+                          [["eslint", "no-eval"]], [["eslint", "no-eval"]]))
+        # only cases of rules outside the set, each hit: every rule of the set is without a case
+        apart = self.report([finding("e", 5, rule="no-eval")], [case("c9", 5, rule="no-eval")])
+        self.assertEqual((apart["report"]["census"], apart["report"]["verdict"], apart["verdict_reason"]),
+                         ({"rules_total": 3, "rules_covered": 0, "misses": 0}, "UNMEASURABLE", "rule_without_case"))
         for gone in range(len(FULL)):
             with self.subTest(gone=gone):
                 # a case not hit is FAIL
                 out = self.report(hit[:gone] + hit[gone + 1:], FULL)
                 self.assertEqual((out["report"]["verdict"], out["verdict_reason"]), ("FAIL", "misses"))
-                # every case hit and a rule of the library without a case: UNMEASURABLE, never PASS
+                # every case hit and a rule of the set without a case: UNMEASURABLE, never PASS
                 fewer = self.report(hit, FULL[:gone] + FULL[gone + 1:])
                 self.assertEqual((fewer["hits"], fewer["report"]["recall"], fewer["report"]["verdict"],
                                   fewer["verdict_reason"], fewer["uncased_rules"]),
@@ -980,8 +1071,8 @@ class Report(Base):
         found = dict(finding("x", 2), required_change=[{"file": "pkg/a.js", "op": "other"}])
         out = self.report([found], k3, window=0)
         self.assertEqual((out["hits"], out["report"]["recall"], out["report"]["census"], out["missed_rules"],
-                          out["uncased_rules"], out["report"]["verdict"], out["verdict_reason"]),
-                         (1, "1.000000", None, None, None, "UNMEASURABLE", "class_without_census"))
+                          out["uncased_rules"], out["outside_rules"], out["report"]["verdict"], out["verdict_reason"]),
+                         (1, "1.000000", None, None, None, None, "UNMEASURABLE", "class_without_census"))
         missed = self.report([], k3, window=0)                     # outside the census a miss is no FAIL
         self.assertEqual((missed["report"]["verdict"], missed["verdict_reason"]), ("UNMEASURABLE", "class_without_census"))
 
@@ -1060,7 +1151,9 @@ class Live(LY.YazBase):
 
     def setUp(self) -> None:
         super().setUp()
-        write_tree(self.src, {"pkg/a.js": TCA.A_JS, "pkg/b.js": TCA.B_JS})
+        # other/ is outside the unit's inputs; with it the tree's commit, the proposal's seed, is one whose two
+        # mutations hold a ``no-var`` one, the one rule the lint stand-in knows (``test_the_cycle_s_cases...`` checks)
+        write_tree(self.src, {"pkg/a.js": TCA.A_JS, "pkg/b.js": TCA.B_JS, "other/x.js": "const o = 1;\n"})
 
     cek = TCA.LivePath.cek
     hand_over = TCA.LivePath.hand_over
@@ -1074,6 +1167,7 @@ class Live(LY.YazBase):
     def test_the_cycle_s_cases_are_scored_on_yaz_s_line(self):
         self.cek()
         snapshot = P.read(self.pulled).snapshot
+        self.assertEqual(sorted(m["operator"] for m in P.read(self.pulled).mutations.values()), ["eqeqeq", "no-var"])
         yaz = self.yaz_after_kos()
         (built,) = yaz["cases"]["cases"]
         harness = yaz["harness"]
@@ -1083,16 +1177,19 @@ class Live(LY.YazBase):
         self.assertEqual((report["snapshot_id"], report["n"], report["n_groups"], report["recall"], report["recall_lb"],
                           report["census"], report["verdict"]),
                          (snapshot["snapshot_id"], 1, 1, "0.000000", "0.000000",
-                          {"rules_total": 3, "rules_covered": 0, "misses": 1}, "FAIL"))
+                          {"rules_total": 7, "rules_covered": 0, "misses": 1}, "FAIL"))
         self.assertEqual(harness["missed_rules"], [["eslint", "no-var"]])
-        self.assertEqual(harness["uncased_rules"], [["eslint", "eqeqeq"], ["eslint", "prefer-const"]])
+        # the target is a toy: the census is the toy's seven rules (``cases.census``), six of them without a case
+        self.assertEqual(harness["uncased_rules"], [["eslint", rule] for rule in TOY_RULES if rule != "no-var"])
+        self.assertEqual(harness["outside_rules"], [])
 
         def read(path):
             return D._read_regular(self.src, path)
 
         # the policy's three values reached the report: the world's policy is test_loop_cagir's ``STAGE1``
+        toy = TOY
         self.assertEqual(harness, HS.report(b"", yaz["cases"]["cases"], snapshot, read, alpha=TENTH, window=15,
-                                            ref_max_lines=30))
+                                            ref_max_lines=30, census=toy))
         # the case's oracle finding on the snapshot, written by the writer, is a hit on the same cases and
         # document; the run has the one case of its own, so no PASS
         oracle = dict(yaz["cases"]["oracle"][built["case_id"]], snapshot_id=snapshot["snapshot_id"])
@@ -1100,7 +1197,7 @@ class Live(LY.YazBase):
         proposal["required_change"] = [{"file": oracle["file"], "op": "lint_fix"}]
         made = FW.observe(b"", b"", [proposal], "oracle", read)
         self.assertEqual((len(made.rows), made.refused), (1, []))
-        scored = HS.report(made.content, yaz["cases"]["cases"], snapshot, read)
+        scored = HS.report(made.content, yaz["cases"]["cases"], snapshot, read, census=toy)
         self.assertEqual((scored["hits"], scored["report"]["recall"], scored["refused"], scored["matched"]),
                          (1, "1.000000", [], {built["case_id"]: FW.fingerprint(proposal, read)}))
         self.assertEqual((scored["report"]["verdict"], scored["verdict_reason"]), ("UNMEASURABLE", "rule_without_case"))
@@ -1116,7 +1213,7 @@ class Live(LY.YazBase):
                           yaz["harness"]["report"]["clean_findings"]), ("UNMEASURABLE", "no_cases", 0))
 
     def test_what_the_scorer_refuses_is_on_the_line(self):
-        art = types.SimpleNamespace(snapshot={"schema": "other"}, policy=json.loads(LY.policy()))
+        art = types.SimpleNamespace(snapshot={"schema": "other"}, policy=json.loads(LY.policy()), target={"kind": "toy"})
         self.assertEqual(J.yaz_harness(art, self.src, {"cases": []}),
                          {"reason": "harness_refused", "reasons": ["snapshot:document_invalid"]})
 

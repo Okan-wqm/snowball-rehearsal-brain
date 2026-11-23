@@ -1,5 +1,5 @@
 """``cases.build``: K0 dev cases by mutation (stage 1, P1 row 3): the catalog, the proposal, the validity
-judgement over the mutation's hunk, the case and the hit rule tests 2 and 4 read.
+judgement over the mutation's hunk, the case, the hit rule tests 2 and 4 read, and the ``produce`` command.
 
 Rules: asama-1/13a (a known violation of the tool's rule catalog is injected into a clean file by a deterministic
 operator; the tool runs on the tree with and without the mutation; lines are mapped over the mutation's hunk by
@@ -7,7 +7,8 @@ stage 0's mapped line; the case is valid when **exactly one** new (rule, line) v
 region; every step that runs the tool is ``koş``'s, selection and judgement are referee code), asama-0/08 "Eşlenmiş
 satır" (``gate.check.map_line``, the one mapped line, used here and not written again), asama-1/13e and
 tohum/29a (match-rule v2), tohum/26 (the ``case`` and ``finding`` fields), tohum/26a (``cases.build``: job
-``çek``, out: dev cases).
+``çek``, out: dev cases), tohum/29za (the ``census`` vectors: the library must produce each rule of the seed's
+set; the command).
 
 **Where each part runs** (``loop.job``): ``çek`` proposes (``propose``, over the files of the clean snapshot it
 makes) and ``pulled`` carries the proposal (``mutations.json``); ``koş`` applies each mutation to a copy of the
@@ -16,21 +17,50 @@ staged base worktree and runs the unit's ``lint_cmd`` three times on it (``runne
 reads a clock or the network.
 
 **The catalog** (``CATALOG``; ``rules()`` gives its distinct ``(tool, rule_id)`` pairs, sorted: the rules this
-library can make a case for, which ``harness.score`` counts as ``rules_total``): each operator is ``{id, tool, rule_id, match, replace}``; it rewrites one line,
-the first place ``match`` (a regular expression, ``^`` the start of a line, blanks being spaces and tabs) is found in it, by ``replace``. Three operators, all of
-``eslint``: ``no-var`` (a line that starts a ``const`` or ``let`` declaration starts a ``var`` one),
-``prefer-const`` (a ``const <name> =`` line becomes ``let``), ``eqeqeq`` (the first ``===`` becomes ``==``).
-An operator reads text, not syntax: a match inside a comment or a string plants nothing, and a rule the
-target's configuration does not enable reports nothing; both are refused by the judgement below
-(``violation_none``), which is the only thing that makes a mutation a case.
+library has an operator for): each operator is ``{id, tool, rule_id, match, replace}``; it rewrites one line,
+the first place ``match`` (a regular expression, ``^`` the start of a line, blanks being spaces and tabs) is
+found in it, by ``replace``. Eight operators, all of ``eslint``, one a rule; a "code line" below is one whose
+first non-blank text is not ``import``, ``//``, ``/*`` or ``*``:
+
+- ``no-var``: a line that starts a ``const`` or ``let`` declaration starts a ``var`` one;
+- ``prefer-const``: a ``const <name> =`` line becomes ``let``;
+- ``eqeqeq``: the first ``===`` becomes ``==``;
+- ``dot-notation``: on a code line, the first ``.name`` after a word character, ``)`` or ``]`` becomes
+  ``["name"]``;
+- ``object-shorthand``: on a code line, the first ``name.`` that starts a member chain (not after a word
+  character, ``.``, ``)``, ``]`` or a quote; not ``this``, ``super``, ``import``, ``new``) becomes
+  ``({ name: name }).name.``;
+- ``operator-assignment``: a line that is a ``let`` or ``var`` declaration of one name ending in ``;`` gets
+  `` name = name + 0;`` after it, on the same line;
+- ``prefer-template``: on a code line, the first one-line ``"..."`` or ``'...'`` with no backslash that follows
+  ``(``, ``[``, ``,``, ``=`` or ``:`` and is not followed by ``:`` becomes ``("..." + [])``;
+- ``yoda``: the first ``name == literal`` (``===``, ``!==``, ``==``, ``!=``; the left side a name or a dotted
+  chain of names not under ``typeof``; the literal a number, a one-line string with no backslash, ``true``,
+  ``false`` or ``null``) becomes ``literal == name``.
+
+An operator reads text, not syntax, and nothing here says a mutation keeps the program's meaning (13a asks for
+a violation, not for an equivalent program): a match inside a comment or a string plants nothing or breaks the
+line, a place whose line already violates the rule plants no new violation, and a rule the target's
+configuration does not enable reports nothing. All of these are refused by the judgement below, which is the
+only thing that makes a mutation a case. What is shown of each operator: on the toy fixture every census rule's
+operator has a place the tool's own runs judge valid (``tests/fixtures/toy-mutations.json``, the capture of
+ESLint over every place of the fixture; ``tests/test_cases.py``); on any other tree, nothing.
+
+**The census** (tohum/29za): ``producible(tool, rule_id)`` is whether the catalog holds an operator of that
+pair; the toy's seven census rules (``cases.census``) each have one, and ``eqeqeq``, which is outside the toy's
+set, stays: a case of it counts as ``harness.score`` says ("outside_rules" there).
 
 **The proposal** (``propose(files, inputs, seed, limit)``): ``files`` maps a path to its bytes, ``inputs`` are
 the unit's input paths (``.`` is the whole tree). A place is (operator, path, line) where: the path is one of ``inputs`` or under one, ends
 in one of ``SUFFIXES`` and is written in ``PLAIN_PATH``'s characters only (a path git would quote in a diff
 header is left out); the file is UTF-8; the line ends in a newline, holds no carriage return, and the operator
-changes it. The places of each operator are ordered by ``sha256(seed, operator, path, line)``; the proposal takes
-them in rounds over the catalog's order (each operator's first, then each one's second, ...) until ``limit``
-(default ``LIMIT``, 2: each mutation costs ``koş`` three lint runs every cycle). Each is ``{operator, tool,
+changes it. The places of each operator are ordered by ``sha256(seed, operator, path, line)``, the operators by
+``sha256(seed, "operator", operator)``; the proposal takes them in rounds over the operators in that order
+(each operator's first place, then each one's second, ...) until ``limit`` (default ``LIMIT``, 2: each mutation
+costs ``koş`` three lint runs every cycle). The operators' order is the seed's so that a catalog longer than
+the limit is not always cut to its first two: which operators one proposal holds changes with the seed
+(``çek`` gives the commit). One proposal still holds at most ``limit`` rules: a report with every census rule
+cased needs cases kept across cycles, which nothing does today (the ledger's ``blocked`` row). Each is ``{operator, tool,
 rule_id, path, line, diff}`` under its mutation id ``<operator>-<16 hex of sha256(operator, path, line, the
 file's sha256)>``; ``diff`` is a git diff of one hunk that replaces that one line. Same inputs, same proposal.
 
@@ -93,19 +123,32 @@ Out of scope, stated: writing the dev set to ``<state_root>/cases/`` (13a). No p
 layout, its file format or how an append-only set is carried between cycles (tohum/01b); ``harness.score``
 reads the cases from ``yaz``'s line, where they are rebuilt each cycle (reports/seed-075). Also: 13a's first source (history, ``human_fix``); a mutation of more than one line or of a
 file that is not UTF-8; tools other than ESLint; the exit sample (``exit.sample``).
+
+**The command**, run from ``referee/`` (tohum/29za's ``census`` vectors)::
+
+    python -m cases.build produce TOOL RULE
+
+prints ``{"producible": true}`` when the catalog holds an operator of that tool and rule, ``{"producible":
+false}`` otherwise, exit 0; it reads no file and no tree. Any other argument list: ``{"ok": false, "error":
+usage}``, exit 2.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import posixpath
 import re
+import sys
 from typing import Any, Callable
 
+import cli
 from gate import check as GC
 from gate import diffguard
 
 TOOL = "eslint"
+_CODE = r"^(?![ \t]*(?:import\b|//|/\*|\*))"      # the start of a line that begins neither an import nor a comment
+_NAME = r"[A-Za-z_$][\w$]*"
 CATALOG = (
     {"id": "no-var", "tool": TOOL, "rule_id": "no-var",
      "match": r"^([ \t]*)(?:const|let)([ \t]+[A-Za-z_$\[{])", "replace": r"\1var\2"},
@@ -113,6 +156,19 @@ CATALOG = (
      "match": r"^([ \t]*)const([ \t]+[A-Za-z_$][\w$]*[ \t]*=)", "replace": r"\1let\2"},
     {"id": "eqeqeq", "tool": TOOL, "rule_id": "eqeqeq",
      "match": r"(?<![=!<>])===(?!=)", "replace": "=="},
+    {"id": "dot-notation", "tool": TOOL, "rule_id": "dot-notation",
+     "match": _CODE + r"(.*?[\w$)\]])\.(" + _NAME + ")", "replace": r'\1["\2"]'},
+    {"id": "object-shorthand", "tool": TOOL, "rule_id": "object-shorthand",
+     "match": _CODE + r"(.*?)(?<![\w$.)\]\"'`])(?!(?:this|super|import|new)\.)(" + _NAME + r")\.(?=[A-Za-z_$])",
+     "replace": r"\1({ \2: \2 }).\2."},
+    {"id": "operator-assignment", "tool": TOOL, "rule_id": "operator-assignment",
+     "match": r"^([ \t]*(?:let|var)[ \t]+(" + _NAME + r")[ \t]*=.*;)[ \t]*$", "replace": r"\1 \2 = \2 + 0;"},
+    {"id": "prefer-template", "tool": TOOL, "rule_id": "prefer-template",
+     "match": _CODE + r"(.*?[(\[,=:][ \t]*)([\"'])((?:(?!\2)[^\\\n])*)\2(?![ \t]*:)", "replace": r"\1(\2\3\2 + [])"},
+    {"id": "yoda", "tool": TOOL, "rule_id": "yoda",
+     "match": r"(?<![\w$.])(?<!typeof )(" + _NAME + r"(?:\." + _NAME + r")*)([ \t]*)(===|!==|==|!=)([ \t]*)"
+              r"(-?\d+(?:\.\d+)?|\"[^\"\\\n]*\"|'[^'\\\n]*'|true|false|null)(?![\w$.])",
+     "replace": r"\5\2\3\4\1"},
 )
 SUFFIXES = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts")
 PLAIN_PATH = re.compile(r"[A-Za-z0-9._/@+\-\[\]()]+\Z")
@@ -126,6 +182,11 @@ EVIDENCE_KIND = "tool_diff"
 def rules() -> list[tuple[str, str]]:
     """The distinct ``(tool, rule_id)`` of the catalog's operators, sorted."""
     return sorted({(op["tool"], op["rule_id"]) for op in CATALOG})
+
+
+def producible(tool: str, rule_id: str) -> bool:
+    """Whether the catalog holds an operator of this tool and rule (tohum/29za, the ``census`` vectors' question)."""
+    return (tool, rule_id) in rules()
 
 
 def _sha(*parts: str) -> str:
@@ -186,8 +247,9 @@ def propose(files: dict[str, bytes], inputs: list[str], seed: str, limit: int = 
     for op_id, found in places.items():
         found.sort(key=lambda p: _sha(seed, op_id, p[0], str(p[1])))
     out: dict[str, dict] = {}
+    turns = sorted(CATALOG, key=lambda op: _sha(seed, "operator", op["id"]))
     for rank in range(max([len(found) for found in places.values()] + [0])):
-        for op in CATALOG:
+        for op in turns:
             if rank < len(places[op["id"]]) and len(out) < limit:
                 path, line = places[op["id"]][rank]
                 mid, mutation = _mutation(op, path, line, files[path])
@@ -377,3 +439,21 @@ def build(base_sha: str, mutations: Any, index: Any, read: Callable[[str], "byte
             out["cases"].append(case)
             out["oracle"][case["case_id"]] = oracle
     return out
+
+
+# ---------------------------------------------------------------- the command
+
+FAULT_LINE = {"ok": False, "error": "internal error"}
+USAGE = "usage: cases.build produce TOOL RULE"
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 3 or argv[0] != "produce":
+        sys.stdout.write(json.dumps({"ok": False, "error": USAGE}) + "\n")
+        return 2
+    sys.stdout.write(json.dumps({"producible": producible(argv[1], argv[2])}) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(cli.run(main, sys.argv[1:], FAULT_LINE))

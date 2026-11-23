@@ -166,8 +166,9 @@ refused tree is ``pulled_invalid``). Then:
   ``base_sha``; the target's line has ``cases`` (``{cases, oracle, refused}``, "The case" there) whatever the
   steps after D5 gave. Then the harness report (P1 MF4, ``yaz_harness``): ``harness.score.report`` scores the
   cycle's findings against those cases on ``pulled``'s ``snapshot.json`` document and the extracted tree, and the
-  target's line has ``harness`` (``{report, hits, matched, missed_rules, uncased_rules, refused, counts, verdict_reason}``, "The
-  report" there; ``{reason: "harness_refused", reasons}`` when the scorer refuses the findings file, the document or the cases). The
+  target's line has ``harness`` (``{report, hits, matched, missed_rules, uncased_rules, outside_rules, refused, counts,
+  verdict_reason}``, "The report" there; the census rule set is ``cases.census.rules`` of the target's ``kind``: the toy's seven
+  rules, none for a copy, whose report has no count and is never ``PASS``; ``{reason: "harness_refused", reasons}`` when the scorer refuses the findings file, the document or the cases). The
   cycle's findings file is the writer's with no row (``FINDINGS``) until an organ's output is read as findings, so every case of a cycle is a miss
   today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``window``
   and ``ref_max_lines`` are ``harness.params.score`` of ``pulled``'s policy (tohum/29v's paths of stage 1; all
@@ -394,6 +395,7 @@ import tempfile
 from typing import Any, NamedTuple
 
 from cases import build as CB
+from cases import census as CC
 from dispatcher import llm_call as LL
 from drift import check as DC
 from gate import revert as RV
@@ -916,12 +918,14 @@ def yaz_harness(art: Any, tree: str, cases: dict[str, Any]) -> dict[str, Any]:
     """The harness report of the cycle (P1 MF4; see the module docstring): ``harness.score.report`` of
     ``FINDINGS`` against the dev cases ``yaz_cases`` built, on ``pulled``'s snapshot document and the extracted
     tree, with ``harness.params.score`` of ``pulled``'s policy (``alpha``, ``window``, ``ref_max_lines``; the
-    policy is one ``yaz_policy`` found usable, so no value is absent or invalid here);
+    policy is one ``yaz_policy`` found usable, so no value is absent or invalid here) and the census rule set of
+    the target's kind (``cases.census.rules``; tohum/26q (10));
     ``{reason: "harness_refused", reasons}`` when the scorer refuses the findings file, the document or the cases."""
     params = HP.score(art.policy)
     try:
         return OF.run(lambda: HS.report(FINDINGS, cases["cases"], art.snapshot,
-                                        lambda path: D._read_regular(tree, path), **params))
+                                        lambda path: D._read_regular(tree, path),
+                                        census=CC.rules(art.target.get("kind")), **params))
     except HS.Unusable as exc:
         return {"reason": "harness_refused", "reasons": exc.reasons}
 

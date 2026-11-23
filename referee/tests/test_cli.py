@@ -777,6 +777,7 @@ def _inject_argv(f: str, d: str) -> dict:
     """Argument lists that reach each command's reads (``f`` a file holding ``{}``, ``d`` a directory)."""
     return {
         "activate": [["genesis", f, f, f, f, f, f]],
+        "cases.build": [["produce", "eslint", "no-var"], ["produce"]],
         "dispatcher.llm_call": [["plan", f]],
         "drift.check": [["check", f, f]],
         "gate.check": [["map", f, "a", "1"], ["decide", d, f, d, f]],

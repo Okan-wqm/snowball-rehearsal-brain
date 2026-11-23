@@ -8,8 +8,14 @@ on a line holding ``eval(``; it knows no other rule, as an ESLint whose configur
 - test 4 (``Hit``): K0: the right file and rule on another line is no hit, nor a reference wider than the hunk, another
   tool, another rule, another file, and the K3+ window does not widen it; K3: a hit inside the symbol or inside the
   window, none outside both, on another file, with another property or without a required change;
-- the proposal (``Proposal``): the ids and diffs by hand, the order by the seed, the rounds over the catalog, the
-  limit, the inputs, the places left out; each diff applies to its file through ``gate.diffguard``'s own parse;
+- the proposal (``Proposal``): the ids and diffs by hand, the order by the seed, the rounds over the operators in
+  the seed's order, the limit, the inputs, the places left out; each diff applies to its file through
+  ``gate.diffguard``'s own parse;
+- the census (``Census``, tohum/29za, 26q (10)): each operator's rewrite by hand and the lines it leaves; over the
+  toy fixture the proposal is the one ESLint was captured on (``tests/fixtures/toy-mutations.json``,
+  ``tests/capture_toy_mutations.py``) and ``judge`` reads those runs: every rule of the toy's census has a valid
+  mutation, the counts by hand; the ``produce`` command as the seed's ``census`` vectors run it; the toy's set
+  (``cases.census``) is the vectors' rules;
 - the judgement (``Judgement``): each reason; a violation a hunk shifted is not new;
 - the case (``Built``): the fields; ``koş``'s refusal, a missing entry, a run file that is not the index's;
 - ``runner.kos`` (``KosRuns``): a mutation's three lint runs on its own copy, no test run, the file and the entry;
@@ -24,6 +30,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 import unittest
 from unittest import mock
@@ -33,6 +40,7 @@ sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from cases import build as CB  # noqa: E402
+from cases import census as CC  # noqa: E402
 from gate import diffguard  # noqa: E402
 from loop import cek as C  # noqa: E402
 from loop import pulled as P  # noqa: E402
@@ -47,7 +55,8 @@ import test_loop_kos as LK  # noqa: E402
 import test_loop_yaz as LY  # noqa: E402
 import yaz_world as YW  # noqa: E402
 
-# pkg/a.js of these tests: a violation of the base (line 1), three declarations and one comparison to mutate.
+# pkg/a.js of these tests: a violation of the base (line 1), three declarations and one comparison to mutate; the
+# ``var`` and ``let`` lines are also places of ``operator-assignment``. No other operator has a place in these files.
 A_JS = "var a = 1;\nconst b = 2;\nlet d = 4;\nif (a === b) eval(a);\n"
 B_JS = "const c = 3;\n"
 FILES = {"pkg/a.js": A_JS.encode(), "pkg/b.js": B_JS.encode()}
@@ -85,6 +94,8 @@ NO_VAR_B = mid_by_hand("no-var", "pkg/b.js", 1, FILES["pkg/b.js"])
 PREFER_2 = mid_by_hand("prefer-const", "pkg/a.js", 2, FILES["pkg/a.js"])
 PREFER_B = mid_by_hand("prefer-const", "pkg/b.js", 1, FILES["pkg/b.js"])
 EQEQEQ_4 = mid_by_hand("eqeqeq", "pkg/a.js", 4, FILES["pkg/a.js"])
+ASSIGN_1 = mid_by_hand("operator-assignment", "pkg/a.js", 1, FILES["pkg/a.js"])
+ASSIGN_3 = mid_by_hand("operator-assignment", "pkg/a.js", 3, FILES["pkg/a.js"])
 ALL = {
     NO_VAR_2: {"operator": "no-var", "tool": "eslint", "rule_id": "no-var", "path": "pkg/a.js", "line": 2,
                "diff": one_line("pkg/a.js", 2, "const b = 2;", "var b = 2;")},
@@ -98,7 +109,12 @@ ALL = {
                "diff": one_line("pkg/b.js", 1, "const c = 3;", "let c = 3;")},
     EQEQEQ_4: {"operator": "eqeqeq", "tool": "eslint", "rule_id": "eqeqeq", "path": "pkg/a.js", "line": 4,
                "diff": one_line("pkg/a.js", 4, "if (a === b) eval(a);", "if (a == b) eval(a);")},
+    ASSIGN_1: {"operator": "operator-assignment", "tool": "eslint", "rule_id": "operator-assignment", "path": "pkg/a.js",
+               "line": 1, "diff": one_line("pkg/a.js", 1, "var a = 1;", "var a = 1; a = a + 0;")},
+    ASSIGN_3: {"operator": "operator-assignment", "tool": "eslint", "rule_id": "operator-assignment", "path": "pkg/a.js",
+               "line": 3, "diff": one_line("pkg/a.js", 3, "let d = 4;", "let d = 4; d = d + 0;")},
 }
+OPERATORS = ("no-var", "prefer-const", "eqeqeq", "operator-assignment")      # those with a place in FILES
 
 
 class Proposal(unittest.TestCase):
@@ -121,19 +137,29 @@ class Proposal(unittest.TestCase):
         places = [(m["path"], m["line"]) for m in ALL.values() if m["operator"] == operator]
         return sorted(places, key=lambda p: sha("\x00".join((seed, operator, p[0], str(p[1]))).encode()))
 
-    def test_rounds_over_the_catalog_in_the_seeds_order_up_to_the_limit(self):
-        orders = set()
+    def turns(self, seed: str) -> list:
+        """The operators with a place in ``FILES`` in the order ``seed`` gives, by hand."""
+        return sorted(OPERATORS, key=lambda op: sha("\x00".join((seed, "operator", op)).encode()))
+
+    def test_rounds_over_the_operators_in_the_seeds_order_up_to_the_limit(self):
+        orders, turns, proposed = set(), set(), set()
         for seed in ("5" * 40, "6" * 40, "7" * 40, "8" * 40):
-            first = [mid_by_hand(op, *self.order(seed, op)[0], FILES[self.order(seed, op)[0][0]])
-                     for op in ("no-var", "prefer-const", "eqeqeq")]
-            second = [mid_by_hand(op, *self.order(seed, op)[1], FILES[self.order(seed, op)[1][0]])
-                      for op in ("no-var", "prefer-const")]
-            for limit in range(0, 6):
+            rounds = []
+            for rank in range(3):
+                rounds += [mid_by_hand(op, *self.order(seed, op)[rank], FILES[self.order(seed, op)[rank][0]])
+                           for op in self.turns(seed) if rank < len(self.order(seed, op))]
+            self.assertEqual(len(rounds), len(ALL))
+            for limit in range(0, len(ALL) + 2):
                 with self.subTest(seed=seed[0], limit=limit):
-                    self.assertEqual(list(CB.propose(FILES, ["pkg"], seed, limit=limit)), (first + second)[:limit])
-            self.assertEqual(list(CB.propose(FILES, ["pkg"], seed)), first[:2])     # the default limit
+                    self.assertEqual(list(CB.propose(FILES, ["pkg"], seed, limit=limit)), rounds[:limit])
+            default = CB.propose(FILES, ["pkg"], seed)
+            self.assertEqual(list(default), rounds[:2])                             # the default limit
+            proposed |= {m["operator"] for m in default.values()}
             orders.add(tuple(self.order(seed, "no-var")))
+            turns.add(tuple(self.turns(seed)))
         self.assertGreater(len(orders), 1)      # the seed decides: these four do not all give one order
+        self.assertGreater(len(turns), 1)       # ... nor one order of the operators,
+        self.assertGreater(len(proposed), 2)    # so the default limit does not cut every proposal to the same two
         self.assertEqual(CB.LIMIT, 2)
 
     def test_only_the_inputs(self):
@@ -176,6 +202,167 @@ class Proposal(unittest.TestCase):
         moved = dict(FILES, **{"pkg/a.js": b"\n" + FILES["pkg/a.js"]})
         self.assertFalse(set(CB.propose(moved, ["pkg/a.js"], SEED, limit=100)) & set(ALL))
         self.assertEqual(CB.propose(FILES, ["pkg"], "other seed", limit=100), ALL)
+
+
+# tohum/29za: the toy's census rules, as the page lists them; the catalog's rules are these and ``eqeqeq``.
+CENSUS = ("dot-notation", "no-var", "object-shorthand", "operator-assignment", "prefer-const", "prefer-template", "yoda")
+RULES = ("dot-notation", "eqeqeq", "no-var", "object-shorthand", "operator-assignment", "prefer-const",
+         "prefer-template", "yoda")
+BRAIN = os.path.dirname(REFEREE)
+VEC = "/vec/cases.json"
+
+
+def rewritten(operator: str, line: str) -> "str | None":
+    """What the one operator makes of ``line`` (a file of that one line), ``None`` when it has no place there."""
+    got = [m for m in CB.propose({"pkg/x.js": (line + "\n").encode()}, ["pkg"], SEED, limit=100).values()
+           if m["operator"] == operator]
+    if not got:
+        return None
+    (m,) = got
+    head, old, new, end = m["diff"].split("\n")[3:]
+    assert (head, old, end) == ("@@ -1 +1 @@", "-" + line, ""), m["diff"]
+    return new[1:]
+
+
+def produce(*argv: str) -> tuple[int, str]:
+    proc = subprocess.run([sys.executable, "-m", "cases.build", *argv], cwd=REFEREE, capture_output=True, text=True,
+                          timeout=120)
+    return proc.returncode, proc.stdout
+
+
+class Census(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, os.path.join(BRAIN, "tests"))
+        import capture_toy_mutations as capture
+        cls.files = capture.toy_files()
+        with open(capture.OUT, encoding="utf-8") as fh:
+            cls.fixture = json.load(fh)
+        cls.proposal = CB.propose(cls.files, ["textkit"], SEED, limit=10 ** 9)
+
+    def test_each_operators_rewrite_by_hand(self):
+        for operator, line, new in (
+                ("dot-notation", "  return list.length;", '  return list["length"];'),
+                ("dot-notation", "f(a)[0].b.c;", 'f(a)[0]["b"].c;'),
+                ("object-shorthand", "  return list.length;", "  return ({ list: list }).list.length;"),
+                ("object-shorthand", "x = this.a + b.c.d;", "x = this.a + ({ b: b }).b.c.d;"),
+                ("operator-assignment", "  let total = 0;", "  let total = 0; total = total + 0;"),
+                ("operator-assignment", "var $n = f(1);  ", "var $n = f(1); $n = $n + 0;"),
+                ("prefer-template", "  return f('a', \"b\");", "  return f(('a' + []), \"b\");"),
+                ("prefer-template", 'const s = "it\'s";', 'const s = ("it\'s" + []);'),
+                ("yoda", "if (a.b !== 'x' && c == 1) {}", "if ('x' !== a.b && c == 1) {}"),
+                ("yoda", "  return n===-1.5;", "  return -1.5===n;"),
+                ("yoda", "ok = flag == null;", "ok = null == flag;"),
+        ):
+            with self.subTest(operator=operator, line=line):
+                self.assertEqual(rewritten(operator, line), new)
+
+    def test_lines_an_operator_leaves(self):
+        for operator, line in (
+                ("dot-notation", "import a from './a.js';"), ("dot-notation", "// a.b"), ("dot-notation", " * a.b"),
+                ("dot-notation", "/* a.b */"), ("dot-notation", "x = 1.5;"), ("dot-notation", "f(...rest);"),
+                ("object-shorthand", "import a from './a.js';"), ("object-shorthand", "// a.b"),
+                ("object-shorthand", "this.a = 1;"), ("object-shorthand", "new.target;"), ("object-shorthand", "f().a;"),
+                ("object-shorthand", "x = 'a.b';"), ("object-shorthand", "a[0].b;"), ("object-shorthand", "x = 1.5;"),
+                ("operator-assignment", "const a = 1;"), ("operator-assignment", "let a = 1"),
+                ("operator-assignment", "let [a] = b;"), ("operator-assignment", "let a;"),
+                ("prefer-template", "import a from './a.js';"), ("prefer-template", "// f('a')"),
+                ("prefer-template", "x = { 'k': 1 };"), ("prefer-template", "x = 'a\\n';"), ("prefer-template", "'use strict';"),
+                ("yoda", "if (a === b) {}"), ("yoda", "if (typeof a === 'string') {}"), ("yoda", "if (1 === a) {}"),
+                ("yoda", "if (f(a) === 1) {}"), ("yoda", "if (a < 1) {}"),
+        ):
+            with self.subTest(operator=operator, line=line):
+                self.assertIsNone(rewritten(operator, line))
+
+    def test_the_toys_proposal_is_the_one_the_tool_was_captured_on(self):
+        self.assertEqual({mid: (m["operator"], m["path"], m["line"], sha(m["diff"].encode()))
+                          for mid, m in self.proposal.items()},
+                         {mid: (m["operator"], m["path"], m["line"], m["diff_sha256"])
+                          for mid, m in self.fixture["mutations"].items()})
+        with open(os.path.join(BRAIN, "targets", "toy", "units.json"), encoding="utf-8") as fh:
+            (unit,) = json.load(fh)["units"]
+        self.assertEqual((self.fixture["lint_cmd"], unit["inputs"]), (unit["lint_cmd"], ["textkit"]))
+        with open(os.path.join(BRAIN, "tests", "fixtures", "toy-repo-eslint.json"), "rb") as fh:
+            self.assertEqual(self.fixture["base"], R.record(fh.read(), os.path.join(BRAIN, "tests", "fixtures", "toy-repo"), "/work"))
+
+    def judged(self) -> dict:
+        """``{operator: {mid: reasons}}`` of the toy's whole proposal, judged from the captured runs."""
+        base, out = R.run_file([self.fixture["base"]] * 3), {}
+        for mid, m in self.proposal.items():
+            mut = R.run_file([{"tool": "eslint", "violations": self.fixture["mutations"][mid]["violations"]}] * 3)
+            reasons, where = CB.judge(m, base, mut)
+            self.assertEqual(where, None if reasons else {"line": m["line"], "hunk": {"start": m["line"], "end": m["line"]}})
+            out.setdefault(m["operator"], {})[mid] = reasons
+        return out
+
+    def test_every_census_rule_has_a_mutation_the_tool_judges_valid_on_the_toy(self):
+        judged = self.judged()
+        self.assertEqual({op: (sum(not r for r in found.values()), sum(bool(r) for r in found.values()))
+                          for op, found in judged.items()},
+                         {"dot-notation": (19, 1), "eqeqeq": (0, 3), "no-var": (2, 0), "object-shorthand": (19, 0),
+                          "operator-assignment": (2, 0), "prefer-const": (1, 0), "prefer-template": (29, 1),
+                          "yoda": (2, 0)})
+        for rule in CENSUS:
+            self.assertTrue(any(not r for r in judged[rule].values()), rule)
+        # what the tool refuses: the rule the toy does not enable, a line that already breaks the rule, and a string
+        # that was already one side of a concatenation
+        refused = {(m["operator"], m["path"], m["line"]): judged[m["operator"]][mid]
+                   for mid, m in self.proposal.items() if judged[m["operator"]][mid]}
+        self.assertEqual(set(refused), {("dot-notation", "textkit/src/greet.js", 6),
+                                        ("prefer-template", "textkit/src/greet.js", 2),
+                                        ("eqeqeq", "textkit/src/permissions.js", 2),
+                                        ("eqeqeq", "textkit/src/permissions.js", 5),
+                                        ("eqeqeq", "textkit/src/stats.js", 2)})
+        self.assertEqual({tuple(r) for r in refused.values()}, {("violation_none",)})
+
+    def test_a_mutation_is_valid_by_its_own_run_only(self):
+        base = R.run_file([self.fixture["base"]] * 3)
+        valid = sorted(mid for mid, m in self.proposal.items() if m["operator"] in CENSUS
+                       and (m["operator"], m["path"], m["line"]) not in (("dot-notation", "textkit/src/greet.js", 6),
+                                                                         ("prefer-template", "textkit/src/greet.js", 2)))
+        for mid, other in zip(valid, valid[1:] + valid[:1]):
+            m, o = self.proposal[mid], self.proposal[other]
+            run_of_other = R.run_file([{"tool": "eslint", "violations": self.fixture["mutations"][other]["violations"]}] * 3)
+            with self.subTest(mid=mid):
+                self.assertEqual(CB.judge(m, base, base), (["violation_none"], None))
+                if (m["rule_id"], m["path"], m["line"]) != (o["rule_id"], o["path"], o["line"]):
+                    self.assertNotEqual(CB.judge(m, base, run_of_other)[0], [])
+
+    def test_the_toys_census_is_the_pages_seven_rules_and_each_is_producible(self):
+        self.assertEqual(CC.rules("toy"), {("eslint", rule) for rule in CENSUS})
+        self.assertLessEqual(CC.rules("toy"), set(CB.rules()))
+        self.assertEqual(set(CB.rules()) - CC.rules("toy"), {("eslint", "eqeqeq")})
+        for kind in ("copy", "real", "", None, 1, ["toy"]):
+            self.assertIsNone(CC.rules(kind), kind)
+        self.assertEqual(sorted(CC.RULES), ["toy"])
+
+    def test_produce_as_the_census_vectors_run_it(self):
+        for rule in CENSUS + ("eqeqeq",):
+            self.assertEqual(produce("produce", "eslint", rule), (0, '{"producible": true}\n'), rule)
+        for argv in (("produce", "eslint", "no-such-rule"), ("produce", "tsc", "no-var"), ("produce", "no-var", "eslint"),
+                     ("produce", "eslint", "")):
+            self.assertEqual(produce(*argv), (0, '{"producible": false}\n'), argv)
+        with mock.patch.object(CB, "CATALOG", CB.CATALOG[:1]):
+            self.assertEqual([CB.producible("eslint", rule) for rule in ("no-var", "prefer-const")], [True, False])
+
+    def test_produce_refuses_other_argument_lists(self):
+        for argv in ((), ("produce",), ("produce", "eslint"), ("produce", "eslint", "no-var", "x"),
+                     ("propose", "eslint", "no-var")):
+            code, out = produce(*argv)
+            self.assertEqual((code, json.loads(out)), (2, {"ok": False, "error": CB.USAGE}), argv)
+
+    @unittest.skipUnless(os.path.exists(VEC), "the seed's vector file is not here")
+    def test_the_seeds_census_vectors_ask_for_the_toys_set(self):
+        with open(VEC, encoding="utf-8") as fh:
+            cases = [case for case in json.load(fh) if case["id"].startswith("census.")]
+        asked = set()
+        for case in cases:
+            words = case["cmd"].split()
+            self.assertEqual(words[:4], ["python", "-m", "cases.build", "produce"], case["id"])
+            asked.add(tuple(words[4:]))
+            self.assertEqual(produce(*words[3:]), (0, '{"producible": true}\n'), case["id"])
+            self.assertEqual(produce(*case["changed"]["cmd"].split()[3:]), (0, '{"producible": false}\n'), case["id"])
+        self.assertEqual(asked, CC.rules("toy"))
 
 
 class Judgement(unittest.TestCase):
@@ -297,7 +484,7 @@ class Oracle(World):
         built = self.build(ALL)
         # the stand-in knows no-var only: its three mutations are the cases, the others plant nothing it reports
         self.assertEqual([c["mutation_id"] for c in built["cases"]], sorted([NO_VAR_2, NO_VAR_3, NO_VAR_B]))
-        self.assertEqual(built["refused"], {m: ["violation_none"] for m in (PREFER_2, PREFER_B, EQEQEQ_4)})
+        self.assertEqual(built["refused"], {m: ["violation_none"] for m in (PREFER_2, PREFER_B, EQEQEQ_4, ASSIGN_1, ASSIGN_3)})
         self.assertEqual(sorted(built["oracle"]), sorted(c["case_id"] for c in built["cases"]))
         self.assertEqual(self.recall(built, list(built["oracle"].values())), 1.0)
         # each oracle finding hits its own case and no other (two of the cases share file and rule)
@@ -391,11 +578,11 @@ class Hit(unittest.TestCase):
                 self.assertFalse(CB.hit(k3_finding(first), K3, 15))
 
     def test_the_rules_of_the_catalog(self):
-        self.assertEqual(CB.rules(), [("eslint", "eqeqeq"), ("eslint", "no-var"), ("eslint", "prefer-const")])
+        self.assertEqual(CB.rules(), [("eslint", r) for r in RULES])
         self.assertEqual(set(CB.rules()), {(op["tool"], op["rule_id"]) for op in CB.CATALOG})
         twice = CB.CATALOG + (dict(CB.CATALOG[0]), {"tool": "a", "rule_id": "z"})
         with mock.patch.object(CB, "CATALOG", twice):     # an operator more of a rule is not a rule more; sorted
-            self.assertEqual(CB.rules(), [("a", "z")] + [("eslint", r) for r in ("eqeqeq", "no-var", "prefer-const")])
+            self.assertEqual(CB.rules(), [("a", "z")] + [("eslint", r) for r in RULES])
 
     def test_k0_the_right_file_and_rule_on_another_line_is_no_hit(self):
         for name, finding in (

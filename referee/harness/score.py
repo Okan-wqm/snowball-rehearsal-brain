@@ -51,8 +51,8 @@ findings nor on that of the cases. Which of several largest sets is returned is 
 ``case_id_twice:<index>``, ``cases_mixed_class``). The cases are the referee's own product
 (``cases.build``); their other fields are read by the hit rule only.
 
-**The report** (``report(findings, cases, snapshot, read, alpha, window, meta, ref_max_lines)``) is ``{report,
-hits, matched, missed_rules, uncased_rules, refused, counts, verdict_reason}``.
+**The report** (``report(findings, cases, snapshot, read, alpha, window, meta, ref_max_lines, census)``) is
+``{report, hits, matched, missed_rules, uncased_rules, outside_rules, refused, counts, verdict_reason}``.
 
 ``findings`` is the bytes of a findings file of the referee's writer (``findings.write``; empty bytes are the
 file with no row), and nothing else is scored: what is not ``bytes`` is ``Unusable`` (``findings_invalid``), and
@@ -78,22 +78,27 @@ snapshot, or a line equal to one already found) is in no run, so a case only it 
   three are ``null``; without ``alpha`` (``None``) ``recall_lb`` is ``null``;
 - ``census``, for the classes the hit rule matches by tool and rule (``cases.build.DETERMINISTIC``: K0, K1,
   K2; a rule is a (``tool``, ``rule_id``) pair of strings, a case without one is ``case_invalid:<index>``):
-  ``{rules_total, rules_covered, misses}``. ``rules_total`` counts the rules a case can be made for,
-  ``cases.build.rules()`` (the whole operator library, which is one tool's today; tohum/26e), together with any
-  rule of the cases that is not among them; ``rules_covered`` the rules with a case and no case missed;
-  ``misses`` the cases not hit. ``null`` for any other class;
+  ``{rules_total, rules_covered, misses}``, counted over ``census``, the rule set of the target's ``census``
+  vectors (tohum/26q (10); the caller's: a list or set of distinct pairs of strings, at least one, else ``Unusable`` ``census_invalid``: a set
+  of no rule would be a ``PASS`` with nothing counted;
+  ``loop.job`` gives ``cases.census.rules`` of the target's kind). ``rules_total`` is the size of that set;
+  ``rules_covered`` its rules with a case and no case missed; ``misses`` the cases not hit, of any rule. A case
+  of a rule outside the set adds nothing to ``rules_total`` or ``rules_covered`` and is a case everywhere else
+  (``n``, ``recall``, ``misses``, the verdict's miss). ``null`` for any other class, and ``null`` without a set
+  (``census`` ``None``: a target with no census vector has no count);
 - ``clean_findings``: with no case (the snapshot is a clean one: nothing was planted), the findings counted, each
   identity once and **every refused finding too** (13e: none is left out of the count); ``null`` with cases;
 - ``precision``, ``precision_lb``, ``unresolved``, ``cost_usd``, ``value_per_usd``: ``null`` (below);
 - ``verdict``, with its reason beside the report (``verdict_reason``), the first that holds (tohum/26m
   "Puanlama" 3): ``UNMEASURABLE`` ``no_cases``; ``UNMEASURABLE`` ``class_without_census`` (a class outside
-  ``DETERMINISTIC``); ``FAIL`` ``misses`` (a case not hit); ``UNMEASURABLE`` ``rule_without_case`` (a rule of
-  ``cases.build.rules()`` has no case among these); else ``PASS`` (reason ``null``): every rule has a case and
-  every case is hit. The dev report has no floor of groups (tohum/26h): G changes no verdict.
+  ``DETERMINISTIC``); ``FAIL`` ``misses`` (a case not hit); ``UNMEASURABLE`` ``census_vector_absent`` (no rule
+  set was given: never ``PASS``); ``UNMEASURABLE`` ``rule_without_case`` (a rule of the set has no case among
+  these); else ``PASS`` (reason ``null``): every rule of the set has a case and every case is hit. The dev report has no floor of groups (tohum/26h): G changes no verdict.
 
 ``matched`` is ``{case_id: the finding's fingerprint}``, ``missed_rules`` the sorted ``[tool, rule_id]`` of the
-rules with a missed case and ``uncased_rules`` those of ``cases.build.rules()`` with no case (both ``null``
-without census), ``counts`` ``{given, distinct, reobserved, refused, other_runs}`` over the file's rows (``given`` is the sum of the
+rules with a missed case (``null`` for a class without census), ``uncased_rules`` those of the set with no case
+and ``outside_rules`` the rules of the cases that are not in the set (tohum/26q (10): named beside the report;
+both ``null`` without a set), ``counts`` ``{given, distinct, reobserved, refused, other_runs}`` over the file's rows (``given`` is the sum of the
 other four). The same arguments
 give the same output: nothing here reads a clock, the environment, or a file other than through ``read``.
 
@@ -109,8 +114,8 @@ Out of scope, stated:
 - ``precision``, ``precision_lb``, ``unresolved`` (they need the triage of findings that hit no case: the panel
   and the oracle, later parties), ``cost_usd``, ``value_per_usd`` (the cost of a hunter's run: P2);
 - the census of K4 (tohum/26m "Puanlama" 4: stage 3's);
-- the rules of tohum/29za's census vectors (the toy's seven rules: the library holds other ones today; the
-  ledger's ``blocked`` row of this change);
+- which rule set is a target's (``cases.census``), and whether the library can make a case of each of its
+  rules (``cases.build produce``): nothing here reads the library's catalog;
 - where ``alpha``, ``window`` and ``ref_max_lines`` come from: the caller's (``harness.params.score`` reads
   them from the policy for ``loop.job``); ``stage_params.census_min_groups`` (tohum/26h: the exit sample's,
   ``exit.sample``, not built; nothing here reads it);
@@ -119,14 +124,15 @@ Out of scope, stated:
 Command line, run from ``referee/`` (``CASES`` is a file holding one JSON list)::
 
     python -m harness.score FINDINGS CASES [--window N] [--ref-max-lines N]
-    python -m harness.score FINDINGS CASES --snapshot DOCUMENT --tree DIR [--alpha A] [--window N]
-                            [--ref-max-lines N]
+    python -m harness.score FINDINGS CASES --snapshot DOCUMENT --tree DIR [--alpha A] [--census RULES]
+                            [--window N] [--ref-max-lines N]
 
 The first form (tohum/29a's ``match`` vectors) prints ``{"hits": N}``: ``FINDINGS`` holds one JSON list, ``sift``
 without a snapshot, then ``match``; when a finding was refused the line also has ``refused``. It gives no report
 and no verdict, the fingerprints are the list's as given, and no job runs it. The second (tohum/26a: the
 findings and the snapshot in, the report out) prints ``report``'s output: ``FINDINGS`` is a findings file of the
-writer, read as bytes; the tree's files are read as regular files with no link on their way
+writer, read as bytes; ``RULES`` is a file holding the census rule set as one JSON list of ``[tool, rule_id]``
+(without it the report has no count and is never ``PASS``); the tree's files are read as regular files with no link on their way
 (``profile.derive``'s reader). Exit 0 with the one JSON line. Exit 2 with ``{"ok": false, "error": ...}``: wrong
 arguments, a file that cannot be read or is not JSON, a list that is not one, ``Unusable``.
 """
@@ -252,6 +258,20 @@ def _checked(cases: Any) -> list[dict]:
     return sorted(cases, key=lambda case: case["case_id"])
 
 
+def _census(census: Any) -> "set[tuple[str, str]] | None":
+    """The census rule set as pairs, ``None`` for none; else ``Unusable`` (``census_invalid``); see the module
+    docstring, ``census``."""
+    if census is None:
+        return None
+    if isinstance(census, (str, bytes, dict)) or not isinstance(census, (list, tuple, set, frozenset)):
+        raise Unusable(["census_invalid"])
+    pairs = [tuple(rule) if isinstance(rule, (list, tuple)) else None for rule in census]
+    if not pairs or len(set(pairs)) != len(pairs) \
+            or any(pair is None or len(pair) != 2 or not all(isinstance(part, str) for part in pair) for pair in pairs):
+        raise Unusable(["census_invalid"])
+    return set(pairs)                                                   # type: ignore[arg-type]
+
+
 def match(accepted: list[dict], cases: list[dict], window: int | None = None) -> dict[str, int]:
     """A maximum matching of findings to cases over the hit rule: ``{case_id: place in accepted}``."""
     ordered = _checked(cases)
@@ -286,7 +306,7 @@ def match(accepted: list[dict], cases: list[dict], window: int | None = None) ->
 
 def report(findings: Any, cases: Any, snapshot: Any, read: Callable[[str], "bytes | None"],
            alpha: Fraction | None = None, window: int | None = None, meta: dict | None = None,
-           ref_max_lines: int | None = None) -> dict[str, Any]:
+           ref_max_lines: int | None = None, census: Any = None) -> dict[str, Any]:
     """The harness report and what stands beside it; see the module docstring, "The report"."""
     try:
         SM.check(snapshot)
@@ -299,6 +319,7 @@ def report(findings: Any, cases: Any, snapshot: Any, read: Callable[[str], "byte
         raise Unusable(["findings:%s" % reason for reason in found])
     rows = FW.rows(findings)
     ordered = _checked(cases)
+    counted = _census(census)
     accepted, refused, reobserved, other_runs = sift(rows, snapshot, read, ref_max_lines)
     matched = match(accepted, ordered, window)
     n, groups, hits = len(ordered), len({case["group"] for case in ordered}), len(matched)
@@ -306,7 +327,7 @@ def report(findings: Any, cases: Any, snapshot: Any, read: Callable[[str], "byte
     out.update(snapshot_id=snapshot["snapshot_id"], match_rule_version=MATCH_RULE_VERSION, n=n, n_groups=groups,
                x_eff=None, recall=None, recall_lb=None, census=None, clean_findings=None)
     out.update({name: None for name in NOT_MEASURED})
-    missed_rules = uncased_rules = None
+    missed_rules = uncased_rules = outside_rules = None
     if n == 0:
         out["clean_findings"] = len(accepted) + len(refused)
         verdict, why = "UNMEASURABLE", "no_cases"
@@ -322,19 +343,23 @@ def report(findings: Any, cases: Any, snapshot: Any, read: Callable[[str], "byte
             rules = {(case["tool"], case["rule_id"]) for case in ordered}
             missed = {(case["tool"], case["rule_id"]) for case in ordered if case["case_id"] not in matched}
             missed_rules = [list(rule) for rule in sorted(missed)]
-            uncased = set(CB.rules()) - rules
-            uncased_rules = [list(rule) for rule in sorted(uncased)]
-            out["census"] = {"rules_total": len(rules | uncased), "rules_covered": len(rules - missed),
-                             "misses": n - hits}
+            if counted is not None:
+                uncased_rules = [list(rule) for rule in sorted(counted - rules)]
+                outside_rules = [list(rule) for rule in sorted(rules - counted)]
+                out["census"] = {"rules_total": len(counted), "rules_covered": len((rules & counted) - missed),
+                                 "misses": n - hits}
             if hits < n:
                 verdict, why = "FAIL", "misses"
-            elif uncased:
+            elif counted is None:
+                verdict, why = "UNMEASURABLE", "census_vector_absent"
+            elif uncased_rules:
                 verdict, why = "UNMEASURABLE", "rule_without_case"
             else:
                 verdict, why = "PASS", None
     out["verdict"] = verdict
     return {"report": out, "hits": hits, "matched": {cid: accepted[f]["fingerprint"] for cid, f in matched.items()},
-            "missed_rules": missed_rules, "uncased_rules": uncased_rules, "refused": refused, "verdict_reason": why,
+            "missed_rules": missed_rules, "uncased_rules": uncased_rules, "outside_rules": outside_rules,
+            "refused": refused, "verdict_reason": why,
             "counts": {"given": len(rows), "distinct": len(accepted), "reobserved": reobserved,
                        "refused": len(refused), "other_runs": other_runs}}
 
@@ -355,19 +380,19 @@ def _list(path: str) -> list:
 
 
 def _options(argv: list[str]) -> dict[str, str]:
-    names = ("--snapshot", "--tree", "--alpha", "--window", "--ref-max-lines")
+    names = ("--snapshot", "--tree", "--alpha", "--census", "--window", "--ref-max-lines")
     if len(argv) % 2 or any(name not in names for name in argv[::2]) or len(set(argv[::2])) != len(argv) // 2:
         raise Unusable(["usage"])
     options = dict(zip(argv[::2], argv[1::2]))
     if ("--snapshot" in options) != ("--tree" in options) \
-            or ("--snapshot" not in options and "--alpha" in options):
+            or ("--snapshot" not in options and ("--alpha" in options or "--census" in options)):
         raise Unusable(["usage"])
     return options
 
 
 def main(argv: list[str]) -> int:
-    usage = ("usage: harness.score FINDINGS CASES [--snapshot DOCUMENT --tree DIR [--alpha A]] [--window N] "
-             "[--ref-max-lines N]")
+    usage = ("usage: harness.score FINDINGS CASES [--snapshot DOCUMENT --tree DIR [--alpha A] [--census RULES]] "
+             "[--window N] [--ref-max-lines N]")
     try:
         if len(argv) < 2:
             raise Unusable(["usage"])
@@ -389,8 +414,9 @@ def main(argv: list[str]) -> int:
             alpha = stats._number(options["--alpha"], stats.DECIMAL) if "--alpha" in options else None
             if alpha is not None and not 0 < alpha < 1:
                 raise Unusable(["usage"])
+            census = _list(options["--census"]) if "--census" in options else None
             line = report(findings, cases, document, lambda path: D._read_regular(tree, path), alpha, window,
-                          ref_max_lines=longest)
+                          ref_max_lines=longest, census=census)
     except Unusable as exc:
         return _refuse(usage if exc.reasons == ["usage"] else "unusable input: %s" % cli.cause(exc))
     except (OSError, ValueError, RecursionError) as exc:
