@@ -23,7 +23,7 @@ bir Windows kullanıcısında koşar; Kurucu'nun yapılandırması repo dışın
 
 1. `control.json`'u hakem reposunun `main`'inden okur; kill switch açıksa çıkar.
 2. Son imzalı önyükleme sonucunu (`actions:read` belirteci, Sigstore doğrulaması) ve beyin başını okur:
-   baş için sonuç yoksa beklemededir, çıkar; park ya da kesinti varsa başlatmaz ve operatörü uyarır;
+   baş için sonuç yoksa beklemededir, çıkar; park ya da kesinti (rakibinki dahil, `26o`) varsa başlatmaz ve operatörü uyarır;
    `not_learning`'den sonra yalnız `founder_resume {after_run, note}` o koşuyu adlandırıyorsa bir kez
    başlatır (Kurucu önce "ne değiştiriyorum" defter satırını yazar); kabul ya da ret varsa başlatır.
 3. `claude -p`: pinli sürüm, Opus model kimliği, `--max-budget-usd <session_cap_usd>`, ayar kaynağı yok
@@ -34,7 +34,7 @@ bir Windows kullanıcısında koşar; Kurucu'nun yapılandırması repo dışın
    okuması"); `policy.json`'un `operating`'i o oturum için okunur, `/work/logs/operating.json`'dadır: `{operating:
    {…}}`, alan yoksa `{}`; okunamaz ya da `26c` biçiminde değilse dosya yoktur. Bütünü `/work/logs/policy.json`'dadır.
 4. Bitince CLI'nin bildirdiği maliyeti `kind: cost` satırı olarak `founder-ledger.jsonl`'a `26`'nın zincir
-   kuralıyla ekler (model ve token toplamları dahil, yorumsuz); oturum sayısı, USD `status-stage0.md`'ye girer.
+   kuralıyla ekler (bütün oturumun model ve token toplamları dahil, yorumsuz; `26o`); oturum sayısı, USD `status-stage0.md`'ye girer.
 
 **Oturumun maliyet satırı** (Y12, `asama-0/12`). `kind: cost` satırını başlatıcı yazar (rapor yoksa
 `unmeasured`). Oturum sayısı ve USD toplamları ilerlemenin ve maliyetin ölçüsüdür; çıkış koşulu değildir ve

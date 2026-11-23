@@ -49,7 +49,8 @@ gelmezler.
 
 **Ölçüm aynası** (operatör kararı, 2026-11-20). `/work/logs/mirror.json`'un `session_time` bölümü oturum başına
 `wall_s`, `api_s`, `blocked_on_own_checks_s` ve kotanın başı ve sonunu kova adıyla (`quota_start`, `quota_end`),
-`path` bölümü bu dilimin henüz kabul edilmemiş MF'lerini (`path_mfs_left`) ve `organ_merges_copy`'yi verir. Yalnız
+`path` bölümü bu dilimin henüz kabul edilmemiş MF'lerini (`path_mfs_left`) ve `organ_merges_copy`'yi verir; ajan
+koşularının maliyeti (`delegation`) ve rakip kesintileri (`outages`) `26o`'dadır. Yalnız
 olgudur; tanımları `seed/founder/mirror.py`'nin `SOURCES`'undadır. Türetilemeyen değer `null`'dır ve nedeni
 yazılıdır.
 
