@@ -1328,8 +1328,8 @@
   {
    "id": "wr_resend_no_pause",
    "file": "target/write.py",
-   "old": "            self.pause(MERGE_RESEND_PAUSE_S)\n",
-   "new": "            pass\n",
+   "old": "                self.pause(MERGE_RESEND_PAUSE_S)\n",
+   "new": "                pass\n",
    "tests": [
     "test_write.WriterLoop.test_a_merge_answered_405_is_sent_again_after_a_pause_and_a_read"
    ]
@@ -1337,8 +1337,8 @@
   {
    "id": "wr_resend_pause_of_the_read",
    "file": "target/write.py",
-   "old": "            self.pause(MERGE_RESEND_PAUSE_S)\n",
-   "new": "            self.pause(MERGE_PAUSE_S)\n",
+   "old": "                self.pause(MERGE_RESEND_PAUSE_S)\n",
+   "new": "                self.pause(MERGE_PAUSE_S)\n",
    "tests": [
     "test_write.WriterLoop.test_a_merge_answered_405_is_sent_again_after_a_pause_and_a_read"
    ]
@@ -1346,8 +1346,8 @@
   {
    "id": "wr_resend_no_read",
    "file": "target/write.py",
-   "old": "            self._call(\"GET\", \"pulls/%d\" % number)\n            now =",
-   "new": "            now =",
+   "old": "                self._call(\"GET\", \"pulls/%d\" % number)\n                now =",
+   "new": "                now =",
    "tests": [
     "test_write.WriterLoop.test_a_merge_is_not_sent_again_to_a_pull_that_closed_or_moved"
    ]
@@ -1355,8 +1355,8 @@
   {
    "id": "wr_resend_closed_not_seen",
    "file": "target/write.py",
-   "old": "            if now[\"state\"] != \"open\" or now[\"head_sha\"] != pinned:",
-   "new": "            if now[\"head_sha\"] != pinned:",
+   "old": "                if now[\"state\"] != \"open\" or now[\"head_sha\"] != pinned:",
+   "new": "                if now[\"head_sha\"] != pinned:",
    "tests": [
     "test_write.WriterLoop.test_a_merge_is_not_sent_again_to_a_pull_that_closed_or_moved"
    ]
@@ -1364,8 +1364,8 @@
   {
    "id": "wr_resend_moved_not_seen",
    "file": "target/write.py",
-   "old": "            if now[\"state\"] != \"open\" or now[\"head_sha\"] != pinned:",
-   "new": "            if now[\"state\"] != \"open\":",
+   "old": "                if now[\"state\"] != \"open\" or now[\"head_sha\"] != pinned:",
+   "new": "                if now[\"state\"] != \"open\":",
    "tests": [
     "test_write.WriterLoop.test_a_merge_is_not_sent_again_to_a_pull_that_closed_or_moved"
    ]
@@ -1373,8 +1373,8 @@
   {
    "id": "wr_resend_repinned",
    "file": "target/write.py",
-   "old": "            now = self.guard.pulls[number]\n",
-   "new": "            now = self.guard.pulls[number]\n            pinned = now[\"head_sha\"]\n",
+   "old": "                now = self.guard.pulls[number]\n",
+   "new": "                now = self.guard.pulls[number]\n                pinned = now[\"head_sha\"]\n",
    "tests": [
     "test_write.WriterLoop.test_a_merge_is_not_sent_again_to_a_pull_that_closed_or_moved"
    ]

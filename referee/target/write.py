@@ -557,13 +557,12 @@ class Writer:
             except ApiError as exc:
                 if exc.status != 405 or sends >= MERGE_SENDS:
                     raise
-                refused = exc
-            self.pause(MERGE_RESEND_PAUSE_S)
-            self._call("GET", "pulls/%d" % number)
-            now = self.guard.pulls[number]
-            if now["state"] != "open" or now["head_sha"] != pinned:
-                raise refused
-            sends += 1
+                self.pause(MERGE_RESEND_PAUSE_S)
+                self._call("GET", "pulls/%d" % number)
+                now = self.guard.pulls[number]
+                if now["state"] != "open" or now["head_sha"] != pinned:
+                    raise  # the 405 as GitHub gave it
+                sends += 1
         sha = data.get("sha") if isinstance(data, dict) else None
         if not isinstance(data, dict) or data.get("merged") is not True or not _sha(sha):
             raise ApiError(None, "merge response without merged true and a sha")
