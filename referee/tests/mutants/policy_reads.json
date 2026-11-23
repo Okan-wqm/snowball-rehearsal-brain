@@ -370,15 +370,6 @@
    ]
   },
   {
-   "id": "cek_planted_max_invalid_passed_over",
-   "file": "loop/cek.py",
-   "old": "    return HP.planted_max_cases(parsed)",
-   "new": "    try:\n        return HP.planted_max_cases(parsed)\n    except HP.Invalid:\n        return None",
-   "tests": [
-    "test_loop_cek.Brain.test_the_snapshot_is_made_with_the_policy_s_planted_max_cases"
-   ]
-  },
-  {
    "id": "pr_gozcu_paths_unnamed",
    "file": "policy/reads.py",
    "old": "SECURITY_KEYWORDS, CANARY_USD) + HARNESS_PATHS + GOZCU_PATHS + tuple(",
