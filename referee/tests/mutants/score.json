@@ -131,8 +131,8 @@
   {
    "id": "covered_rule_with_a_miss",
    "file": "harness/score.py",
-   "old": "\"rules_covered\": len(rules - missed)",
-   "new": "\"rules_covered\": len({(c[\"tool\"], c[\"rule_id\"]) for c in ordered if c[\"case_id\"] in matched})",
+   "old": "\"rules_covered\": len((rules & counted) - missed)",
+   "new": "\"rules_covered\": len({(c[\"tool\"], c[\"rule_id\"]) for c in ordered if c[\"case_id\"] in matched} & counted)",
    "tests": [
     "test_score.Report"
    ]
@@ -149,8 +149,8 @@
   {
    "id": "pass_with_a_miss",
    "file": "harness/score.py",
-   "old": "            if hits < n:\n                verdict, why = \"FAIL\", \"misses\"\n            elif uncased:",
-   "new": "            if False:\n                verdict, why = \"FAIL\", \"misses\"\n            elif uncased:",
+   "old": "            if hits < n:\n                verdict, why = \"FAIL\", \"misses\"\n            elif counted is None:",
+   "new": "            if False:\n                verdict, why = \"FAIL\", \"misses\"\n            elif counted is None:",
    "tests": [
     "test_score.Report"
    ]
@@ -338,8 +338,8 @@
   {
    "id": "ref_length_cli_report_dropped",
    "file": "harness/score.py",
-   "old": "alpha, window,\n                          ref_max_lines=longest)",
-   "new": "alpha, window)",
+   "old": "alpha, window,\n                          ref_max_lines=longest, census=census)",
+   "new": "alpha, window, census=census)",
    "tests": [
     "test_score.RefLength.test_the_command_s_option_in_both_forms"
    ]
@@ -347,8 +347,8 @@
   {
    "id": "yaz_params_not_given",
    "file": "loop/job.py",
-   "old": "lambda path: D._read_regular(tree, path), **params))",
-   "new": "lambda path: D._read_regular(tree, path)))",
+   "old": "census=CC.rules(art.target.get(\"kind\")), **params))",
+   "new": "census=CC.rules(art.target.get(\"kind\"))))",
    "tests": [
     "test_score.FromPolicy"
    ]
@@ -374,8 +374,8 @@
   {
    "id": "pass_with_a_rule_without_a_case",
    "file": "harness/score.py",
-   "old": "            elif uncased:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"\n            else:",
-   "new": "            elif False:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"\n            else:",
+   "old": "            elif uncased_rules:\n",
+   "new": "            elif False:\n",
    "tests": [
     "test_score.Report"
    ]
@@ -383,8 +383,8 @@
   {
    "id": "rule_without_case_before_the_miss",
    "file": "harness/score.py",
-   "old": "            if hits < n:\n                verdict, why = \"FAIL\", \"misses\"\n            elif uncased:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"",
-   "new": "            if uncased:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"\n            elif hits < n:\n                verdict, why = \"FAIL\", \"misses\"",
+   "old": "            if hits < n:\n                verdict, why = \"FAIL\", \"misses\"\n            elif counted is None:\n                verdict, why = \"UNMEASURABLE\", \"census_vector_absent\"\n            elif uncased_rules:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"\n",
+   "new": "            if counted is not None and uncased_rules:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"\n            elif hits < n:\n                verdict, why = \"FAIL\", \"misses\"\n            elif counted is None:\n                verdict, why = \"UNMEASURABLE\", \"census_vector_absent\"\n",
    "tests": [
     "test_score.Report",
     "test_score.Empty"
@@ -393,7 +393,7 @@
   {
    "id": "rules_total_of_the_cases_alone",
    "file": "harness/score.py",
-   "old": "{\"rules_total\": len(rules | uncased),",
+   "old": "{\"rules_total\": len(counted),",
    "new": "{\"rules_total\": len(rules),",
    "tests": [
     "test_score.Report"
@@ -402,7 +402,7 @@
   {
    "id": "rules_total_of_the_library_alone",
    "file": "harness/score.py",
-   "old": "{\"rules_total\": len(rules | uncased),",
+   "old": "{\"rules_total\": len(counted),",
    "new": "{\"rules_total\": len(CB.rules()),",
    "tests": [
     "test_score.Report"
@@ -533,6 +533,105 @@
    "new": "\"other_runs\": 0}}",
    "tests": [
     "test_score.Runs"
+   ]
+  },
+  {
+   "id": "rules_total_with_the_rules_outside_the_set",
+   "file": "harness/score.py",
+   "old": "{\"rules_total\": len(counted),",
+   "new": "{\"rules_total\": len(rules | counted),",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "rule_outside_the_set_counted_as_covered",
+   "file": "harness/score.py",
+   "old": "\"rules_covered\": len((rules & counted) - missed)",
+   "new": "\"rules_covered\": len(rules - missed)",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "rules_outside_the_set_not_named",
+   "file": "harness/score.py",
+   "old": "sorted(rules - counted)",
+   "new": "sorted(set())",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "pass_without_a_census_set",
+   "file": "harness/score.py",
+   "old": "            elif counted is None:\n                verdict, why = \"UNMEASURABLE\", \"census_vector_absent\"\n            elif uncased_rules:",
+   "new": "            elif uncased_rules:",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "census_absent_before_the_miss",
+   "file": "harness/score.py",
+   "old": "            if hits < n:\n                verdict, why = \"FAIL\", \"misses\"\n            elif counted is None:\n                verdict, why = \"UNMEASURABLE\", \"census_vector_absent\"\n            elif uncased_rules:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"\n",
+   "new": "            if counted is None:\n                verdict, why = \"UNMEASURABLE\", \"census_vector_absent\"\n            elif hits < n:\n                verdict, why = \"FAIL\", \"misses\"\n            elif uncased_rules:\n                verdict, why = \"UNMEASURABLE\", \"rule_without_case\"\n",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "census_of_no_rule_accepted",
+   "file": "harness/score.py",
+   "old": "    if not pairs or len(set(pairs)) != len(pairs) \\\n",
+   "new": "    if len(set(pairs)) != len(pairs) \\\n",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "census_rule_twice_accepted",
+   "file": "harness/score.py",
+   "old": "    if not pairs or len(set(pairs)) != len(pairs) \\\n",
+   "new": "    if not pairs \\\n",
+   "tests": [
+    "test_score.Report"
+   ]
+  },
+  {
+   "id": "census_cli_option_dropped",
+   "file": "harness/score.py",
+   "old": "alpha, window,\n                          ref_max_lines=longest, census=census)",
+   "new": "alpha, window,\n                          ref_max_lines=longest)",
+   "tests": [
+    "test_score.Determinism"
+   ]
+  },
+  {
+   "id": "census_cli_option_without_a_report",
+   "file": "harness/score.py",
+   "old": "(\"--alpha\" in options or \"--census\" in options)",
+   "new": "\"--alpha\" in options",
+   "tests": [
+    "test_score.Determinism"
+   ]
+  },
+  {
+   "id": "yaz_census_not_given",
+   "file": "loop/job.py",
+   "old": "census=CC.rules(art.target.get(\"kind\")), **params))",
+   "new": "**params))",
+   "tests": [
+    "test_score.FromPolicy"
+   ]
+  },
+  {
+   "id": "yaz_census_of_the_toy_for_any_kind",
+   "file": "loop/job.py",
+   "old": "census=CC.rules(art.target.get(\"kind\")), **params))",
+   "new": "census=CC.rules(\"toy\"), **params))",
+   "tests": [
+    "test_score.FromPolicy"
    ]
   }
  ]

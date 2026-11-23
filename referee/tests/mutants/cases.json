@@ -296,8 +296,8 @@
   {
    "id": "propose_operator_by_operator",
    "file": "cases/build.py",
-   "old": "    for rank in range(max([len(found) for found in places.values()] + [0])):\n        for op in CATALOG:\n            if rank",
-   "new": "    for op in CATALOG:\n        for rank in range(len(places[op[\"id\"]])):\n            if rank",
+   "old": "    for rank in range(max([len(found) for found in places.values()] + [0])):\n        for op in turns:\n            if rank",
+   "new": "    for op in turns:\n        for rank in range(len(places[op[\"id\"]])):\n            if rank",
    "tests": [
     "test_cases.Proposal"
    ]
@@ -611,6 +611,123 @@
    "new": "    return sorted([(op[\"tool\"], op[\"rule_id\"]) for op in CATALOG])",
    "tests": [
     "test_cases.Hit"
+   ]
+  },
+  {
+   "id": "propose_in_the_catalogs_order",
+   "file": "cases/build.py",
+   "old": "    turns = sorted(CATALOG, key=lambda op: _sha(seed, \"operator\", op[\"id\"]))",
+   "new": "    turns = list(CATALOG)",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_operators_in_one_order_for_every_seed",
+   "file": "cases/build.py",
+   "old": "    turns = sorted(CATALOG, key=lambda op: _sha(seed, \"operator\", op[\"id\"]))",
+   "new": "    turns = sorted(CATALOG, key=lambda op: _sha(\"\", \"operator\", op[\"id\"]))",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "produce_always_true",
+   "file": "cases/build.py",
+   "old": "    return (tool, rule_id) in rules()\n",
+   "new": "    return True\n",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "produce_by_the_rule_alone",
+   "file": "cases/build.py",
+   "old": "    return (tool, rule_id) in rules()\n",
+   "new": "    return rule_id in {rule for _, rule in rules()}\n",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "produce_usage_error_exits_zero",
+   "file": "cases/build.py",
+   "old": "        sys.stdout.write(json.dumps({\"ok\": False, \"error\": USAGE}) + \"\\n\")\n        return 2",
+   "new": "        sys.stdout.write(json.dumps({\"ok\": False, \"error\": USAGE}) + \"\\n\")\n        return 0",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "produce_any_first_word",
+   "file": "cases/build.py",
+   "old": "    if len(argv) != 3 or argv[0] != \"produce\":",
+   "new": "    if len(argv) != 3:",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "yoda_operator_keeps_the_sides",
+   "file": "cases/build.py",
+   "old": "\"replace\": r\"\\5\\2\\3\\4\\1\"",
+   "new": "\"replace\": r\"\\1\\2\\3\\4\\5\"",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "dot_notation_on_a_comment_line",
+   "file": "cases/build.py",
+   "old": "\"match\": _CODE + r\"(.*?[\\w$)\\]])\\.(\" + _NAME + \")\"",
+   "new": "\"match\": r\"^(.*?[\\w$)\\]])\\.(\" + _NAME + \")\"",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "operator_assignment_on_const",
+   "file": "cases/build.py",
+   "old": "\"match\": r\"^([ \\t]*(?:let|var)[ \\t]+(\"",
+   "new": "\"match\": r\"^([ \\t]*(?:let|var|const)[ \\t]+(\"",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "prefer_template_on_a_property_key",
+   "file": "cases/build.py",
+   "old": "\\2(?![ \\t]*:)\", \"replace\": r\"\\1(\\2\\3\\2 + [])\"",
+   "new": "\\2\", \"replace\": r\"\\1(\\2\\3\\2 + [])\"",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "object_shorthand_on_this",
+   "file": "cases/build.py",
+   "old": "(?!(?:this|super|import|new)\\.)",
+   "new": "(?!(?:super|import|new)\\.)",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "toy_census_without_a_rule",
+   "file": "cases/census.py",
+   "old": "\"operator-assignment\", \"prefer-const\", \"prefer-template\",\n        \"yoda\")),",
+   "new": "\"operator-assignment\", \"prefer-const\", \"prefer-template\")),",
+   "tests": [
+    "test_cases.Census"
+   ]
+  },
+  {
+   "id": "census_of_the_toy_for_any_kind",
+   "file": "cases/census.py",
+   "old": "    return RULES.get(kind) if isinstance(kind, str) else None",
+   "new": "    return RULES[\"toy\"]",
+   "tests": [
+    "test_cases.Census"
    ]
   }
  ]
