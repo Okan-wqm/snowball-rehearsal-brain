@@ -41,23 +41,23 @@ yetkisiyle). Arayüz olgularıdır; kodun nasıl yazılacağı Kurucu'nundur.
 - (5) Komutun kendi çıkış numarası arayüz değildir. Arayüz: iş kırmızı bitmez, hiçbir şey yazılmaz ve eski denetim
   farktan ve kullanılamaz girdiden komutun JSON satırıyla (`stale: true`, `hard_stop: false`) ayrılır, metin okunmadan.
 
-**Aşama 1'in bulgu başı frenleri** (`asama-1/10:16`; seed-095; gevşetme L-AF1, geçici). Ertelendi: `fixer.llm`'i
-(Aşama 1 MF4, ilk organ merge'ünden sonra, `26h:12-15`) getiren döneme. O zamana kadar hiçbir kod iki sayıyı okumaz
-(ilk dilimin düzeltme yolunda LLM yoktur) ve hücrenin tek evi aşama sayfasıdır; zorunlu bir politika okuması yoktur, hiçbir
-`policy_reads_required_absent` kırmızı olmaz. Anahtarlar anayasal bütçe anahtarlarıdır: o dönemde sahip karar verir.
-Başlangıç noktası olarak kayıtlıdır: değerler 0,50 USD ve 5 dk (`"0.500000"`, `300`); adlar
-`constitutional.stage_params.fix_call_max_usd` ve `constitutional.stage_params.fix_call_max_s`. `stage_budgets` değil:
-oradaki anahtarlar aşama toplamıdır, her biri `monthly_cap_usd` ile karşılaştırılır (`18a:57`, `02:23`); bunlar
-`llm.call`'ın çağrı başı tavanıdır (`26a:39`). **Gevşetme L-AF1** (geçici): `02:22`'nin eşik maddesi ("her eşik ya
-`policy.json`'a ya da anayasal tabana atıf") bu hücreye o döneme kadar uygulanmaz; L-AF1 `fixer.llm`'in (MF4) döneminde,
-sahip anahtarlara karar verince biter ve o dönemden sonra hiçbir `spec.lint` bu hücreyi muaf tutmaz.
+**Aşama 1'in bulgu başı frenleri** (`asama-1/10:16`; seed-095; sahip kararı (2026-11-23), P1 çıkış dönemi). Karar
+verildi (E702 kapandı): `constitutional.stage_params.fix_call_max_usd` `"0.500000"` (`01c`'nin altı ondalıklı dizgisi,
+0'dan büyük) ve `constitutional.stage_params.fix_call_max_s` `300` (1 ya da daha büyük JSON tamsayısı); başka biçim
+`policy_invalid:<yol>`'dur. İkisi `18a`'nın anayasal tablosunun satırlarıdır; okuyucuları P3 MF2'de `fixer.llm` adına
+`llm.call`'dır (`26s`). `stage_budgets` değil: oradaki anahtarlar aşama toplamıdır, her biri `monthly_cap_usd` ile
+karşılaştırılır (`18a:57`, `02:23`); bunlar `llm.call`'ın çağrı başı tavanıdır (`26a:39`). Değerler sahibin, seed-095'in
+Kurucu önerisi olan 0,50 USD ve 5 dk'dır. P3'ün tablosu açılınca okunması zorunlu yollardır (`29v`), bu dönemin tesliminde değil.
+**L-AF1 bitti** (bu dönemle): `02:22`'nin eşik maddesi ("her eşik ya `policy.json`'a ya da anayasal tabana atıf") bu
+hücreye de uygulanır ve hiçbir `spec.lint` bu hücreyi muaf tutmaz. "Bulgu başına" ile çağrı başının farkı
+`26s`'dedir.
 
 **Açıkça ertelenenler** (rapor masası uzlaşısı; her biri adlı bir döneme ya da aşamaya, nedeniyle):
 - K4'ün sayımı (seed-091 (4)) → Aşama 3: K4 orada gelir (`03:63`).
-- `cases/dev.jsonl`'un hash zinciri (seed-090 (1)) → P1 çıkış dönemi: bugün yalnız ekleme önek kuralıyla yargılanır.
-- Puanlayıcıda parmak izinin snapshot baytlarından yeniden türetilmesi (seed-091 (1)) → P1 çıkış dönemi: bugün puanlanan
-  her parmak izini hakemin kendi yazıcısı yapar (L-AH1 dışında, `26q`).
-- Test 11'in tam yol listesi (seed-092 (4)) → P1 çıkış dönemi: bugün yukarıdaki kural yeter.
+- `cases/dev.jsonl`'un hash zinciri (seed-090 (1)) → Aşama 1 çıkış partisi (P1 çıkış döneminde karar): setin bütün geçmişini okuyan ilk hüküm `exit.sample`'dır (test 27, `asama-1/13`'ün "Aşama 1 çıkışı" satırı). O zamana kadar yalnız ekleme önek kuralı (`26m:34-37`, `01b:33`) ve `28`'in beyan dışı bir aktörün `brain/*` ref değişikliğindeki sert duruşu tutar.
+- Puanlayıcıda parmak izinin snapshot baytlarından yeniden türetilmesi (seed-091 (1)) → ilk LLM avcısını getiren dönem, en geç Aşama 4 partisi (`asama-1/13`'ün "Aşama 4" partisi, "ilk LLM avcısından önce"; P1 çıkış döneminde karar): bugün
+  puanlanan her parmak izini hakemin kendi yazıcısı yapar (L-AH1 dışında, `26q`). L-AH1 iki dosyalı vektör komutunda kalır.
+- Test 11'in tam yol listesi (seed-092 (4)) → reddedildi (P1 çıkış döneminde karar): listenin tanımı `26n:22-25`'tir (bir Aşama 0 ya da P1 aracının sıfırdan yarattığı yollar); sabit bir liste her yeni yazıcıda bir sayfa düzeltmesi isterdi ve daha güçlü olmazdı. P1'in test 11 satırı P1 çıkışında o kuralla okunur.
 - Özel bir hedefin etkinlik okumasının kimliği ve izni (seed-094 (3)) → ilk özel hedefin dönemi: Aşama 1'in hedefleri açık.
   Sayfalar özel hedefe bir aşama vermez (`01a:23-25`, `25` 0 ve 5: önce hakem reposu özel olur, okuyucu App'i kurulur);
   aşama sınırının yerine kapı: bu okumanın kimliği bir sayfada adlandırılmadan hiçbir özel hedef bağlanmaz.
@@ -68,4 +68,4 @@ sahip anahtarlara karar verince biter ve o dönemden sonra hiçbir `spec.lint` b
 - Kimlik olarak bulgu kimlikleri ve başlıkları (seed-089) → `system_tp` vakası üreten ilk partinin dönemi, en geç
   Aşama 4 (`asama-4/07:29`: panelin TP'si `system_tp` vaka adayıdır; bunu o sayfa belirler): Aşama 1'in vaka
   kaynakları `human_fix` ve `mutation`dur (`asama-1/13a:11-13`).
-- Bulgu başı frenlerin anahtarları (seed-095) → `fixer.llm`'in dönemi (yukarıda).
+- Bulgu başı frenlerin anahtarları (seed-095) → P1 çıkış döneminde karar verildi (yukarıda, `26s`).

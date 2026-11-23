@@ -32,7 +32,7 @@ ile Aşama 1'in MF1, MF5, MF6'sı arasında parti yoktur: o ilk okuyucuların ha
   (`finding`, `diff`, `organ_ids`, `definition_sha256`). Kapı yalnız `organ_ids`'i okur.
 - **Hazır adaylar.** Aşama 0'ın hazır adayları P1'in aktarımıyla biter: organ adlandırmayan aday `no_organ` ile
   reddedilir. Etkinleştirme (genesis) devri Aşama 0'ın kuralını korur.
-- **Giriş.** P1'de hiçbir organ girmez. Giriş tetiği hakem kodu değil veridir: önyükleme hakeminin kabul ettiği beyin
+- **Giriş.** İşin sırası, bir denetim değil ((iv)): P1'de hiçbir organ girmez. Giriş tetiği hakem kodu değil veridir: önyükleme hakeminin kabul ettiği beyin
   SHA'sında commit'lenmiş bir organ beyanı, giriş isteği `{organ_ids}`; ilk kullanımı Aşama 1 MF6'dır.
 - **Satır.** `evidence_run_ids`, `yaz`'ın dayandığı imzalı sonucun önyükleme koşusunun kimliğidir, tek elemanlı liste.
   Liste `(organ_id, definition_sha256)` çiftiyle anahtarlanır. Aşama 1'de listeden çıkaran satır yoktur (gevşetme L1,
@@ -76,5 +76,5 @@ kadar kalır ve hakemin hiçbir komutu `cProfile`'ı çağırmaz (`26e`).
 - **(iii)** P1'de merge, nöbetçi, geri alma, tatbikat ve PASS yolları canlı olarak yalnız genesis merge'ünden koşar. Merge
   mekaniğinin testleri gerçek bir `accept` satırı ve gerçek bir tanımla kurulan açık kapının arkasında durabilir; bu yer
   tutucu yalnız testlerdedir, canlı yoldan ulaşılamaz. **(g)** Listelenmiş çift sonraki SHA'larda listede kalır (L1). **(h)** Kapının tanımları kabul edilmiş SHA'daki organlardır (`26a`).
-- **(iv)** `accept.json` için aşama koruması yoktur: P1 çıkış dönemine ertelendi, seed-073'ün (a), (c), (d)'siyle (organ
-  dosya düzeni, `pulled`'a taşınma, organın imajı); o zamana kadar Kurucu'nun okuması geçerlidir.
+- **(iv)** `accept.json`'un aşama koruması yoktur, P1'de de sonra da: hiçbir hakem kodu bir giriş isteğini okunduğu aşama için reddetmez (kurulduğu gibi benimsendi). P1'de beyin ne organ ne `accept.json` taşır; ilk giriş Aşama 1 MF6'dır (`26j:35-36`), MF5'in adayı reddedildikten sonra (`asama-1/06:21-25`). MF5'ten MF6'ya sırayı kod değil, MF5'in kırmızı testi (`asama-1/06:21-22`) ve push'un incelemesi tutar (kod isteği, `29b`).
+  **Gevşetme L-P1E** (kapsamlı; sahibe bildirilir): `26j:35`'in sırasını kod reddetmez, Kurucu'nun verisi tutar. Kapsamı P1'dir, P1'in aktarımıyla biter. Görünürdür: beyin kökünde bugün `accept.json` yoktur. Organın dosyası ve imajı `26r`'dedir (seed-073).

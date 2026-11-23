@@ -27,10 +27,10 @@ seçimidir (`29f`'nin komutları gibi).
 biçiminde, `18a` ve `18b`'nin her anahtarı kendi yolunda. `policy_hoisted.json`: aynı dosya, aşamanın zorunlu yolları
 bölümlerinden çıkarılmış ve köke, bölümsüz yollarına başka değerlerle konmuş. `required.json`: aşama başına zorunlu
 yollar; bir aşama önceki aşamalarınkini de okur. Aşama 0'ın on bir yolu `18a`'da okuyanı `llm.call`, `profile.derive`,
-`deps.fetch`, `run.contained` ya da `unit.verify` olan anahtarlardır. Aşama 1'in satırı (bağımsız inceleme ekibi
-kararı, 2026-11-20, seed-076) harness'in beş yoludur: `constitutional.confidence_level` ve
-`constitutional.stage_params`'ın `census_min_groups`, `planted_max_cases`, `evidence_ref_max_lines`,
-`match_window_lines`'ı; sonraki aşamanın satırı o aşamanın tohum dönemiyle gelir.
+`deps.fetch`, `run.contained` ya da `unit.verify` olan anahtarlardır (P3 MF2'nin okuduğu iki fren anahtarı dışında,
+aşağıda). Aşama 1'in satırı (bağımsız inceleme ekibi kararı, 2026-11-20, seed-076) harness'in beş yoludur:
+`constitutional.confidence_level` ve `constitutional.stage_params`'ın `census_min_groups`, `planted_max_cases`,
+`evidence_ref_max_lines`, `match_window_lines`'ı; sonraki aşamanın satırı o aşamanın tohum dönemiyle gelir.
 
 **Koşu.** Testleri koşulan her push'ta komut `29t`'nin kumunda iki kez koşar: `policy.json` ve `policy_hoisted.json`
 ile.
@@ -63,3 +63,8 @@ verilmez; asla "yargılanmadı, devam" değildir (`18a`: anahtarı olmayan eşik
 **Okunuş.** `29t` "Okunuş" gibidir: bulgu yalnız testleri koşulan push'ta vardır, kırmızı push'ta da koşu yapılır;
 Docker'ın kendi hatası (125) bulgu değil kesintidir (`kos:docker`). Geçmek, komutun adlandırdığı değerlerin kendi
 yollarından geldiğini söyler; döngünün her okumasının komutta adlandırıldığını söylemez (E589).
+
+**P3'ün yolları** (rapor masası uzlaşısı (2026-11-23), P1 çıkış dönemi). `constitutional.stage_params.fix_call_max_usd`,
+`constitutional.stage_params.fix_call_max_s` ve `performance.rules.probe_cycle` P3'ün tablosu açılınca okunması zorunlu
+yollar olur, bu dönemin tesliminde değil: o zamana kadar `required.json`'da değildir ve hiçbiri
+`policy_reads_required_absent` kırmızısı vermez. Fikstürler iki fren anahtarını teslimden taşır (`26s`).

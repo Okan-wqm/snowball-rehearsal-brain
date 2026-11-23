@@ -41,7 +41,7 @@ ilk dilimin sırası `26h`'dedir (sahip kararı (2026-11-20)); MF10–MF12 opera
 **Çıkış partisi.** `asama-1/13`'ün "Aşama 1 çıkışı" satırları (`exit.sample` 27, `spec.lint` 33, `exit.adversarial`
 54; `29za`) bu tohumda tablo değildir: o parti Aşama 1'in kendi çıkışının (A)'sıyla gelir (`asama-1/08`) ve bu tohum
 Aşama 1'in çıkış isteğini yargılamaz (`batch`'siz istek `exit_request_wrong_stage`'dir). Tablosu o yargıyla, bir tohum
-döneminde gelir. P1 ve P2 aktarılınca açık tablo boştur, `done_mf` `[]`'dir. Ertelenen P3'ün tablosu da öyle gelir (`26h`).
+döneminde gelir. P1 ve P2 aktarılınca açık tablo boştur, `done_mf` `[]`'dir. Ertelenen P3'ün tablosu da öyle gelir (`26h`); sayfadaki satırları ve testleri 59 ve 60 `26s`'dedir.
 
 **Önyükleme hakemi Aşama 1'de.** Rakip freni açık aşamanın `constitutional.stage_budgets.asama_<k>.rival_usd`'sidir: `k`
 kilidin `stage`'idir, kilit yokken 0; Aşama 1'inki `asama-1/10`'un tablosundadır (`18a`). Aşamanın harcaması kilidin
@@ -60,7 +60,7 @@ sayfalarının (`asama-1/13a`, `13c`, `13e`, `asama-0/09`) bıraktığı arayüz
 Kurucu'nundur. Kalanları (seed-089–092, seed-094; rapor masası uzlaşısı, 2026-11-22) `26m` ve `26n`'dedir.
 - **Organ tanımının hash'i** (`26b` `definition_sha256`; seed-073): organın okuyabildiği her beyin dosyasını kapsar;
   hakemde tek bir hash fonksiyonu vardır ve her organ onu kullanır; LLM organı ayrıca prompt'unu, modelini ve
-  araçlarını hash'e katar (`11`: tanım hash'i prompt hash'i, model ve araç yüzeyidir).
+  araçlarını hash'e katar (`11`: tanım hash'i prompt hash'i, model ve araç yüzeyidir). Organın dosyası, taşınması ve imajı `26r`'dedir (seed-073).
 - **Snapshot** (`snapshot.make`; seed-074): yer tutucu snapshot'ın türünü (temiz ya da ekilmiş) ele vermez. Vaka
   listesi `26`'nın `case` şemasıdır. Boş `finding_id_patterns` geçerlidir. "Yorum satırı"nın tanımı ertelenmiştir: bu
   tohum onu henüz tanımlamaz.

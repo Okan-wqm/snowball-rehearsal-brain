@@ -33,15 +33,15 @@ yazılı kalır; bu sayfa ondan üstündür (`02`).
 
 **İlk organ merge'ünden sonraya ertelenenler** (sahip kararı (2026-11-20)). Ertelenenler P3 partisidir: Aşama 1
 MF6'dan ve P2'den sonra, MF4 `fixer.llm`'in canlı koşusundan önce. P3'ün tablosu bir tohum döneminde gelir; bu tohum
-onu taşımaz (`stages/`'te tablosu yoktur, `26e` "Çıkış partisi" gibi).
+onu taşımaz (`stages/`'te tablosu yoktur, `26e` "Çıkış partisi" gibi). Sayfadaki tablosu, testleri ve frenleri `26s`'dedir (P1 çıkış dönemi).
 - **Eski P1 MF8**, `operating{}` sınırlarının bant içinde ayarı (test 52): sahip kararıyla ertelendi.
 - **Düzeltme gidiş-dönüşü** `koş` → `çağır` → `koş`: `koş`un ürettiği tipli `fixer.llm` isteğini `çağır` işler, `koş`
   yanıtı deterministik uygulayıcıyla yalnız o aralığa yazar (`asama-1/05` 3). Bugün `çağır` yalnız (B)'nin kanaryasını
   çağırır (`asama-0/01`), `loop.yml` hakem kodudur. `fixer.llm` (MF4) bu satırla birlikte gelir. Testi P3'ün tablosuyla
-  gelir.
+  gelir: test 59 (`26s`).
 - **McNemar ve match-rule v2'nin K3+ dalı.** P1 K0 dalını uygular: `match` vektörleri K0'dır, testler 3 ve 5 "K3
   ile"dir (`asama-0/09`). `mcnemar` grubu MF4'le kabul edildi ve MF4'ün satırında kalır: kabul edilmiş bir MF geri
-  çekilmez, grubu her push'ta koşar. İlk organ merge'ünden önce McNemar'ın yeni bir işi ya da okuyucusu yoktur.
+  çekilmez, grubu her push'ta koşar. İlk organ merge'ünden önce McNemar'ın yeni bir işi ya da okuyucusu yoktur. Düzeltme (P1 çıkış dönemi): K3+ dalı P3'te değildir; testleri 3 ve 5 "K3 ile"dir ve K3'ü getiren Aşama 3 partisiyle gelir, P1 MF4'ün modülünde (`harness/score.py`) kalır (`26s`).
 
 **Bırakma** (sahip kararı (2026-11-20)). P1 MF8 (H1), P1 MF9 (H2) ve düzeltme gidiş-dönüşü (H3), dış göz
 incelemesinin (2026-11-20, iki inceleyicinin uzlaşısı) bulduğu tablo düzeltmeleridir; Kurucu'nun bir raporundan
