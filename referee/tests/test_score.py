@@ -9,18 +9,23 @@ through the loop (``yaz``).
   the number of hits does not depend on the order of the findings or of the cases (``Match``: the largest
   matching, where taking cases greedily would give one hit fewer);
 - test 12 (``Fingerprint``): the same finding in two runs is counted once; the same finding on a shifted line is
-  the same finding; one fingerprint over two files or rules is refused;
+  the same finding; the first row of a fingerprint is the one scored and a later one is never read, whatever it
+  says and also after a refused first; ``Writer``: the report reads the writer's file and nothing else (a file
+  ``findings.write`` made is scored under the fingerprint it gave; a list, a broken chain, a row that is not the
+  writer's are ``Unusable``);
 - test 28 (``Statistics``): tohum/29a's tables through the command line, and ``x_eff`` and ``recall_lb`` through
   the report;
 - ``Match`` and ``Vectors``: one finding takes one case, one case counts once; the shapes of tohum/29a's
   ``match`` vectors through the command line; the command's refusals;
-- ``Report``: the fields, the census, the verdicts, the cases refused;
+- ``Report``: the fields, the census over ``cases.build.rules()``, the verdicts in their order, the cases
+  refused;
 - ``Live``: from ``çek`` through ``koş`` to ``yaz``'s line (``harness``).
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import math
 import os
@@ -37,6 +42,8 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from cases import build as CB  # noqa: E402
+from findings import write as FW  # noqa: E402
 from harness import params as HP  # noqa: E402
 from harness import score as HS  # noqa: E402
 from harness import stats as ST  # noqa: E402
@@ -45,6 +52,7 @@ from loop import pulled as P  # noqa: E402
 from profile import derive as D  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 import test_cases as TCA  # noqa: E402
+import test_findings_write as TFW  # noqa: E402
 import test_loop_kos as LK  # noqa: E402
 import test_loop_yaz as LY  # noqa: E402
 
@@ -66,8 +74,37 @@ def finding(fingerprint: str, *lines: int, path: str = "pkg/a.js", rule: str = "
                  "evidence_refs": [{"path": path, "line_start": n, "line_end": n} for n in lines]}, **over)
 
 
+def fp(name: str) -> str:
+    """The fingerprint ``written`` gives the finding a test names ``name``."""
+    return hashlib.sha256(name.encode()).hexdigest()
+
+
+WRITTEN = {"required_change": [{"file": "pkg/a.js", "op": "lint_fix"}], "severity_hint": "low",
+           "confidence": "0.900000", "derivation": "tool", "state": "open", "trust": "inferred",
+           "proposed_by": "hunter-1"}
+
+
+def written(findings: list) -> bytes:
+    """The findings as the rows of a writer's file, in their order: each with the fields the writer's row has
+    beside ``finding``'s, ``fp`` of its name as fingerprint and the writer's ``finding_id``, chained by the
+    ledger's writer."""
+    rows = []
+    for found in findings:
+        row = dict(WRITTEN, **found)
+        row.update(fingerprint=fp(found["fingerprint"]), finding_id=FW.finding_id(fp(found["fingerprint"])))
+        rows.append(row)
+    return TFW.chained(rows) if rows else b""
+
+
+# one case of every rule of the operator library and the finding that hits it: what a PASS needs
+FULL = [{"case_id": "r%d" % n, "class_level": "K0", "property": "lint", "provenance": "mutation",
+         "touched_paths": [{"path": "pkg/a.js", "hunks": [{"start": n + 1, "end": n + 1}]}],
+         "tool": tool, "rule_id": rule, "split": "dev", "group": "pkg"} for n, (tool, rule) in enumerate(CB.rules())]
+
+
 class Base(unittest.TestCase):
-    """A tree, its clean snapshot document, and ``report`` on them (each finding given the document's id)."""
+    """A tree, its clean snapshot document, and ``report`` on them (the findings as a writer's file, each given
+    the document's id)."""
 
     def setUp(self) -> None:
         self.root = tempfile.mkdtemp(prefix="score-")
@@ -84,7 +121,19 @@ class Base(unittest.TestCase):
                 else f for f in findings]
 
     def report(self, findings: list, cases: list, **kw) -> dict:
-        return HS.report(self.stamped(findings), cases, self.snapshot, self.read, **kw)
+        return HS.report(written(self.stamped(findings)), cases, self.snapshot, self.read, **kw)
+
+    def full_hit(self) -> list:
+        """The findings that hit ``FULL``, one each."""
+        return [finding(c["case_id"], c["touched_paths"][0]["hunks"][0]["start"], rule=c["rule_id"], tool=c["tool"])
+                for c in FULL]
+
+    def registry(self, name: str, findings: list) -> str:
+        """A file holding ``written`` of the findings."""
+        path = os.path.join(self.root, name)
+        with open(path, "wb") as fh:
+            fh.write(written(self.stamped(findings)))
+        return path
 
     def command(self, *argv: str, seed: str = "0") -> tuple[int, str]:
         done = subprocess.run([sys.executable, "-m", "harness.score", *argv], cwd=REFEREE, capture_output=True,
@@ -109,7 +158,7 @@ class Empty(Base):
         report = out["report"]
         self.assertEqual((report["n"], report["n_groups"], report["recall"], report["x_eff"], report["recall_lb"]),
                          (2, 1, "0.000000", "0.000000", "0.000000"))
-        self.assertEqual(report["census"], {"rules_total": 1, "rules_covered": 0, "misses": 2})
+        self.assertEqual(report["census"], {"rules_total": 3, "rules_covered": 0, "misses": 2})
         self.assertEqual((report["verdict"], out["verdict_reason"]), ("FAIL", "misses"))
 
     def test_no_finding_and_no_case(self):
@@ -123,7 +172,7 @@ class Empty(Base):
     def test_the_command_on_an_empty_list(self):
         empty, cases = self.file("f.json", []), self.file("c.json", [case("c1", 2)])
         self.assertEqual(self.command(empty, cases), (0, '{"hits": 0}\n'))
-        code, text = self.command(empty, cases, "--snapshot", self.file("s.json", self.snapshot), "--tree", self.tree)
+        code, text = self.command(self.registry("f.jsonl", []), cases, "--snapshot", self.file("s.json", self.snapshot), "--tree", self.tree)
         self.assertEqual((code, json.loads(text)["report"]["recall"]), (0, "0.000000"))
 
 
@@ -137,7 +186,7 @@ class Refs(Base):
 
     def test_the_control_a_reference_of_the_manifest_hits(self):
         out = self.report([finding("x", 2)], [case("c1", 2)])
-        self.assertEqual((out["hits"], out["refused"], out["matched"]), (1, [], {"c1": "x"}))
+        self.assertEqual((out["hits"], out["refused"], out["matched"]), (1, [], {"c1": fp("x")}))
 
     def test_outside_the_manifest(self):
         # the case is on the very path and line the finding names: only the manifest refuses it
@@ -168,8 +217,10 @@ class Refs(Base):
     def test_another_snapshot(self):
         other = finding("x", 2, snapshot_id="0" * 64)
         self.assertEqual(self.refused([other]), [{"index": 0, "reasons": ["snapshot_mismatch"]}])
-        absent = finding("x", 2, snapshot_id=None)
-        self.assertEqual(self.refused([absent]), [{"index": 0, "reasons": ["snapshot_mismatch"]}])
+        absent = finding("x", 2)     # a finding of no snapshot: no row of the writer, so through ``sift``
+        self.assertEqual(HS.sift([absent], self.snapshot, self.read)[1:],
+                         ([{"index": 0, "reasons": ["snapshot_mismatch"]}], 0))
+        self.assertEqual(HS.sift(self.stamped([absent]), self.snapshot, self.read)[1:], ([], 0))
 
     def test_a_line_the_file_does_not_have(self):
         # pkg/a.js has five lines; lib/c.js two, the last without a newline
@@ -194,24 +245,38 @@ class Refs(Base):
                   dict(finding("x", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": 3, "line_end": 2}]),
                   dict(finding("x", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": True, "line_end": 2}]),
                   dict(finding("x", 2), evidence_refs=[{"path": "pkg/a.js", "line_start": 2, "line_end": 2.0}])]
-        self.assertEqual(self.refused(shapes),
-                         [{"index": i, "reasons": ["finding_invalid"]} for i in range(len(shapes))])
+        # none of them is a row the writer's file can hold: ``sift`` is what judges a list
+        for snapshot in (None, self.snapshot):
+            self.assertEqual(HS.sift(shapes, snapshot, self.read),
+                             ([], [{"index": i, "reasons": ["finding_invalid"]} for i in range(len(shapes))], 0))
+        # and a fingerprint is not taken by one of them: the shaped finding after it is the first
+        accepted, refused, reobserved = HS.sift([dict(finding("x", 2), evidence_refs=[None]), finding("x", 2)])
+        self.assertEqual((accepted, [r["index"] for r in refused], reobserved), ([finding("x", 2)], [0], 0))
 
     def test_the_index_is_the_place_in_the_list_and_the_others_are_scored(self):
-        out = self.report([finding("x", 2, path="nowhere.js"), finding("y", 2), None], [case("c1", 2)])
-        self.assertEqual((out["hits"], out["matched"]), (1, {"c1": "y"}))
+        out = self.report([finding("x", 2, path="nowhere.js"), finding("y", 2), finding("z", 2, snapshot_id="other")],
+                          [case("c1", 2)])
+        self.assertEqual((out["hits"], out["matched"]), (1, {"c1": fp("y")}))
         self.assertEqual(out["refused"], [{"index": 0, "reasons": ["ref_outside_manifest"]},
-                                          {"index": 2, "reasons": ["finding_invalid"]}])
+                                          {"index": 2, "reasons": ["snapshot_mismatch"]}])
         self.assertEqual(out["counts"], {"given": 3, "distinct": 1, "reobserved": 0, "refused": 2})
+        # the index is the row's place in the file, a re-observation before it counted in
+        out = self.report([finding("y", 2), finding("y", 3), finding("x", 2, path="nowhere.js")], [case("c1", 2)])
+        self.assertEqual(out["refused"], [{"index": 2, "reasons": ["ref_outside_manifest"]}])
 
     def test_a_refused_finding_is_counted_in_a_clean_run(self):
-        out = self.report([finding("x", 2, path="nowhere.js"), finding("y", 2), None], [])
+        mixed = [finding("x", 2, path="nowhere.js"), finding("y", 2), finding("z", 2, snapshot_id="other")]
+        out = self.report(mixed, [])
         self.assertEqual(out["report"]["clean_findings"], 3)
+        # each identity once: a later row of a fingerprint is no finding more, the refused one's neither
+        again = self.report(mixed + [finding("x", 2), finding("y", 3)], [])
+        self.assertEqual((again["report"]["clean_findings"], again["counts"]["reobserved"]), (3, 2))
 
     def test_the_command_reports_them(self):
         cases = self.file("c.json", [case("c1", 2, path="nowhere.js")])
         findings = self.file("f.json", self.stamped([finding("x", 2, path="nowhere.js")]))
-        code, text = self.command(findings, cases, "--snapshot", self.file("s.json", self.snapshot), "--tree", self.tree)
+        registry = self.registry("f.jsonl", [finding("x", 2, path="nowhere.js")])
+        code, text = self.command(registry, cases, "--snapshot", self.file("s.json", self.snapshot), "--tree", self.tree)
         self.assertEqual((code, json.loads(text)["refused"], json.loads(text)["hits"]),
                          (0, [{"index": 0, "reasons": ["ref_outside_manifest"]}], 0))
         # without a snapshot the references are not judged, the shape is
@@ -220,9 +285,10 @@ class Refs(Base):
                          (0, '{"hits": 0, "refused": [{"index": 0, "reasons": ["finding_invalid"]}]}\n'))
 
 
-# two cases of one rule on lines 2 and 3; f-wide hits both, f-narrow only c1: the largest matching is two
-WIDE, NARROW = finding("wide", 2, 3), finding("narrow", 2)
-TWO = [case("c1", 2), case("c2", 3)]
+# two cases of one rule, c1 on lines 2-3 and c2 on line 2; wide (line 2) hits both, narrow (line 3) only c1: the
+# largest matching is two (K0 reads the primary reference alone, so a finding hits two cases where hunks overlap)
+WIDE, NARROW = finding("wide", 2), finding("narrow", 3)
+TWO = [case("c1", 2, end=3), case("c2", 2)]
 
 
 def span(fingerprint: str, *spans: tuple, **over) -> dict:
@@ -263,10 +329,9 @@ class RefLength(Base):
 
     def test_its_place_among_the_reasons(self):
         long_missing = span("y", (1, 9), path="pkg/none.js")
-        twin = dict(span("x", (1, 5)), rule_id="other")
-        out = self.report([finding("x", 2), twin, long_missing], [case("c1", 1, end=5)], ref_max_lines=2)
-        self.assertEqual(out["refused"], [{"index": 1, "reasons": ["fingerprint_conflict", "ref_over_max_lines"]},
-                                          {"index": 2, "reasons": ["ref_over_max_lines", "ref_outside_manifest"]}])
+        again = span("x", (1, 5))     # a re-observation is not bounded: nothing of it is read
+        out = self.report([finding("x", 2), again, long_missing], [case("c1", 1, end=5)], ref_max_lines=2)
+        self.assertEqual(out["refused"], [{"index": 2, "reasons": ["ref_over_max_lines", "ref_outside_manifest"]}])
 
     def test_without_a_snapshot_too(self):
         accepted, refused, _ = HS.sift([span("x", (1, 5)), span("y", (1, 2))], ref_max_lines=2)
@@ -281,14 +346,15 @@ class RefLength(Base):
 
     def test_the_command_s_option_in_both_forms(self):
         found, cases = self.file("f.json", self.stamped([span("x", (2, 4))])), self.file("c.json", [case("c1", 1, end=5)])
+        registry = self.registry("f.jsonl", [span("x", (2, 4))])
         refused = [{"index": 0, "reasons": ["ref_over_max_lines"]}]
         self.assertEqual(self.command(found, cases, "--ref-max-lines", "3"), (0, '{"hits": 1}\n'))
         code, text = self.command(found, cases, "--ref-max-lines", "2")
         self.assertEqual((code, json.loads(text)), (0, {"hits": 0, "refused": refused}))
         snapshot = self.file("s.json", self.snapshot)
-        code, text = self.command(found, cases, "--snapshot", snapshot, "--tree", self.tree, "--ref-max-lines", "2")
+        code, text = self.command(registry, cases, "--snapshot", snapshot, "--tree", self.tree, "--ref-max-lines", "2")
         self.assertEqual((code, json.loads(text)["refused"]), (0, refused))
-        code, text = self.command(found, cases, "--snapshot", snapshot, "--tree", self.tree, "--ref-max-lines", "3")
+        code, text = self.command(registry, cases, "--snapshot", snapshot, "--tree", self.tree, "--ref-max-lines", "3")
         self.assertEqual((code, json.loads(text)["hits"]), (0, 1))
         for bad in ("0", "x", "-1", "1.5"):
             code, text = self.command(found, cases, "--ref-max-lines", bad)
@@ -302,7 +368,7 @@ class FromPolicy(Base):
 
     def harness(self, policy, findings: list, cases: list) -> dict:
         art = types.SimpleNamespace(snapshot=self.snapshot, policy=policy)
-        with mock.patch.object(J, "FINDINGS", self.stamped(findings)):
+        with mock.patch.object(J, "FINDINGS", written(self.stamped(findings))):
             return J.yaz_harness(art, self.tree, {"cases": cases})
 
     def policy(self, level="0.900000", **params) -> dict:
@@ -310,7 +376,7 @@ class FromPolicy(Base):
         return {"constitutional": {"confidence_level": level, "stage_params": params}}
 
     def test_each_value_reaches_the_report(self):
-        cases, findings = [case("c1", 2), case("c2", 3, group="lib")], [finding("x", 2), finding("y", 3)]
+        cases, findings = [FULL[0], dict(FULL[1], group="lib"), FULL[2]], self.full_hit()
         got = self.harness(self.policy(), findings, cases)
         self.assertEqual(got, self.report(findings, cases, alpha=TENTH, window=1, ref_max_lines=30))
         self.assertEqual((got["report"]["recall_lb"], got["report"]["verdict"]),
@@ -320,7 +386,7 @@ class FromPolicy(Base):
         self.assertNotEqual(other["report"]["recall_lb"], got["report"]["recall_lb"])
 
     def test_the_group_floor_of_the_policy_changes_nothing_of_the_dev_report(self):
-        cases, findings = [case("c1", 2), case("c2", 3, group="lib")], [finding("x", 2), finding("y", 3)]
+        cases, findings = [FULL[0], dict(FULL[1], group="lib"), FULL[2]], self.full_hit()
         plain = self.harness(self.policy(), findings, cases)
         for floor in (1, 2, 3, 40, 10 ** 6):     # tohum/26h: under, at and over G; the exit sample's, not this report's
             with self.subTest(floor=floor):
@@ -330,7 +396,7 @@ class FromPolicy(Base):
 
     def test_the_window_and_the_reference_bound(self):
         cases = [dict(case("c1", 2), **self.K3)]
-        near = dict(finding("x", 4), property="p", required_change=[{"file": "a", "op": "e"}])
+        near = dict(finding("x", 4), property="p", required_change=[{"file": "a", "op": "other"}])
         self.assertEqual(self.harness(self.policy(match_window_lines=1), [near], cases)["hits"], 0)
         self.assertEqual(self.harness(self.policy(match_window_lines=2), [near], cases)["hits"], 1)
         long = [span("x", (2, 4))]
@@ -376,7 +442,7 @@ class Match(Base):
     def test_a_finding_takes_one_case(self):
         self.assertEqual(self.report([WIDE], TWO)["hits"], 1)
         # which of the two it takes is the first by case_id, in either order of the list
-        self.assertEqual([self.report([WIDE], cases)["matched"] for cases in (TWO, TWO[::-1])], [{"c1": "wide"}] * 2)
+        self.assertEqual([self.report([WIDE], cases)["matched"] for cases in (TWO, TWO[::-1])], [{"c1": fp("wide")}] * 2)
         self.assertEqual(self.report([finding("x", 3)], [case("c1", 3), case("c2", 3, end=4)])["hits"], 1)
 
     def test_a_case_counts_once(self):
@@ -386,20 +452,20 @@ class Match(Base):
         for findings in ([WIDE, NARROW], [NARROW, WIDE]):
             for cases in (TWO, TWO[::-1]):
                 out = self.report(findings, cases)
-                self.assertEqual((out["hits"], out["matched"]), (2, {"c1": "narrow", "c2": "wide"}))
+                self.assertEqual((out["hits"], out["matched"]), (2, {"c1": fp("narrow"), "c2": fp("wide")}))
 
     def test_a_chain_of_three(self):
         # a: c1 c2, b: c2 c3, c: c1 only, given so that a and b sit on c1 and c2 before c comes
-        cases = [case("c1", 1), case("c2", 2), case("c3", 3)]
-        out = self.report([finding("a", 1, 2), finding("b", 2, 3), finding("c", 1)], cases)
-        self.assertEqual(out["matched"], {"c1": "c", "c2": "a", "c3": "b"})
+        cases = [case("c1", 1, end=2), case("c2", 2, end=3), case("c3", 3)]
+        out = self.report([finding("a", 2), finding("b", 3), finding("c", 1)], cases)
+        self.assertEqual(out["matched"], {"c1": fp("c"), "c2": fp("a"), "c3": fp("b")})
 
     def test_the_hit_rule_is_cases_builds(self):
         self.assertEqual(self.report([finding("x", 2, rule="no-eval")], [case("c1", 2)])["hits"], 0)
         self.assertEqual(self.report([finding("x", 3)], [case("c1", 2)])["hits"], 0)
         # K3: the window is the caller's
         k3 = dict(case("c1", 2, class_level="K3"), property="p")
-        found = dict(finding("x", 4), property="p", required_change=[{"file": "pkg/a.js", "op": "edit"}])
+        found = dict(finding("x", 4), property="p", required_change=[{"file": "pkg/a.js", "op": "other"}])
         self.assertEqual(self.report([found], [k3])["hits"], 0)
         self.assertEqual(self.report([found], [k3], window=2)["hits"], 1)
         self.assertEqual(self.report([found], [k3], window=1)["hits"], 0)
@@ -409,7 +475,8 @@ class Determinism(Base):
     """Test 7."""
 
     def test_the_same_input_twice_is_the_same_bytes(self):
-        findings = self.file("f.json", self.stamped([WIDE, NARROW, finding("z", 9), None, finding("wide", 4)]))
+        run = [WIDE, NARROW, finding("z", 9), finding("wide", 4)]
+        findings, listed = self.registry("f.jsonl", run), self.file("f.json", run + [None])
         cases = self.file("c.json", TWO + [case("c3", 1, path="pkg/b.js", rule="no-eval", group="other")])
         args = (findings, cases, "--snapshot", self.file("s.json", self.snapshot), "--tree", self.tree,
                 "--alpha", "0.10")
@@ -419,13 +486,16 @@ class Determinism(Base):
         out = json.loads(first[1])
         self.assertEqual((out["hits"], out["report"]["recall"], out["missed_rules"]),
                          (2, "0.666667", [["eslint", "no-eval"]]))
-        self.assertEqual(self.command(findings, cases, seed="1"), self.command(findings, cases, seed="2"))
+        self.assertEqual((out["counts"], out["uncased_rules"]),
+                         ({"given": 4, "distinct": 2, "reobserved": 1, "refused": 1}, [["eslint", "eqeqeq"], ["eslint", "prefer-const"]]))
+        self.assertEqual(self.command(listed, cases, seed="1"), self.command(listed, cases, seed="2"))
+        self.assertEqual(json.loads(self.command(listed, cases)[1])["hits"], 2)
 
     def test_report_twice_and_its_arguments_unchanged(self):
-        findings, cases = self.stamped([WIDE, NARROW, None]), list(TWO)
+        findings, cases = written(self.stamped([WIDE, NARROW, finding("wide", 4)])), list(TWO)
         kept = copy.deepcopy((findings, cases, self.snapshot))
-        first = self.report(findings, cases, alpha=TENTH)
-        self.assertEqual(first, self.report(findings, cases, alpha=TENTH))
+        first = HS.report(findings, cases, self.snapshot, self.read, alpha=TENTH)
+        self.assertEqual(first, HS.report(findings, cases, self.snapshot, self.read, alpha=TENTH))
         self.assertEqual((findings, cases, self.snapshot), kept)
 
     def test_one_byte_of_the_input_changes_the_report(self):
@@ -456,25 +526,112 @@ class Fingerprint(Base):
         self.assertEqual(self.report([finding("x", 2), finding("y", 3), finding("z", 4)], [])["report"]["clean_findings"], 3)
         # and a re-observation is not read to match: lines 2 and 3 under one fingerprint take one case of TWO
         self.assertEqual(self.report(shifted, TWO)["hits"], 1)
-        self.assertEqual(self.report(shifted, TWO)["matched"], {"c1": "x"})
+        self.assertEqual(self.report(shifted, TWO)["matched"], {"c1": fp("x")})
+        # the first row in the file's order is the one scored: turned round, line 4 is, and it hits neither case
+        self.assertEqual(self.report(shifted[::-1], TWO)["hits"], 0)
 
-    def test_one_fingerprint_over_two_files_or_rules_is_refused(self):
-        for index, other in enumerate([finding("x", 1, path="pkg/b.js"), finding("x", 2, rule="no-eval"),
+    def test_a_later_row_of_a_fingerprint_is_never_read(self):
+        """tohum/26m "Puanlama" 2: neither a hit nor a refusal nor a finding more, whatever the row says."""
+        cases = [case("c1", 2), case("c2", 1, path="pkg/b.js"), case("c3", 3, rule="no-eval")]
+        for index, other in enumerate([finding("x", 1, path="pkg/b.js"), finding("x", 3, rule="no-eval"),
                                        dict(finding("x", 2), property="other"), dict(finding("x", 2), symbol="f"),
-                                       dict(finding("x", 2), tool="ruff")]):
+                                       dict(finding("x", 2), tool="ruff"), finding("x", 2, path="nowhere.js"),
+                                       finding("x", 99), finding("x", 2, snapshot_id="other"), span("x", (1, 5))]):
             with self.subTest(index=index):
-                out = self.report([finding("x", 2), other], [])
-                self.assertEqual(out["refused"], [{"index": 1, "reasons": ["fingerprint_conflict"]}])
-                self.assertEqual(out["report"]["clean_findings"], 2)   # folded it would be 1
+                out = self.report([finding("x", 2), other], cases, ref_max_lines=2)
+                self.assertEqual((out["hits"], out["matched"], out["refused"]), (1, {"c1": fp("x")}, []))
+                self.assertEqual(out["counts"], {"given": 2, "distinct": 1, "reobserved": 1, "refused": 0})
+                self.assertEqual(self.report([finding("x", 2), other], [])["report"]["clean_findings"], 1)
+                # the control: under its own fingerprint the same row is read
+                apart = self.report([finding("x", 2), dict(other, fingerprint="y")], cases, ref_max_lines=2)
+                self.assertEqual((apart["counts"]["reobserved"], apart["counts"]["distinct"] + apart["counts"]["refused"]),
+                                 (0, 2))
 
-    def test_a_refused_finding_gives_its_fingerprint_to_no_one(self):
+    def test_the_first_observation_is_the_one_scored_also_when_it_is_refused(self):
         out = self.report([finding("x", 2, path="nowhere.js"), finding("x", 2)], [case("c1", 2)])
-        self.assertEqual((out["hits"], out["counts"]["distinct"], out["counts"]["reobserved"]), (1, 1, 0))
+        self.assertEqual((out["hits"], out["refused"]), (0, [{"index": 0, "reasons": ["ref_outside_manifest"]}]))
+        self.assertEqual(out["counts"], {"given": 2, "distinct": 0, "reobserved": 1, "refused": 1})
+        turned = self.report([finding("x", 2), finding("x", 2, path="nowhere.js")], [case("c1", 2)])
+        self.assertEqual((turned["hits"], turned["refused"]), (1, []))
+        self.assertEqual(turned["counts"], {"given": 2, "distinct": 1, "reobserved": 1, "refused": 0})
 
     def test_without_a_snapshot_too(self):
         accepted, refused, reobserved = HS.sift([finding("x", 2), finding("x", 3), finding("x", 1, path="pkg/b.js")])
+        self.assertEqual((accepted, refused, reobserved), ([finding("x", 2)], [], 2))
+        accepted, refused, reobserved = HS.sift([span("x", (1, 5)), finding("x", 3), finding("y", 3)], ref_max_lines=2)
         self.assertEqual((accepted, refused, reobserved),
-                         ([finding("x", 2)], [{"index": 2, "reasons": ["fingerprint_conflict"]}], 1))
+                         ([finding("y", 3)], [{"index": 0, "reasons": ["ref_over_max_lines"]}], 1))
+
+
+class Writer(Base):
+    """tohum/26m "Puanlama" 1: the report scores the rows of the referee's writer's file, and nothing else."""
+
+    def proposal(self, line: int, **over) -> dict:
+        return TFW.lint(line, snapshot_id=self.snapshot["snapshot_id"], **over)
+
+    def test_a_file_the_writer_made_is_scored_under_the_writer_s_fingerprint(self):
+        proposals = [self.proposal(2), self.proposal(3), self.proposal(1, path="pkg/b.js")]
+        made = FW.observe(b"", b"", proposals, "hunter-1", self.read)
+        self.assertEqual((len(made.rows), made.refused), (3, []))
+        out = HS.report(made.content, [case("c1", 2), case("c2", 1, path="pkg/b.js")], self.snapshot, self.read)
+        prints = [FW.fingerprint(p, self.read) for p in proposals]
+        self.assertEqual(len(set(prints)), 3)
+        self.assertEqual((out["hits"], out["matched"], out["refused"]), (2, {"c1": prints[0], "c2": prints[2]}, []))
+        self.assertEqual(out["counts"], {"given": 3, "distinct": 3, "reobserved": 0, "refused": 0})
+
+    def test_a_decision_s_row_is_a_re_observation_of_the_finding(self):
+        made = FW.observe(b"", b"", [self.proposal(2), self.proposal(3)], "hunter-1", self.read)
+        fixed = FW.decide(made.content, made.content, b"", b"",
+                          [{"fingerprint": made.rows[0]["fingerprint"], "reasons": []}], "base-1")
+        self.assertEqual(TFW.states(fixed.findings), ["open", "open", "fixed"])
+        out = HS.report(fixed.findings, [case("c1", 2), case("c2", 3)], self.snapshot, self.read)
+        self.assertEqual((out["hits"], out["counts"]), (2, {"given": 3, "distinct": 2, "reobserved": 1, "refused": 0}))
+
+    def test_what_is_not_the_writer_s_file_is_unusable(self):
+        good = written(self.stamped([finding("x", 2), finding("y", 3)]))
+        self.assertEqual(HS.report(good, [case("c1", 2)], self.snapshot, self.read)["hits"], 1)
+        rows = [{k: v for k, v in row.items() if k not in ("prev_hash", "row_hash")} for row in TFW.stored(good)]
+        listed = self.stamped([finding("x", 2)])
+        agent = dict(rows[0], finding_id="f1")                 # an agent's own id beside a fingerprint
+        renamed = dict(rows[0], fingerprint="fp-f1", finding_id="f-fp-f1")
+        other_print = dict(rows[0], fingerprint=fp("z"))       # the writer's id of another fingerprint
+        bare = {k: v for k, v in rows[0].items() if k != "state"}
+        for name, data, reason in (
+                ("a list", listed, None), ("a string", good.decode(), None), ("nothing", None, None),
+                ("a JSON list's bytes", json.dumps(listed).encode(), "chain"),
+                ("JSON lines without a chain", b"".join(json.dumps(f).encode() + b"\n" for f in listed), "chain"),
+                ("a row edited", good.replace(b'"line_start":2', b'"line_start":3'), "chain"),
+                ("the first row cut", good.split(b"\n", 1)[1], "chain"),
+                ("an id that is not the writer's", TFW.chained([agent]), "finding_id"),
+                ("the id of another fingerprint", TFW.chained([other_print]), "finding_id"),
+                ("a fingerprint that is no sha256", TFW.chained([renamed]), "fingerprint"),
+                ("a row without a state", TFW.chained([bare]), "state"),
+                ("a good row, then one that is not", TFW.chained([rows[0], agent]), "row 2")):
+            with self.subTest(name), self.assertRaises(HS.Unusable) as caught:
+                HS.report(data, [case("c1", 2)], self.snapshot, self.read)
+            if reason is None:
+                self.assertEqual(caught.exception.reasons, ["findings_invalid"])
+            else:
+                self.assertTrue(caught.exception.reasons)
+                for given in caught.exception.reasons:
+                    self.assertTrue(given.startswith("findings:"), given)
+                self.assertIn(reason, caught.exception.reasons[0])
+        self.assertEqual(caught.exception.reasons,
+                         ["findings:%s" % r for r in FW.findings_reasons(TFW.chained([rows[0], agent]))])
+
+    def test_the_command_reads_the_writer_s_file_in_its_second_form(self):
+        cases, snapshot = self.file("c.json", [case("c1", 2)]), self.file("s.json", self.snapshot)
+        listed = self.file("f.json", self.stamped([finding("x", 2)]))
+        code, text = self.command(self.registry("f.jsonl", [finding("x", 2)]), cases, "--snapshot", snapshot,
+                                  "--tree", self.tree)
+        self.assertEqual((code, json.loads(text)["matched"]), (0, {"c1": fp("x")}))
+        # the list the first form takes is refused by the second, and the writer's file by the first
+        self.assertEqual(self.command(listed, cases), (0, '{"hits": 1}\n'))
+        code, text = self.command(listed, cases, "--snapshot", snapshot, "--tree", self.tree)
+        self.assertEqual((code, json.loads(text)["ok"]), (2, False))
+        self.assertIn("findings:chain", json.loads(text)["error"])
+        code, text = self.command(self.registry("g.jsonl", [finding("x", 2), finding("y", 3)]), cases)
+        self.assertEqual((code, json.loads(text)["ok"]), (2, False))
 
 
 CP_TABLE = (("60", 60, "0.9624"), ("45", 45, "0.9501"), ("44", 44, "0.9490"), ("25", 25, "0.9120"),
@@ -648,13 +805,14 @@ class Statistics(Base):
 class Report(Base):
     def test_the_fields_are_26b_s(self):
         meta = {"run_id": "r1", "spec_version": "2.2", "hunter_id": "h", "prompt_sha256": "p", "rung": 1, "n": 99}
-        out = self.report([finding("x", 2)], [case("c1", 2)], alpha=TENTH, meta=meta)
-        self.assertEqual(set(out), {"report", "hits", "matched", "missed_rules", "refused", "counts", "verdict_reason"})
+        out = self.report(self.full_hit(), FULL, alpha=TENTH, meta=meta)
+        self.assertEqual(set(out), {"report", "hits", "matched", "missed_rules", "uncased_rules", "refused", "counts",
+                                    "verdict_reason"})
         self.assertEqual(out["report"], {
             "run_id": "r1", "snapshot_id": self.snapshot["snapshot_id"], "spec_version": "2.2",
-            "match_rule_version": "v2", "hunter_id": "h", "prompt_sha256": "p", "rung": 1, "n": 1, "n_groups": 1,
+            "match_rule_version": "v2", "hunter_id": "h", "prompt_sha256": "p", "rung": 1, "n": 3, "n_groups": 1,
             "x_eff": "1.000000", "recall": "1.000000", "recall_lb": "0.100000", "precision": None,
-            "precision_lb": None, "census": {"rules_total": 1, "rules_covered": 1, "misses": 0},
+            "precision_lb": None, "census": {"rules_total": 3, "rules_covered": 3, "misses": 0},
             "clean_findings": None, "unresolved": None, "cost_usd": None, "value_per_usd": None, "verdict": "PASS"})
         bare = self.report([], [])["report"]
         self.assertEqual([bare[k] for k in HS.META], [None] * 5)
@@ -671,29 +829,64 @@ class Report(Base):
         cases = [case("c1", 2), case("c2", 3), case("c3", 4, rule="no-eval"), case("c4", 1, path="pkg/b.js", rule="eqeqeq")]
         out = self.report([finding("x", 2), finding("y", 4, rule="no-eval")], cases)
         # no-var has one case hit and one missed: a rule with a miss is not covered
-        self.assertEqual(out["report"]["census"], {"rules_total": 3, "rules_covered": 1, "misses": 2})
+        # the library's three rules and no-eval, which it does not hold; prefer-const has no case
+        self.assertEqual(out["report"]["census"], {"rules_total": 4, "rules_covered": 1, "misses": 2})
         self.assertEqual(out["missed_rules"], [["eslint", "eqeqeq"], ["eslint", "no-var"]])
+        self.assertEqual(out["uncased_rules"], [["eslint", "prefer-const"]])
         # the same rule id of another tool is another rule
         out = self.report([], [case("c1", 2), case("c2", 3, tool="ruff")])
-        self.assertEqual(out["report"]["census"]["rules_total"], 2)
+        self.assertEqual(out["report"]["census"]["rules_total"], 4)
+        self.assertEqual(out["uncased_rules"], [["eslint", "eqeqeq"], ["eslint", "prefer-const"]])
+        # the total is the library's rules whatever the cases: one case, or one of each rule
+        self.assertEqual(self.report([], FULL[:1])["report"]["census"], {"rules_total": 3, "rules_covered": 0, "misses": 1})
+        full = self.report(self.full_hit()[1:], FULL)
+        self.assertEqual((full["report"]["census"], full["uncased_rules"]),
+                         ({"rules_total": 3, "rules_covered": 2, "misses": 1}, []))
+        # an operator more in the library is a rule more in the total
+        with mock.patch.object(CB, "CATALOG", CB.CATALOG + ({"tool": "eslint", "rule_id": "yoda"},)):
+            more = self.report(self.full_hit(), FULL)
+        self.assertEqual((more["report"]["census"], more["uncased_rules"], more["report"]["verdict"]),
+                         ({"rules_total": 4, "rules_covered": 3, "misses": 0}, [["eslint", "yoda"]], "UNMEASURABLE"))
 
     def test_the_verdicts(self):
-        hit, cases = [finding("x", 2), finding("y", 1, path="pkg/b.js")], [case("c1", 2), case("c2", 1, path="pkg/b.js", group="g2")]
-        out = self.report(hit, cases)     # every case hit is PASS, whatever the number of groups (tohum/26h)
-        self.assertEqual((out["report"]["n_groups"], out["report"]["verdict"], out["verdict_reason"]), (2, "PASS", None))
-        one = self.report(hit[:1], cases[:1])
+        hit, cases = self.full_hit(), [FULL[0], dict(FULL[1], group="g2"), FULL[2]]
+        # a case of every rule of the library, each hit, is PASS, whatever the number of groups (tohum/26h)
+        out = self.report(hit, cases)
+        self.assertEqual((out["report"]["n_groups"], out["report"]["verdict"], out["verdict_reason"], out["uncased_rules"]),
+                         (2, "PASS", None, []))
+        one = self.report(hit, FULL)
         self.assertEqual((one["report"]["n_groups"], one["report"]["verdict"], one["verdict_reason"]), (1, "PASS", None))
         with self.assertRaises(TypeError):     # the report takes no floor of groups
             self.report(hit, cases, min_groups=2)
-        out = self.report(hit[:1], cases)
-        self.assertEqual((out["report"]["verdict"], out["verdict_reason"]), ("FAIL", "misses"))
+        # a case more, of a rule the library does not hold, changes nothing when it is hit too
+        beside = self.report(hit + [finding("e", 5, rule="no-eval")], FULL + [case("c9", 5, rule="no-eval")])
+        self.assertEqual((beside["report"]["census"], beside["report"]["verdict"]),
+                         ({"rules_total": 4, "rules_covered": 4, "misses": 0}, "PASS"))
+        for gone in range(len(FULL)):
+            with self.subTest(gone=gone):
+                # a case not hit is FAIL
+                out = self.report(hit[:gone] + hit[gone + 1:], FULL)
+                self.assertEqual((out["report"]["verdict"], out["verdict_reason"]), ("FAIL", "misses"))
+                # every case hit and a rule of the library without a case: UNMEASURABLE, never PASS
+                fewer = self.report(hit, FULL[:gone] + FULL[gone + 1:])
+                self.assertEqual((fewer["hits"], fewer["report"]["recall"], fewer["report"]["verdict"],
+                                  fewer["verdict_reason"], fewer["uncased_rules"]),
+                                 (2, "1.000000", "UNMEASURABLE", "rule_without_case",
+                                  [[FULL[gone]["tool"], FULL[gone]["rule_id"]]]))
+                self.assertEqual(fewer["report"]["census"], {"rules_total": 3, "rules_covered": 2, "misses": 0})
+        lone = self.report([finding("x", 2)], [case("c1", 2)])     # a run content with its own one case
+        self.assertEqual((lone["report"]["verdict"], lone["verdict_reason"]), ("UNMEASURABLE", "rule_without_case"))
+        missed = self.report([], [case("c1", 2)])                  # a miss and two rules without a case
+        self.assertEqual((missed["report"]["verdict"], missed["verdict_reason"]), ("FAIL", "misses"))
         # a class outside the census: recall is reported, nothing is gated
         k3 = [case("c1", 2, class_level="K3")]
-        found = dict(finding("x", 2), required_change=[{"file": "pkg/a.js", "op": "edit"}])
+        found = dict(finding("x", 2), required_change=[{"file": "pkg/a.js", "op": "other"}])
         out = self.report([found], k3, window=0)
         self.assertEqual((out["hits"], out["report"]["recall"], out["report"]["census"], out["missed_rules"],
-                          out["report"]["verdict"], out["verdict_reason"]),
-                         (1, "1.000000", None, None, "UNMEASURABLE", "class_without_census"))
+                          out["uncased_rules"], out["report"]["verdict"], out["verdict_reason"]),
+                         (1, "1.000000", None, None, None, "UNMEASURABLE", "class_without_census"))
+        missed = self.report([], k3, window=0)                     # outside the census a miss is no FAIL
+        self.assertEqual((missed["report"]["verdict"], missed["verdict_reason"]), ("UNMEASURABLE", "class_without_census"))
 
     def test_cases_refused(self):
         good = case("c1", 2)
@@ -715,7 +908,7 @@ class Report(Base):
         for document, reasons in ((None, ["snapshot:document_invalid"]),
                                   (dict(self.snapshot, snapshot_id="0" * 64), ["snapshot:id_mismatch"])):
             with self.assertRaises(HS.Unusable) as caught:
-                HS.report([], [], document, self.read)
+                HS.report(b"", [], document, self.read)
             self.assertEqual(caught.exception.reasons, reasons)
 
 
@@ -793,19 +986,27 @@ class Live(LY.YazBase):
         self.assertEqual((report["snapshot_id"], report["n"], report["n_groups"], report["recall"], report["recall_lb"],
                           report["census"], report["verdict"]),
                          (snapshot["snapshot_id"], 1, 1, "0.000000", "0.000000",
-                          {"rules_total": 1, "rules_covered": 0, "misses": 1}, "FAIL"))
+                          {"rules_total": 3, "rules_covered": 0, "misses": 1}, "FAIL"))
         self.assertEqual(harness["missed_rules"], [["eslint", "no-var"]])
+        self.assertEqual(harness["uncased_rules"], [["eslint", "eqeqeq"], ["eslint", "prefer-const"]])
 
         def read(path):
             return D._read_regular(self.src, path)
 
         # the policy's three values reached the report: the world's policy is test_loop_cagir's ``STAGE1``
-        self.assertEqual(harness, HS.report([], yaz["cases"]["cases"], snapshot, read, alpha=TENTH, window=15,
+        self.assertEqual(harness, HS.report(b"", yaz["cases"]["cases"], snapshot, read, alpha=TENTH, window=15,
                                             ref_max_lines=30))
-        # the case's oracle finding, given an identity and the snapshot, is a hit on the same cases and document
-        oracle = dict(yaz["cases"]["oracle"][built["case_id"]], fingerprint="fp", snapshot_id=snapshot["snapshot_id"])
-        scored = HS.report([oracle], yaz["cases"]["cases"], snapshot, read)
-        self.assertEqual((scored["hits"], scored["report"]["recall"], scored["refused"]), (1, "1.000000", []))
+        # the case's oracle finding on the snapshot, written by the writer, is a hit on the same cases and
+        # document; the run has the one case of its own, so no PASS
+        oracle = dict(yaz["cases"]["oracle"][built["case_id"]], snapshot_id=snapshot["snapshot_id"])
+        proposal = dict(TFW.lint(), **oracle)
+        proposal["required_change"] = [{"file": oracle["file"], "op": "lint_fix"}]
+        made = FW.observe(b"", b"", [proposal], "oracle", read)
+        self.assertEqual((len(made.rows), made.refused), (1, []))
+        scored = HS.report(made.content, yaz["cases"]["cases"], snapshot, read)
+        self.assertEqual((scored["hits"], scored["report"]["recall"], scored["refused"], scored["matched"]),
+                         (1, "1.000000", [], {built["case_id"]: FW.fingerprint(proposal, read)}))
+        self.assertEqual((scored["report"]["verdict"], scored["verdict_reason"]), ("UNMEASURABLE", "rule_without_case"))
 
     def test_without_cases_the_report_is_unmeasurable(self):
         self.kos({"good": LY.candidate(TCA.TK.GOOD)})
@@ -823,7 +1024,7 @@ class Live(LY.YazBase):
                          {"reason": "harness_refused", "reasons": ["snapshot:document_invalid"]})
 
     def test_the_cycle_s_findings_are_none(self):
-        self.assertEqual(J.FINDINGS, [])
+        self.assertEqual(J.FINDINGS, b"")
 
 
 if __name__ == "__main__":

@@ -208,6 +208,11 @@ def findings_reasons(data: bytes) -> list[str]:
     return _file_reasons(data, lambda row, where: FINDING(row, where) or _class_reasons(row, where))
 
 
+def rows(data: bytes) -> list[dict]:
+    """The rows of a file ``findings_reasons`` or ``unresolved_reasons`` finds no reason in, in the file's order."""
+    return append._ledger_rows(data)
+
+
 def unresolved_reasons(data: bytes) -> list[str]:
     return _file_reasons(data, UNRESOLVED)
 

@@ -168,7 +168,7 @@ refused tree is ``pulled_invalid``). Then:
   cycle's findings against those cases on ``pulled``'s ``snapshot.json`` document and the extracted tree, and the
   target's line has ``harness`` (``{report, hits, matched, missed_rules, refused, counts, verdict_reason}``, "The
   report" there; ``{reason: "harness_refused", reasons}`` when the scorer refuses the document or the cases). The
-  cycle's findings are none (``FINDINGS``) until an organ's output is read as findings, so every case of a cycle is a miss
+  cycle's findings file is the writer's with no row (``FINDINGS``) until an organ's output is read as findings, so every case of a cycle is a miss
   today: recall 0 and ``FAIL`` with a case, ``UNMEASURABLE`` without; ``alpha``, ``window``
   and ``ref_max_lines`` are ``harness.params.score`` of ``pulled``'s policy (tohum/29v's paths of stage 1; all
   three are there and in form, or the job stopped at ``yaz_policy`` below before this target was served).
@@ -900,7 +900,7 @@ def yaz_reruns(environ: dict[str, str], tid: str) -> dict[str, Any]:
     return line
 
 
-FINDINGS: list = []   # the cycle's findings: none, until an organ's output is read as findings (reports/seed-100)
+FINDINGS = b""   # the cycle's findings file (``findings.write``'s): no row, until an organ's output is read as findings (reports/seed-100)
 
 
 CODE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))    # the directory ``loop/`` is in
@@ -920,7 +920,7 @@ def yaz_harness(art: Any, tree: str, cases: dict[str, Any]) -> dict[str, Any]:
     ``{reason: "harness_refused", reasons}`` when the scorer refuses the document or the cases."""
     params = HP.score(art.policy)
     try:
-        return OF.run(lambda: HS.report(list(FINDINGS), cases["cases"], art.snapshot,
+        return OF.run(lambda: HS.report(FINDINGS, cases["cases"], art.snapshot,
                                         lambda path: D._read_regular(tree, path), **params))
     except HS.Unusable as exc:
         return {"reason": "harness_refused", "reasons": exc.reasons}

@@ -15,7 +15,8 @@ staged base worktree and runs the unit's ``lint_cmd`` three times on it (``runne
 ``yaz`` judges (``build``) from the ``results`` artifact and puts the cases on its line. Nothing here runs a tool,
 reads a clock or the network.
 
-**The catalog** (``CATALOG``): each operator is ``{id, tool, rule_id, match, replace}``; it rewrites one line,
+**The catalog** (``CATALOG``; ``rules()`` gives its distinct ``(tool, rule_id)`` pairs, sorted: the rules this
+library can make a case for, which ``harness.score`` counts as ``rules_total``): each operator is ``{id, tool, rule_id, match, replace}``; it rewrites one line,
 the first place ``match`` (a regular expression, ``^`` the start of a line, blanks being spaces and tabs) is found in it, by ``replace``. Three operators, all of
 ``eslint``: ``no-var`` (a line that starts a ``const`` or ``let`` declaration starts a ``var`` one),
 ``prefer-const`` (a ``const <name> =`` line becomes ``let``), ``eqeqeq`` (the first ``===`` becomes ``==``).
@@ -74,12 +75,13 @@ violation's line. Output ``{cases: [case], oracle: {case_id: finding}, refused: 
 
 **The hit** (``hit(finding, case, window)``, match-rule v2 for one finding and one case):
 
-- ``class_level`` K0, K1 or K2: ``tool`` and ``rule_id`` equal (strings), and one of the finding's
-  ``evidence_refs`` lies whole inside one hunk of the case's touched path of the same ``path`` (``start <=
-  line_start <= line_end <= end``): the mapped line. So the right file and rule on another line is no hit, and a
-  reference wider than the hunk is none either;
+- ``class_level`` K0, K1 or K2: ``tool`` and ``rule_id`` equal (strings), and the finding's **primary**
+  reference, ``evidence_refs[0]``, lies whole inside one hunk of the case's touched path of the same ``path``
+  (``start <= line_start <= line_end <= end``): the mapped line (tohum/26m "Dev vaka seti" 6). So the right file
+  and rule on another line is no hit, a reference wider than the hunk is none either, and no later reference
+  makes a hit: not when the first one is elsewhere, and not when the first entry is no reference at all;
 - any other ``class_level``: ``property`` equal, ``required_change`` a non-empty list, and one evidence reference
-  on a touched path either with the finding's ``symbol`` equal to that touched path's ``symbol`` (both strings)
+  (any of them, asama-1/13e) on a touched path either with the finding's ``symbol`` equal to that touched path's ``symbol`` (both strings)
   or whole inside one of its hunks widened by ``window`` lines on each side (``window``: the caller's
   ``stage_params.match_window_lines``; ``None`` leaves the symbol alone to decide).
 
@@ -119,6 +121,11 @@ _MATCH = {op["id"]: re.compile(op["match"], re.MULTILINE) for op in CATALOG}
 MUTATION_KEYS = ("operator", "tool", "rule_id", "path", "line", "diff")
 DETERMINISTIC = ("K0", "K1", "K2")   # match-rule v2: the classes hit by tool, rule and mapped line
 EVIDENCE_KIND = "tool_diff"
+
+
+def rules() -> list[tuple[str, str]]:
+    """The distinct ``(tool, rule_id)`` of the catalog's operators, sorted."""
+    return sorted({(op["tool"], op["rule_id"]) for op in CATALOG})
 
 
 def _sha(*parts: str) -> str:
@@ -262,13 +269,14 @@ def judge(mutation: Any, base_run: bytes, mut_run: bytes) -> tuple[list[str], di
 
 # ---------------------------------------------------------------- the hit
 
-def _refs(finding: dict) -> list[dict]:
+def _refs(finding: dict) -> list[dict | None]:
+    """The finding's ``evidence_refs`` in their order, ``None`` in the place of an entry that is no reference."""
     refs = finding.get("evidence_refs")
     if not isinstance(refs, list):
         return []
-    return [r for r in refs if isinstance(r, dict) and isinstance(r.get("path"), str)
+    return [r if isinstance(r, dict) and isinstance(r.get("path"), str)
             and type(r.get("line_start")) is int and type(r.get("line_end")) is int
-            and r["line_start"] <= r["line_end"]]
+            and r["line_start"] <= r["line_end"] else None for r in refs]
 
 
 def _touched(case: dict) -> list[dict]:
@@ -290,10 +298,13 @@ def hit(finding: Any, case: Any, window: int | None = None) -> bool:
     """Whether ``finding`` hits ``case`` by match-rule v2; see the module docstring, "The hit"."""
     if not (isinstance(finding, dict) and isinstance(case, dict) and isinstance(case.get("class_level"), str)):
         return False
-    pairs = [(r, t) for r in _refs(finding) for t in _touched(case) if r["path"] == t["path"]]
+    refs = _refs(finding)
     if case["class_level"] in DETERMINISTIC:
+        primary = refs[0] if refs else None
         return all(isinstance(case.get(k), str) and finding.get(k) == case[k] for k in ("tool", "rule_id")) \
-            and any(_inside(r, t, 0) for r, t in pairs)
+            and primary is not None \
+            and any(_inside(primary, t, 0) for t in _touched(case) if t["path"] == primary["path"])
+    pairs = [(r, t) for r in refs if r is not None for t in _touched(case) if r["path"] == t["path"]]
     change = finding.get("required_change")
     if not (isinstance(case.get("property"), str) and finding.get("property") == case["property"]
             and isinstance(change, list) and change):

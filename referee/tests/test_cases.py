@@ -26,6 +26,7 @@ import os
 import shutil
 import sys
 import unittest
+from unittest import mock
 
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
@@ -359,7 +360,42 @@ class Hit(unittest.TestCase):
         for line in (10, 11, 12):
             self.assertTrue(CB.hit(k0_finding(ref("src/a.ts", line)), K0))
         self.assertTrue(CB.hit(k0_finding(ref("src/a.ts", 10, 12)), K0))
-        self.assertTrue(CB.hit(k0_finding(ref("src/z.ts", 1), ref("src/a.ts", 11)), K0))    # one reference is enough
+        # the primary reference alone decides: what follows it changes nothing
+        self.assertTrue(CB.hit(k0_finding(ref("src/a.ts", 11), ref("src/z.ts", 1), ref("src/a.ts", 1, 500)), K0))
+        self.assertTrue(CB.hit(k0_finding(ref("src/a.ts", 11), None, "x"), K0))
+
+    def test_k0_only_the_primary_reference_can_hit(self):
+        inside = ref("src/a.ts", 11)
+        for name, finding in (
+                ("another file first", k0_finding(ref("src/z.ts", 1), inside)),
+                ("another line of the file first", k0_finding(ref("src/a.ts", 9), inside)),
+                ("a wider reference first", k0_finding(ref("src/a.ts", 9, 12), inside)),
+                ("a reversed reference first", k0_finding(ref("src/a.ts", 12, 10), inside)),
+                ("no reference first", k0_finding(None, inside)),
+                ("a string first", k0_finding("src/a.ts:11", inside)),
+                ("inside as the third", k0_finding(ref("src/a.ts", 13), ref("src/a.ts", 9), inside))):
+            for level in CB.DETERMINISTIC:
+                with self.subTest(name, level=level):
+                    self.assertFalse(CB.hit(finding, dict(K0, class_level=level)))
+                    self.assertFalse(CB.hit(finding, dict(K0, class_level=level), 15))
+                    # the control: the same finding with the inside reference first is a hit
+                    turned = dict(finding, evidence_refs=[inside] + finding["evidence_refs"][:-1])
+                    self.assertTrue(CB.hit(turned, dict(K0, class_level=level)))
+
+    def test_k3_any_reference_can_hit(self):
+        inside = ref("src/svc.ts", 45)
+        for first in (ref("src/svc.ts", 400), ref("src/other.ts", 45), None, ref("src/svc.ts", 50, 40)):
+            with self.subTest(first=first):
+                self.assertTrue(CB.hit(k3_finding(first, inside), K3, 15))
+                self.assertTrue(CB.hit(k3_finding(inside, first), K3, 15))
+                self.assertFalse(CB.hit(k3_finding(first), K3, 15))
+
+    def test_the_rules_of_the_catalog(self):
+        self.assertEqual(CB.rules(), [("eslint", "eqeqeq"), ("eslint", "no-var"), ("eslint", "prefer-const")])
+        self.assertEqual(set(CB.rules()), {(op["tool"], op["rule_id"]) for op in CB.CATALOG})
+        twice = CB.CATALOG + (dict(CB.CATALOG[0]), {"tool": "a", "rule_id": "z"})
+        with mock.patch.object(CB, "CATALOG", twice):     # an operator more of a rule is not a rule more; sorted
+            self.assertEqual(CB.rules(), [("a", "z")] + [("eslint", r) for r in ("eqeqeq", "no-var", "prefer-const")])
 
     def test_k0_the_right_file_and_rule_on_another_line_is_no_hit(self):
         for name, finding in (

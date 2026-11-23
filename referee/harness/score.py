@@ -3,25 +3,26 @@ tests 1, 6, 7, 12 and, with ``harness.stats``, 28).
 
 Rules: asama-1/13e (match-rule v2: a finding takes at most one case, a case counts at most once in a run; the
 metrics ``census``, ``recall``, ``recall_lb``, ``clean_findings``, ``verdict``), tohum/19 (three verdicts;
-``x_eff = recall * G``), tohum/07 and asama-1/13d (a finding's identity is its fingerprint, the line number is
-not in it, the same fingerprint again is a re-observation; an evidence reference must be in the manifest),
-tohum/26b (the report's fields; no float), tohum/26a (``harness.score``: job ``yaz``, in: the findings and the
-snapshot, out: the report), tohum/29a (the command line of the ``match`` vectors), asama-0/09 (the tests).
+``x_eff = recall * G``), tohum/26m "Puanlama" (the fingerprint is read from the referee's writer's file; a
+fingerprint seen again is a counted re-observation; the verdict), tohum/07 and asama-1/13d (a finding's identity
+is its fingerprint; an evidence reference must be in the manifest), tohum/26b (the report's fields; no float),
+tohum/26a (``harness.score``: job ``yaz``, in: the findings and the snapshot, out: the report), tohum/29a (the
+command line of the ``match`` vectors), asama-0/09 (the tests).
 
 Whether one finding hits one case is ``cases.build.hit`` (the one hit rule, not written again here).
 
-**The findings** (``sift(findings, snapshot, read)``). ``findings`` is a list, read in its order; the answer is
-``(accepted, refused)``: ``refused`` is ``[{index, reasons}]``, ``index`` the finding's place in the list. Every
-reason that holds is listed, in this order; with ``finding_invalid`` nothing more is judged:
+**The findings** (``sift(findings, snapshot, read, ref_max_lines)``). ``findings`` is a list, read in its order;
+the answer is ``(accepted, refused, reobserved)``: ``refused`` is ``[{index, reasons}]``, ``index`` the finding's
+place in the list. Every reason that holds is listed, in this order; with ``finding_invalid`` nothing more is
+judged:
 
 1. ``finding_invalid``: not an object, ``fingerprint`` not a non-empty string, or ``evidence_refs`` not a
    non-empty list of ``{path: string, line_start, line_end: integers, 1 <= line_start <= line_end}``.
-2. The identity of a finding is its ``fingerprint`` string. A finding whose fingerprint an earlier accepted
-   finding of the list carries is a **re-observation**: it is not counted again and nothing of it is read to
-   match (so the same finding in two runs is one, and a re-observation on another line is the same one); except
-   ``fingerprint_conflict``: its ``property``, ``file``, ``symbol``, ``tool`` or ``rule_id`` is not the earlier
-   one's (tohum/07 derives the fingerprint from those, so one fingerprint cannot stand for two of them), and
-   then it is refused, not folded.
+2. The identity of a finding is its ``fingerprint`` string. The first finding of the list that carries a
+   fingerprint (and is not ``finding_invalid``) is the one judged: accepted, or refused by 3 and 4. Every later
+   one carrying it is a **re-observation**: counted in ``reobserved``, nothing else of it is read, so it is
+   neither matched nor refused nor counted as a finding of a clean run (tohum/26m "Puanlama" 2), whatever its
+   file, rule or line, and also when the first one was refused.
 3. With ``ref_max_lines`` (a positive integer, ``stage_params.evidence_ref_max_lines``; another value that is not
    ``None`` is ``Unusable``, ``ref_max_lines_invalid``): ``ref_over_max_lines``: the finding's **primary**
    reference, ``evidence_refs[0]``, spans more lines than it (a reference spans ``line_end - line_start + 1``
@@ -47,7 +48,17 @@ findings nor on that of the cases. Which of several largest sets is returned is 
 (``cases.build``); their other fields are read by the hit rule only.
 
 **The report** (``report(findings, cases, snapshot, read, alpha, window, meta, ref_max_lines)``) is ``{report,
-hits, matched, missed_rules, refused, counts, verdict_reason}``. ``report`` holds exactly tohum/26b's fields:
+hits, matched, missed_rules, uncased_rules, refused, counts, verdict_reason}``.
+
+``findings`` is the bytes of a findings file of the referee's writer (``findings.write``; empty bytes are the
+file with no row), and nothing else is scored: what is not ``bytes`` is ``Unusable`` (``findings_invalid``), and
+so is a file ``findings.write.findings_reasons`` finds a reason in (each reason prefixed ``findings:``: a broken
+chain, a row that is not the writer's row, a ``finding_id`` that is not ``f-`` and the fingerprint). Its rows in
+the file's order are the list ``sift`` reads, the fingerprint as the row holds it (tohum/26m "Puanlama" 1);
+every row of the file is read as an observation, also a row a decision restated (a finding's ``fixed`` row is a
+re-observation of its ``open`` one), and a row of another snapshot is the first of its fingerprint like any other
+(then refused, ``snapshot_mismatch``): the file is the run, no page says where a run ends in it
+(reports/seed-101). ``report`` holds exactly tohum/26b's fields:
 
 - ``snapshot_id``: the document's (``snapshot.make.check`` must accept it, else ``Unusable`` with its reasons
   prefixed ``snapshot:``); ``match_rule_version``: ``v2``; ``run_id``, ``spec_version``, ``hunter_id``,
@@ -59,48 +70,56 @@ hits, matched, missed_rules, refused, counts, verdict_reason}``. ``report`` hold
   three are ``null``; without ``alpha`` (``None``) ``recall_lb`` is ``null``;
 - ``census``, for the classes the hit rule matches by tool and rule (``cases.build.DETERMINISTIC``: K0, K1,
   K2; a rule is a (``tool``, ``rule_id``) pair of strings, a case without one is ``case_invalid:<index>``):
-  ``{rules_total, rules_covered, misses}``: the distinct rules of the cases, those with no case missed, and the
-  cases not hit. ``null`` for any other class;
+  ``{rules_total, rules_covered, misses}``. ``rules_total`` counts the rules a case can be made for,
+  ``cases.build.rules()`` (the whole operator library, which is one tool's today; tohum/26e), together with any
+  rule of the cases that is not among them; ``rules_covered`` the rules with a case and no case missed;
+  ``misses`` the cases not hit. ``null`` for any other class;
 - ``clean_findings``: with no case (the snapshot is a clean one: nothing was planted), the findings counted, each
   identity once and **every refused finding too** (13e: none is left out of the count); ``null`` with cases;
 - ``precision``, ``precision_lb``, ``unresolved``, ``cost_usd``, ``value_per_usd``: ``null`` (below);
-- ``verdict``, with its reason beside the report (``verdict_reason``):
-  ``UNMEASURABLE`` ``no_cases``; ``UNMEASURABLE`` ``class_without_census`` (a class outside ``DETERMINISTIC``);
-  ``FAIL`` ``misses`` (a case not hit: 13e's gate is every rule covered and no miss); with no miss ``PASS``
-  (reason ``null``). The dev report has no floor of groups (tohum/26h): G changes no verdict.
+- ``verdict``, with its reason beside the report (``verdict_reason``), the first that holds (tohum/26m
+  "Puanlama" 3): ``UNMEASURABLE`` ``no_cases``; ``UNMEASURABLE`` ``class_without_census`` (a class outside
+  ``DETERMINISTIC``); ``FAIL`` ``misses`` (a case not hit); ``UNMEASURABLE`` ``rule_without_case`` (a rule of
+  ``cases.build.rules()`` has no case among these); else ``PASS`` (reason ``null``): every rule has a case and
+  every case is hit. The dev report has no floor of groups (tohum/26h): G changes no verdict.
 
 ``matched`` is ``{case_id: the finding's fingerprint}``, ``missed_rules`` the sorted ``[tool, rule_id]`` of the
-rules with a missed case (``null`` without census), ``counts`` ``{given, distinct, reobserved, refused}`` over
-the findings. The same arguments give the same output: nothing here reads a clock, the environment, or a file
-other than through ``read``.
+rules with a missed case and ``uncased_rules`` those of ``cases.build.rules()`` with no case (both ``null``
+without census), ``counts`` ``{given, distinct, reobserved, refused}`` over the file's rows. The same arguments
+give the same output: nothing here reads a clock, the environment, or a file other than through ``read``.
 
 **In the loop** (``loop.job``, ``yaz``): after the dev cases are built, ``report`` runs on them with the cycle's
-findings, ``pulled``'s snapshot document and the extracted tree; its output is ``harness`` on the target's line.
+findings file, ``pulled``'s snapshot document and the extracted tree; its output is ``harness`` on the target's
+line.
 
 Out of scope, stated:
 
-- deriving or checking a fingerprint (tohum/07's formula; no code writes a finding yet, the registry's intake
-  is a later row). So findings on different lines of one file and rule that carry one fingerprint are one
-  finding here, whoever gave them that fingerprint (reports/seed-076);
+- deriving a fingerprint again from the snapshot's bytes (tohum/26n: the P1 exit epoch's): the file's chain and
+  row shape are checked, so a file with a valid chain whose fingerprint no ``findings.write.fingerprint`` gave
+  is scored as it stands; who may write the file is its holder's rule (``brain/state``, ``loop.write_cycle``);
 - ``precision``, ``precision_lb``, ``unresolved`` (they need the triage of findings that hit no case: the panel
   and the oracle, later parties), ``cost_usd``, ``value_per_usd`` (the cost of a hunter's run: P2);
-- the census of K4 (13e names it a census class; no page says what its rule is; the same report);
+- the census of K4 (tohum/26m "Puanlama" 4: stage 3's);
+- the rules of tohum/29za's census vectors (the toy's seven rules: the library holds other ones today; the
+  ledger's ``blocked`` row of this change);
 - where ``alpha``, ``window`` and ``ref_max_lines`` come from: the caller's (``harness.params.score`` reads
   them from the policy for ``loop.job``); ``stage_params.census_min_groups`` (tohum/26h: the exit sample's,
   ``exit.sample``, not built; nothing here reads it);
 - the views of 13e (which of these fields an agent may see) and writing the report anywhere.
 
-Command line, run from ``referee/`` (``FINDINGS`` and ``CASES`` are files holding one JSON list each)::
+Command line, run from ``referee/`` (``CASES`` is a file holding one JSON list)::
 
     python -m harness.score FINDINGS CASES [--window N] [--ref-max-lines N]
     python -m harness.score FINDINGS CASES --snapshot DOCUMENT --tree DIR [--alpha A] [--window N]
                             [--ref-max-lines N]
 
-The first form (tohum/29a) prints ``{"hits": N}``: ``sift`` without a snapshot, then ``match``; when a finding
-was refused the line also has ``refused``. The second (tohum/26a: the findings and the snapshot in, the report
-out; one command for both pages) prints ``report``'s output, the tree's files read as regular files with no link
-on their way (``profile.derive``'s reader). Exit 0 with the one JSON line. Exit 2 with ``{"ok": false, "error":
-...}``: wrong arguments, a file that cannot be read or is not JSON, a list that is not one, ``Unusable``.
+The first form (tohum/29a's ``match`` vectors) prints ``{"hits": N}``: ``FINDINGS`` holds one JSON list, ``sift``
+without a snapshot, then ``match``; when a finding was refused the line also has ``refused``. It gives no report
+and no verdict, the fingerprints are the list's as given, and no job runs it. The second (tohum/26a: the
+findings and the snapshot in, the report out) prints ``report``'s output: ``FINDINGS`` is a findings file of the
+writer, read as bytes; the tree's files are read as regular files with no link on their way
+(``profile.derive``'s reader). Exit 0 with the one JSON line. Exit 2 with ``{"ok": false, "error": ...}``: wrong
+arguments, a file that cannot be read or is not JSON, a list that is not one, ``Unusable``.
 """
 
 from __future__ import annotations
@@ -113,13 +132,13 @@ from typing import Any, Callable
 
 import cli
 from cases import build as CB
+from findings import write as FW
 from harness import stats
 from profile import derive as D
 from snapshot import make as SM
 
 FAULT_LINE = {"ok": False, "error": "internal error"}
 MATCH_RULE_VERSION = "v2"
-IDENTITY_FIELDS = ("property", "file", "symbol", "tool", "rule_id")   # tohum/07: what a fingerprint is derived from
 META = ("run_id", "spec_version", "hunter_id", "prompt_sha256", "rung")
 MAX = "--ref-max-lines"
 NOT_MEASURED = ("precision", "precision_lb", "unresolved", "cost_usd", "value_per_usd")
@@ -169,21 +188,22 @@ def _ref_reasons(finding: dict, snapshot: dict, read: Callable[[str], "bytes | N
 def sift(findings: list, snapshot: dict | None = None, read: Callable[[str], "bytes | None"] | None = None,
          ref_max_lines: int | None = None) -> tuple[list[dict], list[dict], int]:
     """``(accepted, refused, reobserved)``: see the module docstring, "The findings"; ``reobserved`` counts the
-    findings folded into an earlier one."""
+    findings whose fingerprint an earlier one of the list carried."""
     if ref_max_lines is not None and (type(ref_max_lines) is not int or ref_max_lines < 1):
         raise Unusable(["ref_max_lines_invalid"])
     accepted: list[dict] = []
     refused: list[dict] = []
-    first: dict[str, dict] = {}
+    seen: set[str] = set()
     reobserved = 0
     for index, finding in enumerate(findings):
         if not _shaped(finding):
             refused.append({"index": index, "reasons": ["finding_invalid"]})
             continue
-        earlier = first.get(finding["fingerprint"])
+        if finding["fingerprint"] in seen:
+            reobserved += 1
+            continue
+        seen.add(finding["fingerprint"])
         reasons = []
-        if earlier is not None and any(finding.get(k) != earlier.get(k) for k in IDENTITY_FIELDS):
-            reasons.append("fingerprint_conflict")
         primary = finding["evidence_refs"][0]
         if ref_max_lines is not None and primary["line_end"] - primary["line_start"] + 1 > ref_max_lines:
             reasons.append("ref_over_max_lines")
@@ -191,10 +211,7 @@ def sift(findings: list, snapshot: dict | None = None, read: Callable[[str], "by
             reasons += _ref_reasons(finding, snapshot, read)
         if reasons:
             refused.append({"index": index, "reasons": reasons})
-        elif earlier is not None:
-            reobserved += 1
         else:
-            first[finding["fingerprint"]] = finding
             accepted.append(finding)
     return accepted, refused, reobserved
 
@@ -262,17 +279,21 @@ def report(findings: Any, cases: Any, snapshot: Any, read: Callable[[str], "byte
         SM.check(snapshot)
     except SM.SnapshotError as exc:
         raise Unusable(["snapshot:%s" % r for r in exc.reasons]) from None
-    if not isinstance(findings, list):
+    if not isinstance(findings, bytes):
         raise Unusable(["findings_invalid"])
+    found = FW.findings_reasons(findings)
+    if found:
+        raise Unusable(["findings:%s" % reason for reason in found])
+    rows = FW.rows(findings)
     ordered = _checked(cases)
-    accepted, refused, reobserved = sift(findings, snapshot, read, ref_max_lines)
+    accepted, refused, reobserved = sift(rows, snapshot, read, ref_max_lines)
     matched = match(accepted, ordered, window)
     n, groups, hits = len(ordered), len({case["group"] for case in ordered}), len(matched)
     out: dict[str, Any] = {name: (meta or {}).get(name) for name in META}
     out.update(snapshot_id=snapshot["snapshot_id"], match_rule_version=MATCH_RULE_VERSION, n=n, n_groups=groups,
                x_eff=None, recall=None, recall_lb=None, census=None, clean_findings=None)
     out.update({name: None for name in NOT_MEASURED})
-    missed_rules = None
+    missed_rules = uncased_rules = None
     if n == 0:
         out["clean_findings"] = len(accepted) + len(refused)
         verdict, why = "UNMEASURABLE", "no_cases"
@@ -288,12 +309,20 @@ def report(findings: Any, cases: Any, snapshot: Any, read: Callable[[str], "byte
             rules = {(case["tool"], case["rule_id"]) for case in ordered}
             missed = {(case["tool"], case["rule_id"]) for case in ordered if case["case_id"] not in matched}
             missed_rules = [list(rule) for rule in sorted(missed)]
-            out["census"] = {"rules_total": len(rules), "rules_covered": len(rules - missed), "misses": n - hits}
-            verdict, why = ("FAIL", "misses") if hits < n else ("PASS", None)
+            uncased = set(CB.rules()) - rules
+            uncased_rules = [list(rule) for rule in sorted(uncased)]
+            out["census"] = {"rules_total": len(rules | uncased), "rules_covered": len(rules - missed),
+                             "misses": n - hits}
+            if hits < n:
+                verdict, why = "FAIL", "misses"
+            elif uncased:
+                verdict, why = "UNMEASURABLE", "rule_without_case"
+            else:
+                verdict, why = "PASS", None
     out["verdict"] = verdict
     return {"report": out, "hits": hits, "matched": {cid: accepted[f]["fingerprint"] for cid, f in matched.items()},
-            "missed_rules": missed_rules, "refused": refused, "verdict_reason": why,
-            "counts": {"given": len(findings), "distinct": len(accepted), "reobserved": reobserved,
+            "missed_rules": missed_rules, "uncased_rules": uncased_rules, "refused": refused, "verdict_reason": why,
+            "counts": {"given": len(rows), "distinct": len(accepted), "reobserved": reobserved,
                        "refused": len(refused)}}
 
 
@@ -332,13 +361,15 @@ def main(argv: list[str]) -> int:
         options = _options(argv[2:])
         window = int(stats._number(options["--window"], stats.INTEGER)) if "--window" in options else None
         longest = int(stats._number(options[MAX], stats.INTEGER)) if MAX in options else None
-        findings, cases = _list(argv[0]), _list(argv[1])
+        cases = _list(argv[1])
         if "--snapshot" not in options:
-            accepted, refused, _ = sift(findings, ref_max_lines=longest)
+            accepted, refused, _ = sift(_list(argv[0]), ref_max_lines=longest)
             line: dict[str, Any] = {"hits": len(match(accepted, cases, window))}
             if refused:
                 line["refused"] = refused
         else:
+            with open(argv[0], "rb") as fh:
+                findings = fh.read()
             with open(options["--snapshot"], encoding="utf-8") as fh:
                 document = cli.load(fh)
             tree = options["--tree"]
