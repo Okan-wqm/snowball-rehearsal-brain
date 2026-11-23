@@ -77,7 +77,9 @@ again (a base outside ``brain/`` is ``Refused``); any other status is raised at 
 405 is raised as it came. Outside: why GitHub answered 405 is not read from its message (any 405 is sent again,
 also a missing check or a conflict, which then costs the pauses and ends in the same 405); both numbers are
 chosen, not measured (one event shows only that two seconds after the check were not enough once); a merge that
-GitHub did carry out while answering 405 would be read as "not open" and end in that 405.
+GitHub did carry out while answering 405 would be read as "not open" and end in that 405; a merge that went
+through on a later send leaves its refused sends in ``Writer.sent`` only (the job's line and the ledger do not
+say that it was sent more than once).
 
 State commit (``commit_files``, caller ``ledger.append``, MF10): one direct commit on a ``brain/`` branch
 (``brain/state`` takes no pull request, tohum/01b) whose parent is the head the caller read its files at:

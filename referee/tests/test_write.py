@@ -516,6 +516,7 @@ class WriterLoop(unittest.TestCase):
                 with self.assertRaises(W.ApiError) as ctx:
                     wr.merge(n, sha)
                 self.assertEqual(ctx.exception.status, 405)  # the refusal GitHub gave, not a new one
+                self.assertIn("Required status check is expected", str(ctx.exception))
                 self.assertEqual(self.pull_calls(gh, n), ["GET", "PUT", "GET"])
                 self.assertEqual(gh.refs["brain/integration"], root)
 

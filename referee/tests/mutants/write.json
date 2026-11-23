@@ -1387,6 +1387,15 @@
    "tests": [
     "test_loop_write.D7.test_a_revert_whose_merge_is_answered_405_once_is_still_merged"
    ]
+  },
+  {
+   "id": "wr_resend_new_refusal",
+   "file": "target/write.py",
+   "old": "                    raise  # the 405 as GitHub gave it",
+   "new": "                    raise ApiError(405, \"pull closed or moved\")",
+   "tests": [
+    "test_write.WriterLoop.test_a_merge_is_not_sent_again_to_a_pull_that_closed_or_moved"
+   ]
   }
  ]
 }
