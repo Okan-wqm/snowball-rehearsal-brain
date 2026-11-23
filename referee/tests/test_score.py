@@ -537,7 +537,8 @@ class Determinism(Base):
         for name, value in (("no.json", {"eslint": "no-var"}), ("pair.json", [["eslint"]]), ("none.json", [])):
             code, text = self.command(*plain, "--census", self.file(name, value))
             self.assertEqual((code, json.loads(text)["ok"]), (2, False), name)
-        self.assertEqual(self.command(findings, cases, "--census", self.file("r.json", SET))[0], 2)
+        self.assertEqual(self.command(listed, cases)[0], 0)      # the first form takes no census: it gives no report
+        self.assertEqual(self.command(listed, cases, "--census", self.file("r.json", SET))[0], 2)
         self.assertEqual(self.command(listed, cases, seed="1"), self.command(listed, cases, seed="2"))
         self.assertEqual(json.loads(self.command(listed, cases)[1])["hits"], 2)
 

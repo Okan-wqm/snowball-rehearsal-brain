@@ -267,10 +267,10 @@ def _census(census: Any) -> "set[tuple[str, str]] | None":
     if isinstance(census, (str, bytes, dict)) or not isinstance(census, (list, tuple, set, frozenset)):
         raise Unusable(["census_invalid"])
     pairs = [tuple(rule) if isinstance(rule, (list, tuple)) else None for rule in census]
-    if not pairs or len(set(pairs)) != len(pairs) \
+    if len(set(pairs)) != len(pairs) \
             or any(pair is None or len(pair) != 2 or not all(isinstance(part, str) for part in pair) for pair in pairs):
         raise Unusable(["census_invalid"])
-    if len({tool for tool, _ in pairs}) != 1:                           # type: ignore[misc]
+    if len({tool for tool, _ in pairs}) != 1:                           # no rule, or rules of two tools
         raise Unusable(["census_invalid"])
     return set(pairs)                                                   # type: ignore[arg-type]
 

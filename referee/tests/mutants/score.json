@@ -581,19 +581,10 @@
    ]
   },
   {
-   "id": "census_of_no_rule_accepted",
-   "file": "harness/score.py",
-   "old": "    if not pairs or len(set(pairs)) != len(pairs) \\\n",
-   "new": "    if len(set(pairs)) != len(pairs) \\\n",
-   "tests": [
-    "test_score.Report"
-   ]
-  },
-  {
    "id": "census_rule_twice_accepted",
    "file": "harness/score.py",
-   "old": "    if not pairs or len(set(pairs)) != len(pairs) \\\n",
-   "new": "    if not pairs \\\n",
+   "old": "    if len(set(pairs)) != len(pairs) \\\n            or any(",
+   "new": "    if any(",
    "tests": [
     "test_score.Report"
    ]

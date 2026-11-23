@@ -267,7 +267,7 @@ class Census(unittest.TestCase):
                 ("operator-assignment", "const a = 1;"), ("operator-assignment", "let a = 1"),
                 ("operator-assignment", "let [a] = b;"), ("operator-assignment", "let a;"),
                 ("prefer-template", "import a from './a.js';"), ("prefer-template", "// f('a')"),
-                ("prefer-template", "x = { 'k': 1 };"), ("prefer-template", "x = 'a\\n';"), ("prefer-template", "'use strict';"),
+                ("prefer-template", "x = {a: 1, 'k': 2};"), ("prefer-template", "x = 'a\\n';"), ("prefer-template", "'use strict';"),
                 ("yoda", "if (a === b) {}"), ("yoda", "if (typeof a === 'string') {}"), ("yoda", "if (1 === a) {}"),
                 ("yoda", "if (f(a) === 1) {}"), ("yoda", "if (a < 1) {}"),
         ):
