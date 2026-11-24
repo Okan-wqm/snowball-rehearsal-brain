@@ -19,6 +19,8 @@ another job's output only by artifact and hash; the workflow's download checks t
                                   the commit's ``.brain/`` is not repeated; MF1's verify --previous, MF11's root)
     state/findings.jsonl        brain/state's ``STATE_REGISTERS`` at that head (``findings.write``'s files,
     state/unresolved.jsonl        tohum/26j), each as D1 verified it; absent when the head has none
+    state/cases/dev.jsonl       brain/state's dev case set at that head (``STATE_CASES``, tohum/26m "Dev vaka
+                                  seti" (2)), as D1 verified it; absent when the head has none
     state/status.md             brain/state's ``status.md`` at that head, as read; absent when the head has none
     candidates/<cid>/finding.json, diff.patch, expect.json
     organs.json                 {organ_id: definition_sha256}: the accepted organs ("Organs" below)
@@ -134,13 +136,14 @@ def _carried(path: str) -> str:
 STATE_FILES = (HEADS,) + tuple(_carried(p) for p in B.STATE_CHAINS)
 STATUS = _carried(B.STATE_STATUS)
 REGISTER_FILES = tuple(_carried(p) for p in B.STATE_REGISTERS)
+CASES = _carried(B.STATE_CASES)
 HEAD_BRANCHES = (B.STATE, B.INTEGRATION)
 ACCEPTED = "organs.json"
 SNAPSHOT = "snapshot.json"
 MUTATIONS = "mutations.json"
 ACCEPT = "accept.json"
 TOP = (TREE, UNITS, POLICY, ACCEPTED, SNAPSHOT, MUTATIONS, ACCEPT) + STATE_FILES   # always listed
-LAYOUT = TOP + (STATUS,) + REGISTER_FILES    # STATUS and a register listed when the head has the file
+LAYOUT = TOP + (STATUS,) + REGISTER_FILES + (CASES,)   # each of these listed when the head has the file
 SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 CANDIDATES = "candidates"
 CANDIDATE_FILES = ("diff.patch", "expect.json", "finding.json")
@@ -168,7 +171,7 @@ class Pulled(NamedTuple):
     candidates: dict[str, dict[str, bytes]]  # cid -> {file name: bytes}
     heads: dict[str, str]                   # brain/state and brain/integration -> commit
     state: dict[str, bytes]                 # target.branches.STATE_CHAINS path -> bytes, and each path of
-                                            # STATE_REGISTERS the head has a file for
+                                            # STATE_CARRIED (the registers, the dev case set) the head has
     policy_bytes: bytes                     # policy.json as carried (``policy`` is it parsed)
     status: bytes | None                    # brain/state's status.md, None when the head has none
     accepted: Any                           # organs.json parsed: {organ_id: definition_sha256}
@@ -230,7 +233,7 @@ def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
           status: bytes | None, accepted: Any = None, organs: dict[str, dict] | None = None,
           snapshot: Any = None, mutations: Any = None, accept: Any = None) -> dict:
     """Write the layout into ``out`` (which must not exist); returns the manifest. ``state`` maps each path of
-    ``STATE_CHAINS``, and any of ``STATE_REGISTERS`` (the ones the head has), to its bytes; ``status`` is ``status.md``'s bytes or ``None`` (not written); ``accepted`` is
+    ``STATE_CHAINS``, and any of ``STATE_CARRIED`` (the registers and the dev case set: the ones the head has), to its bytes; ``status`` is ``status.md``'s bytes or ``None`` (not written); ``accepted`` is
     ``organs.json``'s document (``None``: ``{}``) and ``organs`` maps each carried organ's id to ``{entry, files:
     {path: bytes}}`` (``None``: none; another form, or a path that is a directory on the way of another, is
     ``organ_invalid:<oid>``, an id or a path outside the layout ``path_not_in_layout:<path>``); ``snapshot`` is
@@ -238,7 +241,7 @@ def write(out: str, target: dict, tree_tar: bytes, units: bytes, policy: bytes,
     is ``mutations.json``'s object (``None``: ``{}``; anything else that is no object json can write is
     ``mutations_invalid``); ``accept`` is ``accept.json``'s document (``None``: no entry; anything that is not
     an entry is ``accept_invalid``)."""
-    if not set(B.STATE_CHAINS) <= set(state) <= set(B.STATE_CHAINS + B.STATE_REGISTERS) \
+    if not set(B.STATE_CHAINS) <= set(state) <= set(B.STATE_CHAINS + B.STATE_CARRIED) \
             or not all(isinstance(d, bytes) for d in state.values()) \
             or not (status is None or isinstance(status, bytes)):
         raise PulledError(["state_incomplete"])
@@ -414,7 +417,7 @@ def read(root: str) -> Pulled:
             except (UnicodeDecodeError, ValueError, RecursionError):
                 reasons.append("json_unreadable:%s" % path)
     state = {p: contents.get(_carried(p), b"") for p in B.STATE_CHAINS}
-    state.update({p: contents[_carried(p)] for p in B.STATE_REGISTERS if _carried(p) in contents})
+    state.update({p: contents[_carried(p)] for p in B.STATE_CARRIED if _carried(p) in contents})
     if HEADS in parsed and not _heads_valid(parsed[HEADS], state, contents.get(STATUS)):
         reasons.append("heads_invalid")
     if MUTATIONS in parsed and not isinstance(parsed[MUTATIONS], dict):

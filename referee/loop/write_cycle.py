@@ -31,7 +31,8 @@ before stage 1 MF6 (no entry request is committed);
 reasons}``), the cycle's input to the finding registry (``findings.write.cycle``, P1 MF8, tohum/26j): both empty
 unless given; ``loop.job`` gives D5's ``finding_decisions`` (P1 MF12, ``loop.decide``) and no proposal (no job
 reads an organ's output as one); ``merge_diff``, the diff of a merge that is a run-time candidate (``None`` for
-a ready one, whose ``diff.patch`` ``pulled`` holds).
+a ready one, whose ``diff.patch`` ``pulled`` holds); ``cases``, the cycle's dev cases (``cases.build.build``'s
+``cases``; none unless given), added to the dev case set.
 
 **Order.** Nothing is written on the target before every check holds, and nothing is signed before the rows are
 planned:
@@ -65,7 +66,14 @@ planned:
    proposed row (``ledger.append.SecretRow``) is ``Refused`` with ``state_unwritable``; input of another form is
    ``Unusable``. The two files as it returns them are the cycle's registers: ``ledger.cycle`` roots them with
    the ledger and writes the ones that hold a row in the cycle's commit (a cycle with empty input writes the
-   files it read, so a state without them stays without them and its root is the ledger's alone). Then
+   files it read, so a state without them stays without them and its root is the ledger's alone). Then the dev
+   case set (tohum/26m "Dev vaka seti" (1), (2), (4)): ``cases.store.add`` of ``cases`` to ``pulled``'s
+   ``cases/dev.jsonl`` (``target.branches.STATE_CASES``; ``b""`` where the head has none): a case whose id the
+   file has is not written again, and with other content it is refused and named, the cycle going on. A file
+   that is no case set is ``target.land.HardStop`` with nothing written, also with no case; a value that is no
+   case row is ``Unusable``. The file as it returns it is the cycle's: ``ledger.cycle`` writes it in the cycle's
+   commit when it holds a case (it starts with the bytes D1 verified: tohum/01b's append only), and the root
+   does not cover it (tohum/26n). Then
    a dry plan: ``ledger.cycle.plan`` of the cycle's rows with the merge's answer left as placeholders and a signer
    that signs nothing (``DRY``): the roots file and the ledger as chains extending themselves (D1's versions are the
    previous ones: nothing was added since), the rows' secret scan, the whole new ledger against ``ledger.schema``,
@@ -107,12 +115,14 @@ cap D4 called with).
 
 Returns ``{merge: {candidate, path, pull, head_sha, merge_sha} | None, revert: {reverted, cause, pull, commit,
 merge_sha} | None, plant: {instance_id, pull, head_sha, merge_sha} | None, state_sha, root, rekor_uuid, rows,
-edited, gozcu, findings}``, ``findings`` the registry's ``{rows, unresolved_rows, refused}`` (the numbers of rows
+edited, gozcu, findings, cases}``, ``cases`` the dev case set's ``{added, kept, refused}``
+(``cases.store.add``'s: the ids written by this cycle, the ids the file had already, ``{case_id: reason}``), ``findings`` the registry's ``{rows, unresolved_rows, refused}`` (the numbers of rows
 added to each file and ``findings.write.decide``'s refused decisions), ``gozcu`` the watcher's answer of step 3 (``{hard_stop, freezes, lifts, marks, unjudged,
 unmeasured}``). A hard stop in it (this cycle's freeze passed ``soft_freeze_limit``) does not undo the cycle: it is
 written, with the freeze, and the caller ends red.
 
-Out of scope, stated: a row of the ledger for what the registry wrote or refused, and a refused proposal's
+Out of scope, stated: a row of the ledger for a case added or refused (the job's line names them); the dev cases of a genesis cycle
+(``activate`` writes that cycle and no case: the set starts in the cycle after); a row of the ledger for what the registry wrote or refused, and a refused proposal's
 element (``findings.write.Observed.refused`` is not returned: nothing gives a proposal yet); what a freeze closes besides D5's merges (``kos`` and ``cagir`` ran before this job, and
 this cycle's revert, drill and rows are written under a freeze); a record of the hard stop or of the operator's
 restart (the stop is read off the freeze rows each cycle); which drill step is due (``loop.drill``); whether GitHub's ruleset accepts the writes (``target.write``'s known limits); the signer's program (``loop.sign``).
@@ -122,6 +132,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from cases import store as case_store
 from dispatcher import llm_call
 from findings import write as findings_write
 from gate import allowlist
@@ -207,7 +218,8 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
           imports: bytes, cycle_id: str, ts: str, base_lint: dict | None = None,
           end: dict | None = None, drill: dict | None = None, gate: dict | None = None,
           passed: dict | None = None, proposals: list | None = None,
-          finding_decisions: list | None = None, merge_diff: str | None = None) -> dict[str, Any]:
+          finding_decisions: list | None = None, merge_diff: str | None = None,
+          cases: list | None = None) -> dict[str, Any]:
     """D6, D7's end of a sentinel, D8's step, the gate's and the PASS row (see the module docstring)."""
     cyc = {"cycle_id": cycle_id, "ts": ts, "snapshot_id": art.heads[B.INTEGRATION]}
     merge = decided["merge"]
@@ -306,7 +318,14 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         raise Unusable("findings: %s" % cli.cause(exc)) from None
     registers = {B.STATE_FINDINGS: kept.findings, B.STATE_UNRESOLVED: kept.unresolved}
     try:
-        cycle.plan(*args, dry + frozen, imports, facts, DRY, root_row_id, registers)
+        cased = case_store.add(art.state.get(B.STATE_CASES, b""), [] if cases is None else cases)
+    except case_store.Broken as exc:
+        raise land.HardStop("state: %s" % cli.cause(exc), []) from None
+    except case_store.Unusable as exc:
+        raise Unusable(cli.cause(exc)) from None
+    sets = {B.STATE_CASES: cased["content"]}
+    try:
+        cycle.plan(*args, dry + frozen, imports, facts, DRY, root_row_id, registers, sets)
     except append.HardStop as exc:
         raise land.HardStop("state: %s" % cli.cause(exc), []) from None
     except cycle.FAILURES as exc:
@@ -325,12 +344,13 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
                                     B.CHECK), instance_id=drill["instance_id"])
         planned = cycle.commit(state, "cycle %s" % cycle_id, *args,
                                rows(merged, plant and plant["merge_sha"]) + frozen, imports, facts, signer,
-                               root_row_id, registers)
+                               root_row_id, registers, sets)
     except (W.ApiError, W.Refused) + cycle.FAILURES as exc:
         raise land.HardStop("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     return {"merge": dict(merged, candidate=merge) if merged else None, "revert": reverted, "plant": plant,
             "state_sha": state.commits_made[-1],
             "root": planned["root"], "rekor_uuid": planned["entry"]["uuid"], "rows": len(planned["row_hashes"]),
             "edited": planned["edited"], "gozcu": judged,
+            "cases": {k: cased[k] for k in ("added", "kept", "refused")},
             "findings": {"rows": sum(len(o.rows) for o in kept.observed) + len(kept.decided.rows),
                          "unresolved_rows": len(kept.decided.unresolved_rows), "refused": kept.decided.refused}}

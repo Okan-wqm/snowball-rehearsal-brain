@@ -9,7 +9,7 @@ Rules: asama-0/01 D1 (``çek`` reads, at the SHA the bootstrap referee last acce
 ``brain_commit`` (the accepted SHA); ``summary`` and ``policy``, the bytes of the referee repository's
 ``setup/summary.json`` and ``policy.json``; ``target_id``; ``objects``, a ``loop.gitobj`` object source holding the
 target's commit; ``commit``, that commit's 40-hex id (``brain/integration``'s head); ``state_head``, the
-``brain/state`` head D1 verified, and ``state``, its files of ``target.branches.STATE_CHAINS`` and those of ``STATE_REGISTERS`` it
+``brain/state`` head D1 verified, and ``state``, its files of ``target.branches.STATE_CHAINS`` and those of ``STATE_CARRIED`` (the registers, the dev case set) it
 has (path -> bytes) as verified; ``status``, that head's ``status.md`` (``None`` when it has none), carried as read. ``state/heads.json`` is ``{brain/state: state_head, brain/integration: commit}``, so the head recorded
 for the tree is the commit the tree was read from. Nothing here reads the network or a clock.
 
@@ -77,10 +77,14 @@ for the tree is the commit the tree was read from. Nothing here reads the networ
   snapshot's files (the clean files of the commit), the ``inputs`` of the units ``units.json`` names, each as
   ``profile.derive.norm_path`` writes it (a
   ``units.json`` of another shape names none, and ``loop.pulled.read`` or the jobs after refuse it) and the
-  commit's id as the seed; the proposal is the artifact's ``mutations.json`` (``loop.pulled``, "Mutations"),
+  commit's id as the seed, and the rows of ``state``'s dev case set (``target.branches.STATE_CASES``,
+  ``cases.store.held``; none when the head has no such file) as the cases held, so the proposal goes first to
+  the rules the set has no case of and passes over the places it has (``cases.build``, "The proposal");
+  ``cases_invalid``: that file is no case set (D1's ``loop.state.verify`` refuses such a head before this is
+  called; said again here for a caller that did not verify); the proposal is the artifact's ``mutations.json`` (``loop.pulled``, "Mutations"),
   which ``kos`` runs and ``yaz`` judges (``cases.build``).
 - ``state_incomplete``: ``state`` does not map the paths of ``STATE_CHAINS``, and none besides those of
-  ``STATE_REGISTERS``, to bytes;
+  ``STATE_CARRIED``, to bytes;
   ``heads_invalid``: ``state_head`` or ``commit`` is not 40 lowercase hex, ``state_head`` ``None`` (the genesis
   cycle) only with both chains empty and no ``status`` (``loop.pulled.write``'s rules).
 
@@ -104,6 +108,7 @@ from typing import Any
 
 import cli
 from cases import build as CB
+from cases import store as CS
 from gate import allowlist as AL
 from harness import params as HP
 from loop import gitobj as G
@@ -310,7 +315,11 @@ def assemble(brain: G.Source, brain_commit: str, summary: bytes, policy: bytes, 
         tree = G.tree_tar(objects, commit)
         made = SM.make(objects, commit, [], "clean", target, _planted_max(policy))
         snapshot = made.document
-        mutations = CB.propose(made.files, _inputs(units), commit)
+        cases = state.get(B.STATE_CASES, b"") if isinstance(state, dict) else b""
+        mutations = CB.propose(made.files, _inputs(units), commit,
+                               held=CS.held(cases if isinstance(cases, bytes) else b""))
+    except CS.Broken:
+        reasons.append("cases_invalid")
     except P.PulledError as exc:
         reasons += exc.reasons
     except D.DeriveError:

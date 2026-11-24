@@ -31,6 +31,14 @@ STATE_STATUS = STATE_ROOT + "/status.md"
 STATE_FINDINGS = STATE_ROOT + "/findings.jsonl"
 STATE_UNRESOLVED = STATE_ROOT + "/unresolved.jsonl"
 STATE_REGISTERS = (STATE_FINDINGS, STATE_UNRESOLVED)
+# The dev case set (tohum/26m "Dev vaka seti" (1), (2)): one JSON-lines file, a case a line, written by D6 from
+# ``cases.build``'s judgement through ``cases.store`` and absent until its first case. It is no chain and no root
+# covers it (tohum/26n defers its hash chain to the stage 1 exit party): only the prefix rule holds, judged by
+# ``cases.store.check``.
+STATE_CASES = STATE_ROOT + "/cases/dev.jsonl"
+# The files a head has only once something was written to them: D1 carries the ones it finds (``loop.state``,
+# ``loop.pulled``).
+STATE_CARRIED = STATE_REGISTERS + (STATE_CASES,)
 
 
 def state_bundle(root: str) -> str:

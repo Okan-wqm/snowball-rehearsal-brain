@@ -51,7 +51,7 @@ ESLint over every place of the fixture; ``tests/test_cases.py``); on any other t
 pair; the toy's seven census rules (``cases.census``) each have one, and ``eqeqeq``, which is outside the toy's
 set, stays: a case of it counts as ``harness.score`` says ("outside_rules" there).
 
-**The proposal** (``propose(files, inputs, seed, limit)``): ``files`` maps a path to its bytes, ``inputs`` are
+**The proposal** (``propose(files, inputs, seed, limit, held)``): ``files`` maps a path to its bytes, ``inputs`` are
 the unit's input paths (``.`` is the whole tree). A place is (operator, path, line) where: the path is one of ``inputs`` or under one, ends
 in one of ``SUFFIXES`` and is written in ``PLAIN_PATH``'s characters only (a path git would quote in a diff
 header is left out); the file is UTF-8; the line ends in a newline, holds no carriage return, and the operator
@@ -60,8 +60,13 @@ changes it. The places of each operator are ordered by ``sha256(seed, operator, 
 (each operator's first place, then each one's second, ...) until ``limit`` (default ``LIMIT``, 2: each mutation
 costs ``koş`` three lint runs every cycle). The operators' order is the seed's so that a catalog longer than
 the limit is not always cut to its first two: which operators one proposal holds changes with the seed
-(``çek`` gives the commit). One proposal still holds at most ``limit`` rules: a report with every census rule
-cased needs cases kept across cycles, which nothing does today (the ledger's ``blocked`` row). Each is ``{operator, tool,
+(``çek`` gives the commit). ``held`` is the rows of the dev case set as the cycle read it (``cases.store.held``;
+none by default), and it changes the proposal in two ways, so that a set kept across cycles grows towards a
+case of every rule the catalog can plant: the operators whose ``(tool, rule_id)`` no held row has come first
+(each half in the seed's order), and a place whose case id (``case_id``) a held row has is passed over, the
+operator's next place taking its turn. One proposal still holds at most ``limit`` mutations, and nothing here
+remembers a place the judgement refused: with the same seed it is proposed again (the seed is the commit, so
+until ``brain/integration`` moves). Each is ``{operator, tool,
 rule_id, path, line, diff}`` under its mutation id ``<operator>-<16 hex of sha256(operator, path, line, the
 file's sha256)>``; ``diff`` is a git diff of one hunk that replaces that one line. Same inputs, same proposal.
 
@@ -89,7 +94,7 @@ judged:
 
 Valid (no reason) gives the violation's line and the hunk that holds it.
 
-**The case** (``build(base_sha, mutations, index, read, source, fingerprint)``: ``index`` is the ``results``
+**The case** (``build(base_sha, mutations, index, read, source, fingerprint, unit_root)``: ``index`` is the ``results``
 artifact's ``index.json`` parsed, ``read(path)`` the bytes of one of its files or ``None``; ``source(path)`` the
 bytes of a file of the tree the mutations were proposed on or ``None``, and ``fingerprint(finding, read)`` the
 function that makes a finding's fingerprint, both the caller's: ``loop.job`` gives ``findings.write.fingerprint``,
@@ -114,10 +119,22 @@ on a line of other text shares nothing. A valid mutation with neither reason is 
 tohum/26 case ``{case_id: "k0-<mid>", class_level: "K0", property: "lint", provenance: "mutation", base_sha,
 mutation_id, touched_paths: [{path, hunks: [{start, end}]}], tool, rule_id, validity_evidence: {kind:
 "tool_diff", ref: "m/<mid>/mut.jsonl", output_sha256}, split: "dev", group}``: the hunk is the mutated side of the
-hunk holding the violation (lines of the mutated file: the case's mapped line), ``group`` the directory of
-``path`` (no page says what a module group is; this module's choice, the same report). Its oracle finding is
+hunk holding the violation (lines of the mutated file: the case's mapped line), ``group`` the case's module
+group (``group``, below; a mutation with none is refused, ``group_unmade``). Its oracle finding is
 ``{class_level, property, file, tool, rule_id, evidence_refs: [{path, line_start, line_end}]}`` at the
 violation's line. Output ``{cases: [case], oracle: {case_id: finding}, refused: {mid: [reason]}}``.
+
+**The group** (``group(path, source, unit_root)``; tohum/26e: "değiştirilen dosyaya en yakın, paket manifesti
+taşıyan dizin; öyle bir dizin yoksa birimin köküdür"): the first directory, from the mutated file's own upwards
+to the tree's root, that holds a file ``source`` reads under one of ``profile.derive.PROJECT_MANIFESTS``' names
+(``package.json``, ``project.json``: the one list of what marks a project's directory; the tree's root is
+``.``); when none does, ``unit_root``, the unit's ``path`` (``loop.job`` gives it as
+``profile.derive.norm_path`` writes it). The readings made here, the page being silent: a "paket manifesti" is a
+name of that list and no other ecosystem's; the walk does not stop at the unit's root, so a manifest above the
+unit is the group of a file with none nearer; a manifest ``source`` does not read (a link, a directory) marks
+nothing. ``group_unmade``, in ``build``: no directory holds one and ``unit_root`` is ``None`` (the unit names no
+usable path); the mutation is refused, with that reason alone (it is judged after the judgement's reasons and
+before the fingerprint's).
 
 **The hit** (``hit(finding, case, window)``, match-rule v2 for one finding and one case):
 
@@ -135,9 +152,8 @@ Anything of another shape is no hit. That a finding takes at most one case and a
 the scorer's rule (``harness.score.match``), not this function's; the scorer is this function's caller,
 ``build`` itself does not call it.
 
-Out of scope, stated: writing the dev set to ``<state_root>/cases/`` (13a). No page gives that directory's
-layout, its file format or how an append-only set is carried between cycles (tohum/01b); the cases are on
-``yaz``'s line, rebuilt each cycle (reports/seed-075). Also: 13a's first source (history, ``human_fix``); a mutation of more than one line or of a
+Out of scope, stated: the dev set's file (``cases.store``: ``yaz`` adds this module's cases to
+``<state_root>/cases/dev.jsonl`` through ``loop.write_cycle``, tohum/26m); 13a's first source (history, ``human_fix``); a mutation of more than one line or of a
 file that is not UTF-8; tools other than ESLint; the exit sample (``exit.sample``).
 
 **The command**, run from ``referee/`` (tohum/29za's ``census`` vectors)::
@@ -156,11 +172,12 @@ import json
 import posixpath
 import re
 import sys
-from typing import Any, Callable
+from typing import Any, Callable, Iterable, Iterator
 
 import cli
 from gate import check as GC
 from gate import diffguard
+from profile import derive
 
 TOOL = "eslint"
 _CODE = r"^(?![ \t]*(?:import\b|//|/\*|\*))"      # the start of a line that begins neither an import nor a comment
@@ -258,21 +275,39 @@ def _mutation(op: dict, path: str, line: int, data: bytes) -> tuple[str, dict]:
                  "diff": _diff(path, line, old, new)}
 
 
-def propose(files: dict[str, bytes], inputs: list[str], seed: str, limit: int = LIMIT) -> dict[str, dict]:
+def case_id(mid: str) -> str:
+    """The id of the case mutation ``mid`` makes."""
+    return "k0-%s" % mid
+
+
+def propose(files: dict[str, bytes], inputs: list[str], seed: str, limit: int = LIMIT,
+            held: Iterable[dict] = ()) -> dict[str, dict]:
     """``{mutation id: mutation}``, at most ``limit``; see the module docstring, "The proposal"."""
     places = _places(files, inputs)
     for op_id, found in places.items():
         found.sort(key=lambda p: _sha(seed, op_id, p[0], str(p[1])))
+    held = list(held)
+    cased = {(row.get("tool"), row.get("rule_id")) for row in held}
+    ids = {row.get("case_id") for row in held}
+
+    def fresh(op: dict) -> Iterator[tuple[str, dict]]:
+        for path, line in places[op["id"]]:
+            mid, mutation = _mutation(op, path, line, files[path])
+            if case_id(mid) not in ids:
+                yield mid, mutation
+
     out: dict[str, dict] = {}
-    turns = sorted(CATALOG, key=lambda op: _sha(seed, "operator", op["id"]))
-    for rank in range(max([len(found) for found in places.values()] + [0])):
-        for op in turns:
-            if rank < len(places[op["id"]]) and len(out) < limit:
-                path, line = places[op["id"]][rank]
-                mid, mutation = _mutation(op, path, line, files[path])
-                out[mid] = mutation
-        if len(out) >= limit:
-            break
+    turns = [fresh(op) for op in sorted(CATALOG, key=lambda op: ((op["tool"], op["rule_id"]) in cased,
+                                                                 _sha(seed, "operator", op["id"])))]
+    while turns and len(out) < limit:
+        for turn in list(turns):
+            if len(out) >= limit:
+                break
+            found = next(turn, None)
+            if found is None:
+                turns.remove(turn)
+            else:
+                out[found[0]] = found[1]
     return out
 
 
@@ -436,8 +471,18 @@ def _shared(block: dict, oracle: dict, mut_run: bytes, source: Callable[[str], "
     return []
 
 
+def group(path: str, source: Callable[[str], "bytes | None"], unit_root: str | None) -> str | None:
+    """The module group of a case that mutates ``path``; see the module docstring, "The group"."""
+    at = posixpath.dirname(path)
+    while not any(source(posixpath.join(at, name)) is not None for name in derive.PROJECT_MANIFESTS):
+        if not at:
+            return unit_root
+        at = posixpath.dirname(at)
+    return at or "."
+
+
 def _one(base_sha: str, mid: str, mutation: Any, index: dict, read: Callable[[str], "bytes | None"],
-         source: Callable[[str], "bytes | None"], fingerprint: Callable) -> tuple:
+         source: Callable[[str], "bytes | None"], fingerprint: Callable, unit_root: str | None) -> tuple:
     """``(reasons, case, oracle)`` of one mutation."""
     block = _block(mutation)
     if block is None:
@@ -455,13 +500,16 @@ def _one(base_sha: str, mid: str, mutation: Any, index: dict, read: Callable[[st
     if reasons:
         return reasons, None, None
     path = mutation["path"]
-    case = {"case_id": "k0-%s" % mid, "class_level": "K0", "property": "lint", "provenance": "mutation",
+    module = group(path, source, unit_root)
+    if module is None:
+        return ["group_unmade"], None, None
+    case = {"case_id": case_id(mid), "class_level": "K0", "property": "lint", "provenance": "mutation",
             "base_sha": base_sha, "mutation_id": mid,
             "touched_paths": [{"path": path, "hunks": [found["hunk"]]}],
             "tool": mutation["tool"], "rule_id": mutation["rule_id"],
             "validity_evidence": {"kind": EVIDENCE_KIND, "ref": run_path(mid),
                                   "output_sha256": hashlib.sha256(mut_run).hexdigest()},
-            "split": "dev", "group": posixpath.dirname(path) or "."}
+            "split": "dev", "group": module}
     oracle = {"class_level": "K0", "property": "lint", "file": path, "tool": mutation["tool"],
               "rule_id": mutation["rule_id"],
               "evidence_refs": [{"path": path, "line_start": found["line"], "line_end": found["line"]}]}
@@ -472,13 +520,13 @@ def _one(base_sha: str, mid: str, mutation: Any, index: dict, read: Callable[[st
 
 
 def build(base_sha: str, mutations: Any, index: Any, read: Callable[[str], "bytes | None"],
-          source: Callable[[str], "bytes | None"], fingerprint: Callable) -> dict[str, Any]:
+          source: Callable[[str], "bytes | None"], fingerprint: Callable, unit_root: str | None) -> dict[str, Any]:
     """``{cases, oracle, refused}`` of the proposed ``mutations`` (``{mid: mutation}``; any other value is no
     mutation) from ``koş``'s results; see the module docstring, "The case"."""
     out: dict[str, Any] = {"cases": [], "oracle": {}, "refused": {}}
     index = index if isinstance(index, dict) else {}
     for mid in sorted(mutations if isinstance(mutations, dict) else {}):
-        reasons, case, oracle = _one(base_sha, mid, mutations[mid], index, read, source, fingerprint)
+        reasons, case, oracle = _one(base_sha, mid, mutations[mid], index, read, source, fingerprint, unit_root)
         if reasons:
             out["refused"][mid] = reasons
         else:

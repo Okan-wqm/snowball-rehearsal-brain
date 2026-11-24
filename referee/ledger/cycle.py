@@ -12,7 +12,8 @@ no ``brain/state`` yet, the activation's orphan commit), the head's ``status.md`
 cycle's rows (JSON objects without ``prev_hash`` and ``row_hash``), ``setup/imports.jsonl``'s bytes, the status facts
 ``{ts, snapshot_id, row_id, canary_cap_usd_micros}`` (``status.block``'s), the signer and the root row's id;
 ``registers``, the cycle's chained state files beside the ledger (a path of ``brain/state``'s commit -> its new
-bytes: ``findings.write``'s files from D6, tohum/26j; none by default).
+bytes: ``findings.write``'s files from D6, tohum/26j; none by default); ``sets``, the cycle's state files no root
+covers (a path -> its new bytes: the dev case set from D6, ``cases.store``, tohum/26m; none by default).
 
 **Order**, nothing signed or returned before every check holds:
 
@@ -34,8 +35,9 @@ bytes: ``findings.write``'s files from D6, tohum/26j; none by default).
 commit to bytes, all under the state directory (``target.branches.STATE_ROOT``, tohum/26d "Yer"): exactly
 ``.brain/ledger.jsonl``, ``.brain/chain/root.jsonl``, ``.brain/status.md`` and the new root's Sigstore bundle as the
 signer gave it, ``.brain/chain/<root>.sigstore.json`` (``ledger.anchor.bundle_path``), beside the root row that names
-that root, and each register that is not empty at its path (an empty one is not written: the commit keeps what the
-head has there). The bundles of earlier roots stay where their cycles wrote them. ``plan`` writes nothing. ``commit`` plans
+that root, and each register and each file of ``sets`` that is not empty at its path (an empty one is not written: the
+commit keeps what the head has there). A path of ``sets`` that is not under the state directory, or is another
+file's of the commit, is ``Unusable`` before anything is signed. The bundles of earlier roots stay where their cycles wrote them. ``plan`` writes nothing. ``commit`` plans
 and hands ``files`` to the state writer in one ``commit_files`` call (``ledger.append.CountingState`` or
 ``TargetState``): the cycle's one commit. The activation opens ``brain/state`` with ``plan``'s files as an orphan
 commit (``target.write.Writer.open_orphan``).
@@ -44,7 +46,8 @@ Out of scope, stated: which rows a cycle writes (the caller's: ``activate`` and 
 ``loop.write_cycle``, both through ``ledger.events``); where ``status.md`` and the previous versions come from (the
 caller's read of ``brain/state``: D6 takes them from ``pulled``, which D1 filled); the meaning of a row's values
 (``ledger.schema`` checks shapes); a register's rows and that it extends the head's version (``findings.write``
-plans them; here it is rooted and written as given); what the bundle's bytes are (the signer's: ``loop.sign`` checks the real one
+plans them; here it is rooted and written as given); a file of ``sets`` (``cases.store`` adds to the head's version; here
+it is written as given, and the root says nothing of it: tohum/26n defers the set's hash chain); what the bundle's bytes are (the signer's: ``loop.sign`` checks the real one
 before it answers); a ``profile.json`` in the state directory (no module writes one).
 """
 
@@ -55,6 +58,7 @@ from typing import Any
 
 from ledger import anchor, append, chain, schema
 from status import block
+from target import branches
 
 
 class Unusable(ValueError):
@@ -68,7 +72,7 @@ FAILURES = (append.HardStop, append.SecretRow, append.Unusable, Unusable, block.
 
 def plan(ledger: bytes, previous: bytes, roots: bytes, previous_roots: bytes, status: bytes | None, rows: Any,
          imports: bytes, facts: Any, signer: Any, root_row_id: str,
-         registers: dict[str, bytes] | None = None) -> dict[str, Any]:
+         registers: dict[str, bytes] | None = None, sets: dict[str, bytes] | None = None) -> dict[str, Any]:
     """The cycle's files and what they record; see the module docstring. Writes nothing."""
     verdict = chain.verify_bytes(roots, previous_roots)
     if not verdict["valid"]:
@@ -85,20 +89,24 @@ def plan(ledger: bytes, previous: bytes, roots: bytes, previous_roots: bytes, st
         raise Unusable("root row: %s" % "; ".join(reasons))
     tip_map = anchor.tips(cycle.content, anchor.named(registers))
     root = anchor.root_of(tip_map)
+    taken = {anchor.LEDGER_PATH, anchor.ROOTS_PATH, block.STATUS_PATH, anchor.bundle_path(root), *(registers or {})}
+    for path in sets or {}:
+        if not path.startswith(branches.STATE_ROOT + "/") or path in taken:
+            raise Unusable("sets: %s is not a free path of the state directory" % path)
     entry, bundle = anchor.anchor(tip_map, signer)
     files = {anchor.LEDGER_PATH: cycle.content, anchor.ROOTS_PATH: anchor.root_row(roots, root_row_id, ts, root,
                                                                                    entry["uuid"]),
              anchor.bundle_path(root): bundle, block.STATUS_PATH: planned["status"]}
-    files.update({path: data for path, data in (registers or {}).items() if data})
+    files.update({path: data for path, data in {**(registers or {}), **(sets or {})}.items() if data})
     return {"files": files, "row_hashes": cycle.row_hashes, "root": root, "entry": entry,
             "block_sha256": planned["block_sha256"], "edited": planned["edited"]}
 
 
 def commit(state: Any, message: str, ledger: bytes, previous: bytes, roots: bytes, previous_roots: bytes,
            status: bytes | None, rows: Any, imports: bytes, facts: Any, signer: Any, root_row_id: str,
-           registers: dict[str, bytes] | None = None) -> dict[str, Any]:
+           registers: dict[str, bytes] | None = None, sets: dict[str, bytes] | None = None) -> dict[str, Any]:
     """``plan`` and its files in one ``state.commit_files`` call; returns ``plan``'s result."""
     planned = plan(ledger, previous, roots, previous_roots, status, rows, imports, facts, signer, root_row_id,
-                   registers)
+                   registers, sets)
     state.commit_files(planned["files"], message)
     return planned

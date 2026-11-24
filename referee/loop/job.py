@@ -163,8 +163,12 @@ refused tree is ``pulled_invalid``). Then:
   output and ``done`` is ``["D5"]``. Once D5 has decided, the dev cases (P1 MF3, ``yaz_cases``): ``cases.build.build``
   judges ``pulled``'s ``mutations.json`` against the results (``index.json``'s ``mutations`` and ``base_run_sha256``,
   ``base.jsonl`` and each ``m/<mid>/mut.jsonl`` read under its hash) with ``brain/integration``'s head as
-  ``base_sha``; the target's line has ``cases`` (``{cases, oracle, refused}``, "The case" there) whatever the
-  steps after D5 gave; ``build`` makes each planted violation's fingerprint with ``findings.write.fingerprint``
+  ``base_sha`` and the one unit's ``path`` as the unit's root of a case's group; the target's line has ``cases``
+  (``{cases, oracle, refused}``, "The case" there) whatever the
+  steps after D5 gave, and D6 adds those cases to the dev case set, ``<state_root>/cases/dev.jsonl``, in the
+  cycle's ``brain/state`` commit (``loop.write_cycle``, ``cases.store``, tohum/26m: ``written.cases`` names
+  the ids added, kept and refused; a genesis cycle, which ``activate`` writes, and a cycle D6 does not
+  write add none); ``build`` makes each planted violation's fingerprint with ``findings.write.fingerprint``
   on the extracted tree with the mutation applied (tohum/26q (7)). No harness report is scored (P1 MF4,
   tohum/26q (6)): no cycle has a hunter run on its cases' snapshot (the first hunter is stage 1 MF1's), so the
   target's line has ``harness`` ``{reason: "no_hunter_run"}`` (``NO_HUNTER_RUN``) in every cycle, with a case and
@@ -194,8 +198,8 @@ refused tree is ``pulled_invalid``). Then:
   that candidate's reject there, and D6 gets D5's ``finding_decisions`` and, for a run-time merge, its diff
   read again under the package hash D5 decided on (``loop.candidates.merge_diff``; a package changed in between
   is ``Unusable``).
-  Nothing reads ``cases``, ``harness``, ``organs`` or ``reruns`` to decide and nothing is written from them: no merge, row or exit code
-  depends on a case or a report (``<state_root>/cases/`` is not written yet, reports/seed-075). Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
+  Nothing reads ``cases``, ``harness``, ``organs`` or ``reruns`` to decide: no merge, row or exit code
+  depends on a case or a report; of the four only ``cases`` is written, to the dev case set. Which merges' sentinels are unfinished (criterion 8) is the cycle's state:
   ``ledger.serial.unfinished`` of ``pulled``'s ``state/ledger.jsonl`` (``brain/state``'s ledger as D1 verified it), read
   before the tree is judged; a ledger it cannot read is ``state_refused`` with its reasons (exit 1), nothing decided. A
   merge is unfinished until its revert row: the end of a green sentinel has no row until D7 writes one, so after the
@@ -847,10 +851,13 @@ def yaz_cases(environ: dict[str, str], tid: str, art: Any, tree: str) -> dict[st
     """The dev cases of target ``tid``'s cycle (P1 MF3; see the module docstring): ``cases.build.build`` of
     ``pulled``'s mutations on ``$RUNNER_TEMP/in/results/<tid>``, each file a regular file with no link on its way
     (else absent); an index that is absent or not JSON is an empty one (every mutation ``kos:missing``). The
-    tree the mutations are applied to for their fingerprints is the extracted ``tree``, read the same way."""
+    tree the mutations are applied to for their fingerprints is the extracted ``tree``, read the same way, and
+    a case's group is read on it too, the unit's root being its ``path`` (``cases.build``, "The group")."""
     index, read = _results(environ, tid)
+    unit = art.units["units"][0]    # ``_read_unit`` read exactly one
     return CB.build(art.heads[B.INTEGRATION], art.mutations, index, read,
-                    lambda path: D._read_regular(tree, path), FW.fingerprint)
+                    lambda path: D._read_regular(tree, path), FW.fingerprint,
+                    D.norm_path(unit.get("path")) if isinstance(unit, dict) else None)
 
 
 def _results(environ: dict[str, str], tid: str) -> tuple[Any, Any]:
@@ -1044,8 +1051,9 @@ def yaz_pass(environ: dict[str, str], tid: str, art: Any) -> tuple[dict[str, Any
 def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
            signer: Any = None, now: Any = None, base_lint: dict | None = None,
            end: dict | None = None, drill: dict | None = None, gate: dict | None = None,
-           passed: dict | None = None, job_calls: list | None = None) -> dict[str, Any]:
-    """D6 of ``yaz``, with D7's ``end``, D8's step, the gate's and the PASS row (see the module docstring): ``{reason,
+           passed: dict | None = None, job_calls: list | None = None,
+           cases: list | None = None) -> dict[str, Any]:
+    """D6 of ``yaz``, with D7's ``end``, D8's step, the gate's and the PASS row and the cycle's dev ``cases`` (see the module docstring): ``{reason,
     reasons,
     written?}`` or
     ``{written}``. ``transport``
@@ -1062,7 +1070,8 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
         sha = d5["decisions"][d5["merge"]].get("package_sha256") if d5["merge"] is not None else None
         diff = None if sha is None else LC.merge_diff(_dir(environ, "in", "results", tid), d5["merge"], sha)
         return {"written": WC.write(art, tree, d5, cost, writer, signer, imports, cycle_id, ts, base_lint, end, drill,
-                                    gate, passed, finding_decisions=d5["finding_decisions"], merge_diff=diff),
+                                    gate, passed, finding_decisions=d5["finding_decisions"], merge_diff=diff,
+                                    cases=cases),
                 "sign_calls": _sign_calls(signer, seen)}
     except LC.Unusable as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
@@ -1633,15 +1642,16 @@ def _yaz(environ: dict[str, str], tid: str, transport: Any = None, signer: Any =
         cases = yaz_cases(environ, tid, art, tree)
         organs = yaz_organs(environ, tid)
         reruns = yaz_reruns(environ, tid)
-        written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls)
+        written = _yaz_written(environ, tid, d5, art, tree, transport, signer, now, job_calls, cases["cases"])
         return dict(written, organs=organs, reruns=reruns, cases=cases, harness=dict(NO_HUNTER_RUN))
     except OF.Online as exc:
         return {"ok": False, "reason": "harness_online", "reasons": exc.reasons}
 
 
 def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any, tree: str, transport: Any,
-                 signer: Any, now: Any, job_calls: list | None = None) -> dict[str, Any]:
-    """``yaz``'s line after D5 decided: D7's half, the genesis cycle or D8, the gate, the pass row and D6."""
+                 signer: Any, now: Any, job_calls: list | None = None, cases: list | None = None) -> dict[str, Any]:
+    """``yaz``'s line after D5 decided: D7's half, the genesis cycle or D8, the gate, the pass row and D6, which
+    adds ``cases`` (the cycle's dev cases) to the dev case set; a genesis cycle writes none."""
     d7, end, lint = yaz_d7(environ, tid, art)
     if "reason" in d7:
         return dict(ok=False, done=["D5"], **d5, **d7)
@@ -1654,7 +1664,8 @@ def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any
     gate = yaz_gate(environ, art)
     opened = PR.gate_payload() if gate is not None and gate["verdict"] == "open" else None
     judged, passed = yaz_pass(environ, tid, art)
-    d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened, passed, job_calls)
+    d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened, passed, job_calls,
+                cases)
     shown = dict({} if gate is None else {"gate": gate}, **({} if judged is None else {"pass": judged}))
     if "reason" in d6:
         return dict(ok=False, done=["D5"], **d5, **d7, **d6, **shown)
