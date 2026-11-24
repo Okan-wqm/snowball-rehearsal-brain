@@ -193,7 +193,7 @@ refused tree is ``pulled_invalid``). Then:
   ``runner.candidate_rerun.reran`` is asked for the package and the gate's files, which it hands out only for a
   package ``kos`` reran ("Before the gate" there); the target's line has ``reruns``, per id
   ``{reran: true, package_sha256, verified}`` (``verified``: whether ``kos`` verified the rerun; one it did not
-  is rejected at the gate by its entry's reasons) or ``{reran: false, reasons}`` (``package_missing``,
+  is rejected by D5 with its entry's reasons) or ``{reran: false, reasons}`` (``package_missing``,
   ``rerun_missing``, ``rerun_files_missing``). The line is a report: D5 (``loop.decide``, P1 MF12) reads those of them that
   are candidate ids itself through ``loop.candidates`` in every cycle but the genesis cycle, a candidate that was not rerun is
   that candidate's reject there, and D6 gets D5's ``finding_decisions`` and, for a run-time merge, its diff

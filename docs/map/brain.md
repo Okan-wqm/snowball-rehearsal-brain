@@ -151,7 +151,6 @@ flowchart LR
   n0 --> n92
   n0 --> n93
   n2 --> n5
-  n2 --> n11
   n2 --> n14
   n2 --> n15
   n2 --> n63
@@ -271,6 +270,7 @@ flowchart LR
   n42 --> n61
   n42 --> n63
   n42 --> n91
+  n43 --> n2
   n43 --> n5
   n43 --> n11
   n43 --> n13
@@ -494,7 +494,7 @@ flowchart LR
 |---|---|---|---|---|---|---|
 | activate | activate.py | yes | yes | cli, drift.check, gate.check, ledger.append, ledger.chain, ledger.cycle, ledger.events, ledger.schema, loop.accepted, loop.pulled, loop.write_cycle, target.branches, target.land, target.write | loop.job |  |
 | cases | cases/__init__.py | yes |  |  |  |  |
-| cases.build | cases/build.py | yes | yes | cli, findings.write, gate.check, gate.diffguard, profile.derive, runner.candidate_rerun | findings.write, harness.score, loop.cek, loop.job |  |
+| cases.build | cases/build.py | yes | yes | cli, gate.check, gate.diffguard, profile.derive, runner.candidate_rerun | findings.write, harness.score, loop.candidates, loop.cek, loop.job |  |
 | cases.census | cases/census.py | no |  |  |  | unwired: a target kind's census rule set, the scorer's denominator (tohum/26q (10)); its one caller in the loop was the report loop.job no longer scores (see harness.score); run by tests/test_cases.py and tests/test_score.py |
 | cases.store | cases/store.py | yes |  | cli, ledger.chain | loop.cek, loop.state, loop.write_cycle |  |
 | cli | cli.py | yes |  |  | activate, cases.build, cases.store, dispatcher.llm_call, drift.check, gate.allowlist, gate.check, gate.diffguard, gate.revert, gate.secrets, gate.sentinel, harness.offline, harness.pass_row, harness.revert_drill, harness.score, harness.stats, ledger.anchor, ledger.append, ledger.chain, ledger.founder, ledger.schema, loop.accepted, loop.cagir, loop.candidates, loop.cek, loop.decide, loop.drill, loop.inputs, loop.job, loop.pulled, loop.rekor, loop.sign, loop.treehash, loop.watch, loop.write_cycle, policy.reads, profile.derive, profile.docker, profile.fit, profile.ghactions, profile.jsimports, profile.unit_verify, runner.candidate_rerun, runner.contained, runner.deps_npm, runner.kos, runner.lint_record, runner.organ_output, status.block, status.depmap, status.exit_b, target.write |  |
@@ -503,7 +503,7 @@ flowchart LR
 | drift | drift/__init__.py | yes |  |  |  |  |
 | drift.check | drift/check.py | yes | yes | cli, ledger.chain, ledger.schema, loop.accepted, loop.treehash, policy.reads, target.branches, target.write | activate, loop.job |  |
 | findings | findings/__init__.py | yes |  |  |  |  |
-| findings.write | findings/write.py | yes |  | cases.build, ledger.append, ledger.chain, ledger.events, ledger.schema, profile.derive | cases.build, loop.candidates, loop.decide, loop.job, loop.write_cycle |  |
+| findings.write | findings/write.py | yes |  | cases.build, ledger.append, ledger.chain, ledger.events, ledger.schema, profile.derive | loop.candidates, loop.decide, loop.job, loop.write_cycle |  |
 | gate | gate/__init__.py | yes |  |  |  |  |
 | gate.allowlist | gate/allowlist.py | yes |  | cli, ledger.events, ledger.schema, runner.organs | loop.candidates, loop.cek, loop.decide, loop.write_cycle |  |
 | gate.check | gate/check.py | yes | yes | cli, gate.diffguard, gate.secrets | activate, cases.build, loop.decide, loop.watch |  |
@@ -535,7 +535,7 @@ flowchart LR
 | loop | loop/__init__.py | yes |  |  |  |  |
 | loop.accepted | loop/accepted.py | yes |  | cli, httpbody, ledger.chain, loop.gitobj, loop.program, loop.pulled, loop.treehash | activate, drift.check, harness.pass_row, loop.drill, loop.inputs, loop.job, loop.rekor, loop.sign |  |
 | loop.cagir | loop/cagir.py | yes |  | cli, dispatcher.llm_call, loop.pulled, policy.reads, profile.derive, target.branches | loop.job, loop.write_cycle |  |
-| loop.candidates | loop/candidates.py | yes |  | cli, findings.write, gate.allowlist, ledger.schema, profile.derive, runner.candidate_rerun, runner.kos | loop.decide, loop.job |  |
+| loop.candidates | loop/candidates.py | yes |  | cases.build, cli, findings.write, gate.allowlist, ledger.schema, profile.derive, runner.candidate_rerun, runner.kos | loop.decide, loop.job |  |
 | loop.cek | loop/cek.py | yes |  | cases.build, cases.store, cli, gate.allowlist, harness.params, loop.gitobj, loop.pulled, profile.derive, runner.kos, runner.organs, snapshot.make, target.branches | loop.job |  |
 | loop.decide | loop/decide.py | yes |  | cli, findings.write, gate.allowlist, gate.check, gate.diffguard, ledger.append, ledger.events, ledger.serial, loop.candidates, loop.pulled, profile.derive, profile.unit_verify, runner.candidate_rerun, target.branches | loop.job |  |
 | loop.drill | loop/drill.py | yes |  | cli, harness.offline, harness.revert_drill, ledger.chain, loop.accepted, target.land | harness.pass_row, loop.job |  |

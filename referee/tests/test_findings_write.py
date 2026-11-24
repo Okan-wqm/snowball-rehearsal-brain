@@ -48,6 +48,7 @@ import unittest
 REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
+from cases import build as CB  # noqa: E402
 from findings import write as W  # noqa: E402
 from gate import allowlist as GA  # noqa: E402
 from gozcu import watch as GW  # noqa: E402
@@ -212,11 +213,11 @@ class Fingerprint(unittest.TestCase):
         first = lint(evidence_refs=lint(2)["evidence_refs"] + elsewhere + lint(3)["evidence_refs"])
         self.assertEqual(W.fingerprint(first, read), W.fingerprint(lint(2), read))
         self.assertNotEqual(W.fingerprint(first, read), W.fingerprint(lint(3), read))
-        self.assertEqual(W.primary(first), lint(2)["evidence_refs"][0])
+        self.assertEqual(CB.primary(first), lint(2)["evidence_refs"][0])
         for none in (lint(evidence_refs=elsewhere + lint(2)["evidence_refs"]), {}, {"evidence_refs": []},
                      {"evidence_refs": ["pkg/a.js"], "file": "pkg/a.js"}, {"evidence_refs": [{}]},
                      {"evidence_refs": None, "file": None}):
-            self.assertIsNone(W.primary(none))
+            self.assertIsNone(CB.primary(none))
 
     def test_two_equal_lines_of_a_file_are_one_finding(self):
         tree = {"pkg/a.js": b"var a = 1;\nlet b;\nvar a = 1;\n"}

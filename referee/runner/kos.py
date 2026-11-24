@@ -116,7 +116,7 @@ an organ's kept output holds at ``candidates/<id>/package.json``). Every package
 is rerun, in the order of the ids, through ``candidate_rerun.rerun``: the outputs are read back from ``o/`` by the
 hashes the organs' entries name (one not read back is unusable input: the store this process wrote does not hold
 what it hashed). An ``<id>`` two outputs hold with different bytes is ``refused`` ``package_id_twice`` and one that
-is no ``CANDIDATE_ID`` ``candidate_id_invalid``, and nothing is written for either. Else the package is written
+is no run-time candidate id (``candidate_rerun.ID``: no dot, tohum/26p) ``candidate_id_invalid``, and nothing is written for either. Else the package is written
 at ``candidates/<id>/package.json`` of ``OUT`` (tohum/26a: the package stands there in ``koş``'s output tree). A
 package without a diff is ``refused`` ``package_unusable``; without ``base.jsonl`` nothing runs
 (``base_unavailable``); otherwise the diff is given to the code of "A candidate" above, the same function with

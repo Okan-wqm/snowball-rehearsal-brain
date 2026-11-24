@@ -48,8 +48,8 @@ object, no entry that is an object under ``cid``, or an entry of other bytes: so
 differs from the one rerun), or ``rerun_files_missing`` (the entry's ``verdict`` is ``verified`` and one of the
 three files is absent). An entry of another verdict (a diff that did not apply, a run that told nothing, a
 package without a diff) is a rerun, not a missing one: it is handed out with whatever files stand there, and the
-gate's reader (``loop.decide``) rejects the candidate with the entry's reasons, as it does a ready candidate
-``koş`` refused (``verified`` tells the two apart). It does not compare the files with ``hashes.json``: that is
+gate's reader (``loop.candidates.read``, ``loop.decide``) rejects the candidate with the entry's reasons, as it
+does a ready candidate ``koş`` refused (``verified`` tells the two apart). It does not compare the files with ``hashes.json``: that is
 the gate's own criterion (``gate.check``, ``artefact_hash_mismatch``), as for a ready candidate.
 
 **The reasons of an entry** (``kos_reasons``): the one reading of an index entry ``koş`` did not verify, for a

@@ -43,8 +43,9 @@ ready ones.
 
 - An id that is also a ready candidate's is one reject for both, ``candidate_id_twice`` (one id is one decision
   row), and neither is judged.
-- A candidate ``loop.candidates.read`` refuses carries that one reason (a package not read by its rerun's hash,
-  or ``package_invalid``) and nothing else is judged for it: it does not reach the gate.
+- A candidate ``loop.candidates.read`` refuses carries that refusal's reasons (the one reason of a package not
+  read by its rerun's hash; ``package_invalid``, with the ``kos:<reason>`` reasons of its rerun's entry when
+  ``koş`` did not verify the rerun) and nothing else is judged for it: it does not reach the gate.
 - Otherwise its reasons are the path reasons of its package's ``diff`` (``diff_unusable`` as above), the
   ``kos:<reason>`` reasons of its rerun's entry when ``koş`` did not verify the rerun
   (``runner.candidate_rerun.kos_reasons``, as for a ready candidate; tohum/26p (5): such a rerun is not a
@@ -217,7 +218,7 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
             decisions[cid] = {"decision": "reject", "reasons": [TWICE]}
             continue
         if isinstance(cand, list):
-            decisions[cid] = {"decision": "reject", "reasons": cand}
+            decisions[cid] = {"decision": "reject", "reasons": sorted(set(cand))}
             continue
         if cand is None:
             diff_text = art.candidates[cid]["diff.patch"].decode("utf-8", "surrogateescape")

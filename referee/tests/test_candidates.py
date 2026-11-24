@@ -308,12 +308,30 @@ class Live(LiveBase):
         merge, reasons, sent = self.judged()
         self.assertEqual(merge, "good")
         self.assertEqual(reasons, {"bad": ["package_invalid"], "good": [], "nofinding": ["package_invalid"],
-                                   "notjson": ["package_invalid"], "old": ["no_organ", "sentinel_pending"],
+                                   "notjson": ["kos:package_unusable", "package_invalid"], "old": ["no_organ", "sentinel_pending"],
                                    "ready": ["candidate_id_twice"]})
         self.assertEqual(sent, [{"fingerprint": PRINT, "reasons": []}])
         self.github()
         line = self.line(self.run_yaz())
         self.assertEqual((line["ok"], line["merge"], self.reasons(line)), (True, "good", reasons))
+
+    def test_a_package_without_form_keeps_the_reasons_of_its_rerun(self):
+        # tohum/26p (5), "girdisinin her nedeniyle": no reason of the entry is lost where the gate cannot be asked
+        nodiff = json.dumps({"finding": VAR, "organ_ids": [OID], "definition_sha256": []}).encode()
+        self.world({"nodiff": nodiff, "notjson": b"\xff{", "rt": package()})
+        refused = ["kos:package_unusable", "package_invalid"]
+        self.assertEqual(self.judged(), ("rt", {"nodiff": refused, "notjson": refused, "rt": []},
+                                         [{"fingerprint": PRINT, "reasons": []}]))
+        index = json.loads(self.change("index.json"))
+        index["reruns"]["nodiff"] = dict(index["reruns"]["nodiff"], reasons=["b", "a"])
+        index["reruns"]["notjson"] = dict(index["reruns"]["notjson"], verdict="verified")   # a verified one has none
+        self.change("index.json", to=json.dumps(index).encode())
+        os.makedirs(self.results("r", "notjson"))
+        for name in CR.FILES:
+            with open(self.results("r", "notjson", name), "wb") as fh:
+                fh.write(b"{}")
+        self.assertEqual(self.judged()[1], {"nodiff": ["kos:a", "kos:b", "package_invalid"],
+                                            "notjson": ["package_invalid"], "rt": []})
 
     def test_a_rerun_kos_did_not_verify_reaches_the_gate_and_is_rejected_by_its_reasons(self):
         # tohum/26p (5): not a missing rerun; rejected as a ready candidate kos refused, and the finding is decided

@@ -48,7 +48,7 @@
   {
    "id": "found_first_ref_of_any_file",
    "file": "loop/candidates.py",
-   "old": "ref = FW.primary(finding)\n    return",
+   "old": "ref = CB.primary(finding)\n    return",
    "new": "ref = next(iter(finding[\"evidence_refs\"]), None)\n    return",
    "tests": [
     "test_candidates.Form"
@@ -322,6 +322,15 @@
    "new": "",
    "tests": [
     "test_candidates.Live.test_a_rerun_kos_did_not_verify_reaches_the_gate_and_is_rejected_by_its_reasons"
+   ]
+  },
+  {
+   "id": "read_formless_package_drops_the_rerun_s_reasons",
+   "file": "loop/candidates.py",
+   "old": "        raise Refused(*exc.reasons, *CR.kos_reasons(entry)) from None",
+   "new": "        raise Refused(*exc.reasons) from None",
+   "tests": [
+    "test_candidates.Live.test_a_package_without_form_keeps_the_reasons_of_its_rerun"
    ]
   }
  ]

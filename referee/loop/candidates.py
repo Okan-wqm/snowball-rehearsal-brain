@@ -14,7 +14,9 @@ entry carries. A candidate ``reran`` does not hand out is ``Refused`` with ``rer
 reason (``package_missing``, ``rerun_missing``, ``rerun_files_missing``) and nothing of
 it is read. A rerun ``koş`` did not verify is handed out (tohum/26p (5)): ``rerun`` is its entry of the index,
 ``files`` may lack a file (``None``), and ``loop.decide`` rejects it by the entry's reasons; ``merge_diff`` hands
-out no diff of one.
+out no diff of one. One whose package has no form ("The package's form": so every package ``koş`` refused as
+``package_unusable``) has no diff and no finding for the gate: it is ``Refused`` with ``package_invalid`` and
+the entry's reasons (``runner.candidate_rerun.kos_reasons``), so no reason of the entry is lost.
 
 **The package's form** (``parsed``; tohum/26a: ``{finding, diff, organ_ids, definition_sha256[]}``). The package
 is UTF-8 JSON (``cli.loads``) in which no string, key or value at any depth, lacks a UTF-8 encoding (a lone
@@ -31,7 +33,7 @@ for. From it, and from nothing the package says about itself:
 
 - ``fingerprint``: ``findings.write.fingerprint`` of the finding on the cycle's tree (``None`` when it has none);
 - ``found``: what the gate's criteria read (``gate.check.finding``): ``{rule_id, path, line}``, the finding's
-  ``rule_id``, its ``file`` and the ``line_start`` of its primary evidence ref (``findings.write.primary``:
+  ``rule_id``, its ``file`` and the ``line_start`` of its primary evidence ref (``cases.build.primary``:
   the first ref, when it is in that file; tohum/26q (3)); absent values stay absent, and the gate refuses them
   (``candidate_unusable``).
 
@@ -53,6 +55,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import cli
+from cases import build as CB
 from findings import write as FW
 from gate import allowlist as AL
 from ledger import schema as S
@@ -70,9 +73,9 @@ Read = Callable[[str], "bytes | None"]
 class Refused(Exception):
     """A candidate that is not judged further; ``reasons`` is its reject."""
 
-    def __init__(self, reason: str) -> None:
-        super().__init__(reason)
-        self.reasons = [reason]
+    def __init__(self, *reasons: str) -> None:
+        super().__init__(*reasons)
+        self.reasons = list(reasons)
 
 
 class Unusable(ValueError):
@@ -137,7 +140,7 @@ def parsed(package: bytes) -> dict:
 
 def found(finding: dict) -> dict:
     """The finding as the gate's criteria read it (``gate.check.finding``'s keys; see "The finding")."""
-    ref = FW.primary(finding)
+    ref = CB.primary(finding)
     return {"rule_id": finding.get("rule_id"), "path": finding["file"], "line": ref and ref["line_start"]}
 
 
@@ -147,7 +150,10 @@ def read(index_: Any, cid: str, read_: Read, tree_read: Read) -> Candidate:
         package, files, entry = CR.reran(index_, cid, read_)
     except CR.NotRerun as exc:
         raise Refused(exc.reasons[0]) from None
-    doc = parsed(package)
+    try:
+        doc = parsed(package)
+    except Refused as exc:      # no diff and no finding to judge: its reject, with what koş said of its rerun
+        raise Refused(*exc.reasons, *CR.kos_reasons(entry)) from None
     return Candidate(CR.key(package), doc, doc["diff"], files, entry, FW.fingerprint(doc["finding"], tree_read),
                      found(doc["finding"]))
 

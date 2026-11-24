@@ -47,7 +47,7 @@
   },
   {
    "id": "fp_first_ref_anywhere",
-   "file": "findings/write.py",
+   "file": "cases/build.py",
    "old": "    return ref if isinstance(path, str) and path == finding.get(\"file\") else None",
    "new": "    return ref if isinstance(path, str) else None",
    "tests": [
@@ -326,7 +326,7 @@
   },
   {
    "id": "primary_any_ref_in_the_file",
-   "file": "findings/write.py",
+   "file": "cases/build.py",
    "old": "    ref = refs[0] if isinstance(refs, list) and refs else None\n    path",
    "new": "    ref = next((r for r in refs if isinstance(r, dict) and r.get(\"path\") == finding.get(\"file\")), None) if isinstance(refs, list) else None\n    path",
    "tests": [
