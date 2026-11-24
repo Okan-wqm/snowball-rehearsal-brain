@@ -98,6 +98,8 @@ import git_store as S  # noqa: E402
 from ledger import anchor as AN  # noqa: E402
 from loop import accepted as A  # noqa: E402
 from loop import rekor as RK  # noqa: E402
+from cases import build as CB  # noqa: E402
+from ledger import chain  # noqa: E402
 from test_rekor import entry_for  # noqa: E402
 from profile_tree import writable_base, write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, operating, recipe  # noqa: E402
@@ -1091,6 +1093,33 @@ class CekJob(unittest.TestCase):
         self.state_head = self.state_commit(counts, (self.state_genesis,), dict(files, **{".brain/status.md": self.STATUS_MD}))
         out, _, _ = self.run_cek()
         self.assertEqual((out["ok"], out["reason"], out["reasons"]), (False, "root_refused", ["root_mismatch"]))
+        self.assertFalse(self.target_fetched())
+
+    def test_the_heads_dev_case_set_is_verified_carried_and_read_by_the_proposal(self):
+        """tohum/26m "Dev vaka seti" (1), (2): the set on ``brain/state``'s head is verified with it, no root covers
+        it, ``pulled`` carries it to D6 and the proposal passes over the place it holds."""
+        counts = {p: n[1] for p, n in self.STATE.items()}
+        path = ".brain/cases/dev.jsonl"
+        held = chain.canonical({"case_id": CB.case_id(MUTATION_IDS[0]), "provenance": "mutation", "split": "dev",
+                                "tool": "eslint", "rule_id": "no-var"}) + b"\n"
+        self.state_head = self.state_commit(counts, (self.state_genesis,),
+                                            {".brain/status.md": self.STATUS_MD, path: held})
+        out, _, _ = self.run_cek()
+        line = self.one(out)
+        self.assertEqual((out["ok"], line["state"]["rows"]), (True, dict(counts, **{path: 1})), out)
+        art = P.read(os.path.join(self.temp, "out", "pulled", "t1"))
+        self.assertEqual(art.state[path], held)
+        self.assertEqual(line["assembled"]["mutations"], sorted(art.mutations))
+        self.assertNotIn(MUTATION_IDS[0], art.mutations)
+        self.assertNotEqual(line["assembled"]["mutations"], MUTATION_IDS)
+        # a head whose set is none is refused before the target is fetched
+        self.clean()
+        self.setUp_state()
+        self.state_head = self.state_commit(counts, (self.state_genesis,),
+                                            {".brain/status.md": self.STATUS_MD, path: held + held})
+        out, _, _ = self.run_cek()
+        self.assertEqual((out["ok"], out["reason"], out["reasons"]),
+                         (False, "state_refused", ["case_invalid:%s:2" % path]))
         self.assertFalse(self.target_fetched())
 
     def test_rekor_unreadable_is_no_verdict(self):

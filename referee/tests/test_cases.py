@@ -10,18 +10,24 @@ on a line holding ``eval(``; it knows no other rule, as an ESLint whose configur
   window, none outside both, on another file, with another property or without a required change;
 - the proposal (``Proposal``): the ids and diffs by hand, the order by the seed, the rounds over the operators in
   the seed's order, the limit, the inputs, the places left out; each diff applies to its file through
-  ``gate.diffguard``'s own parse;
+  ``gate.diffguard``'s own parse; with held rows, the rules the set has no case of first and the held places
+  passed over;
+- the group (``Group``, tohum/26e): the nearest directory at or above the file that holds a manifest, the tree's
+  root as ``.``, the unit's root where none is, no group with neither;
 - the census (``Census``, tohum/29za, 26q (10)): each operator's rewrite by hand and the lines it leaves; over the
   toy fixture the proposal is the one ESLint was captured on (``tests/fixtures/toy-mutations.json``,
   ``tests/capture_toy_mutations.py``) and ``judge`` reads those runs: every rule of the toy's census has a valid
   mutation, the counts by hand; the ``produce`` command as the seed's ``census`` vectors run it; the toy's set
   (``cases.census``) is the vectors' rules;
 - the judgement (``Judgement``): each reason; a violation a hunk shifted is not new;
-- the case (``Built``): the fields; ``koş``'s refusal, a missing entry, a run file that is not the index's;
+- the case (``Built``): the fields, the group read on the tree; ``koş``'s refusal, a missing entry, a run file
+  that is not the index's;
 - ``runner.kos`` (``KosRuns``): a mutation's three lint runs on its own copy, no test run, the file and the entry;
   the refusals; the base and a candidate beside it are untouched;
 - ``loop.pulled`` (``Carried``) and the jobs (``LivePath``): ``mutations.json`` is required and an object; from
-  ``çek``'s assembly through the ``kos`` job to the ``yaz`` job's line (``cases``).
+  ``çek``'s assembly through the ``kos`` job to the ``yaz`` job's line (``cases``), the case in the dev case
+  set of ``brain/state``'s commit, the next ``çek`` reading that set; a set that is none refused by ``çek``; the
+  unit's root as the group. The set's file itself is ``test_case_store``'s.
 """
 
 from __future__ import annotations
@@ -44,11 +50,13 @@ from cases import build as CB  # noqa: E402
 from cases import census as CC  # noqa: E402
 from findings import write as FW  # noqa: E402
 from gate import diffguard  # noqa: E402
+from ledger import chain  # noqa: E402
 from loop import cek as C  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from profile import derive as D  # noqa: E402
 from runner import kos as K  # noqa: E402
 from runner import lint_record as R  # noqa: E402
+from target import branches as B  # noqa: E402
 from fake_docker import FakeDocker  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 import git_store as S  # noqa: E402
@@ -1080,7 +1088,7 @@ class LivePath(LY.YazBase):
         # other/ is outside the unit's inputs: nothing of it is proposed
         write_tree(self.src, {"pkg/a.js": A_JS, "pkg/b.js": B_JS, "other/x.js": "const o = 1;\n"})
 
-    def cek(self) -> str:
+    def cek(self, state=None) -> str:
         """``loop.cek.assemble`` of the tree and the brain into the download ``kos`` reads; the target's commit."""
         brain, brain_commit = S.store(TC.brain_files())
         objects, commit = TC.target_objects(self.src)
@@ -1088,7 +1096,8 @@ class LivePath(LY.YazBase):
         P.write_served(os.path.dirname(self.pulled), ["t1"])
         summary = {"targets": [dict(LK.TARGET, repo=YW.REPO)]}
         C.assemble(brain.__getitem__, brain_commit, json.dumps(summary).encode(), TC.POLICY, "t1",
-                   objects.__getitem__, commit, LK.HEADS["brain/state"], LK.state_files(), None, self.pulled)
+                   objects.__getitem__, commit, LK.HEADS["brain/state"],
+                   LK.state_files() if state is None else state, None, self.pulled)
         return commit
 
     def hand_over(self, out: dict) -> dict:
@@ -1122,6 +1131,27 @@ class LivePath(LY.YazBase):
         with open(self.results(case["validity_evidence"]["ref"]), "rb") as fh:
             self.assertEqual(case["validity_evidence"]["output_sha256"], sha(fh.read()))
         self.assertTrue(CB.hit(yaz["cases"]["oracle"][case["case_id"]], case))
+        # the group is read on the tree (pkg/ holds the manifest), and D6 wrote the case into the dev case set
+        self.assertEqual(case["group"], "pkg")
+        self.assertEqual(yaz["written"]["cases"], {"added": [case["case_id"]], "kept": [], "refused": {}})
+        held = self.gh.read_file(B.STATE, B.STATE_CASES)
+        self.assertEqual(held, chain.canonical(case) + b"\n")
+        # the next cycle's cek reads the set: the place it holds is passed over, and yaz adds what is new
+        shutil.rmtree(os.path.dirname(self.pulled))
+        shutil.rmtree(os.path.join(self.temp, "out"), ignore_errors=True)
+        self.assertEqual(self.cek(dict(LK.state_files(), **{B.STATE_CASES: held})), commit)
+        again = P.read(self.pulled).mutations
+        self.assertEqual(again, CB.propose(FILES, ["pkg"], commit, held=[case]))
+        self.assertNotIn(valid, again)
+        self.assertNotEqual(again, proposed)
+
+    def test_cek_refuses_a_state_whose_case_set_is_none(self):
+        for broken in (b"junk\n", b'{"case_id":"c","split":"dev"}\n'):
+            with self.subTest(broken=broken), self.assertRaises(P.PulledError) as caught:
+                self.cek(dict(LK.state_files(), **{B.STATE_CASES: broken}))
+            self.assertEqual(caught.exception.reasons, ["cases_invalid"])
+            self.assertFalse(os.path.exists(self.pulled))
+            shutil.rmtree(os.path.dirname(self.pulled))
 
     def test_yaz_judges_only_what_kos_ran(self):
         self.write_pulled({}, mutations={NO_VAR_2: ALL[NO_VAR_2], NO_VAR_3: ALL[NO_VAR_3]})
@@ -1139,6 +1169,20 @@ class LivePath(LY.YazBase):
         yaz = self.line(self.run_yaz())
         self.assertEqual(yaz["cases"], {"cases": [], "oracle": {}, "refused": {
             NO_VAR_2: ["artefact_hash_mismatch"], NO_VAR_3: ["kos:missing"]}})
+
+    def test_a_file_under_no_manifest_takes_the_unit_s_root_as_its_group(self):
+        self.write_pulled({}, mutations={NO_VAR_2: ALL[NO_VAR_2]})
+        self.hand_over(LK.J.run("kos", {"RUNNER_TEMP": self.temp}, runner=LK.RedAs()))
+        self.control(LY.OPEN)
+        os.remove(os.path.join(self.src, "pkg", "package.json"))
+        self.github()
+        yaz = self.line(self.run_yaz())
+        (case,) = yaz["cases"]["cases"]
+        (unit,) = P.read(self.pulled).units["units"]
+        # no manifest is at or above the file now: the group is the path of the one unit units.json names
+        self.assertEqual((case["group"], unit["path"]), ("pkg", "pkg"))
+        self.assertEqual([n for at in ("", "pkg") for n in D.PROJECT_MANIFESTS
+                          if os.path.exists(os.path.join(self.src, at, n))], [])
 
     def test_without_mutations_the_line_holds_no_case(self):
         self.kos({"good": LY.candidate(TK.GOOD)})
