@@ -20,4 +20,9 @@ Use, from a clone of the brain:
 then commit the file back to this branch (a commit on top, never a rewrite) and push. The branch is not merged
 into `main` and is not a work branch: it is not deleted when a job ends.
 
-`tests/mutant-rows.jsonl` on `main` is the record as it stood at the accepted bb80d93; nothing writes it any more.
+History of the copy on `main`, corrected 2026-11-24 (founder ledger f2136): the sentence that stood here, "nothing
+writes it any more", did not hold. `tests/mutant-rows.jsonl` on `main` was written again from 88c2586 (2026-11-18)
+to dd8afd5, and dd8afd5 was rejected `prompt_too_large` for it, the second time. The rows `main` held at f02cb97
+(4130) and at dd8afd5 (401) that this file did not have were appended here on that day (3916 and 273 lines).
+Since then `referee/tests/mutate.py` refuses a `--record` inside the brain (`record_in_brain`), and the copy on
+`main` is being removed in pushes small enough for the rival's prompt.
