@@ -1174,15 +1174,14 @@ class LivePath(LY.YazBase):
         self.write_pulled({}, mutations={NO_VAR_2: ALL[NO_VAR_2]})
         self.hand_over(LK.J.run("kos", {"RUNNER_TEMP": self.temp}, runner=LK.RedAs()))
         self.control(LY.OPEN)
-        os.remove(os.path.join(self.src, "pkg", "package.json"))
         self.github()
-        yaz = self.line(self.run_yaz())
+        # yaz reads a tree in which no file is a manifest: the group is the path of the one unit units.json names
+        with mock.patch.object(D, "PROJECT_MANIFESTS", ()):
+            yaz = self.line(self.run_yaz())
+        self.assertEqual(yaz["cases"]["refused"], {})
         (case,) = yaz["cases"]["cases"]
         (unit,) = P.read(self.pulled).units["units"]
-        # no manifest is at or above the file now: the group is the path of the one unit units.json names
         self.assertEqual((case["group"], unit["path"]), ("pkg", "pkg"))
-        self.assertEqual([n for at in ("", "pkg") for n in D.PROJECT_MANIFESTS
-                          if os.path.exists(os.path.join(self.src, at, n))], [])
 
     def test_without_mutations_the_line_holds_no_case(self):
         self.kos({"good": LY.candidate(TK.GOOD)})

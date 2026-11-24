@@ -296,8 +296,8 @@
   {
    "id": "propose_operator_by_operator",
    "file": "cases/build.py",
-   "old": "        for turn in list(turns):\n            if len(out) >= limit:",
-   "new": "        for turn in list(turns)[:1]:\n            if len(out) >= limit:",
+   "old": "            turns.append(turn)\n",
+   "new": "            turns.insert(0, turn)\n",
    "tests": [
     "test_cases.Proposal"
    ]

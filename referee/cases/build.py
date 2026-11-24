@@ -300,14 +300,11 @@ def propose(files: dict[str, bytes], inputs: list[str], seed: str, limit: int = 
     turns = [fresh(op) for op in sorted(CATALOG, key=lambda op: ((op["tool"], op["rule_id"]) in cased,
                                                                  _sha(seed, "operator", op["id"])))]
     while turns and len(out) < limit:
-        for turn in list(turns):
-            if len(out) >= limit:
-                break
-            found = next(turn, None)
-            if found is None:
-                turns.remove(turn)
-            else:
-                out[found[0]] = found[1]
+        turn = turns.pop(0)
+        found = next(turn, None)
+        if found is not None:
+            out[found[0]] = found[1]
+            turns.append(turn)
     return out
 
 
