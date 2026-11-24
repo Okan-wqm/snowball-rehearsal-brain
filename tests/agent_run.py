@@ -126,10 +126,13 @@ The rules, each bound by ``tests/test_agent_run.py``:
    - **A run's session** is the mirror's session with the latest stamp not after the ``ts`` of the run's row,
      when that ``ts`` is a time written ``YYYY-MM-DDTHH:MM:SSZ`` and before the mirror's own stamp; a run with
      no such session is ``session_not_in_mirror`` (the session reading the mirror is never in it).
-   - **A run's call** is the entry of that session's ``runs`` whose ``wall_ms`` is the integer the run's row
-     carries and, for a run under the rules, whose ``subagent_type`` is ``brain:<name>``. No such entry is
-     ``no_call``; more than one, or another run of this agent with the same session and ``wall_ms``, is
-     ``ambiguous``. Neither is guessed.
+   - **A run's call** is the entry of that session's ``runs`` whose ``wall_ms`` is a count at most ``NEAR_MS``
+     (100) from the count the run's row carries and, for a run under the rules, whose ``subagent_type`` is
+     ``brain:<name>``. The two counts are of one call but are not one number: the row's is what the session
+     was shown, the entry's what the launcher measured (the three runs of this brain's ledger that an equal
+     count left unpaired differ by 7, 15 and 7 ms). No such entry is ``no_call``; more than one, or an entry
+     that is also such an entry of another run of this agent in the same session, is ``ambiguous``. Neither
+     is guessed, and the nearer of two is not taken.
    - **A cost row** is appended for each run that has a call, in the runs' order, through the one writer, with
      kind, defaults and refs as rule 5's: ``agent_run/2 `` and one JSON object with exactly ``agent``,
      ``cost_of`` (the run's row id), ``source`` (``mirror.json``), ``stamp``, and from the entry
@@ -174,9 +177,11 @@ The rules, each bound by ``tests/test_agent_run.py``:
 
 What this does not say, stated. A cost is the launcher's figure, derived from its price table and not the
 CLI's (tohum/26o); rule 7 copies it and computes none. A run is tied to its call by its row's ``ts`` and
-``wall_ms``, both written by the session: a row written in a later session than its run, or with another
-``wall_ms`` than the call's notification, finds no call and stays unknown; a run before the rules is tied
-without its agent type, so another agent's call of the same session and wall time would be taken for it. The
+``wall_ms``, both written by the session: a row written in a later session than its run, or with a
+``wall_ms`` more than ``NEAR_MS`` from the call's, finds no call and stays unknown; a run whose own call has
+no ``wall_ms`` in the mirror (unfinished) is tied to another call of its agent type in its session whose wall
+time is within ``NEAR_MS`` of its own, when there is exactly one; a run before the rules is tied
+without its agent type, so another agent's call of the same session and near wall time would be taken for it. The
 mirror holds the newest 20 sessions: a run not costed while its session is in it stays unknown. A row is what
 the session wrote: nothing here checks that the agent ran, that a
 count is the true one (and a run whose ``tokens`` is a count of eight or more digits is refused by the ledger's
@@ -254,6 +259,7 @@ REPORT = re.compile(r"reports/[^/]+\.json")
 FINDING_ID = re.compile(r"(f[1-9][0-9]*)#([1-9][0-9]*)")
 MIRROR = "/work/logs/mirror.json"
 SOURCE = "mirror.json"
+NEAR_MS = 100  # rule 7: how far a call's wall_ms may be from its run's
 STAMP = "%Y%m%dT%H%M%SZ"
 ROW_TS = "%Y-%m-%dT%H:%M:%SZ"
 CALL_ID = "toolu_"
@@ -602,21 +608,26 @@ def mirror(path: str) -> tuple[datetime.datetime, list[tuple[datetime.datetime, 
 def pair(found: dict[str, dict], now: datetime.datetime, sessions: list, name: str) -> tuple[dict, dict]:
     """Rule 7: the cost row's object of each run of ``found`` that has a call, and the reason of each other."""
     place: dict[str, tuple | None] = {}
+    near: dict[str, list[int]] = {}
     for row_id, run in found.items():
         ts = _time(run["ts"], ROW_TS)
         earlier = [s for s in sessions if ts is not None and ts < now and s[0] <= ts]
-        place[row_id] = (earlier[-1], run["wall_ms"]) if earlier else None
+        place[row_id] = earlier[-1] if earlier else None
+        near[row_id] = [] if not earlier else [
+            i for i, m in enumerate(earlier[-1][2])
+            if _count(m.get("wall_ms")) and abs(m["wall_ms"] - run["wall_ms"]) <= NEAR_MS
+            and (run["form"] == 1 or m.get("subagent_type") == BRAIN + name)]
     paired, unpaired = {}, {}
     for row_id, run in found.items():
         if place[row_id] is None:
             unpaired[row_id] = "session_not_in_mirror"
             continue
-        (_, stamp, made), wall = place[row_id]
-        calls = [m for m in made if _count(m.get("wall_ms")) and m["wall_ms"] == wall
-                 and (run["form"] == 1 or m.get("subagent_type") == BRAIN + name)]
+        _, stamp, made = place[row_id]
+        calls = [made[i] for i in near[row_id]]
         if not calls:
             unpaired[row_id] = "no_call"
-        elif len(calls) > 1 or sum(p is not None and p[0][1] == stamp and p[1] == wall for p in place.values()) > 1:
+        elif len(calls) > 1 or any(other != row_id and place[other] is not None and place[other][1] == stamp
+                                   and near[row_id][0] in near[other] for other in found):
             unpaired[row_id] = "ambiguous"
         else:
             fields = {"agent": name, "cost_of": row_id, "source": SOURCE, "stamp": stamp,

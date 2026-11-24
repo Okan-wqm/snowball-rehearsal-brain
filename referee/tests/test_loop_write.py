@@ -1987,6 +1987,7 @@ class LandStanding(unittest.TestCase):
         self.assertEqual([(m, p) for m, p, _ in gh.requests[:2]],
                          [("GET", repo + "git/ref/heads/brain/drill/9-1"), ("POST", repo + "git/refs")])
         self.assertEqual((gh.refs["brain/drill/9-1"], gh.refs[B.INTEGRATION]), (out["head_sha"], out["merge_sha"]))
+        self.assertEqual([p for m, p, _ in gh.requests if m == "GET" and p.endswith("/pulls")], [])  # nothing stood
 
 
 class Cause(unittest.TestCase):

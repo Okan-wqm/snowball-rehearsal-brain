@@ -1576,6 +1576,160 @@
    "tests": [
     "test_write.Revert.test_a_revert_that_does_not_take_up_meets_github_s_refusal"
    ]
+  },
+  {
+   "id": "wb_branch_not_read",
+   "file": "target/write.py",
+   "old": "        at = self.head_or_none(branch)\n        if at is None:\n            self.create_branch(branch, base)\n",
+   "new": "        at = None\n        if at is None:\n            self.create_branch(branch, base)\n",
+   "tests": [
+    "test_write.StandingBranch.test_a_standing_branch_with_exactly_that_commit_is_taken_up"
+   ]
+  },
+  {
+   "id": "wb_parent_unchecked",
+   "file": "target/write.py",
+   "old": "        elif at != base and self.read_commit(at)[\"parents\"] != [base]:\n",
+   "new": "        elif False:\n",
+   "tests": [
+    "test_write.StandingBranch.test_a_standing_head_that_is_not_on_the_base_is_refused_with_nothing_created"
+   ]
+  },
+  {
+   "id": "wb_parent_first_only",
+   "file": "target/write.py",
+   "old": "self.read_commit(at)[\"parents\"] != [base]:",
+   "new": "self.read_commit(at)[\"parents\"][:1] != [base]:",
+   "tests": [
+    "test_write.StandingBranch.test_a_standing_head_that_is_not_on_the_base_is_refused_with_nothing_created"
+   ]
+  },
+  {
+   "id": "wb_parent_any",
+   "file": "target/write.py",
+   "old": "self.read_commit(at)[\"parents\"] != [base]:",
+   "new": "base not in self.read_commit(at)[\"parents\"]:",
+   "tests": [
+    "test_write.StandingBranch.test_a_standing_head_that_is_not_on_the_base_is_refused_with_nothing_created"
+   ]
+  },
+  {
+   "id": "wb_tree_unchecked",
+   "file": "target/write.py",
+   "old": "        if self.read_commit(at)[\"tree\"] != tree:\n",
+   "new": "        if False:\n",
+   "tests": [
+    "test_write.StandingBranch.test_a_standing_commit_on_the_base_with_another_tree_is_refused"
+   ]
+  },
+  {
+   "id": "wb_tree_on_the_standing_head",
+   "file": "target/write.py",
+   "old": "        tree = self._tree(files, self.read_commit(base)[\"tree\"])\n        if at == base:",
+   "new": "        tree = self._tree(files, self.read_commit(at)[\"tree\"])\n        if at == base:",
+   "tests": [
+    "test_write.StandingBranch.test_a_standing_commit_on_the_base_with_another_tree_is_refused"
+   ]
+  },
+  {
+   "id": "wb_base_never_committed",
+   "file": "target/write.py",
+   "old": "        if at == base:\n            sha = self.commit(message, tree, [base])\n",
+   "new": "        if False:\n            sha = self.commit(message, tree, [base])\n",
+   "tests": [
+    "test_write.StandingBranch.test_an_absent_branch_is_created_at_the_base_and_given_the_commit"
+   ]
+  },
+  {
+   "id": "wb_standing_at_base_created",
+   "file": "target/write.py",
+   "old": "        at = self.head_or_none(branch)\n        if at is None:\n            self.create_branch(branch, base)\n",
+   "new": "        at = self.head_or_none(branch)\n        if at is None or at == base:\n            self.create_branch(branch, base)\n",
+   "tests": [
+    "test_write.StandingBranch.test_a_branch_standing_at_the_base_gets_the_commit_and_is_not_created"
+   ]
+  },
+  {
+   "id": "wb_taken_up_said_new",
+   "file": "target/write.py",
+   "old": "        return {\"commit\": at, \"standing\": True}\n",
+   "new": "        return {\"commit\": at, \"standing\": False}\n",
+   "tests": [
+    "test_write.StandingBranch.test_a_standing_branch_with_exactly_that_commit_is_taken_up",
+    "test_loop_write.LandStanding.test_a_standing_pull_request_that_is_open_is_merged_and_none_is_opened"
+   ]
+  },
+  {
+   "id": "wb_new_said_standing",
+   "file": "target/write.py",
+   "old": "            self.update_branch(branch, sha)\n            return {\"commit\": sha, \"standing\": False}\n",
+   "new": "            self.update_branch(branch, sha)\n            return {\"commit\": sha, \"standing\": True}\n",
+   "tests": [
+    "test_write.StandingBranch.test_an_absent_branch_is_created_at_the_base_and_given_the_commit"
+   ]
+  },
+  {
+   "id": "wb_branch_rule_dropped",
+   "file": "target/write.py",
+   "old": "        ``{commit, standing}``.\"\"\"\n        reasons = branch_reasons(branch)\n",
+   "new": "        ``{commit, standing}``.\"\"\"\n        reasons = []\n",
+   "tests": [
+    "test_write.StandingBranch.test_a_branch_outside_brain_is_refused_before_any_call"
+   ]
+  },
+  {
+   "id": "wb_any_error_is_absent",
+   "file": "target/write.py",
+   "old": "            if exc.status == 404:\n                return None\n            raise\n",
+   "new": "            return None\n",
+   "tests": [
+    "test_write.StandingBranch.test_a_branch_that_does_not_read_is_absent_only_on_404"
+   ]
+  },
+  {
+   "id": "lp_standing_pull_not_asked",
+   "file": "target/land.py",
+   "old": "    pull = writer.standing_pull(branch, onto, head) if done[\"standing\"] else None\n",
+   "new": "    pull = None\n",
+   "tests": [
+    "test_loop_write.LandStanding.test_a_standing_pull_request_that_is_open_is_merged_and_none_is_opened"
+   ]
+  },
+  {
+   "id": "lp_pull_asked_of_a_new_commit",
+   "file": "target/land.py",
+   "old": "    pull = writer.standing_pull(branch, onto, head) if done[\"standing\"] else None\n",
+   "new": "    pull = writer.standing_pull(branch, onto, head)\n",
+   "tests": [
+    "test_loop_write.LandStanding.test_a_drill_s_plant_goes_the_same_way"
+   ]
+  },
+  {
+   "id": "lp_pull_always_opened",
+   "file": "target/land.py",
+   "old": "    pull = writer.standing_pull(branch, onto, head) if done[\"standing\"] else None\n    if pull is None:\n",
+   "new": "    pull = writer.standing_pull(branch, onto, head) if done[\"standing\"] else None\n    if True:\n",
+   "tests": [
+    "test_loop_write.LandStanding.test_a_standing_pull_request_that_is_open_is_merged_and_none_is_opened"
+   ]
+  },
+  {
+   "id": "lp_standing_head_not_merged",
+   "file": "target/land.py",
+   "old": "    done = writer.commit_on(branch, base, files, title)\n    head = done[\"commit\"]\n",
+   "new": "    done = writer.commit_on(branch, base, files, title)\n    head = base if done[\"standing\"] else done[\"commit\"]\n",
+   "tests": [
+    "test_loop_write.LandStanding.test_a_standing_commit_with_no_pull_request_gets_one"
+   ]
+  },
+  {
+   "id": "lp_closed_pull_taken",
+   "file": "target/write.py",
+   "old": "                 if (pull[\"state\"], pull[\"head\"], pull[\"base\"], pull[\"head_sha\"]) == (\"open\", head, base, sha)]",
+   "new": "                 if (pull[\"head\"], pull[\"base\"], pull[\"head_sha\"]) == (head, base, sha)]",
+   "tests": [
+    "test_loop_write.LandStanding.test_a_standing_pull_request_that_is_closed_is_not_taken_up"
+   ]
   }
  ]
 }

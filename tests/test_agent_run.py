@@ -1220,7 +1220,7 @@ class Cost(Base):
 
     def test_a_runs_call_has_its_wall_ms_and_under_the_rules_the_agents_type(self):
         run = self.at("2026-11-22T12:30:00Z")
-        for entries in ([], [call(90001)], [call("unfinished")], [call(None)], [call(90000.0)],
+        for entries in ([], [call(90001 + A.NEAR_MS)], [call(89999 - A.NEAR_MS)], [call("unfinished")], [call(None)], [call(90000.0)],
                         [call(subagent_type="brain:two")], [call(subagent_type="general-purpose")],
                         [call(subagent_type=None)], [call(subagent_type="one")]):
             with self.subTest(entries=entries):
@@ -1230,6 +1230,36 @@ class Cost(Base):
         got = self.cost(self.mirror({S1: [call(True), call(subagent_type="brain:two"), call(90000)],
                                      S2: [call(1)]}))
         self.assertEqual(got, {"kept": 0, "recorded": ["f4"], "unchanged": 0, "unpaired": {other: "no_call"}})
+
+    def test_a_call_is_a_runs_when_its_wall_ms_is_at_most_near_ms_from_the_rows(self):
+        self.assertEqual(A.NEAR_MS, 100)
+        over = self.at("2026-11-22T12:30:00Z")
+        under = self.at("2026-11-22T12:31:00Z", wall_ms=50000)
+        got = self.cost(self.mirror({S1: [call(90000 + A.NEAR_MS), call(50000 - A.NEAR_MS, tool_use_id="toolu_u")]}))
+        self.assertEqual(got, {"kept": 0, "recorded": ["f4", "f5"], "unchanged": 0, "unpaired": {}})
+        self.assertEqual([A.runs(self.data, "one")[r]["cost"]["tool_use_id"] for r in (over, under)],
+                         ["toolu_01A", "toolu_u"])
+        self.assertEqual(A.runs(self.data, "one")[over]["wall_ms"], 90000)  # the row's count stands
+
+    def test_two_calls_near_a_run_or_a_call_near_two_runs_are_ambiguous_and_the_nearer_is_not_taken(self):
+        run = self.at("2026-11-22T12:30:00Z")
+        two = self.mirror({S1: [call(90000), call(90000 + A.NEAR_MS, tool_use_id="toolu_far")]})
+        self.assertEqual(self.cost(two), {"kept": 0, "recorded": [], "unchanged": 0, "unpaired": {run: "ambiguous"}})
+        # a second run whose own call the mirror does not hold (unfinished), near the first run's call
+        lost = self.at("2026-11-22T12:31:00Z", wall_ms=90000 + A.NEAR_MS)
+        apart = self.at("2026-11-22T12:32:00Z", wall_ms=90001 + 2 * A.NEAR_MS)
+        mirror = self.mirror({S1: [call(90000), call("unfinished", tool_use_id="toolu_lost")]})
+        self.assertEqual(self.cost(mirror), {"kept": 0, "recorded": [], "unchanged": 0,
+                                             "unpaired": {run: "ambiguous", lost: "ambiguous", apart: "no_call"}})
+        # the same call near a run of another session takes nothing from it
+        self.assertEqual(self.cost(self.mirror({S2: [call(90000)]})),
+                         {"kept": 0, "recorded": [], "unchanged": 0, "unpaired": dict.fromkeys((run, lost, apart),
+                                                                                               "session_not_in_mirror")})
+        later = self.at("2026-11-22T13:30:00Z", wall_ms=90000 + A.NEAR_MS)
+        got = self.cost(self.mirror({S1: [call(90000 - A.NEAR_MS)], S2: [call(90000, tool_use_id="toolu_s2")]}))
+        self.assertEqual(got, {"kept": 0, "recorded": ["f6", "f7"], "unchanged": 0,
+                               "unpaired": {lost: "no_call", apart: "no_call"}})
+        self.assertEqual([A.runs(self.data, "one")[r]["cost"]["stamp"] for r in (run, later)], [S1, S2])
 
     def test_a_run_before_the_rules_is_tied_by_wall_ms_whatever_the_type(self):
         old = self.old_run(run_file(old_finding(1)))
@@ -1284,21 +1314,21 @@ class Cost(Base):
 
     def test_the_fold_takes_a_runs_cost_from_its_last_cost_row_and_sums_the_floors_of_the_runs_left_unknown(self):
         none = dict(cost_usd_micros=None, not_measured="none shown")
-        known = self.at("2026-11-22T12:01:00Z", findings=[finding(1, A.CAUGHT, "t"), finding(2)], wall_ms=1, **none)
-        floor = self.at("2026-11-22T12:02:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=2, **none)
-        self.at("2026-11-22T12:03:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=3, **none)
-        self.at("2026-11-22T12:04:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=4, **none)
-        written = self.at("2026-11-22T12:05:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=5)
-        old = self.old_run(run_file(old_finding(1, A.CAUGHT, "t"), wall_ms=6, **none))
+        known = self.at("2026-11-22T12:01:00Z", findings=[finding(1, A.CAUGHT, "t"), finding(2)], wall_ms=1000, **none)
+        floor = self.at("2026-11-22T12:02:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=2000, **none)
+        self.at("2026-11-22T12:03:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=3000, **none)
+        self.at("2026-11-22T12:04:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=4000, **none)
+        written = self.at("2026-11-22T12:05:00Z", findings=[finding(1, A.CAUGHT, "t")], wall_ms=5000)
+        old = self.old_run(run_file(old_finding(1, A.CAUGHT, "t"), wall_ms=6000, **none))
         got = A.measure(self.data, "one")
         self.assertEqual([got[k] for k in ("cost_usd_micros", "cost_unknown",
                                            "cost_floor_usd_micros", "cost_floor_runs")], [0, 6, 0, 0])
-        mirror = self.mirror({S1: [call(1, tool_use_id="toolu_1", cost_usd_micros=1000),
-                                   unlogged(2, tool_use_id="toolu_2", cost_floor_usd_micros=30),
-                                   unlogged(3, tool_use_id="toolu_3", cost_floor_usd_micros=None,
+        mirror = self.mirror({S1: [call(1000, tool_use_id="toolu_1", cost_usd_micros=1000),
+                                   unlogged(2000, tool_use_id="toolu_2", cost_floor_usd_micros=30),
+                                   unlogged(3000, tool_use_id="toolu_3", cost_floor_usd_micros=None,
                                             not_measured="no_usage"),
-                                   unlogged(5, tool_use_id="toolu_5", cost_floor_usd_micros=7)],
-                              S2: [unlogged(6, tool_use_id="toolu_6", cost_floor_usd_micros=200)]})
+                                   unlogged(5000, tool_use_id="toolu_5", cost_floor_usd_micros=7)],
+                              S2: [unlogged(6000, tool_use_id="toolu_6", cost_floor_usd_micros=200)]})
         self.assertEqual(self.cost(mirror)["recorded"], ["f%d" % n for n in range(8, 13)])
         got = A.measure(self.data, "one")
         under = {"runs": 5, "cost_usd_micros": 1000, "cost_unknown": 4,

@@ -850,8 +850,8 @@
   {
    "id": "run_paired_with_the_first_session",
    "file": "tests/agent_run.py",
-   "old": "(earlier[-1], run[\"wall_ms\"])",
-   "new": "(earlier[0], run[\"wall_ms\"])",
+   "old": "place[row_id] = earlier[-1] if earlier else None",
+   "new": "place[row_id] = earlier[0] if earlier else None",
    "tests": [
     "test_agent_run.py"
    ]
@@ -868,8 +868,8 @@
   {
    "id": "two_calls_of_one_wall_ms_paired",
    "file": "tests/agent_run.py",
-   "old": "elif len(calls) > 1 or sum(",
-   "new": "elif sum(",
+   "old": "elif len(calls) > 1 or any(",
+   "new": "elif any(",
    "tests": [
     "test_agent_run.py"
    ]
@@ -1302,6 +1302,105 @@
    "file": "tests/agent_run.py",
    "old": "            if fields[\"outcome_of\"] not in runs:\n                raise Fault(\"outcome_no_run:%s\" % row_id)\n            runs[fields[\"outcome_of\"]][\"outcome\"] = fields\n",
    "new": "            if fields[\"outcome_of\"] in runs:\n                runs[fields[\"outcome_of\"]][\"outcome\"] = fields\n",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_paired_with_the_first_sessions_calls",
+   "file": "tests/agent_run.py",
+   "old": "for i, m in enumerate(earlier[-1][2])",
+   "new": "for i, m in enumerate(earlier[0][2])",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "call_only_of_the_equal_wall_ms",
+   "file": "tests/agent_run.py",
+   "old": "abs(m[\"wall_ms\"] - run[\"wall_ms\"]) <= NEAR_MS",
+   "new": "m[\"wall_ms\"] == run[\"wall_ms\"]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "call_at_the_bound_not_near",
+   "file": "tests/agent_run.py",
+   "old": "abs(m[\"wall_ms\"] - run[\"wall_ms\"]) <= NEAR_MS",
+   "new": "abs(m[\"wall_ms\"] - run[\"wall_ms\"]) < NEAR_MS",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "call_one_past_the_bound_near",
+   "file": "tests/agent_run.py",
+   "old": "abs(m[\"wall_ms\"] - run[\"wall_ms\"]) <= NEAR_MS",
+   "new": "abs(m[\"wall_ms\"] - run[\"wall_ms\"]) <= NEAR_MS + 1",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "call_near_only_from_above",
+   "file": "tests/agent_run.py",
+   "old": "abs(m[\"wall_ms\"] - run[\"wall_ms\"]) <= NEAR_MS",
+   "new": "0 <= m[\"wall_ms\"] - run[\"wall_ms\"] <= NEAR_MS",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "call_near_only_from_below",
+   "file": "tests/agent_run.py",
+   "old": "abs(m[\"wall_ms\"] - run[\"wall_ms\"]) <= NEAR_MS",
+   "new": "0 <= run[\"wall_ms\"] - m[\"wall_ms\"] <= NEAR_MS",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "call_any_longer_one_near",
+   "file": "tests/agent_run.py",
+   "old": "abs(m[\"wall_ms\"] - run[\"wall_ms\"]) <= NEAR_MS",
+   "new": "run[\"wall_ms\"] - m[\"wall_ms\"] <= NEAR_MS",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "near_ms_wider",
+   "file": "tests/agent_run.py",
+   "old": "NEAR_MS = 100  #",
+   "new": "NEAR_MS = 1000  #",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "call_shared_with_another_run_paired",
+   "file": "tests/agent_run.py",
+   "old": "elif len(calls) > 1 or any(other",
+   "new": "elif len(calls) > 1 or False and any(other",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "call_shared_across_sessions_ambiguous",
+   "file": "tests/agent_run.py",
+   "old": " and place[other][1] == stamp\n",
+   "new": " and place[other][1] is not None\n",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "two_near_calls_take_the_nearer",
+   "file": "tests/agent_run.py",
+   "old": "        calls = [made[i] for i in near[row_id]]\n",
+   "new": "        calls = sorted((made[i] for i in near[row_id]), key=lambda m: abs(m[\"wall_ms\"] - run[\"wall_ms\"]))[:1]\n",
    "tests": [
     "test_agent_run.py"
    ]
