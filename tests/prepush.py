@@ -6,7 +6,7 @@ reads ``reports/``. The rule "which paths can a test read" was a session's judgm
 bytes: a push is checked against a stamp that only a whole green run writes. Two commands, from anywhere:
 
     python3 tests/prepush.py run [-j N] [--timeout S] [--stamp FILE]
-    python3 tests/prepush.py check [-j N] [--timeout S] [--stamp FILE]
+    python3 tests/prepush.py check [-j N] [--timeout S] [--stamp FILE] [--result FILE]
 
 and a third for the work between two whole runs, which stamps nothing and is no part of that comparison:
 
@@ -30,7 +30,13 @@ Rules, each bound by ``tests/test_prepush.py``:
   (else ``uncommitted``; what is pushed is a commit, and the comparison is of the work tree); and the ledger is
   either as stamped or the stamped bytes followed by more (else ``ledger_rewritten``). When the ledger has grown,
   the stamped ``readers`` are run again on the tree as it is, and each one not ok is ``test_failed:<id>``; they
-  are not run when another reason already stands. One JSON line ``{ok, reasons, reran}``; exit 0 ok, 1 not ok.
+  are not run when another reason already stands. **The push's size**: when the referee's result is there
+  (``--result``, default ``push_size.RESULT``; a brain no verdict has judged has no base to measure from, and
+  ``size`` is ``null``; it is ``null`` too, and nothing is measured, when there is no stamp, and when the base or
+  the diff cannot be read), ``push_size.measure`` from the result's last accepted SHA to ``HEAD`` with the result's
+  limit is ``size``, and a band that is not ``fits`` is the reason ``push_size:<band>``, a base or a diff that
+  cannot be read ``push_size:<its reason>`` (the measure, the bands and what ``fits`` does not promise are that
+  module's). One JSON line ``{ok, reasons, reran, size}``; exit 0 ok, 1 not ok.
 - **quick** runs the parts of the manifest whose test files reach a changed path, and no other part.
   *Changed paths*: with ``--since REV``, the paths ``mutate.touched`` names (git's diff of REV against the work
   tree and git's untracked files; a REV git cannot read is exit 2, ``rev_unreadable``, and so is any other
@@ -80,6 +86,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import push_size as PS  # noqa: E402  (the size of the diff the rival is handed: one measure)
 import run_like_referee as R  # noqa: E402
 
 sys.path.insert(0, os.path.join(R.ROOT, "referee", "tests"))
@@ -195,11 +202,23 @@ def ledger_change(stamped: dict | None, now: bytes | None) -> str:
     return "same" if len(now) == stamped["bytes"] else "grown"
 
 
-def check(root: str, git: str, path: str, jobs: int, timeout: float, emit=print) -> dict:
-    """The ``check`` command, as the module says."""
+def size(root: str, git: str, result: str | None) -> tuple[dict | None, list[str]]:
+    """``(size, reasons)`` of the push from the last accepted SHA of the result at ``result`` to ``HEAD`` (module
+    docstring, ``check``); ``(None, [])`` when no result is named or none is there."""
+    if result is None or not os.path.lexists(result):
+        return None, []
+    try:
+        measured = PS.measure(root, PS.base_of(result), "HEAD", git=git, result=result)
+    except PS.Unreadable as e:
+        return None, ["push_size:%s" % e]
+    return measured, [] if measured["ok"] else ["push_size:%s" % measured["band"]]
+
+
+def check(root: str, git: str, path: str, jobs: int, timeout: float, emit=print, result: str | None = None) -> dict:
+    """The ``check`` command, as the module says; ``result`` is ``--result`` (``None``: no size is measured)."""
     stamp = read_stamp(path)
     if stamp is None:
-        return {"ok": False, "reasons": ["no_green_run"], "reran": []}
+        return {"ok": False, "reasons": ["no_green_run"], "reran": [], "size": None}
     now = _others(root, git)
     reasons = ["tree_changed:%s" % n for n in sorted(set(now) | set(stamp["files"]))
                if now.get(n) != stamp["files"].get(n)]
@@ -208,6 +227,8 @@ def check(root: str, git: str, path: str, jobs: int, timeout: float, emit=print)
     change = ledger_change(stamp["ledger"], ledger(root))
     if change == "rewritten":
         reasons.append("ledger_rewritten")
+    measured, large = size(root, git, result)
+    reasons += large
     reran: list[str] = []
     if change == "grown" and not reasons:
         tests = R.manifest(root)
@@ -216,7 +237,7 @@ def check(root: str, git: str, path: str, jobs: int, timeout: float, emit=print)
         summary = R.run(root, tests, R.files(root, git), jobs, timeout, emit=emit)
         reran = [t["id"] for t in tests]
         reasons += ["test_failed:%s" % i for i in summary["failed"]]
-    return {"ok": not reasons, "reasons": reasons, "reran": reran}
+    return {"ok": not reasons, "reasons": reasons, "reran": reran, "size": measured}
 
 
 DISCOVER = re.compile(r"python -m unittest discover -s tests -p '([^'\\]+)'")
@@ -300,6 +321,7 @@ def main(argv: list[str] | None = None, root: str = R.ROOT, git: str = "git") ->
     ap.add_argument("--stamp")
     ap.add_argument("--since", metavar="REV", help="quick: the paths changed since REV, not since the stamp")
     ap.add_argument("--plan", action="store_true", help="quick: select and run nothing")
+    ap.add_argument("--result", default=PS.RESULT, help="check: the referee's result the push's size is read by")
     args = ap.parse_args(argv)
     if args.command != "quick" and (args.since is not None or args.plan):
         ap.error("--since and --plan are quick's")
@@ -307,8 +329,10 @@ def main(argv: list[str] | None = None, root: str = R.ROOT, git: str = "git") ->
         path = args.stamp or stamp_path(root, git)
         if args.command == "quick":
             result = quick(root, git, path, args.jobs, args.timeout, since=args.since, plan=args.plan)
+        elif args.command == "run":
+            result = green(root, git, path, args.jobs, args.timeout)
         else:
-            result = (green if args.command == "run" else check)(root, git, path, args.jobs, args.timeout)
+            result = check(root, git, path, args.jobs, args.timeout, result=args.result)
     except R.Unreadable as e:
         print(json.dumps({"ok": False, "reason": str(e)}))
         return 2

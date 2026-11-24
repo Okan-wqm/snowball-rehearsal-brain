@@ -468,6 +468,69 @@
    "tests": [
     "test_prepush.py"
    ]
+  },
+  {
+   "id": "size_reasons_dropped",
+   "file": "tests/prepush.py",
+   "old": "    reasons += large\n",
+   "new": "    reasons += []\n",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "a_result_not_there_is_measured",
+   "file": "tests/prepush.py",
+   "old": "if result is None or not os.path.lexists(result):",
+   "new": "if result is None:",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "unreadable_size_passes",
+   "file": "tests/prepush.py",
+   "old": "return None, [\"push_size:%s\" % e]",
+   "new": "return None, []",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "a_band_that_does_not_fit_passes",
+   "file": "tests/prepush.py",
+   "old": "return measured, [] if measured[\"ok\"] else",
+   "new": "return measured, [] if True else",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "size_by_another_result_s_limit",
+   "file": "tests/prepush.py",
+   "old": "PS.base_of(result), \"HEAD\", git=git, result=result)",
+   "new": "PS.base_of(result), \"HEAD\", git=git)",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "size_to_another_revision",
+   "file": "tests/prepush.py",
+   "old": "PS.base_of(result), \"HEAD\", git=git, result=result)",
+   "new": "PS.base_of(result), \"HEAD~1\", git=git, result=result)",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "check_command_measures_nothing",
+   "file": "tests/prepush.py",
+   "old": "result = check(root, git, path, args.jobs, args.timeout, result=args.result)",
+   "new": "result = check(root, git, path, args.jobs, args.timeout)",
+   "tests": [
+    "test_prepush.py"
+   ]
   }
  ]
 }

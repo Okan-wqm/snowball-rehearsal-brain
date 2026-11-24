@@ -1,10 +1,10 @@
-"""Measure the diff a push hands the rival, before the push, and place it against the sizes the referee has answered.
+"""Measure the diff a push hands the rival, before the push, and place it against the limit the referee states.
 
-Why: 6820381 was rejected ``rival_unresolved`` with ref ``prompt_too_large`` (founder ledger f1216): the rival's
-artefact is the whole diff since the last accepted SHA (tohum/29b "Rakip çağrısı"), and that diff was 875761 bytes
-by this tool, 820062 of them rows of a mutant record that a whole run rewrites. Nothing here measured a push's
-size before it left. Run from anywhere: ``python3 tests/push_size.py [--base REV | --result PATH] [--head REV]
-[--top N]``.
+Why: 6820381 (founder ledger f1216) and dd8afd5 (f2136) were rejected ``rival_unresolved`` with ref
+``prompt_too_large``: the rival's artefact is the whole diff since the last accepted SHA (tohum/29b "Rakip
+çağrısı"), and each time about 800 KB of it were rows of a mutant record that a whole run rewrites. After the
+first this tool existed and judged by two sizes kept by hand, and no step ran it; ``tests/prepush.py check`` now
+does. Run from anywhere: ``python3 tests/push_size.py [--base REV] [--result PATH] [--head REV] [--top N]``.
 
 What it does, each rule bound by ``tests/test_push_size.py``:
 
@@ -12,10 +12,11 @@ What it does, each rule bound by ``tests/test_push_size.py``:
   (default ``/work/referee/result.json``): a result that cannot be read as a JSON object holding that field as a
   40 character lowercase hex string is unreadable. **The head** is ``--head`` (default ``HEAD``): a commit, not
   the work tree, so the measure is taken after the commit and before the push.
-- **The measure** is the byte count of ``git diff --no-renames --no-ext-diff --no-textconv --no-color <base>
-  <head>`` over the whole tree except the founder records at the root, ``founder-ledger.jsonl`` and ``reports/``
+- **The measure** is ``git diff --no-renames --no-ext-diff --no-textconv --no-color --binary <base> <head>``
+  over the whole tree except the founder records at the root, ``founder-ledger.jsonl`` and ``reports/``
   (``EXCLUDED``; tohum/29e "Kurucu kayıtları": the rival sees neither; a ``reports/`` directory that is not at
-  the root is measured).
+  the root is measured). ``bytes`` is its byte count; ``chars`` is its count of Unicode code points read as
+  UTF-8, a byte that is not UTF-8 counted as one (tohum/29b counts the prompt in code points).
 - **Per path**: a line of the diff is git's, bytes up to and with a line feed (a carriage return or any other
   byte ends none). A line that starts with ``diff --git `` opens a section; one equal, byte for byte, to the line
   that opened the section before it continues that section (git writes a path whose type changed, a file to a
@@ -23,21 +24,31 @@ What it does, each rule bound by ``tests/test_push_size.py``:
   --name-only -z`` with the same arguments; when the two counts differ, or bytes come before the first section,
   the diff is unreadable (``sections_mismatch``) rather than named by guess. ``paths`` holds the ``--top``
   (default 5) largest, ``[path, bytes]``, largest first, equal sizes in path order.
-- **The band** places the measure against ``MEASURED``, the one list of sizes this tool measured for diffs the
-  referee answered: ``accepted_before`` when it is at most the largest accepted size, ``refused_before`` when it
-  is at least the smallest refused size, ``unknown`` between the two.
-- One JSON line: ``ok`` (the band is ``accepted_before``), ``base``, ``head``, ``bytes``, ``files``, ``band``,
-  ``largest_accepted``, ``smallest_refused``, ``paths``. Exit 0 when ok, 1 when not, 2 when the result, git or
-  the diff cannot be read (``{"ok": false, "reason"}``).
+- **The limit** is the referee's own (tohum/29b: every result's ``rival`` record carries ``prompt_max_chars``,
+  ``prompt_chars`` and ``prompt_diff_chars``). From the result at ``--result`` (read for the limit also when
+  ``--base`` is given): ``max_chars`` is ``rival.prompt_max_chars`` and ``around_chars`` is ``prompt_chars``
+  less ``prompt_diff_chars``, the part of that prompt that was not diff; ``limit_from`` is ``result``. The three
+  are taken only when each is an integer (no boolean), the limit above 0 and ``0 <= prompt_diff_chars <=
+  prompt_chars``; from any other result (not there, not JSON, no ``rival``, a number null) they are ``KEPT``,
+  the numbers of the last result this tool's author read that had them, and ``limit_from`` is ``kept``.
+- **The band**: ``fits`` when the diff names no file (nothing is handed to the rival), or when ``chars`` plus
+  ``RESERVE`` (2) times ``around_chars`` is at most ``max_chars``; ``over`` when ``chars`` plus ``around_chars``
+  is above ``max_chars`` (the last prompt's surroundings alone put it past the limit); ``tight`` between the
+  two. ``allowed_chars`` is ``max_chars`` less ``RESERVE`` times ``around_chars``.
+- One JSON line: ``ok`` (the band is ``fits``), ``base``, ``head``, ``bytes``, ``chars``, ``files``, ``band``,
+  ``max_chars``, ``around_chars``, ``allowed_chars``, ``limit_from``, ``paths``. Exit 0 when ok, 1 when not, 2
+  when the base, git or the diff cannot be read (``{"ok": false, "reason"}``).
 
-Out of scope, stated: the referee's limit is not known here, and its prompt is not this diff alone (it adds the
-seed pages it finds relevant and its own framing, and its diff's format is its own); ``accepted_before`` says a
-diff at least this large, measured the same way, was once judged, not that this one will be, and ``unknown`` is
-unknown. The work tree's uncommitted changes are not measured. The diff is
-read as git's patch format with the caller's git configuration: a setting that changes its bytes changes the
-measure, and one that writes a path without a ``diff --git `` line (``diff.submodule=log``) ends in
-``sections_mismatch``. A new answer from the referee is a new row of
-``MEASURED``, added by hand with the ledger row that holds its evidence.
+Out of scope, stated: ``fits`` is a prediction, not the referee's answer. The part of the prompt that is not
+diff (the seat's text, the protocol, the changed paths, the pages found relevant, the open claims) is the
+referee's to build and changes from push to push; it is taken from the last result, and ``RESERVE`` is a margin
+chosen from two observations of it (71298 on d01e1e7, f1294; 88651 on dd8afd5, f2136), not a bound: a push whose
+surroundings more than double is refused by the referee though ``fits`` here. How the referee counts a byte
+that is not UTF-8 is not known here; on dd8afd5 its ``prompt_diff_chars`` and this tool's ``chars`` were both
+880904. The work tree's uncommitted changes are not measured. The diff is read as git's patch format with the
+caller's git configuration: a setting that changes its bytes changes the measure, and one that writes a path
+without a ``diff --git `` line (``diff.submodule=log``) ends in ``sections_mismatch``. ``KEPT`` is changed by
+hand, with the ledger row of the result it was read from, when a result shows other numbers.
 """
 
 from __future__ import annotations
@@ -53,15 +64,14 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULT = "/work/referee/result.json"
 EXCLUDED = ("founder-ledger.jsonl", "reports")
-DIFF = ("diff", "--no-renames", "--no-ext-diff", "--no-textconv", "--no-color")
+# tohum/29b: the rival is handed a --binary diff; agent_run.packet writes the reviewer's by the same arguments
+DIFF = ("diff", "--no-renames", "--no-ext-diff", "--no-textconv", "--no-color", "--binary")
 SECTION = b"diff --git "
 SHA = re.compile(r"[0-9a-f]{40}")
-ACCEPTED, REFUSED, UNKNOWN = "accepted_before", "refused_before", "unknown"
-# (base, head, bytes by this tool, the referee's answer, the ledger row of the answer)
-MEASURED = (
-    ("63811d2", "dab6f8b", 456483, "accepted", "f1107"),
-    ("bb80d93", "6820381", 875761, "prompt_too_large", "f1216"),
-)
+FITS, TIGHT, OVER = "fits", "tight", "over"
+RESERVE = 2  # times the last prompt's part that was not diff (module docstring, "The band" and "Out of scope")
+# (prompt_max_chars, prompt_chars - prompt_diff_chars, the head of the result, the ledger row that read it)
+KEPT = (600000, 88651, "dd8afd5", "f2136")
 
 
 class Unreadable(Exception):
@@ -93,58 +103,80 @@ def _git(root: str, git: str, *args: str) -> bytes:
     return proc.stdout
 
 
-def sections(root: str, base: str, head: str, git: str = "git") -> list[tuple[str, int]]:
-    """``(path, bytes)`` of each path's section of the diff, in the diff's order (module docstring)."""
+def _cut(root: str, base: str, head: str, git: str = "git") -> list[tuple[str, int, int]]:
+    """``(path, bytes, chars)`` of each path's section of the diff, in the diff's order (module docstring)."""
     diff = _git(root, git, *DIFF, base, head)
     names = [n for n in _git(root, git, *DIFF, "--name-only", "-z", base, head).decode(
         "utf-8", "surrogateescape").split("\0") if n]
-    sizes: list[int] = []
+    sizes: list[list[int]] = []
     opened = None
     for line in io.BytesIO(diff):  # git's lines: cut after each LF and nowhere else
         if line.startswith(SECTION):
             if line != opened:
-                sizes.append(0)
+                sizes.append([0, 0])
             opened = line
         elif not sizes:
             raise Unreadable("sections_mismatch")
-        sizes[-1] += len(line)
+        sizes[-1][0] += len(line)
+        # No UTF-8 sequence holds a line feed, so the lines' code points add up to the diff's.
+        sizes[-1][1] += len(line.decode("utf-8", "surrogateescape"))
     if len(sizes) != len(names):
         raise Unreadable("sections_mismatch")
-    return list(zip(names, sizes))
+    return [(name, size[0], size[1]) for name, size in zip(names, sizes)]
 
 
-def band(size: int, measured: tuple = MEASURED) -> tuple[str, int | None, int | None]:
-    """``(band, largest accepted, smallest refused)`` of ``size`` against ``measured`` (module docstring); a
-    side with no row is ``None`` and decides nothing."""
-    accepted = max((row[2] for row in measured if row[3] == "accepted"), default=None)
-    refused = min((row[2] for row in measured if row[3] != "accepted"), default=None)
-    if accepted is not None and size <= accepted:
-        return ACCEPTED, accepted, refused
-    if refused is not None and size >= refused:
-        return REFUSED, accepted, refused
-    return UNKNOWN, accepted, refused
+def sections(root: str, base: str, head: str, git: str = "git") -> list[tuple[str, int]]:
+    """``(path, bytes)`` of each path's section of the diff, in the diff's order (module docstring)."""
+    return [(name, size) for name, size, _ in _cut(root, base, head, git)]
 
 
-def measure(root: str, base: str, head: str, top: int = 5, git: str = "git") -> dict:
-    parts = sections(root, base, head, git)
-    size = sum(n for _, n in parts)
-    name, accepted, refused = band(size)
-    return {"ok": name == ACCEPTED, "base": base, "head": head, "bytes": size, "files": len(parts), "band": name,
-            "largest_accepted": accepted, "smallest_refused": refused,
-            "paths": [list(p) for p in sorted(parts, key=lambda p: (-p[1], p[0]))[:top]]}
+def _count(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def limit_of(result: str) -> tuple[int, int, str]:
+    """``(max_chars, around_chars, limit_from)`` (module docstring, "The limit")."""
+    try:
+        with open(result, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError, RecursionError):
+        doc = None
+    rival = doc.get("rival") if isinstance(doc, dict) else None
+    most, whole, diff = (_count(rival.get(key)) if isinstance(rival, dict) else None
+                         for key in ("prompt_max_chars", "prompt_chars", "prompt_diff_chars"))
+    if most is None or whole is None or diff is None or most <= 0 or not 0 <= diff <= whole:
+        return KEPT[0], KEPT[1], "kept"
+    return most, whole - diff, "result"
+
+
+def band(chars: int, files: int, most: int, around: int) -> str:
+    """The band of a diff of ``chars`` code points over ``files`` paths (module docstring, "The band")."""
+    if files == 0 or chars + RESERVE * around <= most:
+        return FITS
+    return OVER if chars + around > most else TIGHT
+
+
+def measure(root: str, base: str, head: str, top: int = 5, git: str = "git", result: str = RESULT) -> dict:
+    parts = _cut(root, base, head, git)
+    chars = sum(n for _, _, n in parts)
+    most, around, source = limit_of(result)
+    name = band(chars, len(parts), most, around)
+    return {"ok": name == FITS, "base": base, "head": head, "bytes": sum(n for _, n, _ in parts), "chars": chars,
+            "files": len(parts), "band": name, "max_chars": most, "around_chars": around,
+            "allowed_chars": most - RESERVE * around, "limit_from": source,
+            "paths": [[p, n] for p, n, _ in sorted(parts, key=lambda p: (-p[1], p[0]))[:top]]}
 
 
 def main(argv: list[str] | None = None, root: str = ROOT, git: str = "git") -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    where = ap.add_mutually_exclusive_group()
-    where.add_argument("--base")
-    where.add_argument("--result", default=RESULT)
+    ap.add_argument("--base")
+    ap.add_argument("--result", default=RESULT)
     ap.add_argument("--head", default="HEAD")
     ap.add_argument("--top", type=int, default=5)
     args = ap.parse_args(argv)
     try:
         base = args.base if args.base is not None else base_of(args.result)
-        out = measure(root, base, args.head, args.top, git)
+        out = measure(root, base, args.head, args.top, git, args.result)
     except Unreadable as e:
         print(json.dumps({"ok": False, "reason": str(e)}))
         return 2

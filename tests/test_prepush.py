@@ -17,6 +17,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
@@ -185,7 +186,7 @@ class Run(Base):
         self.assertIsNone(self.green()["readers"])
         self.assertIsNone(self.read_stamp()["readers"])
         self.put(P.LEDGER, "row1\nrow2\n")
-        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": ["T0", "T1"]})
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": ["T0", "T1"], "size": None})
 
     def test_a_brain_without_a_ledger_has_null_readers_and_a_ledger_made_later_runs_every_command(self):
         # No command of the run could read a ledger that was not there, so the run knows no reader of it.
@@ -195,11 +196,11 @@ class Run(Base):
         self.assertEqual((got["ok"], got["readers"]), (True, None))
         stamp = self.read_stamp()
         self.assertEqual((stamp["ledger"], stamp["readers"]), (None, None))
-        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": []})
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": [], "size": None})
         self.put(P.LEDGER, "row1\n")
-        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": ["T0", "T1"]})
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": ["T0", "T1"], "size": None})
         self.put(P.LEDGER, "bad row\n")
-        self.assertEqual(self.check(), {"ok": False, "reasons": ["test_failed:T1"], "reran": ["T0", "T1"]})
+        self.assertEqual(self.check(), {"ok": False, "reasons": ["test_failed:T1"], "reran": ["T0", "T1"], "size": None})
 
 
 class Check(Base):
@@ -210,7 +211,7 @@ class Check(Base):
         self.assertEqual(self.green()["readers"], ["T0"])
 
     def test_the_stamped_tree_is_ok_and_nothing_is_run(self):
-        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": []})
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": [], "size": None})
         self.assertEqual(self.lines, [])
 
     def test_no_stamp_and_a_stamp_of_another_form_are_no_green_run(self):
@@ -225,7 +226,7 @@ class Check(Base):
                 else:
                     with open(self.stamp, "w") as f:
                         f.write(doc if isinstance(doc, str) else json.dumps(doc))
-                self.assertEqual(self.check(), {"ok": False, "reasons": ["no_green_run"], "reran": []})
+                self.assertEqual(self.check(), {"ok": False, "reasons": ["no_green_run"], "reran": [], "size": None})
 
     def test_a_file_changed_added_removed_or_made_executable_is_named(self):
         self.put("reports/r.json", "{}\n")
@@ -242,23 +243,23 @@ class Check(Base):
 
     def test_uncommitted_work_is_not_ok(self):
         self.dirty = " M a.txt\0"
-        self.assertEqual(self.check(), {"ok": False, "reasons": ["uncommitted"], "reran": []})
+        self.assertEqual(self.check(), {"ok": False, "reasons": ["uncommitted"], "reran": [], "size": None})
 
     def test_a_grown_ledger_runs_its_readers_again_and_only_them(self):
         self.put(P.LEDGER, "row1\nrow2\n")
-        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": ["T0"]})
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": ["T0"], "size": None})
         self.assertEqual([json.loads(l)["id"] for l in self.lines], ["T0"])
 
     def test_a_grown_ledger_no_command_read_runs_nothing(self):
         self.world(LISTS_ONLY, "python -c pass")
         self.assertEqual(self.green()["readers"], [])
         self.put(P.LEDGER, "row1\nrow2\n")
-        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": []})
+        self.assertEqual(self.check(), {"ok": True, "reasons": [], "reran": [], "size": None})
         self.assertEqual(self.lines, [])
 
     def test_a_grown_ledger_a_reader_refuses_is_that_readers_failure(self):
         self.put(P.LEDGER, "row1\nbad row\n")
-        self.assertEqual(self.check(), {"ok": False, "reasons": ["test_failed:T0"], "reran": ["T0"]})
+        self.assertEqual(self.check(), {"ok": False, "reasons": ["test_failed:T0"], "reran": ["T0"], "size": None})
 
     def test_a_ledger_cut_changed_or_removed_is_rewritten(self):
         for text in ("row", "rowX\n", "rowX\nrow2\n", None):
@@ -267,17 +268,102 @@ class Check(Base):
                     os.remove(os.path.join(self.root, P.LEDGER))
                 else:
                     self.put(P.LEDGER, text)
-                self.assertEqual(self.check(), {"ok": False, "reasons": ["ledger_rewritten"], "reran": []})
+                self.assertEqual(self.check(), {"ok": False, "reasons": ["ledger_rewritten"], "reran": [], "size": None})
 
     def test_readers_are_not_run_while_another_reason_stands(self):
         self.put(P.LEDGER, "row1\nbad row\n")
         self.put("a.txt", "y\n")
-        self.assertEqual(self.check(), {"ok": False, "reasons": ["tree_changed:a.txt"], "reran": []})
+        self.assertEqual(self.check(), {"ok": False, "reasons": ["tree_changed:a.txt"], "reran": [], "size": None})
+
+
+class Size(Base):
+    """``check``'s reading of the push's size: which result, which two revisions, and what each answer becomes.
+    ``push_size.measure`` is replaced (its rules are ``tests/test_push_size.py``'s); ``base_of`` is the real one."""
+    SHA = "0123456789abcdef0123456789abcdef01234567"
+
+    def setUp(self):
+        super().setUp()
+        self.moving_access_times()
+        self.world(LEDGER_HAS_NO_BAD, "python -c pass")
+        self.green()
+        self.result = os.path.join(self.tmp, "result.json")
+        with open(self.result, "w") as f:
+            json.dump({"state": {"last_accepted_sha": self.SHA}}, f)
+        self.calls: list[tuple] = []
+        self.answer: object = {"ok": True, "band": "fits", "chars": 5}
+
+    def measure(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+    def sized(self, result: str | None) -> dict:
+        with mock.patch.object(P.PS, "measure", self.measure):
+            return self.call(P.check, result=result)
+
+    def test_no_result_named_or_none_there_measures_nothing(self):
+        for result in (None, os.path.join(self.tmp, "absent.json")):
+            self.assertEqual(self.sized(result), {"ok": True, "reasons": [], "reran": [], "size": None})
+        self.assertEqual(self.calls, [])
+
+    def test_without_a_stamp_nothing_is_measured_and_the_usage_names_the_result(self):
+        os.remove(self.stamp)
+        self.assertEqual(self.sized(self.result), {"ok": False, "reasons": ["no_green_run"], "reran": [], "size": None})
+        self.assertEqual(self.calls, [])
+        usage = [line for line in P.__doc__.split("\n") if "prepush.py check" in line]
+        self.assertEqual([("--result FILE" in line) for line in usage], [True])
+        self.assertIn("nothing is measured, when there is no stamp", " ".join(P.__doc__.split()))
+
+    def test_the_measure_is_from_the_result_s_last_accepted_sha_to_head_with_the_result_s_limit(self):
+        self.assertEqual(self.sized(self.result), {"ok": True, "reasons": [], "reran": [], "size": self.answer})
+        self.assertEqual(self.calls, [((self.root, self.SHA, "HEAD"), {"git": self.git, "result": self.result})])
+
+    def test_a_band_that_does_not_fit_is_the_reason_and_the_readers_are_not_run(self):
+        self.put(P.LEDGER, "row1\nrow2\n")
+        for name in ("tight", "over"):
+            self.answer = {"ok": False, "band": name, "chars": 5}
+            self.assertEqual(self.sized(self.result), {"ok": False, "reasons": ["push_size:%s" % name],
+                                                       "reran": [], "size": self.answer})
+        self.assertEqual(self.lines, [])
+        self.answer = {"ok": True, "band": "fits", "chars": 5}
+        self.assertEqual(self.sized(self.result)["reran"], ["T0"])
+
+    def test_a_result_or_a_diff_that_cannot_be_read_is_a_reason_not_a_pass(self):
+        self.answer = P.PS.Unreadable("diff_failed:128")
+        self.assertEqual(self.sized(self.result), {"ok": False, "reasons": ["push_size:diff_failed:128"],
+                                                   "reran": [], "size": None})
+        with open(self.result, "w") as f:
+            f.write("{}")
+        self.assertEqual(self.sized(self.result)["reasons"], ["push_size:no_last_accepted_sha"])
+        with open(self.result, "w") as f:
+            f.write("{")
+        self.assertEqual(self.sized(self.result)["reasons"], ["push_size:result_unreadable"])
+        self.assertEqual(len(self.calls), 1)
+
+    def test_it_stands_beside_the_other_reasons(self):
+        self.answer = {"ok": False, "band": "over", "chars": 5}
+        self.put("a.txt", "y\n")
+        self.assertEqual(self.sized(self.result)["reasons"], ["tree_changed:a.txt", "push_size:over"])
+
+    def test_the_command_reads_result_and_by_default_push_size_s(self):
+        self.answer = {"ok": False, "band": "tight", "chars": 5}
+        self.call(lambda *a, **kw: None)
+        for argv, saved in ((["check", "--result", self.result], P.PS.RESULT), (["check"], self.result)):
+            buf = io.StringIO()
+            with mock.patch.object(P.PS, "measure", self.measure), mock.patch.object(P.PS, "RESULT", saved), \
+                    contextlib.redirect_stdout(buf):
+                code = P.main(argv, root=self.root, git=self.git)
+            self.assertEqual((code, json.loads(buf.getvalue().splitlines()[-1])["reasons"]),
+                             (1, ["push_size:tight"]), argv)
+        self.assertEqual([c[1]["result"] for c in self.calls], [self.result, self.result])
 
 
 class Main(Base):
     def main(self, *argv: str) -> tuple[int, dict]:
         self.call(lambda *a, **kw: None)  # writes git's answers for the tree as it is
+        if argv[0] == "check" and "--result" not in argv:  # no verdict here, whatever this machine holds
+            argv += ("--result", os.path.join(self.tmp, "no-result.json"))
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             code = P.main(list(argv), root=self.root, git=self.git)
@@ -285,7 +371,7 @@ class Main(Base):
 
     def test_exit_codes_and_the_stamp_in_the_git_directory(self):
         self.world("python -c pass")
-        self.assertEqual(self.main("check"), (1, {"ok": False, "reasons": ["no_green_run"], "reran": []}))
+        self.assertEqual(self.main("check"), (1, {"ok": False, "reasons": ["no_green_run"], "reran": [], "size": None}))
         code, got = self.main("run", "-j", "2")
         self.assertEqual((code, got["stamp"]), (0, self.stamp))
         self.assertEqual(self.main("check")[0], 0)
@@ -306,7 +392,8 @@ class Main(Base):
             json.dump(answers, f)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            code = P.main(["check"], root=self.root, git=self.git)
+            code = P.main(["check", "--result", os.path.join(self.tmp, "no-result.json")], root=self.root,
+                          git=self.git)
         self.assertEqual((code, json.loads(buf.getvalue())), (2, {"ok": False, "reason": "git_failed:rev-parse:128"}))
 
 
@@ -537,12 +624,17 @@ class Skill(unittest.TestCase):
         for command in ("run -j 3", "check -j 3", "quick --since <last accepted SHA> -j 3"):
             self.assertIn("python3 tests/prepush.py %s" % command, body)
         for path in ("tests/prepush.py", "tests/run_like_referee.py", "tests/vec_compare.py", "docs/map/brain.md",
-                     "referee/ledger/founder.py", "referee/status/depmap.py"):
+                     "referee/ledger/founder.py", "referee/status/depmap.py", "tests/push_size.py",
+                     "referee/tests/mutate.py"):
             self.assertTrue(os.path.isfile(os.path.join(ROOT, path)), path)
         for named in ("tests/run_like_referee.py", "tests/vec_compare.py", "docs/map/brain.md",
                       "python -m ledger.founder append", "python -m ledger.founder check",
-                      "python -m status.depmap brain"):
+                      "python -m status.depmap brain", "python3 tests/push_size.py --head",
+                      "referee/tests/mutate.py --record", "kayit/mutant-rows"):
             self.assertIn(named, body)
+        # the old record copy inside the tree and the sentence that says why it is still there leave together
+        self.assertEqual(os.path.lexists(os.path.join(ROOT, "tests/mutant-rows.jsonl")),
+                         "`tests/mutant-rows.jsonl` is what is left of the old copy" in " ".join(body.split()))
 
 
 if __name__ == "__main__":

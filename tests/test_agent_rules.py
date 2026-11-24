@@ -621,6 +621,12 @@ class Brain(unittest.TestCase):
         for said in ("five sessions with nothing caught", "more false alarms than catches"):
             self.assertIn(said, refuted)
 
+    def test_the_skill_says_where_improves_is_stricter_than_the_owner_s_condition(self):
+        with open(os.path.join(ROOT, "skills", "agents", "SKILL.md"), encoding="utf-8") as f:
+            text = " ".join(f.read().split())
+        self.assertIn("`improves` refutes in two cases the owner's third condition (tohum/00e E697) does not ask it "
+                      "to", text)
+
     def test_the_skill_names_every_rule_and_the_commands_of_a_run(self):
         with open(os.path.join(ROOT, "skills", "agents", "SKILL.md"), "rb") as f:
             fields, body = A.front_matter(f.read(), A.SKILL_KEYS)

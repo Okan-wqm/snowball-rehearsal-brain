@@ -278,6 +278,51 @@
    "tests": [
     "test_mutate.Record"
    ]
+  },
+  {
+   "id": "record_in_brain_run",
+   "file": "tests/mutate.py",
+   "old": "    if record and in_brain(brain, record):\n",
+   "new": "    if False:\n",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_in_brain_command_runs_on",
+   "file": "tests/mutate.py",
+   "old": "    if args.record and in_brain(brain, args.record):\n",
+   "new": "    if False:\n",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_links_not_followed",
+   "file": "tests/mutate.py",
+   "old": "os.path.commonpath([top, os.path.realpath(path)]) == top",
+   "new": "os.path.commonpath([top, os.path.abspath(path)]) == top",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_beside_the_brain_is_inside",
+   "file": "tests/mutate.py",
+   "old": "return os.path.commonpath([top, os.path.realpath(path)]) == top",
+   "new": "return os.path.realpath(path).startswith(top)",
+   "tests": [
+    "test_mutate.Record"
+   ]
+  },
+  {
+   "id": "record_in_brain_only_when_written",
+   "file": "tests/mutate.py",
+   "old": "    if record and in_brain(brain, record):\n",
+   "new": "    if record and not plan_only and in_brain(brain, record):\n",
+   "tests": [
+    "test_mutate.Record"
+   ]
   }
  ]
 }

@@ -1006,6 +1006,38 @@ class Record(unittest.TestCase):
             self.run_()
         self.assertEqual(self.lines(), [self.row(self.K, "killed"), self.row(self.S, "survived"), *other])
 
+    def test_a_record_inside_the_brain_is_refused_before_anything_is_read_or_run(self):
+        link = os.path.join(self.dir, "into")
+        os.symlink(os.path.join(self.brain, "referee"), link)
+        inside = [os.path.join(self.brain, "rows.jsonl"), os.path.join(self.brain, "referee", "tests", "r.jsonl"),
+                  os.path.join(self.brain, "referee", "..", "rows.jsonl"), os.path.join(link, "rows.jsonl"),
+                  self.brain, os.path.join(self.brain, "absent", "dir", "rows.jsonl")]
+        nothing = mock.Mock(side_effect=AssertionError("read or run"))
+        for path in inside:
+            with self.subTest(path=path), mock.patch.object(mutate, "load", nothing), \
+                    mock.patch.object(mutate, "baseline", nothing):
+                self.assertTrue(mutate.in_brain(self.brain, path))
+                for plan_only in (False, True):
+                    with self.assertRaisesRegex(ValueError, "^record_in_brain$"):
+                        mutate.run(self.brain, [self.path], 1, 120.0, record=path, plan_only=plan_only)
+                for flags in ([], ["--plan"]):
+                    err = io.StringIO()
+                    with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as stop:
+                        mutate.main(["--brain", self.brain, "--record", path, *flags, self.path])
+                    self.assertEqual(stop.exception.code, 2)
+                    self.assertIn("record_in_brain", err.getvalue())
+                self.assertFalse(os.path.isfile(path))
+        self.assertEqual(sorted(os.listdir(self.brain)), ["m.json", "referee"])
+
+    def test_a_record_beside_the_brain_or_linked_out_of_it_is_not_inside(self):
+        os.symlink(self.dir, os.path.join(self.brain, "out"))  # a link in the brain to a directory outside it
+        for path in (self.record, self.brain + "-rows.jsonl", os.path.join(self.brain, "out", "rows.jsonl"),
+                     os.path.dirname(self.brain)):
+            self.assertFalse(mutate.in_brain(self.brain, path), path)
+        with self.no_run():
+            mutate.run(self.brain, [self.path], 1, 120.0, record=os.path.join(self.brain, "out", "rows.jsonl"),
+                       plan_only=True)
+
     def test_the_command_line(self):
         def main(*flags: str) -> tuple[int, list[dict]]:
             out = io.StringIO()

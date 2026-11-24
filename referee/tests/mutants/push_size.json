@@ -83,15 +83,6 @@
    ]
   },
   {
-   "id": "lines_counted_not_bytes",
-   "old": "sizes[-1] += len(line)",
-   "new": "sizes[-1] += 1",
-   "file": "tests/push_size.py",
-   "tests": [
-    "test_push_size.py"
-   ]
-  },
-  {
    "id": "hunk_marker_anywhere_in_line",
    "old": "if line.startswith(SECTION):",
    "new": "if SECTION in line:",
@@ -104,51 +95,6 @@
    "id": "failing_git_read",
    "old": "    if proc.returncode != 0:\n",
    "new": "    if False:\n",
-   "file": "tests/push_size.py",
-   "tests": [
-    "test_push_size.py"
-   ]
-  },
-  {
-   "id": "accepted_edge_out",
-   "old": "size <= accepted",
-   "new": "size < accepted",
-   "file": "tests/push_size.py",
-   "tests": [
-    "test_push_size.py"
-   ]
-  },
-  {
-   "id": "refused_edge_out",
-   "old": "size >= refused",
-   "new": "size > refused",
-   "file": "tests/push_size.py",
-   "tests": [
-    "test_push_size.py"
-   ]
-  },
-  {
-   "id": "accepted_is_the_smallest",
-   "old": "max((row[2] for row in measured if row[3] == \"accepted\")",
-   "new": "min((row[2] for row in measured if row[3] == \"accepted\")",
-   "file": "tests/push_size.py",
-   "tests": [
-    "test_push_size.py"
-   ]
-  },
-  {
-   "id": "refused_is_the_largest",
-   "old": "min((row[2] for row in measured if row[3] != \"accepted\")",
-   "new": "max((row[2] for row in measured if row[3] != \"accepted\")",
-   "file": "tests/push_size.py",
-   "tests": [
-    "test_push_size.py"
-   ]
-  },
-  {
-   "id": "unknown_is_ok",
-   "old": "\"ok\": name == ACCEPTED",
-   "new": "\"ok\": name != REFUSED",
    "file": "tests/push_size.py",
    "tests": [
     "test_push_size.py"
@@ -191,15 +137,6 @@
    ]
   },
   {
-   "id": "head_argument_ignored",
-   "old": "out = measure(root, base, args.head, args.top, git)",
-   "new": "out = measure(root, base, \"HEAD\", args.top, git)",
-   "file": "tests/push_size.py",
-   "tests": [
-    "test_push_size.py"
-   ]
-  },
-  {
    "id": "result_read_despite_base",
    "old": "base = args.base if args.base is not None else base_of(args.result)",
    "new": "base = base_of(args.result) if args.base is None or True else args.base",
@@ -221,6 +158,195 @@
    "id": "unreadable_is_exit_1",
    "old": "        print(json.dumps({\"ok\": False, \"reason\": str(e)}))\n        return 2",
    "new": "        print(json.dumps({\"ok\": False, \"reason\": str(e)}))\n        return 1",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "lines_counted_not_bytes",
+   "old": "sizes[-1][0] += len(line)",
+   "new": "sizes[-1][0] += 1",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "chars_are_bytes",
+   "old": "sizes[-1][1] += len(line.decode(\"utf-8\", \"surrogateescape\"))",
+   "new": "sizes[-1][1] += len(line)",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "a_byte_that_is_not_utf8_dropped",
+   "old": "sizes[-1][1] += len(line.decode(\"utf-8\", \"surrogateescape\"))",
+   "new": "sizes[-1][1] += len(line.decode(\"utf-8\", \"ignore\"))",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "binary_flag_dropped",
+   "old": "\"--no-color\", \"--binary\")",
+   "new": "\"--no-color\")",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "head_argument_ignored",
+   "old": "out = measure(root, base, args.head, args.top, git, args.result)",
+   "new": "out = measure(root, base, \"HEAD\", args.top, git, args.result)",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "result_argument_not_the_limit_s",
+   "old": "out = measure(root, base, args.head, args.top, git, args.result)",
+   "new": "out = measure(root, base, args.head, args.top, git)",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "a_boolean_is_a_count",
+   "old": "return value if isinstance(value, int) and not isinstance(value, bool) else None",
+   "new": "return value if isinstance(value, int) else None",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "a_limit_of_zero_taken",
+   "old": "or most <= 0 or",
+   "new": "or most < 0 or",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "diff_above_the_prompt_taken",
+   "old": "not 0 <= diff <= whole:",
+   "new": "not 0 <= diff:",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "negative_diff_taken",
+   "old": "not 0 <= diff <= whole:",
+   "new": "not diff <= whole:",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "around_is_the_whole_prompt",
+   "old": "return most, whole - diff, \"result\"",
+   "new": "return most, whole, \"result\"",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "kept_said_to_be_the_result_s",
+   "old": "return KEPT[0], KEPT[1], \"kept\"",
+   "new": "return KEPT[0], KEPT[1], \"result\"",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "reserve_of_one",
+   "old": "RESERVE = 2  #",
+   "new": "RESERVE = 1  #",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "fits_edge_out",
+   "old": "chars + RESERVE * around <= most",
+   "new": "chars + RESERVE * around < most",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "over_edge_in",
+   "old": "return OVER if chars + around > most else TIGHT",
+   "new": "return OVER if chars + around >= most else TIGHT",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "no_file_judged_by_the_numbers",
+   "old": "if files == 0 or chars + RESERVE",
+   "new": "if chars + RESERVE",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "tight_is_ok",
+   "old": "\"ok\": name == FITS",
+   "new": "\"ok\": name != OVER",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "band_by_bytes",
+   "old": "chars = sum(n for _, _, n in parts)",
+   "new": "chars = sum(n for _, n, _ in parts)",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "bytes_are_chars",
+   "old": "\"bytes\": sum(n for _, n, _ in parts)",
+   "new": "\"bytes\": sum(n for _, _, n in parts)",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "allowed_without_the_reserve",
+   "old": "\"allowed_chars\": most - RESERVE * around",
+   "new": "\"allowed_chars\": most - around",
+   "file": "tests/push_size.py",
+   "tests": [
+    "test_push_size.py"
+   ]
+  },
+  {
+   "id": "paths_by_chars",
+   "old": "[[p, n] for p, n, _ in sorted(",
+   "new": "[[p, n] for p, _, n in sorted(",
    "file": "tests/push_size.py",
    "tests": [
     "test_push_size.py"

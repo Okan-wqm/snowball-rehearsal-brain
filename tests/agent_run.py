@@ -191,7 +191,8 @@ judge found is in no outcome, so ``missed`` is a floor of what a run missed. A r
 redesign has another sha256 and its runs are of the design in force all the same; a run is of a closed design
 only by a sha256 listed there. That the agent was given ``message.txt`` and
 nothing else is read from the session's log by ``tests/agent_rules.py``, not here. The diff is ``push_size``'s,
-not the referee's prompt (which is ``--binary`` and adds pages). The packet is of a diff: an agent whose task
+the ``--binary`` one the referee's prompt carries (a changed binary file is in it as git's binary patch, not as
+text to read); the prompt adds pages the packet does not. The packet is of a diff: an agent whose task
 is no diff has no packet form yet. ``retire_due`` reads the owner's fourth condition from one side only: it is true
 when the
 agent cannot have earned its cost and says nothing of an agent below that line, since what a ``caught`` finding

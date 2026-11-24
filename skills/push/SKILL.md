@@ -15,7 +15,15 @@ line of a report pushed without a run; founder ledger f1359 onward).
    `docs/map/brain.md` (regenerate it in the same push); if code under `referee/` changed,
    `python3 tests/vec_compare.py --before <last accepted SHA>` and read every difference.
 3. If the change holds more than records (anything outside `founder-ledger.jsonl` and `reports/`): commit it to
-   the work branch, then `python3 tests/agent_run.py packet --agent push-reviewer --base <last accepted SHA> --head
+   the work branch, then `python3 tests/push_size.py --head <that commit's SHA>`: the diff the rival will be
+   handed, against the limit the referee's last result states. A band that is not `fits` is repaired now, by
+   what `paths` names, before anyone reads the diff (dd8afd5 and 6820381 were rejected `prompt_too_large`, each
+   for a mutant record a whole run rewrote inside the tree; `referee/tests/mutate.py --record` takes a file
+   outside the brain, the branch `kayit/mutant-rows`, and refuses one inside; `tests/mutant-rows.jsonl` is what
+   is left of the old copy inside the tree: no code reads or writes it, its rows are on that branch, and each
+   push deletes as many of its last lines as still leave the band `fits`, until the file is gone, because
+   deleting it whole is itself a diff over the limit). Then
+   `python3 tests/agent_run.py packet --agent push-reviewer --base <last accepted SHA> --head
    <that commit's SHA> --out <a new directory outside the brain>` and start the agent `brain:push-reviewer` with
    effort `high` and the bytes of that directory's `message.txt` as its whole message (a SHA and a stated
    effort, so the run's row names the commit that was read and the effort it was read at; the message as
@@ -39,8 +47,9 @@ line of a report pushed without a run; founder ledger f1359 onward).
    or close the lesson with a row whose refs carry `closes:<row_id>` and whose summary says why, or replace it
    with a new lesson that closes it (tohum/26g); a lesson is not left failing unseen. Then
    `python -m ledger.founder check`.
-6. Commit. Then `python3 tests/prepush.py check -j 3`: ok only when the committed tree is the stamped tree and the
-   ledger only grew; it runs again the commands that read the ledger. Push only on `"ok": true`. Any reason it
+6. Commit. Then `python3 tests/prepush.py check -j 3`: ok only when the committed tree is the stamped tree, the
+   ledger only grew and the push's size is `fits` by `tests/push_size.py` (`size` in its line); it runs again
+   the commands that read the ledger. Push only on `"ok": true`. Any reason it
    prints is the next thing to repair; a changed file means step 4 again.
 
 What a green check does not say is in the docstrings of `tests/prepush.py` and `tests/run_like_referee.py`

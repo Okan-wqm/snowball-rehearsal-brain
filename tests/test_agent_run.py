@@ -225,6 +225,7 @@ class Packet(Base):
         self.packet()
         spec = ["--", "."] + [":(top,exclude)" + name for name in A.PS.EXCLUDED]
         common = ["-C", self.root, *A.PS.DIFF]
+        self.assertIn("--binary", common)  # what push_size measures and the rival is handed, not a text-only diff
         self.assertEqual(self.argv(), [common + ["BASE", "HEAD"] + spec,
                                        common + ["--name-only", "-z", "BASE", "HEAD"] + spec])
         self.assertIn("founder-ledger.jsonl", A.PS.EXCLUDED)

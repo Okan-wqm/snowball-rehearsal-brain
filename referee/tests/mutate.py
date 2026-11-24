@@ -75,6 +75,11 @@ outcomes are there for the next. When a run is whole (the summary is printed) FI
 mutant file read, in file and mutant order, the one row of each mutant that has a reusable row at today's ``fp``;
 the rows of mutant files this run did not read stay as they were, after them. What a record row is evidence of:
 that this tool printed it; nothing proves a row a person wrote into the file was a run.
+FILE is kept outside the brain: a FILE that is the brain's directory or below it, both read by their real paths
+(links followed), is refused before anything is read or run (``record_in_brain``; the command exits 2, with
+``--plan`` too). Rows written inside the brain are part of the diff the rival is handed, and a whole run's rewrite
+of them was that diff twice (founder ledger f1216, f2136); the record's place is the branch ``kayit/mutant-rows``
+(its README gives the commands).
 
 ``--touched REV`` runs only the mutants a change since ``REV`` can concern. The changed paths are git's: every path
 ``git diff --name-only --no-renames REV`` names (``REV`` against the working tree, staged or not, committed or not;
@@ -408,6 +413,12 @@ def reusable(rows: list[dict[str, str]]) -> dict[tuple[str, str, str], str]:
             if len(outcomes) == 1 and outcomes <= set(REUSED)}
 
 
+def in_brain(brain: str, path: str) -> bool:
+    """Whether ``path`` is ``brain`` or below it, both by their real paths (module docstring, "Kept outcomes")."""
+    top = os.path.realpath(brain)
+    return os.path.commonpath([top, os.path.realpath(path)]) == top
+
+
 def _write_record(path: str, files: list[str], current: dict[tuple[str, str], str]) -> None:
     """A whole run's rewrite of the record (module docstring): ``files`` the brain-relative mutant files read,
     ``current`` each of their mutants' ``(file, id) -> fp`` in file and mutant order."""
@@ -429,7 +440,9 @@ def run(brain: str, files: list[str], jobs: int, timeout: float, changed: set[st
     run); with ``changed``, only the mutants ``select`` keeps; ``emit`` is called with the plan first, then with
     each row as its mutant finishes (one thread at a time); ``timeout``, ``factor`` and ``floor`` are the limits';
     ``record`` and ``plan_only`` are ``--record`` and ``--plan`` (module docstring; ``plan_only`` returns no
-    row)."""
+    row); a ``record`` inside ``brain`` is a ``ValueError``, ``record_in_brain``."""
+    if record and in_brain(brain, record):
+        raise ValueError("record_in_brain")
     loaded = [(path, m) for path in files for m in load(path)]
     roots = {m["root"] for _, m in loaded}
     as_is = reach(brain, roots, set())
@@ -696,6 +709,8 @@ def main(argv: list[str] | None = None) -> int:
         done = summary(args.files, found)
         print(json.dumps(done, sort_keys=True), flush=True)
         return 0 if done["ok"] else 1
+    if args.record and in_brain(brain, args.record):
+        parser.error("record_in_brain: --record %s is inside the brain %s" % (args.record, brain))
     files = args.files or sorted(glob.glob(os.path.join(brain, "referee", "tests", "mutants", "*.json")))
     changed = touched(brain, args.touched) if args.touched else None
     rows = run(brain, [os.path.abspath(f) for f in files], args.jobs, args.timeout, changed,

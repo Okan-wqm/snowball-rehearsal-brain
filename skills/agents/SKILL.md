@@ -89,3 +89,7 @@ refuted by it after five sessions) and an agent under that line is not shown to 
 without an agent is not measured here. A miss is known only from a rejection: a defect neither the agent nor
 the rival found is counted nowhere, an outage leaves a run's outcome `unknown`, and with one rejection among
 the runs so far the missed share moves by whole runs. The caught share rests on the Founder's own verdicts.
+`improves` refutes in two cases the owner's third condition (tohum/00e E697) does not ask it to, and that bar is
+this brain's, above the page's: a design whose only gain is a lower cost per useful finding (tokens per caught
+finding follow what a push holds; cost is the rule `earns`'), and a design whose caught share rose while its
+missed share rose too. Either one is redesigned, which the page allows and does not demand.
