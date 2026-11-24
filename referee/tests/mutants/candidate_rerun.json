@@ -217,28 +217,28 @@
    ]
   },
   {
-   "id": "reran_any_verdict",
+   "id": "reran_files_asked_of_any_verdict",
    "file": "runner/candidate_rerun.py",
-   "old": "if entry.get(\"verdict\") != \"verified\":",
-   "new": "if entry.get(\"verdict\") is None:",
+   "old": "if verified(entry) and any(data is None for data in files.values()):",
+   "new": "if any(data is None for data in files.values()):",
    "tests": [
-    "test_candidate_rerun.py"
+    "test_candidate_rerun.Unit"
    ]
   },
   {
-   "id": "reran_unverified_handed_out",
+   "id": "reran_verified_files_not_asked",
    "file": "runner/candidate_rerun.py",
-   "old": "if entry.get(\"verdict\") != \"verified\":",
+   "old": "if verified(entry) and any(data is None for data in files.values()):",
    "new": "if False:",
    "tests": [
-    "test_candidate_rerun.py"
+    "test_candidate_rerun.Unit"
    ]
   },
   {
    "id": "reran_some_files",
    "file": "runner/candidate_rerun.py",
-   "old": "if any(data is None for data in files.values()):",
-   "new": "if all(data is None for data in files.values()):",
+   "old": "if verified(entry) and any(data is None for data in files.values()):",
+   "new": "if verified(entry) and all(data is None for data in files.values()):",
    "tests": [
     "test_candidate_rerun.py"
    ]
@@ -327,7 +327,7 @@
   {
    "id": "kos_any_id_published",
    "file": "runner/kos.py",
-   "old": "            if not CANDIDATE_ID.fullmatch(cid):\n                return _verdict([\"candidate_id_invalid\"])\n            os.makedirs",
+   "old": "            if not CR.ID.fullmatch(cid):\n                return _verdict([\"candidate_id_invalid\"])\n            os.makedirs",
    "new": "            if \"\\udce9\" in cid:\n                return _verdict([\"candidate_id_invalid\"])\n            os.makedirs",
    "tests": [
     "test_candidate_rerun.py"
@@ -457,6 +457,60 @@
    "new": "    package = read(path(cid)) if isinstance(cid, str) and \"\\x00\" not in cid else None",
    "tests": [
     "test_candidate_rerun.py"
+   ]
+  },
+  {
+   "id": "kos_dotted_id_rerun",
+   "file": "runner/kos.py",
+   "old": "            if not CR.ID.fullmatch(cid):",
+   "new": "            if not CANDIDATE_ID.fullmatch(cid):",
+   "tests": [
+    "test_candidate_rerun.Live"
+   ]
+  },
+  {
+   "id": "runtime_id_with_dot",
+   "file": "runner/candidate_rerun.py",
+   "old": "ID = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\Z\")",
+   "new": "ID = re.compile(r\"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\Z\")",
+   "tests": [
+    "test_candidate_rerun.Unit"
+   ]
+  },
+  {
+   "id": "verified_any_string",
+   "file": "runner/candidate_rerun.py",
+   "old": "return isinstance(entry, dict) and entry.get(\"verdict\") == \"verified\"",
+   "new": "return isinstance(entry, dict) and isinstance(entry.get(\"verdict\"), str)",
+   "tests": [
+    "test_candidate_rerun.Unit"
+   ]
+  },
+  {
+   "id": "kos_reasons_of_a_verified_entry",
+   "file": "runner/candidate_rerun.py",
+   "old": "    if verified(entry):\n        return []\n    reasons = entry.get(\"reasons\")",
+   "new": "    reasons = entry.get(\"reasons\")",
+   "tests": [
+    "test_candidate_rerun.Unit"
+   ]
+  },
+  {
+   "id": "kos_reasons_verdict_only",
+   "file": "runner/candidate_rerun.py",
+   "old": "        return [\"kos:%s\" % r for r in reasons]",
+   "new": "        return [\"kos:%s\" % entry.get(\"verdict\")]",
+   "tests": [
+    "test_candidate_rerun.Unit"
+   ]
+  },
+  {
+   "id": "yaz_line_always_verified",
+   "file": "loop/job.py",
+   "old": "\"verified\": CR.verified(got.entry)}",
+   "new": "\"verified\": True}",
+   "tests": [
+    "test_candidate_rerun.Live"
    ]
   }
  ]

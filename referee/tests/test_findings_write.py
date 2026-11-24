@@ -197,18 +197,26 @@ class Fingerprint(unittest.TestCase):
         elsewhere = [{"path": "pkg/b.js", "line_start": 1, "line_end": 1}]
         for name, finding in (("no rule", lint(rule_id=None, class_level="K3")),
                               ("no ref in the file", lint(evidence_refs=elsewhere)),
+                              ("the first ref elsewhere", lint(evidence_refs=elsewhere + lint(2)["evidence_refs"])),
+                              ("no ref", lint(evidence_refs=[])),
                               ("no file", lint(path="pkg/gone.js")), ("not utf-8", lint(1, path="pkg/bin.js")),
                               ("past the end", lint(5)), ("past the end of one line", lint(2, path="pkg/b.js"))):
             with self.subTest(name=name):
                 self.assertIsNone(W.fingerprint(finding, read))
                 self.assertEqual(observe(b"", [finding], tree).refused,
                                  [{"index": 0, "reasons": ["no_line"]}])
-        # the last line is a line with or without its newline; the ref in the file is used, wherever it stands
+        # the last line is a line with or without its newline; the primary ref alone is read (tohum/26q (3))
         self.assertEqual(W.fingerprint(lint(4), read), W.fingerprint(lint(4), reader({"pkg/a.js": TREE["pkg/a.js"][:-1]})))
         self.assertEqual(W.fingerprint(lint(1, path="pkg/open.js"), read),
                          W.fingerprint(lint(1, path="pkg/open.js"), reader({"pkg/open.js": b"var a = 1;\n"})))
-        late = lint(evidence_refs=elsewhere + lint(2)["evidence_refs"] + lint(3)["evidence_refs"])
-        self.assertEqual(W.fingerprint(late, read), W.fingerprint(lint(2), read))
+        first = lint(evidence_refs=lint(2)["evidence_refs"] + elsewhere + lint(3)["evidence_refs"])
+        self.assertEqual(W.fingerprint(first, read), W.fingerprint(lint(2), read))
+        self.assertNotEqual(W.fingerprint(first, read), W.fingerprint(lint(3), read))
+        self.assertEqual(W.primary(first), lint(2)["evidence_refs"][0])
+        for none in (lint(evidence_refs=elsewhere + lint(2)["evidence_refs"]), {}, {"evidence_refs": []},
+                     {"evidence_refs": ["pkg/a.js"], "file": "pkg/a.js"}, {"evidence_refs": [{}]},
+                     {"evidence_refs": None, "file": None}):
+            self.assertIsNone(W.primary(none))
 
     def test_two_equal_lines_of_a_file_are_one_finding(self):
         tree = {"pkg/a.js": b"var a = 1;\nlet b;\nvar a = 1;\n"}

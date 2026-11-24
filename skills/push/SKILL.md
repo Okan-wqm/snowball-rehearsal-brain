@@ -19,10 +19,7 @@ line of a report pushed without a run; founder ledger f1359 onward).
    handed, against the limit the referee's last result states. A band that is not `fits` is repaired now, by
    what `paths` names, before anyone reads the diff (dd8afd5 and 6820381 were rejected `prompt_too_large`, each
    for a mutant record a whole run rewrote inside the tree; `referee/tests/mutate.py --record` takes a file
-   outside the brain, the branch `kayit/mutant-rows`, and refuses one inside; `tests/mutant-rows.jsonl` is what
-   is left of the old copy inside the tree: no code reads or writes it, its rows are on that branch, and each
-   push deletes as many of its last lines as still leave the band `fits`, until the file is gone, because
-   deleting it whole is itself a diff over the limit). Then
+   outside the brain, the branch `kayit/mutant-rows`, and refuses one inside). Then
    `python3 tests/agent_run.py packet --agent push-reviewer --base <last accepted SHA> --head
    <that commit's SHA> --out <a new directory outside the brain>` and start the agent `brain:push-reviewer` with
    effort `high` and the bytes of that directory's `message.txt` as its whole message (a SHA and a stated

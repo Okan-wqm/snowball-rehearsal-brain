@@ -11,9 +11,10 @@ to ``unresolved.jsonl`` with its ``cause``).
 1. A finding with a ``symbol``: sha256 of the RFC 8785 form of ``["symbol", property, file, symbol,
    normalize(claim)]``. Its evidence is not read.
 2. A finding without one: sha256 of the RFC 8785 form of ``["line", rule_id, file, normalize(content)]``, where
-   ``content`` is the text of the lines of the finding's first evidence ref whose ``path`` is ``file``, read
+   ``content`` is the text of the lines of the finding's primary evidence ref (``primary``: ``evidence_refs[0]``,
+   and only when its ``path`` is ``file``; tohum/26q (3): a later ref in ``file`` does not stand in for it), read
    through ``read`` (``read(path)`` gives the file's bytes or None). ``no_line`` when the finding has no
-   ``rule_id``, no such ref, the file cannot be read, is not UTF-8, or ends before ``line_end``.
+   ``rule_id``, its primary ref is on another path, the file cannot be read, is not UTF-8, or ends before ``line_end``.
 3. ``normalize`` is this brain's (no page defines it): every run of Unicode whitespace becomes one space and the
    ends are trimmed; case and punctuation stay.
 4. No line number enters either form: the same line found at another place in its file is the same finding.
@@ -141,9 +142,19 @@ def normalize(text: str) -> str:
     return " ".join(text.split())
 
 
+def primary(finding: dict) -> dict | None:
+    """The ref a finding's line is read from: ``evidence_refs[0]`` when it is in the finding's ``file``, else
+    None (rule 2; the fingerprint's content, ``loop.candidates.found``, the gate's line, and ``cases.build.hit``
+    for K0-K2 read this one). A finding of any shape is read: one without such a ref has none."""
+    refs = finding.get("evidence_refs")
+    ref = refs[0] if isinstance(refs, list) and refs else None
+    path = ref.get("path") if isinstance(ref, dict) else None
+    return ref if isinstance(path, str) and path == finding.get("file") else None
+
+
 def _content(finding: dict, read: Read) -> str | None:
-    """The text of the lines of the first evidence ref in the finding's own file, or None (rule 2)."""
-    ref = next((r for r in finding["evidence_refs"] if r["path"] == finding["file"]), None)
+    """The text of the lines of the finding's primary ref, or None (rule 2)."""
+    ref = primary(finding)
     data = None if ref is None else read(finding["file"])
     if data is None:
         return None

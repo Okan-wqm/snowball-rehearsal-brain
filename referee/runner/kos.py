@@ -496,7 +496,7 @@ def results(recipe: Any, tree: str, policy: Any, red_control: Any, candidates: d
         def rerun(cid: str, package: bytes | None, diff: bytes | None) -> dict:
             if package is None:
                 return _verdict([CR.TWICE])
-            if not CANDIDATE_ID.fullmatch(cid):
+            if not CR.ID.fullmatch(cid):
                 return _verdict(["candidate_id_invalid"])
             os.makedirs(os.path.dirname(os.path.join(out, CR.path(cid))))
             with open(os.path.join(out, CR.path(cid)), "xb") as fh:

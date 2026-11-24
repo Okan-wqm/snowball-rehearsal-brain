@@ -48,8 +48,8 @@
   {
    "id": "found_first_ref_of_any_file",
    "file": "loop/candidates.py",
-   "old": "ref = next((r for r in finding[\"evidence_refs\"] if r[\"path\"] == finding[\"file\"]), None)\n    return",
-   "new": "ref = next((r for r in finding[\"evidence_refs\"]), None)\n    return",
+   "old": "ref = FW.primary(finding)\n    return",
+   "new": "ref = next(iter(finding[\"evidence_refs\"]), None)\n    return",
    "tests": [
     "test_candidates.Form"
    ]
@@ -246,7 +246,7 @@
   {
    "id": "ids_of_any_name",
    "file": "loop/candidates.py",
-   "old": "return [name for name in names(results, index_) if K.CANDIDATE_ID.fullmatch(name)]",
+   "old": "return [name for name in names(results, index_) if CR.ID.fullmatch(name)]",
    "new": "return names(results, index_)",
    "tests": [
     "test_candidates.Form"
@@ -255,7 +255,7 @@
   {
    "id": "ids_of_any_name_live",
    "file": "loop/candidates.py",
-   "old": "return [name for name in names(results, index_) if K.CANDIDATE_ID.fullmatch(name)]",
+   "old": "return [name for name in names(results, index_) if CR.ID.fullmatch(name)]",
    "new": "return names(results, index_)",
    "tests": [
     "test_candidates.Live.test_a_candidate_is_read_by_the_hash_of_its_rerun"
@@ -295,6 +295,33 @@
    "new": "    except LC.Unusable as exc:\n        raise\n",
    "tests": [
     "test_candidates.Live.test_a_package_changed_between_d5_and_d6_stops_the_job_and_nothing_is_written"
+   ]
+  },
+  {
+   "id": "ids_with_a_dot",
+   "file": "loop/candidates.py",
+   "old": "if CR.ID.fullmatch(name)]",
+   "new": "if K.CANDIDATE_ID.fullmatch(name)]",
+   "tests": [
+    "test_candidates.Form"
+   ]
+  },
+  {
+   "id": "decide_runtime_kos_reasons_dropped",
+   "file": "loop/decide.py",
+   "old": "            reasons += CR.kos_reasons(cand.rerun)\n",
+   "new": "",
+   "tests": [
+    "test_candidates.Live.test_a_rerun_kos_did_not_verify_reaches_the_gate_and_is_rejected_by_its_reasons"
+   ]
+  },
+  {
+   "id": "merge_diff_of_an_unverified_rerun",
+   "file": "loop/candidates.py",
+   "old": "    if not CR.verified(entry):\n        raise Unusable(\"candidate %s: the rerun is not verified\" % cid)\n",
+   "new": "",
+   "tests": [
+    "test_candidates.Live.test_a_rerun_kos_did_not_verify_reaches_the_gate_and_is_rejected_by_its_reasons"
    ]
   }
  ]

@@ -147,7 +147,9 @@ judgement's reasons and before the fingerprint's). A manifest of another ecosyst
 **The hit** (``hit(finding, case, window)``, match-rule v2 for one finding and one case):
 
 - ``class_level`` K0, K1 or K2: ``tool`` and ``rule_id`` equal (strings), and the finding's **primary**
-  reference, ``evidence_refs[0]``, lies whole inside one hunk of the case's touched path of the same ``path``
+  reference, ``evidence_refs[0]`` and only when its ``path`` is the finding's ``file``
+  (``findings.write.primary``, tohum/26q (3): a finding whose first reference is on another path, or with no
+  ``file``, has no line and hits no such case), lies whole inside one hunk of the case's touched path of the same ``path``
   (``start <= line_start <= line_end <= end``): the mapped line (tohum/26m "Dev vaka seti" 6). So the right file
   and rule on another line is no hit, a reference wider than the hunk is none either, and no later reference
   makes a hit: not when the first one is elsewhere, and not when the first entry is no reference at all;
@@ -183,9 +185,11 @@ import sys
 from typing import Any, Callable, Iterable, Iterator
 
 import cli
+from findings import write as FW
 from gate import check as GC
 from gate import diffguard
 from profile import derive
+from runner import candidate_rerun as CR
 
 TOOL = "eslint"
 PACKAGE_MANIFESTS = ("package.json",)     # npm's package manifest; see the module docstring, "The group"
@@ -421,7 +425,7 @@ def hit(finding: Any, case: Any, window: int | None = None) -> bool:
         return False
     refs = _refs(finding)
     if case["class_level"] in DETERMINISTIC:
-        primary = refs[0] if refs else None
+        primary = refs[0] if refs and FW.primary(finding) is not None else None
         return all(isinstance(case.get(k), str) and finding.get(k) == case[k] for k in ("tool", "rule_id")) \
             and primary is not None \
             and any(_inside(primary, t, 0) for t in _touched(case) if t["path"] == primary["path"])
@@ -436,17 +440,6 @@ def hit(finding: Any, case: Any, window: int | None = None) -> bool:
 
 
 # ---------------------------------------------------------------- the case
-
-def _kos_reasons(entry: Any) -> list[str]:
-    if not isinstance(entry, dict):
-        return ["kos:missing"]
-    if entry.get("verdict") == "verified":
-        return []
-    reasons = entry.get("reasons")
-    if isinstance(reasons, list) and reasons and all(isinstance(r, str) for r in reasons):
-        return ["kos:%s" % r for r in reasons]
-    return ["kos:%s" % entry.get("verdict")]
-
 
 def _under_hash(read: Callable[[str], "bytes | None"], path: str, want: Any) -> bytes | None:
     data = read(path)
@@ -498,7 +491,7 @@ def _one(base_sha: str, mid: str, mutation: Any, index: dict, read: Callable[[st
         return ["mutation_unusable"], None, None
     entries = index.get("mutations")
     entry = entries.get(mid) if isinstance(entries, dict) else None
-    reasons = _kos_reasons(entry)
+    reasons = CR.kos_reasons(entry)
     if reasons:
         return reasons, None, None
     base_run = _under_hash(read, GC.RUN_FILES[0], index.get("base_run_sha256"))

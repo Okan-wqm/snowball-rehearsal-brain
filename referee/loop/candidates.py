@@ -2,17 +2,19 @@
 "Aday yolu": "``yaz`` ``candidates/<id>/``'yi sonuçlardan hash'iyle okur. ``organ_ids`` kapıya, ``finding`` bulgu
 yazıcısına gider; biçimsiz paket yalnız o adayı reddeder", test 58; tohum/26k T1, T2).
 
-**The candidates** (``ids``): the candidate ids (``runner.kos.CANDIDATE_ID``, the rule a ready candidate's id
-and ``koş``'s packages stand under) among ``names``: every name under the results' ``candidates/`` and every key
+**The candidates** (``ids``): the run-time candidate ids (``runner.candidate_rerun.ID``, the rule ``koş``
+reruns a package under: tohum/26p's, without a dot) among ``names``: every name under the results' ``candidates/`` and every key
 of the index's ``reruns`` (``names`` is the set ``yaz``'s ``reruns`` line shows). Any other name is no candidate
 and takes no decision: ``koş`` puts no package under it, and a decision row could not carry every such name (one
 that is not UTF-8 has no place in the ledger).
 
 **Read by its hash** (``read``). A candidate's package and the gate's three files are taken from
 ``runner.candidate_rerun.reran`` and from nowhere else: the package is the bytes whose sha256 the index's rerun
-entry carries, rerun ``verified``. A candidate ``reran`` does not hand out is ``Refused`` with ``reran``'s one
-reason (``package_missing``, ``rerun_missing``, ``rerun_not_verified``, ``rerun_files_missing``) and nothing of
-it is read.
+entry carries. A candidate ``reran`` does not hand out is ``Refused`` with ``reran``'s one
+reason (``package_missing``, ``rerun_missing``, ``rerun_files_missing``) and nothing of
+it is read. A rerun ``koş`` did not verify is handed out (tohum/26p (5)): ``rerun`` is its entry of the index,
+``files`` may lack a file (``None``), and ``loop.decide`` rejects it by the entry's reasons; ``merge_diff`` hands
+out no diff of one.
 
 **The package's form** (``parsed``; tohum/26a: ``{finding, diff, organ_ids, definition_sha256[]}``). The package
 is UTF-8 JSON (``cli.loads``) in which no string, key or value at any depth, lacks a UTF-8 encoding (a lone
@@ -29,8 +31,9 @@ for. From it, and from nothing the package says about itself:
 
 - ``fingerprint``: ``findings.write.fingerprint`` of the finding on the cycle's tree (``None`` when it has none);
 - ``found``: what the gate's criteria read (``gate.check.finding``): ``{rule_id, path, line}``, the finding's
-  ``rule_id``, its ``file`` and the ``line_start`` of its first evidence ref in that file (absent values stay
-  absent, and the gate refuses them: ``candidate_unusable``).
+  ``rule_id``, its ``file`` and the ``line_start`` of its primary evidence ref (``findings.write.primary``:
+  the first ref, when it is in that file; tohum/26q (3)); absent values stay absent, and the gate refuses them
+  (``candidate_unusable``).
 
 Caller: ``loop.decide`` (each cycle but the genesis cycle; its rules for a run-time candidate are stated there).
 ``merge_diff`` gives D6 the diff of the merge D5 chose, read again under the same package hash.
@@ -81,7 +84,8 @@ class Candidate:
     package_sha256: str
     package: dict               # the parsed package
     diff: str
-    files: dict[str, bytes]     # ``runner.candidate_rerun.FILES`` of the rerun
+    files: dict[str, "bytes | None"]    # ``runner.candidate_rerun.FILES`` of the rerun; None: no such file
+    rerun: dict                 # the rerun's entry of the index
     fingerprint: str | None     # the finding's fingerprint on the cycle's tree
     found: dict                 # the finding as ``gate.check.finding`` reads it
 
@@ -102,7 +106,7 @@ def index(read: Read) -> Any:
 
 def ids(results: str, index_: Any) -> list[str]:
     """The ids of the results' run-time candidates, in code-point order ("The candidates")."""
-    return [name for name in names(results, index_) if K.CANDIDATE_ID.fullmatch(name)]
+    return [name for name in names(results, index_) if CR.ID.fullmatch(name)]
 
 
 def names(results: str, index_: Any) -> list[str]:
@@ -133,29 +137,31 @@ def parsed(package: bytes) -> dict:
 
 def found(finding: dict) -> dict:
     """The finding as the gate's criteria read it (``gate.check.finding``'s keys; see "The finding")."""
-    ref = next((r for r in finding["evidence_refs"] if r["path"] == finding["file"]), None)
+    ref = FW.primary(finding)
     return {"rule_id": finding.get("rule_id"), "path": finding["file"], "line": ref and ref["line_start"]}
 
 
 def read(index_: Any, cid: str, read_: Read, tree_read: Read) -> Candidate:
     """Candidate ``cid`` of the results, or ``Refused`` (see the module docstring)."""
     try:
-        package, files = CR.reran(index_, cid, read_)
+        package, files, entry = CR.reran(index_, cid, read_)
     except CR.NotRerun as exc:
         raise Refused(exc.reasons[0]) from None
     doc = parsed(package)
-    return Candidate(CR.key(package), doc, doc["diff"], files, FW.fingerprint(doc["finding"], tree_read),
+    return Candidate(CR.key(package), doc, doc["diff"], files, entry, FW.fingerprint(doc["finding"], tree_read),
                      found(doc["finding"]))
 
 
 def merge_diff(results: str, cid: str, package_sha256: str) -> str:
     """The diff of candidate ``cid``'s package, when the package ``reran`` hands out is still the one of
-    ``package_sha256``; else ``Unusable``."""
+    ``package_sha256`` and its rerun is ``verified``; else ``Unusable``."""
     read_ = reader(results)
     try:
-        package, _ = CR.reran(index(read_), cid, read_)
+        package, _, entry = CR.reran(index(read_), cid, read_)
     except CR.NotRerun as exc:
         raise Unusable("candidate %s: %s" % (cid, exc.reasons[0])) from None
+    if not CR.verified(entry):
+        raise Unusable("candidate %s: the rerun is not verified" % cid)
     if CR.key(package) != package_sha256:
         raise Unusable("candidate %s: the package is not the one decided on" % cid)
     return parsed(package)["diff"]

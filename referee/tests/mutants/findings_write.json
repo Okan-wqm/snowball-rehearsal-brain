@@ -48,8 +48,8 @@
   {
    "id": "fp_first_ref_anywhere",
    "file": "findings/write.py",
-   "old": "if r[\"path\"] == finding[\"file\"]), None)",
-   "new": "if True), None)",
+   "old": "    return ref if isinstance(path, str) and path == finding.get(\"file\") else None",
+   "new": "    return ref if isinstance(path, str) else None",
    "tests": [
     "test_findings_write.Fingerprint.test_no_symbol_and_no_line_is_no_fingerprint"
    ]
@@ -322,6 +322,15 @@
    "new": "FINDING = S.shape(dict(PROPOSED, **dict(WRITTEN, file=S.text, required_change=S.any_value, evidence_refs=S.any_value))",
    "tests": [
     "test_findings_write.Files.test_findings_reasons"
+   ]
+  },
+  {
+   "id": "primary_any_ref_in_the_file",
+   "file": "findings/write.py",
+   "old": "    ref = refs[0] if isinstance(refs, list) and refs else None\n    path",
+   "new": "    ref = next((r for r in refs if isinstance(r, dict) and r.get(\"path\") == finding.get(\"file\")), None) if isinstance(refs, list) else None\n    path",
+   "tests": [
+    "test_findings_write.Fingerprint.test_no_symbol_and_no_line_is_no_fingerprint"
    ]
   }
  ]

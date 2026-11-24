@@ -646,6 +646,19 @@ class Hit(unittest.TestCase):
                     turned = dict(finding, evidence_refs=[inside] + finding["evidence_refs"][:-1])
                     self.assertTrue(CB.hit(turned, dict(K0, class_level=level)))
 
+    def test_k0_the_primary_reference_is_in_the_finding_s_file(self):
+        # tohum/26q (3): the hit reads the ref the fingerprint and the gate read; a first ref on another path
+        # than ``file`` is no line, though it lies in a hunk of that path
+        inside = ref("src/a.ts", 11)
+        for name, over in (("another file", {"file": "src/z.ts"}), ("no file", {"file": None}),
+                           ("a file that is no string", {"file": ["src/a.ts"]})):
+            for level in CB.DETERMINISTIC:
+                with self.subTest(name, level=level):
+                    self.assertFalse(CB.hit(k0_finding(inside, **over), dict(K0, class_level=level)))
+                    self.assertTrue(CB.hit(k0_finding(inside), dict(K0, class_level=level)))
+        # K3 and above read any reference: the finding's file does not enter
+        self.assertTrue(CB.hit(k3_finding(ref("src/svc.ts", 45), file="src/z.ts", symbol="Svc.find"), K3))
+
     def test_k3_any_reference_can_hit(self):
         inside = ref("src/svc.ts", 45)
         for first in (ref("src/svc.ts", 400), ref("src/other.ts", 45), None, ref("src/svc.ts", 50, 40)):

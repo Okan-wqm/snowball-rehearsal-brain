@@ -45,9 +45,13 @@ ready ones.
   row), and neither is judged.
 - A candidate ``loop.candidates.read`` refuses carries that one reason (a package not read by its rerun's hash,
   or ``package_invalid``) and nothing else is judged for it: it does not reach the gate.
-- Otherwise its reasons are the path reasons of its package's ``diff`` (``diff_unusable`` as above), the reasons
+- Otherwise its reasons are the path reasons of its package's ``diff`` (``diff_unusable`` as above), the
+  ``kos:<reason>`` reasons of its rerun's entry when ``koş`` did not verify the rerun
+  (``runner.candidate_rerun.kos_reasons``, as for a ready candidate; tohum/26p (5): such a rerun is not a
+  missing one, the candidate reaches the gate), the reasons
   of ``gate.check.decide`` on the three files of its rerun (``r/<id>/``, handed out by
-  ``runner.candidate_rerun.reran``) with the finding ``loop.candidates.found`` derives, ``frozen``, the reasons
+  ``runner.candidate_rerun.reran``; a rerun not verified may lack ``hashes.json``: ``artefact_hash_mismatch``,
+  as for a ready candidate) with the finding ``loop.candidates.found`` derives, ``frozen``, the reasons
   of ``gate.allowlist.reasons`` for the package itself (its ``organ_ids``; never ``READY``; when it names a
   definition of ``pulled`` the allowlist cannot hash, ``organ_unusable`` beside the reasons of the ids it can
   judge: the package chose the definition, so it is that candidate's reject, 26k T2), and its finding's:
@@ -71,8 +75,7 @@ writes: the ``events`` rows of the reasons, the merge, the registry's rows and t
 Out of scope, stated: a finding proposed in the same cycle (no job hands ``yaz`` a proposal: the registry read
 here is the one the cycle started from; reports/seed-100), so live every run-time candidate's finding is one the
 registry does not hold until a proposal is read; a ``reopened`` row when a run-time merge is reverted
-(tohum/26k "Geri alma"; not built, ``loop.candidates``); ``kos:`` reasons for a run-time candidate (one not verified is
-not handed out). An operator excluded path written as a glob is judged by ``gate.diffguard`` as written
+(tohum/26k "Geri alma"; not built, ``loop.candidates``). An operator excluded path written as a glob is judged by ``gate.diffguard`` as written
 (29f coverage), not as a pattern; the staging (``derive``'s pattern rule) leaves such files out of the worktree, so
 ``kos`` refuses a diff that changes one (``kos:base_file_missing``). Criterion 1's "applies to ``brain/integration``'s
 head" is D3's application to the pulled tree (``kos:patch_does_not_apply``); which commit was pulled is D1's.
@@ -120,17 +123,6 @@ def _kos(index: Any) -> dict:
     holds none."""
     cands = index.get("candidates") if isinstance(index, dict) else None
     return cands if isinstance(cands, dict) else {}
-
-def _kos_reasons(entry: Any) -> list[str]:
-    if not isinstance(entry, dict):
-        return ["kos:missing"]
-    if entry.get("verdict") == "verified":
-        return []
-    reasons = entry.get("reasons")
-    if isinstance(reasons, list) and reasons and all(isinstance(r, str) for r in reasons):
-        return ["kos:%s" % r for r in reasons]
-    return ["kos:%s" % entry.get("verdict")]
-
 
 def _gate(found: Any, diff_text: str, results: str, run: dict[str, "bytes | None"], control: Any,
           unfinished: list[str]) -> list[str]:
@@ -242,11 +234,12 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
             raise Unusable("decide: %s" % cli.cause(exc)) from None
         serial_ = pending + ([merge] if merge else [])
         if cand is None:
-            reasons += _kos_reasons(index.get(cid))
+            reasons += CR.kos_reasons(index.get(cid))
             found, run = _ready(art.candidates[cid], results, cid)
             reasons += _gate(found, diff_text, results, run, control, serial_)
             reasons += closed
         else:
+            reasons += CR.kos_reasons(cand.rerun)
             reasons += _gate(cand.found, diff_text, results, dict(cand.files), control, serial_)
             try:
                 reasons += AL.reasons(cand.package, art.organs, rows)

@@ -191,9 +191,10 @@ refused tree is ``pulled_invalid``). Then:
   The reruns (P1 MF11, ``yaz_reruns``; right after the organs' outputs): for every name under the
   results' ``candidates/`` and every key of the index's ``reruns`` (``loop.candidates.names``),
   ``runner.candidate_rerun.reran`` is asked for the package and the gate's files, which it hands out only for a
-  package ``kos`` reran and verified ("Before the gate" there); the target's line has ``reruns``, per id
-  ``{reran: true, package_sha256}`` or ``{reran: false, reasons}`` (``package_missing``, ``rerun_missing``,
-  ``rerun_not_verified``, ``rerun_files_missing``). The line is a report: D5 (``loop.decide``, P1 MF12) reads those of them that
+  package ``kos`` reran ("Before the gate" there); the target's line has ``reruns``, per id
+  ``{reran: true, package_sha256, verified}`` (``verified``: whether ``kos`` verified the rerun; one it did not
+  is rejected at the gate by its entry's reasons) or ``{reran: false, reasons}`` (``package_missing``,
+  ``rerun_missing``, ``rerun_files_missing``). The line is a report: D5 (``loop.decide``, P1 MF12) reads those of them that
   are candidate ids itself through ``loop.candidates`` in every cycle but the genesis cycle, a candidate that was not rerun is
   that candidate's reject there, and D6 gets D5's ``finding_decisions`` and, for a run-time merge, its diff
   read again under the package hash D5 decided on (``loop.candidates.merge_diff``; a package changed in between
@@ -891,17 +892,17 @@ def yaz_organs(environ: dict[str, str], tid: str) -> dict[str, Any]:
 
 def yaz_reruns(environ: dict[str, str], tid: str) -> dict[str, Any]:
     """The reruns of target ``tid``'s run-time candidates (P1 MF11; see the module docstring): one entry per name
-    under the results' ``candidates/`` and per key of the index's ``reruns``: ``{reran: true, package_sha256}``
+    under the results' ``candidates/`` and per key of the index's ``reruns``: ``{reran: true, package_sha256, verified}``
     when ``runner.candidate_rerun.reran`` hands out the package and its files, else ``{reran: false, reasons}``."""
     index, read = _results(environ, tid)
     line: dict[str, Any] = {}
     for cid in LC.names(_dir(environ, "in", "results", tid), index):
         try:
-            package, _ = CR.reran(index, cid, read)
+            got = CR.reran(index, cid, read)
         except CR.NotRerun as exc:
             line[cid] = {"reran": False, "reasons": exc.reasons}
         else:
-            line[cid] = {"reran": True, "package_sha256": CR.key(package)}
+            line[cid] = {"reran": True, "package_sha256": CR.key(got.package), "verified": CR.verified(got.entry)}
     return line
 
 

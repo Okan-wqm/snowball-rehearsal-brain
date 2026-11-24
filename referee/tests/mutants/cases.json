@@ -377,7 +377,7 @@
   {
    "id": "build_kos_refusal_ignored",
    "file": "cases/build.py",
-   "old": "    reasons = _kos_reasons(entry)\n    if reasons:\n        return reasons, None, None\n",
+   "old": "    reasons = CR.kos_reasons(entry)\n    if reasons:\n        return reasons, None, None\n",
    "new": "    if not isinstance(entry, dict):\n        return [\"kos:missing\"], None, None\n",
    "tests": [
     "test_cases.Built",
@@ -590,7 +590,7 @@
   {
    "id": "hit_k0_first_valid_reference",
    "file": "cases/build.py",
-   "old": "        primary = refs[0] if refs else None",
+   "old": "        primary = refs[0] if refs and FW.primary(finding) is not None else None",
    "new": "        primary = next((r for r in refs if r is not None), None)",
    "tests": [
     "test_cases.Hit"
@@ -837,6 +837,15 @@
    "new": "lambda path: D._read_regular(tree, path), lambda finding, read: \"\",",
    "tests": [
     "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "hit_k0_file_not_read",
+   "file": "cases/build.py",
+   "old": "        primary = refs[0] if refs and FW.primary(finding) is not None else None",
+   "new": "        primary = refs[0] if refs else None",
+   "tests": [
+    "test_cases.Hit"
    ]
   }
  ]

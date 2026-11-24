@@ -56,6 +56,7 @@ VAR = TFW.lint(1)                                   # the finding GOOD fixes: li
 OTHER = TFW.lint(2, rule_id="prefer-let")           # another finding, of line 2
 NAMED = TFW.named(1)                                # a finding on a symbol
 PRINT = FW.fingerprint(VAR, TFW.reader(TREE))
+NO_APPLY = kos_diff("pkg/a.js", ["no such line"], ["x"])
 B_GOOD = kos_diff("pkg/b.js", ["const c = 3;"], ["const c = 4;"])   # a diff that fixes nothing of VAR
 
 
@@ -115,11 +116,15 @@ class Form(unittest.TestCase):
         self.addCleanup(shutil.rmtree, results)
         for name in ("b", "bad id", ".hidden", "x" * 129):
             os.makedirs(os.path.join(results, "candidates", name))
-        index = {"reruns": {"a": {}, "b": {}, "caf\udce9": {}, "": {}, "../a": {}, "x" * 128: {}}}
+        dotted = ["a.b", "a..b", "a.", "a.lock", "1.2"]    # a ready candidate's id may be so, a run-time one's not
+        for name in dotted[:2]:
+            os.makedirs(os.path.join(results, "candidates", name))
+        index = {"reruns": dict({"a": {}, "b": {}, "caf\udce9": {}, "": {}, "../a": {}, "x" * 128: {}, "A_b-9": {}},
+                                **{name: {} for name in dotted[2:]})}
         self.assertEqual(LC.names(results, index), sorted(["a", "b", "bad id", ".hidden", "x" * 129, "caf\udce9", "",
-                                                            "../a", "x" * 128]))
-        # an id kos gives no package a place under (runner.kos.CANDIDATE_ID) is no candidate: no decision names it
-        self.assertEqual(LC.ids(results, index), ["a", "b", "x" * 128])
+                                                            "../a", "x" * 128, "A_b-9"] + dotted))
+        # an id kos gives no package a place under (runner.candidate_rerun.ID) is no candidate: no decision names it
+        self.assertEqual(LC.ids(results, index), ["A_b-9", "a", "b", "x" * 128])
         self.assertEqual((LC.names(results, None), LC.names(results, {"reruns": ["a"]})), (sorted(os.listdir(
             os.path.join(results, "candidates"))),) * 2)
         self.assertEqual(LC.names(os.path.join(results, "none"), index), sorted(index["reruns"]))
@@ -128,7 +133,10 @@ class Form(unittest.TestCase):
         self.assertEqual(LC.found(VAR), {"rule_id": "no-var", "path": "pkg/a.js", "line": 1})
         refs = [{"path": "pkg/b.js", "line_start": 9, "line_end": 9}, {"path": "pkg/a.js", "line_start": 2, "line_end": 3},
                 {"path": "pkg/a.js", "line_start": 1, "line_end": 1}]
-        self.assertEqual(LC.found(dict(VAR, evidence_refs=refs)), {"rule_id": "no-var", "path": "pkg/a.js", "line": 2})
+        # the line is the primary ref's (tohum/26q (3)): the first one, and only when it is in the finding's file
+        self.assertEqual(LC.found(dict(VAR, evidence_refs=refs)), {"rule_id": "no-var", "path": "pkg/a.js", "line": None})
+        self.assertEqual(LC.found(dict(VAR, evidence_refs=refs[1:] + refs[:1])),
+                         {"rule_id": "no-var", "path": "pkg/a.js", "line": 2})
         self.assertEqual(LC.found(dict(VAR, evidence_refs=refs[:1])), {"rule_id": "no-var", "path": "pkg/a.js", "line": None})
         self.assertEqual(LC.found(NAMED), {"rule_id": None, "path": "pkg/a.js", "line": 1})
 
@@ -300,12 +308,43 @@ class Live(LiveBase):
         merge, reasons, sent = self.judged()
         self.assertEqual(merge, "good")
         self.assertEqual(reasons, {"bad": ["package_invalid"], "good": [], "nofinding": ["package_invalid"],
-                                   "notjson": ["rerun_not_verified"], "old": ["no_organ", "sentinel_pending"],
+                                   "notjson": ["package_invalid"], "old": ["no_organ", "sentinel_pending"],
                                    "ready": ["candidate_id_twice"]})
         self.assertEqual(sent, [{"fingerprint": PRINT, "reasons": []}])
         self.github()
         line = self.line(self.run_yaz())
         self.assertEqual((line["ok"], line["merge"], self.reasons(line)), (True, "good", reasons))
+
+    def test_a_rerun_kos_did_not_verify_reaches_the_gate_and_is_rejected_by_its_reasons(self):
+        # tohum/26p (5): not a missing rerun; rejected as a ready candidate kos refused, and the finding is decided
+        self.world({"noapply": package(NO_APPLY)})
+        refused = ["artefact_hash_mismatch", "kos:patch_does_not_apply"]
+        got = self.decide()
+        self.assertEqual(got, {"decisions": {"noapply": {"decision": "reject", "reasons": refused,
+                                                         "package_sha256": CR.key(package(NO_APPLY))}},
+                               "merge": None, "finding_decisions": [{"fingerprint": PRINT, "reasons": refused}]})
+        with self.assertRaisesRegex(LC.Unusable, "candidate noapply: the rerun is not verified"):
+            LC.merge_diff(self.results(), "noapply", CR.key(package(NO_APPLY)))
+        # the whole job: no merge, and the finding's reject is written (the loop keeps its lesson)
+        self.github()
+        line = self.line(self.run_yaz())
+        self.assertEqual((line["ok"], line["merge"], self.reasons(line)), (True, None, {"noapply": refused}))
+        self.assertEqual(line["written"]["findings"], {"rows": 1, "unresolved_rows": 1, "refused": []})
+        # a rerun with its three files whose entry is not verified: the entry's reasons alone reject it
+        self.world({"rt": package()})
+        held = self.change("index.json")
+        index = json.loads(held)
+        for entry, reasons in (({"verdict": "no_verdict", "reasons": ["red_control_green"]}, ["kos:red_control_green"]),
+                               ({"verdict": "no_verdict", "reasons": []}, ["kos:no_verdict"]),
+                               ({"reasons": ["x", "y"]}, ["kos:x", "kos:y"])):
+            with self.subTest(entry=entry):
+                index["reruns"]["rt"] = dict(entry, package_sha256=CR.key(package()))
+                self.change("index.json", to=json.dumps(index).encode())
+                self.assertEqual(self.judged(), (None, {"rt": reasons}, [{"fingerprint": PRINT, "reasons": reasons}]))
+                with self.assertRaisesRegex(LC.Unusable, "candidate rt: the rerun is not verified"):
+                    LC.merge_diff(self.results(), "rt", CR.key(package()))
+        self.change("index.json", to=held)      # the control: the entry as kos wrote it merges
+        self.assertEqual(self.judged()[:2], ("rt", {"rt": []}))
 
     def test_a_candidate_is_read_by_the_hash_of_its_rerun(self):
         self.world({"rt": package(), "z": package()})
