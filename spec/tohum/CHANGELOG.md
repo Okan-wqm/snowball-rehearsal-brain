@@ -4,6 +4,7 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-23, E739–E743; tohum dönemi AK, sahibin dört ipucu: aday onu üreten organla yargılanır, organ sayfasının söz verdiği araca ulaşır, dersler büyürken bulma ve yeniden sınama, bağlam ölçülen kaynak; yeni `00g`, aynanın `context` bölümü; seed-102'ye rapor masası uzlaşısı): `CHANGELOG-20.md`; başında **İlk iş**.
 - 2.2 (2026-11-23, E736; tohum dönemi AJ, sahibin ipucu: doğrudan da yanlıştan da öğrenmek, her sorunu sınıf olarak kapatmak, üstünü örtmemek; yeni `00f`): `CHANGELOG-19.md`; başında **İlk iş**.
 - 2.2 (2026-11-23, E733–E735; tohum dönemi AI, P1 çıkış dönemi, rapor masası uzlaşısı: seed-073 (a), (c), (d) ve seed-087 (iv), E696 ve E702 kapandı, E703'ün üç ertelemesi, yeni `26r` ve `26s` (P3'ün tablosu), gevşetme L-P1E, L-AF1 bitti): `CHANGELOG-18.md`; başında **İlk iş**.
 - 2.2 (2026-11-23, E730–E732; tohum dönemi AH, rapor masası uzlaşısı: seed-100 ve seed-101, yeni `26q`, `26m` "Puanlama" düzeltildi, gevşetme L-AH1): `CHANGELOG-17.md`; başında **İlk iş**.

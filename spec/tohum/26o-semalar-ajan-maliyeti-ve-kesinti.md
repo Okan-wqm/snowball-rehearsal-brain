@@ -67,3 +67,13 @@ yargılatır (en çok iki kez), sonra oturum o nedenleri okur.
 operatörün anahtar dosyasının değişme zamanı oturumun başından beri değiştiyse (oturum sürerken konan anahtar da) bir
 dakika içinde sürer (dosyanın içeriği okunmaz). Bu bir
 kesintidir, Kurucu'nun boş oturumu değildir (`24a` "Oturumun maliyet satırı").
+
+**Bağlam ve sıkıştırma** (E742, sahibin ipucu, `00g`). Başlatıcı her oturumdan önce `mirror.json`'un `context`
+bölümüne en yeni 20 oturumun her biri için, transkriptin (`session-<damga>.jsonl`) oturumun kendi `compact_boundary`
+olaylarından (bir alt ajanınki sayılmaz) şunları yazar: `compactions` (sayı), `first_compaction_min` (ilkinin dakikası)
+ve `each`: her sıkıştırma için `minute` (oturumun damgasından, ondan önce zaman damgası taşıyan son olaya kadar, bir
+ondalık), `input_tokens_before` (olayın `compact_metadata.pre_tokens`'ı; yoksa oturumun ondan önceki son kendi
+mesajının giriş, önbellek okuma ve önbellek yazma tokenları) ve `tokens_from` (`pre_tokens` ya da `last_usage`);
+oturum başına en çok 20, kalanı `each_left_out`. Olmayan değer `null`'dır ve nedeni `not_measured`'dadır (transkript
+yok, sıkıştırma yok, zaman damgası ya da token yok). Yalnız olgudur; tanımı `seed/founder/mirror.py`'nin
+`SOURCES`'undadır.

@@ -36,3 +36,5 @@ yanlıştan da öğren; her sorunu bir sınıf olarak kapat; hiçbirinin üstün
   1. Bu ipucu hiçbir hakemi ya da denetimi gevşetmez ve yeni bir hakem kuralı getirmez: önyükleme hakemi, rakip ve tam
      prepush değişmeden kalır.
   2. Teslimde hiçbir yeniden yapım istenmez: görev bundan sonraki işine uygulanır; işin sırası `CHANGELOG-14`'ünkidir.
+
+Sahibin E739'dan başlayarak ipuçları `00g`'dedir.
