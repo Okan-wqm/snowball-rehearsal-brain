@@ -32,6 +32,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -63,6 +64,7 @@ A_JS = "var a = 1;\nconst b = 2;\nlet d = 4;\nif (a === b) eval(a);\n"
 B_JS = "const c = 3;\n"
 FILES = {"pkg/a.js": A_JS.encode(), "pkg/b.js": B_JS.encode()}
 SEED = "5" * 40
+UNIT = "the/unit"     # the unit's root given to ``build``: the group of a case under no manifest
 
 
 def sha(data: bytes) -> str:
@@ -163,6 +165,46 @@ class Proposal(unittest.TestCase):
         self.assertGreater(len(turns), 1)       # ... nor one order of the operators,
         self.assertGreater(len(proposed), 2)    # so the default limit does not cut every proposal to the same two
         self.assertEqual(CB.LIMIT, 2)
+
+    def by_hand(self, seed: str, held: list) -> list:
+        """The whole proposal's ids in order with ``held`` rows, by hand: the operators no row has the rule of
+        first, a place whose case id a row has left out of its operator's places, then the rounds."""
+        cased = {row.get("rule_id") for row in held}
+        ids = {row.get("case_id") for row in held}
+        turns = [op for op in self.turns(seed) if op not in cased] + [op for op in self.turns(seed) if op in cased]
+        places = {op: [m for m in (mid_by_hand(op, *p, FILES[p[0]]) for p in self.order(seed, op))
+                       if "k0-" + m not in ids] for op in turns}
+        return [places[op][rank] for rank in range(3) for op in turns if rank < len(places[op])]
+
+    def test_held_rows_put_uncased_rules_first_and_pass_over_held_places(self):
+        row = lambda rule, case_id="k0-elsewhere": {"case_id": case_id, "tool": "eslint", "rule_id": rule}  # noqa: E731
+        moved = passed = 0
+        for seed in ("5" * 40, "6" * 40, "7" * 40, "8" * 40):
+            plain = list(CB.propose(FILES, ["pkg"], seed, limit=100))
+            self.assertEqual(self.by_hand(seed, []), plain)                 # the hand rule is the rule without rows
+            for held in ([row("no-var")], [row("eqeqeq"), row("prefer-const")], [row(op) for op in OPERATORS],
+                         [row("unknown-rule", "k0-" + NO_VAR_2)], [row("no-var", "k0-" + NO_VAR_B)],
+                         [row("unknown-rule", "k0-" + m) for m in (EQEQEQ_4, ASSIGN_1, ASSIGN_3)],
+                         [row("no-var", NO_VAR_2)], [{"case_id": "k0-" + PREFER_2}], [{}]):
+                want = self.by_hand(seed, held)
+                for limit in (0, 1, 2, 3, 100):
+                    with self.subTest(seed=seed[0], held=held, limit=limit):
+                        got = CB.propose(FILES, ["pkg"], seed, limit=limit, held=iter(held))
+                        self.assertEqual(list(got), want[:limit])
+                        self.assertEqual(got, {m: ALL[m] for m in want[:limit]})
+                moved += want != plain and sorted(want) == sorted(plain)
+                passed += len(want) < len(plain)
+        self.assertGreater(moved, 3)        # rows of a rule changed the order of a whole proposal
+        self.assertGreater(passed, 7)       # rows of an id took places out
+        # a row of the rule and tool: an operator of another tool's rule of the same name is not behind it
+        other_tool = [{"case_id": "k0-x", "tool": "tslint", "rule_id": op} for op in OPERATORS[:2]]
+        self.assertEqual(list(CB.propose(FILES, ["pkg"], SEED, limit=100, held=other_tool)),
+                         list(CB.propose(FILES, ["pkg"], SEED, limit=100)))
+        # with a case of every rule but one, that rule's operator is proposed first, whatever the seed
+        for seed in "0123456789":
+            got = CB.propose(FILES, ["pkg"], seed, limit=1, held=[row(op) for op in OPERATORS if op != "eqeqeq"])
+            self.assertEqual(list(got), [EQEQEQ_4])
+        self.assertEqual(CB.case_id("m"), "k0-m")
 
     def test_only_the_inputs(self):
         files = dict(FILES, **{"other/x.js": b"const o = 1;\n", "pkgs/y.js": b"const p = 1;\n"})
@@ -483,7 +525,7 @@ class World(TK.Base):
 
     def build(self, mutations: dict, index=None, read=None) -> dict:
         index = json.loads(self.read("index.json")) if index is None else index
-        return CB.build(SEED, mutations, index, read or self.read, self.source, FW.fingerprint)
+        return CB.build(SEED, mutations, index, read or self.read, self.source, FW.fingerprint, UNIT)
 
 
 class Oracle(World):
@@ -679,13 +721,42 @@ class Built(World):
         self.assertEqual(built["refused"], {})
         self.assertEqual(index["mutations"][NO_VAR_2]["run_sha256"], sha(self.read("m/%s/mut.jsonl" % NO_VAR_2)))
 
-    def test_the_group_of_a_file_at_the_root(self):
+    def at_root(self, tree: dict, unit_root: "str | None") -> dict:
         m = mutation(one_line("a.js", 1, "const b = 2;", "var b = 2;"), path="a.js")
         index = {"base_run_sha256": sha(run()), "mutations": {"x": {"verdict": "verified", "reasons": [],
                                                                      "run_sha256": sha(run(v("no-var", 1, "a.js")))}}}
         files = {"base.jsonl": run(), "m/x/mut.jsonl": run(v("no-var", 1, "a.js"))}
-        (case,) = CB.build(SEED, {"x": m}, index, files.get, {"a.js": b"const b = 2;\n"}.get, FW.fingerprint)["cases"]
+        return CB.build(SEED, {"x": m}, index, files.get, dict({"a.js": b"const b = 2;\n"}, **tree).get,
+                        FW.fingerprint, unit_root)
+
+    def test_the_group_of_a_file_at_the_root(self):
+        (case,) = self.at_root({"package.json": b"{}"}, UNIT)["cases"]
         self.assertEqual((case["group"], case["touched_paths"]), (".", [{"path": "a.js", "hunks": [{"start": 1, "end": 1}]}]))
+        (case,) = self.at_root({}, "lib")["cases"]
+        self.assertEqual(case["group"], "lib")
+        (case,) = self.at_root({"package.json": b"{}"}, None)["cases"]      # the unit's root is not asked for
+        self.assertEqual(case["group"], ".")
+
+    def test_a_case_with_no_group_is_refused(self):
+        self.assertEqual(self.at_root({}, None), {"cases": [], "oracle": {}, "refused": {"x": ["group_unmade"]}})
+        # ... with that reason alone, before the fingerprint is asked for (the tree has no a.js to make one from)
+        m = mutation(one_line("a.js", 1, "const b = 2;", "var b = 2;"), path="a.js")
+        index = {"base_run_sha256": sha(run()), "mutations": {"x": {"verdict": "verified", "reasons": [],
+                                                                     "run_sha256": sha(run(v("no-var", 1, "a.js")))}}}
+        files = {"base.jsonl": run(), "m/x/mut.jsonl": run(v("no-var", 1, "a.js"))}
+        self.assertEqual(CB.build(SEED, {"x": m}, index, files.get, {}.get, FW.fingerprint, None)["refused"],
+                         {"x": ["group_unmade"]})
+        self.assertEqual(CB.build(SEED, {"x": m}, index, files.get, {}.get, FW.fingerprint, UNIT)["refused"],
+                         {"x": ["fingerprint_unmade"]})
+
+    def test_the_built_case_s_group_is_read_on_the_tree(self):
+        self.kos({NO_VAR_2: ALL[NO_VAR_2]})
+        (case,) = self.build({NO_VAR_2: ALL[NO_VAR_2]})["cases"]
+        self.assertEqual(case["group"], "pkg")                  # the fixture's pkg/package.json
+        os.remove(os.path.join(self.tree, "pkg", "package.json"))
+        (case,) = self.build({NO_VAR_2: ALL[NO_VAR_2]})["cases"]
+        self.assertEqual(case["group"], UNIT)
+
 
     def test_what_kos_refused_is_no_case(self):
         absent = mutation(one_line("pkg/a.js", 2, "const z = 9;", "var z = 9;"), line=2)      # does not apply
@@ -705,7 +776,7 @@ class Built(World):
         index["mutations"][NO_VAR_2] = {"verdict": "no_verdict", "reasons": [], "run_sha256": None}
         self.assertEqual(self.build({NO_VAR_2: ALL[NO_VAR_2]}, index)["refused"], {NO_VAR_2: ["kos:no_verdict"]})
         for index in ({}, {"mutations": []}, [], None):
-            self.assertEqual(CB.build(SEED, {NO_VAR_2: ALL[NO_VAR_2]}, index, self.read, self.source, FW.fingerprint)["refused"],
+            self.assertEqual(CB.build(SEED, {NO_VAR_2: ALL[NO_VAR_2]}, index, self.read, self.source, FW.fingerprint, UNIT)["refused"],
                              {NO_VAR_2: ["kos:missing"]})
 
     def test_a_run_file_is_read_under_its_hash_only(self):
@@ -731,9 +802,49 @@ class Built(World):
 
     def test_mutations_that_are_no_object(self):
         for mutations in (None, [], "x"):
-            self.assertEqual(CB.build(SEED, mutations, {}, lambda p: None, lambda p: None, FW.fingerprint),
+            self.assertEqual(CB.build(SEED, mutations, {}, lambda p: None, lambda p: None, FW.fingerprint, UNIT),
                              {"cases": [], "oracle": {}, "refused": {}})
 
+
+class Group(unittest.TestCase):
+    """tohum/26e: the nearest directory at or above the file that holds a package manifest, else the unit's root."""
+
+    def group(self, path: str, *manifests: str, unit: "str | None" = UNIT) -> "str | None":
+        return CB.group(path, {m: b"{}" for m in manifests}.get, unit)
+
+    def test_the_nearest_directory_holding_a_manifest(self):
+        for name in D.PROJECT_MANIFESTS:
+            with self.subTest(name=name):
+                self.assertEqual(self.group("a/b/c/x.js", "a/b/c/" + name), "a/b/c")            # the file's own
+                self.assertEqual(self.group("a/b/c/x.js", "a/b/" + name), "a/b")
+                self.assertEqual(self.group("a/b/c/x.js", "a/" + name, name), "a")              # the nearer of two
+                self.assertEqual(self.group("a/b/c/x.js", "a/" + name, "a/b/" + name), "a/b")
+                self.assertEqual(self.group("a/b/c/x.js", name), ".")                           # the tree's root
+                self.assertEqual(self.group("x.js", name), ".")
+                # not one below the file, beside its directory, or in a directory whose name only starts the same
+                self.assertEqual(self.group("a/b/x.js", "a/b/c/" + name, "a/c/" + name, "a/bb/" + name, "ab/" + name), UNIT)
+        self.assertEqual(D.PROJECT_MANIFESTS, ("package.json", "project.json"))
+        self.assertEqual(self.group("a/b/x.js", "a/b/project.json", "a/package.json"), "a/b")
+
+    def test_no_manifest_is_the_units_root(self):
+        self.assertEqual(self.group("a/b/x.js"), UNIT)
+        self.assertEqual(self.group("x.js", unit="."), ".")
+        self.assertIsNone(self.group("a/b/x.js", unit=None))
+        # another file is no manifest: a name that only looks like one, another ecosystem's, the file itself
+        self.assertEqual(self.group("a/b/x.js", "a/b/package.json5", "a/b/xpackage.json", "a/b/pyproject.toml",
+                                    "a/b/Cargo.toml", "a/b/x.js", "a/b/package.json/x"), UNIT)
+
+    def test_a_manifest_above_the_unit_s_root_is_still_the_nearest(self):
+        self.assertEqual(self.group("a/b/x.js", "a/package.json", unit="a/b"), "a")
+
+    def test_a_manifest_that_is_not_read_marks_nothing(self):
+        with tempfile.TemporaryDirectory() as tree:
+            write_tree(tree, {"a/package.json": "{}", "a/b/c/x.js": "x\n", "a/b/c/project.json/keep": "", "real": "{}"})
+            os.symlink(os.path.join(tree, "real"), os.path.join(tree, "a", "b", "package.json"))
+            read = lambda path: D._read_regular(tree, path)     # noqa: E731  the job's reader
+            self.assertEqual(CB.group("a/b/c/x.js", read, UNIT), "a")      # past the directory and the link
+            os.remove(os.path.join(tree, "a", "package.json"))
+            self.assertEqual(CB.group("a/b/c/x.js", read, UNIT), UNIT)
 
 class Twins(unittest.TestCase):
     """tohum/26q (7): a case whose planted violation has the fingerprint of another violation in the same file
@@ -750,7 +861,7 @@ class Twins(unittest.TestCase):
         index = {"base_run_sha256": sha(base),
                  "mutations": {"x": {"verdict": "verified", "reasons": [], "run_sha256": sha(mut_run)}}}
         files = {"base.jsonl": base, "m/x/mut.jsonl": mut_run}
-        return CB.build(SEED, {"x": m or self.M}, index, files.get, (self.TREE if tree is None else tree).get, fingerprint)
+        return CB.build(SEED, {"x": m or self.M}, index, files.get, (self.TREE if tree is None else tree).get, fingerprint, UNIT)
 
     def test_another_line_of_the_same_text_and_rule_shares_the_fingerprint(self):
         mut_run = run(*self.BASE, v("no-var", 3, self.PATH))
@@ -780,7 +891,7 @@ class Twins(unittest.TestCase):
                 index = {"base_run_sha256": sha(index_base),
                          "mutations": {"x": {"verdict": "verified", "reasons": [], "run_sha256": sha(mut_run)}}}
                 got = CB.build(SEED, {"x": self.M}, index, {"base.jsonl": index_base, "m/x/mut.jsonl": mut_run}.get,
-                               tree.get, FW.fingerprint)
+                               tree.get, FW.fingerprint, UNIT)
                 self.assertEqual((got["refused"], [c["case_id"] for c in got["cases"]]), ({}, ["k0-x"]))
 
     def test_a_planted_violation_without_a_fingerprint_is_no_case(self):
@@ -792,7 +903,7 @@ class Twins(unittest.TestCase):
             index = {"base_run_sha256": sha(base),
                      "mutations": {"x": {"verdict": "verified", "reasons": [], "run_sha256": sha(mut_run)}}}
             return CB.build(SEED, {"x": self.M}, index, {"base.jsonl": base, "m/x/mut.jsonl": mut_run}.get, tree.get,
-                            fingerprint)["refused"]
+                            fingerprint, UNIT)["refused"]
 
         self.assertEqual(built(alone), {})
         for name, tree in (("no such file in the tree", {"pkg/u.js": b"var a = 1;\n"}),
