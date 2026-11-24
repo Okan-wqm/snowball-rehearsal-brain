@@ -230,8 +230,8 @@
   {
    "id": "registers_not_written",
    "file": "ledger/cycle.py",
-   "old": "    files.update({path: data for path, data in (registers or {}).items() if data})\n",
-   "new": "",
+   "old": "    files.update({path: data for path, data in {**(registers or {}), **(sets or {})}.items() if data})\n",
+   "new": "    files.update({path: data for path, data in (sets or {}).items() if data})\n",
    "tests": [
     "test_cycle.py"
    ]
@@ -239,8 +239,8 @@
   {
    "id": "empty_register_written",
    "file": "ledger/cycle.py",
-   "old": "for path, data in (registers or {}).items() if data})",
-   "new": "for path, data in (registers or {}).items()})",
+   "old": "    files.update({path: data for path, data in {**(registers or {}), **(sets or {})}.items() if data})\n",
+   "new": "    files.update({**{path: data for path, data in (sets or {}).items() if data}, **(registers or {})})\n",
    "tests": [
     "test_cycle.py"
    ]
@@ -248,8 +248,8 @@
   {
    "id": "commit_drops_registers",
    "file": "ledger/cycle.py",
-   "old": "signer, root_row_id,\n                   registers)",
-   "new": "signer, root_row_id)",
+   "old": "signer, root_row_id,\n                   registers, sets)",
+   "new": "signer, root_row_id,\n                   None, sets)",
    "tests": [
     "test_cycle.py",
     "test_loop_write.Registers.test_a_finding_is_written_in_the_cycles_commit_under_its_root"
@@ -304,7 +304,7 @@
   {
    "id": "pulled_any_state_file",
    "file": "loop/pulled.py",
-   "old": "<= set(state) <= set(B.STATE_CHAINS + B.STATE_REGISTERS)",
+   "old": "<= set(state) <= set(B.STATE_CHAINS + B.STATE_CARRIED)",
    "new": "<= set(state)",
    "tests": [
     "test_loop_kos.Layout"
@@ -313,8 +313,8 @@
   {
    "id": "pulled_registers_not_read",
    "file": "loop/pulled.py",
-   "old": "    state.update({p: contents[_carried(p)] for p in B.STATE_REGISTERS if _carried(p) in contents})\n",
-   "new": "",
+   "old": "    state.update({p: contents[_carried(p)] for p in B.STATE_CARRIED if _carried(p) in contents})\n",
+   "new": "    state.update({p: contents[_carried(p)] for p in (B.STATE_CASES,) if _carried(p) in contents})\n",
    "tests": [
     "test_loop_kos.Layout"
    ]
@@ -412,8 +412,8 @@
   {
    "id": "yaz_commit_without_registers",
    "file": "loop/write_cycle.py",
-   "old": "                               root_row_id, registers)\n    except (W.ApiError",
-   "new": "                               root_row_id)\n    except (W.ApiError",
+   "old": "                               root_row_id, registers, sets)\n    except (W.ApiError",
+   "new": "                               root_row_id, None, sets)\n    except (W.ApiError",
    "tests": [
     "test_loop_write.Registers"
    ]

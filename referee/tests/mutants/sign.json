@@ -490,8 +490,8 @@
   {
    "id": "job_list_not_given_to_d6",
    "file": "loop/job.py",
-   "old": "lint, end, d8, opened, passed, job_calls)",
-   "new": "lint, end, d8, opened, passed)",
+   "old": "d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened, passed, job_calls,\n",
+   "new": "d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened, passed, None,\n",
    "tests": [
     "test_loop_write.D6.test_the_job_s_own_signers_count_in_one_list"
    ]

@@ -1,0 +1,369 @@
+{
+ "mutants": [
+  {
+   "id": "store_id_held_twice",
+   "file": "cases/store.py",
+   "old": " or row[\"case_id\"] in seen:",
+   "new": ":",
+   "tests": [
+    "test_case_store.Rows"
+   ]
+  },
+  {
+   "id": "store_last_line_without_newline",
+   "file": "cases/store.py",
+   "old": "if number > len(lines) or not _row(row)",
+   "new": "if not _row(row)",
+   "tests": [
+    "test_case_store.Rows"
+   ]
+  },
+  {
+   "id": "store_any_provenance",
+   "file": "cases/store.py",
+   "old": " and case[\"provenance\"] in PROVENANCES",
+   "new": "",
+   "tests": [
+    "test_case_store.Rows"
+   ]
+  },
+  {
+   "id": "store_any_split",
+   "file": "cases/store.py",
+   "old": " and case[\"split\"] == SPLIT",
+   "new": "",
+   "tests": [
+    "test_case_store.Rows"
+   ]
+  },
+  {
+   "id": "store_empty_id",
+   "file": "cases/store.py",
+   "old": " and case[\"case_id\"] != \"\"",
+   "new": "",
+   "tests": [
+    "test_case_store.Rows"
+   ]
+  },
+  {
+   "id": "store_previous_not_read",
+   "file": "cases/store.py",
+   "old": "    if previous:\n",
+   "new": "    if False:\n",
+   "tests": [
+    "test_case_store.Prefix"
+   ]
+  },
+  {
+   "id": "store_only_a_cut_is_seen",
+   "file": "cases/store.py",
+   "old": "if n > len(new) or new[n - 1] != line]",
+   "new": "if n > len(new)]",
+   "tests": [
+    "test_case_store.Prefix"
+   ]
+  },
+  {
+   "id": "store_old_line_without_newline",
+   "file": "cases/store.py",
+   "old": "            old.pop()\n            new.pop()",
+   "new": "            old.pop()\n            new = new[:-1] if new[-1] == b\"\" else new",
+   "tests": [
+    "test_case_store.Prefix"
+   ]
+  },
+  {
+   "id": "store_reasons_not_by_line",
+   "file": "cases/store.py",
+   "old": "    return sorted(found, key=lambda pair: pair[1])",
+   "new": "    return found",
+   "tests": [
+    "test_case_store.Prefix"
+   ]
+  },
+  {
+   "id": "store_other_content_kept",
+   "file": "cases/store.py",
+   "old": "        elif have[cid] == line:",
+   "new": "        elif True:",
+   "tests": [
+    "test_case_store.Add"
+   ]
+  },
+  {
+   "id": "store_list_twin_added_again",
+   "file": "cases/store.py",
+   "old": "            have[cid] = line\n",
+   "new": "",
+   "tests": [
+    "test_case_store.Add"
+   ]
+  },
+  {
+   "id": "store_held_id_added_again",
+   "file": "cases/store.py",
+   "old": "        if cid not in have:",
+   "new": "        if True:",
+   "tests": [
+    "test_case_store.Add"
+   ]
+  },
+  {
+   "id": "store_broken_file_extended",
+   "file": "cases/store.py",
+   "old": "    if bad:\n        raise Broken",
+   "new": "    if False:\n        raise Broken",
+   "tests": [
+    "test_case_store.Rows",
+    "test_case_store.Add"
+   ]
+  },
+  {
+   "id": "store_add_takes_any_value",
+   "file": "cases/store.py",
+   "old": "        if not _row(case):\n            raise Unusable",
+   "new": "        if not isinstance(case, dict) or \"case_id\" not in case:\n            raise Unusable",
+   "tests": [
+    "test_case_store.Add"
+   ]
+  },
+  {
+   "id": "state_cases_not_against_the_parent",
+   "file": "loop/state.py",
+   "old": "            found = store.check(data, old)",
+   "new": "            found = store.check(data)",
+   "tests": [
+    "test_loop_state.CaseSet"
+   ]
+  },
+  {
+   "id": "state_cases_judged_as_a_chain",
+   "file": "loop/state.py",
+   "old": "        if path == branches.STATE_CASES:",
+   "new": "        if False:",
+   "tests": [
+    "test_loop_state.CaseSet"
+   ]
+  },
+  {
+   "id": "state_cases_not_judged",
+   "file": "loop/state.py",
+   "old": "            found = store.check(data, old)",
+   "new": "            found = []",
+   "tests": [
+    "test_loop_state.CaseSet",
+    "test_loop_cek.CekJob.test_the_heads_dev_case_set_is_verified_carried_and_read_by_the_proposal"
+   ]
+  },
+  {
+   "id": "state_chains_without_the_cases",
+   "file": "loop/state.py",
+   "old": "    for path in branches.STATE_CARRIED:\n        data = _file(source, commit, path)",
+   "new": "    for path in branches.STATE_REGISTERS:\n        data = _file(source, commit, path)",
+   "tests": [
+    "test_loop_state.CaseSet",
+    "test_loop_cek.CekJob.test_the_heads_dev_case_set_is_verified_carried_and_read_by_the_proposal"
+   ]
+  },
+  {
+   "id": "pulled_cases_not_in_the_layout",
+   "file": "loop/pulled.py",
+   "old": "LAYOUT = TOP + (STATUS,) + REGISTER_FILES + (CASES,)",
+   "new": "LAYOUT = TOP + (STATUS,) + REGISTER_FILES",
+   "tests": [
+    "test_loop_kos.Layout.test_the_dev_case_set_is_carried_when_the_head_has_it"
+   ]
+  },
+  {
+   "id": "pulled_cases_not_read",
+   "file": "loop/pulled.py",
+   "old": "    state.update({p: contents[_carried(p)] for p in B.STATE_CARRIED if _carried(p) in contents})\n",
+   "new": "    state.update({p: contents[_carried(p)] for p in B.STATE_REGISTERS if _carried(p) in contents})\n",
+   "tests": [
+    "test_loop_kos.Layout.test_the_dev_case_set_is_carried_when_the_head_has_it"
+   ]
+  },
+  {
+   "id": "cycle_set_on_a_taken_path",
+   "file": "ledger/cycle.py",
+   "old": " or path in taken:",
+   "new": ":",
+   "tests": [
+    "test_cycle.Plan"
+   ]
+  },
+  {
+   "id": "cycle_set_outside_the_state_directory",
+   "file": "ledger/cycle.py",
+   "old": "if not path.startswith(branches.STATE_ROOT + \"/\") or path in taken:",
+   "new": "if path in taken:",
+   "tests": [
+    "test_cycle.Plan"
+   ]
+  },
+  {
+   "id": "cycle_set_not_written",
+   "file": "ledger/cycle.py",
+   "old": "    files.update({path: data for path, data in {**(registers or {}), **(sets or {})}.items() if data})\n",
+   "new": "    files.update({path: data for path, data in (registers or {}).items() if data})\n",
+   "tests": [
+    "test_cycle.Plan"
+   ]
+  },
+  {
+   "id": "cycle_empty_set_written",
+   "file": "ledger/cycle.py",
+   "old": "    files.update({path: data for path, data in {**(registers or {}), **(sets or {})}.items() if data})\n",
+   "new": "    files.update({**{path: data for path, data in (registers or {}).items() if data}, **(sets or {})})\n",
+   "tests": [
+    "test_cycle.Plan"
+   ]
+  },
+  {
+   "id": "cycle_commit_drops_the_sets",
+   "file": "ledger/cycle.py",
+   "old": "signer, root_row_id,\n                   registers, sets)",
+   "new": "signer, root_row_id,\n                   registers)",
+   "tests": [
+    "test_cycle.Plan",
+    "test_loop_write.CaseSet"
+   ]
+  },
+  {
+   "id": "write_cases_not_added",
+   "file": "loop/write_cycle.py",
+   "old": "[] if cases is None else cases)",
+   "new": "[])",
+   "tests": [
+    "test_loop_write.CaseSet"
+   ]
+  },
+  {
+   "id": "write_commit_without_the_cases",
+   "file": "loop/write_cycle.py",
+   "old": "                               root_row_id, registers, sets)\n    except (W.ApiError",
+   "new": "                               root_row_id, registers)\n    except (W.ApiError",
+   "tests": [
+    "test_loop_write.CaseSet"
+   ]
+  },
+  {
+   "id": "write_broken_set_softened",
+   "file": "loop/write_cycle.py",
+   "old": "    except case_store.Broken as exc:\n        raise land.HardStop(\"state: %s\" % cli.cause(exc), []) from None",
+   "new": "    except case_store.Broken as exc:\n        raise Refused([\"state_unwritable: %s\" % cli.cause(exc)]) from None",
+   "tests": [
+    "test_loop_write.CaseSet"
+   ]
+  },
+  {
+   "id": "write_cases_added_to_an_empty_set",
+   "file": "loop/write_cycle.py",
+   "old": "case_store.add(art.state.get(B.STATE_CASES, b\"\"),",
+   "new": "case_store.add(b\"\",",
+   "tests": [
+    "test_loop_write.CaseSet"
+   ]
+  },
+  {
+   "id": "cek_proposal_without_the_held",
+   "file": "loop/cek.py",
+   "old": "held=CS.held(cases if isinstance(cases, bytes) else b\"\"))",
+   "new": "held=CS.held(b\"\"))",
+   "tests": [
+    "test_cases.LivePath",
+    "test_loop_cek.CekJob.test_the_heads_dev_case_set_is_verified_carried_and_read_by_the_proposal"
+   ]
+  },
+  {
+   "id": "job_cases_not_given_to_d6",
+   "file": "loop/job.py",
+   "old": "now, job_calls, cases[\"cases\"])",
+   "new": "now, job_calls)",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "job_d6_drops_the_cases",
+   "file": "loop/job.py",
+   "old": "                                    cases=cases),",
+   "new": "                                    cases=None),",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "job_unit_root_not_given",
+   "file": "loop/job.py",
+   "old": "                    D.norm_path(unit.get(\"path\")) if isinstance(unit, dict) else None)",
+   "new": "                    None)",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "group_without_the_unit_s_root",
+   "file": "cases/build.py",
+   "old": "        if not at:\n            return unit_root",
+   "new": "        if not at:\n            return None",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "group_root_is_the_empty_name",
+   "file": "cases/build.py",
+   "old": "    return at or \".\"",
+   "new": "    return at",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "group_only_the_file_s_directory",
+   "file": "cases/build.py",
+   "old": "            return unit_root\n        at = posixpath.dirname(at)",
+   "new": "            return unit_root\n        at = \"\"",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "group_not_the_nearest",
+   "file": "cases/build.py",
+   "old": "    at = posixpath.dirname(path)\n    while not any(source",
+   "new": "    at = \"\"\n    while not any(source",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "build_case_without_a_group",
+   "file": "cases/build.py",
+   "old": "    if module is None:\n",
+   "new": "    if False:\n",
+   "tests": [
+    "test_cases.Built"
+   ]
+  },
+  {
+   "id": "propose_held_place_again",
+   "file": "cases/build.py",
+   "old": "            if case_id(mid) not in ids:",
+   "new": "            if True:",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_cased_rules_not_last",
+   "file": "cases/build.py",
+   "old": "((op[\"tool\"], op[\"rule_id\"]) in cased,",
+   "new": "(False,",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  }
+ ]
+}

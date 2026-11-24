@@ -296,8 +296,8 @@
   {
    "id": "propose_operator_by_operator",
    "file": "cases/build.py",
-   "old": "    for rank in range(max([len(found) for found in places.values()] + [0])):\n        for op in turns:\n            if rank",
-   "new": "    for op in turns:\n        for rank in range(len(places[op[\"id\"]])):\n            if rank",
+   "old": "        for turn in list(turns):\n            if len(out) >= limit:",
+   "new": "        for turn in list(turns)[:1]:\n            if len(out) >= limit:",
    "tests": [
     "test_cases.Proposal"
    ]
@@ -406,10 +406,11 @@
   {
    "id": "build_group_is_the_path",
    "file": "cases/build.py",
-   "old": "\"group\": posixpath.dirname(path) or \".\"}",
-   "new": "\"group\": path}",
+   "old": "    module = group(path, source, unit_root)\n",
+   "new": "    module = path\n",
    "tests": [
-    "test_cases.Built"
+    "test_cases.Built",
+    "test_cases.LivePath"
    ]
   },
   {
@@ -516,7 +517,7 @@
   {
    "id": "cek_proposes_nothing",
    "file": "loop/cek.py",
-   "old": "        mutations = CB.propose(made.files, _inputs(units), commit)",
+   "old": "        mutations = CB.propose(made.files, _inputs(units), commit,\n                               held=CS.held(cases if isinstance(cases, bytes) else b\"\"))",
    "new": "        mutations = {}",
    "tests": [
     "test_cases.LivePath",
@@ -526,8 +527,8 @@
   {
    "id": "cek_proposes_over_the_whole_tree",
    "file": "loop/cek.py",
-   "old": "        mutations = CB.propose(made.files, _inputs(units), commit)",
-   "new": "        mutations = CB.propose(made.files, [\".\"], commit)",
+   "old": "        mutations = CB.propose(made.files, _inputs(units), commit,\n",
+   "new": "        mutations = CB.propose(made.files, [\".\"], commit,\n",
    "tests": [
     "test_cases.LivePath"
    ]
@@ -535,8 +536,8 @@
   {
    "id": "cek_seed_is_not_the_commit",
    "file": "loop/cek.py",
-   "old": "        mutations = CB.propose(made.files, _inputs(units), commit)",
-   "new": "        mutations = CB.propose(made.files, _inputs(units), \"\")",
+   "old": "        mutations = CB.propose(made.files, _inputs(units), commit,\n",
+   "new": "        mutations = CB.propose(made.files, _inputs(units), \"\",\n",
    "tests": [
     "test_cases.LivePath"
    ]
@@ -616,8 +617,8 @@
   {
    "id": "propose_in_the_catalogs_order",
    "file": "cases/build.py",
-   "old": "    turns = sorted(CATALOG, key=lambda op: _sha(seed, \"operator\", op[\"id\"]))",
-   "new": "    turns = list(CATALOG)",
+   "old": "_sha(seed, \"operator\", op[\"id\"])))]",
+   "new": "0))]",
    "tests": [
     "test_cases.Proposal"
    ]
@@ -625,8 +626,8 @@
   {
    "id": "propose_operators_in_one_order_for_every_seed",
    "file": "cases/build.py",
-   "old": "    turns = sorted(CATALOG, key=lambda op: _sha(seed, \"operator\", op[\"id\"]))",
-   "new": "    turns = sorted(CATALOG, key=lambda op: _sha(\"\", \"operator\", op[\"id\"]))",
+   "old": "_sha(seed, \"operator\", op[\"id\"])))]",
+   "new": "_sha(\"\", \"operator\", op[\"id\"])))]",
    "tests": [
     "test_cases.Proposal"
    ]
@@ -832,8 +833,8 @@
   {
    "id": "job_yaz_fingerprint_not_the_writer_s",
    "file": "loop/job.py",
-   "old": "lambda path: D._read_regular(tree, path), FW.fingerprint)",
-   "new": "lambda path: D._read_regular(tree, path), lambda finding, read: \"\")",
+   "old": "lambda path: D._read_regular(tree, path), FW.fingerprint,",
+   "new": "lambda path: D._read_regular(tree, path), lambda finding, read: \"\",",
    "tests": [
     "test_cases.LivePath"
    ]

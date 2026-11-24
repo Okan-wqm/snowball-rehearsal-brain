@@ -57,8 +57,8 @@
   {
    "id": "pass_payload_dropped",
    "file": "loop/job.py",
-   "old": "lint, end, d8, opened, passed, job_calls)",
-   "new": "lint, end, d8, opened, None, job_calls)",
+   "old": "d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened, passed, job_calls,\n",
+   "new": "d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened, None, job_calls,\n",
    "tests": [
     "test_loop_write.Pass"
    ]

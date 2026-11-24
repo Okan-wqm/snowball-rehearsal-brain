@@ -12,8 +12,8 @@
   {
    "id": "dry_plan_signs_for_real",
    "file": "loop/write_cycle.py",
-   "old": "imports, facts, DRY, root_row_id, registers)",
-   "new": "imports, facts, signer, root_row_id, registers)",
+   "old": "imports, facts, DRY, root_row_id, registers, sets)",
+   "new": "imports, facts, signer, root_row_id, registers, sets)",
    "tests": [
     "test_loop_write.py"
    ]
@@ -21,8 +21,8 @@
   {
    "id": "dry_hard_stop_softened",
    "file": "loop/write_cycle.py",
-   "old": "registers)\n    except append.HardStop as exc:\n        raise land.HardStop(\"state: %s\" % cli.cause(exc), []) from None\n",
-   "new": "registers)\n    except append.HardStop as exc:\n        raise Refused([\"state_unwritable: %s\" % cli.cause(exc)]) from None\n",
+   "old": "registers, sets)\n    except append.HardStop as exc:\n        raise land.HardStop(\"state: %s\" % cli.cause(exc), []) from None\n",
+   "new": "registers, sets)\n    except append.HardStop as exc:\n        raise Refused([\"state_unwritable: %s\" % cli.cause(exc)]) from None\n",
    "tests": [
     "test_loop_write.py"
    ]
