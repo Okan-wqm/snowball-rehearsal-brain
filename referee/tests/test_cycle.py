@@ -142,6 +142,37 @@ class Plan(unittest.TestCase):
         self.assertEqual((B.STATE_FINDINGS in one["files"], one["files"][B.STATE_UNRESOLVED]), (False, LOST))
         self.assertEqual(one["root"], AN.root_of(AN.tips(ledger, {"unresolved.jsonl": LOST})))
 
+    def test_a_set_is_written_with_the_cycle_and_no_root_covers_it(self):
+        plain = plan()
+        cases = b'{"case_id":"c1"}\n'
+        sign = signer()
+        out = plan(sign=sign, sets={B.STATE_CASES: cases})
+        self.assertEqual(out["files"], dict(plain["files"], **{B.STATE_CASES: cases}))
+        self.assertEqual((out["root"], [sha(p) for p in sign.payloads]), (plain["root"], [plain["root"]]))
+        both = {B.STATE_FINDINGS: FINDINGS}
+        with_register = plan(registers=both, sets={B.STATE_CASES: cases})
+        self.assertEqual(with_register["files"], dict(plan(registers=both)["files"], **{B.STATE_CASES: cases}))
+        # an empty set is not written; none at all is the plan without the argument
+        for sets in ({}, None, {B.STATE_CASES: b""}):
+            with self.subTest(sets=sets):
+                self.assertEqual(plan(sets=sets), plain)
+        state = AP.CountingState()
+        made = CY.commit(state, "m", LEDGER, LEDGER, b"", b"", None, [start()], IMPORTS, facts(), signer(), "r1",
+                         None, {B.STATE_CASES: cases})
+        self.assertEqual((state.commits, state.files, made["files"][B.STATE_CASES]), (1, made["files"], cases))
+
+    def test_a_set_s_path_is_a_free_one_of_the_state_directory(self):
+        sign = signer()
+        taken = (B.STATE_LEDGER, B.STATE_ROOTS, B.STATE_STATUS, B.state_bundle(plan()["root"]), B.STATE_FINDINGS)
+        for path in taken + ("cases/dev.jsonl", ".brainx/cases.jsonl", ".brain", "/.brain/cases/dev.jsonl", ""):
+            with self.subTest(path=path):
+                with self.assertRaises(CY.Unusable) as caught:
+                    plan(sign=sign, registers={B.STATE_FINDINGS: FINDINGS} if path == B.STATE_FINDINGS else None,
+                         sets={path: b"x\n"})
+                self.assertEqual(str(caught.exception), "sets: %s is not a free path of the state directory" % path)
+        self.assertEqual(sign.payloads, [])
+        self.assertIn(CY.Unusable, CY.FAILURES)
+
     def test_a_register_that_is_no_chain_signs_nothing(self):
         sign = signer()
         for bad in (FINDINGS[:-9], FINDINGS.replace(b'"open"', b'"gone"')):

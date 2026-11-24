@@ -454,6 +454,41 @@ class Layout(Base):
                 self.write_pulled(state=state)
             self.assertEqual(ctx.exception.reasons, ["state_incomplete"])
 
+    def test_the_dev_case_set_is_carried_when_the_head_has_it(self):
+        """``cases/dev.jsonl`` (``STATE_CASES``, tohum/26m): listed and read back only when given, under its path in
+        the state directory; held to the manifest like every file."""
+        self.assertEqual(P.CASES, "state/cases/dev.jsonl")
+        self.assertIn(P.CASES, P.LAYOUT)
+        for given in ({B.STATE_CASES: b"c\n"}, {B.STATE_CASES: b""}, {B.STATE_CASES: b"c\n", B.STATE_FINDINGS: b"f\n"}):
+            with self.subTest(given=sorted(given)):
+                manifest = self.write_pulled(state=dict(state_files(), **given))
+                self.assertIn(P.CASES, manifest["files"])
+                with open(os.path.join(self.pulled, "state", "cases", "dev.jsonl"), "rb") as f:
+                    self.assertEqual(f.read(), given[B.STATE_CASES])
+                self.assertEqual(P.read(self.pulled).state, dict(state_files(), **given))
+                shutil.rmtree(self.pulled)
+        manifest = self.write_pulled()
+        self.assertNotIn(P.CASES, manifest["files"])
+        self.assertNotIn(B.STATE_CASES, P.read(self.pulled).state)
+        self.assertFalse(os.path.exists(os.path.join(self.pulled, "state", "cases")))
+        write_tree(self.pulled, {"state/cases/dev.jsonl": "c\n"})
+        self.assertEqual(self.reasons(), ["unlisted:state/cases/dev.jsonl"])
+        shutil.rmtree(self.pulled)
+        self.write_pulled(state=dict(state_files(), **{B.STATE_CASES: b"c\n"}))
+        write_tree(self.pulled, {"state/cases/dev.jsonl": "d\n"})
+        self.assertEqual(self.reasons(), ["hash_mismatch:state/cases/dev.jsonl"])
+        write_tree(self.pulled, {"state/cases/dev.jsonl": "c\n", "state/cases/exit.jsonl": "e\n"})
+        self.assertEqual(self.reasons(), ["unlisted:state/cases/exit.jsonl"])
+        os.remove(os.path.join(self.pulled, "state", "cases", "exit.jsonl"))
+        os.remove(os.path.join(self.pulled, "state", "cases", "dev.jsonl"))
+        self.assertEqual(self.reasons(), ["file_missing:state/cases/dev.jsonl", "unlisted:state/cases/"])
+        shutil.rmtree(self.pulled)
+        for state in ({B.STATE_CASES: b"c\n"}, dict(state_files(), **{B.STATE_CASES: "text"}),
+                      dict(state_files(), **{".brain/cases/exit.jsonl": b""})):
+            with self.assertRaises(P.PulledError) as ctx:
+                self.write_pulled(state=state)
+            self.assertEqual(ctx.exception.reasons, ["state_incomplete"])
+
     def test_the_genesis_cycles_form(self):
         """``brain/state`` null: a target with neither head, whose cycle is its activation (loop.pulled.genesis):
         both chains empty, no status.md, brain/integration the commit the tree was read from; nothing else."""

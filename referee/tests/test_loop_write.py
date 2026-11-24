@@ -106,6 +106,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from cases import store as case_store  # noqa: E402
 from gate import diffguard as G  # noqa: E402
 from gate import revert as RV  # noqa: E402
 from ledger import anchor as AN  # noqa: E402
@@ -1583,28 +1584,30 @@ class Pass(StateBase):
         self.assertEqual((got["rows"], SC.ledger_reasons(new)), (3, []))
 
 
-class Registers(StateBase):
-    """Stage 1 MF8 (tohum/26j): ``yaz`` runs ``findings.write.cycle`` each cycle on ``brain/state``'s registers as
-    ``pulled`` holds them, and the files it returns are written in the cycle's one ``brain/state`` commit under the
-    signed root. The job hands it no proposal and no decision (their producers are MF10-12's)."""
+class Carried(StateBase):
+    """A state whose carried files (``STATE_CARRIED``: the registers, the dev case set) ``pulled`` holds as D1 hands
+    them over, and ``loop.write_cycle.write`` called with their input."""
 
     def write_pulled(self, cands=None, **kw) -> dict:
-        kw.setdefault("state", {p: self.state[p] for p in B.STATE_CHAINS + B.STATE_REGISTERS if p in self.state})
+        kw.setdefault("state", {p: self.state[p] for p in B.STATE_CHAINS + B.STATE_CARRIED if p in self.state})
         return super().write_pulled(cands, **kw)
 
-    def registers(self) -> dict:
+    def carried(self, paths=B.STATE_CARRIED) -> dict:
         tree = self.gh.trees[self.gh.commits[self.gh.refs[B.STATE]]["tree"]]
-        return {p: self.gh.blobs[tree[p]] for p in B.STATE_REGISTERS if p in tree}
+        return {p: self.gh.blobs[tree[p]] for p in paths if p in tree}
 
-    def direct(self, cycle_id: str, proposals=None, decisions=None) -> dict:
+    def registers(self) -> dict:
+        return self.carried(B.STATE_REGISTERS)
+
+    def direct(self, cycle_id: str, proposals=None, decisions=None, **more) -> dict:
         """``loop.write_cycle.write`` of a cycle with no candidate on ``pulled``, with the registry's input."""
         return WC.write(P.read(self.pulled), self.src, {"decisions": {}, "merge": None}, [],
                         W.Writer(YW.REPO, self.gh), self.signer, YW.chained(YW.IMPORTS_ROWS), cycle_id, YW.TS,
-                        proposals=proposals, finding_decisions=decisions)
+                        proposals=proposals, finding_decisions=decisions, **more)
 
     def pull_again(self) -> None:
-        """``pulled`` and the target as the next cycle's D1 finds them: ``brain/state``'s files, the registers too."""
-        self.state = dict({p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}, **self.registers())
+        """``pulled`` and the target as the next cycle's D1 finds them: ``brain/state``'s files, the carried too."""
+        self.state = dict({p: self.state_file(p) for p in B.STATE_CHAINS + (B.STATE_STATUS,)}, **self.carried())
         heads = {b: self.gh.refs[b] for b in P.HEAD_BRANCHES}
         shutil.rmtree(self.pulled)
         shutil.rmtree(self.results())
@@ -1622,6 +1625,12 @@ class Registers(StateBase):
 
     def signed(self) -> str:
         return hashlib.sha256(self.signer.payloads[-1]).hexdigest()
+
+
+class Registers(Carried):
+    """Stage 1 MF8 (tohum/26j): ``yaz`` runs ``findings.write.cycle`` each cycle on ``brain/state``'s registers as
+    ``pulled`` holds them, and the files it returns are written in the cycle's one ``brain/state`` commit under the
+    signed root. The job hands it no proposal and no decision (their producers are MF10-12's)."""
 
     def test_a_cycle_with_no_register_and_no_input_writes_none(self):
         out = self.cycle({})
@@ -1708,6 +1717,82 @@ class Registers(StateBase):
             with self.subTest(name), self.assertRaises(WC.Unusable) as caught:
                 self.direct("301-1", proposals, decisions)
             self.assertTrue(str(caught.exception).startswith("findings: "), caught.exception)
+        self.assertEqual((self.writes(), self.signer.payloads), ([], []))
+
+
+def dev_case(cid: str, **more) -> dict:
+    return dict({"case_id": cid, "provenance": "mutation", "split": "dev", "group": "pkg"}, **more)
+
+
+class CaseSet(Carried):
+    """tohum/26m "Dev vaka seti" (1), (2), (4): ``write`` adds the cycle's cases to ``cases/dev.jsonl`` as ``pulled``
+    holds it (``cases.store.add``) and the file is written in the cycle's one ``brain/state`` commit; no root covers
+    it."""
+
+    def start(self) -> None:
+        self.kos({})
+        self.control(OPEN)
+        self.github()
+
+    def held(self) -> list:
+        return rows_of(self.carried()[B.STATE_CASES])
+
+    def test_a_cycle_with_no_case_writes_no_file(self):
+        out = self.cycle({})
+        self.assertEqual(out["ok"], True, out)
+        self.assertEqual(out["written"]["cases"], {"added": [], "kept": [], "refused": {}})
+        self.assertEqual(self.carried(), {})
+
+    def test_cases_are_added_in_the_cycle_s_commit_and_the_root_is_the_ledger_s(self):
+        self.start()
+        got = self.direct("301-1", cases=[dev_case("c1"), dev_case("c2")])
+        self.assertEqual(got["cases"], {"added": ["c1", "c2"], "kept": [], "refused": {}})
+        data = self.carried()[B.STATE_CASES]
+        self.assertEqual(data, b"".join(CH.canonical(dev_case(c)) + b"\n" for c in ("c1", "c2")))
+        self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [HEADS[B.STATE]])
+        self.assertEqual(got["state_sha"], self.gh.refs[B.STATE])
+        self.assertEqual((got["root"], self.signed()), (AN.root_of(AN.tips(self.state_file(B.STATE_LEDGER))),) * 2)
+        # the next cycle: a held case is kept, another content of its id refused, a new one after the last line
+        self.pull_again()
+        self.assertEqual(P.read(self.pulled).state[B.STATE_CASES], data)
+        got = self.direct("302-1", cases=[dev_case("c2"), dev_case("c1", group="other"), dev_case("c3")])
+        self.assertEqual(got["cases"], {"added": ["c3"], "kept": ["c2"], "refused": {"c1": "case_id_taken"}})
+        self.assertEqual(self.carried()[B.STATE_CASES], data + CH.canonical(dev_case("c3")) + b"\n")
+        # a cycle with no case (the job's genesis-free empty list, or none) keeps the file byte for byte
+        whole = self.carried()[B.STATE_CASES]
+        self.pull_again()
+        out = self.run_yaz()
+        self.assertEqual((out["ok"], out["written"]["cases"]), (True, {"added": [], "kept": [], "refused": {}}), out)
+        self.assertEqual(self.carried()[B.STATE_CASES], whole)
+        self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [got["state_sha"]])
+        # and the state it wrote is one the next D1 takes
+        self.assertEqual(case_store.check(whole, data), [])
+
+    def test_a_file_that_is_no_case_set_is_a_hard_stop_before_any_write(self):
+        self.start()
+        self.direct("301-1", cases=[dev_case("c1")])
+        good = self.carried()[B.STATE_CASES]
+        for name, broken in (("no row", good + b"junk\n"), ("an id twice", good + good), ("cut", good[:-1])):
+            with self.subTest(name):
+                self.pull_again()
+                shutil.rmtree(self.pulled)
+                self.state[B.STATE_CASES] = broken
+                self.kos({}, heads={b: self.gh.refs[b] for b in P.HEAD_BRANCHES})
+                self.github()
+                before = len(self.signer.payloads)
+                out = self.run_yaz()
+                self.assertEqual((out["reason"], out["written"]), ("hard_stop", []), out)
+                self.assertTrue(out["reasons"][0].startswith("state: cases: line "), out)
+                self.assertEqual((self.writes(), len(self.signer.payloads)), ([], before))
+                self.state[B.STATE_CASES] = good
+
+    def test_what_is_no_case_writes_nothing(self):
+        self.start()
+        for bad in ("c1", [dev_case("c1"), {"case_id": "c2"}], [dev_case("c1", split="exit")],
+                    [dev_case("c1", provenance="guess")], [dev_case("c1", weight=0.5)]):
+            with self.subTest(bad=bad), self.assertRaises(WC.Unusable) as caught:
+                self.direct("301-1", cases=bad)
+            self.assertTrue(str(caught.exception).startswith("cases: "), caught.exception)
         self.assertEqual((self.writes(), self.signer.payloads), ([], []))
 
 

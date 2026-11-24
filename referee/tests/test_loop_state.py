@@ -30,7 +30,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from loop import gitobj as G  # noqa: E402
 from loop import state as ST  # noqa: E402
+from ledger import chain  # noqa: E402
 from loop.pulled import PulledError  # noqa: E402
+from target import branches as B  # noqa: E402
 import git_store as S  # noqa: E402
 from test_accepted import chained  # noqa: E402
 
@@ -225,6 +227,81 @@ class Registers(StateTest):
     def test_a_missing_object_of_a_register(self):
         head = self.head(dict(files(3, 2), **{FINDINGS: chained(rows("f", 1))}))
         blob = G.lookup(self.objects.__getitem__, head, FINDINGS)[1]
+        del self.objects[blob]
+        self.assertEqual(self.refused(head, self.genesis), ["state:object_missing:%s" % blob])
+
+
+CASES = ".brain/cases/dev.jsonl"
+
+
+def case_file(*ids, **more) -> bytes:
+    return b"".join(chain.canonical(dict({"case_id": i, "provenance": "mutation", "split": "dev"}, **more)) + b"\n"
+                    for i in ids)
+
+
+class CaseSet(StateTest):
+    """The dev case set on ``brain/state`` (tohum/26m "Dev vaka seti" (1), (2)): carried when the head has it,
+    judged by ``cases.store.check`` against the parent's, a reason naming the path and the line."""
+
+    def chains(self, head: str) -> dict:
+        return ST.chains(self.objects.__getitem__, head)
+
+    def test_the_path_is_the_state_s(self):
+        self.assertEqual((B.STATE_CASES, B.STATE_CARRIED), (CASES, (FINDINGS, UNRESOLVED, CASES)))
+
+    def test_a_set_new_appended_unchanged_or_absent(self):
+        one, three = case_file("a"), case_file("a", "b", "c")
+        self.assertNotIn(CASES, self.chains(self.head(files(3, 2))))
+        first = self.head(dict(files(3, 2), **{CASES: one}))
+        for prev in (self.genesis, None):
+            self.assertEqual(self.verify(first, prev)["rows"], {LEDGER: 3, ROOTS: 2, CASES: 1})
+        self.assertEqual(self.chains(first)[CASES], one)
+        for data, count in ((three, 3), (one, 1)):
+            head = self.head(dict(files(4, 3), **{CASES: data}), (first,))
+            self.assertEqual(self.verify(head, first)["rows"], {LEDGER: 4, ROOTS: 3, CASES: count})
+            self.assertEqual(self.chains(head)[CASES], data)
+        # the set is no chain: a register's verifier would refuse these same bytes
+        self.assertFalse(chain.verify_bytes(one)["valid"])
+        # beside a register
+        head = self.head(dict(files(4, 3), **{CASES: three, FINDINGS: chained(rows("f", 1))}), (first,))
+        self.assertEqual(self.verify(head, first)["rows"], {LEDGER: 4, ROOTS: 3, FINDINGS: 1, CASES: 3})
+
+    def test_each_refusal(self):
+        old = case_file("a", "b")
+        parent = self.head(dict(files(3, 2), **{CASES: old}))
+        for name, change, reasons in (
+                ("gone", {CASES: None}, ["file_missing:%s" % CASES]),
+                ("a link", {CASES: ("120000", b".brain/status.md")}, ["not_a_file:%s" % CASES]),
+                ("a tree", {CASES: None, CASES + "/x": b"1\n"}, ["not_a_file:%s" % CASES]),
+                ("no row", {CASES: old + b"not json\n"}, ["case_invalid:%s:3" % CASES]),
+                ("no provenance", {CASES: old + b'{"case_id":"c","split":"dev"}\n'}, ["case_invalid:%s:3" % CASES]),
+                ("an id twice", {CASES: old + case_file("a", group="g")}, ["case_invalid:%s:3" % CASES]),
+                ("changed", {CASES: case_file("a") + case_file("b", group="g")}, ["not_append_only:%s:2" % CASES]),
+                ("cut", {CASES: case_file("a")}, ["not_append_only:%s:2" % CASES]),
+                ("emptied", {CASES: b""}, ["not_append_only:%s:1" % CASES]),
+                ("moved", {CASES: case_file("b", "a")}, ["not_append_only:%s:1" % CASES]),
+                ("both", {CASES: case_file("a") + b"x\n"}, ["case_invalid:%s:2" % CASES,
+                                                            "not_append_only:%s:2" % CASES])):
+            with self.subTest(name=name):
+                content = {p: d for p, d in dict(files(4, 3), **dict({CASES: old}, **change)).items() if d is not None}
+                self.assertEqual(self.refused(self.head(content, (parent,)), parent), reasons)
+        # with no parent's file any set stands, and what is no set or no file does not
+        for name, data, reason in (("a link", ("120000", b".brain/status.md"), "not_a_file:%s" % CASES),
+                                   ("no row", b"x\n", "case_invalid:%s:1" % CASES)):
+            with self.subTest(name=name, parent="without"):
+                head = self.head(dict(files(3, 2), **{CASES: data}))
+                self.assertEqual(self.refused(head, self.genesis), [reason])
+                self.assertEqual(self.refused(head), [reason])
+        # listed after the chains' and the registers' reasons
+        parent = self.head(dict(files(3, 2), **{CASES: old, UNRESOLVED: chained(rows("u", 1))}))
+        head = self.head({LEDGER: chained(rows("e", 1)), ROOTS: chained(rows("r", 2)), CASES: case_file("a")},
+                         (parent,))
+        self.assertEqual(self.refused(head, parent), ["not_append_only:%s:2" % LEDGER, "file_missing:%s" % UNRESOLVED,
+                                                      "not_append_only:%s:2" % CASES])
+
+    def test_a_missing_object_of_the_set(self):
+        head = self.head(dict(files(3, 2), **{CASES: case_file("a")}))
+        blob = G.lookup(self.objects.__getitem__, head, CASES)[1]
         del self.objects[blob]
         self.assertEqual(self.refused(head, self.genesis), ["state:object_missing:%s" % blob])
 
