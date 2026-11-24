@@ -64,7 +64,9 @@ the limit is not always cut to its first two: which operators one proposal holds
 none by default), and it changes the proposal in two ways, so that a set kept across cycles grows towards a
 case of every rule the catalog can plant: the operators whose ``(tool, rule_id)`` no held row has come first
 (each half in the seed's order), and a place whose case id (``case_id``) a held row has is passed over, the
-operator's next place taking its turn. One proposal still holds at most ``limit`` mutations, and nothing here
+operator's next place taking its turn. A held row is an object (``cases.store`` checks its ``case_id``, not its
+``tool`` or ``rule_id``): one whose ``tool`` or ``rule_id`` is no string cases no rule, and a ``case_id`` that
+is no string is no place's. One proposal still holds at most ``limit`` mutations, and nothing here
 remembers a place the judgement refused: with the same seed it is proposed again (the seed is the commit, so
 until ``brain/integration`` moves). Each is ``{operator, tool,
 rule_id, path, line, diff}`` under its mutation id ``<operator>-<16 hex of sha256(operator, path, line, the
@@ -120,21 +122,27 @@ tohum/26 case ``{case_id: "k0-<mid>", class_level: "K0", property: "lint", prove
 mutation_id, touched_paths: [{path, hunks: [{start, end}]}], tool, rule_id, validity_evidence: {kind:
 "tool_diff", ref: "m/<mid>/mut.jsonl", output_sha256}, split: "dev", group}``: the hunk is the mutated side of the
 hunk holding the violation (lines of the mutated file: the case's mapped line), ``group`` the case's module
-group (``group``, below; a mutation with none is refused, ``group_unmade``). Its oracle finding is
+group (``group``, below; a mutation with none is refused, ``group_unmade``, and one whose group the page
+leaves open ``group_undecided``). Its oracle finding is
 ``{class_level, property, file, tool, rule_id, evidence_refs: [{path, line_start, line_end}]}`` at the
 violation's line. Output ``{cases: [case], oracle: {case_id: finding}, refused: {mid: [reason]}}``.
 
-**The group** (``group(path, source, unit_root)``; tohum/26e: "değiştirilen dosyaya en yakın, paket manifesti
-taşıyan dizin; öyle bir dizin yoksa birimin köküdür"): the first directory, from the mutated file's own upwards
-to the tree's root, that holds a file ``source`` reads under one of ``profile.derive.PROJECT_MANIFESTS``' names
-(``package.json``, ``project.json``: the one list of what marks a project's directory; the tree's root is
-``.``); when none does, ``unit_root``, the unit's ``path`` (``loop.job`` gives it as
-``profile.derive.norm_path`` writes it). The readings made here, the page being silent: a "paket manifesti" is a
-name of that list and no other ecosystem's; the walk does not stop at the unit's root, so a manifest above the
+**The group** (``group(path, source, unit_root, manifests)``; tohum/26e: "değiştirilen dosyaya en yakın, paket
+manifesti taşıyan dizin; öyle bir dizin yoksa birimin köküdür"): the first directory, from the mutated file's own
+upwards to the tree's root, that holds a file ``source`` reads under one of ``manifests``' names (the tree's
+root is ``.``); when none does, ``unit_root``, the unit's ``path`` (``loop.job`` gives it as
+``profile.derive.norm_path`` writes it). The walk does not stop at the unit's root, so a manifest above the
 unit is the group of a file with none nearer; a manifest ``source`` does not read (a link, a directory) marks
-nothing. ``group_unmade``, in ``build``: no directory holds one and ``unit_root`` is ``None`` (the unit names no
-usable path); the mutation is refused, with that reason alone (it is judged after the judgement's reasons and
-before the fingerprint's).
+nothing; both are this module's readings, the page being silent. Which names are a "paket manifesti" the page
+does not say (reports/seed-105), and a case's row is never edited (tohum/26m), so ``build`` writes a group only
+where the two lists this brain has agree: ``PACKAGE_MANIFESTS`` (``package.json``: npm's, the package manifest of
+the ecosystem ``TOOL`` lints; the default) and ``profile.derive.PROJECT_MANIFESTS`` (that and Nx's
+``project.json``, what marks a project's directory for the profile). ``group_undecided``, in ``build``: the two
+lists give different groups (a directory holding only ``project.json`` at or above the file and nearer than any
+``package.json``); ``group_unmade``: they agree on none (no directory holds one and ``unit_root`` is ``None``:
+the unit names no usable path). Either refuses the mutation with that reason alone (judged after the
+judgement's reasons and before the fingerprint's). A manifest of another ecosystem (``pyproject.toml``,
+``Cargo.toml``, ...) is in neither list and marks nothing.
 
 **The hit** (``hit(finding, case, window)``, match-rule v2 for one finding and one case):
 
@@ -180,6 +188,7 @@ from gate import diffguard
 from profile import derive
 
 TOOL = "eslint"
+PACKAGE_MANIFESTS = ("package.json",)     # npm's package manifest; see the module docstring, "The group"
 _CODE = r"^(?![ \t]*(?:import\b|//|/\*|\*))"      # the start of a line that begins neither an import nor a comment
 _NAME = r"[A-Za-z_$][\w$]*"
 CATALOG = (
@@ -287,8 +296,9 @@ def propose(files: dict[str, bytes], inputs: list[str], seed: str, limit: int = 
     for op_id, found in places.items():
         found.sort(key=lambda p: _sha(seed, op_id, p[0], str(p[1])))
     held = list(held)
-    cased = {(row.get("tool"), row.get("rule_id")) for row in held}
-    ids = {row.get("case_id") for row in held}
+    cased = {pair for pair in ((row.get("tool"), row.get("rule_id")) for row in held)
+             if all(isinstance(part, str) for part in pair)}
+    ids = {cid for cid in (row.get("case_id") for row in held) if isinstance(cid, str)}
 
     def fresh(op: dict) -> Iterator[tuple[str, dict]]:
         for path, line in places[op["id"]]:
@@ -468,10 +478,12 @@ def _shared(block: dict, oracle: dict, mut_run: bytes, source: Callable[[str], "
     return []
 
 
-def group(path: str, source: Callable[[str], "bytes | None"], unit_root: str | None) -> str | None:
-    """The module group of a case that mutates ``path``; see the module docstring, "The group"."""
+def group(path: str, source: Callable[[str], "bytes | None"], unit_root: str | None,
+          manifests: tuple[str, ...] = PACKAGE_MANIFESTS) -> str | None:
+    """The module group of a case that mutates ``path``, by ``manifests``' names; see the module docstring,
+    "The group"."""
     at = posixpath.dirname(path)
-    while not any(source(posixpath.join(at, name)) is not None for name in derive.PROJECT_MANIFESTS):
+    while not any(source(posixpath.join(at, name)) is not None for name in manifests):
         if not at:
             return unit_root
         at = posixpath.dirname(at)
@@ -498,6 +510,8 @@ def _one(base_sha: str, mid: str, mutation: Any, index: dict, read: Callable[[st
         return reasons, None, None
     path = mutation["path"]
     module = group(path, source, unit_root)
+    if module != group(path, source, unit_root, derive.PROJECT_MANIFESTS):
+        return ["group_undecided"], None, None
     if module is None:
         return ["group_unmade"], None, None
     case = {"case_id": case_id(mid), "class_level": "K0", "property": "lint", "provenance": "mutation",

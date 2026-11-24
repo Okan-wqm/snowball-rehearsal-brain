@@ -195,8 +195,8 @@
   {
    "id": "cycle_set_outside_the_state_directory",
    "file": "ledger/cycle.py",
-   "old": "if not path.startswith(branches.STATE_ROOT + \"/\") or path in taken:",
-   "new": "if path in taken:",
+   "old": "if not path.startswith(branches.STATE_ROOT + \"/\") or posixpath.normpath(path) != path or path in taken:",
+   "new": "if posixpath.normpath(path) != path or path in taken:",
    "tests": [
     "test_cycle.Plan"
    ]
@@ -361,6 +361,69 @@
    "file": "cases/build.py",
    "old": "((op[\"tool\"], op[\"rule_id\"]) in cased,",
    "new": "(False,",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "cycle_set_path_not_as_written",
+   "file": "ledger/cycle.py",
+   "old": " or posixpath.normpath(path) != path or path in taken:",
+   "new": " or path in taken:",
+   "tests": [
+    "test_cycle.Plan"
+   ]
+  },
+  {
+   "id": "build_group_undecided_built",
+   "file": "cases/build.py",
+   "old": "    if module != group(path, source, unit_root, derive.PROJECT_MANIFESTS):\n",
+   "new": "    if False:\n",
+   "tests": [
+    "test_cases.Built"
+   ]
+  },
+  {
+   "id": "build_group_undecided_by_the_same_list",
+   "file": "cases/build.py",
+   "old": "    if module != group(path, source, unit_root, derive.PROJECT_MANIFESTS):\n",
+   "new": "    if module != group(path, source, unit_root):\n",
+   "tests": [
+    "test_cases.Built"
+   ]
+  },
+  {
+   "id": "group_default_is_the_project_s",
+   "file": "cases/build.py",
+   "old": "manifests: tuple[str, ...] = PACKAGE_MANIFESTS)",
+   "new": "manifests: tuple[str, ...] = derive.PROJECT_MANIFESTS)",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "group_names_not_the_given",
+   "file": "cases/build.py",
+   "old": "for name in manifests):",
+   "new": "for name in PACKAGE_MANIFESTS):",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "propose_cased_by_any_value",
+   "file": "cases/build.py",
+   "old": "             if all(isinstance(part, str) for part in pair)}",
+   "new": "             if True}",
+   "tests": [
+    "test_cases.Proposal"
+   ]
+  },
+  {
+   "id": "propose_held_id_of_any_value",
+   "file": "cases/build.py",
+   "old": "if isinstance(cid, str)}",
+   "new": "if True}",
    "tests": [
     "test_cases.Proposal"
    ]

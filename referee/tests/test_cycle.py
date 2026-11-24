@@ -164,7 +164,9 @@ class Plan(unittest.TestCase):
     def test_a_set_s_path_is_a_free_one_of_the_state_directory(self):
         sign = signer()
         taken = (B.STATE_LEDGER, B.STATE_ROOTS, B.STATE_STATUS, B.state_bundle(plan()["root"]), B.STATE_FINDINGS)
-        for path in taken + ("cases/dev.jsonl", ".brainx/cases.jsonl", ".brain", "/.brain/cases/dev.jsonl", ""):
+        left = (".brain/../README.md", ".brain/cases/../../x", ".brain/./cases/dev.jsonl", ".brain//cases/dev.jsonl",
+                ".brain/cases/", ".brain/..")       # under the directory by its first letters only, or not as written
+        for path in taken + left + ("cases/dev.jsonl", ".brainx/cases.jsonl", ".brain", "/.brain/cases/dev.jsonl", ""):
             with self.subTest(path=path):
                 with self.assertRaises(CY.Unusable) as caught:
                     plan(sign=sign, registers={B.STATE_FINDINGS: FINDINGS} if path == B.STATE_FINDINGS else None,

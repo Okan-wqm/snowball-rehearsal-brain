@@ -10,7 +10,12 @@ of the code that ran. No module of its own stands behind this test (reports/seed
 as built.
 
 Out of scope, stated: an empty toy (this one holds the tree the fake runner tests); the real GitHub
-(``fake_github``); the parts of ``<state_root>`` no job writes yet (cases, findings, properties: reports/seed-075);
+(``fake_github``); the parts of ``<state_root>`` this flow's cycles do not write: findings and properties
+(reports/seed-075). The dev case set (``cases.store``, tohum/26m) is read here only as far as this: the genesis
+writes none (the case its run built is not kept), the first cycle after it creates the path with the rows it
+reports as added, and the two after it add none and leave it as it was; what a row holds is ``tests.test_cases``'.
+tohum/26n (4) reads test 11 as done only when a cycle from an empty toy creates that path and the registers' too;
+that fixture is not built (the ledger's open item (g));
 the copy's state (this flow never writes it, asserted); names of a target in the brain's text (test 14,
 ``tests/generality.py``).
 """
@@ -61,6 +66,12 @@ class StateRoot(unittest.TestCase):
             now = tree_of(hub, sha)
             self.assertTrue(now and all(p.startswith(under) for p in now), sorted(now))
             self.assertLess(set(before), set(now), run)                                  # nothing lost, more held
+            # the dev case set: none at the genesis, then one row for each case a cycle reports as added
+            added = (line.get("written") or {}).get("cases", {}).get("added", [])
+            old, new = before.get(B.STATE_CASES, b""), now.get(B.STATE_CASES, b"")
+            self.assertEqual((B.STATE_CASES in now, new.startswith(old), new[len(old):].count(b"\n")),
+                             (run > 1, True, len(added)), run)
+            self.assertEqual(len(added), 1 if run == 2 else 0, run)
             for chain in B.STATE_CHAINS:
                 old, new = before.get(chain, b""), now[chain]
                 self.assertTrue(new.startswith(old) and len(new) > len(old) and new.endswith(b"\n"), (run, chain))

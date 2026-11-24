@@ -36,8 +36,9 @@ commit to bytes, all under the state directory (``target.branches.STATE_ROOT``, 
 ``.brain/ledger.jsonl``, ``.brain/chain/root.jsonl``, ``.brain/status.md`` and the new root's Sigstore bundle as the
 signer gave it, ``.brain/chain/<root>.sigstore.json`` (``ledger.anchor.bundle_path``), beside the root row that names
 that root, and each register and each file of ``sets`` that is not empty at its path (an empty one is not written: the
-commit keeps what the head has there). A path of ``sets`` that is not under the state directory, or is another
-file's of the commit, is ``Unusable`` before anything is signed. The bundles of earlier roots stay where their cycles wrote them. ``plan`` writes nothing. ``commit`` plans
+commit keeps what the head has there). A path of ``sets`` that is not a path under the state directory as
+``posixpath.normpath`` writes it (so none with ``..``, ``.`` or an empty segment), or is another file's of the
+commit, is ``Unusable`` before anything is signed. The bundles of earlier roots stay where their cycles wrote them. ``plan`` writes nothing. ``commit`` plans
 and hands ``files`` to the state writer in one ``commit_files`` call (``ledger.append.CountingState`` or
 ``TargetState``): the cycle's one commit. The activation opens ``brain/state`` with ``plan``'s files as an orphan
 commit (``target.write.Writer.open_orphan``).
@@ -54,6 +55,7 @@ before it answers); a ``profile.json`` in the state directory (no module writes 
 from __future__ import annotations
 
 import json
+import posixpath
 from typing import Any
 
 from ledger import anchor, append, chain, schema
@@ -91,7 +93,7 @@ def plan(ledger: bytes, previous: bytes, roots: bytes, previous_roots: bytes, st
     root = anchor.root_of(tip_map)
     taken = {anchor.LEDGER_PATH, anchor.ROOTS_PATH, block.STATUS_PATH, anchor.bundle_path(root), *(registers or {})}
     for path in sets or {}:
-        if not path.startswith(branches.STATE_ROOT + "/") or path in taken:
+        if not path.startswith(branches.STATE_ROOT + "/") or posixpath.normpath(path) != path or path in taken:
             raise Unusable("sets: %s is not a free path of the state directory" % path)
     entry, bundle = anchor.anchor(tip_map, signer)
     files = {anchor.LEDGER_PATH: cycle.content, anchor.ROOTS_PATH: anchor.root_row(roots, root_row_id, ts, root,
