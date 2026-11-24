@@ -2,24 +2,6 @@
  "root": ".",
  "mutants": [
   {
-   "id": "any_schema",
-   "file": "tests/agent_rules.py",
-   "old": "if sorted(doc) != [\"rules\", \"schema\"] or doc[\"schema\"] != SCHEMA or not isinstance(rules, list):",
-   "new": "if sorted(doc) != [\"rules\", \"schema\"] or not isinstance(rules, list):",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
-   "id": "more_keys_in_the_file",
-   "file": "tests/agent_rules.py",
-   "old": "if sorted(doc) != [\"rules\", \"schema\"] or doc[\"schema\"] != SCHEMA",
-   "new": "if doc.get(\"schema\") != SCHEMA",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
    "id": "rule_with_an_empty_text",
    "file": "tests/agent_rules.py",
    "old": "all(A._text(v) for v in rule.values())",
@@ -236,24 +218,6 @@
    ]
   },
   {
-   "id": "caught_per_finding_not_per_run",
-   "file": "tests/agent_rules.py",
-   "old": "_lower(before[A.CAUGHT], before[\"runs\"], under[A.CAUGHT], under[\"runs\"])",
-   "new": "_lower(before[A.CAUGHT], before[\"findings\"], under[A.CAUGHT], under[\"findings\"])",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
-   "id": "fewer_caught_a_run_is_more",
-   "file": "tests/agent_rules.py",
-   "old": "_lower(before[A.CAUGHT], before[\"runs\"], under[A.CAUGHT], under[\"runs\"])",
-   "new": "_lower(under[A.CAUGHT], under[\"runs\"], before[A.CAUGHT], before[\"runs\"])",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
    "id": "one_row_for_many_calls",
    "file": "tests/agent_rules.py",
    "old": "            free[name].remove(call[\"sha256\"])",
@@ -380,60 +344,6 @@
    ]
   },
   {
-   "id": "improves_due_after_six",
-   "file": "tests/agent_rules.py",
-   "old": "if under[\"sessions\"] < AFTER_SESSIONS:",
-   "new": "if under[\"sessions\"] <= AFTER_SESSIONS:",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
-   "id": "improves_due_at_once",
-   "file": "tests/agent_rules.py",
-   "old": "if under[\"sessions\"] < AFTER_SESSIONS:",
-   "new": "if False:",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
-   "id": "improves_needs_both",
-   "file": "tests/agent_rules.py",
-   "old": "seen[\"caught_per_run_higher\"] or seen[\"tokens_per_caught_lower\"]",
-   "new": "seen[\"caught_per_run_higher\"] and seen[\"tokens_per_caught_lower\"]",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
-   "id": "improves_by_repeats_too",
-   "file": "tests/agent_rules.py",
-   "old": "seen[\"caught_per_run_higher\"] or seen[\"tokens_per_caught_lower\"]",
-   "new": "seen[\"caught_per_run_higher\"] or seen[\"repeats_lower\"] or seen[\"tokens_per_caught_lower\"]",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
-   "id": "improves_not_by_catches",
-   "file": "tests/agent_rules.py",
-   "old": "seen[\"caught_per_run_higher\"] or seen[\"tokens_per_caught_lower\"]",
-   "new": "seen[\"tokens_per_caught_lower\"]",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
-   "id": "improves_not_by_tokens",
-   "file": "tests/agent_rules.py",
-   "old": "seen[\"caught_per_run_higher\"] or seen[\"tokens_per_caught_lower\"]",
-   "new": "seen[\"caught_per_run_higher\"]",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
    "id": "equal_is_lower",
    "file": "tests/agent_rules.py",
    "old": "return per_a > 0 and per_b > 0 and a * per_b < b * per_a",
@@ -447,24 +357,6 @@
    "file": "tests/agent_rules.py",
    "old": "return per_a > 0 and per_b > 0 and a * per_b < b * per_a",
    "new": "return a * per_b < b * per_a",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
-   "id": "tokens_per_finding_not_per_caught",
-   "file": "tests/agent_rules.py",
-   "old": "_lower(under[\"tokens\"], under[\"caught_tokens_known\"], before[\"tokens\"],\n                                                  before[\"caught_tokens_known\"])",
-   "new": "_lower(under[\"tokens\"], under[\"findings\"], before[\"tokens\"],\n                                                  before[\"findings\"])",
-   "tests": [
-    "test_agent_rules.py"
-   ]
-  },
-  {
-   "id": "tokens_per_caught_of_every_run",
-   "file": "tests/agent_rules.py",
-   "old": "_lower(under[\"tokens\"], under[\"caught_tokens_known\"], before[\"tokens\"],\n                                                  before[\"caught_tokens_known\"])",
-   "new": "_lower(under[\"tokens\"], under[A.CAUGHT], before[\"tokens\"],\n                                                  before[A.CAUGHT])",
    "tests": [
     "test_agent_rules.py"
    ]
@@ -537,6 +429,258 @@
    "file": "tests/agent_rules.py",
    "old": "        print(json.dumps({\"ok\": False, \"reason\": str(e)}))\n        return 2",
    "new": "        print(json.dumps({\"ok\": False, \"reason\": str(e)}))\n        return 0",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "any_schema",
+   "file": "tests/agent_rules.py",
+   "old": " or doc[\"schema\"] != SCHEMA or not isinstance(rules, list)",
+   "new": " or not isinstance(rules, list)",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "more_keys_in_the_file",
+   "file": "tests/agent_rules.py",
+   "old": "if sorted(doc) != [\"designs\", \"rules\", \"schema\"] or doc[\"schema\"] != SCHEMA",
+   "new": "if \"designs\" not in doc or doc.get(\"schema\") != SCHEMA",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "designs_of_the_file_unchecked",
+   "file": "tests/agent_rules.py",
+   "old": "    A.check_designs(doc[\"designs\"])\n",
+   "new": "",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "missed_share_of_every_catch",
+   "file": "tests/agent_rules.py",
+   "old": "d[\"caught_judged\"] + d[\"missed\"])",
+   "new": "d[A.CAUGHT] + d[\"missed\"])",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_due_after_six",
+   "file": "tests/agent_rules.py",
+   "old": "if now[\"judged_sessions\"] < AFTER_SESSIONS:",
+   "new": "if now[\"judged_sessions\"] <= AFTER_SESSIONS:",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_due_at_once",
+   "file": "tests/agent_rules.py",
+   "old": "if now[\"judged_sessions\"] < AFTER_SESSIONS:",
+   "new": "if False:",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_due_by_unjudged_sessions",
+   "file": "tests/agent_rules.py",
+   "old": "if now[\"judged_sessions\"] < AFTER_SESSIONS:",
+   "new": "if now[\"sessions\"] < AFTER_SESSIONS:",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_says_every_session",
+   "file": "tests/agent_rules.py",
+   "old": "\"sessions\": now[\"judged_sessions\"],",
+   "new": "\"sessions\": now[\"sessions\"],",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_needs_both",
+   "file": "tests/agent_rules.py",
+   "old": "seen[\"missed_share_lower\"] or seen[\"useful_share_higher\"]",
+   "new": "seen[\"missed_share_lower\"] and seen[\"useful_share_higher\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_not_by_misses",
+   "file": "tests/agent_rules.py",
+   "old": "seen[\"missed_share_lower\"] or seen[\"useful_share_higher\"]",
+   "new": "seen[\"useful_share_higher\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_not_by_catches",
+   "file": "tests/agent_rules.py",
+   "old": "seen[\"missed_share_lower\"] or seen[\"useful_share_higher\"]",
+   "new": "seen[\"missed_share_lower\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_by_tokens_too",
+   "file": "tests/agent_rules.py",
+   "old": "seen[\"missed_share_lower\"] or seen[\"useful_share_higher\"]",
+   "new": "seen[\"missed_share_lower\"] or seen[\"useful_share_higher\"] or seen[\"tokens_per_caught_lower\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_though_more_is_missed",
+   "file": "tests/agent_rules.py",
+   "old": "HELD if better and not seen[\"missed_share_higher\"] else",
+   "new": "HELD if better else",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "useful_share_per_run",
+   "file": "tests/agent_rules.py",
+   "old": "_lower(before[A.CAUGHT], before[\"findings\"], now[A.CAUGHT], now[\"findings\"])",
+   "new": "_lower(before[A.CAUGHT], before[\"runs\"], now[A.CAUGHT], now[\"runs\"])",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "lower_useful_share_is_higher",
+   "file": "tests/agent_rules.py",
+   "old": "_lower(before[A.CAUGHT], before[\"findings\"], now[A.CAUGHT], now[\"findings\"])",
+   "new": "_lower(now[A.CAUGHT], now[\"findings\"], before[A.CAUGHT], before[\"findings\"])",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "missed_shares_swapped",
+   "file": "tests/agent_rules.py",
+   "old": "\"missed_share_higher\": _lower(*share(before), *share(now))",
+   "new": "\"missed_share_higher\": _lower(*share(now), *share(before))",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "tokens_per_caught_of_every_run",
+   "file": "tests/agent_rules.py",
+   "old": "_lower(now[\"tokens\"], now[\"caught_tokens_known\"], before[\"tokens\"],\n                                                  before[\"caught_tokens_known\"])",
+   "new": "_lower(now[\"tokens\"], now[A.CAUGHT], before[\"tokens\"],\n                                                  before[A.CAUGHT])",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "improves_against_the_time_before_the_rules",
+   "file": "tests/agent_rules.py",
+   "old": "*closed, before, now = m[\"designs\"]",
+   "new": "before, *closed, now = m[\"designs\"]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "designs_not_told_to_the_measure",
+   "file": "tests/agent_rules.py",
+   "old": "A.measure(ctx[\"data\"], name, ctx[\"closed\"])",
+   "new": "A.measure(ctx[\"data\"], name)",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "answered_asks_this_sessions_runs",
+   "file": "tests/agent_rules.py",
+   "old": "if run[\"session\"] is None or run[\"session\"] != ctx[\"session\"]]",
+   "new": "if True]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "answered_forgets_runs_before_any_session",
+   "file": "tests/agent_rules.py",
+   "old": "if run[\"session\"] is None or run[\"session\"] != ctx[\"session\"]]",
+   "new": "if run[\"session\"] != ctx[\"session\"]]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "answered_though_unanswered",
+   "file": "tests/agent_rules.py",
+   "old": "REFUTED if unanswered or unlearned else",
+   "new": "REFUTED if unlearned else",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "answered_though_unlearned",
+   "file": "tests/agent_rules.py",
+   "old": "REFUTED if unanswered or unlearned else",
+   "new": "REFUTED if unanswered else",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "a_miss_after_the_run_owes_a_lesson",
+   "file": "tests/agent_rules.py",
+   "old": "any(m[\"in_diff\"] and m[\"lesson\"] is None",
+   "new": "any(m[\"lesson\"] is None",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "a_lesson_asked_of_no_miss",
+   "file": "tests/agent_rules.py",
+   "old": "any(m[\"in_diff\"] and m[\"lesson\"] is None",
+   "new": "any(False and m[\"lesson\"] is None",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "answered_held_with_no_run",
+   "file": "tests/agent_rules.py",
+   "old": "HELD if earlier else NOT_DUE",
+   "new": "HELD",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "design_rows_not_asked_of_the_ledger",
+   "file": "tests/agent_rules.py",
+   "old": "if not set(design[\"recorded_in\"]) <= held:",
+   "new": "if False:",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "one_design_row_is_enough",
+   "file": "tests/agent_rules.py",
+   "old": "if not set(design[\"recorded_in\"]) <= held:",
+   "new": "if not set(design[\"recorded_in\"]) & held:",
    "tests": [
     "test_agent_rules.py"
    ]

@@ -10,7 +10,8 @@ session tool, not in ``referee/``. From anywhere:
 
     python3 tests/agent_run.py packet --agent NAME --base REV [--head REV] --out DIR
     python3 tests/agent_run.py record --packet DIR --run FILE --snapshot SHA [--ts TS] [--ledger FILE]
-    python3 tests/agent_run.py record --agent NAME --run FILE --snapshot SHA [--ts TS] [--ledger FILE]
+    python3 tests/agent_run.py record --agent NAME --run FILE --snapshot SHA [--ts TS] [--ledger FILE] [--index FILE]
+        (FILE: an amending file by rule 4, or an outcome file by rule 9)
     python3 tests/agent_run.py measure --agent NAME [--ledger FILE]
     python3 tests/agent_run.py cost --agent NAME --snapshot SHA [--mirror FILE] [--ts TS] [--ledger FILE]
 
@@ -69,7 +70,8 @@ The rules, each bound by ``tests/test_agent_run.py``:
    ``amends`` and ``findings``: a later reading of the findings of the run it names (the rival's or the
    referee's answer comes after the push); it is refused unless ``amends`` names a run of this agent that rule
    6 reads in the ledger (``amends_no_run``) and the findings are as many as that run's
-   (``amends_other_findings``). Both or neither of ``--packet`` and ``--agent`` is ``packet_or_agent``. Either
+   (``amends_other_findings``); a file with the key ``outcome_of`` is an outcome file instead and goes by
+   rule 9. Both or neither of ``--packet`` and ``--agent`` is ``packet_or_agent``. Either
    row is refused when a finding's ``carried_in`` names a report that is no file under the brain's root or a
    row id the ledger does not hold (``carried_in_absent``), or its ``repeat_of`` names no finding of a run of
    this agent that is in the ledger before the run the findings are of (``repeat_of_no_finding``). A ledger
@@ -78,9 +80,8 @@ The rules, each bound by ``tests/test_agent_run.py``:
 6. **measure** folds the ledger's rows that carry the ref ``agent_run:<name>``, in file order. Such a row whose
    summary is not a form below is a fault, never skipped. ``agent_run/2 `` and one JSON object: either
    ``agent``, ``amends`` and ``findings`` by rule 4, or every field of rule 3's packet but ``tools`` and beside
-   them a run file by rule 4 and no other key, or a cost row by rule 7. ``agent_run/1 `` and one JSON object, the form
-   of the runs before
-   the rules, still read and no longer written: the packet's first nine fields but ``tools``, and beside them
+   them a run file by rule 4 and no other key, or a cost row by rule 7, or an outcome row by rule 9.
+   ``agent_run/1 `` and one JSON object, the form of the runs before the rules, still read and no longer written: the packet's first nine fields but ``tools``, and beside them
    the run file's keys with ``effort`` and ``tokens`` null too under a ``not_measured``, findings without
    ``carried_in`` and ``repeat_of`` and with a verdict of ``VERDICTS``, and optionally ``amends`` (such a row
    amends and is no run). In each form ``agent`` is ``<name>``; the packet fields' other values are not judged.
@@ -88,16 +89,23 @@ The rules, each bound by ``tests/test_agent_run.py``:
    run's ``cost_usd_micros`` is null until a cost row names it: the count a run row of the form ``agent_run/1``
    may carry is the session's own and is not read. A
    cost row gives the earlier run row it names (of either form) its ``cost_usd_micros`` and its floor, the last
-   such row of a run standing; naming anything else is a fault (``cost_no_run:<row id>``). The answer:
+   such row of a run standing; naming anything else is a fault (``cost_no_run:<row id>``). An outcome row gives
+   the earlier run row it names its outcome, the last such row of a run standing; naming anything else is a
+   fault (``outcome_no_run:<row id>``). The answer:
    ``runs``; ``sessions``, the distinct ``session_start`` rows last seen before each run (a run before
    any such row counts as one more); ``findings`` and the count of each verdict; ``repeats``, the findings that
    carry a ``repeat_of``; the sums ``tokens``, ``cost_usd_micros`` and ``wall_ms`` over the runs that carry a
    count (the cost: from a cost row), with ``tokens_unknown`` and ``cost_unknown`` the runs that carry null,
    and ``caught_tokens_known`` the ``caught`` findings of the runs whose tokens are a count;
    ``cost_floor_usd_micros``, the sum of ``cost_floor_usd_micros`` over the runs whose cost is null and whose
-   cost row carries a floor that is a count, and ``cost_floor_runs``, how many those are; ``before_rules`` and
-   ``under_rules``, the same counts and sums over the runs of the form ``agent_run/1`` and of ``agent_run/2``
-   alone; ``session_cost_usd_micros``, the lower median of what the ledger's ``cost`` rows say a session cost
+   cost row carries a floor that is a count, and ``cost_floor_runs``, how many those are; ``outcome_none``, the
+   runs with no outcome row, ``outcome_unknown``, those whose outcome's verdict is ``unknown``, ``judged_runs``,
+   the others (``accepted`` or ``rejected``), ``judged_sessions``, the distinct sessions of those,
+   ``caught_judged``, their ``caught`` findings, ``missed``, the entries of their outcomes' ``missed`` whose
+   ``in_diff`` is true, and ``missed_after``, the entries whose ``in_diff`` is false (a miss is counted once
+   for each run whose outcome lists it); ``before_rules`` and ``under_rules``, the same counts and sums over the
+   runs of the form ``agent_run/1`` and of ``agent_run/2`` alone; ``designs``, the same over the runs of each
+   design by rule 10, each with its ``design``; ``session_cost_usd_micros``, the lower median of what the ledger's ``cost`` rows say a session cost
    (a row of the kind ``cost`` whose summary begins ``session <stamp>: exit <..>, <..> min, turns <..>,
    cost_usd_micros <count>,``, the launcher's form, tohum/26o, with a count above 0; a row that says anything
    else there, ``unknown`` or ``0`` too, states none: a launch that cost nothing called no model, as the
@@ -140,6 +148,29 @@ The rules, each bound by ``tests/test_agent_run.py``:
      not printed). Each row is appended alone: a fault of the writer stops the command and the
      rows appended before it stay.
 8. One JSON line; exit 0, or 2 with ``{"ok": false, "reason"}`` on a fault.
+9. **An outcome** is what the judge after a run said of the push the run read for: a later session writes it,
+   as a file with exactly ``outcome_of`` (``f<n>``: the run's row), ``head`` (40 lower-case
+   hex, the commit that was pushed; null only beside the verdict ``unknown``), ``verdict`` (one of
+   ``OUTCOMES``), ``source`` (text: where the verdict was read) and ``missed``, a list that is empty unless the
+   verdict is ``rejected`` and then is not: each entry has exactly ``reason`` and ``claim`` (texts),
+   ``in_diff`` (a boolean: the defect was in the diff the run read) and ``lesson`` (``f<n>`` or null). Anything
+   else is ``bad_outcome``. ``record --agent`` appends it through the one writer with kind, defaults and refs
+   as rule 5's and the summary ``agent_run/2 `` and one JSON object, ``agent`` and the file's fields; it is
+   refused unless ``outcome_of`` names a run of this agent that rule 6 reads in the ledger
+   (``outcome_no_run``), that run's session is not the ledger's last ``session_start`` row (a run before any
+   such row, in a ledger that has none, is refused too: ``outcome_in_the_runs_session``; the judge's answer
+   comes after the push), and every ``lesson`` named is a lesson in force by rule 3's reader over ``--index``
+   as the row is written (``lesson_not_in_force``; the index's own faults are ``lessons:<reason>``, and it is
+   not asked when no lesson is named).
+10. **A design** is a state of the rules the runs are compared by. The rules file's ``designs`` (``designs``,
+   ``check_designs``) is a list of the closed ones, the first first: each has exactly ``design`` (1, 2, ... in
+   order), ``rules_sha256`` (a list, not empty, of 64 lower-case hex, ``ledger.schema``'s form, none twice in
+   the file) and ``recorded_in`` (a list, not empty, of ``f<n>``: the rows that say which rule closed it and
+   on what numbers); anything else is
+   ``bad_design``, a file that is no JSON object ``rules_unreadable``. A run of the form ``agent_run/1`` is of
+   design 0; a run under the rules is of the closed design that lists the ``rules_sha256`` its row carries,
+   and of the design in force (the count of the closed ones plus 1) when none does. ``measure`` the command
+   reads the designs of the root's rules file.
 
 What this does not say, stated. A cost is the launcher's figure, derived from its price table and not the
 CLI's (tohum/26o); rule 7 copies it and computes none. A run is tied to its call by its row's ``ts`` and
@@ -151,7 +182,14 @@ the session wrote: nothing here checks that the agent ran, that a
 count is the true one (and a run whose ``tokens`` is a count of eight or more digits is refused by the ledger's
 row scan for the same reason a cost row says ``usage``: ``row_refused:row_scan:secret-assignment``; the runs so
 far are of six digits), that a ``caught`` finding's test exists or was ever red, that a ``carried`` finding's
-place speaks of it, or that a ``repeat_of`` is the same claim. That the agent was given ``message.txt`` and
+place speaks of it, or that a ``repeat_of`` is the same claim. An outcome is the session's word too: that
+``head`` is the commit pushed, that the verdict is the referee's, that ``in_diff`` was found by running the
+reproducer on the run's head, and that the lesson named speaks of the miss are not checked; a lesson in
+force when the outcome was written may be closed later without a successor, and then the class is in no
+packet though the row still names it; a defect no later
+judge found is in no outcome, so ``missed`` is a floor of what a run missed. A rules file edited without a
+redesign has another sha256 and its runs are of the design in force all the same; a run is of a closed design
+only by a sha256 listed there. That the agent was given ``message.txt`` and
 nothing else is read from the session's log by ``tests/agent_rules.py``, not here. The diff is ``push_size``'s,
 not the referee's prompt (which is ``--binary`` and adds pages). The packet is of a diff: an agent whose task
 is no diff has no packet form yet. ``retire_due`` reads the owner's fourth condition from one side only: it is true
@@ -223,6 +261,11 @@ TOKEN_KINDS = ("in", "cache_read", "cache_write_5m", "cache_write_1h", "out")
 COPIED = ("tool_use_id", "subagent_type", "model", "effort", "cost_usd_micros", "cost_floor_usd_micros",
           "cost_basis", "not_measured")
 COST_KEYS = ("agent", "cost_of", "source", "stamp", "usage", *COPIED)
+OUTCOME_KEYS = ("agent", "outcome_of", "head", "verdict", "source", "missed")
+ACCEPTED, REJECTED, UNKNOWN = "accepted", "rejected", "unknown"
+OUTCOMES = (ACCEPTED, REJECTED, UNKNOWN)
+MISS_KEYS = ("reason", "claim", "in_diff", "lesson")
+DESIGN_KEYS = ("design", "rules_sha256", "recorded_in")
 RULES = "skills/agents/rules.json"
 LOADED = "/work/logs/brain-definitions.json"
 GIVEN = ("diff.patch", "paths.txt", "packet.json", "lessons.json", "memory.json")
@@ -499,6 +542,45 @@ def check_cost(fields: dict) -> None:
         raise Fault("bad_cost_row")
 
 
+def check_outcome(fields: dict) -> None:
+    """Rule 9's outcome row."""
+    if sorted(fields) != sorted(OUTCOME_KEYS):
+        raise Fault("bad_outcome")
+    head, verdict, missed = fields["head"], fields["verdict"], fields["missed"]
+    ok = (isinstance(fields["outcome_of"], str) and ROW_ID.fullmatch(fields["outcome_of"])
+          and isinstance(verdict, str) and verdict in OUTCOMES and _text(fields["source"])
+          and ((isinstance(head, str) and PS.SHA.fullmatch(head)) or (head is None and verdict == UNKNOWN))
+          and isinstance(missed, list) and bool(missed) == (verdict == REJECTED)
+          and all(isinstance(m, dict) and sorted(m) == sorted(MISS_KEYS) and _text(m["reason"])
+                  and _text(m["claim"]) and isinstance(m["in_diff"], bool)
+                  and (m["lesson"] is None or (isinstance(m["lesson"], str) and ROW_ID.fullmatch(m["lesson"])))
+                  for m in missed))
+    if not ok:
+        raise Fault("bad_outcome")
+
+
+def check_designs(designs) -> list[dict]:
+    """Rule 10: ``designs``, the closed designs of a rules file, when they are ones."""
+    if not isinstance(designs, list):
+        raise Fault("bad_design")
+    for n, d in enumerate(designs, 1):
+        ok = (isinstance(d, dict) and sorted(d) == sorted(DESIGN_KEYS) and type(d["design"]) is int
+              and d["design"] == n
+              and all(isinstance(d[k], list) and d[k] and all(isinstance(v, str) and form.fullmatch(v) for v in d[k])
+                      for k, form in (("rules_sha256", F.schema.HEX64), ("recorded_in", ROW_ID))))
+        if not ok:
+            raise Fault("bad_design")
+    listed = [v for d in designs for v in d["rules_sha256"]]
+    if len(set(listed)) != len(listed):
+        raise Fault("bad_design")
+    return designs
+
+
+def designs(root: str) -> list[dict]:
+    """Rule 10: the closed designs of ``root``'s rules file."""
+    return check_designs(_load(os.path.join(root, RULES), "rules_unreadable").get("designs"))
+
+
 def mirror(path: str) -> tuple[datetime.datetime, list[tuple[datetime.datetime, str, list[dict]]]]:
     """Rule 7's mirror: the time of its own stamp and ``(time, stamp, runs)`` of each session, oldest first."""
     reason = "mirror_unreadable"
@@ -599,6 +681,28 @@ def amend(name: str, run: dict, ledger: str, snapshot: str, ts: str, kinds: froz
     return _append(name, run["findings"], text, ledger, snapshot, ts, kinds, root, run["amends"])
 
 
+def outcome(name: str, run: dict, ledger: str, snapshot: str, ts: str, kinds: frozenset,
+            index: str = LR.INDEX) -> str:
+    """Rule 9: append the row that says what the later judge answered the push of the run ``run`` names and
+    return its ``row_id``."""
+    if sorted(run) != sorted(OUTCOME_KEYS[1:]):
+        raise Fault("bad_outcome")
+    fields = {"agent": name, **run}
+    check_outcome(fields)
+    data = _read(ledger)
+    found = runs(data, name)
+    if run["outcome_of"] not in found:
+        raise Fault("outcome_no_run")
+    starts = [row["row_id"] for row in map(json.loads, data.splitlines()) if row["kind"] == "session_start"]
+    if found[run["outcome_of"]]["session"] == (starts[-1] if starts else None):
+        raise Fault("outcome_in_the_runs_session")
+    named = {m["lesson"] for m in run["missed"]} - {None}
+    if named and not named <= {lesson["row_id"] for lesson in lessons(index, ledger, data)}:
+        raise Fault("lesson_not_in_force")
+    text = FORM2 + json.dumps(fields, ensure_ascii=False, sort_keys=True)
+    return _write(name, text, ledger, data, snapshot, ts, kinds)
+
+
 def _append(name: str, findings: list[dict], text: str, ledger: str, snapshot: str, ts: str, kinds: frozenset,
             root: str, amends: str | None = None) -> str:
     data = _read(ledger)
@@ -634,9 +738,10 @@ def _write(name: str, text: str, ledger: str, data: bytes, snapshot: str, ts: st
 
 def runs(data: bytes, name: str) -> dict[str, dict]:
     """Rule 6: ``name``'s runs in the ledger's bytes by row id, each ``{session, form, ts, message_sha256,
-    findings, cost, tokens, cost_usd_micros, wall_ms}`` with the findings of the last row that amends it and,
-    as ``cost``, the object of its last cost row or none (``ts`` is the row's; ``message_sha256`` is null in a
-    run of the form ``agent_run/1``)."""
+    rules_sha256, findings, cost, outcome, tokens, cost_usd_micros, wall_ms}`` with the findings of the last row
+    that amends it and, as ``cost`` and ``outcome``, the object of its last cost row and of its last outcome row
+    or none (``ts`` is the row's; ``message_sha256`` and ``rules_sha256`` are null in a run of the form
+    ``agent_run/1``)."""
     runs: dict[str, dict] = {}
     session = None
     for raw in data.splitlines():
@@ -659,12 +764,17 @@ def runs(data: bytes, name: str) -> dict[str, dict]:
             if fields["cost_of"] not in runs:
                 raise Fault("cost_no_run:%s" % row_id)
             runs[fields["cost_of"]].update(cost=fields, cost_usd_micros=fields["cost_usd_micros"])
+        elif "outcome_of" in fields:
+            if fields["outcome_of"] not in runs:
+                raise Fault("outcome_no_run:%s" % row_id)
+            runs[fields["outcome_of"]]["outcome"] = fields
         elif "amends" in fields:
             if fields["amends"] not in runs:
                 raise Fault("amends_no_run:%s" % row_id)
             runs[fields["amends"]]["findings"] = fields["findings"]
         else:
             runs[row_id] = {"session": session, "form": form, "ts": ts, "cost": None, "cost_usd_micros": None,
+                            "outcome": None, "rules_sha256": fields.get("rules_sha256"),
                             "message_sha256": fields.get("message_sha256"), "findings": fields["findings"], **sums}
     return runs
 
@@ -685,6 +795,9 @@ def _fields(text, name: str) -> tuple[int, dict]:
     if form == 2 and "cost_of" in fields:
         check_cost(fields)
         return form, fields
+    if form == 2 and "outcome_of" in fields:
+        check_outcome(fields)
+        return form, fields
     carried = [k for k in (PACKET_KEYS, PACKET_KEYS2)[form - 1] if k != "tools"]
     if any(k not in fields for k in carried):
         raise ValueError
@@ -700,7 +813,15 @@ def fold(found: list[dict]) -> dict:
     floors = [run["cost"]["cost_floor_usd_micros"] for run in found
               if run["cost_usd_micros"] is None and run["cost"] is not None
               and run["cost"]["cost_floor_usd_micros"] is not None]
+    judged = [run for run in found if run["outcome"] is not None and run["outcome"]["verdict"] != UNKNOWN]
+    misses = [m["in_diff"] for run in judged for m in run["outcome"]["missed"]]
+    answers = {"outcome_none": sum(run["outcome"] is None for run in found),
+               "outcome_unknown": len(found) - len(judged) - sum(run["outcome"] is None for run in found),
+               "judged_runs": len(judged), "judged_sessions": len({run["session"] for run in judged}),
+               "caught_judged": sum(f["verdict"] == CAUGHT for run in judged for f in run["findings"]),
+               "missed": sum(misses), "missed_after": len(misses) - sum(misses)}
     return {"runs": len(found), "sessions": len({run["session"] for run in found}), "findings": len(findings),
+            **answers,
             **count, "repeats": sum(f.get("repeat_of") is not None for f in findings),
             "tokens": sum(known["tokens"]), "tokens_unknown": len(found) - len(known["tokens"]),
             "caught_tokens_known": sum(f["verdict"] == CAUGHT for run in found if run["tokens"] is not None
@@ -727,8 +848,17 @@ def session_costs(data: bytes) -> list[int]:
     return sorted(costs)
 
 
-def measure(data: bytes, name: str) -> dict:
-    """Rule 6: the fold of ``name``'s runs and whether its retirement is due."""
+def design_of(run: dict, closed: list[dict] | tuple) -> int:
+    """Rule 10: the design ``run`` was made under: 0 before the rules, the closed design that lists its rules
+    file, else the one in force."""
+    if run["form"] == 1:
+        return 0
+    return next((d["design"] for d in closed if run["rules_sha256"] in d["rules_sha256"]), len(closed) + 1)
+
+
+def measure(data: bytes, name: str, closed: list[dict] | tuple = ()) -> dict:
+    """Rules 6 and 10: the fold of ``name``'s runs, of each design's (``closed``: rule 10's closed designs),
+    and whether its retirement is due."""
     found = list(runs(data, name).values())
     whole = fold(found)
     costs = session_costs(data)
@@ -738,6 +868,8 @@ def measure(data: bytes, name: str) -> dict:
     return {"ok": True, "agent": name, **whole,
             "before_rules": fold([r for r in found if r["form"] == 1]),
             "under_rules": fold([r for r in found if r["form"] == 2]),
+            "designs": [{"design": n, **fold([r for r in found if design_of(r, closed) == n])}
+                        for n in range(len(closed) + 2)],
             "session_cost_usd_micros": session, "session_costs": len(costs), "cost_over_gain": over,
             "retire_due": whole["sessions"] >= RETIRE_AFTER and (whole[CAUGHT] == 0 or over)}
 
@@ -762,6 +894,7 @@ def main(argv: list[str] | None = None, root: str = ROOT, git: str = "git") -> i
     r.add_argument("--snapshot", required=True)
     r.add_argument("--ts", default=None)
     r.add_argument("--agent", default=None)
+    r.add_argument("--index", default=LR.INDEX)
     m = sub.add_parser("measure")
     m.add_argument("--agent", required=True)
     c = sub.add_parser("cost")
@@ -784,7 +917,9 @@ def main(argv: list[str] | None = None, root: str = ROOT, git: str = "git") -> i
             ts = args.ts or _now()
             if (args.packet is None) == (args.agent is None):
                 raise Fault("packet_or_agent")
-            if args.packet is None:
+            if args.packet is None and "outcome_of" in run:
+                row_id = outcome(args.agent, run, args.ledger, args.snapshot, ts, F.spec_kinds(), args.index)
+            elif args.packet is None:
                 row_id = amend(args.agent, run, args.ledger, args.snapshot, ts, F.spec_kinds(), root)
             else:
                 row_id = record(read_packet(args.packet), run, args.ledger, args.snapshot, ts, F.spec_kinds(), root)
@@ -795,7 +930,7 @@ def main(argv: list[str] | None = None, root: str = ROOT, git: str = "git") -> i
                     data = f.read()
             except OSError:
                 raise Fault("ledger_unreadable") from None
-            out = measure(data, args.agent)
+            out = measure(data, args.agent, designs(root))
     except Fault as e:
         print(json.dumps({"ok": False, "reason": str(e)}))
         return 2

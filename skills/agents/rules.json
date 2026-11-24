@@ -1,5 +1,22 @@
 {
- "schema": "agent_rules/1",
+ "schema": "agent_rules/2",
+ "designs": [
+  {
+   "design": 1,
+   "rules_sha256": [
+    "00a127d29b35acd8c7c7cd8347dde64f0a2daa71ec3279eb90033f72b7f00007",
+    "859a56ee281b6babe87d1f42ad11daab5ecb074e248be248c7d66cfd47e29366",
+    "a1e18e20f78623a8e9ec8f9b0a860a18930d434bdf8f7796bb764a87c880c2aa",
+    "e316881e1ff9217f7a2fa1660d891d88741511d1e4f86e177e46e7090d8dc4f7"
+   ],
+   "recorded_in": [
+    "f2081",
+    "f2083",
+    "f2094",
+    "f2108"
+   ]
+  }
+ ],
  "rules": [
   {
    "id": "defined",
@@ -20,6 +37,12 @@
    "expects": "No finding of a run of an earlier session is unjudged, whether the agent's definition is still under agents/ or was removed. One that is refutes it; it is closed by an amending row."
   },
   {
+   "id": "answered",
+   "check": "outcomes_known",
+   "says": "What an agent missed is known only from the judge that comes after it. Each run is answered in a later session by an outcome row: the commit that was pushed, what the bootstrap referee and the rival said of it (accepted, rejected, or unknown when no verdict was given), where that was read, and for a rejection each reason with whether its defect was in the diff the run read. A defect that was in that diff and that the run did not report is a miss, and it names the lesson written from it, a lesson in force when the row is written: the lessons in force are given to every later run, so a class missed once is in the packets that follow while that lesson or one that replaces it stands.",
+   "expects": "Every run of an earlier session has an outcome row, and every miss that was in the run's diff names a lesson (the writer takes an outcome only for a run of an earlier session and only with lessons then in force). A run left without its answer, or a miss without a lesson, refutes it; it is closed by writing the row (python3 tests/agent_run.py record --agent <name> with a file that carries outcome_of)."
+  },
+  {
    "id": "remembers",
    "check": "repeats_rare",
    "says": "An agent is given its memory: the findings of its earlier runs that were refused, are carried or are not judged yet, so it does not spend a run on what is already known. A finding that says an earlier one again carries repeat_of.",
@@ -34,8 +57,8 @@
   {
    "id": "improves",
    "check": "improves",
-   "says": "The rules are kept only while the runs under them are better than the runs before them (tohum/00e E697, condition 3).",
-   "expects": "After five sessions with runs under the rules, an agent catches more findings a run than before the rules, or its tokens per caught finding are fewer (rework is not measured; the share of repeats is the rule remembers' and decides nothing here). Neither refutes it: that is recorded and the rules are designed again."
+   "says": "The rules are a design, and a design is kept only while the runs under it are better than the runs under the design before it (tohum/00e E697, condition 3). A design the runs refuted is closed in this file's designs with the rows that recorded it, and its runs become the next design's comparison. Better is read from what does not follow the size of a push: the share of defects the later judge found in a run's diff among those and the ones the run caught, and the share of findings that were caught.",
+   "expects": "After five sessions whose runs under the design in force have an accepted or rejected outcome, against the design before it the missed share (missed over caught plus missed, in the runs with such an outcome) is not higher, and either it is lower or the caught share of all findings is higher. Anything else refutes it: that is recorded, the design is closed in designs, and the rules are designed again. Caught findings a run and tokens per caught finding follow what a push holds and decide nothing (the first design was closed on them: rows f2081, f2083, f2094, f2108); the cost is the rule earns' and the repeats are the rule remembers'."
   }
  ]
 }

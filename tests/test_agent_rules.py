@@ -47,7 +47,14 @@ class Base(TA.Base):
 
     def write_rules(self, rules, **over) -> None:
         with open(os.path.join(self.root, A.RULES), "w", encoding="utf-8") as f:
-            json.dump({"schema": "agent_rules/1", "rules": rules, **over}, f)
+            json.dump({"schema": "agent_rules/2", "designs": [], "rules": rules, **over}, f)
+
+    def outcome(self, run: str, *missed: dict, verdict: str | None = None, **over) -> str:
+        """The outcome row of ``run``: rejected with ``missed``, accepted with none, or ``verdict``."""
+        row_id = A.outcome("one", TA.answer(run, verdict or (A.REJECTED if missed else A.ACCEPTED), *missed, **over),
+                           self.ledger, TA.SNAPSHOT, TA.TS, TA.F.spec_kinds(), self.index)
+        self.read()
+        return row_id
 
     def write_log(self, *rows, tail: bytes = b"") -> str:
         self.log = self.put("session.jsonl", b"".join(
@@ -81,9 +88,10 @@ class Load(Base):
     def test_each_break_of_the_file_is_a_fault(self):
         rules = [rule(check) for check in R.CHECKS]
         path = os.path.join(self.root, A.RULES)
-        for text in (b"not json", b"[1]", b"{}", json.dumps({"schema": "agent_rules/2", "rules": rules}).encode(),
-                     json.dumps({"schema": "agent_rules/1", "rules": {}}).encode(),
-                     json.dumps({"schema": "agent_rules/1", "rules": rules, "more": 1}).encode()):
+        doc = {"schema": "agent_rules/2", "designs": [], "rules": rules}
+        for text in (b"not json", b"[1]", b"{}", json.dumps({**doc, "schema": "agent_rules/1"}).encode(),
+                     json.dumps({"schema": "agent_rules/2", "rules": rules}).encode(),
+                     json.dumps({**doc, "rules": {}}).encode(), json.dumps({**doc, "more": 1}).encode()):
             with open(path, "wb") as f:
                 f.write(text)
             with self.subTest(text=text), self.faults("rules_unreadable"):
@@ -91,6 +99,12 @@ class Load(Base):
         os.remove(path)
         with self.faults("rules_unreadable"):
             R.load(self.root)
+        for designs in ({}, [TA.design(2, "a" * 64)]):
+            self.write_rules(rules, designs=designs)
+            with self.subTest(designs=designs), self.faults("bad_design"):
+                R.load(self.root)
+        self.write_rules(rules, designs=[TA.design(1, "a" * 64)])
+        self.assertEqual(R.load(self.root), rules)
         first = rules[0]
         for broken in ("a rule", {**first, "more": "x"}, {k: v for k, v in first.items() if k != "expects"},
                        {**first, "says": " "}, {**first, "expects": None}, {**first, "id": 7},
@@ -105,9 +119,9 @@ class Load(Base):
         with self.faults("check_without_rule"):
             R.load(self.root)
 
-    def test_the_checks_are_these_six(self):
+    def test_the_checks_are_these_seven(self):
         self.assertEqual(sorted(R.CHECKS), ["calls_are_rows", "definitions", "earns", "improves", "no_unjudged_left",
-                                            "repeats_rare"])
+                                            "outcomes_known", "repeats_rare"])
 
 
 class Definitions(Base):
@@ -278,6 +292,43 @@ class NoUnjudgedLeft(Base):
         self.assertEqual(R.tagged(b""), (None, []))
 
 
+class OutcomesKnown(Base):
+    def test_a_run_of_an_earlier_session_without_its_outcome_refutes(self):
+        self.assertEqual(self.state("outcomes_known"), ("not_due", {"runs": 0, "unanswered": [], "unlearned": []}))
+        old = self.old_run(run_file(old_finding(1, A.CAUGHT, "t")))
+        run = self.run_under()
+        self.assertEqual(self.state("outcomes_known"), ("not_due", {"runs": 0, "unanswered": [], "unlearned": []}))
+        self.row("session_start")
+        self.assertEqual(self.state("outcomes_known"),
+                         ("refuted", {"runs": 2, "unanswered": [old, run], "unlearned": []}))
+        self.outcome(old, verdict=A.UNKNOWN, head=None)
+        self.assertEqual(self.state("outcomes_known"), ("refuted", {"runs": 2, "unanswered": [run], "unlearned": []}))
+        self.outcome(run)
+        self.assertEqual(self.state("outcomes_known"), ("held", {"runs": 2, "unanswered": [], "unlearned": []}))
+        self.run_under()
+        self.assertEqual(self.state("outcomes_known"), ("held", {"runs": 2, "unanswered": [], "unlearned": []}))
+
+    def test_a_miss_that_was_in_the_runs_diff_names_its_lesson(self):
+        run = self.run_under()
+        self.row("session_start")
+        self.outcome(run, TA.miss(False))
+        self.assertEqual(self.state("outcomes_known"), ("held", {"runs": 1, "unanswered": [], "unlearned": []}))
+        self.outcome(run, TA.miss(False), TA.miss(True))
+        self.assertEqual(self.state("outcomes_known"), ("refuted", {"runs": 1, "unanswered": [], "unlearned": [run]}))
+        lesson = self.row("lesson", "what was missed", recheck="true")
+        self.outcome(run, TA.miss(False), TA.miss(True, lesson))
+        self.assertEqual(self.state("outcomes_known"), ("held", {"runs": 1, "unanswered": [], "unlearned": []}))
+
+    def test_a_run_of_no_session_and_a_run_of_a_removed_agent_are_listed(self):
+        self.data = b""
+        self.row("decision")
+        run = self.run_under()
+        self.assertEqual(self.state("outcomes_known"), ("refuted", {"runs": 1, "unanswered": [run], "unlearned": []}))
+        self.row("session_start")
+        os.remove(os.path.join(self.root, "agents", "one.md"))
+        self.assertEqual(self.state("outcomes_known"), ("refuted", {"runs": 1, "unanswered": [run], "unlearned": []}))
+
+
 class RepeatsRare(Base):
     def test_one_finding_in_ten_refutes_and_fewer_holds(self):
         self.assertEqual(self.state("repeats_rare"),
@@ -343,78 +394,136 @@ class Earns(Base):
 
 
 class Improves(Base):
-    def before(self) -> str:
-        """Before the rules: two runs, three findings, one of them a repeat, two caught, 2400 tokens."""
-        first = self.old_run(run_file(old_finding(1, A.CAUGHT, "t"), old_finding(2, A.CAUGHT, "t")))
-        second = self.old_run(run_file(old_finding(1)))
-        self.amend(second, finding(1, A.FALSE_ALARM, "said before", repeat_of=first + "#1"))
-        return first
+    """The design in force is the runs under the rules, the one before it the runs before them, unless the rules
+    file closes a design."""
 
-    def under(self, sessions: int, run) -> None:
-        for _ in range(sessions):
+    def before(self, *missed: dict, caught: int = 2, refused: int = 2) -> str:
+        """Before the rules: one run of 1200 tokens with its outcome."""
+        run = self.old_run(run_file(*(old_finding(n, A.CAUGHT if n <= caught else A.FALSE_ALARM, "t")
+                                      for n in range(1, caught + refused + 1))))
+        self.row("session_start")
+        self.outcome(run, *missed)
+        return run
+
+    def under(self, sessions: int, caught: int = 1, refused: int = 1, missed=(), tokens: int = 1200) -> None:
+        """``sessions`` sessions, each with one run, each run answered in the session after its own; the first
+        carries ``missed``. The ledger ends in a session with no run."""
+        self.row("session_start")
+        for i in range(sessions):
+            run = self.run_under(*(finding(n, A.CAUGHT if n <= caught else A.FALSE_ALARM, "t")
+                                   for n in range(1, caught + refused + 1)), tokens=tokens)
             self.row("session_start")
-            self.run_under(**run) if isinstance(run, dict) else self.run_under(*run)
+            self.outcome(run, *(missed if i == 0 else ()))
 
-    def test_before_five_sessions_under_the_rules_it_is_not_due(self):
+    def seen(self, sessions: int = 5, **true) -> dict:
+        return {"one": {"state": self.state("improves")[0], "design": 1, "against": 0, "sessions": sessions,
+                        "missed_share_higher": False, "missed_share_lower": False, "useful_share_higher": False,
+                        "tokens_per_caught_lower": False, **true}}
+
+    def test_before_five_sessions_with_an_answered_run_it_is_not_due(self):
         self.assertEqual(R.AFTER_SESSIONS, 5)
-        first = self.before()
-        self.under(4, {"findings": [finding(1, A.CAUGHT, "t", repeat_of=first + "#1")], "tokens": 5000})
-        self.assertEqual(self.state("improves"), ("not_due", {"one": {
-            "state": "not_due", "sessions": 4, "caught_per_run_higher": False, "repeats_lower": False,
-            "tokens_per_caught_lower": False}}))
-        self.run_under()
+        self.before(TA.miss())
+        self.under(4)
+        self.assertEqual(self.state("improves"), ("not_due", self.seen(4, missed_share_lower=True)))
+        run = self.run_under()
         self.assertEqual(self.state("improves")[0], "not_due")
+        self.row("session_start")
+        self.outcome(run, verdict=A.UNKNOWN)
+        self.assertEqual(self.state("improves"), ("not_due", self.seen(4, missed_share_lower=True)))
+        self.outcome(run)
+        self.assertEqual(self.state("improves"), ("held", self.seen(5, missed_share_lower=True)))
 
-    def test_at_five_sessions_neither_fewer_repeats_nor_fewer_tokens_per_catch_refutes(self):
-        first = self.before()
-        self.under(5, {"findings": [finding(1, A.CAUGHT, "t", repeat_of=first + "#1")], "tokens": 1200})
-        self.assertEqual(self.state("improves"), ("refuted", {"one": {
-            "state": "refuted", "sessions": 5, "caught_per_run_higher": False, "repeats_lower": False,
-            "tokens_per_caught_lower": False}}))
+    def test_at_five_sessions_nothing_better_refutes(self):
+        self.before()
+        self.under(5)
+        self.assertEqual(self.state("improves"), ("refuted", self.seen()))
 
-    def test_fewer_repeats_among_findings_alone_is_observed_and_does_not_hold(self):
-        first = self.before()
-        self.under(5, {"findings": [finding(1, A.CAUGHT, "t", repeat_of=first + "#1"),
-                                    *(finding(n, A.FALSE_ALARM, "why") for n in (2, 3, 4))], "tokens": 9000})
-        self.assertEqual(self.state("improves"), ("refuted", {"one": {
-            "state": "refuted", "sessions": 5, "caught_per_run_higher": False, "repeats_lower": True,
-            "tokens_per_caught_lower": False}}))
+    def test_more_caught_a_run_and_fewer_tokens_per_caught_are_observed_and_do_not_hold(self):
+        self.before()
+        self.under(5, caught=3, refused=3, tokens=100)
+        self.assertEqual(self.state("improves"), ("refuted", self.seen(tokens_per_caught_lower=True)))
+
+    def test_a_higher_share_of_caught_among_the_findings_holds(self):
+        self.before()
+        self.under(5, caught=2, refused=1)
+        self.assertEqual(self.state("improves"), ("held", self.seen(useful_share_higher=True)))
+
+    def test_a_lower_share_of_missed_holds(self):
+        self.before(TA.miss())
+        self.under(5, missed=[TA.miss()])
+        self.assertEqual(self.state("improves"), ("held", self.seen(missed_share_lower=True)))
+
+    def test_a_higher_share_of_missed_refutes_whatever_else_is_better(self):
+        self.before(TA.miss())
+        self.under(5, caught=1, refused=0, missed=[TA.miss()] * 3, tokens=100)
+        self.assertEqual(self.state("improves"), ("refuted", self.seen(
+            missed_share_higher=True, useful_share_higher=True, tokens_per_caught_lower=True)))
+
+    def test_the_missed_share_is_among_the_caught_of_the_judged_runs_alone(self):
+        self.before(TA.miss())
+        self.under(5, missed=[TA.miss()] * 3)
+        seen = self.seen(missed_share_higher=True)
+        self.assertEqual(self.state("improves"), ("refuted", seen))
+        self.run_under(*(finding(n, A.CAUGHT, "t") for n in range(1, 6)))
+        self.assertEqual(self.state("improves"), ("refuted", {"one": {**seen["one"], "useful_share_higher": True}}))
 
     def test_tokens_per_caught_are_of_the_runs_whose_tokens_are_known(self):
-        first = self.before()
-        self.old_run(run_file(old_finding(1, A.CAUGHT, "t"), tokens=None, not_measured="none shown"))
-        self.under(5, {"findings": [finding(1, A.CAUGHT, "t", repeat_of=first + "#1")], "tokens": 1000})
-        self.assertEqual(self.state("improves"), ("held", {"one": {
-            "state": "held", "sessions": 5, "caught_per_run_higher": False, "repeats_lower": False,
-            "tokens_per_caught_lower": True}}))
+        self.old_run(run_file(*(old_finding(n, A.CAUGHT, "t") for n in range(1, 6)), tokens=None))
+        self.before(caught=1, refused=1)
+        self.under(5, tokens=600)
+        self.assertEqual(self.state("improves"), ("refuted", self.seen(tokens_per_caught_lower=True)))
 
-    def test_more_caught_findings_a_run_holds(self):
-        first = self.before()
-        self.under(5, {"findings": [finding(n, A.CAUGHT, "t", repeat_of=first + "#1") for n in (1, 2)],
-                       "tokens": 2400})
-        self.assertEqual(self.state("improves"), ("held", {"one": {
-            "state": "held", "sessions": 5, "caught_per_run_higher": True, "repeats_lower": False,
-            "tokens_per_caught_lower": False}}))
-
-    def test_fewer_tokens_per_caught_finding_holds(self):
-        first = self.before()
-        self.under(5, {"findings": [finding(1, A.CAUGHT, "t", repeat_of=first + "#1")], "tokens": 1199})
-        self.assertEqual(self.state("improves"), ("held", {"one": {
-            "state": "held", "sessions": 5, "caught_per_run_higher": False, "repeats_lower": False,
-            "tokens_per_caught_lower": True}}))
-
-    def test_a_side_with_no_finding_or_nothing_caught_shows_no_improvement(self):
-        self.under(5, {"findings": [finding(1, A.CAUGHT, "t")], "tokens": 1})
-        self.assertEqual(self.state("improves"), ("refuted", {"one": {
-            "state": "refuted", "sessions": 5, "caught_per_run_higher": False, "repeats_lower": False,
-            "tokens_per_caught_lower": False}}))
+    def test_a_miss_that_was_not_in_the_runs_diff_is_no_miss_of_the_run(self):
+        self.before()
+        self.under(5, caught=2, refused=1, missed=[TA.miss(False)])
+        self.assertEqual(self.state("improves"), ("held", self.seen(useful_share_higher=True)))
         self.data = b""
         self.row("session_start")
         self.before()
-        self.under(5, {"findings": [], "tokens": 1})
+        self.under(5, caught=2, refused=1, missed=[TA.miss(True)])
         self.assertEqual(self.state("improves")[0], "refuted")
+
+    def test_the_missed_share_is_of_the_runs_a_judge_answered(self):
+        old = self.before(TA.miss())
+        self.under(5)
+        self.outcome(old, verdict=A.UNKNOWN)
+        self.assertEqual(self.state("improves"), ("refuted", self.seen()))
+
+    def test_a_side_with_nothing_to_divide_by_shows_no_improvement(self):
+        self.under(5, caught=1, refused=0)
+        self.assertEqual(self.state("improves"), ("refuted", self.seen()))
+        self.data = b""
+        self.row("session_start")
+        self.before(TA.miss())
+        self.under(5, caught=0, refused=0)
+        self.assertEqual(self.state("improves"), ("refuted", self.seen()))
         self.assertFalse(R._lower(0, 0, 1, 2) or R._lower(0, 2, 1, 0))
         self.assertTrue(R._lower(1, 3, 1, 2) and not R._lower(1, 2, 2, 4))
+
+    def test_a_closed_design_is_what_the_design_in_force_is_judged_against(self):
+        self.before(caught=1, refused=9)
+        rules = [rule(check) for check in R.CHECKS]
+        self.under(1)
+        with open(os.path.join(self.root, A.RULES), "rb") as f:
+            first = hashlib.sha256(f.read()).hexdigest()
+        self.write_rules(rules, designs=[TA.design(1, first)])
+        self.assertEqual(self.state("improves"), ("not_due", {"one": {
+            "state": "not_due", "design": 2, "against": 1, "sessions": 0, "missed_share_higher": False,
+            "missed_share_lower": False, "useful_share_higher": False, "tokens_per_caught_lower": False}}))
+        self.under(5)
+        self.assertEqual(self.state("improves"), ("refuted", {"one": {
+            "state": "refuted", "design": 2, "against": 1, "sessions": 5, "missed_share_higher": False,
+            "missed_share_lower": False, "useful_share_higher": False, "tokens_per_caught_lower": False}}))
+        self.write_rules(rules)
+        self.assertEqual(self.state("improves"), ("held", self.seen(6, useful_share_higher=True)))
+
+    def test_a_closed_design_names_rows_the_ledger_holds(self):
+        rules = [rule(check) for check in R.CHECKS]
+        self.write_rules(rules, designs=[TA.design(1, "a" * 64, recorded_in=["f1", "f2"])])
+        with self.faults("design_not_recorded:1"):
+            R.judge(self.root, self.data, None)
+        self.row("decision")
+        self.assertEqual(self.state("improves")[0], "not_due")
 
 
 class Main(Base):
@@ -432,6 +541,7 @@ class Main(Base):
         self.assertEqual([(r["id"], r["check"]) for r in out["rules"]], [("rule-" + c, c) for c in R.CHECKS])
         self.assertEqual({r["check"]: r["state"] for r in out["rules"]}, {
             "definitions": "held", "calls_are_rows": "not_due", "no_unjudged_left": "held",
+            "outcomes_known": "not_due",
             "repeats_rare": "not_due", "earns": "not_due", "improves": "not_due"})
         self.assertEqual(out["rules"], R.judge(self.root, self.data, None))
 
@@ -480,6 +590,17 @@ class Brain(unittest.TestCase):
         rules = R.load(ROOT)
         self.assertEqual(sorted(r["check"] for r in rules), sorted(R.CHECKS))
 
+    def test_the_first_design_is_closed_with_the_rules_files_of_its_runs_and_the_rows_that_refuted_it(self):
+        (first,) = A.designs(ROOT)
+        self.assertEqual(first["recorded_in"], ["f2081", "f2083", "f2094", "f2108"])
+        with open(os.path.join(ROOT, A.LEDGER), "rb") as f:
+            data = f.read()
+        (name,) = R.tagged(data)[1]
+        found = [r for r in A.runs(data, name).values() if r["ts"] < "2026-11-24T02:32:34Z"]
+        self.assertEqual(sorted({r["rules_sha256"] for r in found if r["form"] == 2}), sorted(first["rules_sha256"]))
+        self.assertEqual([d["runs"] for d in A.measure(data, name, [first])["designs"]][:2],
+                         [sum(r["form"] == 1 for r in found), sum(r["form"] == 2 for r in found)])
+
     def test_the_rules_are_judged_on_the_brains_own_ledger_without_a_fault(self):
         with open(os.path.join(ROOT, A.LEDGER), "rb") as f:
             got = R.judge(ROOT, f.read(), None)
@@ -513,6 +634,9 @@ class Brain(unittest.TestCase):
                       "whole prompt, nothing added",
                       "python3 tests/agent_run.py record --packet", "python3 tests/agent_run.py record --agent <name>",
                       "python3 tests/agent_run.py measure --agent <name>", "stands in for none",
+                      "--run <a file with outcome_of> --snapshot", "`designs`", "`rules_sha256`",
+                      *("`%s`" % k for k in A.OUTCOME_KEYS[1:]), *("`%s`" % k for k in A.MISS_KEYS),
+                      *("`%s`" % v for v in A.OUTCOMES),
                       *("`%s`" % v for v in A.VERDICTS2), "`carried_in`", "`repeat_of`", "`session_start`"):
             self.assertIn(named, text)
 

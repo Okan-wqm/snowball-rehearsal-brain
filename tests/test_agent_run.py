@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import sys
 import unittest
 
@@ -39,7 +40,9 @@ for row in rows:
 """
 ZERO = {"runs": 0, "sessions": 0, "findings": 0, "caught": 0, "false_alarm": 0, "unjudged": 0, "carried": 0,
         "repeats": 0, "tokens": 0, "tokens_unknown": 0, "cost_usd_micros": 0, "cost_unknown": 0, "wall_ms": 0,
-        "caught_tokens_known": 0, "cost_floor_usd_micros": 0, "cost_floor_runs": 0}
+        "caught_tokens_known": 0, "cost_floor_usd_micros": 0, "cost_floor_runs": 0, "outcome_none": 0,
+        "outcome_unknown": 0, "judged_runs": 0, "judged_sessions": 0, "caught_judged": 0, "missed": 0,
+        "missed_after": 0}
 
 
 NO_SESSION = {"session_cost_usd_micros": None, "session_costs": 0, "cost_over_gain": False}
@@ -71,7 +74,7 @@ class Base(TP.Base):
         self.root = os.path.join(self.tmp, "root")
         os.makedirs(os.path.join(self.root, "agents"))
         os.makedirs(os.path.join(self.root, "skills", "agents"))
-        self.rules = b'{"rules": "of the test"}\n'
+        self.rules = b'{"rules": "of the test", "designs": []}\n'
         with open(os.path.join(self.root, A.RULES), "wb") as f:
             f.write(self.rules)
         self.agent(GOOD)
@@ -565,7 +568,8 @@ def old_text(pack: dict, run: dict) -> str:
 class Measure(Base):
     def test_no_run_is_all_zero_and_not_due(self):
         self.assertEqual(A.measure(self.data, "one"), {"ok": True, "agent": "one", **ZERO, "before_rules": ZERO,
-                                                       "under_rules": ZERO, **NO_SESSION, "retire_due": False})
+                                                       "under_rules": ZERO, **NO_SESSION, "retire_due": False,
+                                                       "designs": [{"design": 0, **ZERO}, {"design": 1, **ZERO}]})
 
     def test_runs_sessions_verdicts_and_sums(self):
         self.record(run_file(finding(1, A.CAUGHT, "t"), finding(2)))
@@ -575,12 +579,13 @@ class Measure(Base):
         self.record(run_file(finding(1, A.CARRIED, "true", start), finding(2, A.CAUGHT, "t", repeat_of="f2#2"),
                              wall_ms=1))
         got = A.measure(self.data, "one")
-        fold = {"runs": 3, "sessions": 2, "findings": 5, "caught": 2, "false_alarm": 1, "unjudged": 1, "carried": 1,
+        fold = {**ZERO, "outcome_none": 3, "runs": 3, "sessions": 2, "findings": 5, "caught": 2, "false_alarm": 1, "unjudged": 1, "carried": 1,
                 "repeats": 1, "tokens": 3600, "tokens_unknown": 0, "cost_usd_micros": 0, "cost_unknown": 3,
                 "wall_ms": 90006, "caught_tokens_known": 2, "cost_floor_usd_micros": 0,
                 "cost_floor_runs": 0}
         self.assertEqual(got, {"ok": True, "agent": "one", **fold, "before_rules": ZERO, "under_rules": fold,
-                               **NO_SESSION, "retire_due": False})
+                               **NO_SESSION, "retire_due": False,
+                               "designs": [{"design": 0, **ZERO}, {"design": 1, **fold}]})
 
     def test_the_runs_before_the_rules_are_still_read_and_folded_apart_from_the_runs_under_them(self):
         old = self.old_run(run_file(old_finding(1, A.CAUGHT, "t"), old_finding(2), effort=None, tokens=None,
@@ -590,14 +595,14 @@ class Measure(Base):
         self.record(run_file(finding(1, A.FALSE_ALARM, "why", repeat_of=old + "#2"), wall_ms=7))
         got = A.measure(self.data, "one")
         before = {**ZERO, "runs": 2, "sessions": 1, "findings": 3, "caught": 1, "unjudged": 2, "tokens": 1200,
-                  "tokens_unknown": 1, "cost_usd_micros": 0, "cost_unknown": 2, "wall_ms": 180000}
+                  "tokens_unknown": 1, "cost_usd_micros": 0, "cost_unknown": 2, "wall_ms": 180000, "outcome_none": 2}
         under = {**ZERO, "runs": 1, "sessions": 1, "findings": 1, "false_alarm": 1, "repeats": 1, "tokens": 1200,
-                 "cost_usd_micros": 0, "cost_unknown": 1, "wall_ms": 7}
+                 "cost_usd_micros": 0, "cost_unknown": 1, "wall_ms": 7, "outcome_none": 1}
         self.assertEqual((got["before_rules"], got["under_rules"]), (before, under))
         self.assertEqual({k: got[k] for k in ZERO}, {
             **ZERO, "runs": 3, "sessions": 2, "findings": 4, "caught": 1, "false_alarm": 1, "unjudged": 2,
             "repeats": 1, "tokens": 2400, "tokens_unknown": 1, "cost_usd_micros": 0, "cost_unknown": 3,
-            "wall_ms": 180007})
+            "wall_ms": 180007, "outcome_none": 3})
         self.assertEqual([r["message_sha256"] for r in A.runs(self.data, "one").values()],
                          [None, None, A.read_packet(self.out)["message_sha256"]])
 
@@ -828,6 +833,283 @@ class Measure(Base):
                 got = sessions(count, cost)
                 self.assertEqual((got["sessions"], got["caught"], got["cost_over_gain"], got["retire_due"]),
                                  (count, count, cost > 1000, due))
+
+HEAD = "b" * 40
+
+
+def answer(run: str, verdict: str = A.ACCEPTED, *missed: dict, **over) -> dict:
+    """An outcome file of the run ``run``."""
+    return {"outcome_of": run, "head": HEAD, "verdict": verdict, "source": "result.json of the next session",
+            "missed": list(missed), **over}
+
+
+def miss(in_diff: bool = True, lesson=None) -> dict:
+    return {"reason": "refutation_reproduced", "claim": "a count that is wrong", "in_diff": in_diff, "lesson": lesson}
+
+
+class Outcome(Base):
+    def outcome(self, run: dict, name: str = "one") -> str:
+        row_id = A.outcome(name, run, self.ledger, SNAPSHOT, TS, F.spec_kinds(), self.index)
+        self.read()
+        return row_id
+
+    def ran(self, *findings: dict) -> str:
+        self.out = os.path.join(self.tmp, "packet-%d" % len(self.data))
+        return self.record(run_file(*findings))
+
+    def later(self, *findings: dict) -> str:
+        """A run, and the start of the session after its own."""
+        run = self.ran(*findings)
+        self.row("session_start")
+        return run
+
+    def test_the_row_carries_the_agent_and_the_answer_and_the_last_of_a_run_stands(self):
+        run = self.ran()
+        other = self.later()
+        self.assertEqual([r["outcome"] for r in A.runs(self.data, "one").values()], [None, None])
+        row_id = self.outcome(answer(run, A.UNKNOWN, head=None))
+        row = json.loads(self.data.splitlines()[-1])
+        self.assertEqual((row["row_id"], row["kind"], row["payload"]["refs"]),
+                         (row_id, "build", ["agents/one.md", "agent_run:one"]))
+        self.assertTrue(row["payload"]["summary"].startswith(A.FORM2))
+        self.assertEqual(json.loads(row["payload"]["summary"][len(A.FORM2):]),
+                         {"agent": "one", **answer(run, A.UNKNOWN, head=None)})
+        lesson = self.row("lesson", "what was missed", recheck="true")
+        self.outcome(answer(run, A.REJECTED, miss(True, lesson), miss(False)))
+        found = A.runs(self.data, "one")
+        self.assertEqual((found[run]["outcome"], found[other]["outcome"]),
+                         ({"agent": "one", **answer(run, A.REJECTED, miss(True, lesson), miss(False))}, None))
+        self.assertEqual(len(found), 2)
+
+    def test_each_break_of_an_outcome_file_is_refused_and_writes_nothing(self):
+        run = self.later()
+        self.outcome(answer(run))
+        good = answer(run)
+        before = self.data
+        for broken in ({**good, "agent": "one"}, {**good, "more": 1}, {k: v for k, v in good.items() if k != "source"},
+                       answer("run"), answer(7), answer(run, "merged"), answer(run, ["accepted"]),
+                       answer(run, source=" "), answer(run, head="b" * 39), answer(run, head="B" * 40),
+                       answer(run, head=None), answer(run, A.REJECTED, head=None), answer(run, head=7),
+                       answer(run, missed={}), answer(run, A.ACCEPTED, miss()), answer(run, A.UNKNOWN, miss()),
+                       answer(run, A.REJECTED), answer(run, A.REJECTED, "a miss"),
+                       answer(run, A.REJECTED, {**miss(), "more": 1}), answer(run, A.REJECTED, {**miss(), "reason": ""}),
+                       answer(run, A.REJECTED, {**miss(), "claim": None}), answer(run, A.REJECTED, miss(1)),
+                       answer(run, A.REJECTED, miss(None)), answer(run, A.REJECTED, miss(True, "lesson")),
+                       answer(run, A.REJECTED, miss(True, 7))):
+            with self.subTest(broken=broken), self.faults("bad_outcome"):
+                self.outcome(broken)
+        self.read()
+        self.assertEqual(self.data, before)
+
+    def test_a_commit_and_a_sha256_are_of_the_one_form_each_has_in_this_brain(self):
+        for holder, name, good in ((A.PS, "SHA", lambda v: A.check_outcome({"agent": "one", **answer("f2", head=v)})),
+                                   (F.schema, "HEX64", lambda v: A.check_designs([design(1, v)]))):
+            real = getattr(holder, name)
+            self.addCleanup(setattr, holder, name, real)
+            with self.subTest(name=name), self.assertRaises(A.Fault):
+                good("x")
+            setattr(holder, name, re.compile("x"))
+            good("x")
+            setattr(holder, name, real)
+
+    def test_an_outcome_names_a_run_of_this_agent(self):
+        run = self.later()
+        start = json.loads(self.data.splitlines()[0])["row_id"]
+        self.agent(GOOD.replace(b"name: one", b"name: two"), "two")
+        for name, of in (("one", start), ("one", "f999"), ("two", run)):
+            with self.subTest(name=name, of=of), self.faults("outcome_no_run"):
+                self.outcome(answer(of), name)
+        self.assertEqual(A.runs(self.data, "one")[run]["outcome"], None)
+
+    def test_an_outcome_is_not_written_in_the_session_of_its_run(self):
+        first = self.ran()
+        with self.faults("outcome_in_the_runs_session"):
+            self.outcome(answer(first))
+        self.row("session_end")
+        with self.faults("outcome_in_the_runs_session"):
+            self.outcome(answer(first))
+        self.row("session_start")
+        second = self.ran()
+        with self.faults("outcome_in_the_runs_session"):
+            self.outcome(answer(second))
+        self.outcome(answer(first))
+        self.assertEqual([r["outcome"] is None for r in A.runs(self.data, "one").values()], [False, True])
+        self.data = b""
+        self.row("decision")
+        run = self.ran()
+        with self.faults("outcome_in_the_runs_session"):
+            self.outcome(answer(run))
+        self.row("session_start")
+        self.outcome(answer(run))
+
+    def test_a_miss_names_a_lesson_in_force_as_the_row_is_written(self):
+        run = self.later()
+        start = json.loads(self.data.splitlines()[0])["row_id"]
+        closed = self.row("lesson", "a lesson that was closed", recheck="true")
+        lesson = self.row("lesson", "what was missed", recheck="true")
+        every = self.index
+        self.index = self.put("index-closed.py", (INDEX.replace('== "lesson"]', '== "lesson"][1:]')
+                                                  % (list(A.LR.FOLD),)).encode())
+        for named in (start, run, "f999", closed):
+            with self.subTest(named=named), self.faults("lesson_not_in_force"):
+                self.outcome(answer(run, A.REJECTED, miss(True, lesson), miss(False, named)))
+        self.assertEqual(A.runs(self.data, "one")[run]["outcome"], None)
+        self.outcome(answer(run, A.REJECTED, miss(True, lesson)))
+        self.index = every
+        self.outcome(answer(run, A.REJECTED, miss(True, lesson), miss(False, closed)))
+        self.index = self.put("index-broken.py", b"raise SystemExit(3)")
+        with self.assertRaisesRegex(A.Fault, "^lessons:"):
+            self.outcome(answer(run, A.REJECTED, miss(True, lesson)))
+        self.outcome(answer(run, A.REJECTED, miss(True)))
+        self.outcome(answer(run))
+
+    def test_an_outcome_row_that_names_no_earlier_run_or_is_no_outcome_is_a_fault_of_the_reader(self):
+        run = self.later()
+        start = json.loads(self.data.splitlines()[0])["row_id"]
+        for of in (start, "f999"):
+            row = F.next_row(self.data, "build", A.FORM2 + json.dumps({"agent": "one", **answer(of)}),
+                             ["agent_run:one"], SNAPSHOT, TS)
+            with self.subTest(of=of), self.faults("outcome_no_run:%s" % row["row_id"]):
+                A.measure(self.data + F.line_of(row), "one")
+        for fields in ({"agent": "one", **answer(run, "merged")}, {"agent": "two", **answer(run)},
+                       {"agent": "one", **answer(run), "more": 1}):
+            for form in (A.FORM, A.FORM2):
+                row = F.next_row(self.data, "build", form + json.dumps(fields), ["agent_run:one"], SNAPSHOT, TS)
+                with self.subTest(fields=fields, form=form), self.faults("run_row_unreadable:%s" % row["row_id"]):
+                    A.measure(self.data + F.line_of(row), "one")
+        row = F.next_row(self.data, "build", A.FORM + json.dumps({"agent": "one", **answer(run)}), ["agent_run:one"],
+                         SNAPSHOT, TS)
+        with self.faults("run_row_unreadable:%s" % row["row_id"]):
+            A.measure(self.data + F.line_of(row), "one")
+
+    def test_the_fold_counts_the_answers_and_the_misses_of_the_runs_a_judge_answered(self):
+        accepted = self.ran(finding(1, A.CAUGHT, "t"), finding(2, A.CAUGHT, "t"))
+        rejected = self.ran(finding(1, A.CAUGHT, "t"), finding(2, A.FALSE_ALARM, "why"))
+        self.row("session_start")
+        unknown = self.ran(finding(1, A.CAUGHT, "t"))
+        self.ran(finding(1, A.CAUGHT, "t"))
+        self.row("session_start")
+        again = self.later()
+        lesson = self.row("lesson", "what was missed", recheck="true")
+        self.outcome(answer(accepted))
+        self.outcome(answer(rejected, A.REJECTED, miss(True, lesson), miss(True), miss(False)))
+        self.outcome(answer(unknown, A.UNKNOWN))
+        self.outcome(answer(again, A.REJECTED, miss(False)))
+        self.outcome(answer(again))
+        got = A.measure(self.data, "one")
+        self.assertEqual({k: got[k] for k in ("runs", "sessions", "caught", "outcome_none", "outcome_unknown",
+                                              "judged_runs", "judged_sessions", "caught_judged", "missed",
+                                              "missed_after")},
+                         {"runs": 5, "sessions": 3, "caught": 5, "outcome_none": 1, "outcome_unknown": 1,
+                          "judged_runs": 3, "judged_sessions": 2, "caught_judged": 3, "missed": 2, "missed_after": 1})
+
+    def test_record_with_an_agent_and_a_file_that_carries_outcome_of_writes_the_outcome(self):
+        run = self.later()
+        lesson = self.row("lesson", "what was missed", recheck="true")
+        file = self.put("outcome.json", json.dumps(answer(run, A.REJECTED, miss(True, lesson))).encode())
+        argv = ["record", "--agent", "one", "--run", file, "--snapshot", SNAPSHOT, "--ts", TS, "--ledger", self.ledger]
+        seen = []
+        real = A.outcome
+        A.outcome = lambda *args: seen.append(args) or "f9"
+        with contextlib.redirect_stdout(io.StringIO()):
+            A.main(argv, root=self.root, git=self.git)
+        A.outcome = real
+        self.assertEqual(seen, [("one", answer(run, A.REJECTED, miss(True, lesson)), self.ledger, SNAPSHOT, TS,
+                                 F.spec_kinds(), "/opt/founder/ledger_index.py")])
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            code = A.main([*argv, "--index", self.put("index-broken.py", b"raise SystemExit(3)")], root=self.root,
+                          git=self.git)
+        self.assertEqual((code, json.loads(buf.getvalue())["reason"][:8]), (2, "lessons:"))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = A.main([*argv, "--index", self.index], root=self.root, git=self.git)
+        self.read()
+        row_id = json.loads(self.data.splitlines()[-1])["row_id"]
+        self.assertEqual((code, json.loads(buf.getvalue())), (0, {"ok": True, "recorded": row_id}))
+        self.assertEqual(A.runs(self.data, "one")[run]["outcome"],
+                         {"agent": "one", **answer(run, A.REJECTED, miss(True, lesson))})
+        file = self.put("outcome.json", json.dumps(answer("f999")).encode())
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            code = A.main(["record", "--agent", "one", "--run", file, "--snapshot", SNAPSHOT, "--ledger", self.ledger],
+                          root=self.root, git=self.git)
+        self.assertEqual((code, json.loads(buf.getvalue())), (2, {"ok": False, "reason": "outcome_no_run"}))
+
+
+def design(n: int, *shas: str, **over) -> dict:
+    return {"design": n, "rules_sha256": list(shas), "recorded_in": ["f1"], **over}
+
+
+class Designs(Base):
+    def rules_file(self, designs) -> str:
+        """Write a rules file with ``designs`` and return its sha256."""
+        self.rules = json.dumps({"designs": designs, "n": len(self.data)}).encode()
+        with open(os.path.join(self.root, A.RULES), "wb") as f:
+            f.write(self.rules)
+        return hashlib.sha256(self.rules).hexdigest()
+
+    def ran(self, *findings: dict) -> str:
+        self.out = os.path.join(self.tmp, "packet-%d" % len(self.data))
+        return self.record(run_file(*findings))
+
+    def test_the_closed_designs_of_a_rules_file(self):
+        good = [design(1, "a" * 64, "b" * 64), design(2, "c" * 64, recorded_in=["f7", "f9"])]
+        self.rules_file(good)
+        self.assertEqual(A.designs(self.root), good)
+        self.rules_file([])
+        self.assertEqual(A.designs(self.root), [])
+        for broken in (None, {}, ["a design"], [design(2, "a" * 64)], [design(0, "a" * 64)], [design(True, "a" * 64)],
+                       [design(1)], [design(1, "a" * 63)], [design(1, "A" * 64)], [design(1, 7)],
+                       [design(1, "a" * 64, "a" * 64)], [design(1, "a" * 64), design(2, "a" * 64)],
+                       [design(1, "a" * 64), design(1, "b" * 64)], [design(1, "a" * 64, closed_by="improves")],
+                       [design(1, "a" * 64, recorded_in=[])], [design(1, "a" * 64, recorded_in=["row"])],
+                       [design(1, "a" * 64, recorded_in="f1")], [design(1, "a" * 64, rules_sha256="a" * 64)],
+                       [{**design(1, "a" * 64), "more": 1}],
+                       [{k: v for k, v in design(1, "a" * 64).items() if k != "recorded_in"}]):
+            self.rules_file(broken)
+            with self.subTest(broken=broken), self.faults("bad_design"):
+                A.designs(self.root)
+        for text in (b"not json", b"[]"):
+            with open(os.path.join(self.root, A.RULES), "wb") as f:
+                f.write(text)
+            with self.subTest(text=text), self.faults("rules_unreadable"):
+                A.designs(self.root)
+        with open(os.path.join(self.root, A.RULES), "wb") as f:
+            f.write(b"{}")
+        with self.faults("bad_design"):
+            A.designs(self.root)
+
+    def test_a_run_is_of_the_closed_design_that_lists_its_rules_file_or_of_the_one_in_force(self):
+        self.old_run(run_file(old_finding(1, A.CAUGHT, "t")))
+        first = self.rules_file([])
+        self.ran(finding(1, A.CAUGHT, "t"), finding(2, A.CAUGHT, "t"))
+        second = self.rules_file([])
+        self.ran()
+        third = self.rules_file([])
+        self.ran(finding(1, A.FALSE_ALARM, "why"))
+        self.assertEqual([r["rules_sha256"] for r in A.runs(self.data, "one").values()], [None, first, second, third])
+        count = lambda closed: [(d["design"], d["runs"], d["caught"], d["findings"])  # noqa: E731
+                                for d in A.measure(self.data, "one", closed)["designs"]]
+        self.assertEqual(count([]), [(0, 1, 1, 1), (1, 3, 2, 3)])
+        self.assertEqual(count([design(1, first, second)]), [(0, 1, 1, 1), (1, 2, 2, 2), (2, 1, 0, 1)])
+        self.assertEqual(count([design(1, second), design(2, third)]),
+                         [(0, 1, 1, 1), (1, 1, 0, 0), (2, 1, 0, 1), (3, 1, 2, 2)])
+        got = A.measure(self.data, "one", [design(1, first, second)])
+        self.assertEqual(got["designs"][1], {"design": 1, **A.fold(list(A.runs(self.data, "one").values())[1:3])})
+        self.assertEqual((got["before_rules"]["runs"], got["under_rules"]["runs"], got["runs"]), (1, 3, 4))
+
+    def test_the_command_measures_by_the_closed_designs_of_the_roots_rules_file(self):
+        first = self.rules_file([])
+        self.ran()
+        self.rules_file([design(1, first)])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = A.main(["measure", "--agent", "one", "--ledger", self.ledger], root=self.root, git=self.git)
+        out = json.loads(buf.getvalue())
+        self.assertEqual((code, [(d["design"], d["runs"]) for d in out["designs"]]), (0, [(0, 0), (1, 1), (2, 0)]))
+        self.rules_file([design(2, first)])
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            code = A.main(["measure", "--agent", "one", "--ledger", self.ledger], root=self.root, git=self.git)
+        self.assertEqual((code, json.loads(buf.getvalue())), (2, {"ok": False, "reason": "bad_design"}))
 
 
 def call(wall_ms=90000, **over) -> dict:

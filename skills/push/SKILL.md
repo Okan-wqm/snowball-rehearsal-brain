@@ -30,7 +30,10 @@ line of a report pushed without a run; founder ledger f1359 onward).
 4. `python3 tests/prepush.py run -j 3`. It runs the whole manifest as `tests/run_like_referee.py` does and writes
    a stamp only when every command is green on a tree that did not change during the run. Red: repair the cause,
    then run again; do not push.
-5. Write the ledger rows with `python -m ledger.founder append` (from `referee/`). Then
+5. Write the ledger rows with `python -m ledger.founder append` (from `referee/`); among them, in every
+   session, the outcome row of each agent run of an earlier session that has none (`brain:agents`, step 4: a
+   push with no agent run owes it too, and `python3 tests/agent_rules.py`, a lesson's recheck, is red without
+   it). Then
    `python3 tests/lesson_recheck.py record --snapshot <HEAD's SHA>`: it runs the `recheck` of every lesson in
    force and appends one row with each result. Not ok: for each lesson it names, repair the code (step 4 again),
    or close the lesson with a row whose refs carry `closes:<row_id>` and whose summary says why, or replace it

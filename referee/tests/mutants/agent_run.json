@@ -1062,6 +1062,249 @@
    "tests": [
     "test_agent_run.py"
    ]
+  },
+  {
+   "id": "outcome_any_verdict",
+   "file": "tests/agent_run.py",
+   "old": "and isinstance(verdict, str) and verdict in OUTCOMES and",
+   "new": "and isinstance(verdict, str) and",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "outcome_no_source",
+   "file": "tests/agent_run.py",
+   "old": "verdict in OUTCOMES and _text(fields[\"source\"])",
+   "new": "verdict in OUTCOMES",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "outcome_no_head_whatever_the_verdict",
+   "file": "tests/agent_run.py",
+   "old": "or (head is None and verdict == UNKNOWN))",
+   "new": "or head is None)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "outcome_any_head",
+   "file": "tests/agent_run.py",
+   "old": "((isinstance(head, str) and PS.SHA.fullmatch(head)) or",
+   "new": "(isinstance(head, str) or",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "rejected_with_no_miss",
+   "file": "tests/agent_run.py",
+   "old": "and isinstance(missed, list) and bool(missed) == (verdict == REJECTED)",
+   "new": "and isinstance(missed, list)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "a_miss_with_other_keys",
+   "file": "tests/agent_run.py",
+   "old": "isinstance(m, dict) and sorted(m) == sorted(MISS_KEYS) and",
+   "new": "isinstance(m, dict) and set(MISS_KEYS) <= set(m) and",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "a_miss_in_diff_not_a_bool",
+   "file": "tests/agent_run.py",
+   "old": " and isinstance(m[\"in_diff\"], bool)\n",
+   "new": "\n",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "a_miss_lesson_any_text",
+   "file": "tests/agent_run.py",
+   "old": "(m[\"lesson\"] is None or (isinstance(m[\"lesson\"], str) and ROW_ID.fullmatch(m[\"lesson\"])))",
+   "new": "(m[\"lesson\"] is None or isinstance(m[\"lesson\"], str))",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "outcome_of_any_text",
+   "file": "tests/agent_run.py",
+   "old": "isinstance(fields[\"outcome_of\"], str) and ROW_ID.fullmatch(fields[\"outcome_of\"])",
+   "new": "isinstance(fields[\"outcome_of\"], str)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "design_out_of_order",
+   "file": "tests/agent_run.py",
+   "old": "\n              and d[\"design\"] == n",
+   "new": "",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "design_with_an_empty_list",
+   "file": "tests/agent_run.py",
+   "old": "isinstance(d[k], list) and d[k] and all(",
+   "new": "isinstance(d[k], list) and all(",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "design_any_text",
+   "file": "tests/agent_run.py",
+   "old": "isinstance(v, str) and form.fullmatch(v) for v in d[k]",
+   "new": "isinstance(v, str) for v in d[k]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "design_with_other_keys",
+   "file": "tests/agent_run.py",
+   "old": "isinstance(d, dict) and sorted(d) == sorted(DESIGN_KEYS) and",
+   "new": "isinstance(d, dict) and set(DESIGN_KEYS) <= set(d) and",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "a_rules_file_in_two_designs",
+   "file": "tests/agent_run.py",
+   "old": "if len(set(listed)) != len(listed):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "outcome_in_its_runs_session",
+   "file": "tests/agent_run.py",
+   "old": "if found[run[\"outcome_of\"]][\"session\"] == (starts[-1] if starts else None):",
+   "new": "if False:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "outcome_session_is_the_first",
+   "file": "tests/agent_run.py",
+   "old": "(starts[-1] if starts else None)",
+   "new": "(starts[0] if starts else None)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "outcome_any_lesson",
+   "file": "tests/agent_run.py",
+   "old": "if named and not named <= {",
+   "new": "if False and not named <= {",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "outcome_one_lesson_in_force_is_enough",
+   "file": "tests/agent_run.py",
+   "old": "if named and not named <= {",
+   "new": "if named and not named & {",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "outcome_of_another_agents_run",
+   "file": "tests/agent_run.py",
+   "old": "    if run[\"outcome_of\"] not in found:\n        raise Fault(\"outcome_no_run\")\n    starts",
+   "new": "    found = {**found, **{k: v for n in (\"one\", \"two\") for k, v in runs(data, n).items()}}\n    starts",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "unknown_is_judged",
+   "file": "tests/agent_run.py",
+   "old": "run[\"outcome\"] is not None and run[\"outcome\"][\"verdict\"] != UNKNOWN]",
+   "new": "run[\"outcome\"] is not None]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "missed_counts_what_came_after",
+   "file": "tests/agent_run.py",
+   "old": "\"missed\": sum(misses), \"missed_after\"",
+   "new": "\"missed\": len(misses), \"missed_after\"",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "caught_judged_of_every_run",
+   "file": "tests/agent_run.py",
+   "old": "for run in judged for f in run[\"findings\"]),\n",
+   "new": "for run in found for f in run[\"findings\"]),\n",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "judged_sessions_are_runs",
+   "file": "tests/agent_run.py",
+   "old": "\"judged_sessions\": len({run[\"session\"] for run in judged})",
+   "new": "\"judged_sessions\": len(judged)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "design_of_a_run_before_the_rules",
+   "file": "tests/agent_run.py",
+   "old": "file, else the one in force.\"\"\"\n    if run[\"form\"] == 1:\n        return 0\n",
+   "new": "file, else the one in force.\"\"\"\n",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "closed_designs_ignored",
+   "file": "tests/agent_run.py",
+   "old": "next((d[\"design\"] for d in closed if run[\"rules_sha256\"] in d[\"rules_sha256\"]), len(closed) + 1)",
+   "new": "len(closed) + 1",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "one_design_too_few",
+   "file": "tests/agent_run.py",
+   "old": "for n in range(len(closed) + 2)]",
+   "new": "for n in range(len(closed) + 1)]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "outcome_of_no_run_read",
+   "file": "tests/agent_run.py",
+   "old": "            if fields[\"outcome_of\"] not in runs:\n                raise Fault(\"outcome_no_run:%s\" % row_id)\n            runs[fields[\"outcome_of\"]][\"outcome\"] = fields\n",
+   "new": "            if fields[\"outcome_of\"] in runs:\n                runs[fields[\"outcome_of\"]][\"outcome\"] = fields\n",
+   "tests": [
+    "test_agent_run.py"
+   ]
   }
  ]
 }
