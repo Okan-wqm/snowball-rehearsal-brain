@@ -43,6 +43,7 @@ from __future__ import annotations
 from typing import Any
 
 from ledger import chain
+import cli
 
 PROVENANCES = ("human_fix", "mutation", "system_tp", "system_regression")
 SPLIT = "dev"
@@ -115,7 +116,7 @@ def add(data: bytes, cases: Any) -> dict[str, Any]:
         try:
             line = chain.canonical(case)
         except chain.ChainError as exc:
-            raise Unusable("cases: %s: %s" % (cid, exc)) from None
+            raise Unusable("cases: %s: %s" % (cid, cli.cause(exc))) from None
         if cid not in have:
             out["content"] += line + b"\n"
             have[cid] = line
