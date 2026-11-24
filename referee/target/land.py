@@ -20,7 +20,10 @@ a reason.
 ``land(writer, cid, path, content, base, check)``: branch ``brain/c/<cid>`` at ``base``, one commit setting ``path``
 to ``content``, a pull request into ``brain/integration``, a ``success`` check run named ``check`` on the commit, and
 the merge pinned to that commit; returns ``{pull, head_sha, merge_sha}``. Each step is one ``target.write`` call;
-an error leaves the earlier steps written (the caller's ``HardStop`` names them, ``writer.written``).
+an error leaves the earlier steps written (the caller's ``HardStop`` names them, ``writer.written``). The next
+cycle that decides the same merge on the same base takes them up (``target.write``, "Standing branch": the branch,
+its commit when it is exactly this one, its open pull request) and sends only what is missing; a standing branch
+that is anything else is ``Refused`` (``branch_differs``).
 
 ``plant(writer, cycle_id, path, content, base, check)``: D8's planted merge (the revert drill's, ``loop.drill``), the
 same five steps on branch ``brain/drill/<cycle_id>``, its title and check summary saying it is planted by the drill
@@ -89,10 +92,13 @@ def pull_merge(writer: Any, branch: str, base: str, files: dict[str, bytes], ont
                check: str, summary: str) -> dict:
     """``branch`` at ``base``, one commit of ``files``, a pull request into ``onto``, a ``success`` check named
     ``check`` on the commit and the merge pinned to it: ``{pull, head_sha, merge_sha}``. One sequence for a candidate,
-    a planted drill merge and ``harness.revert_drill``'s."""
-    writer.create_branch(branch, base)
-    head = writer.commit_files(branch, base, files, title)
-    pull = writer.open_pull(branch, onto, title, body)
+    a planted drill merge and ``harness.revert_drill``'s; what of it stands from an earlier attempt is taken up
+    (``Writer.commit_on``, ``Writer.standing_pull``)."""
+    done = writer.commit_on(branch, base, files, title)
+    head = done["commit"]
+    pull = writer.standing_pull(branch, onto, head) if done["standing"] else None
+    if pull is None:
+        pull = writer.open_pull(branch, onto, title, body)
     return {"pull": pull, "head_sha": head, "merge_sha": _checked_merge(writer, pull, head, check, summary)}
 
 

@@ -76,9 +76,31 @@ the default branch (a revert's commit is on ``brain/`` only), 30 a page. Outside
 page is read (a standing pull beyond it is not found, the pull request is opened again and GitHub's refusal ends
 the cycle as before); a branch another actor put there is taken up when its head is exactly that commit shape, since merging it
 leaves the same tree on ``onto`` whoever made it; a standing branch whose pull request was already merged is not
-met here (``onto``'s head is then no longer the merge: ``revert_not_head``); the other sequences that create a
-branch by name (``target.land.pull_merge``: a candidate's ``brain/c/<id>``, a drill's ``brain/drill/<cycle>``)
-take up nothing, and a standing branch of theirs is GitHub's 422 as before.
+met here (``onto``'s head is then no longer the merge: ``revert_not_head``).
+
+Standing branch (``Writer.commit_on``, caller ``target.land.pull_merge``: a candidate's ``brain/c/<id>``, a drill's
+``brain/drill/<cycle>``). The same class as the standing revert, not observed live: read from the code (the
+sequence is a branch, a commit, a pull request, a check and a merge, each one call, and an error after the first
+leaves the earlier ones written) and from the rehearsal toy, where ``brain/c/good`` stands after its merge. A
+candidate's branch is named by its id, which the next cycle uses again when it decides the same merge again; a
+drill's is named by the cycle, which no later cycle is (the run's id and attempt), so nothing of a drill's is ever
+taken up and its read answers 404. Rules, each with a test in ``test_write``:
+
+1. ``commit_on(branch, base, files, message)`` reads ``branch`` before it creates anything. A 404: the branch is
+   created at ``base``, then the commit as in rule 2.
+2. The branch stands at ``base`` (an earlier attempt ended between its two calls): the tree (``files`` on
+   ``base``'s), the commit and the branch's move to it, as ``commit_files`` makes them. ``standing`` false.
+3. The branch stands elsewhere: its head commit is read, and unless ``base`` is its one parent it is refused
+   (``branch_differs``) with nothing created. Then the tree is posted (GitHub answers the sha of a tree it holds
+   already, so a taken-up branch gains no object; a refused one leaves a blob and a tree no ref reaches) and the
+   head's tree must be it, else ``branch_differs``. Equal: no commit and no ref is created, the answer names that
+   head (``standing`` true); the caller asks for its open pull request (rule 3 above) and opens one when there is
+   none. The standing commit's message is not compared.
+
+Outside, stated: a branch that stands after its pull request was merged (an id used a second time; the base has
+moved, so the head's parent is not ``base``) is refused in every cycle until the id or the branch goes, which no
+page rules on (reports/seed-104); a standing pull request that was closed unmerged is not taken up, a new one is
+opened from the same branch.
 
 Known limits, stated: the base of a pull request is checked from the response the guard saw; GitHub's merge
 endpoint pins the head (``sha``), not the base, so a base changed between that response and the merge is not
@@ -510,6 +532,28 @@ class Writer:
         sha = self.commit(message, tree, [head])
         self.update_branch(branch, sha)
         return sha
+
+    def commit_on(self, branch: str, base: str, files: dict[str, bytes], message: str) -> dict:
+        """``branch`` (under ``brain/``) with one commit at its head that sets ``files`` on ``base``: made here, or
+        taken up when it stands with exactly that commit (``standing``; module docstring, "Standing branch").
+        ``{commit, standing}``."""
+        reasons = branch_reasons(branch)
+        if reasons:
+            raise Refused(reasons)
+        at = self.head_or_none(branch)
+        if at is None:
+            self.create_branch(branch, base)
+            at = base
+        elif at != base and self.read_commit(at)["parents"] != [base]:
+            raise Refused(["branch_differs"])
+        tree = self._tree(files, self.read_commit(base)["tree"])
+        if at == base:
+            sha = self.commit(message, tree, [base])
+            self.update_branch(branch, sha)
+            return {"commit": sha, "standing": False}
+        if self.read_commit(at)["tree"] != tree:
+            raise Refused(["branch_differs"])
+        return {"commit": at, "standing": True}
 
     def head_or_none(self, branch: str) -> str | None:
         """``branch``'s head, or ``None`` when the API answers 404 to its ref. Any other error is raised."""

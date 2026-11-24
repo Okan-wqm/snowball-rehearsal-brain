@@ -17,6 +17,9 @@
   calls stay 29i's) a revert branch that already stands is taken up when its head is exactly that commit (tree
   and parents) and refused when it is anything else, and the open pull request
   of a standing branch is found among the pulls GitHub lists for its head (``target.write``, "Standing revert");
+- a branch with one commit of files on a base (``commit_on``; ``target.write``, "Standing branch"): made when the
+  branch is absent or stands at the base, taken up when its head is exactly that commit, refused when it is
+  anything else;
 - responses that do not say what was asked are errors; the HTTPS transport sends the token only to the API
   and follows no redirect;
 - one way: no other module under ``referee/`` reaches the network or pushes with git;
@@ -963,6 +966,115 @@ class Revert(unittest.TestCase):
                              (["commit_unknown"], None), tree)
         three = {B: {"tree": "2" * 40, "parents": [A, A, A]}, A: commits[A]}
         self.assertEqual(W.revert_commit(three, B, B), (["revert_not_merge"], None))
+
+
+class StandingBranch(unittest.TestCase):
+    """``Writer.commit_on`` (``target.write``, "Standing branch"): a branch with one commit of files on a base, made
+    or taken up."""
+
+    FILES = {"pkg/a.js": b"let a = 1;\n"}
+
+    def shape(self, gh, sha):
+        return {k: gh.commits[sha][k] for k in ("tree", "parents")}
+
+    def test_an_absent_branch_is_created_at_the_base_and_given_the_commit(self):
+        gh, wr, root = world()
+        out = wr.commit_on("brain/c/1", root, self.FILES, "candidate 1")
+        self.assertEqual([(m, p) for m, p, _ in gh.requests], [
+            ("GET", P + "git/ref/heads/brain/c/1"), ("POST", P + "git/refs"), ("GET", P + "git/commits/" + root),
+            ("POST", P + "git/blobs"), ("POST", P + "git/trees"), ("POST", P + "git/commits"),
+            ("PATCH", P + "git/refs/heads/brain/c/1")])
+        self.assertEqual(gh.requests[1][2], {"ref": "refs/heads/brain/c/1", "sha": root})
+        self.assertIs(out["standing"], False)
+        self.assertEqual(sorted(out), ["commit", "standing"])
+        self.assertEqual(gh.refs["brain/c/1"], out["commit"])
+        self.assertEqual(gh.commits[out["commit"]]["parents"], [root])
+        self.assertEqual(gh.commits[out["commit"]]["message"], "candidate 1")
+        self.assertEqual(gh.read_file("brain/c/1", "pkg/a.js"), self.FILES["pkg/a.js"])
+        self.assertEqual(wr.written, ["refs/heads/brain/c/1"] * 2)
+
+    def test_a_standing_branch_with_exactly_that_commit_is_taken_up(self):
+        """Rule 3: the second writer (the next cycle's) creates no commit and moves no ref; the tree it posts is
+        the one GitHub holds; the standing commit's message stays the first attempt's."""
+        gh, wr, root = world()
+        first = wr.commit_on("brain/c/1", root, self.FILES, "candidate 1")
+        held = (len(gh.commits), len(gh.trees), len(gh.blobs), dict(gh.refs))
+        sent = len(gh.requests)
+        again = W.Writer(REPO, gh)
+        out = again.commit_on("brain/c/1", root, self.FILES, "candidate 1, again")
+        self.assertEqual(out, {"commit": first["commit"], "standing": True})
+        self.assertEqual([(m, p) for m, p, _ in gh.requests[sent:]], [
+            ("GET", P + "git/ref/heads/brain/c/1"), ("GET", P + "git/commits/" + first["commit"]),
+            ("GET", P + "git/commits/" + root), ("POST", P + "git/blobs"), ("POST", P + "git/trees"),
+            ("GET", P + "git/commits/" + first["commit"])])
+        self.assertEqual((len(gh.commits), len(gh.trees), len(gh.blobs), dict(gh.refs)), held)
+        self.assertEqual(again.written, [])
+        self.assertEqual(gh.commits[first["commit"]]["message"], "candidate 1")
+
+    def test_a_branch_standing_at_the_base_gets_the_commit_and_is_not_created(self):
+        """Rule 2: an earlier attempt ended between the branch and its commit."""
+        gh, wr, root = world()
+        wr.create_branch("brain/c/1", root)
+        sent = len(gh.requests)
+        again = W.Writer(REPO, gh)
+        out = again.commit_on("brain/c/1", root, self.FILES, "candidate 1")
+        self.assertEqual([(m, p) for m, p, _ in gh.requests[sent:]], [
+            ("GET", P + "git/ref/heads/brain/c/1"), ("GET", P + "git/commits/" + root),
+            ("POST", P + "git/blobs"), ("POST", P + "git/trees"), ("POST", P + "git/commits"),
+            ("PATCH", P + "git/refs/heads/brain/c/1")])
+        self.assertIs(out["standing"], False)
+        self.assertEqual((gh.refs["brain/c/1"], self.shape(gh, out["commit"])["parents"]), (out["commit"], [root]))
+        self.assertEqual(gh.read_file("brain/c/1", "pkg/a.js"), self.FILES["pkg/a.js"])
+
+    def test_a_standing_head_that_is_not_on_the_base_is_refused_with_nothing_created(self):
+        """Rule 3's first refusal: another parent (the base moved: the id of a candidate merged before), two
+        parents, no parent; no object and no ref is sent."""
+        gh, wr, root = world()
+        made = wr.commit_on("brain/c/0", root, self.FILES, "candidate 0")
+        tree = gh.commits[made["commit"]]["tree"]
+        other = gh.seed_commit("t9")
+        for n, parents in enumerate(([other], [root, other], [other, root], [])):
+            branch = "brain/c/%d" % (n + 1)
+            wr.create_branch(branch, wr.commit("candidate", tree, parents))
+            again = W.Writer(REPO, gh)
+            sent = len(writes(gh))
+            with self.assertRaises(W.Refused) as ctx:
+                again.commit_on(branch, root, self.FILES, "candidate")
+            self.assertEqual(ctx.exception.reasons, ["branch_differs"], parents)
+            self.assertEqual((len(writes(gh)), again.written), (sent, []))
+
+    def test_a_standing_commit_on_the_base_with_another_tree_is_refused(self):
+        """Rule 3's second refusal: other content at the path, a file more, a file less; the tree is posted to be
+        compared, and no commit and no ref is."""
+        gh, wr, root = world()
+        for n, files in enumerate(({"pkg/a.js": b"let a = 2;\n"}, dict(self.FILES, **{"pkg/b.js": b"b\n"}),
+                                   {"pkg/b.js": b"b\n"})):
+            branch = "brain/c/%d" % n
+            wr.commit_on(branch, root, files, "candidate")
+            again = W.Writer(REPO, gh)
+            sent, held = len(writes(gh)), (len(gh.commits), dict(gh.refs))
+            with self.assertRaises(W.Refused) as ctx:
+                again.commit_on(branch, root, self.FILES, "candidate")
+            self.assertEqual(ctx.exception.reasons, ["branch_differs"], files)
+            self.assertEqual([(m, p) for m, p, _ in writes(gh)[sent:]],
+                             [("POST", P + "git/blobs"), ("POST", P + "git/trees")])
+            self.assertEqual(((len(gh.commits), dict(gh.refs)), again.written), (held, []))
+
+    def test_a_branch_that_does_not_read_is_absent_only_on_404(self):
+        gh, wr, root = world()
+        for status in (500, 403):
+            gh.overrides[("GET", P + "git/ref/heads/brain/c/1")] = (status, {})
+            with self.assertRaises(W.ApiError) as ctx:
+                wr.commit_on("brain/c/1", root, self.FILES, "candidate 1")
+            self.assertEqual(ctx.exception.status, status)
+        self.assertEqual(writes(gh), [])
+
+    def test_a_branch_outside_brain_is_refused_before_any_call(self):
+        gh, wr, root = world()
+        for branch in ("main", "brain", "brain/../main"):
+            with self.assertRaises(W.Refused):
+                wr.commit_on(branch, root, self.FILES, "candidate")
+        self.assertEqual(gh.requests, [])
 
 
 class Said(unittest.TestCase):
