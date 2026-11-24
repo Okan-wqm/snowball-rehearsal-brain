@@ -318,6 +318,51 @@
    "tests": [
     "test_revert.py"
    ]
+  },
+  {
+   "id": "rv_standing_pull_never_asked",
+   "file": "gate/revert.py",
+   "old": "    pull = writer.standing_pull(revert_branch, onto, done[\"commit\"]) if done[\"standing\"] else None\n",
+   "new": "    pull = None\n",
+   "tests": [
+    "test_revert.Revert.test_a_standing_revert_and_its_open_pull_are_taken_up"
+   ]
+  },
+  {
+   "id": "rv_standing_pull_always_asked",
+   "file": "gate/revert.py",
+   "old": "    pull = writer.standing_pull(revert_branch, onto, done[\"commit\"]) if done[\"standing\"] else None\n",
+   "new": "    pull = writer.standing_pull(revert_branch, onto, done[\"commit\"])\n",
+   "tests": [
+    "test_revert.Revert.test_a_new_revert_asks_for_no_standing_pull"
+   ]
+  },
+  {
+   "id": "rv_standing_never_opens",
+   "file": "gate/revert.py",
+   "old": "    if pull is None:\n        pull = writer.open_pull(",
+   "new": "    if pull is None and not done[\"standing\"]:\n        pull = writer.open_pull(",
+   "tests": [
+    "test_revert.Revert.test_a_standing_revert_without_an_open_pull_gets_one"
+   ]
+  },
+  {
+   "id": "rv_standing_pull_other_base",
+   "file": "gate/revert.py",
+   "old": "    pull = writer.standing_pull(revert_branch, onto, done[\"commit\"]) if done[\"standing\"] else None\n",
+   "new": "    pull = writer.standing_pull(revert_branch, revert_branch, done[\"commit\"]) if done[\"standing\"] else None\n",
+   "tests": [
+    "test_revert.Revert.test_a_standing_revert_and_its_open_pull_are_taken_up"
+   ]
+  },
+  {
+   "id": "rv_revert_takes_nothing_up",
+   "file": "gate/revert.py",
+   "old": "    done = writer.revert(merge, onto, revert_branch, title, take_up=True)\n",
+   "new": "    done = writer.revert(merge, onto, revert_branch, title)\n",
+   "tests": [
+    "test_revert.Revert.test_a_standing_revert_and_its_open_pull_are_taken_up"
+   ]
   }
  ]
 }

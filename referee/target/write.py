@@ -11,8 +11,8 @@ guard allows exactly these routes, under ``/repos/<owner>/<repo>/`` of the one c
 nothing else (no contents API, no ``merges`` endpoint, no ref deletion, no repository settings, no GraphQL,
 no other repository):
 
-- ``GET git/ref/heads/<branch>``, ``GET git/commits/<sha>``, ``GET pulls/<n>`` (reads; ``<branch>`` must be
-  a valid branch name, it need not be under ``brain/``);
+- ``GET git/ref/heads/<branch>``, ``GET git/commits/<sha>``, ``GET pulls/<n>``, ``GET commits/<sha>/pulls``
+  (reads; ``<branch>`` must be a valid branch name, it need not be under ``brain/``; ``<sha>`` is 40 lowercase hex);
 - ``POST git/refs`` ``{ref, sha}``: ``ref`` under ``refs/heads/brain/``;
 - ``PATCH git/refs/heads/<branch>`` ``{sha, force?}``: branch under ``brain/``, ``force`` absent or false;
 - ``POST git/commits`` ``{message, tree, parents}``: zero, one or two parents (creates an object, writes no ref;
@@ -46,6 +46,39 @@ one parent, ``onto``'s head (which is the merge). A merge that is not the head i
 reads the merge, its first parent and ``onto``'s head, then puts the commit on a new branch under ``brain/``;
 ``brain/integration`` takes no direct push (tohum/01b), so the caller opens a pull request from that branch
 (``open_pull``) and merges it like any candidate, which leaves the first parent's tree on ``onto``.
+
+Standing revert (``Writer.revert``, ``Writer.standing_pull``). A revert that ended between its branch and its
+merge leaves the branch standing, and its name is the merge's, so the next cycle's revert of the same merge meets
+it. Observed live (loop run 45268983995 ended on the revert pull's merge, 405; loop run 45280652647, the next
+cycle, then ended ``422: POST git/refs; GitHub: Reference already exists``; read from GitHub afterwards: the
+branch's head was a commit with the first parent's tree and the merge as its one parent, its pull request open,
+and ``GET commits/<that head>/pulls`` answered a list holding that pull with ``number``, ``state``, ``base.ref``,
+``head.ref`` and ``head.sha``). Rules, each with a test in ``test_write``:
+
+1. ``Writer.revert`` with ``take_up`` reads ``revert_branch`` after the three reads above and before it creates
+   anything. A 404: the commit and the branch are created (``standing`` false). Without ``take_up`` (the default,
+   and the command line's ``revert``: tohum/29i lists that request's calls, and a call answered 404 is its exit
+   2) the branch is not read, the calls are the five above, and a standing branch is GitHub's 422 to the new ref.
+2. The branch reads: its head commit is read. Tree and parents equal to the revert's (``revert_commit``): no
+   object and no ref is created, the answer names that head (``standing`` true). Anything else is refused
+   (``revert_branch_differs``) with nothing written. The standing commit's message is not compared: it is the
+   earlier attempt's text and may name another cause.
+3. ``Writer.standing_pull(head, base, sha)`` reads ``GET commits/<sha>/pulls`` and gives the number of the one pull
+   in the answer that is ``open``, from ``head`` into ``base``, with head sha ``sha``; ``None`` when there is none;
+   an ``ApiError`` when there are two, when the answer is no list, or when an item lacks one of those fields. The
+   answer is not kept by the guard: a merge of that number reads the pull itself (``GET pulls/<n>``) and is held to
+   the guard's merge rules by that read.
+
+The caller (``gate.revert.revert_red``, the loop's and the drill's revert) reverts with ``take_up``, asks for the
+standing pull only on a standing branch and opens a pull request when there is none. GitHub's REST page for the
+route (read 2026-11-24): it asks ``pull_requests: read``, lists merged and open pulls for a commit that is not on
+the default branch (a revert's commit is on ``brain/`` only), 30 a page. Outside, stated: only the answer's first
+page is read (a standing pull beyond it is not found, the pull request is opened again and GitHub's refusal ends
+the cycle as before); a branch another actor put there is taken up when its head is exactly that commit shape, since merging it
+leaves the same tree on ``onto`` whoever made it; a standing branch whose pull request was already merged is not
+met here (``onto``'s head is then no longer the merge: ``revert_not_head``); the other sequences that create a
+branch by name (``target.land.pull_merge``: a candidate's ``brain/c/<id>``, a drill's ``brain/drill/<cycle>``)
+take up nothing, and a standing branch of theirs is GitHub's 422 as before.
 
 Known limits, stated: the base of a pull request is checked from the response the guard saw; GitHub's merge
 endpoint pins the head (``sha``), not the base, so a base changed between that response and the merge is not
@@ -293,7 +326,7 @@ class Guard:
             m = re.fullmatch(r"git/ref/heads/(.+)", rest)
             if m:
                 return ([] if branch_syntax(m.group(1)) else ["ref_invalid"]), []
-            if re.fullmatch(r"git/commits/[0-9a-f]{40}|pulls/" + _N, rest):
+            if re.fullmatch(r"git/commits/[0-9a-f]{40}|commits/[0-9a-f]{40}/pulls|pulls/" + _N, rest):
                 return [], []
             return ["route_not_allowed"], []
         if method == "POST" and rest == "git/refs":
@@ -478,15 +511,18 @@ class Writer:
         self.update_branch(branch, sha)
         return sha
 
-    def exists(self, branch: str) -> bool:
-        """Whether ``branch`` exists: its ref reads, or the API answers 404. Any other error is raised."""
+    def head_or_none(self, branch: str) -> str | None:
+        """``branch``'s head, or ``None`` when the API answers 404 to its ref. Any other error is raised."""
         try:
-            self.head(branch)
+            return self.head(branch)
         except ApiError as exc:
             if exc.status == 404:
-                return False
+                return None
             raise
-        return True
+
+    def exists(self, branch: str) -> bool:
+        """Whether ``branch`` exists: its ref reads, or the API answers 404. Any other error is raised."""
+        return self.head_or_none(branch) is not None
 
     def _tree(self, files: dict[str, bytes], base_tree: str | None) -> str:
         entries = []
@@ -570,8 +606,23 @@ class Writer:
             raise ApiError(None, "merge response without merged true and a sha")
         return sha
 
-    def revert(self, merge: str, onto: str, revert_branch: str, message: str) -> dict:
-        """Revert ``merge``, the head of ``onto``, with a commit on the new branch ``revert_branch``."""
+    def standing_pull(self, head: str, base: str, sha: str) -> int | None:
+        """The number of the one open pull request from ``head`` into ``base`` whose head sha is ``sha``, among
+        the pulls GitHub lists for that commit; ``None`` when there is none (module docstring, "Standing revert",
+        rule 3)."""
+        data = self._call("GET", "commits/%s/pulls" % sha)
+        if not isinstance(data, list):
+            raise ApiError(None, "the pulls of a commit are not a list")
+        found = [pull["number"] for pull in map(_pull, data)
+                 if (pull["state"], pull["head"], pull["base"], pull["head_sha"]) == ("open", head, base, sha)]
+        if len(found) > 1:
+            raise ApiError(None, "more than one open pull request from %s into %s" % (head, base))
+        return found[0] if found else None
+
+    def revert(self, merge: str, onto: str, revert_branch: str, message: str, take_up: bool = False) -> dict:
+        """Revert ``merge``, the head of ``onto``, with a commit on the branch ``revert_branch``: a new branch, or
+        with ``take_up`` one that stands with exactly that commit shape at its head (``standing``; module
+        docstring, "Standing revert", rules 1 and 2)."""
         reasons = branch_reasons(revert_branch)
         if reasons:
             raise Refused(reasons)
@@ -582,9 +633,15 @@ class Writer:
         reasons, spec = revert_commit(commits, self.head(onto), merge)
         if reasons:
             raise Refused(reasons)
-        sha = self.commit(message, spec["tree"], spec["parents"])
-        self.create_branch(revert_branch, sha)
-        return {"commit": sha, "tree": spec["tree"], "parents": spec["parents"]}
+        sha = self.head_or_none(revert_branch) if take_up else None
+        standing = sha is not None
+        if standing:
+            if self.read_commit(sha) != spec:
+                raise Refused(["revert_branch_differs"])
+        else:
+            sha = self.commit(message, spec["tree"], spec["parents"])
+            self.create_branch(revert_branch, sha)
+        return {"commit": sha, "tree": spec["tree"], "parents": spec["parents"], "standing": standing}
 
 
 # ---------------------------------------------------------------- transport

@@ -50,7 +50,11 @@ facts). With that cause (``stated``), by the tests' verdict:
 ``reverted`` is false. A revert: the cause is computed first (an unusable request sends nothing), then ``target.write``'s
 ``Writer.revert`` (calls 9 -> 13) puts a commit whose tree is the merge's first parent's tree on ``revert_branch``
 (refused, nothing written, if the merge is not ``onto``'s head or not a merge), and a pull request from that branch to
-``onto`` is opened. The message and the title carry the cause.
+``onto`` is opened. The message and the title carry the cause. A ``revert_branch`` that already stands with exactly
+that commit shape at its head is taken up, and so is its open pull request when ``Writer.standing_pull`` finds one
+(``target.write``, "Standing revert": an earlier cycle's revert that ended before its merge); then ``commit`` is
+the standing head, whose message is the earlier attempt's, as is the title of a pull request taken up, and either
+may name another cause than the one returned here (a pull request opened now carries this call's title).
 
 Out of scope here, stated: merging that pull request (it passes the gate like any candidate: the gate's
 check, then ``Writer.merge``; ``brain/integration`` takes no direct push, tohum/01b; the loop's is
@@ -170,8 +174,10 @@ def revert_red(writer: Any, runs: Any, facts: Any, merge: str, onto: str, revert
         return out
     found = judged["cause"]
     title = "revert %s: %s" % (merge, found)
-    done = writer.revert(merge, onto, revert_branch, title)
-    pull = writer.open_pull(revert_branch, onto, title, "cause: %s; red: %s" % (found, ", ".join(judged["red"])))
+    done = writer.revert(merge, onto, revert_branch, title, take_up=True)
+    pull = writer.standing_pull(revert_branch, onto, done["commit"]) if done["standing"] else None
+    if pull is None:
+        pull = writer.open_pull(revert_branch, onto, title, "cause: %s; red: %s" % (found, ", ".join(judged["red"])))
     return dict(out, reverted=True, cause=found, commit=done["commit"], tree=done["tree"],
                 parents=done["parents"], pull=pull)
 

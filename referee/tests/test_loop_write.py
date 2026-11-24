@@ -718,6 +718,42 @@ class D7(Watching):
         self.assertEqual(pauses, [W.MERGE_RESEND_PAUSE_S])
         self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [])
 
+    def test_a_revert_that_ended_before_its_merge_is_finished_by_the_next_cycle(self):
+        """Loop runs 45268983995 and 45280652647 as the fake models them: cycle 10-1's revert ends on its merge
+        (405 to every send: a hard stop that leaves the revert's branch, pull request and check standing and no
+        ``brain/state`` commit); cycle 11-1 watches the same merge, takes the standing branch and pull up
+        (``target.write``, "Standing revert") and ends as any D7."""
+        first, heads = self.merged_then_watched(RED_AT_HEAD)
+        merge_sha = first["merge"]["merge_sha"]
+        pull = len(self.gh.pulls) + 1
+        self.gh.merge_lag[pull] = W.MERGE_SENDS
+        with mock.patch.object(W.Writer.__init__, "__defaults__", ([].append,)):
+            out = self.run_yaz(GITHUB_RUN_ID="10")
+        self.assertEqual((out["ok"], out["reason"]), (False, "hard_stop"), out)
+        branch = "brain/revert/" + merge_sha
+        standing = self.gh.refs[branch]
+        self.assertEqual((self.gh.pulls[pull]["head"], self.gh.pulls[pull]["state"]), (branch, "open"))
+        self.assertEqual((self.gh.refs[B.INTEGRATION], self.gh.refs[B.STATE]), (merge_sha, heads[B.STATE]))
+        watched = self.next_cycle({}, "11", units=SENTINEL_UNITS)
+        self.assertEqual(watched["index"]["sentinel"]["merge_sha"], merge_sha)
+        sent = len(self.writes())
+        out = self.run_yaz(GITHUB_RUN_ID="11")
+        self.assertEqual((out["ok"], "reason" in out, out["done"]), (True, False, ["D5", "D6", "D7"]), out)
+        revert = out["written"]["revert"]
+        self.assertEqual((revert["reverted"], revert["commit"], revert["pull"]), (merge_sha, standing, pull))
+        self.assertEqual(self.gh.refs[B.INTEGRATION], revert["merge_sha"])
+        self.assertEqual(self.gh.read_file(B.INTEGRATION, "pkg/a.js"), A_JS.encode())
+        self.assertEqual((self.gh.refs[branch], len(self.gh.pulls)), (standing, pull))
+        repo = "/repos/%s/" % YW.REPO
+        new = self.writes()[sent:]
+        self.assertEqual([w for w in new if w in (("POST", repo + "git/refs"), ("POST", repo + "pulls"))], [])
+        self.assertEqual(new.count(("PUT", repo + "pulls/%d/merge" % pull)), 1)
+        added = [(r["row_id"], r["kind"]) for r in rows_of(self.state_file(B.STATE_LEDGER))
+                 if r["row_id"].startswith(("10-1:", "11-1:"))]
+        self.assertEqual(added, [("11-1:start", "cycle_start"), ("11-1:observation", "observation"),
+                                 ("11-1:revert", "revert"), ("11-1:status", "status")])
+        self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [])
+
     def test_a_green_merge_is_ended_and_the_next_cycle_merges(self):
         write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})  # the next candidate's finding
         first, heads = self.merged_then_watched(GOOD)

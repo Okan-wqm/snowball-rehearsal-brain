@@ -13,7 +13,10 @@
 - revert: the revert commit's tree is the merge's first parent's tree (not its own, not the second parent's),
   its parent is the head of the branch it is made onto, it lands on a ``brain/`` branch, and after the pull
   request and merge the branch holds that tree; a merge that is not the head, a commit that is not a merge,
-  or a revert branch outside ``brain/`` is refused;
+  or a revert branch outside ``brain/`` is refused; with ``take_up`` (not the command line's revert, whose
+  calls stay 29i's) a revert branch that already stands is taken up when its head is exactly that commit (tree
+  and parents) and refused when it is anything else, and the open pull request
+  of a standing branch is found among the pulls GitHub lists for its head (``target.write``, "Standing revert");
 - responses that do not say what was asked are errors; the HTTPS transport sends the token only to the API
   and follows no redirect;
 - one way: no other module under ``referee/`` reaches the network or pushes with git;
@@ -96,6 +99,7 @@ class RouteRule(unittest.TestCase):
         allowed = [
             ("GET", "git/ref/heads/main", None, []), ("GET", "git/ref/heads/brain/integration", None, []),
             ("GET", "git/commits/" + A, None, []), ("GET", "pulls/12", None, []),
+            ("GET", "commits/%s/pulls" % A, None, []),
             ("POST", "git/refs", {"ref": "refs/heads/brain/c/1", "sha": A}, ["refs/heads/brain/c/1"]),
             ("PATCH", "git/refs/heads/brain/state", {"sha": A}, ["refs/heads/brain/state"]),
             ("PATCH", "git/refs/heads/brain/state", {"sha": A, "force": False}, ["refs/heads/brain/state"]),
@@ -164,6 +168,13 @@ class RouteRule(unittest.TestCase):
         self.assertEqual(check("GET", "git/ref/heads/main", {"x": 1}), (["body_invalid"], []))
         for sha in (A.upper(), A[:7], A + "0" * 24):
             self.assertEqual(check("GET", "git/commits/" + sha), (["route_not_allowed"], []), sha)
+            self.assertEqual(check("GET", "commits/%s/pulls" % sha), (["route_not_allowed"], []), sha)
+        for rest in ("commits/%s" % A, "commits/%s/pulls?per_page=100" % A, "commits/%s/pulls/1" % A,
+                     "commits/%s/comments" % A, "commits/brain/c/1/pulls", "git/commits/%s/pulls" % A, "pulls"):
+            self.assertEqual(check("GET", rest), (["route_not_allowed"], []), rest)
+        for method in ("POST", "PUT", "PATCH", "DELETE"):
+            self.assertEqual(check(method, "commits/%s/pulls" % A, {}), (["route_not_allowed"], []), method)
+        self.assertEqual(check("GET", "commits/%s/pulls" % A, {}), (["body_invalid"], []))
 
     def test_bodies(self):
         bad = [
@@ -756,6 +767,7 @@ class Revert(unittest.TestCase):
         self.assertEqual([(m, p) for m, p, _ in wr.sent[sent:]], [
             ("GET", P + "git/commits/" + merge), ("GET", P + "git/commits/" + first),
             ("GET", P + "git/ref/heads/brain/integration"), ("POST", P + "git/commits"), ("POST", P + "git/refs")])
+        self.assertIs(out["standing"], False)
         self.assertEqual(gh.refs["brain/c/revert-1"], out["commit"])
         self.assertEqual(gh.refs["brain/integration"], merge)  # the revert is a branch, not a push
         n = wr.open_pull("brain/c/revert-1", "brain/integration", "revert: test_regression")
@@ -796,6 +808,147 @@ class Revert(unittest.TestCase):
             with self.assertRaises(W.Refused):
                 wr.revert(merge, "brain/integration", branch, "revert")
         self.assertEqual(len(gh.requests), sent)
+
+    def test_a_standing_revert_branch_with_exactly_that_commit_is_taken_up(self):
+        """"Standing revert" rules 1 and 2: the second revert of one merge, by a writer that made nothing of the
+        first (the next cycle's), creates no object and no ref and names the standing head."""
+        gh, wr, root, merge = self.merged()
+        first = wr.revert(merge, "brain/integration", "brain/c/revert-1", "revert: lint_regression")
+        sent = len(gh.requests)
+        again = W.Writer(REPO, gh)
+        out = again.revert(merge, "brain/integration", "brain/c/revert-1", "revert: test_regression", take_up=True)
+        self.assertEqual(out, dict(first, standing=True))
+        self.assertEqual(gh.requests[sent:], [
+            ("GET", P + "git/commits/" + merge, None), ("GET", P + "git/commits/" + gh.commits[merge]["parents"][0], None),
+            ("GET", P + "git/ref/heads/brain/integration", None), ("GET", P + "git/ref/heads/brain/c/revert-1", None),
+            ("GET", P + "git/commits/" + first["commit"], None)])
+        self.assertEqual(again.written, [])
+        self.assertEqual(gh.refs["brain/c/revert-1"], first["commit"])
+        self.assertEqual(gh.commits[first["commit"]]["message"], "revert: lint_regression")  # not compared, not remade
+
+    def test_a_revert_that_takes_up_makes_a_branch_that_is_absent(self):
+        gh, wr, root, merge = self.merged()
+        sent = len(wr.sent)
+        out = wr.revert(merge, "brain/integration", "brain/c/revert-1", "revert", take_up=True)
+        self.assertEqual([(m, p) for m, p, _ in wr.sent[sent:]][2:], [
+            ("GET", P + "git/ref/heads/brain/integration"), ("GET", P + "git/ref/heads/brain/c/revert-1"),
+            ("POST", P + "git/commits"), ("POST", P + "git/refs")])
+        self.assertIs(out["standing"], False)
+        self.assertEqual((gh.refs["brain/c/revert-1"], gh.commits[out["commit"]]["parents"]), (out["commit"], [merge]))
+
+    def test_a_revert_that_does_not_take_up_meets_github_s_refusal(self):
+        """Without ``take_up`` (the default): the branch is not read and a standing one is GitHub's 422."""
+        gh, wr, root, merge = self.merged()
+        wr.revert(merge, "brain/integration", "brain/c/revert-1", "revert")
+        again = W.Writer(REPO, gh)
+        with self.assertRaises(W.ApiError) as ctx:
+            again.revert(merge, "brain/integration", "brain/c/revert-1", "revert")
+        self.assertEqual(ctx.exception.status, 422)
+        self.assertEqual([(m, p) for m, p, _ in again.sent][3:], [("POST", P + "git/commits"), ("POST", P + "git/refs")])
+
+    def test_a_standing_revert_branch_with_anything_else_is_refused(self):
+        gh, wr, root, merge = self.merged()
+        first_parent, second = gh.commits[merge]["parents"]
+        right, other = gh.commits[first_parent]["tree"], gh.commits[merge]["tree"]
+        for n, (tree, parents) in enumerate(((other, [merge]), (right, [first_parent]), (right, [merge, second]),
+                                             (right, []))):
+            branch = "brain/c/revert-%d" % n
+            wr.create_branch(branch, wr.commit("revert: test_regression", tree, parents))
+            again = W.Writer(REPO, gh)
+            sent = len(writes(gh))
+            with self.assertRaises(W.Refused) as ctx:
+                again.revert(merge, "brain/integration", branch, "revert: test_regression", take_up=True)
+            self.assertEqual(ctx.exception.reasons, ["revert_branch_differs"], (tree, parents))
+            self.assertEqual((len(writes(gh)), again.written), (sent, []))
+
+    def test_a_revert_branch_that_does_not_read_is_absent_only_on_404(self):
+        gh, wr, root, merge = self.merged()
+        sent = len(writes(gh))
+        for status in (500, 403):
+            gh.overrides[("GET", P + "git/ref/heads/brain/c/revert-1")] = (status, {})
+            with self.assertRaises(W.ApiError) as ctx:
+                wr.revert(merge, "brain/integration", "brain/c/revert-1", "revert", take_up=True)
+            self.assertEqual(ctx.exception.status, status)
+        self.assertEqual(len(writes(gh)), sent)
+
+    def test_the_merge_must_still_be_the_head_over_a_standing_branch(self):
+        """The head rule is read before the branch: a standing revert of a merge that is no longer the head is
+        ``revert_not_head`` (as the module states for a standing branch whose pull was merged), not taken up."""
+        gh, wr, root, merge = self.merged()
+        done = wr.revert(merge, "brain/integration", "brain/c/revert-1", "revert")
+        n = wr.open_pull("brain/c/revert-1", "brain/integration", "revert")
+        wr.check(done["commit"], GATE, "success")
+        wr.merge(n, done["commit"])
+        with self.assertRaises(W.Refused) as ctx:
+            W.Writer(REPO, gh).revert(merge, "brain/integration", "brain/c/revert-1", "revert", take_up=True)
+        self.assertEqual(ctx.exception.reasons, ["revert_not_head"])
+
+    def pull_item(self, number=7, state="open", head="brain/c/revert-1", base="brain/integration", sha=A):
+        return {"number": number, "state": state, "base": {"ref": base}, "head": {"ref": head, "sha": sha}}
+
+    def standing_pull(self, answer, status=200):
+        gh, wr, root = world()
+        gh.overrides[("GET", P + "commits/%s/pulls" % A)] = (status, answer)
+        return wr, lambda: wr.standing_pull("brain/c/revert-1", "brain/integration", A)
+
+    def test_standing_pull_is_the_one_open_pull_of_that_head_base_and_sha(self):
+        """"Standing revert" rule 3, over answers a test writes (each filter alone)."""
+        item = self.pull_item
+        others = [item(1, state="closed"), item(2, base="brain/state"), item(3, head="brain/c/revert-2"),
+                  item(4, sha=B), item(5, base="main")]
+        for answer, want in (([], None), (others, None), ([item()], 7), (others + [item(9)], 9),
+                             ([item(9)] + others, 9)):
+            wr, ask = self.standing_pull(answer)
+            self.assertEqual(ask(), want, answer)
+            self.assertEqual(wr.sent, [("GET", P + "commits/%s/pulls" % A, None)])
+            self.assertEqual(wr.guard.pulls, {})  # not a pull the guard has seen: a merge reads it itself
+            with self.assertRaises(W.Refused) as ctx:
+                wr._call("PUT", "pulls/9/merge", {"sha": A, "merge_method": "merge"})
+            self.assertEqual(ctx.exception.reasons, ["merge_unknown_pull"])
+
+    def test_standing_pull_answers_that_are_errors(self):
+        item = self.pull_item
+        broken = dict(item(), head={"ref": "brain/c/revert-1"})
+        for answer in ([item(7), item(8)], {"number": 7}, None, "x", [item(1, state="closed"), broken], [None],
+                       [dict(item(), number="7")]):
+            wr, ask = self.standing_pull(answer)
+            with self.assertRaises(W.ApiError) as ctx:
+                ask()
+            self.assertIsNone(ctx.exception.status, answer)
+        wr, ask = self.standing_pull({"message": "Not Found"}, 404)
+        with self.assertRaises(W.ApiError) as ctx:
+            ask()
+        self.assertEqual(ctx.exception.status, 404)
+
+    def test_standing_pull_over_the_fake(self):
+        """The list as ``fake_github`` models it: the candidate's merged pull is among the pulls of no revert head;
+        a closed revert pull and an open one stand side by side only once the first is closed."""
+        gh, wr, root, merge = self.merged()
+        done = wr.revert(merge, "brain/integration", "brain/c/revert-1", "revert")
+        ask = lambda: W.Writer(REPO, gh).standing_pull("brain/c/revert-1", "brain/integration", done["commit"])
+        self.assertIsNone(ask())
+        n = wr.open_pull("brain/c/revert-1", "brain/integration", "revert")
+        self.assertEqual(ask(), n)
+        self.assertIsNone(W.Writer(REPO, gh).standing_pull("brain/c/revert-1", "brain/state", done["commit"]))
+        gh.pulls[n]["state"] = "closed"
+        self.assertIsNone(ask())
+        self.assertEqual(wr.open_pull("brain/c/revert-1", "brain/integration", "revert"), n + 1)
+        self.assertEqual(ask(), n + 1)
+        with self.assertRaises(W.ApiError) as ctx:
+            wr.standing_pull("brain/c/revert-1", "brain/integration", B)  # a commit GitHub does not hold
+        self.assertEqual(ctx.exception.status, 404)
+
+    def test_the_fake_s_list_of_a_commit_s_pulls_is_no_read_of_a_pull(self):
+        """``fake_github``: ``mergeable_pending`` counts reads of ``GET pulls/<n>`` only; the list of a commit's
+        pulls neither lowers it nor carries ``mergeable``."""
+        gh, wr, root = world()
+        n, sha = candidate(gh, wr)
+        gh.mergeable_pending[n] = 1
+        status, listed = gh("GET", P + "commits/%s/pulls" % sha, None)
+        self.assertEqual((status, [item["number"] for item in listed], ["mergeable" in item for item in listed]),
+                         (200, [n], [False]))
+        self.assertEqual(gh.mergeable_pending[n], 1)
+        self.assertEqual([gh("GET", P + "pulls/%d" % n, None)[1]["mergeable"] for _ in range(2)], [None, True])
 
     def test_pure_rule(self):
         commits = {A: {"tree": "1" * 40, "parents": []}, B: {"tree": "2" * 40, "parents": [A, "c" * 40]},
@@ -1136,6 +1289,17 @@ class CommandLine(unittest.TestCase):
             "ok": True, "refs": ["refs/heads/brain/c/revert-1"],
             "writes": ["POST %sgit/commits" % P, "POST %sgit/refs" % P],
             "commit": {"tree": T1, "parents": [M]}, "forced": False}))
+        # 29i's calls and no other: a recording that also holds the revert's branch, at exactly the revert's
+        # commit, changes nothing (the command's revert takes nothing up), and no call is left to a 404
+        standing = dict(REVERT_API, **{
+            "GET %sgit/ref/heads/brain/c/revert-1" % P: {"ref": "refs/heads/brain/c/revert-1", "object": {"sha": R}},
+            "GET %sgit/commits/%s" % (P, R): {"sha": R, "tree": {"sha": T1}, "parents": [{"sha": M}]}})
+        self.assertEqual(cli("replay", api=standing, request=req), cli("replay", api=REVERT_API, request=req))
+        wr = W.Writer(REPO, W.Replay(standing))
+        W.run_request(req, wr)
+        self.assertEqual([(m, p) for m, p, _ in wr.sent], [
+            ("GET", P + "git/commits/" + M), ("GET", P + "git/commits/" + F1),
+            ("GET", P + "git/ref/heads/brain/integration"), ("POST", P + "git/commits"), ("POST", P + "git/refs")])
         moved = dict(REVERT_API, **{"GET %sgit/ref/heads/brain/integration" % P: {
             "ref": "refs/heads/brain/integration", "object": {"sha": H}}})
         code, out = cli("replay", api=moved, request=req)

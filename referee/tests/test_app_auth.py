@@ -249,6 +249,12 @@ class TheGitHub(unittest.TestCase):
                            ["acme/toy"])
         self.assertEqual(self.get(few, p + "actions/permissions"), 403)
         self.assertEqual(self.get(few, p + "rules/branches/main"), 200)
+        # the pulls of a commit (``Writer.standing_pull``): ``pull_requests: read``, as GitHub's page for it says
+        pulls = p + "commits/%s/pulls" % ("a" * 40)
+        self.assertEqual(self.get(token, pulls), 200)
+        no_pulls = self.gh.mint({k: v for k, v in J.APP_INPUTS.items() if k != "permission-pull-requests"}, SECRETS,
+                                ["acme/toy"])
+        self.assertEqual((self.get(no_pulls, pulls), self.get(no_pulls, p + "git/ref/heads/main")), (403, 200))
         # workflows: free on a public repository, ``actions: read`` (which the App does not hold) on a private one
         self.assertEqual(self.get(token, p + "actions/workflows"), 200)
         self.gh.public = False

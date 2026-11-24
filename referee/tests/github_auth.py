@@ -80,6 +80,7 @@ NEEDS = [
     ("GET", r"git/ref/heads/.+", ("contents", "read")),
     ("GET", r"git/commits/[0-9a-f]+", ("contents", "read")),
     ("GET", r"pulls/\d+", ("pull_requests", "read")),
+    ("GET", r"commits/[0-9a-f]+/pulls", ("pull_requests", "read")),  # "List pull requests associated with a commit"
     ("POST", r"git/(refs|commits|blobs|trees)", ("contents", "write")),
     ("PATCH", r"git/refs/heads/.+", ("contents", "write")),
     ("POST", r"pulls", ("pull_requests", "write")),

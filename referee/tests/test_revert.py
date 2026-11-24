@@ -9,6 +9,8 @@
   first parent's tree, on a branch, with a pull request carrying the cause; after the gate's check and merge,
   ``brain/integration`` has the first parent's tree again; green, flaky and too few runs send nothing; the red
   tests are the sentinel's, not the caller's; unusable facts and a merge that is not the head write nothing;
+- a standing revert (an earlier attempt's branch at exactly that commit): taken up with its open pull request,
+  nothing created; without an open pull one is opened; a standing branch that is anything else opens nothing;
 - a red with no red test: a green or flaky verdict whose facts state ``build_break`` or ``lint_regression`` is a
   revert (29j's ``lint_regression`` and ``lint_per_tool`` cases have no red test); one whose facts state nothing
   is not; a ``rerun`` reverts nothing and reads no facts; a green or flaky verdict without usable facts is unusable;
@@ -32,7 +34,7 @@ sys.path.insert(0, REFEREE)
 from gate import revert as R  # noqa: E402
 from gate import sentinel  # noqa: E402
 from target import write as W  # noqa: E402
-from test_write import GATE, candidate, world, writes  # noqa: E402
+from test_write import GATE, P, REPO, candidate, world, writes  # noqa: E402
 
 
 def req(red=(), impact=(), build_ok=True, lint=None):
@@ -160,6 +162,54 @@ class Revert(unittest.TestCase):
         self.assertEqual(gh.commits[gh.refs["brain/integration"]]["tree"], gh.commits[root]["tree"])
         self.assertEqual(gh.refs["brain/integration"], reverted)
         self.assertEqual(gh.refs["main"], root)
+
+    def test_a_standing_revert_and_its_open_pull_are_taken_up(self):
+        """An earlier cycle's revert that ended before its merge (``target.write``, "Standing revert"): the same
+        call by another writer creates no commit, no branch and no pull request and gives the standing ones; the
+        merge of that pull then leaves the first parent's tree on the branch."""
+        gh, wr, root, merge = self.merged()
+        first = R.revert_red(wr, [RED_A] * 4, dict(FACTS, impact=["z"]), merge, "brain/integration",
+                             "brain/c/revert-1")
+        self.assertEqual(first["cause"], "impact_miss")
+        sent = len(gh.requests)
+        again = W.Writer(REPO, gh)
+        out = R.revert_red(again, [RED_A] * 4, FACTS, merge, "brain/integration", "brain/c/revert-1")
+        self.assertEqual(out, dict(first, cause="test_regression"))
+        self.assertEqual([r for r in gh.requests[sent:] if r[0] != "GET"], [])
+        self.assertEqual(gh.requests[-1], ("GET", P + "commits/%s/pulls" % first["commit"], None))
+        # the standing commit keeps the earlier attempt's text, as the module states
+        self.assertEqual(gh.commits[out["commit"]]["message"], "revert %s: impact_miss" % merge)
+        again.check(out["commit"], GATE, "success")
+        again.merge(out["pull"], out["commit"])
+        self.assertEqual(gh.commits[gh.refs["brain/integration"]]["tree"], gh.commits[root]["tree"])
+
+    def test_a_standing_revert_without_an_open_pull_gets_one(self):
+        gh, wr, root, merge = self.merged()
+        done = wr.revert(merge, "brain/integration", "brain/c/revert-1", "revert")
+        for closed in (False, True):  # no pull at all; then only a closed one
+            sent = len(gh.requests)
+            out = R.revert_red(W.Writer(REPO, gh), [RED_A] * 4, FACTS, merge, "brain/integration", "brain/c/revert-1")
+            self.assertEqual((out["commit"], out["pull"]), (done["commit"], len(gh.pulls)))
+            self.assertEqual([(m, p) for m, p, _ in gh.requests[sent:] if m != "GET"], [("POST", P + "pulls")])
+            self.assertEqual(gh.pulls[out["pull"]]["state"], "open")
+            opened = [body for method, path, body in gh.requests if method == "POST" and path.endswith("/pulls")]
+            self.assertEqual(opened[-1]["title"], "revert %s: test_regression" % merge)  # this call's, opened now
+            gh.pulls[out["pull"]]["state"] = "closed"
+
+    def test_a_new_revert_asks_for_no_standing_pull(self):
+        gh, wr, root, merge = self.merged()
+        sent = len(gh.requests)
+        R.revert_red(wr, [RED_A] * 4, FACTS, merge, "brain/integration", "brain/c/revert-1")
+        self.assertEqual([p for m, p, _ in gh.requests[sent:] if p.endswith("/pulls")], [P + "pulls"])
+
+    def test_a_standing_branch_that_is_not_that_revert_opens_nothing(self):
+        gh, wr, root, merge = self.merged()
+        wr.create_branch("brain/c/revert-1", merge)
+        sent = len(gh.requests)
+        with self.assertRaises(W.Refused) as ctx:
+            R.revert_red(W.Writer(REPO, gh), [RED_A] * 4, FACTS, merge, "brain/integration", "brain/c/revert-1")
+        self.assertEqual(ctx.exception.reasons, ["revert_branch_differs"])
+        self.assertEqual([r for r in gh.requests[sent:] if r[0] != "GET"], [])
 
     def test_cause_reaches_the_commit(self):
         gh, wr, root, merge = self.merged()

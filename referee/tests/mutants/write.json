@@ -282,8 +282,8 @@
   {
    "id": "wr_get_commit_hex",
    "file": "target/write.py",
-   "old": "            if re.fullmatch(r\"git/commits/[0-9a-f]{40}|pulls/\" + _N, rest):",
-   "new": "            if re.fullmatch(r\"git/commits/[0-9a-z]+|pulls/\" + _N, rest):",
+   "old": "            if re.fullmatch(r\"git/commits/[0-9a-f]{40}|commits/[0-9a-f]{40}/pulls|pulls/\" + _N, rest):",
+   "new": "            if re.fullmatch(r\"git/commits/[0-9a-z]+|commits/[0-9a-f]{40}/pulls|pulls/\" + _N, rest):",
    "tests": [
     "test_write.RouteRule.test_path_shapes"
    ]
@@ -1395,6 +1395,186 @@
    "new": "                    raise ApiError(405, \"pull closed or moved\")",
    "tests": [
     "test_write.WriterLoop.test_a_merge_is_not_sent_again_to_a_pull_that_closed_or_moved"
+   ]
+  },
+  {
+   "id": "ws_route_any_sha",
+   "file": "target/write.py",
+   "old": "|commits/[0-9a-f]{40}/pulls|",
+   "new": "|commits/[^/]+/pulls|",
+   "tests": [
+    "test_write.RouteRule.test_path_shapes"
+   ]
+  },
+  {
+   "id": "ws_route_any_suffix",
+   "file": "target/write.py",
+   "old": "|commits/[0-9a-f]{40}/pulls|",
+   "new": "|commits/[0-9a-f]{40}(/pulls.*)?|",
+   "tests": [
+    "test_write.RouteRule.test_path_shapes"
+   ]
+  },
+  {
+   "id": "ws_no_take_up",
+   "file": "target/write.py",
+   "old": "        sha = self.head_or_none(revert_branch) if take_up else None\n",
+   "new": "        sha = None\n",
+   "tests": [
+    "test_write.Revert.test_a_standing_revert_branch_with_exactly_that_commit_is_taken_up"
+   ]
+  },
+  {
+   "id": "ws_no_take_up_job",
+   "file": "target/write.py",
+   "old": "        sha = self.head_or_none(revert_branch) if take_up else None\n",
+   "new": "        sha = None\n",
+   "tests": [
+    "test_loop_write.D7.test_a_revert_that_ended_before_its_merge_is_finished_by_the_next_cycle"
+   ]
+  },
+  {
+   "id": "ws_tree_only",
+   "file": "target/write.py",
+   "old": "            if self.read_commit(sha) != spec:",
+   "new": "            if self.read_commit(sha)[\"tree\"] != spec[\"tree\"]:",
+   "tests": [
+    "test_write.Revert.test_a_standing_revert_branch_with_anything_else_is_refused"
+   ]
+  },
+  {
+   "id": "ws_parents_only",
+   "file": "target/write.py",
+   "old": "            if self.read_commit(sha) != spec:",
+   "new": "            if self.read_commit(sha)[\"parents\"] != spec[\"parents\"]:",
+   "tests": [
+    "test_write.Revert.test_a_standing_revert_branch_with_anything_else_is_refused"
+   ]
+  },
+  {
+   "id": "ws_first_parent_only",
+   "file": "target/write.py",
+   "old": "            if self.read_commit(sha) != spec:",
+   "new": "            if (lambda c: (c[\"tree\"], c[\"parents\"][:1]))(self.read_commit(sha)) != (spec[\"tree\"], spec[\"parents\"]):",
+   "tests": [
+    "test_write.Revert.test_a_standing_revert_branch_with_anything_else_is_refused"
+   ]
+  },
+  {
+   "id": "ws_remade_over_standing",
+   "file": "target/write.py",
+   "old": "        standing = sha is not None\n        if standing:\n            if self.read_commit(sha) != spec:\n                raise Refused([\"revert_branch_differs\"])\n",
+   "new": "        standing = sha is not None\n        if standing:\n            if self.read_commit(sha) != spec:\n                raise Refused([\"revert_branch_differs\"])\n            sha = self.commit(message, spec[\"tree\"], spec[\"parents\"])\n",
+   "tests": [
+    "test_write.Revert.test_a_standing_revert_branch_with_exactly_that_commit_is_taken_up"
+   ]
+  },
+  {
+   "id": "ws_absent_on_any_error",
+   "file": "target/write.py",
+   "old": "            if exc.status == 404:\n                return None",
+   "new": "            if exc.status is not None:\n                return None",
+   "tests": [
+    "test_write.Revert.test_a_revert_branch_that_does_not_read_is_absent_only_on_404"
+   ]
+  },
+  {
+   "id": "ws_branch_before_head_rule",
+   "file": "target/write.py",
+   "old": "        reasons, spec = revert_commit(commits, self.head(onto), merge)\n        if reasons:\n            raise Refused(reasons)\n        sha = self.head_or_none(revert_branch) if take_up else None\n",
+   "new": "        reasons, spec = revert_commit(commits, self.head(onto), merge)\n        sha = self.head_or_none(revert_branch)\n        if reasons and sha is None:\n            raise Refused(reasons)\n        spec = spec or {\"tree\": commits[commits[merge][\"parents\"][0]][\"tree\"], \"parents\": [merge]}\n",
+   "tests": [
+    "test_write.Revert.test_the_merge_must_still_be_the_head_over_a_standing_branch"
+   ]
+  },
+  {
+   "id": "ws_pull_any_state",
+   "file": "target/write.py",
+   "old": "                 if (pull[\"state\"], pull[\"head\"], pull[\"base\"], pull[\"head_sha\"]) == (\"open\", head, base, sha)]",
+   "new": "                 if (pull[\"head\"], pull[\"base\"], pull[\"head_sha\"]) == (head, base, sha)]",
+   "tests": [
+    "test_write.Revert.test_standing_pull_is_the_one_open_pull_of_that_head_base_and_sha"
+   ]
+  },
+  {
+   "id": "ws_pull_any_head",
+   "file": "target/write.py",
+   "old": "                 if (pull[\"state\"], pull[\"head\"], pull[\"base\"], pull[\"head_sha\"]) == (\"open\", head, base, sha)]",
+   "new": "                 if (pull[\"state\"], pull[\"base\"], pull[\"head_sha\"]) == (\"open\", base, sha)]",
+   "tests": [
+    "test_write.Revert.test_standing_pull_is_the_one_open_pull_of_that_head_base_and_sha"
+   ]
+  },
+  {
+   "id": "ws_pull_any_base",
+   "file": "target/write.py",
+   "old": "                 if (pull[\"state\"], pull[\"head\"], pull[\"base\"], pull[\"head_sha\"]) == (\"open\", head, base, sha)]",
+   "new": "                 if (pull[\"state\"], pull[\"head\"], pull[\"head_sha\"]) == (\"open\", head, sha)]",
+   "tests": [
+    "test_write.Revert.test_standing_pull_is_the_one_open_pull_of_that_head_base_and_sha"
+   ]
+  },
+  {
+   "id": "ws_pull_any_sha",
+   "file": "target/write.py",
+   "old": "                 if (pull[\"state\"], pull[\"head\"], pull[\"base\"], pull[\"head_sha\"]) == (\"open\", head, base, sha)]",
+   "new": "                 if (pull[\"state\"], pull[\"head\"], pull[\"base\"]) == (\"open\", head, base)]",
+   "tests": [
+    "test_write.Revert.test_standing_pull_is_the_one_open_pull_of_that_head_base_and_sha"
+   ]
+  },
+  {
+   "id": "ws_pull_first_of_two",
+   "file": "target/write.py",
+   "old": "        if len(found) > 1:\n            raise ApiError(None, \"more than one open",
+   "new": "        if len(found) > 2:\n            raise ApiError(None, \"more than one open",
+   "tests": [
+    "test_write.Revert.test_standing_pull_answers_that_are_errors"
+   ]
+  },
+  {
+   "id": "ws_pull_not_a_list",
+   "file": "target/write.py",
+   "old": "        if not isinstance(data, list):\n            raise ApiError(None, \"the pulls of a commit",
+   "new": "        if data is None:\n            return None\n        if not isinstance(data, (list, dict, str)):\n            raise ApiError(None, \"the pulls of a commit",
+   "tests": [
+    "test_write.Revert.test_standing_pull_answers_that_are_errors"
+   ]
+  },
+  {
+   "id": "ws_pull_kept_by_guard",
+   "file": "target/write.py",
+   "old": "        found = [pull[\"number\"] for pull in map(_pull, data)\n",
+   "new": "        self.guard.pulls.update((pull[\"number\"], pull) for pull in map(_pull, data))\n        found = [pull[\"number\"] for pull in map(_pull, data)\n",
+   "tests": [
+    "test_write.Revert.test_standing_pull_is_the_one_open_pull_of_that_head_base_and_sha"
+   ]
+  },
+  {
+   "id": "ws_pull_items_unchecked",
+   "file": "target/write.py",
+   "old": "        found = [pull[\"number\"] for pull in map(_pull, data)\n",
+   "new": "        found = [pull[\"number\"] for pull in map(_pull, [d for d in data if isinstance(d, dict) and d.get(\"state\") == \"open\"])\n",
+   "tests": [
+    "test_write.Revert.test_standing_pull_answers_that_are_errors"
+   ]
+  },
+  {
+   "id": "ws_take_up_always",
+   "file": "target/write.py",
+   "old": "        sha = self.head_or_none(revert_branch) if take_up else None\n",
+   "new": "        sha = self.head_or_none(revert_branch)\n",
+   "tests": [
+    "test_write.CommandLine.test_revert_first_parent_tree"
+   ]
+  },
+  {
+   "id": "ws_take_up_by_default",
+   "file": "target/write.py",
+   "old": "message: str, take_up: bool = False) -> dict:",
+   "new": "message: str, take_up: bool = True) -> dict:",
+   "tests": [
+    "test_write.Revert.test_a_revert_that_does_not_take_up_meets_github_s_refusal"
    ]
   }
  ]

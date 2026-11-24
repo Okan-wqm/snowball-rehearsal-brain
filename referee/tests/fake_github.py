@@ -19,6 +19,14 @@ It models what the writer depends on and the target's rulesets (tohum/25a row 3)
   is expected" for a head whose ``success`` check run had been accepted two seconds before; the pull read open
   and clean afterwards). Modelled only for a pull a test names in ``merge_lag`` (number -> merges still answered
   that 405 although the check is there); how long GitHub does this is not known;
+- the pulls of a commit (``GET commits/<sha>/pulls``): observed live once (the rehearsal toy, 2026-11-24: for the
+  head of a standing revert branch the answer was a list holding its open pull; for the merge under it the list
+  held that pull and the merged pull that had made the merge). Modelled: every pull, whatever its state, whose
+  head commit is ``sha`` or has it among its ancestors, with the fields ``GET pulls/<n>`` gives each but no
+  ``mergeable`` (the list is no read of a pull: ``mergeable_pending`` is not lowered by it); a commit not held is 404;
+  the merged pull that made a merge commit is not listed for it;
+- a second open pull from one head into one base is refused (422 "A pull request already exists"; GitHub's REST
+  page for creating a pull, read as documentation, not observed live);
 - a commit's tree must already be known (from a seeded commit or ``POST git/trees``), its parents must exist;
 - blobs hold bytes and trees map paths to blobs (``base_tree`` entries kept, the new ones set on top), so
   ``read_file`` gives a branch's file content back.
@@ -154,10 +162,15 @@ class FakeGitHub:
         return {"sha": sha, "tree": {"sha": rec["tree"]}, "parents": [{"sha": p} for p in rec["parents"]],
                 "message": rec["message"]}
 
-    def _pull(self, n):
+    def _pull_item(self, n):
         p = self.pulls[n]
-        out = {"number": n, "state": p["state"], "merged": p["merged"],
-               "base": {"ref": p["base"]}, "head": {"ref": p["head"], "sha": self.refs.get(p["head"], p["sha"])}}
+        return {"number": n, "state": p["state"], "merged": p["merged"],
+                "base": {"ref": p["base"]}, "head": {"ref": p["head"], "sha": self.refs.get(p["head"], p["sha"])}}
+
+    def _pull(self, n):
+        """A read of ``GET pulls/<n>``: the item, and ``mergeable`` for a pull named in ``mergeable_pending``
+        (the one place that counter is lowered)."""
+        out = self._pull_item(n)
         if n in self.mergeable_pending:
             left = self.mergeable_pending[n]
             self.mergeable_pending[n] = max(0, left - 1)
@@ -174,6 +187,12 @@ class FakeGitHub:
         m = re.fullmatch(r"pulls/(\d+)", rest)
         if m:
             return (200, self._pull(int(m.group(1)))) if int(m.group(1)) in self.pulls else (404, {})
+        m = re.fullmatch(r"commits/(.+)/pulls", rest)
+        if m:
+            if m.group(1) not in self.commits:
+                return 404, {"message": "Not Found"}
+            return 200, [self._pull_item(n) for n, p in sorted(self.pulls.items())
+                         if m.group(1) in self.ancestors(self.refs.get(p["head"], p["sha"]))]
         return 404, {"message": "Not Found"}
 
     def _set_ref(self, name, sha, force, create=False):
@@ -213,6 +232,9 @@ class FakeGitHub:
         if rest == "pulls":
             if body["head"] not in self.refs or body["base"] not in self.refs:
                 return 422, {"message": "head or base does not exist"}
+            if any((p["head"], p["base"], p["state"]) == (body["head"], body["base"], "open")
+                   for p in self.pulls.values()):
+                return 422, {"message": "Validation Failed", "errors": [{"message": "A pull request already exists"}]}
             n = len(self.pulls) + 1
             self.pulls[n] = {"base": body["base"], "head": body["head"], "state": "open", "merged": False,
                              "sha": self.refs[body["head"]]}
