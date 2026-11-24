@@ -180,7 +180,8 @@ CLI's (tohum/26o); rule 7 copies it and computes none. A run is tied to its call
 ``wall_ms``, both written by the session: a row written in a later session than its run, or with a
 ``wall_ms`` more than ``NEAR_MS`` from the call's, finds no call and stays unknown; a run whose own call has
 no ``wall_ms`` in the mirror (unfinished) is tied to another call of its agent type in its session whose wall
-time is within ``NEAR_MS`` of its own, when there is exactly one; a run before the rules is tied
+time is within ``NEAR_MS`` of its own, when there is exactly one and it is near no other run of this agent in
+that session (then both runs are ``ambiguous``); a run before the rules is tied
 without its agent type, so another agent's call of the same session and near wall time would be taken for it. The
 mirror holds the newest 20 sessions: a run not costed while its session is in it stays unknown. A row is what
 the session wrote: nothing here checks that the agent ran, that a

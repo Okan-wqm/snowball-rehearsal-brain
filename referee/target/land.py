@@ -22,8 +22,10 @@ to ``content``, a pull request into ``brain/integration``, a ``success`` check r
 the merge pinned to that commit; returns ``{pull, head_sha, merge_sha}``. Each step is one ``target.write`` call;
 an error leaves the earlier steps written (the caller's ``HardStop`` names them, ``writer.written``). The next
 cycle that decides the same merge on the same base takes them up (``target.write``, "Standing branch": the branch,
-its commit when it is exactly this one, its open pull request) and sends only what is missing; a standing branch
-that is anything else is ``Refused`` (``branch_differs``).
+its commit when it is exactly this one, its open pull request) and creates only those of the three that are
+missing; the check and the merge are sent in every attempt, so a check an earlier attempt posted is posted a second
+time on the same commit (no route here reads a commit's check runs). A standing branch that is anything else is
+``Refused`` (``branch_differs``).
 
 ``plant(writer, cycle_id, path, content, base, check)``: D8's planted merge (the revert drill's, ``loop.drill``), the
 same five steps on branch ``brain/drill/<cycle_id>``, its title and check summary saying it is planted by the drill

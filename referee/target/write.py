@@ -82,9 +82,11 @@ Standing branch (``Writer.commit_on``, caller ``target.land.pull_merge``: a cand
 ``brain/drill/<cycle>``). The same class as the standing revert, not observed live: read from the code (the
 sequence is a branch, a commit, a pull request, a check and a merge, each one call, and an error after the first
 leaves the earlier ones written) and from the rehearsal toy, where ``brain/c/good`` stands after its merge. A
-candidate's branch is named by its id, which the next cycle uses again when it decides the same merge again; a
-drill's is named by the cycle, which no later cycle is (the run's id and attempt), so nothing of a drill's is ever
-taken up and its read answers 404. Rules, each with a test in ``test_write``:
+candidate's branch is named by its id, which the next cycle uses again when it decides the same merge again. The
+loop's planted merge (``land.plant``) is named by the running cycle, which no later cycle is (the run's id and
+attempt), so its read answers 404 unless another actor put the branch there; ``harness.revert_drill.run_drill``
+names its branch by the commitment's cycle, so a second ``run_drill`` of one commitment meets the first one's
+branch. The rules are the same for all three. Rules, each with a test in ``test_write``:
 
 1. ``commit_on(branch, base, files, message)`` reads ``branch`` before it creates anything. A 404: the branch is
    created at ``base``, then the commit as in rule 2.
@@ -99,8 +101,10 @@ taken up and its read answers 404. Rules, each with a test in ``test_write``:
 
 Outside, stated: a branch that stands after its pull request was merged (an id used a second time; the base has
 moved, so the head's parent is not ``base``) is refused in every cycle until the id or the branch goes, which no
-page rules on (reports/seed-104); a standing pull request that was closed unmerged is not taken up, a new one is
-opened from the same branch.
+page rules on (reports/seed-104); a pull request from the branch that was closed unmerged is not seen (rule 3
+above reads open ones, and GitHub's route lists no closed one for a commit off the default branch), so a new one is
+opened from the same branch: a second pull request of one fix, where tohum/01b says each fix is one (the same
+report, (3)).
 
 Known limits, stated: the base of a pull request is checked from the response the guard saw; GitHub's merge
 endpoint pins the head (``sha``), not the base, so a base changed between that response and the merge is not

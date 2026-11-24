@@ -1989,6 +1989,17 @@ class LandStanding(unittest.TestCase):
         self.assertEqual((gh.refs["brain/drill/9-1"], gh.refs[B.INTEGRATION]), (out["head_sha"], out["merge_sha"]))
         self.assertEqual([p for m, p, _ in gh.requests if m == "GET" and p.endswith("/pulls")], [])  # nothing stood
 
+    def test_a_drill_s_branch_that_stands_with_exactly_the_plant_is_taken_up(self):
+        """``harness.revert_drill.run_drill`` names its branch by the commitment's cycle: a second one meets it."""
+        gh, wr, repo = self.world()
+        made = wr.commit_on("brain/drill/9-1", HEADS[B.INTEGRATION], {self.PATH: self.NEW}, LN.planted_title("9-1"))
+        sent = len(gh.requests)
+        out = LN.plant(W.Writer(YW.REPO, gh), "9-1", self.PATH, self.NEW, HEADS[B.INTEGRATION], B.CHECK)
+        self.assertEqual((out["head_sha"], gh.commits[out["merge_sha"]]["parents"]),
+                         (made["commit"], [HEADS[B.INTEGRATION], made["commit"]]))
+        self.assertEqual([self.posts(gh, sent, repo + r) for r in ("git/refs", "git/commits", "pulls", "check-runs")],
+                         [0, 0, 1, 1])
+
 
 class Cause(unittest.TestCase):
     def test_each_rule_by_name(self):

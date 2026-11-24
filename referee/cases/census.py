@@ -9,7 +9,9 @@ seven ``(tool, rule_id)`` pairs. ``rules(kind)`` is the set of a kind, ``None`` 
 copy today): the scorer (``harness.score.report``) then gives no count and never ``PASS``.
 
 The seed's vector file (``/vec/cases.json``'s ``census.*`` cases, each one ``cases.build produce TOOL RULE``) is
-not read at run time: no page says where a running referee finds it or which target a case of it is of. The
+not read at run time: the set is the referee's own, kept in its tree by the target's kind, and a run reads it
+from no vector file, policy, ``state_root`` or target (tohum/29za, "Koşan hakem bir hedefin ``census`` kümesini
+nerede bulur" (1): the vector is the set's ground and a test input, not a run input). The
 tests (``tests/test_cases.py``) hold the toy's set here to the seven rules written there by hand; only on a
 machine that has that vector file does one more test read it and hold the set to exactly the rules its cases ask
 for (it is skipped elsewhere: the file is the seed's, not this tree's).
