@@ -396,11 +396,14 @@ class Live(LiveBase):
         os.rmdir(self.results("candidates", "rt"))
         self.assertEqual(self.judged()[1], {"z": []})
         index = json.loads(self.change("index.json"))
-        index["reruns"]["caf\udce9"] = index["reruns"]["bad id"] = {"verdict": "refused", "reasons": ["candidate_id_invalid"]}
+        # (a name that is no id is no candidate even with a package under it and an entry of its hash)
+        index["reruns"]["caf\udce9"] = index["reruns"]["bad id"] = {
+            "verdict": "refused", "reasons": ["candidate_id_invalid"], "package_sha256": CR.key(package())}
         self.change("index.json", to=json.dumps(index).encode())
-        os.mkdir(self.results("candidates", "stray"))
-        with open(self.results("candidates", "stray", "package.json"), "wb") as fh:
-            fh.write(package())
+        for name in ("stray", "bad id"):
+            os.mkdir(self.results("candidates", name))
+            with open(self.results("candidates", name, "package.json"), "wb") as fh:
+                fh.write(package())
         self.assertEqual(self.judged()[:2], ("z", {"z": []}))
         # a name of the results that is also a ready candidate's id is one reject, rerun or not
         self.again["cands"] = {"stray": candidate(GOOD)}
