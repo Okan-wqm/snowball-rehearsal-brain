@@ -10,9 +10,10 @@ that is not UTF-8 has no place in the ledger).
 
 **Read by its hash** (``read``). A candidate's package and the gate's three files are taken from
 ``runner.candidate_rerun.reran`` and from nowhere else: the package is the bytes whose sha256 the index's rerun
-entry carries. A candidate ``reran`` does not hand out is ``Refused`` with ``reran``'s one
+entry carries. A candidate ``reran`` does not hand out is ``runner.candidate_rerun.NotRerun`` with ``reran``'s one
 reason (``package_missing``, ``rerun_missing``, ``rerun_files_missing``) and nothing of
-it is read. A rerun ``koş`` did not verify is handed out (tohum/26p (5)): ``rerun`` is its entry of the index,
+it is read: it does not reach the gate, and the reason is no gate reason (tohum/26p (5); ``loop.job``'s line names
+it, ``yaz_reruns``). A rerun ``koş`` did not verify is handed out (tohum/26p (5)): ``rerun`` is its entry of the index,
 ``files`` may lack a file (``None``), and ``loop.decide`` rejects it by the entry's reasons; ``merge_diff`` hands
 out no diff of one. One whose package has no form ("The package's form": so every package ``koş`` refused as
 ``package_unusable``) has no diff and no finding for the gate: it is ``Refused`` with ``package_invalid`` and
@@ -145,11 +146,9 @@ def found(finding: dict) -> dict:
 
 
 def read(index_: Any, cid: str, read_: Read, tree_read: Read) -> Candidate:
-    """Candidate ``cid`` of the results, or ``Refused`` (see the module docstring)."""
-    try:
-        package, files, entry = CR.reran(index_, cid, read_)
-    except CR.NotRerun as exc:
-        raise Refused(exc.reasons[0]) from None
+    """Candidate ``cid`` of the results; ``Refused``, or ``runner.candidate_rerun.NotRerun`` for one not rerun
+    (see the module docstring)."""
+    package, files, entry = CR.reran(index_, cid, read_)
     try:
         doc = parsed(package)
     except Refused as exc:      # no diff and no finding to judge: its reject, with what koş said of its rerun

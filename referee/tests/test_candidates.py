@@ -369,31 +369,43 @@ class Live(LiveBase):
         self.assertEqual(self.judged()[:2], ("rt", {"rt": [], "z": ["finding_decided", "sentinel_pending"]}))
         # one byte of the package: it is not the package rerun; the other candidate is judged as before
         held = self.change("candidates", "rt", "package.json")
-        self.assertEqual(self.judged()[:2], ("z", {"rt": ["rerun_missing"], "z": []}))
+        # (tohum/26p (5): it does not reach the gate and takes no decision; the line's ``reruns`` names the reason)
+        self.assertEqual(self.judged()[:2], ("z", {"z": []}))
+        self.github()
+        line = self.line(self.run_yaz())
+        self.assertEqual((line["reruns"]["rt"], self.reasons(line)), ({"reran": False, "reasons": ["rerun_missing"]}, {"z": []}))
+        ledger = self.gh.read_file(B.STATE, B.STATE_LEDGER).decode()
+        self.assertIn(":c:z\"", ledger)
+        self.assertNotIn(":c:rt\"", ledger)
+        self.assertNotIn("rerun_missing", ledger)
         # a valid package of other bytes (another diff) under the rerun of the first: not read either
         self.change("candidates", "rt", "package.json", to=package(B_GOOD))
-        self.assertEqual(self.judged()[1]["rt"], ["rerun_missing"])
+        self.assertEqual(self.judged()[1], {"z": []})
         self.change("candidates", "rt", "package.json", to=held)
         for name in CR.FILES:
             with self.subTest(name):
                 os.rename(self.results("r", "rt", name), self.results("r", "rt", name + ".away"))
-                self.assertEqual(self.judged()[1], {"rt": ["rerun_files_missing"], "z": []})
+                self.assertEqual(self.judged()[1], {"z": []})
                 os.rename(self.results("r", "rt", name + ".away"), self.results("r", "rt", name))
         # a run file changed after the rerun: the gate's own criterion, as for a ready candidate
         self.change("r", "rt", "cand.jsonl")
         self.assertEqual(self.judged()[1], {"rt": ["artefact_hash_mismatch"], "z": ["finding_decided"]})
         # the candidates are the names under candidates/ and the keys of the index's reruns, each alone
         os.remove(self.results("candidates", "rt", "package.json"))
-        self.assertEqual(self.judged()[1]["rt"], ["package_missing"])
+        self.assertEqual(self.judged()[1], {"z": []})
         os.rmdir(self.results("candidates", "rt"))
-        self.assertEqual(self.judged()[1]["rt"], ["package_missing"])
+        self.assertEqual(self.judged()[1], {"z": []})
         index = json.loads(self.change("index.json"))
         index["reruns"]["caf\udce9"] = index["reruns"]["bad id"] = {"verdict": "refused", "reasons": ["candidate_id_invalid"]}
         self.change("index.json", to=json.dumps(index).encode())
         os.mkdir(self.results("candidates", "stray"))
         with open(self.results("candidates", "stray", "package.json"), "wb") as fh:
             fh.write(package())
-        self.assertEqual(self.judged()[:2], ("z", {"rt": ["package_missing"], "stray": ["rerun_missing"], "z": []}))
+        self.assertEqual(self.judged()[:2], ("z", {"z": []}))
+        # a name of the results that is also a ready candidate's id is one reject, rerun or not
+        self.again["cands"] = {"stray": candidate(GOOD)}
+        self.rewrite()
+        self.assertEqual(self.judged()[:2], ("z", {"stray": ["candidate_id_twice"], "z": []}))
 
     def test_a_freeze_and_the_serial_rule_hold_for_a_run_time_candidate(self):
         self.world({"rt": package()})

@@ -42,10 +42,13 @@ genesis cycle (where none is read): each id of ``loop.candidates.ids`` is judged
 ready ones.
 
 - An id that is also a ready candidate's is one reject for both, ``candidate_id_twice`` (one id is one decision
-  row), and neither is judged.
-- A candidate ``loop.candidates.read`` refuses carries that refusal's reasons (the one reason of a package not
-  read by its rerun's hash; ``package_invalid``, with the ``kos:<reason>`` reasons of its rerun's entry when
-  ``koş`` did not verify the rerun) and nothing else is judged for it: it does not reach the gate.
+  row), and neither is judged; so for a name of the results that was not rerun.
+- A candidate that was not rerun (``runner.candidate_rerun.NotRerun``: no package, no rerun of its bytes, or a
+  verified rerun without its three files) does not reach the gate and takes no decision, so no row and no
+  ``cause`` (tohum/26p (5)): its one reason is named on the target's line alone (``loop.job``'s ``reruns``).
+- A candidate ``loop.candidates.read`` refuses carries that refusal's reasons (``package_invalid``, with the
+  ``kos:<reason>`` reasons of its rerun's entry when ``koş`` did not verify the rerun) and nothing else is
+  judged for it: it does not reach the gate.
 - Otherwise its reasons are the path reasons of its package's ``diff`` (``diff_unusable`` as above), the
   ``kos:<reason>`` reasons of its rerun's entry when ``koş`` did not verify the rerun
   (``runner.candidate_rerun.kos_reasons``, as for a ready candidate; tohum/26p (5): such a rerun is not a
@@ -102,6 +105,7 @@ from target import branches as B
 
 READY = {"organ_ids": []}   # a ready candidate's package: it is the output of no organ (tohum/26j MF9)
 TWICE = "candidate_id_twice"
+NOT_RERUN = object()    # a run-time candidate that does not reach the gate: no decision (tohum/26p (5))
 DECIDED = "finding_decided"
 REGISTRY = "registry_unusable"
 ORGAN_UNUSABLE = "organ_unusable"
@@ -154,8 +158,9 @@ def _ready(files: dict[str, bytes], results: str, cid: str) -> tuple[Any, dict[s
 
 def _runtime(art: P.Pulled, tree: str, results: str, read: LC.Read,
              index: Any) -> tuple[dict[str, Any], "dict[str, dict] | None"]:
-    """``({id: loop.candidates.Candidate | its Refused's reasons}, the registry's last rows)`` of the cycle's
-    run-time candidates: none in the genesis cycle; the rows are ``None`` when the findings file is no valid chain."""
+    """``({id: loop.candidates.Candidate | its Refused's reasons | NOT_RERUN}, the registry's last rows)`` of the
+    cycle's run-time candidates: none in the genesis cycle; the rows are ``None`` when the findings file is no valid
+    chain."""
     if P.genesis(art):
         return {}, None
     got: dict[str, Any] = {}
@@ -164,6 +169,8 @@ def _runtime(art: P.Pulled, tree: str, results: str, read: LC.Read,
             got[cid] = LC.read(index, cid, read, lambda path: D._read_regular(tree, path))
         except LC.Refused as exc:
             got[cid] = exc.reasons
+        except CR.NotRerun:
+            got[cid] = NOT_RERUN
     try:
         return got, FW.last(art.state.get(B.STATE_FINDINGS, b""))
     except append.HardStop:
@@ -216,6 +223,8 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
         cand = runtime.get(cid)
         if cand is not None and cid in art.candidates:
             decisions[cid] = {"decision": "reject", "reasons": [TWICE]}
+            continue
+        if cand is NOT_RERUN:
             continue
         if isinstance(cand, list):
             decisions[cid] = {"decision": "reject", "reasons": sorted(set(cand))}

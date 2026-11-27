@@ -195,8 +195,8 @@ refused tree is ``pulled_invalid``). Then:
   ``{reran: true, package_sha256, verified}`` (``verified``: whether ``kos`` verified the rerun; one it did not
   is rejected by D5 with its entry's reasons) or ``{reran: false, reasons}`` (``package_missing``,
   ``rerun_missing``, ``rerun_files_missing``). The line is a report: D5 (``loop.decide``, P1 MF12) reads those of them that
-  are candidate ids itself through ``loop.candidates`` in every cycle but the genesis cycle, a candidate that was not rerun is
-  that candidate's reject there, and D6 gets D5's ``finding_decisions`` and, for a run-time merge, its diff
+  are candidate ids itself through ``loop.candidates`` in every cycle but the genesis cycle, a candidate that was not rerun takes
+  no decision there (tohum/26p (5): its reason stands on this line alone), and D6 gets D5's ``finding_decisions`` and, for a run-time merge, its diff
   read again under the package hash D5 decided on (``loop.candidates.merge_diff``; a package changed in between
   is ``Unusable``).
   Nothing reads ``cases``, ``harness``, ``organs`` or ``reruns`` to decide: no merge, row or exit code

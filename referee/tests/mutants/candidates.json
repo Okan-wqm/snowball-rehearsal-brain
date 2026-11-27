@@ -64,10 +64,19 @@
    ]
   },
   {
-   "id": "refused_reason_lost",
-   "file": "loop/candidates.py",
-   "old": "raise Refused(exc.reasons[0]) from None",
-   "new": "raise Refused(INVALID) from None",
+   "id": "not_rerun_is_a_reject",
+   "file": "loop/decide.py",
+   "old": "        except CR.NotRerun:\n            got[cid] = NOT_RERUN",
+   "new": "        except CR.NotRerun as exc:\n            got[cid] = exc.reasons",
+   "tests": [
+    "test_candidates.Live.test_a_candidate_is_read_by_the_hash_of_its_rerun"
+   ]
+  },
+  {
+   "id": "not_rerun_frees_the_ready_id",
+   "file": "loop/decide.py",
+   "old": "        except CR.NotRerun:\n            got[cid] = NOT_RERUN",
+   "new": "        except CR.NotRerun:\n            pass",
    "tests": [
     "test_candidates.Live.test_a_candidate_is_read_by_the_hash_of_its_rerun"
    ]
