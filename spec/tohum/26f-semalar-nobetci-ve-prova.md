@@ -77,3 +77,4 @@ değil: #geri-alma yine her neden için PASS bir prova ister (`asama-0/10a`).
 
 **Geri almanın `head_sha`'sı** (bağımsız inceleme ekibi kararı, 2026-11-20, seed-078): geri almanın merge'ünün
 `brain/integration`'da bıraktığı baştır; `merge_sha` geri alınan merge'dür. `13` onu adlandıran satır sayar.
+Bir geri almanın kaç devirde ya da gönderimde bittiği bu satırlarda değildir: `07` "Yarım kalmış geri alma" (seed-103).

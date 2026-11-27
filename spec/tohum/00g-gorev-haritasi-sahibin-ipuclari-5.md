@@ -62,3 +62,19 @@ sınama.**
   2. Teslimde, E739 ve E740'ın sayfaların zaten istediği işin ötesinde hiçbir yeniden yapım istenmez; işin sırası
      `CHANGELOG-14`'ünkidir.
   3. Yanlışlanabilir: E739 ve E740 kendi testleriyle; E741 ve E742 5 oturumdan sonra aynanın ve defterin sayılarıyla.
+
+**Sahibin ipucu (bu kez kural esnetildi; 2026-11-24, E750; görev, reçete değil). Canlı döngünün sağlığı önce gelir.**
+- Olgu (canlı): hakem reposunun `loop` koşuları 2026-11-23 21:22Z'den (45268983995) 2026-11-24 10:42Z'ye (45377326573)
+  kadar 13 kez kırmızı bitti; `yaz` her birinde `hard_stop` ile bitti: ilkinde oyuncağın geri alma PR'ı #162'nin
+  merge'ünde (405), sonrakilerde onun duran dalında (`422`, "Reference already exists"). 2026-11-24'te sahip tarafı
+  #162'yi kapattı ve dalını elle sildi: bir kerelik operatör dokunuşudur, düzeltme değildir.
+- Olgu (beyin ve sayfalar): düzeltmelerinin kodu (`2e5d6ab`, `f02cb97`, `af708d9` pushları) beynin `referee/`
+  ağacındadır. Canlı döngü aktarılmış hakemi koşar; onun ağacı aktarılan pinli SHA'nın `referee/` ağacıdır
+  (`01a:56-58`). `referee/` yalnız partilerle değişir (`26j:9-10`); parti, çıkış isteği (A), operatör aktarımı ve (B)
+  ile gelir (`02:46-49`, `asama-1/13`).
+- Görev: canlı döngünün sağlığı birinci önceliktir. Kurulmuş düzeltmelerini canlı döngüye taşıyan yolu sen seçersin
+  (sayfaların adlandırdığı yol P1'in çıkış isteğidir) ve her oturumun `session_end` satırında o isteğin önünde neyin
+  durduğunu söylersin.
+- Korkuluklar (bu ipucu için): hiçbir gevşetme yok, yeni hakem kuralı yok, bugünkü hiçbir push'u kırmızı yapan bir şey
+  yok. Yanlışlanabilir: sonraki oturumlar ya P1'in çıkış isteğini yapar ya da onu engelleyeni madde madde adlandırır.
+  Aktarılmış kodu Kurucu değiştirmez (`01a:60-61`); onu canlı döngüye taşımak aktarımdır.

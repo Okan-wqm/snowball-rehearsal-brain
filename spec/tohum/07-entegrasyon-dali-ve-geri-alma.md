@@ -62,3 +62,19 @@ izi ikinci kez bulunursa yeni bulgu değil, yeniden gözlemdir. Yaşam döngüs�
 `open → fixed → verified → reopened`; ayrıca `blocked` ve `unresolved` (`26`). Üç kez `reopened`
 olan bulgu salınımdır; `blocked`'a düşer ve ikisini birlikte ele alan tek bir mikro görev olmadan
 yeniden denenmez. Kredi kök neden başınadır (çakışan hunk ya da aynı sembol).
+
+**Yarım kalmış geri alma** (rapor masası uzlaşısı (2026-11-24), seed-103; kurulduğu gibi benimsendi, beyin `af708d9`).
+Önceki bir devrin başlayıp bitiremediği geri almayı aynı merge'ü geri alan sonraki devir bitirir. Dal
+`brain/revert/<merge_sha>` yalnız başı tam olarak geri alma commit'iyse devralınır: ağacı ilk ebeveynin ağacı, tek
+ebeveyni merge (`29i:20-23`, `asama-0/09` test 25); o baştan `brain/integration`'a açık tek PR onunla devralınır, yoksa
+biri açılır. Başka her şey hiçbir şey yazılmadan `revert_branch_differs` ile reddedilir: kırmızı merge
+`brain/integration`'da kalır, nöbetçisi bitmediği için ondan sonra merge yapılmaz (`26f:20-22`). Duran commit'in mesajı
+ve yazarı karşılaştırılmaz; satırın `cause`'u bu devrin `gate.revert` kararıdır (`29j:53-58`). Her denemede check ve
+sabitlenmiş merge gönderilir (`07:45-48`). Geri alma borçtur: geri almanın birleşmeden kapatılmış PR'ı onu bitirmez,
+aynı daldan yenisi açılır. Nöbetçi kararı geri alma olmayan devir (`green`, `flaky`, `26f:12-15`) duran bir geri almaya
+hiçbir şey yazmaz. Dalın adı deneme başına değişmez ve hiçbir ref silinmez (`25a:33`). `29i:20-23`'ün `revert` komutu ve
+vektörleri değişmez. Defter geri almayı bir kez, merge'ü inince yazar; satır `{merge_sha, head_sha}` kalır
+(`26f:17-18`). Kaç devir ya da gönderim sürdüğü defter olgusu değildir: `yaz` işinin satırında ve hedefin geçmişindedir.
+**Gevşetme L-AM2** (sahibe bildirilir): yazarın korumasına okuma yolu `GET commits/<sha>/pulls` eklendi, yazma kuralı
+değişmez. **Gevşetme L-AM3** (sahibe bildirilir): yazarın bu devirde yapmadığı duran commit, ağacı ve ebeveynleri tam
+olarak işinki ise devralınır; mesajı karşılaştırılmaz.

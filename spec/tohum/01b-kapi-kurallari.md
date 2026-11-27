@@ -71,3 +71,10 @@ inceleme ekibi kararı, 2026-11-20, seed-080). Fark varsa sert duruş (`28`); d�
 **Tavanlar.** Döngü ve gün başına PR, merge, model çağrısı ve CI dakikası tavanları
 `policy.json`'dadır; aylık Actions dakikası anayasal tavandır (`monthly_cap_ci_minutes`). Aşım
 temiz bir duruştur.
+
+**Kapatılmış PR ve duran dal** (rapor masası uzlaşısı (2026-11-24), seed-104 (3); sıkılaştırma). Bir düzeltme tek PR'dır
+(`01b:40-41`): adayın dalından birleşmeden kapatılmış bir PR o düzeltmeyi bitirir; aday yalnız o kimlik için, hiçbir şey
+yazılmadan `pull_closed` ile reddedilir (`26p` "Yarım kalmış merge"in retleri gibi). Yazar PR kapatmaz, kapatan bir
+kişidir. Görmek yazarın korumasında kapalı PR'ların bir okumasını ister (yalnız GET; L-AM2, `07`). Geri almanın PR'ı
+düzeltme değildir: kapatılmışı geri almayı bitirmez (`07`). `01b:54-55`'in "temizler"i silme değildir: sonraki devir
+duran dalı devralır ya da reddeder, hiçbir ref silmez (`25a:33`).
