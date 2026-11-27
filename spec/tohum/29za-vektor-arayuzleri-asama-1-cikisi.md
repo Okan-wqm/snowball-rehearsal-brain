@@ -55,3 +55,15 @@ gibi benimsendi; gevşetme yok). `26q` (10)'un ve bu sayfanın `29za:9-29`'unun 
   kopyada `base_sha`), koşuda yeniden okunan hedef yapılandırması değil; "üretilebilir" `cases.build produce`'un
   cevabıdır; çıkışta puanlayıcının kural başı listeleri (`uncased_rules`, `missed_rules`) `29za:15-17`'nin koşulunu
   taşır.
+
+**Kopyanın `census` vektörü var** (tohum dönemi AL, 2026-11-24; E744). `29za:19-22`'nin operatör işi yapıldı;
+`29za:22`'nin "Bugün açık bir operatör işidir" cümlesi 2026-11-20'nin durumudur. Vektör `vectors.json`'un `census_copy`
+grubudur (commit `e273244`), arayüzü `29zc`'dir; sahibi `census`'unki gibi Aşama 1 çıkış partisidir, hiçbir tablo onu
+adlandırmaz, bugün koşmaz. Kopyanın `base_sha`'sı `4f479013a42f4b750e0784cc2500bd17d932af1a`'dır; birimleri hakemin
+`setup/summary.json`'undaki kopya hedefinin dört `unit_candidates`'idir; her birimde kopyanın kendi ESLint'i (9.39.4)
+`--print-config` ile soruldu. Araç tektir (`eslint`); kopyanın kümesi birim kümelerinin birleşimidir (operatör kararı,
+2026-11-24: bir birime ekilen vaka hangi birimde olursa olsun sayılmalıdır) ve her kural etkin olduğu birimleri taşır.
+Birleşim 186 kuraldır; oyuncağın yedi kuralı değildir, Kurucu'nun kataloğu da değildir. Kopyanın paydası bu kümedir ve
+sayımı `29za:15-17`'nin koşuluyla geçer: vektörün her kuralının en az bir geçerli `asama-1/13a` vakası olmalıdır.
+Türetmenin kaydı `seed/bootstrap/local/census_copy.json`'dur (sha256
+`33a0ca77bd6f8039fd8889869eb889775e9a5b0142e2a21edf8a56f61e00d6b0`).
