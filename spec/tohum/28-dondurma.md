@@ -47,3 +47,14 @@ yerde, burada yazılır; başka sayfa buraya atıf yapar.
 
 **İşaret, dondurma değil.** Kümülatif eşik kayması (`18`), koltuk benzerliği (`09a`) ve genesis
 kuyruğu taşması Gözcü işaretidir: eylemi durdurmaz, şerit yazarına görev yazar.
+
+**Hedefe yazımın başarısızlığı bir kesintidir** (rapor masası uzlaşısı (2026-11-24), seed-103 (3)). Bir `yaz` işinde
+hedefe başarısız olan bir GitHub yazımı (ilk yazımı da, sonrakiler de) bu sayfanın sert duruşu değildir: tetikleri
+(`28:35-38`, `26i:24-25`'in kapalı kümesi) değişmez ve onu saymaz. `28:19-20`'nin HTTP 429'u gibi bir kesintidir: iş
+biter ve hiçbir şey tutmaz (satır yok, `status.md` duruşu yok, operatör adımı yok); sonraki zamanlanmış devir koşar,
+çektiğinden yeniden karar verir ve başarısız işin bıraktığını devralır (`07` "Yarım kalmış geri alma", `26p` "Yarım
+kalmış merge"). `yaz` işinin satırı bu sonu `hard_stop`'tan ayrı bir adla adlandırır; `hard_stop` yalnız bu sayfanın
+sert duruşunu adlandırır (`26i:24`). Değişmeyenler: genesis devrinde başarısız yazım `activation`'dır (`28:37`, `25a`
+satır 7); bir (B) koşusunda hedefe yazdıktan sonra kırmızı biten koşu yeniden tetiklenmez (`25a:44-46`); P1'den önce
+`çek`'in zincir kırığı reddi (`13:56-57`) olduğu gibidir. **Gevşetme L-AM1** (sahibe bildirilir): iki okumanın
+gevşeğidir; başarısız yazım operatör adımı istemez.

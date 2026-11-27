@@ -65,3 +65,16 @@ yapımını arayüz yapar (`26j:17`'nin emsali); sayfanın ondan ayrıldığı y
   koşusunu kullanır (`index.json` `base_run_sha256`). Lint ve test koşuları, kırmızı kontrol dahil, o taban koşusuyla
   karşılaştırılır.
 - Vektör: MF10–MF12'nin vektör grubu yoktur (`26e`); seed-098 ve seed-099 için vektör reddedildi, testler 56–58 bağlar.
+
+**Yarım kalmış merge** (rapor masası uzlaşısı (2026-11-24), seed-104; (1) kurulduğu gibi benimsendi, beyin `af708d9`,
+bir sıkılaştırmayla; (2) sıkılaştırma). Önceki denemenin bıraktığı `brain/c/<id>` ya da `brain/drill/<devir>` dalını
+aynı commit'i aynı tabana indiren sonraki devir kullanır: dal yoksa kesilir; tabandaysa commit'i alır; başı tam olarak
+bu commit'se (tek ebeveyni taban, ağacı adayın dosyasının tabanınkinde verdiği ağaç) açık tek PR'ıyla devralınır, PR
+yoksa biri açılır. Başka her şey PR açılmadan ve check gönderilmeden `branch_differs` ile reddedilir; ret yalnız o
+adayındır, devir sürer (`26k:37-38` T2, `26p:47-48`), devri bitiren bir sert duruş değildir. Duran commit'in mesajı
+karşılaştırılmaz (L-AM3, `07`).
+- Aday kimliği hedef başına iki genesis arasında tek merge içindir (kimlik aynı zamanda dalın adıdır, `26p:38-39`).
+  Defterin o hedefte son genesis'ten beri merge'ünü yazdığı kimliği (`candidate`'inin `decision` merge ve `merge`
+  satırı) `yaz` yalnız o kimlik için, kapı devrin merge'ünü seçmeden önce `candidate_id_used` ile reddeder;
+  `26p:53-55`'in nedenleri gibi hedef satırında adlandırılır, kapı nedeni ya da `cause` değildir. Merge edilmiş adayın
+  dalı silinmez: sonraki genesis'in silmesine kadar durur (`25a:29-33`, insan dokunuşu).
