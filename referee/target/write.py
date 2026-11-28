@@ -100,9 +100,10 @@ branch. The rules are the same for all three. Rules, each with a test in ``test_
    none. The standing commit's message is not compared.
 
 Outside, stated: a branch that stands after its pull request was merged (an id used a second time; the base has
-moved, so the head's parent is not ``base``) is refused ``branch_differs`` in every cycle until the id or the branch goes; tohum/26p:76-80 rules that
-such an id is ``candidate_id_used``, refused by ``yaz`` before the gate chooses, which is not built (the caller,
-``loop.job``, makes this refusal that candidate's reject); a pull request from the branch that was closed unmerged is not seen (rule 3
+moved, so the head's parent is not ``base``) is refused ``branch_differs`` whenever it is asked for; the cycle does
+not ask for the id of a merge its ledger holds since the last genesis (tohum/26p:76-80, ``candidate_id_used``:
+``loop.decide`` judges no such candidate), and for any other the caller, ``loop.job``, makes this refusal that
+candidate's reject; a pull request from the branch that was closed unmerged is not seen (rule 3
 above reads open ones, and GitHub's route lists no closed one for a commit off the default branch), so a new one is
 opened from the same branch: a second pull request of one fix, where tohum/01b says each fix is one (the same
 report, (3)).

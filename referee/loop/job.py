@@ -269,10 +269,11 @@ refused tree is ``pulled_invalid``). Then:
   branch has another name, plants it). Each candidate is refused at most once in a cycle and the plant once, so
   D6 is called at most once more than the cycle has candidates, plus one. Not covered, stated: the genesis cycle
   (``activate`` lands its merge; tohum/28:57 keeps its failed write a hard stop) and a standing revert branch that
-  differs (``revert_branch_differs``: ``write_refused``, below). Not built: tohum/26p:76-80, ``candidate_id_used``.
-  A candidate whose id the ledger already holds a merge of meets its merged branch here and is rejected
-  ``branch_differs`` with a gate row and its ``cause`` in each cycle it comes back, where the page wants it
-  refused before the gate chooses, named in the target's line only; no test here holds that case. D6's refusals before any write
+  differs (``revert_branch_differs``: ``write_refused``, below). A used id (tohum/26p:76-80): a candidate whose
+  id the ledger holds a merge of since its last genesis does not come this far. D5 judges it by no rule
+  (``loop.decide`` "A used id", ``ledger.serial.used_ids``) and the target's line names it under
+  ``candidate_id_used``, the sorted list D5 answers (empty when none is offered), in every line that carries
+  D5's ``decisions``; no row, no ``cause``, no ref, pull request or check is its. D6's refusals before any write
   (``head_moved:<branch>``, ``state_unwritable: ...``, any other refusal of the writer before any ref is written
   and before the root is signed) are
   ``write_refused`` with the reasons; a hard stop

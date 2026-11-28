@@ -13,6 +13,8 @@ their subject is what the other criteria and the merge do; ``ClosedGate`` is the
   ``organ_not_listed:<id>``); a ledger or a package the allowlist cannot read judges nothing;
 - one cycle: a good candidate merges; a test-breaking and a ratchet-raising one are rejected for their own reasons;
   merges are serial (a second good candidate carries ``sentinel_pending``); the order is the ids' code-point order;
+  a ready candidate whose id the ledger holds a merge of (tohum/26p:76-80) is not judged and named in
+  ``candidate_id_used``, the next one merges;
 - criterion 1 through ``gate.diffguard`` with the profile ``kos`` staged with: a manifest change, a security
   keyword of the policy, and an operator excluded path, which 29g says ``excluded_dirs`` carries (and ``kos`` refused too: ``kos:base_file_missing``);
 - criterion 2: a diff that adds a key id is ``secret_in_diff`` (MF2 reached through MF8);
@@ -55,7 +57,7 @@ from profile_tree import write_tree  # noqa: E402
 from test_kos import BREAKS_TEST, GOOD, RAISES, diff, recipe  # noqa: E402
 from test_loop_kos import HEADS, TARGET, Base, RedAs, candidate, state_files  # noqa: E402
 from test_revert_drill import plant, reverted  # noqa: E402
-from test_serial import M1, START, merge  # noqa: E402
+from test_serial import M1, START, merge, merged_rows  # noqa: E402
 from test_loop_cagir import policy  # noqa: E402
 import yaz_world as YW  # noqa: E402
 import listed_world as LW  # noqa: E402
@@ -160,9 +162,31 @@ class OneCycle(Cycle):
                          (None, {"B1": ["branch_differs"], "a3": ["branch_differs"], "b2": ["branch_differs", "tests_red"]}))
         self.assertEqual(self.decide(refused={}), self.decide())
 
+    def test_a_used_id_is_not_judged_and_the_next_candidate_merges(self):
+        # tohum/26p:76-80. Two ready candidates of one good diff: the first in id order merges, the other waits
+        cands = {"a": candidate(GOOD), "good": candidate(GOOD)}
+        self.kos(cands)
+        self.assertEqual((self.decide()["merge"], self.reasons(self.decide()), self.decide()["candidate_id_used"]),
+                         ("a", {"a": [], "good": ["sentinel_pending"]}, []))
+        for rows, used in (([START, *merged_rows("a", M1)], ["a"]),
+                           ([START, merged_rows("a", M1)[0]], []), ([START, merged_rows("a", M1)[1]], []),
+                           ([START, *merged_rows("gone", M1)], []),  # a used id no one offers is not on the line
+                           ([START, *merged_rows("a", M1), *merged_rows("good", "2" * 40)], ["a", "good"])):
+            with self.subTest(rows=[r["row_id"] for r in rows]):
+                shutil.rmtree(self.pulled)
+                self.write_pulled(cands, state=state_files(rows))
+                got = self.decide()
+                self.assertEqual(got["candidate_id_used"], used)
+                left = [cid for cid in sorted(cands) if cid not in used]
+                self.assertEqual((got["merge"], self.reasons(got)),
+                                 (left[0] if left else None,
+                                  {cid: ["sentinel_pending"] if i else [] for i, cid in enumerate(left)}))
+                self.assertEqual(got["finding_decisions"], [])
+
     def test_no_candidates(self):
         self.kos({})
-        self.assertEqual(self.decide(), {"decisions": {}, "merge": None, "finding_decisions": []})
+        self.assertEqual(self.decide(), {"decisions": {}, "merge": None, "finding_decisions": [],
+                                         "candidate_id_used": []})
 
 
 class Criteria(Cycle):

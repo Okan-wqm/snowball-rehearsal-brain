@@ -15,7 +15,8 @@ the same ledger; tohum/28, 27a); ``refused``, ``{cid: reasons}``, the writer's r
 earlier in this cycle (``loop.write_cycle.BranchDiffers``, tohum/26p "Yarım kalmış merge"; empty in a cycle's first
 decision, ``loop.job``).
 
-**A used id** (tohum/26p:76-80, "Yarım kalmış merge"), judged first and in every cycle but the genesis cycle: a
+**A used id** (tohum/26p:76-80, "Yarım kalmış merge"), read before any rule below (a genesis cycle, whose
+``pulled`` has no ledger, has none): a
 candidate, ready or run-time, whose id ``ledger.serial.used_ids`` finds in ``pulled``'s ``brain/state`` ledger (a
 ``decision`` merge row and a ``merge`` row of that id since the ledger's last genesis) is not judged: no rule
 below is read for it, it takes no decision (so no row, no ``cause``, no finding decision), it is never the cycle's

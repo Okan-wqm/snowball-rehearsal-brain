@@ -12,7 +12,8 @@ What is measured:
   ``fixed`` on ``brain/state``; ``organ_ids`` is what the allowlist judges (each of its reasons); the finding's
   reasons before the merge is chosen (T1), two candidates of one finding (T2); a malformed package, a package of
   which one byte changed, a missing rerun file and an id held by a ready candidate too reject that candidate
-  beside one that merges; a package changed between D5 and D6 stops the job (``Unusable``) with nothing written;
+  beside one that merges; a run-time id the ledger holds a merge of (tohum/26p:76-80) takes no decision and no
+  finding decision, offered twice or not; a package changed between D5 and D6 stops the job (``Unusable``) with nothing written;
   the genesis cycle reads none.
 
 Not run here: a real docker, the artifact's upload and download, an organ's output read as a proposal (the
@@ -48,6 +49,7 @@ from test_candidate_rerun import organ  # noqa: E402
 from test_kos import A_JS, BREAKS_TEST, GOOD, diff as kos_diff  # noqa: E402
 from test_loop_kos import HEADS, candidate, recipe, state_files  # noqa: E402
 from test_loop_yaz import OPEN  # noqa: E402
+from test_serial import M1, merged_rows  # noqa: E402
 from test_organ_output import LiveBase  # noqa: E402
 
 OID = "lint.discover"
@@ -181,7 +183,8 @@ class Live(LiveBase):
         got = self.decide()
         sha = CR.key(package())
         self.assertEqual(got, {"decisions": {"rt": {"decision": "merge", "reasons": [], "package_sha256": sha}},
-                               "merge": "rt", "finding_decisions": [{"fingerprint": PRINT, "reasons": []}]})
+                               "merge": "rt", "finding_decisions": [{"fingerprint": PRINT, "reasons": []}],
+                               "candidate_id_used": []})
         # the whole job: D6 lands the package's diff and writes the finding fixed on brain/state
         self.github()
         line = self.line(self.run_yaz())
@@ -322,6 +325,27 @@ class Live(LiveBase):
         self.assertEqual((self.gh.refs["brain/c/a"], self.gh.refs[B.INTEGRATION], self.gh.pulls),
                          (other, HEADS[B.INTEGRATION], {}))
 
+    def test_a_used_run_time_id_takes_no_decision_and_no_finding_decision(self):
+        # tohum/26p:76-80: the ledger holds rt's merge (its two rows) since the last genesis
+        self.world({"rt": package()}, cands={"zz": candidate(GOOD)})
+        self.assertEqual(self.judged(), ("rt", {"rt": [], "zz": ["no_organ", "sentinel_pending"]},
+                                         [{"fingerprint": PRINT, "reasons": []}]))
+        ledger = self.again["state"][B.STATE_LEDGER]
+        rows = json.dumps({"rows": merged_rows("rt", M1)}).encode()
+        state = dict(self.again["state"], **{B.STATE_LEDGER: append.plan_cycle(ledger, ledger, lambda: rows).content})
+        self.rewrite(state=state)
+        got = self.decide()
+        # the candidate after it is judged as if rt were not offered: no sentinel_pending, the finding not decided
+        self.assertEqual(got, {"decisions": {"zz": {"decision": "reject", "reasons": ["no_organ"]}}, "merge": None,
+                               "finding_decisions": [], "candidate_id_used": ["rt"]})
+        # used and offered twice (ready and run-time): a used id, not candidate_id_twice
+        self.again["cands"] = {"rt": candidate(GOOD)}
+        self.rewrite(state=state)
+        self.assertEqual(self.decide(), {"decisions": {}, "merge": None, "finding_decisions": [],
+                                         "candidate_id_used": ["rt"]})
+        self.rewrite()
+        self.assertEqual(self.judged()[:2], (None, {"rt": ["candidate_id_twice"]}))
+
     def test_a_malformed_package_rejects_only_that_candidate(self):
         self.world({"bad": package(more=1), "good": package(), "nofinding": package(finding=None),
                     "notjson": b"{", "ready": package()},
@@ -361,7 +385,8 @@ class Live(LiveBase):
         got = self.decide()
         self.assertEqual(got, {"decisions": {"noapply": {"decision": "reject", "reasons": refused,
                                                          "package_sha256": CR.key(package(NO_APPLY))}},
-                               "merge": None, "finding_decisions": [{"fingerprint": PRINT, "reasons": refused}]})
+                               "merge": None, "finding_decisions": [{"fingerprint": PRINT, "reasons": refused}],
+                               "candidate_id_used": []})
         with self.assertRaisesRegex(LC.Unusable, "candidate noapply: the rerun is not verified"):
             LC.merge_diff(self.results(), "noapply", CR.key(package(NO_APPLY)))
         # the whole job: no merge, and the finding's reject is written (the loop keeps its lesson)

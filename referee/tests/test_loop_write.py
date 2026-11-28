@@ -37,6 +37,9 @@ open allowlist gate (``listed_world``; the gate as a job meets it is test_loop_y
   write; ``loop.write_cycle.write`` given an end whose runs do not give its verdict (a green claimed of failing runs,
   a red claimed of passing runs, runs that ask for a rerun, a flaky list that differs) or of another merge than the
   head writes nothing; ``target.land.revert`` of runs that are not red (green, too few, flaky) writes nothing;
+- a used id (``UsedId``, tohum/26p:76-80): a merged candidate's id offered again, in the cycle that ends its merge
+  and in the one after, is on the line's ``candidate_id_used`` with no decision, no row naming it, no pull request,
+  its branch where the merge left it, while another id's candidate waits and then merges;
 - D8, the revert drill (``loop.drill``) over four cycles on one target, each cycle's ``pulled`` read back from what the
   previous one wrote (``next_cycle``): a commitment (the hash only, the key nowhere in the line), the key's instance
   planted as the cycle's one merge on ``brain/drill/<cycle>`` with its ratchet base and plant rows, the next cycle's
@@ -358,16 +361,16 @@ class D6(StateBase):
         # the next cycle: the merge is unfinished (its sentinel is D7's), so nothing merges; its own commit is written
         self.assertEqual(SE.unfinished(new), [merge["merge_sha"]])
         heads = dict(self.gh.refs)
-        # GOOD is on the head now; the next candidate is another file's
+        # GOOD is on the head now; the next candidate is another file's, under its own id (tohum/26p:76-80)
         other = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
                      **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})
-        self.next_cycle({"good": other}, "10")
+        self.next_cycle({"next": other}, "10")
         out = self.run_yaz(GITHUB_RUN_ID="10")  # D7 ends the merge's green sentinel; D5 merges nothing beside it
         self.assertEqual((out["done"], out["written"]["merge"], out["sentinel"]["verdict"]),
                          (["D5", "D6", "D7"], None, "green"))
         added = rows_of(self.state_file(B.STATE_LEDGER))[len(rows_of(self.state[B.STATE_LEDGER])):]
         self.assertEqual([(r["row_id"], r["payload"].get("reasons")) for r in added if r["kind"] == "decision"],
-                         [("10-1:c:good", ["sentinel_pending"])])
+                         [("10-1:c:next", ["sentinel_pending"])])
         self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [heads[B.STATE]])
 
     def test_without_a_merge_only_brain_state_is_written(self):
@@ -1004,6 +1007,43 @@ class Watching(StateBase):
         self.assertEqual((watched["done"], watched["index"]["sentinel"]["merge_sha"]),
                          (["D3", "D7"], heads[B.INTEGRATION]))  # kos ends ok after D7 whatever the verdict
         return first["written"], heads
+
+
+class UsedId(Watching):
+    """tohum/26p:76-80: the id of a merge the ledger wrote is refused ``candidate_id_used`` on the target's line, in
+    the cycle that ends the merge and in the one after it; another id's candidate is judged as if alone."""
+
+    def test_a_merged_id_offered_again_is_named_on_the_line_and_written_nowhere(self):
+        write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})  # the later candidates' finding
+        nxt = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
+                   **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})
+        self.kos({"c": candidate(GOOD)}, units=SENTINEL_UNITS)
+        self.control(OPEN)
+        self.github()
+        first = self.run_yaz()
+        self.assertEqual((first["merge"], first["candidate_id_used"]), ("c", []), first)
+        branch, pulls = self.gh.refs["brain/c/c"], dict(self.gh.pulls)
+        for run_id, merge, decisions in (("10", None, {"d": {"decision": "reject", "reasons": ["sentinel_pending"]}}),
+                                         ("11", "d", {"d": {"decision": "merge", "reasons": []}})):
+            with self.subTest(cycle=run_id):
+                self.next_cycle({"c": nxt, "d": nxt}, run_id, units=SENTINEL_UNITS)
+                del self.gh.requests[:]
+                out = self.run_yaz(GITHUB_RUN_ID=run_id)
+                self.assertEqual((out["ok"], "reason" in out, out["merge"], out["decisions"], out["candidate_id_used"]),
+                                 (True, False, merge, decisions, ["c"]), out)
+                new = self.state_file(B.STATE_LEDGER)
+                self.assertEqual(SC.ledger_reasons(new), [])
+                added = rows_of(new)[len(rows_of(self.state[B.STATE_LEDGER])):]
+                # no row of the cycle names the used id; d's rows are the cycle's decisions
+                self.assertEqual([(r["kind"], r["payload"]["candidate"]) for r in added
+                                  if "candidate" in r["payload"]],
+                                 [("decision", "d")] + [("merge", "d")] * (merge == "d"))
+                self.assertNotIn(b'"c"', b"".join(json.dumps(r["payload"]).encode() for r in added))
+                # the merged candidate's branch stands where its merge left it; no pull request is opened for c
+                self.assertEqual(self.gh.refs["brain/c/c"], branch)
+                self.assertEqual([m for m, p in self.writes() if m == "DELETE"], [])
+                self.assertEqual({n: p for n, p in self.gh.pulls.items() if n in pulls}, pulls)
+                self.assertEqual(len(self.gh.pulls), len(pulls) + (merge == "d"))
 
 
 class D7(Watching):
