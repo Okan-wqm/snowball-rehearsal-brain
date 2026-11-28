@@ -45,6 +45,14 @@ sha}``, or ``None`` for a ledger with no such row. The same schema check as ``un
 applied here: whether a revert names the merge that was the tip before it is not judged (``loop.integration``
 judges the head's own parents instead).
 
+**The candidate ids a merge used** (``used_ids``, read by D5, ``loop.decide``; tohum/26p:76-80: an id is for one
+merge of a target between two geneses): the ``candidate`` of every ``events``/``merge`` row after the rows' last
+``events``/``genesis`` row whose id an ``events``/``decision`` row of ``decision`` ``merge`` after that genesis
+names too (the page's two rows; ``ledger.events.decided`` writes them together). A row with ``proposed_by`` is a
+proposal and counts for nothing (tohum/26d, as ``harness.pass_row``'s held rows). With no genesis row the whole
+of the rows is read. A reverted merge used its id as any other: the rule reads the two rows, not what followed.
+It takes rows ``rows`` gave, so the schema check is its caller's.
+
 Out of scope, stated: whether a finisher's verdict is true (D7 writes it from a sentinel ``loop.watch`` verified;
 this reader reads rows); whether a merge row's SHA is on ``brain/integration`` (D1's ``loop.integration`` for the
 ledger's last one, D6's for the one it writes).
@@ -64,6 +72,9 @@ RATCHET_BASE = ("events", "ratchet_base")
 OBSERVATION = ("events", "observation")
 CUT = ("events", "integration_cut")
 REVERT = ("events", "revert")
+GENESIS = ("events", "genesis")
+DECISION = ("events", "decision")
+MERGE = ("events", "merge")
 
 
 class Unusable(ValueError):
@@ -157,3 +168,20 @@ def integration_tip(ledger: bytes) -> dict[str, str] | None:
         elif _type(row) == REVERT:
             tip = {"row_id": row["row_id"], "kind": "revert", "sha": row["payload"]["merge_sha"]}
     return tip
+
+
+def used_ids(rows: list[dict]) -> set[str]:
+    """The candidate ids whose merge ``rows`` (``rows``'s answer) hold since their last genesis; see the module
+    docstring."""
+    decided: set[str] = set()
+    merged: set[str] = set()
+    for row in rows:
+        if "proposed_by" in row:
+            continue
+        if _type(row) == GENESIS:
+            decided, merged = set(), set()
+        elif _type(row) == DECISION and row["payload"]["decision"] == "merge":
+            decided.add(row["payload"]["candidate"])
+        elif _type(row) == MERGE:
+            merged.add(row["payload"]["candidate"])
+    return decided & merged

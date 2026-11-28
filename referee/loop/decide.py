@@ -15,6 +15,15 @@ the same ledger; tohum/28, 27a); ``refused``, ``{cid: reasons}``, the writer's r
 earlier in this cycle (``loop.write_cycle.BranchDiffers``, tohum/26p "Yarım kalmış merge"; empty in a cycle's first
 decision, ``loop.job``).
 
+**A used id** (tohum/26p:76-80, "Yarım kalmış merge"), judged first and in every cycle but the genesis cycle: a
+candidate, ready or run-time, whose id ``ledger.serial.used_ids`` finds in ``pulled``'s ``brain/state`` ledger (a
+``decision`` merge row and a ``merge`` row of that id since the ledger's last genesis) is not judged: no rule
+below is read for it, it takes no decision (so no row, no ``cause``, no finding decision), it is never the cycle's
+merge and it leaves the candidates after it as if it were not offered. Its id is in the output's
+``candidate_id_used`` (``USED``), which ``loop.job`` puts on the target's line: the one place the refusal is
+named. An id used and offered twice (ready and run-time) is a used id, not ``candidate_id_twice``. The ledger read
+is the one the cycle started from: the id of the merge this cycle chooses is used from the next cycle on.
+
 **Rules.** Candidates are judged in code-point order of their id. Each one's ``reasons`` are, sorted and unique:
 
 - the path reasons of ``gate.diffguard.check`` (criterion 1, ``<reason>:<path>``) under
@@ -76,7 +85,7 @@ ready ones.
   takes, with no fingerprint it refuses and none it would call decided twice.
 
 ``decision`` is ``merge`` only with no reason. Output ``{decisions: {cid: {decision, reasons, package_sha256?}},
-merge: cid | None, finding_decisions}``.
+merge: cid | None, finding_decisions, candidate_id_used: [cid]}`` (the used ids offered, sorted).
 A recipe whose ``inputs`` is not a list of strings, or a tree ``profile.derive`` refuses, is ``Unusable`` for
 the whole cycle (no candidate is judged). Nothing here
 writes: the ``events`` rows of the reasons, the merge, the registry's rows and the ledger are D6's
@@ -111,6 +120,7 @@ from target import branches as B
 
 READY = {"organ_ids": []}   # a ready candidate's package: it is the output of no organ (tohum/26j MF9)
 TWICE = "candidate_id_twice"
+USED = "candidate_id_used"  # the key of the used ids in the answer and on the target's line (tohum/26p:76-80)
 NOT_RERUN = object()    # a run-time candidate that does not reach the gate: no decision (tohum/26p (5))
 DECIDED = "finding_decided"
 REGISTRY = "registry_unusable"
@@ -223,10 +233,14 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
     try:
         rows = None if P.genesis(art) else serial.rows(art.state[B.STATE_LEDGER])
         closed = [] if rows is None else AL.reasons(READY, art.organs, rows)
+        used = set() if rows is None else serial.used_ids(rows)
     except (AL.Unusable, serial.Unusable) as exc:
         raise Unusable("decide: allowlist: %s" % cli.cause(exc)) from None
     runtime, registry = _runtime(art, tree, results, read, whole)
-    for cid in sorted(set(art.candidates) | set(runtime)):
+    offered = sorted(set(art.candidates) | set(runtime))
+    for cid in offered:
+        if cid in used:
+            continue
         cand = runtime.get(cid)
         if cand is not None and cid in art.candidates:
             decisions[cid] = {"decision": "reject", "reasons": [TWICE]}
@@ -274,4 +288,5 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
                     named.add(cand.fingerprint)     # type: ignore[arg-type]
         if not reasons and merge is None:
             merge = cid
-    return {"decisions": decisions, "merge": merge, "finding_decisions": finding_decisions}
+    return {"decisions": decisions, "merge": merge, "finding_decisions": finding_decisions,
+            USED: [cid for cid in offered if cid in used]}

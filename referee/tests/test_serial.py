@@ -17,7 +17,10 @@ written by ``ledger.append`` (the cycle's writer) with rows of ``ledger.schema``
 - ``integration_tip`` (tohum/13:56-58): the last row in file order that records a write on ``brain/integration``
   and the commit it names: the cut row's base, a gate merge's and a planted merge's merge commit, a revert row's
   reverted merge; none in a ledger without such a row (a decision, a sentinel end, a ratchet base name none); an
-  unreadable ledger answers nothing.
+  unreadable ledger answers nothing;
+- ``used_ids`` (tohum/26p:76-80): the ids with both a ``decision`` merge row and a ``merge`` row since the last
+  genesis row; either row alone, a reject and a planted merge name none; a revert or an end frees no id; a genesis
+  row frees every id before it; a row with ``proposed_by`` counts for nothing.
 """
 
 from __future__ import annotations
@@ -234,6 +237,59 @@ class IntegrationTip(unittest.TestCase):
             with self.subTest(ledger=ledger[:40]), self.assertRaises(SE.Unusable):
                 SE.integration_tip(ledger)
 
+
+
+
+def used(cid: str, sha: str, **extra) -> list[dict]:
+    """The two rows of ``cid``'s merge as ``ledger.events.decided`` writes them (``c:<id>``, ``m:<id>``)."""
+    return [dict(row("c:" + cid, "events", "decision", {"decision": "merge", "candidate": cid}), **extra),
+            dict(row("m:" + cid, "events", "merge", {"candidate": cid, "path": "pkg/a.js", "pull": 1,
+                                                     "head_sha": "f" * 40, "merge_sha": sha, "hunk_covered": []}),
+                 **extra)]
+
+
+def genesis(row_id: str) -> dict:
+    from test_pass_row import genesis_payload  # here: test_pass_row's imports reach this module
+
+    return row(row_id, "events", "genesis", genesis_payload("toy"))
+
+
+class UsedIds(unittest.TestCase):
+    def used(self, *rows: dict) -> set[str]:
+        return SE.used_ids(SE.rows(ledger_with(list(rows))))
+
+    def test_an_id_with_both_rows_of_its_merge_is_used(self):
+        self.assertEqual(self.used(START), set())
+        self.assertEqual(self.used(START, *used("c1", M1)), {"c1"})
+        self.assertEqual(self.used(START, *used("c1", M1), *used("c2", M2)), {"c1", "c2"})
+
+    def test_one_row_of_the_two_a_reject_and_a_plant_name_no_id(self):
+        decision, merged = used("c1", M1)
+        self.assertEqual(self.used(START, decision), set())
+        self.assertEqual(self.used(START, merged), set())
+        self.assertEqual(self.used(START, reject("c1"), plant("p1", "i1", M2)), set())
+        # the two rows are one id's: a decision of one id and a merge row of another use neither
+        self.assertEqual(self.used(START, decision, used("c2", M2)[1]), set())
+
+    def test_a_revert_or_an_end_frees_no_id(self):
+        self.assertEqual(self.used(START, *used("c1", M1), reverted("r1", M1, "test_regression")), {"c1"})
+        self.assertEqual(self.used(START, *used("c1", M1), ended("e1", M1)), {"c1"})
+
+    def test_a_genesis_row_frees_the_ids_before_it(self):
+        first, again = genesis("g"), genesis("g2")
+        self.assertEqual(self.used(first, *used("c1", M1)), {"c1"})
+        self.assertEqual(self.used(first, *used("c1", M1), ended("e1", M1), again), set())
+        second = [dict(r, row_id=r["row_id"] + ":2") for r in used("c2", M2)]
+        self.assertEqual(self.used(first, *used("c1", M1), ended("e1", M1), again, *second), {"c2"})
+        # the two rows on either side of a genesis are not one merge of the run
+        decision, merged = used("c3", M3)
+        self.assertEqual(self.used(first, decision, again, merged), set())
+
+    def test_a_proposed_row_counts_for_nothing(self):
+        self.assertEqual(self.used(START, *used("c1", M1, proposed_by="someone")), set())
+        decision, merged = used("c1", M1)
+        self.assertEqual(self.used(START, dict(decision, proposed_by="someone"), merged), set())
+        self.assertEqual(self.used(START, decision, dict(merged, proposed_by="someone")), set())
 
 if __name__ == "__main__":
     unittest.main()
