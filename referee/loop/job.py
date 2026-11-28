@@ -272,8 +272,9 @@ refused tree is ``pulled_invalid``). Then:
   differs (``revert_branch_differs``: ``write_refused``, below). A used id (tohum/26p:76-80): a candidate whose
   id the ledger holds a merge of since its last genesis does not come this far. D5 judges it by no rule
   (``loop.decide`` "A used id", ``ledger.serial.used_ids``) and the target's line names it under
-  ``candidate_id_used``, the sorted list D5 answers (empty when none is offered), in every line that carries
-  D5's ``decisions``; no row, no ``cause``, no ref, pull request or check is its. D6's refusals before any write
+  ``candidate_id_used``, the sorted list D5 answers (empty when none is offered); no row, no ``cause``, no ref,
+  pull request or check is its (shown on a written cycle's line, ``tests.test_loop_write.UsedId``; a refused
+  cycle's line carries D5's answer by the same spread, which no test reads for this key). D6's refusals before any write
   (``head_moved:<branch>``, ``state_unwritable: ...``, any other refusal of the writer before any ref is written
   and before the root is signed) are
   ``write_refused`` with the reasons; a hard stop
