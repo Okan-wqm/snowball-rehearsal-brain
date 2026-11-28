@@ -18,7 +18,7 @@ a block with no hunk), the ranges ``ledger.events.hunk_covered`` records. ``cont
 a reason.
 
 ``land(writer, cid, path, content, base, check)``: first the read of the closed pull requests from ``brain/c/<cid>``
-into ``brain/integration`` (``Writer.closed_pulls``): when one was closed without a merge the landing is ``Refused``
+into ``brain/integration`` (``refuse_closed``, ``Writer.closed_pulls``): when one was closed without a merge the landing is ``Refused``
 (``pull_closed``) with nothing sent after that read, no object and no ref (tohum/01b:75-80: a fix is one pull
 request, and a closed one ends it; so no second pull request of one candidate branch is opened here). Then branch
 ``brain/c/<cid>`` at ``base``, one commit setting ``path``
@@ -43,9 +43,9 @@ parent's, on ``brain/revert/<merge_sha>``, and its pull request into ``brain/int
 pinned merge as a candidate's. Returns ``{cause, pull, commit, merge_sha}`` (``merge_sha`` the revert's merge
 commit). Runs and facts that are no revert are ``Unusable``, before anything is written.
 
-Not covered, stated: the genesis cycle's landing (``activate`` calls ``land`` after it created
-``brain/integration``, and any refusal of it there, ``pull_closed`` too, is the activation's failed write; not judged
-against tohum/01b:75-80 and held by no test).
+The genesis cycle (``activate``) creates ``brain/integration`` before it calls ``land``, so it asks ``refuse_closed``
+among its own reads, before that write, and ``land`` reads a second time. Not covered, stated: a pull request closed
+between those two reads (``land``'s refusal after the cut is the activation's failed write, as any refusal there).
 
 Out of scope, stated: whether ``base`` is still ``brain/integration``'s head (the caller reads it before landing;
 GitHub refuses a merge that is not a fast-forward of a moved base only by the ruleset's strict check); that the
@@ -115,11 +115,17 @@ def pull_merge(writer: Any, branch: str, base: str, files: dict[str, bytes], ont
     return {"pull": pull, "head_sha": head, "merge_sha": _checked_merge(writer, pull, head, check, summary)}
 
 
+def refuse_closed(writer: Any, cid: str) -> None:
+    """``Refused`` (``pull_closed``) when a pull request from ``brain/c/<cid>`` into ``brain/integration`` was closed
+    unmerged (tohum/01b:75-80): one read, nothing written."""
+    if writer.closed_pulls(CANDIDATE_PREFIX + cid, branches.INTEGRATION):
+        raise write.Refused([write.PULL_CLOSED])
+
+
 def land(writer: Any, cid: str, path: str, content: bytes, base: str, check: str) -> dict:
     """Branch, commit, pull request, check and merge of one accepted candidate onto ``brain/integration``, unless a
     pull request from its branch was closed unmerged (``pull_closed``, before anything is written)."""
-    if writer.closed_pulls(CANDIDATE_PREFIX + cid, branches.INTEGRATION):
-        raise write.Refused([write.PULL_CLOSED])
+    refuse_closed(writer, cid)
     return pull_merge(writer, CANDIDATE_PREFIX + cid, base, {path: content}, branches.INTEGRATION, "candidate %s" % cid,
                       "accepted by the gate (asama-0/08)", check, "gate: merge")
 

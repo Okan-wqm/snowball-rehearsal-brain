@@ -32,8 +32,8 @@
   {
    "id": "branch_differs_names_no_candidate",
    "file": "loop/job.py",
-   "old": "return {\"landing_refused\": d5[\"merge\"], \"why\": [*exc.reasons]}",
-   "new": "return {\"landing_refused\": None, \"why\": [*exc.reasons]}",
+   "old": "the merge's branch, or else the plant's\n        return {\"landing_refused\": d5[\"merge\"], \"why\": [*exc.reasons]}",
+   "new": "the merge's branch, or else the plant's\n        return {\"landing_refused\": None, \"why\": [*exc.reasons]}",
    "tests": [
     "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
    ]
@@ -41,7 +41,7 @@
   {
    "id": "refusal_not_given_to_d5",
    "file": "loop/job.py",
-   "old": "d5, _, _ = yaz_d5(environ, tid, (art, tree), differs)",
+   "old": "d5, _, _ = yaz_d5(environ, tid, (art, tree), refused)",
    "new": "d5, _, _ = yaz_d5(environ, tid, (art, tree), None)",
    "tests": [
     "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
@@ -50,8 +50,8 @@
   {
    "id": "second_decision_reads_pulled_again",
    "file": "loop/job.py",
-   "old": "d5, _, _ = yaz_d5(environ, tid, (art, tree), differs)",
-   "new": "d5, _, _ = yaz_d5(environ, tid, None, differs)",
+   "old": "d5, _, _ = yaz_d5(environ, tid, (art, tree), refused)",
+   "new": "d5, _, _ = yaz_d5(environ, tid, None, refused)",
    "tests": [
     "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
    ]
@@ -77,8 +77,8 @@
   {
    "id": "drill_step_not_taken_again",
    "file": "loop/job.py",
-   "old": "            raise Unusable(\"yaz: %s\" % d5[\"reason\"])\n        d8 = yaz_d8(environ, art, tree, d5)",
-   "new": "            raise Unusable(\"yaz: %s\" % d5[\"reason\"])\n        pass",
+   "old": "        d5 = _decided_again(environ, tid, art, tree, differs, d6)\n        d8 = yaz_d8(environ, art, tree, d5)",
+   "new": "        d5 = _decided_again(environ, tid, art, tree, differs, d6)\n        pass",
    "tests": [
     "test_loop_write.D8.test_a_candidate_refused_for_its_branch_does_not_keep_the_drill_waiting"
    ]
@@ -104,8 +104,8 @@
   {
    "id": "refused_candidate_guard_inverted",
    "file": "loop/job.py",
-   "old": "        if cid in differs:\n            raise Unusable(",
-   "new": "        if cid not in differs:\n            raise Unusable(",
+   "old": "    if cid in refused:\n        raise Unusable(",
+   "new": "    if cid not in refused:\n        raise Unusable(",
    "tests": [
     "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
    ]

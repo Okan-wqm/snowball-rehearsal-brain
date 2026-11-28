@@ -525,6 +525,21 @@ class Refusals(unittest.TestCase):
             self.assertEqual(ctx.exception.reasons, [reason])
             self.assert_nothing_written(w)
 
+    def test_a_closed_pull_request_of_d5s_merge_refuses_before_the_cut(self):
+        """tohum/01b:75-80 in the activation: a pull request closed unmerged from the branch of D5's merge is
+        ``pull_closed`` among the reads, with nothing written; one of another candidate's branch is nothing."""
+        closed = {"base": "brain/integration", "state": "closed", "merged": False, "sha": "0" * 40}
+        w = AW.World()
+        w.gh.pulls[1] = dict(closed, head="brain/c/other")
+        self.assertEqual(w.run()["merge"]["candidate"], "good")
+        w = AW.World()
+        w.gh.pulls[1] = dict(closed, head="brain/c/good")
+        with self.assertRaises(W.Refused) as ctx:
+            w.run()
+        self.assertEqual(ctx.exception.reasons, ["pull_closed"])
+        self.assert_nothing_written(w)
+        self.assertNotIn("brain/integration", w.gh.refs)
+
     def test_already_activated_and_integration_exists(self):
         w = AW.World()
         w.gh.refs["brain/state"] = w.main

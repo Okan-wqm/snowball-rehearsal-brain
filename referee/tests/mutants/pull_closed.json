@@ -13,8 +13,8 @@
   {
    "id": "closed_read_after_the_landing_began",
    "file": "target/land.py",
-   "old": "    if writer.closed_pulls(CANDIDATE_PREFIX + cid, branches.INTEGRATION):\n        raise write.Refused([write.PULL_CLOSED])\n    return pull_merge(writer, CANDIDATE_PREFIX + cid, base,",
-   "new": "    writer.commit_on(CANDIDATE_PREFIX + cid, base, {path: content}, \"candidate %s\" % cid)\n    if writer.closed_pulls(CANDIDATE_PREFIX + cid, branches.INTEGRATION):\n        raise write.Refused([write.PULL_CLOSED])\n    return pull_merge(writer, CANDIDATE_PREFIX + cid, base,",
+   "old": "    refuse_closed(writer, cid)\n    return pull_merge(writer, CANDIDATE_PREFIX + cid, base,",
+   "new": "    writer.commit_on(CANDIDATE_PREFIX + cid, base, {path: content}, \"candidate %s\" % cid)\n    refuse_closed(writer, cid)\n    return pull_merge(writer, CANDIDATE_PREFIX + cid, base,",
    "tests": [
     "test_loop_write.LandStanding.test_a_pull_request_closed_unmerged_ends_the_fix_with_nothing_written",
     "test_loop_write.StandingDiffers.test_a_closed_pull_request_rejects_its_candidate_and_the_cycle_is_written"
@@ -59,8 +59,8 @@
   {
    "id": "refusal_always_named_branch_differs",
    "file": "loop/job.py",
-   "old": "        differs[cid] = d6[\"why\"]",
-   "new": "        differs[cid] = [W.BRANCH_DIFFERS]",
+   "old": "    refused[cid] = d6[\"why\"]",
+   "new": "    refused[cid] = [W.BRANCH_DIFFERS]",
    "tests": [
     "test_loop_write.StandingDiffers.test_a_closed_pull_request_rejects_its_candidate_and_the_cycle_is_written"
    ]
@@ -235,6 +235,52 @@
    "new": "        return \"pulls?state=all&head=%s:%s&base=%s&per_page=%d\" % (self.owner, head, base, CLOSED_PAGE)",
    "tests": [
     "test_write.ClosedPulls.test_the_route_is_taken_in_one_spelling_only"
+   ]
+  },
+  {
+   "id": "genesis_closed_read_not_made_before_the_cut",
+   "file": "activate.py",
+   "old": "    if change is not None:\n        land.refuse_closed(writer, decided[\"merge\"])",
+   "new": "    if change is not None:\n        pass",
+   "tests": [
+    "test_activate.Refusals.test_a_closed_pull_request_of_d5s_merge_refuses_before_the_cut",
+    "test_loop_write.Genesis.test_a_closed_pull_request_rejects_the_genesis_cycle_s_candidate_and_the_activation_is_written"
+   ]
+  },
+  {
+   "id": "genesis_pull_closed_a_plain_refusal",
+   "file": "loop/job.py",
+   "old": "        if exc.reasons == [W.PULL_CLOSED]:",
+   "new": "        if False:",
+   "tests": [
+    "test_loop_write.Genesis.test_a_closed_pull_request_rejects_the_genesis_cycle_s_candidate_and_the_activation_is_written"
+   ]
+  },
+  {
+   "id": "genesis_any_refusal_decides_again",
+   "file": "loop/job.py",
+   "old": "        if exc.reasons == [W.PULL_CLOSED]:",
+   "new": "        if True:",
+   "tests": [
+    "test_loop_write.Genesis.test_nothing_is_written_when_the_activation_refuses"
+   ]
+  },
+  {
+   "id": "genesis_not_decided_again",
+   "file": "loop/job.py",
+   "old": "            d5 = _decided_again(environ, tid, art, tree, refused, d6)\n        if \"reason\" in d6:",
+   "new": "            break\n        if \"reason\" in d6:",
+   "tests": [
+    "test_loop_write.Genesis.test_a_closed_pull_request_rejects_the_genesis_cycle_s_candidate_and_the_activation_is_written"
+   ]
+  },
+  {
+   "id": "genesis_refusal_names_no_candidate",
+   "file": "loop/job.py",
+   "old": "            return {\"landing_refused\": d5[\"merge\"], \"why\": [*exc.reasons]}",
+   "new": "            return {\"landing_refused\": None, \"why\": [*exc.reasons]}",
+   "tests": [
+    "test_loop_write.Genesis.test_a_closed_pull_request_rejects_the_genesis_cycle_s_candidate_and_the_activation_is_written"
    ]
   }
  ]

@@ -2341,6 +2341,34 @@ class Genesis(StateBase):
         shutil.rmtree(os.path.join(self.temp, "in", "response"), ignore_errors=True)
         YW.write_response(self.temp, "t1", art.heads, [YW.cost_row(snapshot=art.heads[B.INTEGRATION])])
 
+    def test_a_closed_pull_request_rejects_the_genesis_cycle_s_candidate_and_the_activation_is_written(self):
+        """tohum/01b:75-80 in the genesis cycle: the candidate is rejected ``pull_closed``, that id only, with
+        nothing of it written, and the activation is written with the decision made again: with no merge when it
+        was the one candidate, with the next candidate's when there is one."""
+        closed = {"base": B.INTEGRATION, "head": "brain/c/good", "state": "closed", "merged": False, "sha": "0" * 40}
+        for cands, merged in (({"good": candidate(GOOD)}, None), ({"good": candidate(GOOD), "second": SECOND}, "second")):
+            self.setUp()
+            write_tree(self.src, {"pkg/b.js": B_JS})
+            main = self.main_at()
+            self.gh.pulls[1] = dict(closed)
+            out = self.cycle(cands)
+            self.assertEqual((out["ok"], "reason" in out, out["done"], out["merge"]),
+                             (True, False, ["D5", "D6"], merged), out)
+            self.assertEqual(out["decisions"]["good"], {"decision": "reject", "reasons": ["pull_closed"]})
+            written = out["written"]
+            self.assertEqual((written["genesis"], written["integration_sha"]), (True, main))
+            self.assertEqual(written["merge"] and written["merge"]["candidate"], merged)
+            self.assertEqual(sorted(self.gh.refs), sorted(["main", B.STATE, B.INTEGRATION]
+                                                         + ["brain/c/second"] * (merged is not None)))
+            self.assertEqual(self.gh.refs[B.INTEGRATION], written["merge"]["merge_sha"] if merged else main)
+            self.assertEqual((self.gh.pulls[1], len(self.gh.pulls)), (closed, 1 + (merged is not None)))
+            self.assertNotIn(LandStanding.NEW, self.gh.blobs.values())
+            rows = [(r["row_id"], r["payload"].get("reasons")) for r in rows_of(self.state_file(B.STATE_LEDGER))
+                    if r["kind"] in ("decision", "merge")]
+            self.assertEqual(rows, [("9-1:c:good", ["pull_closed"])]
+                             + ([("9-1:c:second", None), ("9-1:m:second", None)] if merged else []))
+            self.assertEqual(len(self.signer.payloads), 1)
+
     def test_the_activation_writes_the_cycle_and_the_next_cycle_extends_it(self):
         write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})
         main = self.main_at()
@@ -2353,6 +2381,7 @@ class Genesis(StateBase):
         # the cut at main, D5's merge on it, brain/state an orphan; main untouched
         merge = written["merge"]
         self.assertEqual((merge["candidate"], merge["path"]), ("good", "pkg/a.js"))
+        self.assertIn(LandStanding.NEW, self.gh.blobs.values())  # what a test of a refused ``good`` looks for
         self.assertEqual(self.gh.refs[B.INTEGRATION], merge["merge_sha"])
         self.assertEqual(self.gh.commits[merge["merge_sha"]]["parents"][0], main)
         self.assertEqual(self.gh.refs["main"], main)

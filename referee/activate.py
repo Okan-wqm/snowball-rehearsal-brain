@@ -63,12 +63,15 @@ the cycle id and the time. In this order; nothing is written before step 5:
 3. Reads: ``brain/state`` must not exist (``already_activated``), ``brain/integration`` must not exist
    (``integration_exists``), the ``base_sha`` commit must read. Any reason: ``Refused``. D5's merge, if any, is
    applied to its base file in ``tree`` (``loop.write_cycle.merge_change``, the application D6 makes too; a reason
-   is ``Unusable``: D5 chose a candidate that cannot be written).
+   is ``Unusable``: D5 chose a candidate that cannot be written). Then, for D5's merge, the read of the closed pull
+   requests from its branch (``target.land.refuse_closed``; tohum/01b:75-80): one closed unmerged is ``Refused``
+   with ``pull_closed`` alone, which the caller (``loop.job``) makes that candidate's reject and decides again.
 4. A dry plan of the state (``ledger.cycle.plan`` with the merge's answer as placeholders and a signer that signs
    nothing, ``loop.write_cycle``'s): the rows' secret scan, the whole ledger against ``ledger.schema``; a failure
    is ``Refused`` with ``state_unwritable: ...``.
 5. Cut: ``brain/integration`` created at ``base_sha``. If GitHub refuses the creation, nothing else is written.
-6. D5's merge (``target.land.land``): branch ``brain/c/<cid>`` at the cut, one commit, a pull request into
+6. D5's merge (``target.land.land``): its closed pull requests read again (one closed since step 3 is this
+   step's failure, a ``HardStop``), then branch ``brain/c/<cid>`` at the cut, one commit, a pull request into
    ``brain/integration``, a ``success`` check named ``target.branches.CHECK``, the merge. A reject writes nothing on
    the target.
 7. The state, ``events`` rows in this order: ``genesis`` (the payload), ``cycle_start {cycle_id}``,
@@ -263,6 +266,8 @@ def activate(writer: write.Writer, files: dict[str, bytes], art: pulled.Pulled, 
         facts = write_cycle.status_facts(art, cyc)
     except write_cycle.Unusable as exc:
         raise Unusable(cli.cause(exc)) from None
+    if change is not None:
+        land.refuse_closed(writer, decided["merge"])  # ``pull_closed``, before the cut
 
     def rows(merged: dict | None) -> list[dict]:
         return [events.row(cyc, "genesis", "genesis", gen["payload"]), events.start(cyc),

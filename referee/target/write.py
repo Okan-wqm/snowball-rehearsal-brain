@@ -36,7 +36,7 @@ no other repository):
   parent is the base it was made on (the revert rule reads that).
 
 Fields outside the listed ones, a body that is not an object, a sha that is not 40 lowercase hex, and a path
-with a query, fragment, ``%``, backslash, whitespace, ``..``, an empty segment or a trailing slash are
+with a query (but the one read of closed pull requests above, in its one spelling), fragment, ``%``, backslash, whitespace, ``..``, an empty segment or a trailing slash are
 refused. A branch name under ``brain/`` (``ref_invalid`` otherwise) is ``[A-Za-z0-9._/-]`` only, with git's
 rules on top: no empty component (no leading, trailing or double slash), no component starting with ``.`` or
 ending with ``.lock``, no ``..``, no trailing ``.``. Prefixes are exact and case-sensitive: ``refs/heads/Brain/x``,

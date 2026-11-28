@@ -273,8 +273,9 @@ refused tree is ``pulled_invalid``). Then:
   pull request from the branch of D5's merge into ``brain/integration`` was closed without a merge
   (``target.land.land``, one read; nothing written), the same ``LandingRefused`` carries ``pull_closed`` and the
   cycle goes on by the same steps, that candidate a reject with ``pull_closed``; what is and is not read as such a
-  pull request is ``target.write``'s "Closed pull". Not covered, stated: the genesis cycle here too, a plant and a
-  revert (``target.land``). A used id (tohum/26p:76-80): a candidate whose
+  pull request is ``target.write``'s "Closed pull". In the genesis cycle the activation reads the same before it
+  writes anything (``activate``, step 3), and D5 decides again the same way before the activation is called
+  again. Not read, stated: a plant's and a revert's closed pull requests (``target.land``). A used id (tohum/26p:76-80): a candidate whose
   id the ledger holds a merge of since its last genesis does not come this far. D5 judges it by no rule
   (``loop.decide`` "A used id", ``ledger.serial.used_ids``) and the target's line names it under
   ``candidate_id_used``, the sorted list D5 answers (empty when none is offered); no row, no ``cause``, no ref,
@@ -1271,7 +1272,9 @@ SECURITY_LEDGER = "setup/security-ledger.jsonl"  # tohum/26c, 29o, 29s: the seed
 def yaz_genesis(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str, Any], transport: Any = None,
                 signer: Any = None, now: Any = None, job_calls: list | None = None) -> dict[str, Any]:
     """D6 of the genesis cycle (``loop.pulled.genesis``; see the module docstring): ``activate.activate`` with this
-    cycle's D5 and D3 and the checkout's files: ``{reason, reasons, written?}`` or ``{written}``. Its own
+    cycle's D5 and D3 and the checkout's files: ``{reason, reasons, written?}`` or ``{written}``, or
+    ``{landing_refused: cid, why}`` when the activation refused D5's merge ``cid`` ``pull_closed`` with nothing
+    written. Its own
     transport (``transport`` ``None``) is ``writer_transport`` with the App's credential, for genesis'
     ``GET /app``; its own signer (``signer`` ``None``) counts its runs in ``job_calls`` as ``yaz_d6``'s does."""
     got = _yaz_inputs(environ, tid, art, transport, signer, now, app=True, job_calls=job_calls)
@@ -1290,6 +1293,8 @@ def yaz_genesis(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict
         done = AC.activate(writer, files, art, tree, d5, given[1], got["cost"], got["signer"], got["cycle_id"],
                            got["ts"])
     except AC.Refused as exc:
+        if exc.reasons == [W.PULL_CLOSED]:  # the merge's candidate's alone, nothing written (tohum/01b:75-80)
+            return {"landing_refused": d5["merge"], "why": [*exc.reasons]}
         return {"reason": "activation_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
         return {"reason": "hard_stop", "reasons": [cli.cause(exc)], "written": sorted(set(writer.written)),
@@ -1699,7 +1704,12 @@ def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any
     if "reason" in d7:
         return dict(ok=False, done=["D5"], **d5, **d7)
     if P.genesis(art):  # the activation writes this cycle; D7 watched nothing, D8 starts in the next cycle
-        d6 = yaz_genesis(environ, tid, art, tree, d5, transport, signer, now, job_calls)
+        refused: dict[str, list[str]] = {}
+        while True:  # tohum/01b:75-80: a closed pull request refuses its candidate, not the activation
+            d6 = yaz_genesis(environ, tid, art, tree, d5, transport, signer, now, job_calls)
+            if "landing_refused" not in d6:
+                break
+            d5 = _decided_again(environ, tid, art, tree, refused, d6)
         if "reason" in d6:
             return dict(ok=False, done=["D5"], **d5, **d7, **d6)
         return dict(ok=True, done=["D5", "D6"], drill=GENESIS_DRILL, **d5, **d7, **d6)
@@ -1719,12 +1729,7 @@ def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any
                 raise Unusable("yaz: the writer refused a plant the cycle does not make")
             d8 = PLANT_REFUSED
             continue
-        if cid in differs:
-            raise Unusable("yaz: the writer refused %s, which D5 had rejected" % cid)
-        differs[cid] = d6["why"]
-        d5, _, _ = yaz_d5(environ, tid, (art, tree), differs)
-        if "reason" in d5:  # the first decision read the same inputs
-            raise Unusable("yaz: %s" % d5["reason"])
+        d5 = _decided_again(environ, tid, art, tree, differs, d6)
         d8 = yaz_d8(environ, art, tree, d5)  # a plant is refused only after it: the cycle that plants has no merge
     shown = dict({} if gate is None else {"gate": gate}, **({} if judged is None else {"pass": judged}))
     if "reason" in d6:
@@ -1736,6 +1741,20 @@ def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any
     if d8.get("judged", {}).get("verdict") == "FAIL":
         return dict(line, ok=False, reason="drill_fail")
     return line
+
+
+def _decided_again(environ: dict[str, str], tid: str, art: Any, tree: str, refused: dict[str, list[str]],
+                   d6: dict[str, Any]) -> dict[str, Any]:
+    """D5's decision made again on the same ``pulled`` and tree after the landing of ``d6``'s candidate was
+    refused: its reasons are added to ``refused``, the cycle's refusals so far, each candidate once."""
+    cid = d6["landing_refused"]
+    if cid in refused:
+        raise Unusable("yaz: the writer refused %s, which D5 had rejected" % cid)
+    refused[cid] = d6["why"]
+    d5, _, _ = yaz_d5(environ, tid, (art, tree), refused)
+    if "reason" in d5:  # the first decision read the same inputs
+        raise Unusable("yaz: %s" % d5["reason"])
+    return d5
 
 
 GENESIS_DRILL = {"action": "off", "why": "genesis"}
