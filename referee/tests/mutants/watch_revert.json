@@ -149,7 +149,7 @@
   {
    "id": "land_revert_not_merged",
    "file": "target/land.py",
-   "old": "            \"merge_sha\": _checked_merge(writer, done[\"pull\"], done[\"commit\"], check, summary)}",
+   "old": "            \"merge_sha\": revert_merge(writer, merge_sha, done, check)}",
    "new": "            \"merge_sha\": done[\"commit\"]}",
    "tests": [
     "test_loop_write.py"

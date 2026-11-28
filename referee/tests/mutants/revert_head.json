@@ -1,0 +1,157 @@
+{
+ "mutants": [
+  {
+   "id": "schema_head_sha_any_text",
+   "file": "ledger/schema.py",
+   "old": "shape({\"merge_sha\": hex40}, {\"head_sha\": hex40})",
+   "new": "shape({\"merge_sha\": hex40}, {\"head_sha\": text})",
+   "tests": [
+    "test_schema.py"
+   ]
+  },
+  {
+   "id": "schema_head_sha_refused",
+   "file": "ledger/schema.py",
+   "old": "shape({\"merge_sha\": hex40}, {\"head_sha\": hex40})",
+   "new": "shape({\"merge_sha\": hex40})",
+   "tests": [
+    "test_schema.py"
+   ]
+  },
+  {
+   "id": "schema_row_without_head_refused",
+   "file": "ledger/schema.py",
+   "old": "shape({\"merge_sha\": hex40}, {\"head_sha\": hex40})",
+   "new": "shape({\"merge_sha\": hex40, \"head_sha\": hex40})",
+   "tests": [
+    "test_schema.py"
+   ]
+  },
+  {
+   "id": "payload_without_head",
+   "file": "ledger/events.py",
+   "old": "    return {\"merge_sha\": merge_sha, \"head_sha\": head_sha}",
+   "new": "    return {\"merge_sha\": merge_sha}",
+   "tests": [
+    "test_revert_drill.Commitment.test_rows"
+   ]
+  },
+  {
+   "id": "payload_head_is_the_reverted_merge",
+   "file": "ledger/events.py",
+   "old": "    return {\"merge_sha\": merge_sha, \"head_sha\": head_sha}",
+   "new": "    return {\"merge_sha\": merge_sha, \"head_sha\": merge_sha}",
+   "tests": [
+    "test_loop_write.D7.test_a_red_merge_is_reverted_with_its_cause"
+   ]
+  },
+  {
+   "id": "tip_names_the_reverted_merge",
+   "file": "ledger/serial.py",
+   "old": "\"sha\": row[\"payload\"][\"head_sha\" if named else \"merge_sha\"]}",
+   "new": "\"sha\": row[\"payload\"][\"merge_sha\"]}",
+   "tests": [
+    "test_serial.py"
+   ]
+  },
+  {
+   "id": "tip_row_without_head_reads_as_a_head",
+   "file": "ledger/serial.py",
+   "old": "\"kind\": \"revert\" if named else \"reverted\",",
+   "new": "\"kind\": \"revert\",",
+   "tests": [
+    "test_serial.py"
+   ]
+  },
+  {
+   "id": "revert_head_judged_by_shape",
+   "file": "loop/integration.py",
+   "old": "    if tip[\"kind\"] != \"reverted\":\n        return",
+   "new": "    if tip[\"kind\"] not in (\"reverted\", \"revert\"):\n        return",
+   "tests": [
+    "test_loop_integration.py"
+   ]
+  },
+  {
+   "id": "cek_revert_head_fetches_history",
+   "file": "loop/job.py",
+   "old": "    if tip[\"kind\"] != \"reverted\":\n        reasons = IG.reasons(tip, head)",
+   "new": "    if tip[\"kind\"] not in (\"reverted\", \"revert\"):\n        reasons = IG.reasons(tip, head)",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_revert_row_names_the_head_its_revert_left"
+   ]
+  },
+  {
+   "id": "cek_revert_head_unjudged",
+   "file": "loop/job.py",
+   "old": "    if tip[\"kind\"] != \"reverted\":\n        reasons = IG.reasons(tip, head)",
+   "new": "    if tip[\"kind\"] != \"reverted\":\n        reasons = [] if tip[\"kind\"] == \"revert\" else IG.reasons(tip, head)",
+   "tests": [
+    "test_loop_cek.CekJob.test_a_revert_row_names_the_head_its_revert_left"
+   ]
+  },
+  {
+   "id": "yaz_row_head_is_the_reverted_merge",
+   "file": "loop/write_cycle.py",
+   "old": "reverted and reverted[\"merge_sha\"]) + frozen,",
+   "new": "red and red[\"merge_sha\"]) + frozen,",
+   "tests": [
+    "test_loop_write.D7.test_a_red_merge_is_reverted_with_its_cause"
+   ]
+  },
+  {
+   "id": "yaz_row_head_is_the_revert_commit",
+   "file": "loop/write_cycle.py",
+   "old": "reverted and reverted[\"merge_sha\"]) + frozen,",
+   "new": "reverted and reverted[\"commit\"]) + frozen,",
+   "tests": [
+    "test_loop_write.D7.test_a_red_merge_is_reverted_with_its_cause"
+   ]
+  },
+  {
+   "id": "yaz_standing_revert_row_head",
+   "file": "loop/write_cycle.py",
+   "old": "reverted and reverted[\"merge_sha\"]) + frozen,",
+   "new": "reverted and reverted[\"commit\"]) + frozen,",
+   "tests": [
+    "test_loop_write.D7.test_a_revert_that_ended_before_its_merge_is_finished_by_the_next_cycle"
+   ]
+  },
+  {
+   "id": "drill_revert_not_merged",
+   "file": "harness/revert_drill.py",
+   "old": "    head = land.revert_merge(writer, merge, done, check_name) if done[\"reverted\"] else None",
+   "new": "    head = done[\"commit\"] if done[\"reverted\"] else None",
+   "tests": [
+    "test_revert_drill.Run.test_each_planted_cause_is_reverted_and_judged_pass"
+   ]
+  },
+  {
+   "id": "drill_merges_a_green_watch",
+   "file": "harness/revert_drill.py",
+   "old": "    head = land.revert_merge(writer, merge, done, check_name) if done[\"reverted\"] else None",
+   "new": "    head = land.revert_merge(writer, merge, done, check_name)",
+   "tests": [
+    "test_revert_drill.Run.test_green_watch_is_not_reverted"
+   ]
+  },
+  {
+   "id": "drill_row_head_is_the_plant",
+   "file": "harness/revert_drill.py",
+   "old": "events.revert_payload(merge, head) if done[\"reverted\"]",
+   "new": "events.revert_payload(merge, merge) if done[\"reverted\"]",
+   "tests": [
+    "test_revert_drill.Run.test_each_planted_cause_is_reverted_and_judged_pass"
+   ]
+  },
+  {
+   "id": "revert_merge_without_check",
+   "file": "target/land.py",
+   "old": "    return _checked_merge(writer, done[\"pull\"], done[\"commit\"], check, summary)",
+   "new": "    return writer.merge(done[\"pull\"], done[\"commit\"])",
+   "tests": [
+    "test_revert_drill.Run.test_each_planted_cause_is_reverted_and_judged_pass"
+   ]
+  }
+ ]
+}

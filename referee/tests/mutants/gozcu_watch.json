@@ -237,8 +237,8 @@
   {
    "id": "cycle_freeze_rows_unwritten",
    "file": "loop/write_cycle.py",
-   "old": "rows(merged, plant and plant[\"merge_sha\"]) + frozen, imports",
-   "new": "rows(merged, plant and plant[\"merge_sha\"]), imports",
+   "old": "reverted and reverted[\"merge_sha\"]) + frozen,",
+   "new": "reverted and reverted[\"merge_sha\"]),",
    "tests": [
     "test_gozcu_watch.Budget.test_the_cycle_that_reaches_the_cap_writes_the_freeze"
    ]

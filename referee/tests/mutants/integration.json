@@ -12,8 +12,8 @@
   {
    "id": "tip_revert_not_a_naming_row",
    "file": "ledger/serial.py",
-   "old": "        elif _type(row) == REVERT:\n            tip =",
-   "new": "        elif _type(row) == (\"events\", \"none\"):\n            tip =",
+   "old": "        elif _type(row) == REVERT:\n            named =",
+   "new": "        elif _type(row) == (\"events\", \"none\"):\n            named =",
    "tests": [
     "test_serial.py"
    ]
@@ -21,8 +21,8 @@
   {
    "id": "tip_revert_reads_as_merge",
    "file": "ledger/serial.py",
-   "old": "\"kind\": \"revert\", \"sha\"",
-   "new": "\"kind\": \"merge\", \"sha\"",
+   "old": "\"kind\": \"revert\" if named else \"reverted\",",
+   "new": "\"kind\": \"merge\",",
    "tests": [
     "test_serial.py"
    ]
@@ -57,8 +57,8 @@
   {
    "id": "revert_row_names_merge_as_head",
    "file": "loop/integration.py",
-   "old": "    if tip[\"kind\"] != \"revert\":\n        return",
-   "new": "    if tip[\"kind\"] != \"revert\" or head == tip[\"sha\"]:\n        return",
+   "old": "    if tip[\"kind\"] != \"reverted\":\n        return",
+   "new": "    if tip[\"kind\"] != \"reverted\" or head == tip[\"sha\"]:\n        return",
    "tests": [
     "test_loop_integration.py"
    ]
@@ -174,8 +174,8 @@
   {
    "id": "cek_revert_judged_without_history",
    "file": "loop/job.py",
-   "old": "    if tip[\"kind\"] != \"revert\":\n        reasons = IG.reasons(tip, head)\n    else:",
-   "new": "    if True:\n        reasons = [] if tip[\"kind\"] == \"revert\" else IG.reasons(tip, head)\n    else:",
+   "old": "    if tip[\"kind\"] != \"reverted\":\n        reasons = IG.reasons(tip, head)\n    else:",
+   "new": "    if True:\n        reasons = [] if tip[\"kind\"] == \"reverted\" else IG.reasons(tip, head)\n    else:",
    "tests": [
     "test_loop_cek.CekJob.test_a_head_that_is_not_the_revert_of_the_named_merge"
    ]
@@ -186,7 +186,7 @@
    "old": "F.fetch(history_dir, url, head, git=git, environ=environ, history=True)",
    "new": "F.fetch(history_dir, url, head, git=git, environ=environ)",
    "tests": [
-    "test_loop_cek.CekJob.test_a_revert_row_names_the_head_by_the_reverts_shape"
+    "test_loop_cek.CekJob.test_a_revert_row_without_head_sha_names_the_head_by_the_reverts_shape"
    ]
   },
   {
