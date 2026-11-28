@@ -532,9 +532,10 @@ class Job(TLW.Genesis):
         sent = len(self.auth.seen)
         other = dict(TLW.candidate(TLW.diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
                      **{"finding.json": json.dumps(dict(TLW.FINDING, path="pkg/b.js")).encode()})
-        self.next_cycle({"good": other}, "10")
+        self.next_cycle({"next": other}, "10")
         out = self.own(GITHUB_RUN_ID="10")
         self.assertEqual((out["ok"], out["done"]), (True, ["D5", "D6", "D7"]), out)
+        self.assertEqual((list(out["decisions"]), out["candidate_id_used"]), (["next"], []), out)  # it was judged
         # ``drift.check``'s transport, the job's first, has the App's credential for its one ``GET /app`` (stage 1
         # MF6), sent before any write; D6's writer, made after it, is made without, and every other request goes
         # with the token

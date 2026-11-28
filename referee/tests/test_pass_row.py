@@ -273,7 +273,8 @@ class Passes(unittest.TestCase):
                 self.assertEqual(CH.canonical(got["owner_exception"]), CH.canonical(exceptions))
         self.assertNotIn("owner_exception", PR.imported(IMPORTS, RESULT))
 
-    def test_a_merged_candidate_offered_again_is_judged_by_its_first_decision(self):
+    def test_a_later_decision_row_of_a_merged_candidate_is_not_its_verdict(self):
+        # no row ``loop.decide`` writes today (a merged id is used, tohum/26p:76-80): a ledger that holds one
         toy = toy_world()
         toy.cycle(lambda c: EV.decided(c, "good", ["kos:patch_does_not_apply"]), cost)
         self.assertEqual(judge(toy)["verdict"], "PASS")

@@ -42,8 +42,9 @@ row's shape); a state that does not gives ``<target>:state_invalid`` under every
 schema's reasons) and nothing else is judged.
 
 **Conditions judged**, each reason prefixed with its target (``toy:``, ``copy:``); "the first decision" of a
-candidate is its first ``events``/``decision`` row (a candidate is offered again every cycle; after its merge its
-diff no longer applies, so later rows are not its verdict):
+candidate is its first ``events``/``decision`` row (a rejected candidate offered again is judged again every cycle,
+so later rows are not its verdict; a merged one's id is used, tohum/26p:76-80, and ``loop.decide`` writes it no
+later row, and one a ledger holds all the same is not its verdict either):
 
 - ``#genesis``: the ledger's first row is ``events``/``genesis`` (``genesis_not_first``; nothing else is judged
   under it then); the last genesis's ``import_line_sha256``, ``referee_tree_sha256`` and ``result_sha256`` are the

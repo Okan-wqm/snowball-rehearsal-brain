@@ -2304,10 +2304,11 @@ class Genesis(StateBase):
         # the next cycle: an ordinary one on the state the activation wrote; D7 ends the merge's green sentinel
         other = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
                      **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})
-        self.next_cycle({"good": other}, "10")
+        self.next_cycle({"next": other}, "10")
         self.assertFalse(P.genesis(P.read(self.pulled)))
         out = self.run_yaz(GITHUB_RUN_ID="10")
         self.assertEqual((out["ok"], out["done"], out["sentinel"]["verdict"]), (True, ["D5", "D6", "D7"], "green"), out)
+        self.assertEqual((list(out["decisions"]), out["candidate_id_used"]), (["next"], []), out)  # it was judged
         new = self.state_file(B.STATE_LEDGER)
         self.assertTrue(CH.verify_bytes(new, ledger)["valid"])
         self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [written["state_sha"]])

@@ -125,10 +125,10 @@
    ]
   },
   {
-   "id": "used_ids_its_own_start_of_the_run",
+   "id": "a_proposed_genesis_starts_a_run",
    "file": "ledger/serial.py",
-   "old": "    for row in rows[last_genesis(rows) or 0:]:",
-   "new": "    own = [i for i, row in enumerate(rows) if _type(row) == GENESIS and \"proposed_by\" not in row]\n    for row in rows[own[-1] if own else 0:]:",
+   "old": "             if _type(row) == GENESIS and \"proposed_by\" not in row and isinstance(row.get(\"payload\"), dict)]",
+   "new": "             if _type(row) == GENESIS and isinstance(row.get(\"payload\"), dict)]",
    "tests": [
     "test_serial.UsedIds.test_the_run_s_start_is_the_one_rule_of_every_reader"
    ]

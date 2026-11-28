@@ -21,7 +21,8 @@ written by ``ledger.append`` (the cycle's writer) with rows of ``ledger.schema``
 - ``used_ids`` (tohum/26p:76-80): the ids with both a ``decision`` merge row and a ``merge`` row since the last
   genesis row; either row alone, a reject and a planted merge name none; a revert or an end frees no id; a genesis
   row frees every id before it (``last_genesis``, the one function the harness's readers of a run's start read
-  too); a decision or merge row with ``proposed_by`` counts for nothing.
+  too); a genesis, decision or merge row with ``proposed_by`` counts for nothing (a proposed genesis row starts no
+  run for any of those readers).
 """
 
 from __future__ import annotations
@@ -289,19 +290,20 @@ class UsedIds(unittest.TestCase):
 
     def test_the_run_s_start_is_the_one_rule_of_every_reader(self):
         # ``last_genesis`` is the one function ``harness.revert_drill`` and ``harness.pass_row`` read too, and the
-        # used ids are those of the rows from it on, whatever the genesis row carries (which answer is right for
-        # a genesis row with ``proposed_by`` is not judged: only that the readers cannot differ)
+        # used ids are those of the rows from it on; a genesis row with ``proposed_by`` is a proposal (tohum/26d:25-26)
+        # and starts no run for any of them
         from harness import pass_row, revert_drill
 
         self.assertIs(revert_drill.serial.last_genesis, SE.last_genesis)
         self.assertIs(pass_row.serial.last_genesis, SE.last_genesis)
         self.assertFalse(hasattr(revert_drill, "last_genesis"))
-        for second in (genesis("g2"), dict(genesis("g2"), proposed_by="someone")):
+        for second, start, used in ((genesis("g2"), 4, {"c2"}),
+                                    (dict(genesis("g2"), proposed_by="someone"), 0, {"c1", "c2"})):
             rows = SE.rows(ledger_with([genesis("g"), *merged_rows("c1", M1), ended("e1", M1), second,
                                         *merged_rows("c2", M2)]))
-            since = SE.last_genesis(rows)
-            self.assertEqual(since, pass_row._last_genesis(rows))
-            self.assertEqual(SE.used_ids(rows), SE.used_ids(rows[since:]))
+            self.assertEqual((SE.last_genesis(rows), pass_row._last_genesis(rows)), (start, start))
+            self.assertEqual(SE.used_ids(rows), used)
+        self.assertIsNone(SE.last_genesis([dict(genesis("g"), proposed_by="someone")]))
 
     def test_a_proposed_row_counts_for_nothing(self):
         self.assertEqual(self.used(START, *merged_rows("c1", M1, proposed_by="someone")), set())

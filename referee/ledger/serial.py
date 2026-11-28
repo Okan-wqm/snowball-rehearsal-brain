@@ -50,10 +50,9 @@ merge of a target between two geneses): the ``candidate`` of every ``events``/``
 ``events``/``genesis`` row whose id an ``events``/``decision`` row of ``decision`` ``merge`` after that genesis
 names too (the page's two rows; ``ledger.events.decided`` writes them together). The last genesis is
 ``last_genesis``'s, the one rule of where a target's run starts (``harness.revert_drill`` and ``harness.pass_row``
-read the same function), and with no genesis row the whole of the rows is read. A decision or merge row with
-``proposed_by`` is a proposal and counts for nothing (tohum/26d, as ``harness.pass_row``'s held rows). Not
-judged, here or by the other two readers: whether a genesis row that itself carries ``proposed_by`` starts a run
-(``last_genesis`` reads part and kind; the three readers agree, and no test holds either answer as right). A reverted merge used its id as any other: the rule reads the two rows, not what followed.
+read the same function), and with no genesis row the whole of the rows is read. A genesis, decision
+or merge row with ``proposed_by`` is a proposal and counts for nothing (tohum/26d:25-26, as ``harness.pass_row``'s
+held rows): a proposed genesis row starts no run, for any of the three readers. A reverted merge used its id as any other: the rule reads the two rows, not what followed.
 It takes rows ``rows`` gave, so the schema check is its caller's.
 
 Out of scope, stated: whether a finisher's verdict is true (D7 writes it from a sentinel ``loop.watch`` verified;
@@ -174,10 +173,12 @@ def integration_tip(ledger: bytes) -> dict[str, str] | None:
 
 
 def last_genesis(rows: list[dict]) -> int | None:
-    """The index of the last ``events``/``genesis`` row of ``rows``, None when there is none: where a target's run
+    """The index of the last ``events``/``genesis`` row of ``rows`` without ``proposed_by`` (tohum/26d:25-26, 29: a
+    proposal enters no count and a genesis row is the referee's own), None when there is none: where a target's run
     starts, for every reader of "since the last genesis" (this module's ``used_ids``, ``harness.revert_drill``,
     ``harness.pass_row``)."""
-    found = [i for i, row in enumerate(rows) if _type(row) == GENESIS and isinstance(row.get("payload"), dict)]
+    found = [i for i, row in enumerate(rows)
+             if _type(row) == GENESIS and "proposed_by" not in row and isinstance(row.get("payload"), dict)]
     return found[-1] if found else None
 
 

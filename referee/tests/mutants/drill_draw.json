@@ -30,8 +30,8 @@
   {
    "id": "genesis_of_any_part",
    "file": "ledger/serial.py",
-   "old": "    found = [i for i, row in enumerate(rows) if _type(row) == GENESIS and isinstance(row.get(\"payload\"), dict)]",
-   "new": "    found = [i for i, row in enumerate(rows) if row.get(\"kind\") == \"genesis\"]",
+   "old": "             if _type(row) == GENESIS and \"proposed_by\" not in row and isinstance(row.get(\"payload\"), dict)]",
+   "new": "             if row.get(\"kind\") == \"genesis\" and \"proposed_by\" not in row]",
    "tests": [
     "test_drill_draw.Eligible.test_only_the_rows_after_the_last_genesis_count"
    ]
