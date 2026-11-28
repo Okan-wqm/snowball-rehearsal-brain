@@ -38,8 +38,9 @@ One run (rule `recorded`):
 5. `python3 tests/agent_run.py packet --agent <name> --base <last accepted SHA> --head <the commit's SHA> --out
    <a new directory outside the brain>`. The packet is the whole of what the agent is given: the diff and its
    paths, every lesson in force, whole, and the agent's memory, the findings of its earlier runs that were
-   refused, are carried or are not judged yet (rule `remembers`). Only an agent the capsule loaded for this
-   session has a packet.
+   refused, are carried or are not judged yet (rule `remembers`), and `open.json`, every `blocked` row no
+   later row closes, whole (rule `informed`: the diff leaves the ledger out, so what the Founder holds open
+   reaches the agent only so). Only an agent the capsule loaded for this session has a packet.
 6. Start the agent with the Agent tool: the type `brain:<name>`, a stated effort, and the bytes of the
    packet's `message.txt` as the whole prompt, nothing added. No other type of agent is started, and no agent
    is started with a prompt written by hand, and a running agent is sent no further text (`SendMessage`): such
@@ -78,7 +79,10 @@ failed. A refuted `improves` closes the design: the sha256 of every rules file i
 (`rules_sha256` in their rows) goes into the file's `designs` with the rows that recorded which rule
 closed it and on what numbers, so the next design is judged against that one and its refutation stays readable. The first
 design (the runs before any rule are design 0) was closed so: caught findings a run and tokens per caught
-finding followed what each push held, not the rules.
+finding followed what each push held, not the rules. The second was closed on a higher missed share (row
+f2210): its one miss was a test that held a behaviour the session's own `blocked` row listed as against a
+page, and the third design gives each run that list (`informed`, refuted by a run of the design in force whose
+row carries no `open_sha256`; such a run is made again from a packet of the tool).
 
 What these rules do not reach, stated: an agent whose task is no diff has no packet form yet; a run's cost is
 the launcher's derived figure, known a session later and only for a run the mirror can cost (of two runs of

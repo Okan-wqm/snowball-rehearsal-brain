@@ -51,7 +51,10 @@ What it does, each rule bound by ``tests/test_agent_rules.py``:
      all findings is higher, else ``refuted``. A side with nothing to divide by shows neither higher nor lower
      on that share. Whether the tokens per ``caught`` finding are fewer is observed beside them and decides
      nothing.
-   The last three are judged for each agent (a name with runs and no definition is not judged by them: its
+   - ``open_given``: over each agent's runs of the design in force (``agent_run.design_of``: under the rules
+     and of no closed design), ``not_due`` with none, ``refuted`` when one carries no ``open_sha256`` (its
+     packet held no open list; the runs are listed), else ``held``.
+   The last four are judged for each agent (a name with runs and no definition is not judged by them: its
    definition was removed). A rule over several agents is ``refuted`` when one agent refutes it, ``not_due``
    when every agent is (or there is none), else ``held``.
 4. **The log** (``calls``) is the session's transcript, JSON Lines: each line with ``type`` ``assistant`` whose
@@ -77,7 +80,10 @@ here (the cost in money is in the rows of ``agent_run.py cost``, and ``earns`` r
 from one side only: see that tool's docstring); rework is not measured, and the comparison of sessions with and
 without an agent (E692's third condition) is not here. That a design was closed when it was refuted is the
 session's act: nothing here closes one, and ``recorded_in`` is checked to name rows, not what they say (which
-rule closed a design is in those rows and nowhere in the file).
+rule closed a design is in those rows and nowhere in the file). ``open_given`` reads that a run's row carries
+the sha256 of an open list, which ``agent_run.py record`` copies from the packet it pinned; that the agent read
+the list, or that the list named the defect a later judge found, is not read here: whether the list helps is
+``improves``' comparison of the design that carries it with the one before.
 """
 
 from __future__ import annotations
@@ -280,8 +286,21 @@ def improves(ctx: dict) -> tuple[str, dict]:
     return _each(ctx, judge)
 
 
+def open_given(ctx: dict) -> tuple[str, dict]:
+    seen = {}
+    for name in ctx["agents"]:
+        now = {row_id: run for row_id, run in ctx["runs"][name].items()
+               if A.design_of(run, ctx["closed"]) == len(ctx["closed"]) + 1}
+        without = [row_id for row_id, run in now.items() if run["open_sha256"] is None]
+        seen[name] = {"state": NOT_DUE if not now else REFUTED if without else HELD, "runs": len(now),
+                      "without": without}
+    states = [o["state"] for o in seen.values()]
+    return (REFUTED if REFUTED in states else HELD if HELD in states else NOT_DUE), seen
+
+
 CHECKS = {"definitions": definitions, "calls_are_rows": calls_are_rows, "no_unjudged_left": no_unjudged_left,
-          "outcomes_known": outcomes_known, "repeats_rare": repeats_rare, "earns": earns, "improves": improves}
+          "outcomes_known": outcomes_known, "repeats_rare": repeats_rare, "earns": earns, "improves": improves,
+          "open_given": open_given}
 
 
 def judge(root: str, data: bytes, log: str | None) -> list[dict]:

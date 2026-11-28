@@ -684,6 +684,69 @@
    "tests": [
     "test_agent_rules.py"
    ]
+  },
+  {
+   "id": "open_given_reads_every_design",
+   "file": "tests/agent_rules.py",
+   "old": "if A.design_of(run, ctx[\"closed\"]) == len(ctx[\"closed\"]) + 1}",
+   "new": "if A.design_of(run, ctx[\"closed\"]) >= 1}",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "open_given_reads_runs_before_the_rules",
+   "file": "tests/agent_rules.py",
+   "old": "if A.design_of(run, ctx[\"closed\"]) == len(ctx[\"closed\"]) + 1}",
+   "new": "if A.design_of(run, ctx[\"closed\"]) in (0, len(ctx[\"closed\"]) + 1)}",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "open_given_never_refutes",
+   "file": "tests/agent_rules.py",
+   "old": "NOT_DUE if not now else REFUTED if without else HELD, \"runs\"",
+   "new": "NOT_DUE if not now else HELD, \"runs\"",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "open_given_held_without_a_run",
+   "file": "tests/agent_rules.py",
+   "old": "NOT_DUE if not now else REFUTED if without else HELD, \"runs\"",
+   "new": "REFUTED if without else HELD, \"runs\"",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "open_given_run_with_the_list_refutes",
+   "file": "tests/agent_rules.py",
+   "old": "if run[\"open_sha256\"] is None]",
+   "new": "if run[\"open_sha256\"] is not None]",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "open_given_one_agent_holding_hides_another",
+   "file": "tests/agent_rules.py",
+   "old": "    states = [o[\"state\"] for o in seen.values()]\n    return (REFUTED if REFUTED in states else HELD if HELD in states else NOT_DUE), seen",
+   "new": "    states = [o[\"state\"] for o in seen.values()]\n    return (HELD if HELD in states else REFUTED if REFUTED in states else NOT_DUE), seen",
+   "tests": [
+    "test_agent_rules.py"
+   ]
+  },
+  {
+   "id": "open_given_has_no_check",
+   "file": "tests/agent_rules.py",
+   "old": "\"earns\": earns, \"improves\": improves,\n          \"open_given\": open_given}",
+   "new": "\"earns\": earns, \"improves\": improves}",
+   "tests": [
+    "test_agent_rules.py"
+   ]
   }
  ]
 }

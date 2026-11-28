@@ -661,7 +661,7 @@
   {
    "id": "packet_of_other_keys_taken",
    "file": "tests/agent_run.py",
-   "old": "if sorted(doc) != sorted(PACKET_KEYS2):",
+   "old": "if sorted(doc) != sorted(PACKET_KEYS3):",
    "new": "if False:",
    "tests": [
     "test_agent_run.py"
@@ -670,8 +670,8 @@
   {
    "id": "old_form_with_the_rules_fields",
    "file": "tests/agent_run.py",
-   "old": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS2)[form - 1] if k != \"tools\"]",
-   "new": "carried = [k for k in (PACKET_KEYS2, PACKET_KEYS2)[form - 1] if k != \"tools\"]",
+   "old": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS3 if with_open else PACKET_KEYS2)[form - 1] if k != \"tools\"]",
+   "new": "carried = [k for k in (PACKET_KEYS2, PACKET_KEYS3 if with_open else PACKET_KEYS2)[form - 1] if k != \"tools\"]",
    "tests": [
     "test_agent_run.py"
    ]
@@ -679,8 +679,8 @@
   {
    "id": "new_form_without_the_rules_fields",
    "file": "tests/agent_run.py",
-   "old": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS2)[form - 1] if k != \"tools\"]",
-   "new": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS)[form - 1] if k != \"tools\"]",
+   "old": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS3 if with_open else PACKET_KEYS2)[form - 1] if k != \"tools\"]",
+   "new": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS3 if with_open else PACKET_KEYS)[form - 1] if k != \"tools\"]",
    "tests": [
     "test_agent_run.py"
    ]
@@ -1401,6 +1401,114 @@
    "file": "tests/agent_run.py",
    "old": "        calls = [made[i] for i in near[row_id]]\n",
    "new": "        calls = sorted((made[i] for i in near[row_id]), key=lambda m: abs(m[\"wall_ms\"] - run[\"wall_ms\"]))[:1]\n",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "packet_without_the_open_list_read",
+   "file": "tests/agent_run.py",
+   "old": "if sorted(doc) != sorted(PACKET_KEYS3):",
+   "new": "if sorted(doc) != sorted(PACKET_KEYS3) and sorted(doc) != sorted(PACKET_KEYS2):",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "open_list_one_key_is_enough",
+   "file": "tests/agent_run.py",
+   "old": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS3 if with_open else PACKET_KEYS2)[form - 1] if k != \"tools\"]",
+   "new": "carried = [k for k in (PACKET_KEYS, PACKET_KEYS2)[form - 1] if k != \"tools\"] + [k for k in OPEN_KEYS if k in fields]",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "open_list_not_pinned",
+   "file": "tests/agent_run.py",
+   "old": "          (\"open.json\", \"open_sha256\"), (\"message.txt\", \"message_sha256\"))",
+   "new": "          (\"message.txt\", \"message_sha256\"))",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "open_list_of_the_lessons",
+   "file": "tests/agent_run.py",
+   "old": "digest, rows = LR.in_force(index, ledger, OPEN_FOLD)",
+   "new": "digest, rows = LR.in_force(index, ledger)",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "open_list_of_a_moved_ledger",
+   "file": "tests/agent_run.py",
+   "old": "        raise Fault(\"open:ledger_moved\")\n    lines",
+   "new": "        pass\n    lines",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "open_list_line_not_checked_for_the_row",
+   "file": "tests/agent_run.py",
+   "old": "if row[\"row_id\"] != r[\"row_id\"] or row[\"kind\"] != \"blocked\":",
+   "new": "if row[\"kind\"] != \"blocked\":",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "open_list_line_of_another_kind",
+   "file": "tests/agent_run.py",
+   "old": "if row[\"row_id\"] != r[\"row_id\"] or row[\"kind\"] != \"blocked\":",
+   "new": "if row[\"row_id\"] != r[\"row_id\"]:",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "open_list_line_counted_from_the_end",
+   "file": "tests/agent_run.py",
+   "old": "            if r[\"line\"] < 1:\n                raise IndexError\n            row = json.loads(lines",
+   "new": "            row = json.loads(lines",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "open_list_summary_cut",
+   "file": "tests/agent_run.py",
+   "old": "out.append({\"row_id\": r[\"row_id\"], \"summary\": row[\"payload\"][\"summary\"]})",
+   "new": "out.append({\"row_id\": r[\"row_id\"], \"summary\": row[\"payload\"][\"summary\"][:1000]})",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "open_list_count_of_the_lessons",
+   "file": "tests/agent_run.py",
+   "old": "           \"open\": len(given[\"open.json\"])}",
+   "new": "           \"open\": len(given[\"lessons.json\"])}",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "run_forgets_its_open_list",
+   "file": "tests/agent_run.py",
+   "old": "\"open_sha256\": fields.get(\"open_sha256\"),",
+   "new": "\"open_sha256\": None,",
+   "tests": [
+    "test_agent_run.py"
+   ]
+  },
+  {
+   "id": "message_without_the_open_list",
+   "file": "tests/agent_run.py",
+   "old": "- open.json: what the Founder",
+   "new": "open.json: what the Founder",
    "tests": [
     "test_agent_run.py"
    ]

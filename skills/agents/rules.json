@@ -15,6 +15,16 @@
     "f2094",
     "f2108"
    ]
+  },
+  {
+   "design": 2,
+   "rules_sha256": [
+    "3acacc953d8fa6f258ef0d885df6a01fe4eb1e9929727311df7ce2510b9c5cea",
+    "ffde05720c2a774bf2c3dff847ce990b450670a0fad1fe5bd4caa5ffa8680db0"
+   ],
+   "recorded_in": [
+    "f2210"
+   ]
   }
  ],
  "rules": [
@@ -27,7 +37,7 @@
   {
    "id": "recorded",
    "check": "calls_are_rows",
-   "says": "An agent is started only as brain:<name>, with the message tests/agent_run.py packet wrote and nothing else, so what it was given (the task, the scope, the lessons in force, its own memory) is in the packet, and each run has one row that names that message by its sha256.",
+   "says": "An agent is started only as brain:<name>, with the message tests/agent_run.py packet wrote and nothing else, so what it was given (the task, the scope, the lessons in force, its own memory, what the Founder holds open) is in the packet, and each run has one row that names that message by its sha256.",
    "expects": "In the session's log, every Agent or Task call is of a brain:<name> type and its prompt is the message of one run row of that agent written in this session, one row a call. A call with no row (a run under another type, a prompt written by hand, a run not recorded, a row of an earlier session, a call an agent made itself) refutes it, and so does a text sent to an agent with SendMessage."
   },
   {
@@ -58,7 +68,13 @@
    "id": "improves",
    "check": "improves",
    "says": "The rules are a design, and a design is kept only while the runs under it are better than the runs under the design before it (tohum/00e E697, condition 3). A design the runs refuted is closed in this file's designs with the rows that recorded it, and its runs become the next design's comparison. Better is read from what does not follow the size of a push: the share of defects the later judge found in a run's diff among those and the ones the run caught, and the share of findings that were caught.",
-   "expects": "After five sessions whose runs under the design in force have an accepted or rejected outcome, against the design before it the missed share (missed over caught plus missed, in the runs with such an outcome) is not higher, and either it is lower or the caught share of all findings is higher. Anything else refutes it: that is recorded, the design is closed in designs, and the rules are designed again. Caught findings a run and tokens per caught finding follow what a push holds and decide nothing (the first design was closed on them: rows f2081, f2083, f2094, f2108); the cost is the rule earns' and the repeats are the rule remembers'."
+   "expects": "After five sessions whose runs under the design in force have an accepted or rejected outcome, against the design before it the missed share (missed over caught plus missed, in the runs with such an outcome) is not higher, and either it is lower or the caught share of all findings is higher. Anything else refutes it: that is recorded, the design is closed in designs, and the rules are designed again. Caught findings a run and tokens per caught finding follow what a push holds and decide nothing (the first design was closed on them: rows f2081, f2083, f2094, f2108; the second on a higher missed share, one miss among 25 against one among 29: row f2210); the cost is the rule earns' and the repeats are the rule remembers'."
+  },
+  {
+   "id": "informed",
+   "check": "open_given",
+   "says": "A push is read against what its writer knows is open. The diff leaves the founder ledger out, as the rival's does, so the packet carries open.json: every blocked row no later row closes, whole, and the message tells the agent to read each new or changed test, docstring and comment against it. The second design was closed on a defect of that kind: a test that held a behaviour the session's own blocked row listed as against a page (rows f2198, f2202, f2208, f2210).",
+   "expects": "Every run of the design in force has a row that carries open_sha256, the sha256 of the open.json its packet pinned. A run of the design in force without it refutes the rule: the packet was not this tool's, and the run is made again from one. That the list lowers what the later judge finds is not this rule's: it is improves' comparison of this design with the one before it."
   }
  ]
 }

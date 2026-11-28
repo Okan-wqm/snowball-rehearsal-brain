@@ -119,9 +119,9 @@ class Load(Base):
         with self.faults("check_without_rule"):
             R.load(self.root)
 
-    def test_the_checks_are_these_seven(self):
+    def test_the_checks_are_these_eight(self):
         self.assertEqual(sorted(R.CHECKS), ["calls_are_rows", "definitions", "earns", "improves", "no_unjudged_left",
-                                            "outcomes_known", "repeats_rare"])
+                                            "open_given", "outcomes_known", "repeats_rare"])
 
 
 class Definitions(Base):
@@ -526,6 +526,45 @@ class Improves(Base):
         self.assertEqual(self.state("improves")[0], "not_due")
 
 
+class OpenGiven(Base):
+    def without(self) -> str:
+        """A run under the rules whose row carries no open list, as the runs before the third design."""
+        return self.row("build", A.summary(TA.PACK2, run_file(finding(1, A.CAUGHT, "t"))),
+                        ["agents/one.md", "agent_run:one"])
+
+    def test_an_agent_with_no_run_of_the_design_in_force_is_not_due(self):
+        self.assertEqual(self.state("open_given"), ("not_due", {"one": {"state": "not_due", "runs": 0,
+                                                                         "without": []}}))
+        self.old_run(run_file(old_finding(1, A.CAUGHT, "t")))  # before the rules: of design 0
+        self.assertEqual(self.state("open_given")[0], "not_due")
+
+    def test_a_run_from_a_packet_holds_and_a_run_whose_row_carries_no_open_list_refutes(self):
+        run = self.run_under(finding(1, A.CAUGHT, "t"))
+        self.assertIsNotNone(A.runs(self.data, "one")[run]["open_sha256"])
+        self.assertEqual(self.state("open_given"), ("held", {"one": {"state": "held", "runs": 1, "without": []}}))
+        bare = self.without()
+        self.assertEqual(self.state("open_given"), ("refuted", {"one": {"state": "refuted", "runs": 2,
+                                                                         "without": [bare]}}))
+
+    def test_a_run_of_a_closed_design_is_not_judged(self):
+        bare = self.without()
+        self.assertEqual(self.state("open_given")[1]["one"]["without"], [bare])
+        self.write_rules([rule(check) for check in R.CHECKS], designs=[TA.design(1, TA.PACK2["rules_sha256"])])
+        self.assertEqual(self.state("open_given"), ("not_due", {"one": {"state": "not_due", "runs": 0,
+                                                                         "without": []}}))
+        self.run_under(finding(1, A.CAUGHT, "t"))
+        self.assertEqual(self.state("open_given")[0], "held")
+
+    def test_one_agent_refuting_refutes_the_rule(self):
+        self.agent(GOOD.replace(b"name: one", b"name: two"), "two")
+        self.assertEqual(self.state("open_given")[0], "not_due")
+        self.run_under(finding(1, A.CAUGHT, "t"))
+        self.assertEqual(self.state("open_given")[0], "held")
+        self.row("build", A.summary(dict(TA.PACK2, agent="two"), run_file()), ["agents/two.md", "agent_run:two"])
+        state, seen = self.state("open_given")
+        self.assertEqual((state, seen["one"]["state"], seen["two"]["state"]), ("refuted", "held", "refuted"))
+
+
 class Main(Base):
     def main(self, *argv: str, logs: str | None = None) -> tuple[int, dict]:
         buf = io.StringIO()
@@ -542,7 +581,7 @@ class Main(Base):
         self.assertEqual({r["check"]: r["state"] for r in out["rules"]}, {
             "definitions": "held", "calls_are_rows": "not_due", "no_unjudged_left": "held",
             "outcomes_known": "not_due",
-            "repeats_rare": "not_due", "earns": "not_due", "improves": "not_due"})
+            "repeats_rare": "not_due", "earns": "not_due", "improves": "not_due", "open_given": "not_due"})
         self.assertEqual(out["rules"], R.judge(self.root, self.data, None))
 
     def test_a_refuted_rule_is_exit_1(self):
@@ -590,8 +629,23 @@ class Brain(unittest.TestCase):
         rules = R.load(ROOT)
         self.assertEqual(sorted(r["check"] for r in rules), sorted(R.CHECKS))
 
+    def test_the_second_design_is_closed_with_the_rules_files_of_its_runs_and_the_row_that_refuted_it(self):
+        first, second = A.designs(ROOT)
+        self.assertEqual(second["recorded_in"], ["f2210"])
+        with open(os.path.join(ROOT, A.LEDGER), "rb") as f:
+            data = f.read()
+        (name,) = R.tagged(data)[1]
+        found = [r for r in A.runs(data, name).values()
+                 if "2026-11-24T02:32:34Z" <= r["ts"] < "2026-11-28T02:43:54Z"]
+        self.assertEqual(sorted({r["rules_sha256"] for r in found}), sorted(second["rules_sha256"]))
+        self.assertTrue(found and all(r["open_sha256"] is None for r in found))
+        informed = {r["id"]: r for r in R.load(ROOT)}["informed"]
+        self.assertEqual(informed["check"], "open_given")
+        for text in (informed["says"], informed["expects"]):
+            self.assertIn("open", text)
+
     def test_the_first_design_is_closed_with_the_rules_files_of_its_runs_and_the_rows_that_refuted_it(self):
-        (first,) = A.designs(ROOT)
+        first, _ = A.designs(ROOT)
         self.assertEqual(first["recorded_in"], ["f2081", "f2083", "f2094", "f2108"])
         with open(os.path.join(ROOT, A.LEDGER), "rb") as f:
             data = f.read()

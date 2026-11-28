@@ -39,12 +39,18 @@ The rules, each bound by ``tests/test_agent_run.py``:
    - ``memory.json``: the findings of this agent's earlier runs (rule 6) that are not ``caught`` and carry no
      ``repeat_of``, as each was last read, in ledger order, each with ``id`` (``<the run's row id>#<n>``) in
      place of ``n``;
+   - ``open.json``: ``{row_id, summary}`` of every ``blocked`` row of ``--ledger`` that no later row closes
+     (the index's answer to ``OPEN_FOLD``), the summary whole, oldest first: what the Founder holds open, which
+     the diff does not carry (the ledger is outside it). An index that read other bytes than the ledger's
+     (``open:ledger_moved``) or names a line that is not that ``blocked`` row (``open:line_is_not_the_row:<row
+     id>``) is a fault;
    - ``message.txt``: ``MESSAGE`` with the directory's absolute path, the text the session gives the agent as
      its whole prompt;
    - ``packet.json``: ``agent``, ``model``, ``tools``, ``definition_sha256``, ``base``, ``head``,
-     ``diff_sha256``, ``bytes``, ``files``, ``rules_sha256`` (of the rules file's bytes), ``lessons`` and
-     ``memory`` (the counts of the two lists), and ``lessons_sha256``, ``memory_sha256`` and ``message_sha256``
-     (of the bytes of ``lessons.json``, ``memory.json`` and ``message.txt``).
+     ``diff_sha256``, ``bytes``, ``files``, ``rules_sha256`` (of the rules file's bytes), ``lessons``,
+     ``memory`` and ``open`` (the counts of the three lists), and ``lessons_sha256``, ``memory_sha256``,
+     ``open_sha256`` and ``message_sha256`` (of the bytes of ``lessons.json``, ``memory.json``, ``open.json``
+     and ``message.txt``).
    It prints ``packet.json``'s object with ``out``. A fault writes nothing.
 4. **The run file** is a JSON object the session writes after the run, with exactly the keys ``invoked_as``
    (text: the agent type the Agent tool was given), ``model_served`` (text: the model as the session saw it
@@ -60,7 +66,8 @@ The rules, each bound by ``tests/test_agent_run.py``:
    this one says again). A count is an integer of 0 or more, not a boolean; a text is a string that is not
    empty. An **amending file** has exactly ``amends`` (``f<n>``) and ``findings``.
 5. **record** with ``--packet`` reads ``packet.json`` (exactly rule 3's keys) and the run file, refuses when
-   the sha256 of ``diff.patch``, ``lessons.json``, ``memory.json`` or ``message.txt`` is no longer the packet's
+   the sha256 of ``diff.patch``, ``lessons.json``, ``memory.json``, ``open.json`` or ``message.txt`` is no
+   longer the packet's
    (``<file's name before the dot>_changed``), and appends one row through ``ledger.founder``
    (``next_row`` and ``append``, the one writer): kind ``build``, the defaults ``llm_inference`` and
    ``inferred`` (the verdicts are the session's judgement), refs ``agents/<name>.md`` and ``agent_run:<name>``,
@@ -79,7 +86,8 @@ The rules, each bound by ``tests/test_agent_run.py``:
    extend are faults; the file is left as it was.
 6. **measure** folds the ledger's rows that carry the ref ``agent_run:<name>``, in file order. Such a row whose
    summary is not a form below is a fault, never skipped. ``agent_run/2 `` and one JSON object: either
-   ``agent``, ``amends`` and ``findings`` by rule 4, or every field of rule 3's packet but ``tools`` and beside
+   ``agent``, ``amends`` and ``findings`` by rule 4, or every field of rule 3's packet but ``tools`` (``open`` and
+   ``open_sha256`` both or neither: the runs before the packet held the open list carry neither) and beside
    them a run file by rule 4 and no other key, or a cost row by rule 7, or an outcome row by rule 9.
    ``agent_run/1 `` and one JSON object, the form of the runs before the rules, still read and no longer written: the packet's first nine fields but ``tools``, and beside them
    the run file's keys with ``effort`` and ``tokens`` null too under a ``not_measured``, findings without
@@ -252,8 +260,11 @@ FINDING_KEYS = ("n", "class", "claim", "ref", "verdict", "evidence")
 ROW_ID = re.compile(r"f[1-9][0-9]*")
 PACKET_KEYS2 = (*PACKET_KEYS, "rules_sha256", "lessons", "lessons_sha256", "memory", "memory_sha256",
                 "message_sha256")
+OPEN_KEYS = ("open", "open_sha256")
+PACKET_KEYS3 = (*PACKET_KEYS2, *OPEN_KEYS)
+OPEN_FOLD = ("unclosed", "--kinds", "blocked", "--tag", "closes", "--order", "oldest")
 PINNED = (("diff.patch", "diff_sha256"), ("lessons.json", "lessons_sha256"), ("memory.json", "memory_sha256"),
-          ("message.txt", "message_sha256"))
+          ("open.json", "open_sha256"), ("message.txt", "message_sha256"))
 FINDING_KEYS2 = (*FINDING_KEYS, "carried_in", "repeat_of")
 AMEND_KEYS = ("agent", "amends", "findings")
 REPORT = re.compile(r"reports/[^/]+\.json")
@@ -276,7 +287,7 @@ MISS_KEYS = ("reason", "claim", "in_diff", "lesson")
 DESIGN_KEYS = ("design", "rules_sha256", "recorded_in")
 RULES = "skills/agents/rules.json"
 LOADED = "/work/logs/brain-definitions.json"
-GIVEN = ("diff.patch", "paths.txt", "packet.json", "lessons.json", "memory.json")
+GIVEN = ("diff.patch", "paths.txt", "packet.json", "lessons.json", "memory.json", "open.json")
 MESSAGE = """%s
 
 That directory is your packet. It holds:
@@ -288,7 +299,11 @@ made here before, not evidence: look for its class in the change.
 - memory.json: the findings of your earlier runs that were refused (false_alarm, with the reason), that are true \
 and kept open elsewhere (carried, with the place), or that are not judged yet. Do not report one of them again. Only \
 when this change itself makes one newly wrong, report it and give its "id" from memory.json as "repeat_of" in the \
-finding."""
+finding.
+- open.json: what the Founder who wrote this change holds open, whole: each row lists work not built yet, often \
+with the page and lines it is owed to. The diff does not show these rows. Read each new or changed test, docstring \
+and comment of the change against them: one that holds as right, or promises as kept, a behaviour a row lists as \
+open or as against a page is a finding (class "page" when the row names the page, else "promise")."""
 
 
 class Fault(Exception):
@@ -374,6 +389,30 @@ def lessons(index: str, ledger: str, data: bytes) -> list[dict]:
     return [{"row_id": r["row_id"], "summary": json.loads(lines[r["line"] - 1])["payload"]["summary"]} for r in rows]
 
 
+def open_rows(index: str, ledger: str, data: bytes) -> list[dict]:
+    """Rule 3: ``{row_id, summary}`` of each ``blocked`` row of ``data``, the ledger's bytes, that no row closes,
+    oldest first, by the capsule's index (``OPEN_FOLD``; the one reader of the closing rule)."""
+    try:
+        digest, rows = LR.in_force(index, ledger, OPEN_FOLD)
+    except LR.Fault as e:
+        raise Fault("open:%s" % e) from None
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise Fault("open:ledger_moved")
+    lines = data.split(b"\n")
+    out = []
+    for r in rows:
+        try:
+            if r["line"] < 1:
+                raise IndexError
+            row = json.loads(lines[r["line"] - 1].decode("utf-8"))
+            if row["row_id"] != r["row_id"] or row["kind"] != "blocked":
+                raise KeyError
+            out.append({"row_id": r["row_id"], "summary": row["payload"]["summary"]})
+        except (IndexError, ValueError, KeyError, TypeError):
+            raise Fault("open:line_is_not_the_row:%s" % r["row_id"]) from None
+    return out
+
+
 def memory(data: bytes, name: str) -> list[dict]:
     """Rule 3: the findings of ``name``'s runs in ``data`` that are not ``caught`` and are no repeat, as each
     was last read, in file order: ``id`` (``<run's row id>#<n>``) and the finding's fields without ``n``."""
@@ -395,7 +434,8 @@ def packet(root: str, name: str, base: str, head: str, out: str, git: str = "git
             rows = f.read()
     except OSError:
         raise Fault("no_rules_or_ledger") from None
-    given = {"lessons.json": lessons(index, ledger, rows), "memory.json": memory(rows, name)}
+    given = {"lessons.json": lessons(index, ledger, rows), "memory.json": memory(rows, name),
+             "open.json": open_rows(index, ledger, rows)}
     files = {k: (json.dumps(v, ensure_ascii=False, indent=1) + "\n").encode() for k, v in given.items()}
     real, top = os.path.realpath(out), os.path.realpath(root)
     if real == top or real.startswith(top + os.sep):
@@ -410,7 +450,8 @@ def packet(root: str, name: str, base: str, head: str, out: str, git: str = "git
     doc = {"agent": name, "model": agent["model"], "tools": agent["tools"], "definition_sha256": agent["sha256"],
            "base": base, "head": head, "bytes": len(diff),
            "files": len(names), "rules_sha256": hashlib.sha256(rules).hexdigest(),
-           "lessons": len(given["lessons.json"]), "memory": len(given["memory.json"])}
+           "lessons": len(given["lessons.json"]), "memory": len(given["memory.json"]),
+           "open": len(given["open.json"])}
     files["message.txt"] = (MESSAGE % os.path.abspath(out)).encode()
     files["diff.patch"] = diff
     for file, key in PINNED:
@@ -659,7 +700,7 @@ def cost(name: str, path: str, ledger: str, snapshot: str, ts: str, kinds: froze
 def read_packet(directory: str) -> dict:
     """Rule 5: ``packet.json`` of ``directory``, each file of ``PINNED`` still the one it names."""
     doc = _load(os.path.join(directory, "packet.json"), "packet_unreadable")
-    if sorted(doc) != sorted(PACKET_KEYS2):
+    if sorted(doc) != sorted(PACKET_KEYS3):
         raise Fault("packet_unreadable")
     for file, key in PINNED:
         try:
@@ -751,7 +792,7 @@ def _write(name: str, text: str, ledger: str, data: bytes, snapshot: str, ts: st
 
 def runs(data: bytes, name: str) -> dict[str, dict]:
     """Rule 6: ``name``'s runs in the ledger's bytes by row id, each ``{session, form, ts, message_sha256,
-    rules_sha256, findings, cost, outcome, tokens, cost_usd_micros, wall_ms}`` with the findings of the last row
+    rules_sha256, open_sha256 (null in a run whose packet held no open list), findings, cost, outcome, tokens, cost_usd_micros, wall_ms}`` with the findings of the last row
     that amends it and, as ``cost`` and ``outcome``, the object of its last cost row and of its last outcome row
     or none (``ts`` is the row's; ``message_sha256`` and ``rules_sha256`` are null in a run of the form
     ``agent_run/1``)."""
@@ -788,6 +829,7 @@ def runs(data: bytes, name: str) -> dict[str, dict]:
         else:
             runs[row_id] = {"session": session, "form": form, "ts": ts, "cost": None, "cost_usd_micros": None,
                             "outcome": None, "rules_sha256": fields.get("rules_sha256"),
+                            "open_sha256": fields.get("open_sha256"),
                             "message_sha256": fields.get("message_sha256"), "findings": fields["findings"], **sums}
     return runs
 
@@ -811,7 +853,8 @@ def _fields(text, name: str) -> tuple[int, dict]:
     if form == 2 and "outcome_of" in fields:
         check_outcome(fields)
         return form, fields
-    carried = [k for k in (PACKET_KEYS, PACKET_KEYS2)[form - 1] if k != "tools"]
+    with_open = any(k in fields for k in OPEN_KEYS)
+    carried = [k for k in (PACKET_KEYS, PACKET_KEYS3 if with_open else PACKET_KEYS2)[form - 1] if k != "tools"]
     if any(k not in fields for k in carried):
         raise ValueError
     (check_run, check_run2)[form - 1]({k: v for k, v in fields.items() if k not in carried})

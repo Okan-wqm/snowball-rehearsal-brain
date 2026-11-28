@@ -87,8 +87,8 @@ class Fault(Exception):
     """An input this tool cannot read as its rules say; the message is the reason."""
 
 
-def _page(index: str, ledger: str, more: list[str]) -> tuple[dict, list[dict]]:
-    argv = [sys.executable, "-I", index, *FOLD, "--ledger", ledger, *more]
+def _page(index: str, ledger: str, more: list[str], fold: tuple[str, ...] = FOLD) -> tuple[dict, list[dict]]:
+    argv = [sys.executable, "-I", index, *fold, "--ledger", ledger, *more]
     try:
         proc = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True)
     except OSError as e:
@@ -107,13 +107,14 @@ def _page(index: str, ledger: str, more: list[str]) -> tuple[dict, list[dict]]:
     return head, rows
 
 
-def in_force(index: str = INDEX, ledger: str = F.LEDGER) -> tuple[str, list[dict]]:
-    """Rule 1: the sha256 of the ledger the index read and its lessons in force, ``{row_id, line}``, oldest first."""
+def in_force(index: str = INDEX, ledger: str = F.LEDGER, fold: tuple[str, ...] = FOLD) -> tuple[str, list[dict]]:
+    """Rule 1: the sha256 of the ledger the index read and its lessons in force, ``{row_id, line}``, oldest first.
+    ``fold`` is the index's query; with another one (``agent_run.OPEN_FOLD``) the rows are that query's."""
     out: list[dict] = []
     more: list[str] = []
     digest = None
     while True:
-        head, rows = _page(index, ledger, more)
+        head, rows = _page(index, ledger, more, fold)
         if digest not in (None, head.get("sha256")):
             raise Fault("ledger_moved")
         digest = head.get("sha256")

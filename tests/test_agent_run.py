@@ -29,15 +29,16 @@ GOOD = b"---\nname: one\ndescription: Reads a thing.\ntools: Read, Grep\nmodel: 
 # of these tests closes a lesson); the capsule's own index is not on the machine that runs this file.
 INDEX = """import hashlib, json, sys
 args = sys.argv[1:]
-assert args[:-2] == %r and args[-2] == "--ledger", args
+assert args[:-2] in %r and args[-2] == "--ledger", args
 data = open(args[-1], "rb").read()
 rows = [{"row_id": json.loads(line)["row_id"], "line": i} for i, line in enumerate(data.split(b"\\n")[:-1], 1)
-        if json.loads(line)["kind"] == "lesson"]
+        if json.loads(line)["kind"] == args[2]]
 print(json.dumps({"complete": True, "sha256": hashlib.sha256(data).hexdigest(), "count": len(rows),
                   "shown": len(rows), "next": None}))
 for row in rows:
     print(json.dumps(row))
 """
+FOLDS = [list(A.LR.FOLD), list(A.OPEN_FOLD)]
 ZERO = {"runs": 0, "sessions": 0, "findings": 0, "caught": 0, "false_alarm": 0, "unjudged": 0, "carried": 0,
         "repeats": 0, "tokens": 0, "tokens_unknown": 0, "cost_usd_micros": 0, "cost_unknown": 0, "wall_ms": 0,
         "caught_tokens_known": 0, "cost_floor_usd_micros": 0, "cost_floor_runs": 0, "outcome_none": 0,
@@ -80,7 +81,7 @@ class Base(TP.Base):
         self.agent(GOOD)
         self.loaded = self.load([{"name": "one", "model": "opus", "tools": ["Read", "Grep"], "sha256": "c" * 64},
                                  {"name": "two", "model": "opus", "tools": ["Read"], "sha256": "c" * 64}])
-        self.index = self.put("index.py", (INDEX % (list(A.LR.FOLD),)).encode())
+        self.index = self.put("index.py", (INDEX % (FOLDS,)).encode())
         self.out = os.path.join(self.tmp, "packet")
         self.ledger = os.path.join(self.tmp, "ledger.jsonl")
         self.data = b""
@@ -201,6 +202,7 @@ class Packet(Base):
             "agent": "one", "model": "opus", "tools": ["Read", "Grep"], "definition_sha256": "c" * 64,
             "base": "BASE", "head": "HEAD", "diff_sha256": hashlib.sha256(diff).hexdigest(), "bytes": len(diff),
             "files": 2, "rules_sha256": hashlib.sha256(self.rules).hexdigest(), "lessons": 0, "memory": 0,
+            "open": 0, "open_sha256": hashlib.sha256(b"[]\n").hexdigest(),
             "lessons_sha256": hashlib.sha256(b"[]\n").hexdigest(),
             "memory_sha256": hashlib.sha256(b"[]\n").hexdigest(),
             "message_sha256": hashlib.sha256(message).hexdigest()})
@@ -208,8 +210,8 @@ class Packet(Base):
         self.assertEqual(self.given("diff.patch"), diff)
         self.assertEqual(self.given("paths.txt"), b"a.py\nb/c.py\n")
         self.assertEqual(self.given("message.txt"), message)
-        self.assertEqual((self.given("packet.json"), self.given("lessons.json"), self.given("memory.json")),
-                         (doc, [], []))
+        self.assertEqual((self.given("packet.json"), self.given("lessons.json"), self.given("memory.json"),
+                          self.given("open.json")), (doc, [], [], []))
 
     def test_the_message_starts_with_the_directory_and_names_each_file_the_agent_is_given(self):
         os.chdir(self.tmp)
@@ -268,11 +270,51 @@ class Packet(Base):
         self.assertEqual(self.given("lessons.json"), [{"row_id": first, "summary": long},
                                                       {"row_id": second, "summary": "another"}])
 
+    def test_the_open_list_is_every_blocked_row_the_index_calls_unclosed_whole_and_oldest_first(self):
+        long = "open: " + "x" * 2000
+        first = self.row("blocked", long)
+        self.row("lesson", "a lesson", recheck="true")
+        second = self.row("blocked", "another")
+        doc = self.packet()
+        want = [{"row_id": first, "summary": long}, {"row_id": second, "summary": "another"}]
+        self.assertEqual((doc["open"], doc["lessons"], self.given("open.json")), (2, 1, want))
+        with open(os.path.join(self.out, "open.json"), "rb") as f:
+            self.assertEqual(doc["open_sha256"], hashlib.sha256(f.read()).hexdigest())
+        self.assertEqual(A.OPEN_FOLD, ("unclosed", "--kinds", "blocked", "--tag", "closes", "--order", "oldest"))
+        # the index decides which rows are closed: one it leaves out is not in the list
+        self.index = self.put("index-closed.py", (INDEX.replace('== args[2]]', '== args[2]][1:]')
+                                                  % (FOLDS,)).encode())
+        A.packet(self.root, "one", "BASE", "HEAD", self.out + "-2", self.git, self.loaded, self.index, self.ledger)
+        with open(os.path.join(self.out + "-2", "open.json"), "rb") as f:
+            self.assertEqual(json.load(f), want[1:])
+
+    def test_an_index_that_names_another_line_or_read_another_ledger_gives_no_open_list(self):
+        self.row("blocked", "open")
+        self.row("blocked", "open too")
+        self.row("lesson", "a lesson", recheck="true")
+        for change, reason in (('"line": i}', '"line": i - 1}'), "open:line_is_not_the_row:f[0-9]+"), \
+                (('"line": i}', '"line": i + 1}'), "open:line_is_not_the_row:f[0-9]+"), \
+                (('"line": i}', '"line": i - 5}'), "open:line_is_not_the_row:f[0-9]+"), \
+                (('"line": i}', '"line": 5 - i}'), "open:line_is_not_the_row:f[0-9]+"), \
+                (('== args[2]]', '== "lesson"]'), "open:line_is_not_the_row:f[0-9]+"), \
+                (('"line": i}', '"line": 99}'), "open:line_is_not_the_row:f[0-9]+"), \
+                (("hashlib.sha256(data)", 'hashlib.sha256(data + b"x")'), "open:ledger_moved"), \
+                (('"complete": True', '"complete": False'), "open:index_incomplete"):
+            only_open = INDEX.replace(*change)
+            self.assertNotEqual(only_open, INDEX)
+            # the lessons' query is answered as before, so the fault is the open list's
+            self.index = self.put("index-open.py", (
+                "import sys\nif sys.argv[3] == 'lesson':\n    exec(%r)\n    sys.exit(0)\n" % (INDEX % (FOLDS,))
+                + only_open % (FOLDS,)).encode())
+            with self.subTest(change=change), self.faults(reason):
+                self.packet()
+            self.assertFalse(os.path.exists(self.out))
+
     def test_without_the_index_the_rules_or_the_ledger_nothing_is_written(self):
         os.remove(self.index)
         with self.assertRaisesRegex(A.Fault, "^lessons:index_exit:[0-9]+$"):
             self.packet()
-        self.index = self.put("index.py", (INDEX % (list(A.LR.FOLD),)).encode())
+        self.index = self.put("index.py", (INDEX % (FOLDS,)).encode())
         os.remove(os.path.join(self.root, A.RULES))
         with self.faults("no_rules_or_ledger"):
             self.packet()
@@ -349,16 +391,24 @@ class Record(Base):
         text = row["payload"]["summary"]
         self.assertTrue(text.startswith("agent_run/2 {"))
         pack = A.read_packet(self.out)
-        self.assertEqual(sorted(pack), sorted(A.PACKET_KEYS2))
+        self.assertEqual(sorted(pack), sorted(A.PACKET_KEYS3))
+        self.assertEqual(A.PACKET_KEYS3, (*A.PACKET_KEYS2, "open", "open_sha256"))
+        with open(os.path.join(self.out, "packet.json"), "w") as f:  # a packet without the open list is not one
+            json.dump({k: v for k, v in pack.items() if k not in A.OPEN_KEYS}, f)
+        with self.faults("packet_unreadable"):
+            A.read_packet(self.out)
         del pack["tools"]
         self.assertEqual(json.loads(text[len("agent_run/2 "):]), {**pack, **run})
+        before = self.row("build", A.summary(PACK2, run_file()), ["agents/one.md", "agent_run:one"])
+        self.assertEqual([(k, r["open_sha256"]) for k, r in A.runs(self.data, "one").items()],
+                         [(row_id, pack["open_sha256"]), (before, None)])
         self.assertEqual(F.problems(self.data, F.spec_kinds()), [])
 
     def test_the_row_names_the_definitions_model_and_the_one_served_and_no_field_hides_another(self):
         self.record(run_file())
         fields = json.loads(json.loads(self.data.splitlines()[-1])["payload"]["summary"][len(A.FORM2):])
         self.assertEqual((fields["model"], fields["model_served"]), ("opus", "claude-opus-5-5"))
-        self.assertEqual(set(A.PACKET_KEYS2) & (set(A.RUN_KEYS) | set(A.AMEND_KEYS[1:])), set())
+        self.assertEqual(set(A.PACKET_KEYS3) & (set(A.RUN_KEYS) | set(A.AMEND_KEYS[1:])), set())
 
     def test_an_amending_row_carries_the_agent_the_run_it_names_and_the_findings(self):
         first = self.record(run_file(finding(1)))
@@ -436,7 +486,8 @@ class Record(Base):
 
     def test_a_file_the_agent_was_given_that_is_no_longer_the_packets_is_refused(self):
         self.packet()
-        self.assertEqual([file for file, _ in A.PINNED], ["diff.patch", "lessons.json", "memory.json", "message.txt"])
+        self.assertEqual([file for file, _ in A.PINNED], ["diff.patch", "lessons.json", "memory.json", "open.json",
+                                                            "message.txt"])
         for file, key in A.PINNED:
             path = os.path.join(self.out, file)
             with open(path, "rb") as f:
@@ -560,6 +611,9 @@ PACK = {"agent": "one", "model": "opus", "definition_sha256": "d" * 64, "base": 
         "diff_sha256": "e" * 64, "bytes": 1, "files": 1}
 PACK2 = {**PACK, "rules_sha256": "a" * 64, "lessons": 0, "memory": 0, "message_sha256": "b" * 64,
          "lessons_sha256": "e" * 64, "memory_sha256": "f" * 64}
+
+
+PACK3 = {**PACK2, "open": 0, "open_sha256": "c" * 64}
 
 
 def old_text(pack: dict, run: dict) -> str:
@@ -695,7 +749,11 @@ class Measure(Base):
 
     def test_a_tagged_row_under_the_rules_that_is_not_their_form_is_a_fault_never_skipped(self):
         self.assertEqual(self.readable(A.summary(PACK2, run_file(finding(1))))["under_rules"]["runs"], 1)
+        self.assertEqual(self.readable(A.summary(PACK3, run_file(finding(1))))["under_rules"]["runs"], 1)
         self.unreadable((
+            A.summary({k: v for k, v in PACK3.items() if k != "open"}, run_file()),
+            A.summary({k: v for k, v in PACK3.items() if k != "open_sha256"}, run_file()),
+            old_text({**PACK, "open": 0, "open_sha256": "a" * 64}, run_file()),
             "agent_run/2 not json", "agent_run/2 [1]", "agent_run/2 {}",
             A.summary(dict(PACK2, agent="two"), run_file()),
             A.summary({k: v for k, v in PACK2.items() if k != "diff_sha256"}, run_file()),
@@ -949,8 +1007,8 @@ class Outcome(Base):
         closed = self.row("lesson", "a lesson that was closed", recheck="true")
         lesson = self.row("lesson", "what was missed", recheck="true")
         every = self.index
-        self.index = self.put("index-closed.py", (INDEX.replace('== "lesson"]', '== "lesson"][1:]')
-                                                  % (list(A.LR.FOLD),)).encode())
+        self.index = self.put("index-closed.py", (INDEX.replace('== args[2]]', '== args[2]][1:]')
+                                                  % (FOLDS,)).encode())
         for named in (start, run, "f999", closed):
             with self.subTest(named=named), self.faults("lesson_not_in_force"):
                 self.outcome(answer(run, A.REJECTED, miss(True, lesson), miss(False, named)))
