@@ -69,3 +69,10 @@ hücreye de uygulanır ve hiçbir `spec.lint` bu hücreyi muaf tutmaz. "Bulgu ba
   Aşama 4 (`asama-4/07:29`: panelin TP'si `system_tp` vaka adayıdır; bunu o sayfa belirler): Aşama 1'in vaka
   kaynakları `human_fix` ve `mutation`dur (`asama-1/13a:11-13`).
 - Bulgu başı frenlerin anahtarları (seed-095) → P1 çıkış döneminde karar verildi (yukarıda, `26s`).
+
+**Vakanın grubu, devam** (seed-105; `26m:77-80`). Adlar vakanın aracının ekosistemininkidir; Aşama 1'in tek aracı
+`eslint`'tir (`29za:25`). İkinci bir araç kendi ekosisteminin adlarını kendi sayfasında veri olarak getirir
+(`31c:23-27`); adları ne profil ne Kurucu koyar. Kurulduğu gibi benimsendi: okunmayan manifest (bağ, dizin) işaretlemez,
+ağacın kökü `.`'dır. Beynin `6f36fba`'sında arama birimin kökünün üstüne çıkar (`referee/cases/build.py:484-493`;
+`referee/tests/test_cases.py:903-904` onu sabitler). Açık grup kalmadı: `group_undecided` ara çözümünün yerini bu yanıt
+alır, reddedilmiş mutasyonlar yeniden önerilir. Yazılmış satır durur (`26m:35-36`). Vektör değişmez; gevşetme yok.

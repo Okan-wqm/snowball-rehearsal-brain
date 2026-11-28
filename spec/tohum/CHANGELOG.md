@@ -4,6 +4,7 @@ Tarih: 2026-10-29 · Sürüm: 2.2
 Okunma: bir sayfanın geçmişi aranırken
 Çapa: git geçmişi ve zincirdeki spec hash satırları
 
+- 2.2 (2026-11-28, E751–E752; tohum dönemi AN, tohumun kendi testleri gerçek bir gecikme beklemez: `tests/no_real_delays.py`, `04`'ün sonu; seed-105'e rapor masası uzlaşısı: vakanın grubu, `26m` ve `26n` sonu): `CHANGELOG-23.md`; başında **İlk iş**.
 - 2.2 (2026-11-24, E744; tohum dönemi AL, kopya hedefin `census` vektörü: `census_copy` grubu, yeni `29zc`): `CHANGELOG-21.md`; başında **İlk iş**.
 - 2.2 (2026-11-24, E745–E750; tohum dönemi AM, rapor masası uzlaşısı: seed-103 ve seed-104, yarım kalmış geri alma ve merge dalları kurulduğu gibi benimsendi, `candidate_id_used` ve `pull_closed` sıkılaştırma, gevşetmeler L-AM1–L-AM3; sahibin ipucu: canlı döngünün sağlığı önce gelir): `CHANGELOG-22.md`; başında **İlk iş**.
 - 2.2 (2026-11-23, E739–E743; tohum dönemi AK, sahibin dört ipucu: aday onu üreten organla yargılanır, organ sayfasının söz verdiği araca ulaşır, dersler büyürken bulma ve yeniden sınama, bağlam ölçülen kaynak; yeni `00g`, aynanın `context` bölümü; seed-102'ye rapor masası uzlaşısı): `CHANGELOG-20.md`; başında **İlk iş**.

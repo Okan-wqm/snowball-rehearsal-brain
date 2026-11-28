@@ -73,3 +73,8 @@ arayüz yapar (`26j:17`'nin emsali): sonraki bir değişikliği yeni bir biçimd
 
 Açıkça ertelenenler ve test 9, test 11, sürükleme etkinliği, Aşama 1'in bulgu başı frenleri `26n`'dedir. Koşunun
 tanımı, gözlem listesi, payda ve iki dosyalı komutun gevşetmesi L-AH1 `26q`'dadır (seed-101).
+
+**Vakanın grubu** (`26e:68-69`; seed-105; devamı `26n:73-78`). Paket manifesti temel adı `package.json` olan düzenli
+dosyadır (`29k:51`'in `manifest`'i), başka hiçbir şey değildir: Nx'in `project.json`'ı da, `pyproject.toml`,
+`Cargo.toml` ya da `go.mod` da grup işaretlemez. Arama değiştirilen dosyanın dizininden birimin köküne kadardır, kök
+dahil, üstüne çıkmaz; yolda manifest yoksa grup birimin köküdür. Sıkılaştırma: grup birimin kökü ya da altındadır.
