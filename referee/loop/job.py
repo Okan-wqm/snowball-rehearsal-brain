@@ -259,13 +259,14 @@ refused tree is ``pulled_invalid``). Then:
   any other, and ``activate.genesis`` reads the same facts again by the same rules. The stop lasts as long as the
   drift does: nothing is recorded, the next job reads the facts anew (a record that outlives the drift, tohum/28's
   restart by the operator, is not built here). D6's refusals before any write
-  (``head_moved:<branch>``, ``state_unwritable: ...``, the writer's refusal with no ref written) are
+  (``head_moved:<branch>``, ``state_unwritable: ...``, the writer's refusal before any ref is written and before
+  the root is signed) are
   ``write_refused`` with the reasons; a hard stop
   (``target.land.HardStop``: a chain break, a root that cannot be signed, the
   watcher's stop on the ledger as pulled, P1 MF7) is
   ``hard_stop`` with ``written``, the refs already written; a GitHub write to the target that failed, the first or a
   later one (``loop.write_cycle.WriteFailed``, tohum/28:51-60: an outage, not a hard stop; the next cycle takes up
-  what stands), is ``write_failed`` with ``written`` and ``sign_calls`` and holds nothing; all three exit 1 with
+  what stands unless the merge landed, ``loop.write_cycle`` "A failure in step 4 or 5"), is ``write_failed`` with ``written`` and ``sign_calls`` and holds nothing; all three exit 1 with
   ``done`` ``["D5"]``. A written cycle
   whose own freeze passed ``soft_freeze_limit`` (``written.gozcu.hard_stop``) is ``hard_stop`` too, exit 1, after
   its writes. A hard stop's line

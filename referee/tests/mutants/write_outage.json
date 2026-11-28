@@ -12,8 +12,8 @@
   {
    "id": "refusal_after_a_write_a_hard_stop",
    "file": "loop/write_cycle.py",
-   "old": "            raise Refused(list(exc.reasons)) from None\n        raise WriteFailed(",
-   "new": "            raise Refused(list(exc.reasons)) from None\n        raise land.HardStop(",
+   "old": "            raise Refused([*exc.reasons]) from None\n        raise WriteFailed(",
+   "new": "            raise Refused([*exc.reasons]) from None\n        raise land.HardStop(",
    "tests": [
     "test_loop_write.WriteOutage.test_the_writer_s_refusal_after_a_write_is_a_failed_write"
    ]
@@ -30,8 +30,8 @@
   {
    "id": "refusal_unwritten_a_failed_write",
    "file": "loop/write_cycle.py",
-   "old": "        if not writer.written:\n            raise Refused(list(exc.reasons)) from None",
-   "new": "        if False:\n            raise Refused(list(exc.reasons)) from None",
+   "old": "        if landing and not writer.written:",
+   "new": "        if False:",
    "tests": [
     "test_loop_write.WriteOutage.test_the_writer_s_refusal_with_nothing_written_is_a_refusal_with_its_reasons"
    ]
@@ -39,10 +39,10 @@
   {
    "id": "refusal_after_a_write_a_refusal",
    "file": "loop/write_cycle.py",
-   "old": "        if not writer.written:\n            raise Refused(list(exc.reasons)) from None",
-   "new": "        if True:\n            raise Refused(list(exc.reasons)) from None",
+   "old": "        if landing and not writer.written:",
+   "new": "        if landing:",
    "tests": [
-    "test_loop_write.WriteOutage.test_the_writer_s_refusal_after_a_write_is_a_failed_write"
+    "test_loop_write.WriteOutage.test_the_writer_s_refusal_before_the_merge_after_a_ref_is_a_failed_write"
    ]
   },
   {
@@ -86,6 +86,34 @@
    "file": "activate.py",
    "old": "    except (write.ApiError, write.Refused, Unusable) + cycle.FAILURES as exc:",
    "new": "    except (write.Refused, Unusable) + cycle.FAILURES as exc:",
+   "tests": [
+    "test_loop_write.Genesis.test_a_genesis_write_that_fails_stays_a_hard_stop"
+   ]
+  },
+  {
+   "id": "refusal_of_the_state_commit_a_refusal",
+   "file": "loop/write_cycle.py",
+   "old": "        if landing and not writer.written:",
+   "new": "        if not writer.written:",
+   "tests": [
+    "test_loop_write.WriteOutage.test_the_writer_s_refusal_of_the_state_commit_names_the_signing_runs"
+   ]
+  },
+  {
+   "id": "no_answer_not_a_failed_write",
+   "file": "target/write.py",
+   "old": "        except (OSError, http.client.HTTPException) as exc:  # no answer",
+   "new": "        except () as exc:  # no answer",
+   "tests": [
+    "test_loop_write.WriteOutage.test_a_write_that_gets_no_answer_is_a_failed_write",
+    "test_write.py"
+   ]
+  },
+  {
+   "id": "genesis_failed_cut_no_hard_stop",
+   "file": "activate.py",
+   "old": "    merged = None\n    try:\n        writer.create_branch(INTEGRATION, cut)\n",
+   "new": "    merged = None\n    writer.create_branch(INTEGRATION, cut)\n    try:\n",
    "tests": [
     "test_loop_write.Genesis.test_a_genesis_write_that_fails_stays_a_hard_stop"
    ]

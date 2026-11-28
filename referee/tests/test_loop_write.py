@@ -121,6 +121,7 @@ from loop import accepted as AC  # noqa: E402
 from drift import check as DC  # noqa: E402
 from loop import drill as DR  # noqa: E402
 from loop import job as J  # noqa: E402
+from loop import integration as IG  # noqa: E402
 from loop import pulled as P  # noqa: E402
 from loop import watch as WT  # noqa: E402
 from loop import write_cycle as WC  # noqa: E402
@@ -697,7 +698,8 @@ class D6Standing(StateBase):
 class WriteOutage(StateBase):
     """tohum/28:51-60: a GitHub write to the target that fails in ``yaz``, the first or a later one, is no hard stop.
     The line names it ``write_failed``; nothing is held (no ``brain/state`` commit, so no row and no ``status.md``);
-    the next cycle decides anew and takes up what stands."""
+    the next cycle decides anew and takes up what stands, when the merge did not land (after it the next ``cek``
+    refuses the head no row names, tohum/13:56-57, which tohum/28:58-59 keeps)."""
 
     listed = True
 
@@ -737,8 +739,11 @@ class WriteOutage(StateBase):
                 self.assertEqual(len(out["sign_calls"]), 2 if at > merge_at else 0)
                 self.assertEqual(out["written"] == [], "refs/heads/brain/c/good" not in out["written"])
                 self.assertFalse(at == 0 and out["written"], out)
-                if at > merge_at:
+                if at > merge_at:  # the merge stands and no row names it: the next cek's refusal (tohum/13:56-57)
                     self.assertEqual(out["written"], ["refs/heads/brain/c/good", "refs/heads/" + B.INTEGRATION])
+                    head = self.gh.refs[B.INTEGRATION]
+                    self.assertNotEqual(head, before[B.INTEGRATION])
+                    self.assertNotIn(head.encode(), self.state_file(B.STATE_LEDGER))
                 else:
                     self.assertEqual(self.gh.refs[B.INTEGRATION], HEADS[B.INTEGRATION])
                     self.signs_second()
@@ -781,6 +786,62 @@ class WriteOutage(StateBase):
         self.assertEqual(out["written"], ["refs/heads/brain/c/good", "refs/heads/" + B.INTEGRATION])
         self.assertEqual(out["reasons"], ["Refused: state_head_moved (written: %s)" % ", ".join(out["written"])])
         self.assertEqual(self.refs_changed(dict(before, **{B.STATE: HEADS[B.INTEGRATION]})), out["written"])
+
+    def test_the_writer_s_refusal_before_the_merge_after_a_ref_is_a_failed_write(self):
+        """The candidate's branch is written and moves before its pull is read: the writer refuses the merge. The
+        refusal is step 4's, and a ref is written: a failed write naming it, no refusal."""
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        self.github()
+        gh, before = self.gh, dict(self.gh.refs)
+
+        def moved(n, method, path):
+            if (method, path.rsplit("/", 1)[-1]) == ("POST", "pulls"):
+                gh.refs["brain/c/good"] = HEADS[B.INTEGRATION]
+
+        out = self.run_yaz(moved)
+        self.assertEqual((out["ok"], out["reason"], out["done"]), (False, "write_failed", ["D5"]), out)
+        self.assertEqual(out["written"], ["refs/heads/brain/c/good"])
+        self.assertEqual(out["reasons"], ["Refused: merge_head_moved (written: refs/heads/brain/c/good)"])
+        self.assertEqual((self.refs_changed(before), out["sign_calls"]), (out["written"], []))
+
+    def test_the_writer_s_refusal_of_the_state_commit_names_the_signing_runs(self):
+        """A cycle that merges nothing: ``brain/state`` moves while the root is signed. Nothing is written, and the
+        line is a failed write's, which names every run of the signing program (tohum/13:60)."""
+        self.kos({"breaks": candidate(BREAKS_TEST)})
+        self.control(OPEN)
+        self.github()
+        self.signs_second()
+        gh, sign = self.gh, self.signer.sign
+
+        def moving(payload):
+            gh.refs[B.STATE] = HEADS[B.INTEGRATION]
+            return sign(payload)
+
+        self.signer.sign = moving
+        out = self.run_yaz()
+        self.assertEqual((out["ok"], out["reason"], out["written"]), (False, "write_failed", []), out)
+        self.assertEqual(out["reasons"], ["Refused: state_head_moved (written: nothing)"])
+        self.assertEqual((len(out["sign_calls"]), out["sign_calls"]), (2, self.signer.calls))
+        self.assertEqual(self.writes(), [])
+
+    def test_a_write_that_gets_no_answer_is_a_failed_write(self):
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        self.github()
+        before = dict(self.gh.refs)
+
+        def silent(n, method, path):  # the merge's request times out; GitHub did not carry it out
+            if path.endswith("/pulls/1/merge"):
+                raise TimeoutError("timed out")
+
+        out = self.run_yaz(silent)
+        self.assertEqual((out["ok"], out["reason"], out["done"]), (False, "write_failed", ["D5"]), out)
+        self.assertEqual(out["written"], self.refs_changed(before))
+        self.assertEqual(out["reasons"], ["ApiError: None: PUT /repos/%s/pulls/1/merge: TimeoutError (written: "
+                                          "refs/heads/brain/c/good)" % YW.REPO])
+        out = self.run_yaz()
+        self.assertEqual((out["ok"], out["done"], out["merge"]), (True, ["D5", "D6"], "good"), out)
 
     def test_the_writer_s_refusal_with_nothing_written_is_a_refusal_with_its_reasons(self):
         self.kos({"good": candidate(GOOD)})
@@ -2031,16 +2092,18 @@ class Genesis(StateBase):
 
     def test_a_genesis_write_that_fails_stays_a_hard_stop(self):
         """tohum/28:57-58: the genesis cycle's failed write is ``activation``, a hard stop; ``write_failed`` is not
-        its name. Shown for a request after the cut; the cut's own failure is not judged here (``loop.job``
-        answers it unusable, as before)."""
+        its name: the cut's own failure and a later request's."""
         self.main_at()
         self.kos({"good": candidate(GOOD)})
         self.control(OPEN)
         self.github()
-        out = self.run_yaz(outage(1))  # the cut is made, the next request fails
-        self.assertEqual((out["ok"], out["reason"], out["written"]),
-                         (False, "hard_stop", ["refs/heads/" + B.INTEGRATION]), out)
-        self.assertTrue(out["reasons"][0].startswith("ApiError: 503: "), out)
+        for at, written in ((0, []), (1, ["refs/heads/" + B.INTEGRATION])):  # the cut fails; the request after it
+            with self.subTest(at=at):
+                self.gh = None
+                self.main_at()
+                out = self.run_yaz(outage(at))
+                self.assertEqual((out["ok"], out["reason"], out["written"]), (False, "hard_stop", written), out)
+                self.assertTrue(out["reasons"][0].startswith("ApiError: 503: "), out)
 
     def own_signer_job(self, made_before: int) -> tuple[dict, list, str]:
         """The genesis target's line from ``J._yaz`` with no signer passed (the job's own, over a fake program on

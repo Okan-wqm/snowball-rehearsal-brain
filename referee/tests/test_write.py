@@ -620,6 +620,30 @@ class WriterLoop(unittest.TestCase):
             wr.open_pull("brain/c/1", "brain/integration", "t")
 
 
+class NoAnswer(unittest.TestCase):
+    def test_a_transport_that_gives_no_answer_is_an_api_error_naming_no_ref(self):
+        """A timeout or a broken connection is the API's failure with no status; the request stays in ``sent`` and
+        its refs are not ``written`` (whether GitHub carried it out is not known)."""
+        import http.client
+        for fault, said in ((TimeoutError("timed out"), "TimeoutError"),
+                            (ConnectionResetError(104, "Connection reset by peer"), "Connection reset by peer"),
+                            (http.client.IncompleteRead(b""), "IncompleteRead")):
+            with self.subTest(fault=said):
+                gh, wr, root = world()
+
+                def transport(method, path, body, fault=fault):
+                    if method == "POST":
+                        raise fault
+                    return gh(method, path, body)
+
+                wr.transport = transport
+                with self.assertRaises(W.ApiError) as ctx:
+                    wr.create_branch("brain/c/1", root)
+                self.assertEqual((ctx.exception.status, str(ctx.exception)),
+                                 (None, "None: POST %sgit/refs: %s" % (P, said)))
+                self.assertEqual((wr.written, [m for m, _, _ in wr.sent if m != "GET"]), ([], ["POST"]))
+
+
 class StateCommit(unittest.TestCase):
     """``POST git/blobs`` and ``git/trees`` (plain files only) and ``commit_files``, the state commit."""
 
