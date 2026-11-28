@@ -3,8 +3,8 @@
   {
    "id": "branch_differs_ends_the_cycle",
    "file": "loop/job.py",
-   "old": "    except WC.BranchDiffers:\n        return {\"branch_differs\": d5[\"merge\"]}",
-   "new": "    except WC.BranchDiffers:\n        return {\"reason\": \"write_refused\", \"reasons\": [W.BRANCH_DIFFERS]}",
+   "old": "    except WC.LandingRefused as exc:  # one landing in a cycle: the merge's branch, or else the plant's\n        return {\"landing_refused\": d5[\"merge\"], \"why\": exc.reason}",
+   "new": "    except WC.LandingRefused as exc:  # one landing in a cycle: the merge's branch, or else the plant's\n        return {\"reason\": \"write_refused\", \"reasons\": [exc.reason]}",
    "tests": [
     "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written",
     "test_loop_write.D8.test_a_plant_whose_branch_stands_and_differs_is_not_made_and_the_next_cycle_plants"
@@ -13,7 +13,7 @@
   {
    "id": "branch_differs_a_plain_refusal",
    "file": "loop/write_cycle.py",
-   "old": "            if exc.reasons == [W.BRANCH_DIFFERS]:",
+   "old": "            if len(exc.reasons) == 1 and exc.reasons[0] in W.LANDING_REFUSALS:",
    "new": "            if False:",
    "tests": [
     "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written",
@@ -23,7 +23,7 @@
   {
    "id": "every_unwritten_refusal_branch_differs",
    "file": "loop/write_cycle.py",
-   "old": "            if exc.reasons == [W.BRANCH_DIFFERS]:",
+   "old": "            if len(exc.reasons) == 1 and exc.reasons[0] in W.LANDING_REFUSALS:",
    "new": "            if True:",
    "tests": [
     "test_loop_write.D7.test_a_standing_revert_branch_that_differs_stays_a_refusal_of_the_cycle"
@@ -32,8 +32,8 @@
   {
    "id": "branch_differs_names_no_candidate",
    "file": "loop/job.py",
-   "old": "return {\"branch_differs\": d5[\"merge\"]}",
-   "new": "return {\"branch_differs\": None}",
+   "old": "return {\"landing_refused\": d5[\"merge\"], \"why\": exc.reason}",
+   "new": "return {\"landing_refused\": None, \"why\": exc.reason}",
    "tests": [
     "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
    ]

@@ -99,7 +99,10 @@ merge up instead, as tohum/28:54-55 reads, no page settles and nothing here buil
   (``writer.written``; none when the first write failed);
 - a standing branch of the cycle's merge or of D8's plant that is not this cycle's commit (``target.write``'s
   ``branch_differs``, before any ref is written; the commit's blob and tree may be created by then, objects no ref
-  names) is ``BranchDiffers`` (the merge's branch when the cycle merges, else the plant's; tohum/26p "Yarım
+  names) and a pull request from the merge's branch that was closed unmerged (``target.land.land``'s
+  ``pull_closed``, after one read and before any object or ref; tohum/01b:75-80) are ``LandingRefused`` carrying
+  that reason (``target.write.LANDING_REFUSALS``; the merge's branch when the cycle merges, else the plant's,
+  whose closed pull requests are not read; tohum/26p "Yarım
   kalmış merge": the refusal is that candidate's and the cycle goes on). Nothing of the cycle is written by this
   call: the caller (``loop.job``) decides again with the refusal and calls ``write`` again;
 - any other refusal of the writer in step 4 before a ref is written (a standing revert branch that differs,
@@ -190,10 +193,15 @@ class Unusable(ValueError):
     pass
 
 
-class BranchDiffers(Exception):
-    """The branch step 4 lands from stands and is not this cycle's commit (tohum/26p "Yarım kalmış merge"); no ref
-    was written. The branch is the merge's, ``brain/c/<decided["merge"]>``, when the cycle merges, and D8's plant's
-    otherwise (a cycle lands one of the two, ``write``)."""
+class LandingRefused(Exception):
+    """Step 4's landing was refused for ``reason``, one of ``target.write.LANDING_REFUSALS``, with no ref written:
+    its branch stands and is not this cycle's commit (tohum/26p "Yarım kalmış merge"), or a pull request from it
+    was closed unmerged (tohum/01b:75-80). The branch is the merge's, ``brain/c/<decided["merge"]>``, when the
+    cycle merges, and D8's plant's otherwise (a cycle lands one of the two, ``write``)."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
 
 
 class WriteFailed(Exception):
@@ -387,8 +395,8 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
                                root_row_id, registers, sets)
     except W.Refused as exc:
         if landing and not writer.written:
-            if exc.reasons == [W.BRANCH_DIFFERS]:  # ``commit_on``'s: the merge's branch, or the plant's
-                raise BranchDiffers(W.BRANCH_DIFFERS) from None
+            if len(exc.reasons) == 1 and exc.reasons[0] in W.LANDING_REFUSALS:  # the merge's branch, or the plant's
+                raise LandingRefused(exc.reasons[0]) from None
             raise Refused([*exc.reasons]) from None
         raise WriteFailed("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     except W.ApiError as exc:

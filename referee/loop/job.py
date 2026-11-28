@@ -260,7 +260,7 @@ refused tree is ``pulled_invalid``). Then:
   drift does: nothing is recorded, the next job reads the facts anew (a record that outlives the drift, tohum/28's
   restart by the operator, is not built here). A standing branch that differs (tohum/26p "Yarım kalmış merge";
   ``_yaz_written``): when the writer refuses the branch of D5's merge, ``brain/c/<id>``, because it stands and is
-  not this cycle's commit (``loop.write_cycle.BranchDiffers``; no ref written, no pull request opened, no check
+  not this cycle's commit (``loop.write_cycle.LandingRefused``; no ref written, no pull request opened, no check
   sent), D5 decides again on the same ``pulled``, tree and results with that candidate carrying ``branch_differs``
   (``loop.decide``'s ``refused``), D8's step is taken again from that decision, and D6 writes the cycle so decided:
   the line's ``decisions`` and ``merge`` are the last decision's, the refused candidate a reject. When the branch
@@ -269,7 +269,12 @@ refused tree is ``pulled_invalid``). Then:
   branch has another name, plants it). Each candidate is refused at most once in a cycle and the plant once, so
   D6 is called at most once more than the cycle has candidates, plus one. Not covered, stated: the genesis cycle
   (``activate`` lands its merge; tohum/28:57 keeps its failed write a hard stop) and a standing revert branch that
-  differs (``revert_branch_differs``: ``write_refused``, below). A used id (tohum/26p:76-80): a candidate whose
+  differs (``revert_branch_differs``: ``write_refused``, below). A closed pull request (tohum/01b:75-80): when a
+  pull request from the branch of D5's merge into ``brain/integration`` was closed without a merge
+  (``target.land.land``, one read; nothing written), the same ``LandingRefused`` carries ``pull_closed`` and the
+  cycle goes on by the same steps, that candidate a reject with ``pull_closed``; what is and is not read as such a
+  pull request is ``target.write``'s "Closed pull". Not covered, stated: the genesis cycle here too, a plant and a
+  revert (``target.land``). A used id (tohum/26p:76-80): a candidate whose
   id the ledger holds a merge of since its last genesis does not come this far. D5 judges it by no rule
   (``loop.decide`` "A used id", ``ledger.serial.used_ids``) and the target's line names it under
   ``candidate_id_used``, the sorted list D5 answers (empty when none is offered); no row, no ``cause``, no ref,
@@ -1088,8 +1093,8 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
     """D6 of ``yaz``, with D7's ``end``, D8's step, the gate's and the PASS row and the cycle's dev ``cases`` (see the module docstring): ``{reason,
     reasons,
     written?}`` or
-    ``{written}``, or ``{branch_differs: cid | None}`` when the writer refused the standing branch of D5's merge
-    ``cid`` or of D8's plant (``None``) with nothing written (``loop.write_cycle.BranchDiffers``). ``transport``
+    ``{written}``, or ``{landing_refused: cid | None, why}`` when the landing of D5's merge ``cid`` or of D8's
+    plant (``None``) was refused for ``why`` with nothing written (``loop.write_cycle.LandingRefused``). ``transport``
     is the target's API (``target.write.HttpTransport`` with ``WRITER_TOKEN`` when ``None``), ``signer`` the root's
     (``loop.sign.SigstoreSigner`` pinned to ``loop.yml`` on ``$GITHUB_REPOSITORY`` when ``None``, counting its runs
     in ``job_calls``, the job's list, or in its own when that is ``None`` too), ``now`` the clock."""
@@ -1108,8 +1113,8 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
                 "sign_calls": _sign_calls(signer, seen)}
     except LC.Unusable as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
-    except WC.BranchDiffers:
-        return {"branch_differs": d5["merge"]}  # one landing in a cycle: the merge's branch, or else the plant's
+    except WC.LandingRefused as exc:  # one landing in a cycle: the merge's branch, or else the plant's
+        return {"landing_refused": d5["merge"], "why": exc.reason}
     except WC.Refused as exc:
         return {"reason": "write_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
@@ -1703,12 +1708,12 @@ def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any
     opened = PR.gate_payload() if gate is not None and gate["verdict"] == "open" else None
     judged, passed = yaz_pass(environ, tid, art)
     differs: dict[str, list[str]] = {}
-    while True:  # tohum/26p "Yarım kalmış merge": a standing branch that differs refuses its candidate, not the cycle
+    while True:  # tohum/26p "Yarım kalmış merge", 01b:75-80: a refused landing is its candidate's, not the cycle's
         d6 = yaz_d6(environ, tid, art, tree, d5, transport, signer, now, lint, end, d8, opened, passed, job_calls,
                     cases)
-        if "branch_differs" not in d6:
+        if "landing_refused" not in d6:
             break
-        cid = d6["branch_differs"]
+        cid = d6["landing_refused"]
         if cid is None:  # the plant's branch: this cycle plants nothing
             if d8["action"] != "plant":
                 raise Unusable("yaz: the writer refused a plant the cycle does not make")
@@ -1716,7 +1721,7 @@ def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any
             continue
         if cid in differs:
             raise Unusable("yaz: the writer refused %s, which D5 had rejected" % cid)
-        differs[cid] = [W.BRANCH_DIFFERS]
+        differs[cid] = [d6["why"]]
         d5, _, _ = yaz_d5(environ, tid, (art, tree), differs)
         if "reason" in d5:  # the first decision read the same inputs
             raise Unusable("yaz: %s" % d5["reason"])

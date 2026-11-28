@@ -17,7 +17,11 @@ order, each ``{old_start, old_count, new_start, new_count}`` as its ``@@`` heade
 a block with no hunk), the ranges ``ledger.events.hunk_covered`` records. ``content`` and ``hunks`` are ``None`` with
 a reason.
 
-``land(writer, cid, path, content, base, check)``: branch ``brain/c/<cid>`` at ``base``, one commit setting ``path``
+``land(writer, cid, path, content, base, check)``: first the read of the closed pull requests from ``brain/c/<cid>``
+into ``brain/integration`` (``Writer.closed_pulls``): when one was closed without a merge the landing is ``Refused``
+(``pull_closed``) with nothing sent after that read, no object and no ref (tohum/01b:75-80: a fix is one pull
+request, and a closed one ends it; so no second pull request of one candidate branch is opened here). Then branch
+``brain/c/<cid>`` at ``base``, one commit setting ``path``
 to ``content``, a pull request into ``brain/integration``, a ``success`` check run named ``check`` on the commit, and
 the merge pinned to that commit; returns ``{pull, head_sha, merge_sha}``. Each step is one ``target.write`` call;
 an error leaves the earlier steps written (the caller names them, ``writer.written``). The next
@@ -30,7 +34,8 @@ time on the same commit (no route here reads a commit's check runs). A standing 
 ``plant(writer, cycle_id, path, content, base, check)``: D8's planted merge (the revert drill's, ``loop.drill``), the
 same five steps on branch ``brain/drill/<cycle_id>``, its title and check summary saying it is planted by the drill
 and is not a gate decision; returns ``{pull, head_sha, merge_sha}``. ``harness.revert_drill.run_drill`` makes the same
-writes through the same function (``pull_merge``).
+writes through the same function (``pull_merge``). A planted merge is no fix: its closed pull requests are not
+read, and neither are a revert's (tohum/01b:78-79: a revert's closed pull request does not end the revert).
 
 ``revert(writer, merge_sha, runs, facts, check)``: D7's revert of ``merge_sha``, ``brain/integration``'s head, when
 ``gate.revert.assess`` of ``runs`` and ``facts`` is a revert: ``gate.revert.revert_red`` (the revert commit, whose tree is the merge's first
@@ -38,7 +43,9 @@ parent's, on ``brain/revert/<merge_sha>``, and its pull request into ``brain/int
 pinned merge as a candidate's. Returns ``{cause, pull, commit, merge_sha}`` (``merge_sha`` the revert's merge
 commit). Runs and facts that are no revert are ``Unusable``, before anything is written.
 
-Out of scope, stated: whether ``base`` is still ``brain/integration``'s head (the caller reads it before landing;
+Out of scope, stated: the genesis cycle's landing (``activate`` calls ``land`` after it created
+``brain/integration``, and any refusal of it there, ``pull_closed`` too, is the activation's failed write; not judged
+against tohum/01b:75-80 and held by no test); whether ``base`` is still ``brain/integration``'s head (the caller reads it before landing;
 GitHub refuses a merge that is not a fast-forward of a moved base only by the ruleset's strict check); that the
 file is the finding's (the gate's criterion 4, judged before).
 """
@@ -107,7 +114,10 @@ def pull_merge(writer: Any, branch: str, base: str, files: dict[str, bytes], ont
 
 
 def land(writer: Any, cid: str, path: str, content: bytes, base: str, check: str) -> dict:
-    """Branch, commit, pull request, check and merge of one accepted candidate onto ``brain/integration``."""
+    """Branch, commit, pull request, check and merge of one accepted candidate onto ``brain/integration``, unless a
+    pull request from its branch was closed unmerged (``pull_closed``, before anything is written)."""
+    if writer.closed_pulls(CANDIDATE_PREFIX + cid, branches.INTEGRATION):
+        raise write.Refused([write.PULL_CLOSED])
     return pull_merge(writer, CANDIDATE_PREFIX + cid, base, {path: content}, branches.INTEGRATION, "candidate %s" % cid,
                       "accepted by the gate (asama-0/08)", check, "gate: merge")
 

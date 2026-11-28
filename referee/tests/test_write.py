@@ -1101,6 +1101,108 @@ class StandingBranch(unittest.TestCase):
         self.assertEqual(gh.requests, [])
 
 
+class ClosedPulls(unittest.TestCase):
+    """``Writer.closed_pulls`` and its route (``target.write``, "Closed pull"; tohum/01b:75-80)."""
+
+    ROUTE = "pulls?state=closed&head=acme:brain/c/1&base=brain/integration&per_page=100"
+
+    def item(self, number=7, state="closed", head="brain/c/1", base="brain/integration", merged_at=None):
+        return {"number": number, "state": state, "base": {"ref": base}, "head": {"ref": head, "sha": A},
+                "merged_at": merged_at}
+
+    def answered(self, answer):
+        gh, wr, _ = world()
+        gh.overrides[("GET", P + self.ROUTE)] = (200, answer)
+        return wr
+
+    def test_the_route_is_taken_in_one_spelling_only(self):
+        guard = W.Guard(REPO)
+        self.assertEqual(guard.closed_route("brain/c/1", "brain/integration"), self.ROUTE)
+        self.assertEqual(check("GET", self.ROUTE), ([], []))
+        self.assertEqual(check("GET", self.ROUTE, {}), (["body_invalid"], []))
+        for method in ("POST", "PUT", "PATCH", "DELETE"):
+            self.assertEqual(check(method, self.ROUTE, {}), (["route_not_allowed"], []), method)
+        h, b = "head=acme:brain/c/1", "base=brain/integration"
+        for rest in ("pulls?state=open&%s&%s&per_page=100" % (h, b), "pulls?state=all&%s&%s&per_page=100" % (h, b),
+                     "pulls?%s&%s&per_page=100" % (h, b), "pulls?state=closed&%s&%s" % (h, b),
+                     "pulls?state=closed&%s&%s&per_page=50" % (h, b), "pulls?state=closed&%s&%s&per_page=1000" % (h, b),
+                     self.ROUTE + "&page=2", self.ROUTE + "&", self.ROUTE + "#x", self.ROUTE + " ", "x" + self.ROUTE,
+                     "pulls?state=closed&%s&%s&per_page=100" % (b, h),
+                     "pulls?state=closed&head=other:brain/c/1&%s&per_page=100" % b,
+                     "pulls?state=closed&head=brain/c/1&%s&per_page=100" % b,
+                     "pulls?state=closed&head=acme:main&%s&per_page=100" % b,
+                     "pulls?state=closed&head=acme:brain/a..b&%s&per_page=100" % b,
+                     "pulls?state=closed&head=acme:brain/c/1&state=open&%s&per_page=100" % b,
+                     "pulls?state=closed&%s&base=main&per_page=100" % h,
+                     "pulls?state=closed&%s&base=brain/integration&base=main&per_page=100" % h,
+                     "pulls?state=closed&%s&base=brain/c/%%31&per_page=100" % h,
+                     "pulls/?state=closed&%s&%s&per_page=100" % (h, b), "pulls?", "pulls?state=closed",
+                     "issues?state=closed&%s&%s&per_page=100" % (h, b),
+                     "git/refs?state=closed&%s&%s&per_page=100" % (h, b)):
+            self.assertEqual(check("GET", rest), (["route_not_allowed"], []), rest)
+        self.assertEqual(check("GET", self.ROUTE, prefix="/repos/acme/other/"), (["route_not_allowed"], []))
+
+    def test_one_read_and_the_closed_unmerged_pulls_of_the_branch(self):
+        gh, wr, root = world()
+        self.assertEqual(wr.closed_pulls("brain/c/1", "brain/integration"), [])
+        self.assertEqual(gh.requests, [("GET", P + self.ROUTE, None)])
+        first, _ = candidate(gh, wr)
+        self.assertEqual(wr.closed_pulls("brain/c/1", "brain/integration"), [])  # an open one is none
+        gh.pulls[first]["state"] = "closed"
+        second = wr.open_pull("brain/c/1", "brain/integration", "again")
+        gh.pulls[second]["state"] = "closed"
+        other, _ = candidate(gh, wr, "brain/c/2", "t2")
+        gh.pulls[other]["state"] = "closed"
+        sent = len(gh.requests)
+        self.assertEqual(wr.closed_pulls("brain/c/1", "brain/integration"), [first, second])
+        self.assertEqual(wr.closed_pulls("brain/c/2", "brain/integration"), [other])
+        self.assertEqual(wr.closed_pulls("brain/c/1", "brain/state"), [])
+        self.assertEqual([r[0] for r in gh.requests[sent:]], ["GET"] * 3)
+        self.assertEqual(wr.written, [r for r in wr.written if "brain/integration" not in r])
+
+    def test_a_merged_pull_is_not_counted(self):
+        gh, wr, root = world()
+        pull, sha = candidate(gh, wr)
+        wr.check(sha, GATE, "success", "s")
+        wr.merge(pull, sha)
+        self.assertEqual((gh.pulls[pull]["state"], gh.pulls[pull]["merged"]), ("closed", True))
+        self.assertEqual(wr.closed_pulls("brain/c/1", "brain/integration"), [])
+
+    def test_the_answer_is_read_again_here(self):
+        item = self.item
+        answers = [
+            ([item(9), item(3)], [3, 9]),
+            ([item(merged_at="2026-01-01T00:00:00Z")], []),
+            ([item(state="open")], []),
+            ([item(head="brain/c/2")], []),
+            ([item(base="brain/state")], []),
+            ([item(1, state="open"), item(2), item(3, merged_at="t"), item(4, head="main")], [2]),
+            ([item(n) for n in range(1, 101)], list(range(1, 101))),
+            ([item(n, state="open") for n in range(1, 100)], []),
+        ]
+        for answer, want in answers:
+            self.assertEqual(self.answered(answer).closed_pulls("brain/c/1", "brain/integration"), want, answer)
+
+    def test_an_answer_that_cannot_be_read_is_an_api_error(self):
+        item = self.item
+        no_key = {k: v for k, v in item().items() if k != "merged_at"}
+        no_head = {k: v for k, v in item().items() if k != "head"}
+        for answer in ({}, {"items": []}, None, "x", [None], [no_key], [no_head], [item(merged_at="")],
+                       [item(merged_at=False)], [item(merged_at=0)], [item(merged_at=True)], [item(), no_key],
+                       [item(n, state="open") for n in range(1, 101)],
+                       [item(n, merged_at="t") for n in range(1, 102)]):
+            with self.assertRaises(W.ApiError, msg=repr(answer)[:80]):
+                self.answered(answer).closed_pulls("brain/c/1", "brain/integration")
+
+    def test_a_branch_outside_brain_is_refused_with_nothing_sent(self):
+        for head, base in (("main", "brain/integration"), ("brain/c/1", "main"), ("brain/a..b", "brain/integration"),
+                           ("brain/c/1", "brain/c/1&page=2"), (None, "brain/integration")):
+            gh, wr, _ = world()
+            with self.assertRaises(W.Refused, msg=(head, base)):
+                wr.closed_pulls(head, base)
+            self.assertEqual(gh.requests, [])
+
+
 class Said(unittest.TestCase):
     """``said``: what an ``ApiError`` adds from an error answer's body (the module's rules 1 to 3)."""
 

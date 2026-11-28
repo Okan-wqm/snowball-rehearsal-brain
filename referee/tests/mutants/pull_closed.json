@@ -1,0 +1,250 @@
+{
+ "mutants": [
+  {
+   "id": "old_rule_no_closed_read",
+   "file": "target/land.py",
+   "old": "    if writer.closed_pulls(CANDIDATE_PREFIX + cid, branches.INTEGRATION):",
+   "new": "    if False:",
+   "tests": [
+    "test_loop_write.LandStanding.test_a_pull_request_closed_unmerged_ends_the_fix_with_nothing_written",
+    "test_loop_write.StandingDiffers.test_a_closed_pull_request_rejects_its_candidate_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "closed_read_after_the_landing_began",
+   "file": "target/land.py",
+   "old": "    if writer.closed_pulls(CANDIDATE_PREFIX + cid, branches.INTEGRATION):\n        raise write.Refused([write.PULL_CLOSED])\n    return pull_merge(writer, CANDIDATE_PREFIX + cid, base,",
+   "new": "    writer.commit_on(CANDIDATE_PREFIX + cid, base, {path: content}, \"candidate %s\" % cid)\n    if writer.closed_pulls(CANDIDATE_PREFIX + cid, branches.INTEGRATION):\n        raise write.Refused([write.PULL_CLOSED])\n    return pull_merge(writer, CANDIDATE_PREFIX + cid, base,",
+   "tests": [
+    "test_loop_write.LandStanding.test_a_pull_request_closed_unmerged_ends_the_fix_with_nothing_written",
+    "test_loop_write.StandingDiffers.test_a_closed_pull_request_rejects_its_candidate_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "closed_read_of_another_base",
+   "file": "target/land.py",
+   "old": "    if writer.closed_pulls(CANDIDATE_PREFIX + cid, branches.INTEGRATION):",
+   "new": "    if writer.closed_pulls(CANDIDATE_PREFIX + cid, branches.STATE):",
+   "tests": [
+    "test_loop_write.LandStanding.test_a_pull_request_closed_unmerged_ends_the_fix_with_nothing_written"
+   ]
+  },
+  {
+   "id": "plant_reads_closed_pulls",
+   "file": "target/land.py",
+   "old": "    done = writer.commit_on(branch, base, files, title)\n    head = done[\"commit\"]",
+   "new": "    if writer.closed_pulls(branch, onto):\n        raise write.Refused([write.PULL_CLOSED])\n    done = writer.commit_on(branch, base, files, title)\n    head = done[\"commit\"]",
+   "tests": [
+    "test_loop_write.LandStanding.test_a_plant_s_closed_pull_request_is_not_read"
+   ]
+  },
+  {
+   "id": "revert_reads_closed_pulls",
+   "file": "target/land.py",
+   "old": "    done = gate_revert.revert_red(writer, runs, facts, merge_sha, branches.INTEGRATION, REVERT_PREFIX + merge_sha)",
+   "new": "    if writer.closed_pulls(REVERT_PREFIX + merge_sha, branches.INTEGRATION):\n        raise write.Refused([write.PULL_CLOSED])\n    done = gate_revert.revert_red(writer, runs, facts, merge_sha, branches.INTEGRATION, REVERT_PREFIX + merge_sha)",
+   "tests": [
+    "test_loop_write.D7.test_a_revert_s_closed_pull_request_does_not_end_the_revert"
+   ]
+  },
+  {
+   "id": "pull_closed_ends_the_cycle",
+   "file": "target/write.py",
+   "old": "LANDING_REFUSALS = (BRANCH_DIFFERS, PULL_CLOSED)",
+   "new": "LANDING_REFUSALS = (BRANCH_DIFFERS,)",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_a_closed_pull_request_rejects_its_candidate_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "refusal_always_named_branch_differs",
+   "file": "loop/job.py",
+   "old": "        differs[cid] = [d6[\"why\"]]",
+   "new": "        differs[cid] = [W.BRANCH_DIFFERS]",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_a_closed_pull_request_rejects_its_candidate_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "landing_refused_names_the_first_tuple_entry",
+   "file": "loop/write_cycle.py",
+   "old": "                raise LandingRefused(exc.reasons[0]) from None",
+   "new": "                raise LandingRefused(W.LANDING_REFUSALS[0]) from None",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_after_a_closed_pull_request_the_next_candidate_merges_in_the_same_cycle"
+   ]
+  },
+  {
+   "id": "merged_pull_counted",
+   "file": "target/write.py",
+   "old": "== (\"closed\", head, base, None):\n                found.append",
+   "new": "[:3] == (\"closed\", head, base):\n                found.append",
+   "tests": [
+    "test_write.ClosedPulls.test_a_merged_pull_is_not_counted",
+    "test_write.ClosedPulls.test_the_answer_is_read_again_here"
+   ]
+  },
+  {
+   "id": "open_pull_counted",
+   "file": "target/write.py",
+   "old": "            if (pull[\"state\"], pull[\"head\"], pull[\"base\"], item[\"merged_at\"]) == (\"closed\", head, base, None):",
+   "new": "            if (\"closed\", pull[\"head\"], pull[\"base\"], item[\"merged_at\"]) == (\"closed\", head, base, None):",
+   "tests": [
+    "test_write.ClosedPulls.test_the_answer_is_read_again_here"
+   ]
+  },
+  {
+   "id": "another_head_counted",
+   "file": "target/write.py",
+   "old": "            if (pull[\"state\"], pull[\"head\"], pull[\"base\"], item[\"merged_at\"]) == (\"closed\", head, base, None):",
+   "new": "            if (pull[\"state\"], head, pull[\"base\"], item[\"merged_at\"]) == (\"closed\", head, base, None):",
+   "tests": [
+    "test_write.ClosedPulls.test_the_answer_is_read_again_here"
+   ]
+  },
+  {
+   "id": "another_base_counted",
+   "file": "target/write.py",
+   "old": "            if (pull[\"state\"], pull[\"head\"], pull[\"base\"], item[\"merged_at\"]) == (\"closed\", head, base, None):",
+   "new": "            if (pull[\"state\"], pull[\"head\"], base, item[\"merged_at\"]) == (\"closed\", head, base, None):",
+   "tests": [
+    "test_write.ClosedPulls.test_the_answer_is_read_again_here"
+   ]
+  },
+  {
+   "id": "merged_at_not_checked",
+   "file": "target/write.py",
+   "old": "            if \"merged_at\" not in item or not (item[\"merged_at\"] is None or _text(item[\"merged_at\"])):",
+   "new": "            if \"merged_at\" not in item:",
+   "tests": [
+    "test_write.ClosedPulls.test_an_answer_that_cannot_be_read_is_an_api_error"
+   ]
+  },
+  {
+   "id": "merged_at_absent_is_unmerged",
+   "file": "target/write.py",
+   "old": "            if \"merged_at\" not in item or not (item[\"merged_at\"] is None or _text(item[\"merged_at\"])):",
+   "new": "            item = dict({\"merged_at\": None}, **item)\n            if not (item[\"merged_at\"] is None or _text(item[\"merged_at\"])):",
+   "tests": [
+    "test_write.ClosedPulls.test_an_answer_that_cannot_be_read_is_an_api_error"
+   ]
+  },
+  {
+   "id": "closed_answer_any_shape",
+   "file": "target/write.py",
+   "old": "        if not isinstance(data, list):\n            raise ApiError(None, \"the closed pulls of a branch are not a list\")",
+   "new": "        if not isinstance(data, (list, dict, str)):\n            raise ApiError(None, \"the closed pulls of a branch are not a list\")",
+   "tests": [
+    "test_write.ClosedPulls.test_an_answer_that_cannot_be_read_is_an_api_error"
+   ]
+  },
+  {
+   "id": "full_page_read_as_whole",
+   "file": "target/write.py",
+   "old": "        if not found and len(data) >= CLOSED_PAGE:",
+   "new": "        if False:",
+   "tests": [
+    "test_write.ClosedPulls.test_an_answer_that_cannot_be_read_is_an_api_error"
+   ]
+  },
+  {
+   "id": "full_page_one_more",
+   "file": "target/write.py",
+   "old": "        if not found and len(data) >= CLOSED_PAGE:",
+   "new": "        if not found and len(data) > CLOSED_PAGE:",
+   "tests": [
+    "test_write.ClosedPulls.test_an_answer_that_cannot_be_read_is_an_api_error"
+   ]
+  },
+  {
+   "id": "full_page_with_a_find_refused",
+   "file": "target/write.py",
+   "old": "        if not found and len(data) >= CLOSED_PAGE:",
+   "new": "        if len(data) >= CLOSED_PAGE:",
+   "tests": [
+    "test_write.ClosedPulls.test_the_answer_is_read_again_here"
+   ]
+  },
+  {
+   "id": "closed_numbers_unsorted",
+   "file": "target/write.py",
+   "old": "        return sorted(found)",
+   "new": "        return found",
+   "tests": [
+    "test_write.ClosedPulls.test_the_answer_is_read_again_here"
+   ]
+  },
+  {
+   "id": "closed_branches_not_checked",
+   "file": "target/write.py",
+   "old": "        reasons = sorted(set(branch_reasons(head) + branch_reasons(base)))\n        if reasons:",
+   "new": "        reasons = sorted(set(branch_reasons(head) + branch_reasons(base)))\n        if False:",
+   "tests": [
+    "test_write.ClosedPulls.test_a_branch_outside_brain_is_refused_with_nothing_sent"
+   ]
+  },
+  {
+   "id": "closed_route_any_owner",
+   "file": "target/write.py",
+   "old": "        return bool(m) and m.group(1) == self.owner and not branch_reasons(m.group(2)) \\",
+   "new": "        return bool(m) and not branch_reasons(m.group(2)) \\",
+   "tests": [
+    "test_write.ClosedPulls.test_the_route_is_taken_in_one_spelling_only"
+   ]
+  },
+  {
+   "id": "closed_route_any_head",
+   "file": "target/write.py",
+   "old": "        return bool(m) and m.group(1) == self.owner and not branch_reasons(m.group(2)) \\",
+   "new": "        return bool(m) and m.group(1) == self.owner \\",
+   "tests": [
+    "test_write.ClosedPulls.test_the_route_is_taken_in_one_spelling_only"
+   ]
+  },
+  {
+   "id": "closed_route_any_base",
+   "file": "target/write.py",
+   "old": "            and not branch_reasons(m.group(3))",
+   "new": "            and True",
+   "tests": [
+    "test_write.ClosedPulls.test_the_route_is_taken_in_one_spelling_only"
+   ]
+  },
+  {
+   "id": "closed_route_takes_a_body",
+   "file": "target/write.py",
+   "old": "            return ([] if body is None else [\"body_invalid\"]), []",
+   "new": "            return [], []",
+   "tests": [
+    "test_write.ClosedPulls.test_the_route_is_taken_in_one_spelling_only"
+   ]
+  },
+  {
+   "id": "closed_route_any_method",
+   "file": "target/write.py",
+   "old": "        if method == \"GET\" and self._closed(path):",
+   "new": "        if self._closed(path):",
+   "tests": [
+    "test_write.ClosedPulls.test_the_route_is_taken_in_one_spelling_only"
+   ]
+  },
+  {
+   "id": "closed_route_prefix_match",
+   "file": "target/write.py",
+   "old": "        m = _CLOSED.fullmatch(path[len(self.prefix):])",
+   "new": "        m = _CLOSED.match(path[len(self.prefix):])",
+   "tests": [
+    "test_write.ClosedPulls.test_the_route_is_taken_in_one_spelling_only"
+   ]
+  },
+  {
+   "id": "closed_route_state_all",
+   "file": "target/write.py",
+   "old": "        return \"pulls?state=closed&head=%s:%s&base=%s&per_page=%d\" % (self.owner, head, base, CLOSED_PAGE)",
+   "new": "        return \"pulls?state=all&head=%s:%s&base=%s&per_page=%d\" % (self.owner, head, base, CLOSED_PAGE)",
+   "tests": [
+    "test_write.ClosedPulls.test_the_route_is_taken_in_one_spelling_only"
+   ]
+  }
+ ]
+}

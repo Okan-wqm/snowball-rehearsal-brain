@@ -25,6 +25,13 @@ It models what the writer depends on and the target's rulesets (tohum/25a row 3)
   head commit is ``sha`` or has it among its ancestors, with the fields ``GET pulls/<n>`` gives each but no
   ``mergeable`` (the list is no read of a pull: ``mergeable_pending`` is not lowered by it); a commit not held is 404;
   the merged pull that made a merge commit is not listed for it;
+- the closed pulls of a branch (``GET pulls?state=closed&head=<owner>:<branch>&base=<branch>&per_page=<n>``,
+  GitHub's "List pull requests", read as documentation, not observed live): the pulls whose state is ``closed``,
+  merged ones too, from that head into that base, ascending by number, at most ``n``; each with ``number``,
+  ``state``, ``base``, ``head`` and ``merged_at`` (``null`` for one closed without a merge, a time otherwise) and no
+  ``merged`` key; an owner that is not this repository's lists nothing; any other query on ``pulls`` is 404
+  (not modelled). The order GitHub lists them in (newest first by default) and the pages after the first are
+  not modelled;
 - a second open pull from one head into one base is refused (422 "A pull request already exists"; GitHub's REST
   page for creating a pull, read as documentation, not observed live);
 - a commit's tree must already be known (from a seeded commit or ``POST git/trees``), its parents must exist;
@@ -167,6 +174,12 @@ class FakeGitHub:
         return {"number": n, "state": p["state"], "merged": p["merged"],
                 "base": {"ref": p["base"]}, "head": {"ref": p["head"], "sha": self.refs.get(p["head"], p["sha"])}}
 
+    def _listed(self, n):
+        """A pull as the list of pulls gives it: ``merged_at`` and no ``merged``."""
+        out = self._pull_item(n)
+        return dict({k: v for k, v in out.items() if k != "merged"},
+                    merged_at="2026-01-01T00:00:00Z" if out["merged"] else None)
+
     def _pull(self, n):
         """A read of ``GET pulls/<n>``: the item, and ``mergeable`` for a pull named in ``mergeable_pending``
         (the one place that counter is lowered)."""
@@ -187,6 +200,13 @@ class FakeGitHub:
         m = re.fullmatch(r"pulls/(\d+)", rest)
         if m:
             return (200, self._pull(int(m.group(1)))) if int(m.group(1)) in self.pulls else (404, {})
+        m = re.fullmatch(r"pulls\?state=closed&head=([^:&]+):([^&]+)&base=([^&]+)&per_page=(\d+)", rest)
+        if m:
+            owner, head, base, page = m.group(1), m.group(2), m.group(3), int(m.group(4))
+            if owner != self.prefix.split("/")[2]:
+                return 200, []
+            return 200, [self._listed(n) for n, p in sorted(self.pulls.items())
+                         if (p["state"], p["head"], p["base"]) == ("closed", head, base)][:page]
         m = re.fullmatch(r"commits/(.+)/pulls", rest)
         if m:
             if m.group(1) not in self.commits:

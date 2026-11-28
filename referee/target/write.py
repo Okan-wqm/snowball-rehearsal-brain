@@ -13,6 +13,9 @@ no other repository):
 
 - ``GET git/ref/heads/<branch>``, ``GET git/commits/<sha>``, ``GET pulls/<n>``, ``GET commits/<sha>/pulls``
   (reads; ``<branch>`` must be a valid branch name, it need not be under ``brain/``; ``<sha>`` is 40 lowercase hex);
+- ``GET pulls?state=closed&head=<owner>:<head>&base=<base>&per_page=100`` (a read, the one route with a query,
+  taken only in this spelling, ``Guard.closed_route``'s: ``<owner>`` is the configured repository's, ``<head>`` and
+  ``<base>`` are branches under ``brain/``; "Closed pull" below);
 - ``POST git/refs`` ``{ref, sha}``: ``ref`` under ``refs/heads/brain/``;
 - ``PATCH git/refs/heads/<branch>`` ``{sha, force?}``: branch under ``brain/``, ``force`` absent or false;
 - ``POST git/commits`` ``{message, tree, parents}``: zero, one or two parents (creates an object, writes no ref;
@@ -103,10 +106,31 @@ Outside, stated: a branch that stands after its pull request was merged (an id u
 moved, so the head's parent is not ``base``) is refused ``branch_differs`` whenever it is asked for; the cycle does
 not ask for the id of a merge its ledger holds since the last genesis (tohum/26p:76-80, ``candidate_id_used``:
 ``loop.decide`` judges no such candidate), and for any other the caller, ``loop.job``, makes this refusal that
-candidate's reject; a pull request from the branch that was closed unmerged is not seen (rule 3
-above reads open ones, and GitHub's route lists no closed one for a commit off the default branch), so a new one is
-opened from the same branch: a second pull request of one fix, where tohum/01b says each fix is one (the same
-report, (3)).
+candidate's reject.
+
+Closed pull (``Writer.closed_pulls``, caller ``target.land.land``; tohum/01b:75-80: a pull request from the
+candidate's branch that was closed without a merge ends that fix, and seeing it wants a read of closed pull requests
+in this guard, GET only). Rule 3 above does not see one: it reads the pulls of a commit, and GitHub's REST page for
+that route says a commit that is not on the default branch lists its open pulls and the merged one (read as
+documentation; a closed one was never observed live there). So the closed pulls are read by the branch's name, from
+GitHub's list of pull requests ("List pull requests": ``state``, ``head`` as ``<owner>:<branch>``, ``base``,
+``per_page`` at most 100; read as documentation, not observed live; the route asks ``pull_requests: read``, which
+the reads above ask too). Rules, each with a test in ``test_write``:
+
+1. ``closed_pulls(head, base)`` sends that one read for two branches under ``brain/`` (``Refused`` otherwise, nothing
+   sent) and gives the numbers, ascending, of the answer's items with ``state`` ``closed``, ``head.ref`` ``head``,
+   ``base.ref`` ``base`` and ``merged_at`` ``null``. An item that is merged (``merged_at`` a non-empty string), is
+   not closed, or names another head or base is passed over: the filters are GitHub's, and the answer is read
+   again here.
+2. An ``ApiError``: an answer that is no list; an item without ``number``, ``state``, ``base.ref``, ``head.ref`` or
+   ``head.sha`` (``_pull``), without the key ``merged_at``, or whose ``merged_at`` is neither ``null`` nor a
+   non-empty string; and an answer of ``CLOSED_PAGE`` items or more none of which counts, since only the first
+   page is read and what lies beyond it is not known.
+
+Outside, stated: a pull request closed from a fork's branch of the same name is told apart only by GitHub's
+``head`` filter (an item's repository is not read here); a pull request the writer's own earlier merge closed is
+merged and is not counted; who closed it and when is not read, so one that GitHub closed because its branch was
+deleted (tohum/25a's deletion before a genesis) counts like a person's, also after that genesis.
 
 Known limits, stated: the base of a pull request is checked from the response the guard saw; GitHub's merge
 endpoint pins the head (``sha``), not the base, so a base changed between that response and the merge is not
@@ -230,6 +254,12 @@ _REPO = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
 _N = r"[1-9][0-9]{0,9}"
 _CONCLUSIONS = ("success", "failure")
 BRANCH_DIFFERS = "branch_differs"  # ``commit_on``'s refusal of a standing branch that is not its commit
+PULL_CLOSED = "pull_closed"  # ``target.land.land``'s refusal of a candidate whose pull request was closed unmerged
+# The refusals of a landing that are its candidate's alone, with nothing written (tohum/26p "Yarım kalmış merge",
+# tohum/01b:75-80): ``loop.write_cycle`` hands exactly these back to be decided again.
+LANDING_REFUSALS = (BRANCH_DIFFERS, PULL_CLOSED)
+CLOSED_PAGE = 100  # the items one read of a branch's closed pull requests asks for (GitHub's largest page)
+_CLOSED = re.compile(r"pulls\?state=closed&head=([^:&]+):([^&]+)&base=([^&]+)&per_page=%d" % CLOSED_PAGE)
 
 Transport = Callable[[str, str, Any], "tuple[int, Any]"]
 
@@ -337,7 +367,20 @@ class Guard:
         if not isinstance(repo, str) or not _REPO.fullmatch(repo) or ".." in repo:
             raise Unusable("repo must be owner/name")
         self.prefix = "/repos/%s/" % repo
+        self.owner = repo.split("/")[0]
         self.pulls: dict[int, dict] = dict(pulls or {})
+
+    def closed_route(self, head: str, base: str) -> str:
+        """The read of the closed pull requests from ``head`` into ``base``, under the repository's prefix
+        (module docstring, "Closed pull"): the one spelling ``check`` takes."""
+        return "pulls?state=closed&head=%s:%s&base=%s&per_page=%d" % (self.owner, head, base, CLOSED_PAGE)
+
+    def _closed(self, path: Any) -> bool:
+        if not isinstance(path, str) or not path.startswith(self.prefix):
+            return False
+        m = _CLOSED.fullmatch(path[len(self.prefix):])
+        return bool(m) and m.group(1) == self.owner and not branch_reasons(m.group(2)) \
+            and not branch_reasons(m.group(3))
 
     def _rest(self, path: Any) -> str | None:
         if not isinstance(path, str) or not path.startswith(self.prefix):
@@ -349,6 +392,8 @@ class Guard:
 
     def check(self, method: Any, path: Any, body: Any = None) -> tuple[list[str], list[str]]:
         """Return ``(reasons, refs)``: why the request is refused, and the refs it writes when allowed."""
+        if method == "GET" and self._closed(path):  # the one route with a query, which ``_rest`` takes none of
+            return ([] if body is None else ["body_invalid"]), []
         rest = self._rest(path)
         if rest is None:
             return ["route_not_allowed"], []
@@ -675,6 +720,26 @@ class Writer:
         if len(found) > 1:
             raise ApiError(None, "more than one open pull request from %s into %s" % (head, base))
         return found[0] if found else None
+
+    def closed_pulls(self, head: str, base: str) -> list[int]:
+        """The numbers, ascending, of the pull requests from ``head`` into ``base`` (branches under ``brain/``)
+        that are closed and were not merged, among those GitHub lists (module docstring, "Closed pull")."""
+        reasons = sorted(set(branch_reasons(head) + branch_reasons(base)))
+        if reasons:
+            raise Refused(reasons)
+        data = self._call("GET", self.guard.closed_route(head, base))
+        if not isinstance(data, list):
+            raise ApiError(None, "the closed pulls of a branch are not a list")
+        found = []
+        for item in data:
+            pull = _pull(item)
+            if "merged_at" not in item or not (item["merged_at"] is None or _text(item["merged_at"])):
+                raise ApiError(None, "a listed pull without merged_at as null or a time")
+            if (pull["state"], pull["head"], pull["base"], item["merged_at"]) == ("closed", head, base, None):
+                found.append(pull["number"])
+        if not found and len(data) >= CLOSED_PAGE:
+            raise ApiError(None, "a full page of pulls and no closed unmerged one: the pages after it are not read")
+        return sorted(found)
 
     def revert(self, merge: str, onto: str, revert_branch: str, message: str, take_up: bool = False) -> dict:
         """Revert ``merge``, the head of ``onto``, with a commit on the branch ``revert_branch``: a new branch, or

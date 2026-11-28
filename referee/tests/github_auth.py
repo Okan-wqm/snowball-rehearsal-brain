@@ -81,6 +81,8 @@ NEEDS = [
     ("GET", r"git/commits/[0-9a-f]+", ("contents", "read")),
     ("GET", r"pulls/\d+", ("pull_requests", "read")),
     ("GET", r"commits/[0-9a-f]+/pulls", ("pull_requests", "read")),  # "List pull requests associated with a commit"
+    # "List pull requests" (read as documentation): the closed ones of a branch, ``target.write.Guard.closed_route``
+    ("GET", r"pulls\?state=closed&head=[^&]+&base=[^&]+&per_page=\d+", ("pull_requests", "read")),
     ("POST", r"git/(refs|commits|blobs|trees)", ("contents", "write")),
     ("PATCH", r"git/refs/heads/.+", ("contents", "write")),
     ("POST", r"pulls", ("pull_requests", "write")),

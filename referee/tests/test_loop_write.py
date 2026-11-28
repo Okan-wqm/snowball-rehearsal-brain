@@ -95,6 +95,7 @@ open allowlist gate (``listed_world``; the gate as a job meets it is test_loop_y
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import io
 import json
@@ -945,6 +946,68 @@ class StandingDiffers(StateBase):
         self.assertEqual([d["reasons"] for d in out["decisions"].values()], [["branch_differs"], ["branch_differs"]])
         self.assertEqual((self.gh.refs[B.INTEGRATION], self.gh.pulls, self.gh.checks), (HEADS[B.INTEGRATION], {}, []))
 
+    def closed(self, branch: str) -> None:
+        """A pull request from ``branch`` into ``brain/integration`` that a person closed; the branch is gone."""
+        n = len(self.gh.pulls) + 1
+        self.gh.pulls[n] = {"base": B.INTEGRATION, "head": branch, "state": "closed", "merged": False, "sha": "0" * 40}
+
+    def test_a_closed_pull_request_rejects_its_candidate_and_the_cycle_is_written(self):
+        """tohum/01b:75-80 on the live path: ``pull_closed`` for that id, nothing of the candidate written (no
+        branch, no blob of its file, no pull request, no check), the cycle's one ``brain/state`` commit."""
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        self.github()
+        self.closed("brain/c/good")
+        pulls = copy.deepcopy(self.gh.pulls)
+        out = self.run_yaz()
+        self.assertEqual((out["ok"], "reason" in out, out["done"], out["merge"]), (True, False, ["D5", "D6"], None), out)
+        self.assertEqual(out["decisions"], {"good": {"decision": "reject", "reasons": ["pull_closed"]}})
+        self.assertEqual((out["written"]["merge"], out["written"]["revert"]), (None, None))
+        head = self.gh.refs[B.STATE]
+        self.assertEqual(self.gh.refs, dict(HEADS, **{B.STATE: head}))
+        self.assertEqual((self.gh.pulls, self.gh.checks), (pulls, []))
+        self.assertNotIn(LandStanding.NEW, self.gh.blobs.values())
+        self.assertEqual([p for m, p in self.writes() if "/git/refs" in p], ["/repos/acme/t1/git/refs/heads/brain/state"])
+        self.assertEqual([p for _, p, _ in self.gh.requests if "/pulls?" in p],
+                         ["/repos/acme/t1/pulls?state=closed&head=acme:brain/c/good&base=brain/integration&per_page=100"])
+        [row] = self.decisions()
+        self.assertEqual((row["row_id"], row["payload"], row["cause"]),
+                         ("9-1:c:good", {"decision": "reject", "candidate": "good", "reasons": ["pull_closed"]},
+                          "unknown"))
+        self.assertEqual(len(self.signer.payloads), 1)
+
+    def test_after_a_closed_pull_request_the_next_candidate_merges_in_the_same_cycle(self):
+        write_tree(self.src, {"pkg/b.js": B_JS})
+        self.kos({"good": candidate(GOOD), "second": SECOND})
+        self.control(OPEN)
+        self.github()
+        self.closed("brain/c/good")
+        out = self.run_yaz()
+        self.assertEqual((out["ok"], out["done"], out["merge"]), (True, ["D5", "D6"], "second"), out)
+        self.assertEqual({c: (d["decision"], d["reasons"]) for c, d in out["decisions"].items()},
+                         {"good": ("reject", ["pull_closed"]), "second": ("merge", [])})
+        merge = out["written"]["merge"]
+        self.assertEqual((merge["candidate"], self.gh.refs[B.INTEGRATION]), ("second", merge["merge_sha"]))
+        self.assertNotIn("brain/c/good", self.gh.refs)
+        self.assertEqual([(n, p["head"], p["merged"]) for n, p in sorted(self.gh.pulls.items())],
+                         [(1, "brain/c/good", False), (2, "brain/c/second", True)])
+        self.assertEqual([(r["row_id"], r["payload"].get("reasons"), r.get("cause")) for r in self.decisions()],
+                         [("9-1:c:good", ["pull_closed"], "unknown"), ("9-1:c:second", None, None),
+                          ("9-1:m:second", None, None)])
+
+    def test_a_closed_pull_request_and_a_standing_branch_each_reject_their_own_candidate(self):
+        write_tree(self.src, {"pkg/b.js": B_JS})
+        self.kos({"good": candidate(GOOD), "second": SECOND})
+        self.control(OPEN)
+        self.github()
+        self.closed("brain/c/good")
+        self.gh.refs["brain/c/second"] = self.stands("brain/c/other")
+        out = self.run_yaz()
+        self.assertEqual((out["ok"], out["merge"], out["written"]["merge"]), (True, None, None), out)
+        self.assertEqual({c: d["reasons"] for c, d in out["decisions"].items()},
+                         {"good": ["pull_closed"], "second": ["branch_differs"]})
+        self.assertEqual((self.gh.refs[B.INTEGRATION], self.gh.checks), (HEADS[B.INTEGRATION], []))
+
     def test_a_refusal_the_job_cannot_place_stops_it(self):
         """The loop's two bounds: a candidate D5 rejected for its branch and the writer refuses again, and a plant
         refused in a cycle that makes none. Neither happens with this writer and this D5; each is made here."""
@@ -961,7 +1024,7 @@ class StandingDiffers(StateBase):
 
         def no_plant(*args, **kw):
             calls.append(1)
-            raise WC.BranchDiffers()
+            raise WC.LandingRefused(W.BRANCH_DIFFERS)
 
         with mock.patch.object(WC, "write", no_plant):
             with self.assertRaisesRegex(J.Unusable, "^yaz: the writer refused a plant the cycle does not make$"):
@@ -1049,6 +1112,21 @@ class UsedId(Watching):
 class D7(Watching):
     """Cycle 9-1 merges a candidate; cycle 10-1's ``kos`` runs the sentinel at the merge (the head) and ``yaz``
     reads it: red is reverted with its cause in the cycle's one ``brain/state`` commit."""
+
+    def test_a_revert_s_closed_pull_request_does_not_end_the_revert(self):
+        """tohum/01b:78-79, tohum/07: a pull request from the revert's branch that was closed unmerged is not read
+        and the red merge is reverted by a new one."""
+        first, heads = self.merged_then_watched(RED_AT_HEAD)
+        merge_sha = first["merge"]["merge_sha"]
+        closed = len(self.gh.pulls) + 1
+        self.gh.pulls[closed] = {"base": B.INTEGRATION, "head": "brain/revert/" + merge_sha, "state": "closed",
+                                 "merged": False, "sha": "0" * 40}
+        sent = len(self.gh.requests)
+        out = self.run_yaz(GITHUB_RUN_ID="10")
+        revert = out["written"]["revert"]
+        self.assertEqual((out["ok"], revert["reverted"], revert["pull"]), (True, merge_sha, closed + 1), out)
+        self.assertEqual((self.gh.refs[B.INTEGRATION], self.gh.pulls[closed]["merged"]), (revert["merge_sha"], False))
+        self.assertEqual([p for _, p, _ in self.gh.requests[sent:] if "/pulls?" in p], [])
 
     def test_a_red_merge_is_reverted_with_its_cause(self):
         first, heads = self.merged_then_watched(RED_AT_HEAD)
@@ -2492,14 +2570,47 @@ class LandStanding(unittest.TestCase):
                          [0, 0, 0, 1])
         self.assertEqual(gh.refs[B.INTEGRATION], out["merge_sha"])
 
-    def test_a_standing_pull_request_that_is_closed_is_not_taken_up(self):
+    CLOSED = "pulls?state=closed&head=acme:brain/c/good&base=brain/integration&per_page=100"
+
+    def test_a_pull_request_closed_unmerged_ends_the_fix_with_nothing_written(self):
+        """tohum/01b:75-80: one read, then ``pull_closed``; no second pull request, no object, no ref. With the
+        candidate's commit standing, and with its branch gone."""
+        for stands in (True, False):
+            gh, wr, repo = self.world()
+            wr.commit_on("brain/c/good", HEADS[B.INTEGRATION], {self.PATH: self.NEW}, "candidate good")
+            closed = wr.open_pull("brain/c/good", B.INTEGRATION, "candidate good")
+            gh.pulls[closed]["state"] = "closed"
+            if not stands:
+                del gh.refs["brain/c/good"]
+            sent, refs, pulls = len(gh.requests), dict(gh.refs), copy.deepcopy(gh.pulls)
+            writer = W.Writer(YW.REPO, gh)
+            with self.assertRaises(W.Refused) as ctx:
+                LN.land(writer, "good", self.PATH, self.NEW, HEADS[B.INTEGRATION], B.CHECK)
+            self.assertEqual(ctx.exception.reasons, ["pull_closed"], stands)
+            self.assertEqual([(m, p) for m, p, _ in gh.requests[sent:]], [("GET", repo + self.CLOSED)], stands)
+            self.assertEqual((gh.refs, gh.pulls, gh.checks, writer.written), (refs, pulls, [], []), stands)
+
+    def test_the_closed_pull_requests_are_read_first_and_only_the_branch_s_own_end_the_fix(self):
+        """A closed pull request of another candidate's branch, one into another base and a merged one of this
+        branch's name leave the landing as it was."""
         gh, wr, repo = self.world()
-        wr.commit_on("brain/c/good", HEADS[B.INTEGRATION], {self.PATH: self.NEW}, "candidate good")
-        closed = wr.open_pull("brain/c/good", B.INTEGRATION, "candidate good")
-        gh.pulls[closed]["state"] = "closed"
+        gh.pulls[1] = {"base": B.INTEGRATION, "head": "brain/c/other", "state": "closed", "merged": False, "sha": "0" * 40}
+        gh.pulls[2] = {"base": B.STATE, "head": "brain/c/good", "state": "closed", "merged": False, "sha": "0" * 40}
+        gh.pulls[3] = {"base": B.INTEGRATION, "head": "brain/c/good", "state": "closed", "merged": True, "sha": "0" * 40}
+        sent = len(gh.requests)
         out = self.land(gh)
-        self.assertEqual((out["pull"], gh.pulls[closed]["merged"], gh.pulls[out["pull"]]["merged"]),
-                         (closed + 1, False, True))
+        self.assertEqual(gh.requests[sent][:2], ("GET", repo + self.CLOSED))
+        self.assertEqual([p for m, p, _ in gh.requests[sent:] if "?" in p], [repo + self.CLOSED])
+        self.assertEqual((out["pull"], gh.pulls[4]["merged"], gh.refs[B.INTEGRATION]), (4, True, out["merge_sha"]))
+
+    def test_a_plant_s_closed_pull_request_is_not_read(self):
+        """A planted merge is no fix: a pull request closed from its branch does not stop it, and no list is read."""
+        gh, wr, repo = self.world()
+        gh.pulls[1] = {"base": B.INTEGRATION, "head": "brain/drill/9-1", "state": "closed", "merged": False,
+                       "sha": "0" * 40}
+        out = LN.plant(wr, "9-1", self.PATH, self.NEW, HEADS[B.INTEGRATION], B.CHECK)
+        self.assertEqual((out["pull"], gh.refs[B.INTEGRATION]), (2, out["merge_sha"]))
+        self.assertEqual([p for m, p, _ in gh.requests if "?" in p], [])
 
     def test_a_standing_branch_that_is_not_this_commit_ends_before_a_pull_request(self):
         gh, wr, repo = self.world()

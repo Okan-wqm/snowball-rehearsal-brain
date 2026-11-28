@@ -12,7 +12,7 @@ the job's ``control`` step read it; ``unfinished``, the merge SHAs whose sentine
 (``ledger.serial.unfinished`` of the ``brain/state`` ledger D1 verified, read by the ``yaz`` job); ``frozen``, the
 ``frozen:<trigger>`` reasons of the soft freezes in force that close this loop's merges (``gozcu.watch.closed`` of
 the same ledger; tohum/28, 27a); ``refused``, ``{cid: reasons}``, the writer's refusals of candidates D5 chose
-earlier in this cycle (``loop.write_cycle.BranchDiffers``, tohum/26p "Yarım kalmış merge"; empty in a cycle's first
+earlier in this cycle (``loop.write_cycle.LandingRefused``, tohum/26p "Yarım kalmış merge"; empty in a cycle's first
 decision, ``loop.job``).
 
 **A used id** (tohum/26p:76-80, "Yarım kalmış merge"), read before any rule below (a genesis cycle, whose
@@ -39,7 +39,7 @@ is the one the cycle started from: the id of the merge this cycle chooses is use
   ``candidate_unusable``;
 - every reason of ``frozen`` (tohum/28: the merge gate is closed), so under a freeze no candidate merges;
 - the reasons ``refused`` gives the candidate (``branch_differs``: its branch stands on the target and is not its
-  commit). The reject is that candidate's alone and is a reject like any other (a ``decision`` row whose ``cause``
+  commit; ``pull_closed``: a pull request from its branch was closed unmerged, tohum/01b:75-80). The reject is that candidate's alone and is a reject like any other (a ``decision`` row whose ``cause``
   is ``ledger.events.cause`` of its reasons; a run-time candidate's finding takes the decision): the candidates
   after it are judged as if it had never been the cycle's merge, so the next one with no reason merges;
 - in every cycle but the genesis cycle (``loop.pulled.genesis``), the reasons of ``gate.allowlist.reasons``
