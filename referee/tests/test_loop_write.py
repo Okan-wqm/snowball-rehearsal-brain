@@ -699,8 +699,8 @@ class D6Standing(StateBase):
 class WriteOutage(StateBase):
     """tohum/28:51-60: a GitHub write to the target that fails in ``yaz``, the first or a later one, is no hard stop.
     The line names it ``write_failed``; nothing is held (no ``brain/state`` commit, so no row and no ``status.md``);
-    the next cycle decides anew and takes up what stands, when the merge did not land (after it the next ``cek``
-    refuses the head no row names, tohum/13:56-57, which tohum/28:58-59 keeps)."""
+    the next cycle decides anew and takes up what stands, when the merge did not land. After it the head stands and
+    no row names it: what the failed job leaves is shown here, what a later cycle does with it is not (open)."""
 
     listed = True
 
@@ -740,7 +740,7 @@ class WriteOutage(StateBase):
                 self.assertEqual(len(out["sign_calls"]), 2 if at > merge_at else 0)
                 self.assertEqual(out["written"] == [], "refs/heads/brain/c/good" not in out["written"])
                 self.assertFalse(at == 0 and out["written"], out)
-                if at > merge_at:  # the merge stands and no row names it: the next cek's refusal (tohum/13:56-57)
+                if at > merge_at:  # what is left: the merge stands and no row names it (nothing was held)
                     self.assertEqual(out["written"], ["refs/heads/brain/c/good", "refs/heads/" + B.INTEGRATION])
                     head = self.gh.refs[B.INTEGRATION]
                     self.assertNotEqual(head, before[B.INTEGRATION])
@@ -954,12 +954,17 @@ class StandingDiffers(StateBase):
             with self.assertRaisesRegex(J.Unusable, "^yaz: the writer refused good, which D5 had rejected$"):
                 self.run_yaz()
 
+        calls = []
+
         def no_plant(*args, **kw):
+            calls.append(1)
             raise WC.BranchDiffers()
 
         with mock.patch.object(WC, "write", no_plant):
             with self.assertRaisesRegex(J.Unusable, "^yaz: the writer refused a plant the cycle does not make$"):
                 self.run_yaz()
+        # the first for ``good``'s branch; the second, with no merge and D8's step no plant, is the one that stops
+        self.assertEqual(len(calls), 2)
         self.assertEqual([p for m, p in self.writes() if "/git/refs" in p], [])
 
     def test_a_branch_that_stands_with_exactly_the_commit_is_no_refusal(self):

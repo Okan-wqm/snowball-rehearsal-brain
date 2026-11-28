@@ -95,8 +95,8 @@
   {
    "id": "refused_plant_guard_inverted",
    "file": "loop/job.py",
-   "old": "            if d8 == PLANT_REFUSED:\n                raise Unusable(",
-   "new": "            if d8 != PLANT_REFUSED:\n                raise Unusable(",
+   "old": "            if d8[\"action\"] != \"plant\":\n                raise Unusable(",
+   "new": "            if d8[\"action\"] == \"plant\":\n                raise Unusable(",
    "tests": [
     "test_loop_write.D8.test_a_plant_whose_branch_stands_and_differs_is_not_made_and_the_next_cycle_plants"
    ]
@@ -147,6 +147,15 @@
    "tests": [
     "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written",
     "test_write.py"
+   ]
+  },
+  {
+   "id": "refused_plant_guard_only_at_the_second",
+   "file": "loop/job.py",
+   "old": "            if d8[\"action\"] != \"plant\":\n                raise Unusable(",
+   "new": "            if d8 == PLANT_REFUSED:\n                raise Unusable(",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_a_refusal_the_job_cannot_place_stops_it"
    ]
   }
  ]

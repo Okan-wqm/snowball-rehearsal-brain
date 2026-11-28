@@ -39,7 +39,8 @@ One run (rule `recorded`):
    <a new directory outside the brain>`. The packet is the whole of what the agent is given: the diff and its
    paths, every lesson in force, whole, and the agent's memory, the findings of its earlier runs that were
    refused, are carried or are not judged yet (rule `remembers`), and `open.json`, every `blocked` row no
-   later row closes, whole (rule `informed`: the diff leaves the ledger out, so what the Founder holds open
+   later row closes, each row's own text whole (an item such a row keeps only by naming an earlier, closed row
+   is not in it) (rule `informed`: the diff leaves the ledger out, so what the Founder holds open
    reaches the agent only so). Only an agent the capsule loaded for this session has a packet.
 6. Start the agent with the Agent tool: the type `brain:<name>`, a stated effort, and the bytes of the
    packet's `message.txt` as the whole prompt, nothing added. No other type of agent is started, and no agent
@@ -52,7 +53,8 @@ One run (rule `recorded`):
    keeps the agent's `repeat_of`. `unjudged` is for a run still being read; no finding leaves the session so.
 8. `python3 tests/agent_run.py record --packet <directory> --run <the run's file> --snapshot <HEAD's SHA>`
    writes the run's row: agent, model, effort, the definition's sha256, the sha256 of the diff, of the lessons,
-   of the memory and of the message as the packet wrote them (a file of the four changed since is refused),
+   of the memory, of the open list and of the message as the packet wrote them (`diff_sha256`,
+   `lessons_sha256`, `memory_sha256`, `open_sha256`, `message_sha256`; a file of these changed since is refused),
    tokens, wall time and the findings; the cost is null there, with the reason in `not_measured` (step 3 of
    the next session writes it). A later reading of a run's findings (the rival's answer, a finding
    judged in a later session) is `python3 tests/agent_run.py record --agent <name> --run <a file with amends

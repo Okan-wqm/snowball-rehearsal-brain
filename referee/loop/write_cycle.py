@@ -90,7 +90,8 @@ planned:
 **A failure in step 4 or 5** (tohum/28:51-60: a GitHub write to the target that fails, the first or a later one, is
 an outage like HTTP 429 and not that page's hard stop; the next cycle decides anew and takes up what stands, when
 the merge did not land: a failure after the merge leaves ``brain/integration`` at a commit no row names, which the
-next ``cek`` refuses, tohum/13:56-57's chain break, kept by tohum/28:58-59):
+next ``cek`` refuses, tohum/13:56-57's chain break, kept by tohum/28:58-59; whether a later cycle should take that
+merge up instead, as tohum/28:54-55 reads, no page settles and nothing here builds):
 
 - the API's error to a request of these steps or no answer to it (``target.write.ApiError``), the writer's refusal
   after a ref was written (``target.write.Refused``: ``merge_head_moved``) and its refusal of step 5's commit

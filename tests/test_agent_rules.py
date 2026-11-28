@@ -699,6 +699,9 @@ class Brain(unittest.TestCase):
                       *("`%s`" % v for v in A.OUTCOMES),
                       *("`%s`" % v for v in A.VERDICTS2), "`carried_in`", "`repeat_of`", "`session_start`"):
             self.assertIn(named, text)
+        row = text.partition("writes the run's row:")[2].partition("is refused)")[0]
+        for _, key in A.PINNED:  # step 8 names each file the row pins
+            self.assertIn("`%s`" % key, row)
 
 
 if __name__ == "__main__":

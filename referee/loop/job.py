@@ -71,7 +71,7 @@ unit as the recipe: the genesis row, the cut at that commit, D5's merge, the rat
 ``GET /app``, is answered only to the App's JWT (``target.app_jwt``; spec/tohum/CHANGELOG.md 2026-11-15), every other
 request goes with the token, and an ordinary cycle's writer is given neither secret (the job's ``drift.check`` is: below). Its refusals before any
 write (``activate``'s reasons, ``base_moved`` among them) are
-``activation_refused`` with the reasons; a hard stop after the cut is ``hard_stop`` with ``written``. The line has
+``activation_refused`` with the reasons; a hard stop at the cut or after it is ``hard_stop`` with ``written`` (none when the cut itself failed). The line has
 ``done`` ``["D5", "D6"]``, ``drill`` ``{action: off, why: genesis}`` (D8 starts in the next cycle) and ``written``
 (``GENESIS_WRITTEN`` of ``activate``'s answer, ``genesis: true``). The next run's ``cek`` finds both heads and serves
 an ordinary cycle.
@@ -269,7 +269,10 @@ refused tree is ``pulled_invalid``). Then:
   branch has another name, plants it). Each candidate is refused at most once in a cycle and the plant once, so
   D6 is called at most once more than the cycle has candidates, plus one. Not covered, stated: the genesis cycle
   (``activate`` lands its merge; tohum/28:57 keeps its failed write a hard stop) and a standing revert branch that
-  differs (``revert_branch_differs``: ``write_refused``, below). D6's refusals before any write
+  differs (``revert_branch_differs``: ``write_refused``, below). Not built: tohum/26p:76-80, ``candidate_id_used``.
+  A candidate whose id the ledger already holds a merge of meets its merged branch here and is rejected
+  ``branch_differs`` with a gate row and its ``cause`` in each cycle it comes back, where the page wants it
+  refused before the gate chooses, named in the target's line only; no test here holds that case. D6's refusals before any write
   (``head_moved:<branch>``, ``state_unwritable: ...``, any other refusal of the writer before any ref is written
   and before the root is signed) are
   ``write_refused`` with the reasons; a hard stop
@@ -1705,7 +1708,7 @@ def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any
             break
         cid = d6["branch_differs"]
         if cid is None:  # the plant's branch: this cycle plants nothing
-            if d8 == PLANT_REFUSED:
+            if d8["action"] != "plant":
                 raise Unusable("yaz: the writer refused a plant the cycle does not make")
             d8 = PLANT_REFUSED
             continue

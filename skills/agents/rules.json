@@ -73,7 +73,7 @@
   {
    "id": "informed",
    "check": "open_given",
-   "says": "A push is read against what its writer knows is open. The diff leaves the founder ledger out, as the rival's does, so the packet carries open.json: every blocked row no later row closes, whole, and the message tells the agent to read each new or changed test, docstring and comment against it. The second design was closed on a defect of that kind: a test that held a behaviour the session's own blocked row listed as against a page (rows f2198, f2202, f2208, f2210).",
+   "says": "A push is read against what its writer knows is open. The diff leaves the founder ledger out, as the rival's does, so the packet carries open.json: every blocked row no later row closes, each row's own text whole, and the message tells the agent to read each new or changed test, docstring and comment against it. The second design was closed on a defect of that kind: a test that held a behaviour the session's own blocked row listed as against a page (rows f2198, f2202, f2208, f2210).",
    "expects": "Every run of the design in force has a row that carries open_sha256, the sha256 of the open.json its packet pinned. A run of the design in force without it refutes the rule: the packet was not this tool's, and the run is made again from one. That the list lowers what the later judge finds is not this rule's: it is improves' comparison of this design with the one before it."
   }
  ]

@@ -41,7 +41,8 @@ The rules, each bound by ``tests/test_agent_run.py``:
      place of ``n``;
    - ``open.json``: ``{row_id, summary}`` of every ``blocked`` row of ``--ledger`` that no later row closes
      (the index's answer to ``OPEN_FOLD``), the summary whole, oldest first: what the Founder holds open, which
-     the diff does not carry (the ledger is outside it). An index that read other bytes than the ledger's
+     the diff does not carry (the ledger is outside it); an item such a row keeps only by naming a closed row
+     is not in the list. An index that read other bytes than the ledger's
      (``open:ledger_moved``) or names a line that is not that ``blocked`` row (``open:line_is_not_the_row:<row
      id>``) is a fault;
    - ``message.txt``: ``MESSAGE`` with the directory's absolute path, the text the session gives the agent as
@@ -300,8 +301,9 @@ made here before, not evidence: look for its class in the change.
 and kept open elsewhere (carried, with the place), or that are not judged yet. Do not report one of them again. Only \
 when this change itself makes one newly wrong, report it and give its "id" from memory.json as "repeat_of" in the \
 finding.
-- open.json: what the Founder who wrote this change holds open, whole: each row lists work not built yet, often \
-with the page and lines it is owed to. The diff does not show these rows. Read each new or changed test, docstring \
+- open.json: what the Founder who wrote this change holds open: each row, whole, lists work not built yet, often \
+with the page and lines it is owed to; an item a row keeps only by naming an earlier row is not in it. The diff \
+does not show these rows. Read each new or changed test, docstring \
 and comment of the change against them: one that holds as right, or promises as kept, a behaviour a row lists as \
 open or as against a page is a finding (class "page" when the row names the page, else "promise")."""
 
