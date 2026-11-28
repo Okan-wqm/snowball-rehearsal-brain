@@ -108,10 +108,13 @@ def batch_record(sha: str, kind: str, data: bytes) -> bytes:
     return b"%s %s %d\n" % (sha.encode(), kind.encode(), len(data)) + data + b"\n"
 
 
-# Both test ``git``s start as ``python -IS`` and import no module from a file but those every python start does (``start_imports``):
-# a test starts one per git command, hundreds in a file, and where the standard library keeps no bytecode (the
-# referee's sandbox) each start that imports ``json`` compiles it again. So what a start records and reads is
-# marshal, not JSON: ``CALLS`` (read it with ``calls``) and ``ANSWERS``, beside the script.
+# The test ``git`` below starts as ``python -IS`` and imports no module from a file but those every python start
+# does (``start_imports``; ``test_gitobj`` holds it): a test starts one per git command, hundreds in a file, and
+# where the standard library keeps no bytecode (the referee's sandbox, read from its durations) each start that
+# imports ``json`` compiles it again. So what a start records and reads is marshal, not JSON: ``CALLS`` (read it
+# with ``calls``) and ``ANSWERS``, beside the script. The same is held of ``test_loop_cek``'s front of it there,
+# and of the history git further down for the commands that name no object (``rev-parse``, ``log``; the others
+# import ``hashlib``), in ``tests/test_founder_ledger.py``. No other program a test starts is measured.
 CALLS, ANSWERS = "calls", "answers"
 
 SCRIPT = '''#!%s -IS
@@ -168,7 +171,7 @@ def start_imports(script: str, args: list[str], stdin: bytes = b"") -> list[str]
     """The modules a start of ``script`` (run as its ``#!`` line says, with ``args``) imports from a file beyond
     those every start of python imports: python's own ``-X importtime`` report of that start, less the report of
     an empty file run as ``python -IS`` and less the modules built into the binary or frozen in it, which cost no
-    compiling. What the scripts here promise is that this is empty (see ``CALLS``)."""
+    compiling. Which script is held to an empty list, and for which commands, is said at ``CALLS``."""
     import importlib.machinery
     import subprocess
     import tempfile
@@ -190,7 +193,7 @@ def start_imports(script: str, args: list[str], stdin: bytes = b"") -> list[str]
 # ---------------------------------------------------------------- a history git (``ledger.founder``'s ref check)
 
 HISTORY_SCRIPT = '''#!%s -IS
-import hashlib, marshal, os, sys
+import marshal, os, sys
 here = os.path.dirname(os.path.abspath(__file__))
 with open("/proc/self/environ", "rb") as fh:
     env = dict(item.decode().split("=", 1) for item in fh.read().split(b"\\0") if item)
@@ -213,8 +216,11 @@ while not os.path.isfile(os.path.join(top, ".git", "history")):
 with open(os.path.join(top, ".git", "history"), "rb") as fh:
     commits = marshal.load(fh)["commits"]
 out = sys.stdout.buffer
+def sha1(data):
+    import hashlib  # read from a file: only a command that names an object pays for it (see CALLS)
+    return hashlib.sha1(data).hexdigest()
 def blob_id(data):
-    return hashlib.sha1(b"blob %%d\\0" %% len(data) + data).hexdigest()
+    return sha1(b"blob %%d\\0" %% len(data) + data)
 def at(commit, path):
     entry = commit["files"].get(path)
     return None if entry is None else (entry[0], bytes.fromhex(entry[1]))
@@ -251,7 +257,7 @@ elif args[:3] == ["ls-tree", "-z", "--full-tree"] and len(args) == 6 and args[4]
             mode, data = at(found[0], name)
             out.write(b"%%s blob %%s\\t%%s\\0" %% (mode.encode(), blob_id(data).encode(), name.encode()))
         elif any(p.startswith(name + "/") for p in files):
-            out.write(b"040000 tree %%s\\t%%s\\0" %% (hashlib.sha1(name.encode()).hexdigest().encode(),
+            out.write(b"040000 tree %%s\\t%%s\\0" %% (sha1(name.encode()).encode(),
                                                        name.encode()))
 elif args[:2] == ["cat-file", "blob"] and len(args) == 3:
     blobs = {blob_id(e[1]): e[1] for c in commits for e in (at(c, p) for p in c["files"])}

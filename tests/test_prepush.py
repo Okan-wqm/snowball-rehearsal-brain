@@ -61,6 +61,10 @@ class Base(unittest.TestCase):
         os.chmod(self.git, 0o755)
         self.dirty = ""
         self.git_says: dict = {}  # more answers of the fake git, over ``call``'s own
+        # ``run`` stamps only what ran on ``run_like_referee``'s cold home; whether this machine builds one is
+        # that module's test, so here it is answered: this interpreter stands for it.
+        self.addCleanup(setattr, R, "cold_home", R.cold_home)
+        R.cold_home = lambda home: os.path.realpath(sys.executable)
 
     def moving_access_times(self) -> None:
         self.assertTrue(R.atime_moves(self.work), "this test needs a file system where access times move")
@@ -480,27 +484,27 @@ class Quick(Base):
         with open(self.stamp, "rb") as f:
             self.assertEqual(f.read(), stamped)  # a green quick pass stamps nothing
 
-    def test_run_times_on_a_cold_python_and_quick_on_a_warm_one(self):
+    def test_run_stamps_only_a_cold_run_and_quick_runs_warm(self):
         # ``run_like_referee``'s cold home is asked for by ``run`` (a command's time is what it bounds) and not by
-        # ``quick``; here it answers None, so both go on with the warm interpreter.
+        # ``quick``. A run that did not get one says which python it had and writes no stamp.
         asked: list = []
-        self.addCleanup(setattr, R, "cold_home", R.cold_home)
-        R.cold_home = lambda home: asked.append(os.path.basename(home))
         self.tree()
         got = self.green()
-        self.assertEqual((got["ok"], asked), (True, ["python-cold"]))
-        self.assertIn(got["python"], ("own", "moved_home"))             # said by run: no cold home was built
-        R.cold_home = lambda home: os.path.realpath(sys.executable)
-        self.assertEqual(self.green()["python"], "cold_home")
-        self.put("referee/tests/test_other.py", value_test("other", 3))
-        self.assertEqual([self.green()[k] for k in ("ok", "python")], [False, "cold_home"])
-        self.put("referee/tests/test_other.py", value_test("other", 2))
+        self.assertEqual((got["ok"], got["python"], os.path.exists(self.stamp)), (True, "cold_home", True))
         R.cold_home = lambda home: asked.append(os.path.basename(home))
+        got = self.green()
+        self.assertEqual((got["ok"], got["reasons"], got["failed"], asked), (False, ["timed_warm"], [], ["python-cold"]))
+        self.assertIn(got["python"], ("own", "moved_home"))
+        self.assertFalse(os.path.exists(self.stamp))                     # the earlier stamp is gone with it
+        self.put("referee/tests/test_other.py", value_test("other", 3))
+        self.assertEqual(self.green()["reasons"], ["tests_red", "timed_warm"])
+        self.put("referee/tests/test_other.py", value_test("other", 2))
+        R.cold_home = lambda home: os.path.realpath(sys.executable)
         self.assertTrue(self.green()["ok"])
-        del asked[1:]
+        R.cold_home = lambda home: asked.append(os.path.basename(home))
         self.put("referee/deep.py", "VALUE = 1  # the same\n")
         got = self.quick()
-        self.assertEqual((got["ok"], got["ran"], asked), (True, True, ["python-cold"]))
+        self.assertEqual((got["ok"], got["ran"], asked), (True, True, ["python-cold"] * 2))  # the two runs' own
 
     def test_the_stamped_tree_selects_and_runs_nothing(self):
         self.tree()

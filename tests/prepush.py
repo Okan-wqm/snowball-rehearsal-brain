@@ -17,10 +17,12 @@ Rules, each bound by ``tests/test_prepush.py``:
 - **run** runs every command of the manifest with ``run_like_referee`` (its rules and its out-of-scope list are
   that module's; no ``--only`` here) and prints its lines. It writes the stamp only when the summary is ok and
   ``state`` of the tree is the same after the run as before it; otherwise it removes a stamp that is there and
-  says why (``tests_red``, ``tree_changed_during_run``). Exit 0 with a stamp written, 1 without. Its last line
-  carries ``python``, the kind of interpreter the commands ran on (``run_like_referee``'s summary): the run asks
-  for ``cold_home``, where a command's time is nearest the referee's, and any other kind there says the times of
-  this run were a warm python's, which the stamp does not record.
+  says why (``tests_red``, ``timed_warm``, ``tree_changed_during_run``). Exit 0 with a stamp written, 1 without.
+  ``timed_warm``: the commands did not run on ``run_like_referee``'s ``cold_home`` (its summary's ``python``,
+  carried in this command's last line, says another kind: the cold home could not be built here), so no
+  command's time was measured where it is nearest the referee's, and a machine that cannot build one writes no
+  stamp. (``check``'s second run of the ledger's readers asks for the same python and does not read which it
+  got: it judges the rows, the times were ``run``'s.)
 - **The stamp** holds ``state`` of every file ``git add -A`` would commit except ``founder-ledger.jsonl`` (a
   file's sha256 and execute bit, a link's target), the ledger's length and sha256, and ``readers``: the ids of the
   commands that read the ledger's bytes from their copy during the run (``run_like_referee.run_one``'s ``read``,
@@ -157,6 +159,8 @@ def green(root: str, git: str, path: str, jobs: int, timeout: float, emit=print)
 
     summary = R.run(root, tests, names, jobs, timeout, emit=keep, watch=watched)
     reasons = [] if summary["ok"] else ["tests_red"]
+    if summary["python"] != "cold_home":
+        reasons.append("timed_warm")
     if state(root, R.files(root, git)) != before:
         reasons.append("tree_changed_during_run")
     if reasons:

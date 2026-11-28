@@ -773,6 +773,19 @@ class RefSince(Repos):
         self.answers.append(out["open"][1]["ref_check"] | {"filed": self.commits.index(filed)})
 
 
+class HistoryGitStart(Repos):
+    def test_a_command_that_names_no_object_imports_no_module_from_a_file(self):
+        # ``git_store.CALLS``: each start compiles what it imports where no bytecode is kept; ``ref_checks`` starts
+        # this git several times a row.
+        from git_store import start_imports
+        top, _ = self.repo()
+        for args in (["rev-parse", "--show-toplevel"], ["rev-parse", "--git-path", "shallow"],
+                     ["log", "-1", "--format=%H", "--", "spec/p.md"]):
+            with self.subTest(args=args):
+                self.assertEqual(start_imports(self.repos.path, ["-C", top] + args), [])
+        self.assertIn("hashlib", start_imports(self.repos.path, ["-C", top, "cat-file", "blob", "0" * 40]))
+
+
 class HistoryGitCalls(Repos):
     """What ``ref_checks`` asks git, seen by ``HistoryGit``: every call is ``git <trust> --literal-pathspecs -C
     <top> <command>`` with ``loop.gitobj.git_env``'s environment, and only the five commands it answers."""

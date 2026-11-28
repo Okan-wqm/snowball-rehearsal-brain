@@ -558,6 +558,15 @@
    "tests": [
     "test_founder_ledger.Append.test_recheck_is_written_for_a_lesson_and_refused_elsewhere"
    ]
+  },
+  {
+   "id": "history_git_imports_hashlib_at_every_start",
+   "file": "referee/tests/git_store.py",
+   "old": "import marshal, os, sys\nhere = os.path.dirname(os.path.abspath(__file__))\nwith open(\"/proc/self/environ\", \"rb\") as fh:\n    env = dict(item.decode().split(\"=\", 1) for item in fh.read().split(b\"\\\\0\") if item)\nwith open(os.path.join(here, \"calls\"), \"ab\") as fh:  # marshal",
+   "new": "import hashlib, marshal, os, sys\nhere = os.path.dirname(os.path.abspath(__file__))\nwith open(\"/proc/self/environ\", \"rb\") as fh:\n    env = dict(item.decode().split(\"=\", 1) for item in fh.read().split(b\"\\\\0\") if item)\nwith open(os.path.join(here, \"calls\"), \"ab\") as fh:  # marshal",
+   "tests": [
+    "test_founder_ledger.HistoryGitStart"
+   ]
   }
  ]
 }
