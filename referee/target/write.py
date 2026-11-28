@@ -117,8 +117,8 @@ GitHub's list of pull requests ("List pull requests": ``state``, ``head`` as ``<
 ``per_page`` at most 100; read as documentation, not observed live; the route asks ``pull_requests: read``, which
 the reads above ask too). Rules, each with a test in ``test_write``:
 
-1. ``closed_pulls(head, base)`` sends that one read for two branches under ``brain/`` (``Refused`` otherwise, nothing
-   sent) and gives the numbers, ascending, of the answer's items with ``state`` ``closed``, ``head.ref`` ``head``,
+1. ``closed_pulls(head, base)`` sends that one read for two branches under ``brain/`` (the guard's ``Refused``
+   otherwise, nothing sent) and gives the numbers, ascending, of the answer's items with ``state`` ``closed``, ``head.ref`` ``head``,
    ``base.ref`` ``base`` and ``merged_at`` ``null``. An item that is merged (``merged_at`` a non-empty string), is
    not closed, or names another head or base is passed over: the filters are GitHub's, and the answer is read
    again here.
@@ -724,10 +724,7 @@ class Writer:
     def closed_pulls(self, head: str, base: str) -> list[int]:
         """The numbers, ascending, of the pull requests from ``head`` into ``base`` (branches under ``brain/``)
         that are closed and were not merged, among those GitHub lists (module docstring, "Closed pull")."""
-        reasons = sorted(set(branch_reasons(head) + branch_reasons(base)))
-        if reasons:
-            raise Refused(reasons)
-        data = self._call("GET", self.guard.closed_route(head, base))
+        data = self._call("GET", self.guard.closed_route(head, base))  # the guard refuses any other two branches
         if not isinstance(data, list):
             raise ApiError(None, "the closed pulls of a branch are not a list")
         found = []

@@ -59,7 +59,7 @@
   {
    "id": "refusal_always_named_branch_differs",
    "file": "loop/job.py",
-   "old": "        differs[cid] = [d6[\"why\"]]",
+   "old": "        differs[cid] = d6[\"why\"]",
    "new": "        differs[cid] = [W.BRANCH_DIFFERS]",
    "tests": [
     "test_loop_write.StandingDiffers.test_a_closed_pull_request_rejects_its_candidate_and_the_cycle_is_written"
@@ -68,8 +68,8 @@
   {
    "id": "landing_refused_names_the_first_tuple_entry",
    "file": "loop/write_cycle.py",
-   "old": "                raise LandingRefused(exc.reasons[0]) from None",
-   "new": "                raise LandingRefused(W.LANDING_REFUSALS[0]) from None",
+   "old": "                raise LandingRefused([*exc.reasons]) from None",
+   "new": "                raise LandingRefused([W.LANDING_REFUSALS[0]]) from None",
    "tests": [
     "test_loop_write.StandingDiffers.test_after_a_closed_pull_request_the_next_candidate_merges_in_the_same_cycle"
    ]
@@ -172,15 +172,6 @@
    "new": "        return found",
    "tests": [
     "test_write.ClosedPulls.test_the_answer_is_read_again_here"
-   ]
-  },
-  {
-   "id": "closed_branches_not_checked",
-   "file": "target/write.py",
-   "old": "        reasons = sorted(set(branch_reasons(head) + branch_reasons(base)))\n        if reasons:",
-   "new": "        reasons = sorted(set(branch_reasons(head) + branch_reasons(base)))\n        if False:",
-   "tests": [
-    "test_write.ClosedPulls.test_a_branch_outside_brain_is_refused_with_nothing_sent"
    ]
   },
   {

@@ -1728,7 +1728,7 @@
    "old": "                 if (pull[\"state\"], pull[\"head\"], pull[\"base\"], pull[\"head_sha\"]) == (\"open\", head, base, sha)]",
    "new": "                 if (pull[\"head\"], pull[\"base\"], pull[\"head_sha\"]) == (head, base, sha)]",
    "tests": [
-    "test_loop_write.LandStanding.test_a_standing_pull_request_that_is_closed_is_not_taken_up"
+    "test_write.Revert.test_standing_pull_is_the_one_open_pull_of_that_head_base_and_sha"
    ]
   }
  ]

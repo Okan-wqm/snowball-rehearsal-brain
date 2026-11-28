@@ -194,14 +194,15 @@ class Unusable(ValueError):
 
 
 class LandingRefused(Exception):
-    """Step 4's landing was refused for ``reason``, one of ``target.write.LANDING_REFUSALS``, with no ref written:
+    """Step 4's landing was refused with no ref written; ``reasons`` is the one reason, one of
+    ``target.write.LANDING_REFUSALS``:
     its branch stands and is not this cycle's commit (tohum/26p "Yarım kalmış merge"), or a pull request from it
     was closed unmerged (tohum/01b:75-80). The branch is the merge's, ``brain/c/<decided["merge"]>``, when the
     cycle merges, and D8's plant's otherwise (a cycle lands one of the two, ``write``)."""
 
-    def __init__(self, reason: str):
-        super().__init__(reason)
-        self.reason = reason
+    def __init__(self, reasons: list[str]):
+        super().__init__(", ".join(reasons))
+        self.reasons = reasons
 
 
 class WriteFailed(Exception):
@@ -396,7 +397,7 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
     except W.Refused as exc:
         if landing and not writer.written:
             if len(exc.reasons) == 1 and exc.reasons[0] in W.LANDING_REFUSALS:  # the merge's branch, or the plant's
-                raise LandingRefused(exc.reasons[0]) from None
+                raise LandingRefused([*exc.reasons]) from None
             raise Refused([*exc.reasons]) from None
         raise WriteFailed("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     except W.ApiError as exc:

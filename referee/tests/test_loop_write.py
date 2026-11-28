@@ -1024,7 +1024,7 @@ class StandingDiffers(StateBase):
 
         def no_plant(*args, **kw):
             calls.append(1)
-            raise WC.LandingRefused(W.BRANCH_DIFFERS)
+            raise WC.LandingRefused([W.BRANCH_DIFFERS])
 
         with mock.patch.object(WC, "write", no_plant):
             with self.assertRaisesRegex(J.Unusable, "^yaz: the writer refused a plant the cycle does not make$"):

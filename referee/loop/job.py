@@ -1094,7 +1094,7 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
     reasons,
     written?}`` or
     ``{written}``, or ``{landing_refused: cid | None, why}`` when the landing of D5's merge ``cid`` or of D8's
-    plant (``None``) was refused for ``why`` with nothing written (``loop.write_cycle.LandingRefused``). ``transport``
+    plant (``None``) was refused for the one reason in ``why`` with nothing written (``loop.write_cycle.LandingRefused``). ``transport``
     is the target's API (``target.write.HttpTransport`` with ``WRITER_TOKEN`` when ``None``), ``signer`` the root's
     (``loop.sign.SigstoreSigner`` pinned to ``loop.yml`` on ``$GITHUB_REPOSITORY`` when ``None``, counting its runs
     in ``job_calls``, the job's list, or in its own when that is ``None`` too), ``now`` the clock."""
@@ -1114,7 +1114,7 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
     except LC.Unusable as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
     except WC.LandingRefused as exc:  # one landing in a cycle: the merge's branch, or else the plant's
-        return {"landing_refused": d5["merge"], "why": exc.reason}
+        return {"landing_refused": d5["merge"], "why": [*exc.reasons]}
     except WC.Refused as exc:
         return {"reason": "write_refused", "reasons": exc.reasons}
     except LN.HardStop as exc:
@@ -1721,7 +1721,7 @@ def _yaz_written(environ: dict[str, str], tid: str, d5: dict[str, Any], art: Any
             continue
         if cid in differs:
             raise Unusable("yaz: the writer refused %s, which D5 had rejected" % cid)
-        differs[cid] = [d6["why"]]
+        differs[cid] = d6["why"]
         d5, _, _ = yaz_d5(environ, tid, (art, tree), differs)
         if "reason" in d5:  # the first decision read the same inputs
             raise Unusable("yaz: %s" % d5["reason"])

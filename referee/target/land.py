@@ -43,9 +43,11 @@ parent's, on ``brain/revert/<merge_sha>``, and its pull request into ``brain/int
 pinned merge as a candidate's. Returns ``{cause, pull, commit, merge_sha}`` (``merge_sha`` the revert's merge
 commit). Runs and facts that are no revert are ``Unusable``, before anything is written.
 
-Out of scope, stated: the genesis cycle's landing (``activate`` calls ``land`` after it created
+Not covered, stated: the genesis cycle's landing (``activate`` calls ``land`` after it created
 ``brain/integration``, and any refusal of it there, ``pull_closed`` too, is the activation's failed write; not judged
-against tohum/01b:75-80 and held by no test); whether ``base`` is still ``brain/integration``'s head (the caller reads it before landing;
+against tohum/01b:75-80 and held by no test).
+
+Out of scope, stated: whether ``base`` is still ``brain/integration``'s head (the caller reads it before landing;
 GitHub refuses a merge that is not a fast-forward of a moved base only by the ruleset's strict check); that the
 file is the finding's (the gate's criterion 4, judged before).
 """
