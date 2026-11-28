@@ -2,7 +2,7 @@
  "mutants": [
   {
    "id": "last_genesis_ignored",
-   "file": "harness/revert_drill.py",
+   "file": "ledger/serial.py",
    "old": "    return found[-1] if found else None",
    "new": "    return 0 if found else None",
    "tests": [

@@ -34,6 +34,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from harness import revert_drill as RD  # noqa: E402
+from ledger import serial  # noqa: E402
 from loop import drill as DR  # noqa: E402
 from profile_tree import write_tree  # noqa: E402
 from test_kos import diff  # noqa: E402
@@ -133,8 +134,8 @@ class Eligible(unittest.TestCase):
         self.assertEqual(self.got([genesis("g1"), before, genesis("g2"), after]), [L2, T1, T2, L1])
         self.assertEqual(self.got([genesis("g1"), genesis("g2"), before, after]), [L2, L1])
         self.assertEqual(self.got([before, genesis("g1"), after, genesis("g2")]), ids(CATALOG))
-        self.assertEqual((RD.last_genesis([]), RD.last_genesis([before]), RD.last_genesis([genesis("g"), before]),
-                          RD.last_genesis([genesis("g1"), before, genesis("g2"), after])), (None, None, 0, 2))
+        self.assertEqual((serial.last_genesis([]), serial.last_genesis([before]), serial.last_genesis([genesis("g"), before]),
+                          serial.last_genesis([genesis("g1"), before, genesis("g2"), after])), (None, None, 0, 2))
         # a row of kind genesis in another part is no genesis row
         self.assertEqual(self.got([before, row("x", "drill", "genesis", {})]), [L2, B1, L1, B2])
 

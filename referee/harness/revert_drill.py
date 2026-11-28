@@ -91,7 +91,7 @@ import sys
 from typing import Any, Callable
 
 from gate import revert
-from ledger import append, chain
+from ledger import append, chain, serial
 from target import land, write
 import cli
 
@@ -197,19 +197,13 @@ def chain_rows(ledger: bytes) -> list[dict] | None:
     return [chain.parse_row(line.decode("utf-8")) for line in chain._lines(ledger)]
 
 
-def last_genesis(rows: list[dict]) -> int | None:
-    """The index of the last ``events``/``genesis`` row of ``rows``, None when there is none."""
-    found = [i for i, row in enumerate(rows) if _is(row, "events", "genesis")]
-    return found[-1] if found else None
-
-
 def eligible(catalog: Any, rows: list[dict]) -> dict:
     """The catalog a commitment written after ``rows`` draws from: the instances of the least-planted causes (see
     the module docstring); ``Unusable`` for a catalog ``instances`` refuses."""
     items = instances(catalog)
     cause_of = {item["id"]: item["cause"] for item in items}
     counts = dict.fromkeys(cause_of.values(), 0)
-    since = last_genesis(rows)
+    since = serial.last_genesis(rows)
     for row in rows[0 if since is None else since + 1:]:
         planted = row["payload"].get("instance_id") if is_drill(row, "plant") else None
         if isinstance(planted, str) and planted in cause_of:

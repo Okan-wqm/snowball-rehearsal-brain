@@ -20,7 +20,7 @@
   },
   {
    "id": "first_genesis_not_last",
-   "file": "harness/revert_drill.py",
+   "file": "ledger/serial.py",
    "old": "    return found[-1] if found else None",
    "new": "    return found[0] if found else None",
    "tests": [
@@ -29,8 +29,8 @@
   },
   {
    "id": "genesis_of_any_part",
-   "file": "harness/revert_drill.py",
-   "old": "    found = [i for i, row in enumerate(rows) if _is(row, \"events\", \"genesis\")]",
+   "file": "ledger/serial.py",
+   "old": "    found = [i for i, row in enumerate(rows) if _type(row) == GENESIS and isinstance(row.get(\"payload\"), dict)]",
    "new": "    found = [i for i, row in enumerate(rows) if row.get(\"kind\") == \"genesis\"]",
    "tests": [
     "test_drill_draw.Eligible.test_only_the_rows_after_the_last_genesis_count"

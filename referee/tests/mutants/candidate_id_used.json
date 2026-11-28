@@ -3,8 +3,8 @@
   {
    "id": "used_ids_a_genesis_frees_nothing",
    "file": "ledger/serial.py",
-   "old": "            decided, merged = set(), set()",
-   "new": "            pass",
+   "old": "    for row in rows[last_genesis(rows) or 0:]:",
+   "new": "    for row in rows:",
    "tests": [
     "test_serial.UsedIds.test_a_genesis_row_frees_the_ids_before_it"
    ]
@@ -39,8 +39,8 @@
   {
    "id": "used_ids_any_decision",
    "file": "ledger/serial.py",
-   "old": "elif _type(row) == DECISION and row[\"payload\"][\"decision\"] == \"merge\":",
-   "new": "elif _type(row) == DECISION:",
+   "old": "        if _type(row) == DECISION and row[\"payload\"][\"decision\"] == \"merge\":",
+   "new": "        if _type(row) == DECISION:",
    "tests": [
     "test_serial.UsedIds.test_one_row_of_the_two_a_reject_and_a_plant_name_no_id"
    ]
@@ -48,8 +48,8 @@
   {
    "id": "used_ids_reads_a_proposal",
    "file": "ledger/serial.py",
-   "old": "    for row in rows:\n        if \"proposed_by\" in row:\n            continue\n        if _type(row) == GENESIS:",
-   "new": "    for row in rows:\n        if \"proposed_by\" in row:\n            pass\n        if _type(row) == GENESIS:",
+   "old": "    for row in rows[last_genesis(rows) or 0:]:\n        if \"proposed_by\" in row:\n            continue",
+   "new": "    for row in rows[last_genesis(rows) or 0:]:\n        if \"proposed_by\" in row:\n            pass",
    "tests": [
     "test_serial.UsedIds.test_a_proposed_row_counts_for_nothing"
    ]
@@ -122,6 +122,15 @@
    "new": "        cand = runtime.get(cid)\n        if cid in used and not (cand is not None and cid in art.candidates):\n            continue",
    "tests": [
     "test_candidates.Live.test_a_used_run_time_id_takes_no_decision_and_no_finding_decision"
+   ]
+  },
+  {
+   "id": "used_ids_its_own_start_of_the_run",
+   "file": "ledger/serial.py",
+   "old": "    for row in rows[last_genesis(rows) or 0:]:",
+   "new": "    own = [i for i, row in enumerate(rows) if _type(row) == GENESIS and \"proposed_by\" not in row]\n    for row in rows[own[-1] if own else 0:]:",
+   "tests": [
+    "test_serial.UsedIds.test_the_run_s_start_is_the_one_rule_of_every_reader"
    ]
   }
  ]

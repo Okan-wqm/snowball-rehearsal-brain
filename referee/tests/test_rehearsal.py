@@ -260,6 +260,7 @@ class Flow:
             out[t["target"]] = {
                 "genesis": t.get("written", {}).get("genesis", False), "merge": t.get("merge"),
                 "decisions": {cid: d["reasons"] for cid, d in t.get("decisions", {}).items()},
+                "used": t.get("candidate_id_used"),
                 "sentinel": None if sentinel is None else sentinel["verdict"], "drill": t.get("drill"),
                 "gate": t.get("gate"), "pass": t.get("pass"), "done": t.get("done")}
         return out
@@ -295,16 +296,17 @@ def step(record: dict) -> dict:
 
 
 def toy(merge=None, decisions=None, sentinel=None, drill=None, gate=None, done=("D5", "D6"), genesis=False,
-        judged=None) -> dict:
-    """The toy's part of an expected record; ``decisions`` default: both candidates' diffs no longer apply (``good``
-    merged at the genesis) and, as ready candidates of a cycle after the genesis, they name no organ (P1 MF9)."""
+        judged=None, used=("good",)) -> dict:
+    """The toy's part of an expected record; the defaults are a cycle after the genesis: ``good``, merged at the
+    genesis, is a used id (tohum/26p:76-80: on the line's ``candidate_id_used``, no decision), and ``breaks``'s diff
+    no longer applies and, as a ready candidate of a cycle after the genesis, it names no organ (P1 MF9)."""
     stale = ["artefact_hash_mismatch", "kos:patch_does_not_apply", "no_organ"]
-    return {"genesis": genesis, "merge": merge, "decisions": decisions or {"breaks": stale, "good": stale},
+    return {"genesis": genesis, "merge": merge, "decisions": decisions or {"breaks": stale}, "used": list(used),
             "sentinel": sentinel, "drill": drill, "gate": gate, "pass": judged, "done": list(done)}
 
 
 GENESIS = toy(merge="good", decisions={"breaks": ["tests_red"], "good": []}, drill={"action": "off", "why": "genesis"},
-              genesis=True)
+              genesis=True, used=())
 
 
 def closed(**conditions) -> dict:
@@ -460,23 +462,22 @@ class Rehearsal(unittest.TestCase):
                                           gate=closed(geri_alma=unshown[1:2]))},
             {"waiting": ["c1"], "t1": toy(drill={"action": "plant", "instance_id": RD_BUILD}, done=d8,
                                           gate=closed(geri_alma=unshown[1:2]))},
-            {"waiting": ["c1"], "t1": toy(sentinel="red", drill=wait, done=d78, decisions={"breaks": no_base,
-                                                                                          "good": no_base},
+            {"waiting": ["c1"], "t1": toy(sentinel="red", drill=wait, done=d78, decisions={"breaks": no_base},
                                           gate=closed(geri_alma=["drill_fail:%s:not_reverted" % RD_BUILD] + unshown[1:2]))},
             {"waiting": ["c1"], "t1": toy(drill=dict(commit, judged=[RD_BUILD, "PASS", []]), done=d8,
                                           gate={"verdict": "open", "conditions": {}})},
             {"waiting": [], "t1": toy(drill={"action": "plant", "instance_id": RD_LINT}, done=d8,
                                       judged={"waiting": "copy_genesis"}),
-             "c1": {"genesis": True, "merge": "good", "decisions": {"good": []}, "sentinel": None,
+             "c1": {"genesis": True, "merge": "good", "decisions": {"good": []}, "used": [], "sentinel": None,
                     "drill": {"action": "off", "why": "genesis"}, "gate": None, "pass": None, "done": ["D5", "D6"]}},
             {"waiting": [], "t1": toy(sentinel="green", drill=wait, done=d78, judged={
                 "verdict": "FAIL", "conditions": {"#geri-alma": ["toy:drill_fail:%s:not_reverted" % RD_LINT],
                                                   "#nobetci #hayatta": ["copy:sentinel_unfinished:<sha>"]}}),
-             "c1": {"genesis": False, "merge": None, "decisions": {"good": stale}, "sentinel": "green",
+             "c1": {"genesis": False, "merge": None, "decisions": {}, "used": ["good"], "sentinel": "green",
                     "drill": {"action": "off"}, "gate": None, "pass": None, "done": ["D5", "D6", "D7"]}},
             {"waiting": [], "t1": toy(drill=dict(commit, judged=[RD_LINT, "PASS", []]), done=d8,
                                       judged={"verdict": "PASS", "conditions": {}}),
-             "c1": {"genesis": False, "merge": None, "decisions": {"good": stale}, "sentinel": None,
+             "c1": {"genesis": False, "merge": None, "decisions": {}, "used": ["good"], "sentinel": None,
                     "drill": {"action": "off"}, "gate": None, "pass": None, "done": ["D5", "D6"]}}])
         ledger = flow.hubs["o/toy"].read_file(B.STATE, B.STATE_LEDGER)
         self.assertTrue(PR.passed(ledger))  # the PASS row is written

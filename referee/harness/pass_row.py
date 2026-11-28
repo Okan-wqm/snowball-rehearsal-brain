@@ -208,7 +208,7 @@ def _first_decisions(rows: list[dict]) -> dict[str, dict]:
 
 def _last_genesis(rows: list[dict]) -> int:
     """The index of the ledger's last ``genesis`` row (tohum/26d: (B) runs on it), 0 when there is none."""
-    return RD.last_genesis(rows) or 0
+    return serial.last_genesis(rows) or 0
 
 
 def _genesis(rows: list[dict], imported: dict) -> list[str]:
