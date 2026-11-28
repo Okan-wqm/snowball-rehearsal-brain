@@ -1,0 +1,94 @@
+{
+ "mutants": [
+  {
+   "id": "api_error_a_hard_stop",
+   "file": "loop/write_cycle.py",
+   "old": "end = WriteFailed if isinstance(exc, (W.ApiError, W.Refused)) else land.HardStop",
+   "new": "end = WriteFailed if isinstance(exc, W.Refused) else land.HardStop",
+   "tests": [
+    "test_loop_write.WriteOutage.test_a_write_that_fails_at_any_request_of_a_merging_cycle_is_no_hard_stop"
+   ]
+  },
+  {
+   "id": "refusal_after_a_write_a_hard_stop",
+   "file": "loop/write_cycle.py",
+   "old": "end = WriteFailed if isinstance(exc, (W.ApiError, W.Refused)) else land.HardStop",
+   "new": "end = WriteFailed if isinstance(exc, W.ApiError) else land.HardStop",
+   "tests": [
+    "test_loop_write.WriteOutage.test_the_writer_s_refusal_after_a_write_is_a_failed_write"
+   ]
+  },
+  {
+   "id": "hard_stop_a_failed_write",
+   "file": "loop/write_cycle.py",
+   "old": "end = WriteFailed if isinstance(exc, (W.ApiError, W.Refused)) else land.HardStop",
+   "new": "end = WriteFailed",
+   "tests": [
+    "test_loop_write.D6.test_a_root_that_cannot_be_signed_after_the_merge_is_a_hard_stop_naming_the_writes"
+   ]
+  },
+  {
+   "id": "refusal_unwritten_a_failed_write",
+   "file": "loop/write_cycle.py",
+   "old": "        if isinstance(exc, W.Refused) and not writer.written:",
+   "new": "        if False:",
+   "tests": [
+    "test_loop_write.WriteOutage.test_the_writer_s_refusal_with_nothing_written_is_a_refusal_with_its_reasons"
+   ]
+  },
+  {
+   "id": "refusal_after_a_write_a_refusal",
+   "file": "loop/write_cycle.py",
+   "old": "        if isinstance(exc, W.Refused) and not writer.written:",
+   "new": "        if isinstance(exc, W.Refused):",
+   "tests": [
+    "test_loop_write.WriteOutage.test_the_writer_s_refusal_after_a_write_is_a_failed_write"
+   ]
+  },
+  {
+   "id": "failed_write_names_no_ref",
+   "file": "loop/job.py",
+   "old": "\"written\": exc.written,",
+   "new": "\"written\": [],",
+   "tests": [
+    "test_loop_write.WriteOutage.test_a_write_that_fails_at_any_request_of_a_merging_cycle_is_no_hard_stop"
+   ]
+  },
+  {
+   "id": "failed_write_calls_dropped",
+   "file": "loop/job.py",
+   "old": "\"written\": exc.written,\n                \"sign_calls\": _sign_calls(signer, seen)}",
+   "new": "\"written\": exc.written,\n                \"sign_calls\": []}",
+   "tests": [
+    "test_loop_write.WriteOutage.test_the_first_write_of_a_cycle_that_merges_nothing_fails_and_the_next_cycle_writes"
+   ]
+  },
+  {
+   "id": "failed_write_named_hard_stop",
+   "file": "loop/job.py",
+   "old": "return {\"reason\": \"write_failed\",",
+   "new": "return {\"reason\": \"hard_stop\",",
+   "tests": [
+    "test_loop_write.WriteOutage.test_the_first_write_of_a_cycle_that_merges_nothing_fails_and_the_next_cycle_writes"
+   ]
+  },
+  {
+   "id": "failed_write_unusable",
+   "file": "loop/job.py",
+   "old": "    except WC.WriteFailed as exc:\n",
+   "new": "    except ():\n",
+   "tests": [
+    "test_loop_write.WriteOutage.test_the_first_write_of_a_cycle_that_merges_nothing_fails_and_the_next_cycle_writes"
+   ]
+  },
+  {
+   "id": "genesis_failed_write_no_hard_stop",
+   "file": "activate.py",
+   "old": "    except (write.ApiError, write.Refused, Unusable) + cycle.FAILURES as exc:",
+   "new": "    except (write.Refused, Unusable) + cycle.FAILURES as exc:",
+   "tests": [
+    "test_loop_write.Genesis.test_a_genesis_write_that_fails_stays_a_hard_stop"
+   ]
+  }
+ ]
+}

@@ -87,8 +87,20 @@ planned:
 5. ``ledger.cycle.commit`` on ``brain/state`` at ``pulled``'s head (``ledger.append.TargetState``: the writer
    refuses a moved head before creating anything): the rows, ``status.md``'s block and the signed root, one commit.
 
-A failure after the first write of step 4 or 5 is ``target.land.HardStop`` naming the refs written
-(``writer.written``).
+**A failure in step 4 or 5** (tohum/28:51-60: a GitHub write to the target that fails, the first or a later one, is
+an outage like HTTP 429 and not that page's hard stop; the next cycle decides anew and takes up what stands):
+
+- the API's error to a request of these steps (``target.write.ApiError``), or the writer's refusal after a ref was
+  written (``target.write.Refused``: ``merge_head_moved``, ``state_head_moved``), is ``WriteFailed`` naming the refs
+  written (``writer.written``; none when the first write failed);
+- the writer's refusal with no ref written (a standing branch that differs, ``brain/state``'s head moved) is
+  ``Refused`` with the writer's reasons, as step 2's;
+- a chain break and a root that cannot be signed (``ledger.append.HardStop``, ``ledger.anchor.Unsignable``: tohum/28's
+  triggers ``chain_break`` and ``rekor``) are ``target.land.HardStop`` naming the refs written.
+
+Not decided here, stated: the other failures of ``ledger.cycle.FAILURES`` in step 5 (a secret in a row, an unusable
+input) stay ``target.land.HardStop`` as before; step 3's dry plan refuses them before any write and no test reaches
+one after it. An API error to step 2's reads of the heads is ``target.write.ApiError``, the caller's (unusable).
 
 **The rows**, in this order, each ``ledger.events``': ``cycle_start {cycle_id}``; ``ratchet_base {base_run_sha256,
 counts}`` when the cycle merges or plants (``base_lint``: the merge's lint before, which a later revert reads with
@@ -165,6 +177,15 @@ class Refused(Exception):
 
 class Unusable(ValueError):
     pass
+
+
+class WriteFailed(Exception):
+    """A GitHub write of step 4 or 5 failed (tohum/28:51-60: an outage, no hard stop); ``written`` names the refs
+    already written."""
+
+    def __init__(self, message: str, written: list[str]) -> None:
+        super().__init__("%s (written: %s)" % (message, ", ".join(written) or "nothing"))
+        self.written = written
 
 
 class _Dry:
@@ -346,7 +367,10 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
                                rows(merged, plant and plant["merge_sha"]) + frozen, imports, facts, signer,
                                root_row_id, registers, sets)
     except (W.ApiError, W.Refused) + cycle.FAILURES as exc:
-        raise land.HardStop("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
+        if isinstance(exc, W.Refused) and not writer.written:
+            raise Refused(list(exc.reasons)) from None
+        end = WriteFailed if isinstance(exc, (W.ApiError, W.Refused)) else land.HardStop
+        raise end("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     return {"merge": dict(merged, candidate=merge) if merged else None, "revert": reverted, "plant": plant,
             "state_sha": state.commits_made[-1],
             "root": planned["root"], "rekor_uuid": planned["entry"]["uuid"], "rows": len(planned["row_hashes"]),
