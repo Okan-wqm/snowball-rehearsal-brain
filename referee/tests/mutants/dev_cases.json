@@ -305,17 +305,8 @@
   {
    "id": "group_without_the_unit_s_root",
    "file": "cases/build.py",
-   "old": "        if not at:\n            return unit_root",
-   "new": "        if not at:\n            return None",
-   "tests": [
-    "test_cases.Group"
-   ]
-  },
-  {
-   "id": "group_root_is_the_empty_name",
-   "file": "cases/build.py",
-   "old": "    return at or \".\"",
-   "new": "    return at",
+   "old": "        at = posixpath.dirname(at)\n    return unit_root",
+   "new": "        at = posixpath.dirname(at)\n    return None",
    "tests": [
     "test_cases.Group"
    ]
@@ -323,8 +314,8 @@
   {
    "id": "group_only_the_file_s_directory",
    "file": "cases/build.py",
-   "old": "            return unit_root\n        at = posixpath.dirname(at)",
-   "new": "            return unit_root\n        at = \"\"",
+   "old": "            return at\n        at = posixpath.dirname(at)",
+   "new": "            return at\n        break",
    "tests": [
     "test_cases.Group"
    ]
@@ -332,8 +323,80 @@
   {
    "id": "group_not_the_nearest",
    "file": "cases/build.py",
-   "old": "    at = posixpath.dirname(path)\n    while not any(source",
-   "new": "    at = \"\"\n    while not any(source",
+   "old": "    at = posixpath.dirname(path)\n    while at and",
+   "new": "    at = posixpath.dirname(posixpath.dirname(path))\n    while at and",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "group_above_the_unit_s_root",
+   "file": "cases/build.py",
+   "old": "    while at and at.startswith(below):",
+   "new": "    while at:",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "group_to_the_tree_s_root_live",
+   "file": "cases/build.py",
+   "old": "    while at and at.startswith(below):\n        if any(source(posixpath.join(at, name)) is not None for name in diffguard.SEED_MANIFEST_NAMES):\n            return at\n        at = posixpath.dirname(at)\n",
+   "new": "    while True:\n        if any(source(posixpath.join(at, name)) is not None for name in diffguard.SEED_MANIFEST_NAMES):\n            return at or \".\"\n        if not at:\n            break\n        at = posixpath.dirname(at)\n",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "group_prefix_without_the_slash",
+   "file": "cases/build.py",
+   "old": "else unit_root + \"/\"     #",
+   "new": "else unit_root     #",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "group_with_no_unit_root_is_the_tree_s",
+   "file": "cases/build.py",
+   "old": "    if unit_root is None:\n        return None\n    below",
+   "new": "    if unit_root is None:\n        unit_root = \".\"\n    below",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "group_by_the_project_s_manifest",
+   "file": "cases/build.py",
+   "old": "for name in diffguard.SEED_MANIFEST_NAMES):",
+   "new": "for name in diffguard.SEED_MANIFEST_NAMES + (\"project.json\",)):",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "group_by_the_project_s_manifest_built",
+   "file": "cases/build.py",
+   "old": "for name in diffguard.SEED_MANIFEST_NAMES):",
+   "new": "for name in diffguard.SEED_MANIFEST_NAMES + (\"project.json\",)):",
+   "tests": [
+    "test_cases.Built"
+   ]
+  },
+  {
+   "id": "group_by_the_gate_s_measured_manifests",
+   "file": "cases/build.py",
+   "old": "for name in diffguard.SEED_MANIFEST_NAMES):",
+   "new": "for name in diffguard.MANIFEST_NAMES):",
+   "tests": [
+    "test_cases.Group"
+   ]
+  },
+  {
+   "id": "gate_seed_manifest_takes_the_project_s",
+   "file": "gate/diffguard.py",
+   "old": "SEED_MANIFEST_NAMES = (\"package.json\",)",
+   "new": "SEED_MANIFEST_NAMES = (\"package.json\", \"project.json\")",
    "tests": [
     "test_cases.Group"
    ]
@@ -372,42 +435,6 @@
    "new": " or path in taken:",
    "tests": [
     "test_cycle.Plan"
-   ]
-  },
-  {
-   "id": "build_group_undecided_built",
-   "file": "cases/build.py",
-   "old": "    if module != group(path, source, unit_root, derive.PROJECT_MANIFESTS):\n",
-   "new": "    if False:\n",
-   "tests": [
-    "test_cases.Built"
-   ]
-  },
-  {
-   "id": "build_group_undecided_by_the_same_list",
-   "file": "cases/build.py",
-   "old": "    if module != group(path, source, unit_root, derive.PROJECT_MANIFESTS):\n",
-   "new": "    if module != group(path, source, unit_root):\n",
-   "tests": [
-    "test_cases.Built"
-   ]
-  },
-  {
-   "id": "group_default_is_the_project_s",
-   "file": "cases/build.py",
-   "old": "manifests: tuple[str, ...] = PACKAGE_MANIFESTS)",
-   "new": "manifests: tuple[str, ...] = derive.PROJECT_MANIFESTS)",
-   "tests": [
-    "test_cases.Group"
-   ]
-  },
-  {
-   "id": "group_names_not_the_given",
-   "file": "cases/build.py",
-   "old": "for name in manifests):",
-   "new": "for name in PACKAGE_MANIFESTS):",
-   "tests": [
-    "test_cases.Group"
    ]
   },
   {

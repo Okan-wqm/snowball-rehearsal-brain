@@ -122,27 +122,25 @@ tohum/26 case ``{case_id: "k0-<mid>", class_level: "K0", property: "lint", prove
 mutation_id, touched_paths: [{path, hunks: [{start, end}]}], tool, rule_id, validity_evidence: {kind:
 "tool_diff", ref: "m/<mid>/mut.jsonl", output_sha256}, split: "dev", group}``: the hunk is the mutated side of the
 hunk holding the violation (lines of the mutated file: the case's mapped line), ``group`` the case's module
-group (``group``, below; a mutation with none is refused, ``group_unmade``, and one whose group the page
-leaves open ``group_undecided``). Its oracle finding is
+group (``group``, below; a mutation with none is refused, ``group_unmade``). Its oracle finding is
 ``{class_level, property, file, tool, rule_id, evidence_refs: [{path, line_start, line_end}]}`` at the
 violation's line. Output ``{cases: [case], oracle: {case_id: finding}, refused: {mid: [reason]}}``.
 
-**The group** (``group(path, source, unit_root, manifests)``; tohum/26e: "değiştirilen dosyaya en yakın, paket
-manifesti taşıyan dizin; öyle bir dizin yoksa birimin köküdür"): the first directory, from the mutated file's own
-upwards to the tree's root, that holds a file ``source`` reads under one of ``manifests``' names (the tree's
-root is ``.``); when none does, ``unit_root``, the unit's ``path`` (``loop.job`` gives it as
-``profile.derive.norm_path`` writes it). The walk does not stop at the unit's root, so a manifest above the
-unit is the group of a file with none nearer; a manifest ``source`` does not read (a link, a directory) marks
-nothing; both are this module's readings, the page being silent. Which names are a "paket manifesti" the page
-does not say (reports/seed-105), and a case's row is never edited (tohum/26m), so ``build`` writes a group only
-where the two lists this brain has agree: ``PACKAGE_MANIFESTS`` (``package.json``: npm's, the package manifest of
-the ecosystem ``TOOL`` lints; the default) and ``profile.derive.PROJECT_MANIFESTS`` (that and Nx's
-``project.json``, what marks a project's directory for the profile). ``group_undecided``, in ``build``: the two
-lists give different groups (a directory holding only ``project.json`` at or above the file and nearer than any
-``package.json``); ``group_unmade``: they agree on none (no directory holds one and ``unit_root`` is ``None``:
-the unit names no usable path). Either refuses the mutation with that reason alone (judged after the
-judgement's reasons and before the fingerprint's). A manifest of another ecosystem (``pyproject.toml``,
-``Cargo.toml``, ...) is in neither list and marks nothing.
+**The group** (``group(path, source, unit_root)``; tohum/26e:68-69 with tohum/26m:77-80 and tohum/26n:73-78, the
+answer to reports/seed-105). The package manifest is a file ``source`` reads under the base name
+``package.json``: ``gate.diffguard.SEED_MANIFEST_NAMES``, the gate's ``manifest`` of tohum/29k, so the gate's
+manifest and the group's are one list. The search goes from the mutated file's own directory up to
+``unit_root``, the unit's ``path`` (``loop.job`` gives it as ``profile.derive.norm_path`` writes it; ``.`` is
+the tree's root), and no higher: the group is the first directory under ``unit_root`` on that way that holds
+the manifest, and ``unit_root`` when none does. The root's own manifest is not asked for: the root is the
+group with it and without it. A manifest above the unit's root is not looked at; Nx's ``project.json`` and
+another ecosystem's manifest (``pyproject.toml``, ``Cargo.toml``, ``go.mod``) mark nothing, and neither does a
+``package.json`` that ``source`` does not read (with ``loop.job``'s reader a link or a directory). Two
+readings are this module's, the pages being silent: a file that does not lie under ``unit_root`` has no
+directory on that way, so no manifest is asked for and its group is ``unit_root``; and with no ``unit_root``
+(``None``: the unit names no usable path) there is no bound to search within and no group, whatever the tree
+holds: ``build`` refuses the mutation with ``group_unmade`` alone (judged after the judgement's reasons and
+before the fingerprint's). So every group ``build`` writes is ``unit_root`` or a directory under it.
 
 **The hit** (``hit(finding, case, window)``, match-rule v2 for one finding and one case):
 
@@ -187,11 +185,9 @@ from typing import Any, Callable, Iterable, Iterator
 import cli
 from gate import check as GC
 from gate import diffguard
-from profile import derive
 from runner import candidate_rerun as CR
 
 TOOL = "eslint"
-PACKAGE_MANIFESTS = ("package.json",)     # npm's package manifest; see the module docstring, "The group"
 _CODE = r"^(?![ \t]*(?:import\b|//|/\*|\*))"      # the start of a line that begins neither an import nor a comment
 _NAME = r"[A-Za-z_$][\w$]*"
 CATALOG = (
@@ -481,16 +477,18 @@ def _shared(block: dict, oracle: dict, mut_run: bytes, source: Callable[[str], "
     return []
 
 
-def group(path: str, source: Callable[[str], "bytes | None"], unit_root: str | None,
-          manifests: tuple[str, ...] = PACKAGE_MANIFESTS) -> str | None:
-    """The module group of a case that mutates ``path``, by ``manifests``' names; see the module docstring,
+def group(path: str, source: Callable[[str], "bytes | None"], unit_root: str | None) -> str | None:
+    """The module group of a case that mutates ``path`` in the unit at ``unit_root``; see the module docstring,
     "The group"."""
+    if unit_root is None:
+        return None
+    below = "" if unit_root == "." else unit_root + "/"     # what the path of every directory under the root starts with
     at = posixpath.dirname(path)
-    while not any(source(posixpath.join(at, name)) is not None for name in manifests):
-        if not at:
-            return unit_root
+    while at and at.startswith(below):
+        if any(source(posixpath.join(at, name)) is not None for name in diffguard.SEED_MANIFEST_NAMES):
+            return at
         at = posixpath.dirname(at)
-    return at or "."
+    return unit_root
 
 
 def _one(base_sha: str, mid: str, mutation: Any, index: dict, read: Callable[[str], "bytes | None"],
@@ -513,8 +511,6 @@ def _one(base_sha: str, mid: str, mutation: Any, index: dict, read: Callable[[st
         return reasons, None, None
     path = mutation["path"]
     module = group(path, source, unit_root)
-    if module != group(path, source, unit_root, derive.PROJECT_MANIFESTS):
-        return ["group_undecided"], None, None
     if module is None:
         return ["group_unmade"], None, None
     case = {"case_id": case_id(mid), "class_level": "K0", "property": "lint", "provenance": "mutation",

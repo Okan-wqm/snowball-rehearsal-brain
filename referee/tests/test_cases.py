@@ -73,7 +73,7 @@ A_JS = "var a = 1;\nconst b = 2;\nlet d = 4;\nif (a === b) eval(a);\n"
 B_JS = "const c = 3;\n"
 FILES = {"pkg/a.js": A_JS.encode(), "pkg/b.js": B_JS.encode()}
 SEED = "5" * 40
-UNIT = "the/unit"     # the unit's root given to ``build``: the group of a case under no manifest
+UNIT = "."     # the unit's root given to ``build``: the tree's root, the group of a case under no manifest
 
 
 def sha(data: bytes) -> str:
@@ -764,15 +764,19 @@ class Built(World):
                         FW.fingerprint, unit_root)
 
     def test_the_group_of_a_file_at_the_root(self):
-        (case,) = self.at_root({"package.json": b"{}"}, UNIT)["cases"]
+        (case,) = self.at_root({"package.json": b"{}"}, ".")["cases"]
         self.assertEqual((case["group"], case["touched_paths"]), (".", [{"path": "a.js", "hunks": [{"start": 1, "end": 1}]}]))
-        (case,) = self.at_root({}, "lib")["cases"]
-        self.assertEqual(case["group"], "lib")
-        (case,) = self.at_root({"package.json": b"{}"}, None)["cases"]      # the unit's root is not asked for
+        (case,) = self.at_root({}, ".")["cases"]
         self.assertEqual(case["group"], ".")
+        # a file outside the unit: the tree's own manifest lies above the unit's root and is not looked at
+        for tree in ({}, {"package.json": b"{}"}):
+            (case,) = self.at_root(tree, "lib")["cases"]
+            self.assertEqual(case["group"], "lib")
 
     def test_a_case_with_no_group_is_refused(self):
-        self.assertEqual(self.at_root({}, None), {"cases": [], "oracle": {}, "refused": {"x": ["group_unmade"]}})
+        # no unit root, no bound to search within: no group, with a manifest beside the file or without
+        for tree in ({}, {"package.json": b"{}"}):
+            self.assertEqual(self.at_root(tree, None), {"cases": [], "oracle": {}, "refused": {"x": ["group_unmade"]}})
         # ... with that reason alone, before the fingerprint is asked for (the tree has no a.js to make one from)
         m = mutation(one_line("a.js", 1, "const b = 2;", "var b = 2;"), path="a.js")
         index = {"base_run_sha256": sha(run()), "mutations": {"x": {"verdict": "verified", "reasons": [],
@@ -783,30 +787,22 @@ class Built(World):
         self.assertEqual(CB.build(SEED, {"x": m}, index, files.get, {}.get, FW.fingerprint, UNIT)["refused"],
                          {"x": ["fingerprint_unmade"]})
 
-    def test_a_group_the_page_leaves_open_is_refused(self):
-        undecided = {"cases": [], "oracle": {}, "refused": {"x": ["group_undecided"]}}
-        # Nx's project.json alone at the file's directory: a project's directory, and no package manifest's
-        # (reports/seed-105). The two lists differ: by the package's the unit's root, by the project's the directory
-        for unit in ("lib", None):
-            with self.subTest(unit=unit):
-                self.assertEqual(self.at_root({"project.json": b"{}"}, unit), undecided)
-        # ... and where they agree the case is built: both manifests in the directory, or the unit's root is it
-        (case,) = self.at_root({"project.json": b"{}", "package.json": b"{}"}, "lib")["cases"]
-        self.assertEqual(case["group"], ".")
-        (case,) = self.at_root({"project.json": b"{}"}, ".")["cases"]
-        self.assertEqual(case["group"], ".")
-        # with that reason alone, before the fingerprint is asked for (this tree has no a.js to make one from)
+    def test_a_project_json_marks_no_group_and_refuses_none(self):
+        # tohum/26m:77-80 (the answer to reports/seed-105): Nx's project.json is no package manifest, so a
+        # directory holding it alone marks nothing, and no mutation is refused for it
         m = mutation(one_line("p/q/a.js", 1, "const b = 2;", "var b = 2;"), path="p/q/a.js")
         index = {"base_run_sha256": sha(run()), "mutations": {"x": {"verdict": "verified", "reasons": [],
                                                                      "run_sha256": sha(run(v("no-var", 1, "p/q/a.js")))}}}
         files = {"base.jsonl": run(), "m/x/mut.jsonl": run(v("no-var", 1, "p/q/a.js"))}
-        for tree, want in (({"p/project.json": b"{}", "package.json": b"{}"}, ["group_undecided"]),   # nearer than the package's
-                           ({"p/q/project.json": b"{}", "p/package.json": b"{}"}, ["group_undecided"]),
-                           ({"p/project.json": b"{}", "p/q/package.json": b"{}"}, ["fingerprint_unmade"]),  # the package's is nearer
-                           ({"p/project.json": b"{}", "p/package.json": b"{}"}, ["fingerprint_unmade"])):
-            with self.subTest(tree=sorted(tree)):
-                self.assertEqual(CB.build(SEED, {"x": m}, index, files.get, tree.get, FW.fingerprint, UNIT)["refused"],
-                                 {"x": want})
+        src = {"p/q/a.js": b"const b = 2;\n"}
+        for tree, unit, want in (({"p/q/project.json": b"{}"}, "p", "p"),                              # the unit's root
+                                 ({"p/q/project.json": b"{}", "p/package.json": b"{}"}, ".", "p"),      # past the project's
+                                 ({"p/project.json": b"{}", "p/q/package.json": b"{}"}, ".", "p/q"),
+                                 ({"p/q/project.json": b"{}", "package.json": b"{}"}, "p", "p"),        # not above the unit
+                                 ({"p/q/project.json": b"{}", "package.json": b"{}"}, ".", ".")):
+            with self.subTest(tree=sorted(tree), unit=unit):
+                built = CB.build(SEED, {"x": m}, index, files.get, dict(src, **tree).get, FW.fingerprint, unit)
+                self.assertEqual((built["refused"], [c["group"] for c in built["cases"]]), ({}, [want]))
 
     def test_the_built_case_s_group_is_read_on_the_tree(self):
         self.kos({NO_VAR_2: ALL[NO_VAR_2]})
@@ -866,51 +862,75 @@ class Built(World):
 
 
 class Group(unittest.TestCase):
-    """tohum/26e: the nearest directory at or above the file that holds a package manifest, else the unit's root."""
+    """tohum/26e:68-69, 26m:77-80, 26n:73-78: the nearest directory holding a ``package.json``, from the file's own
+    up to the unit's root and no higher; else the unit's root."""
 
-    def group(self, path: str, *manifests: str, unit: "str | None" = UNIT, names: "tuple | None" = None) -> "str | None":
-        return CB.group(path, {m: b"{}" for m in manifests}.get, unit, *(() if names is None else (names,)))
+    def group(self, path: str, *manifests: str, unit: "str | None" = ".") -> "str | None":
+        return CB.group(path, {m: b"{}" for m in manifests}.get, unit)
 
     def test_the_nearest_directory_holding_a_manifest(self):
-        for name in D.PROJECT_MANIFESTS:
-            for names in ((name,), D.PROJECT_MANIFESTS) + ((None,) if name in CB.PACKAGE_MANIFESTS else ()):
-                with self.subTest(name=name, names=names):
-                    group = lambda *a: self.group(*a, names=names)      # noqa: E731
-                    self.assertEqual(group("a/b/c/x.js", "a/b/c/" + name), "a/b/c")            # the file's own
-                    self.assertEqual(group("a/b/c/x.js", "a/b/" + name), "a/b")
-                    self.assertEqual(group("a/b/c/x.js", "a/" + name, name), "a")              # the nearer of two
-                    self.assertEqual(group("a/b/c/x.js", "a/" + name, "a/b/" + name), "a/b")
-                    self.assertEqual(group("a/b/c/x.js", name), ".")                           # the tree's root
-                    self.assertEqual(group("x.js", name), ".")
-                    # not one below the file, beside its directory, or in a directory whose name only starts the same
-                    self.assertEqual(group("a/b/x.js", "a/b/c/" + name, "a/c/" + name, "a/bb/" + name, "ab/" + name), UNIT)
-        self.assertEqual((CB.PACKAGE_MANIFESTS, D.PROJECT_MANIFESTS), (("package.json",), ("package.json", "project.json")))
-        # the default names are the package's: a directory holding Nx's project.json alone marks nothing by them
-        self.assertEqual(self.group("a/b/x.js", "a/b/project.json", "a/package.json"), "a")
-        self.assertEqual(self.group("a/b/x.js", "a/b/project.json", "a/package.json", names=D.PROJECT_MANIFESTS), "a/b")
-        self.assertEqual(self.group("a/b/x.js", "a/b/project.json"), UNIT)
+        name = "package.json"
+        for unit in (".", "a"):
+            with self.subTest(unit=unit):
+                group = lambda *a: self.group(*a, unit=unit)      # noqa: E731
+                self.assertEqual(group("a/b/c/x.js", "a/b/c/" + name), "a/b/c")            # the file's own
+                self.assertEqual(group("a/b/c/x.js", "a/b/" + name), "a/b")
+                self.assertEqual(group("a/b/c/x.js", "a/" + name, name), "a")              # the nearer of two
+                self.assertEqual(group("a/b/c/x.js", "a/" + name, "a/b/" + name), "a/b")
+                self.assertEqual(group("a/x.js", "a/" + name), "a")                        # at the unit's root
+                # not one below the file, beside its directory, or in a directory whose name only starts the same
+                self.assertEqual(group("a/b/x.js", "a/b/c/" + name, "a/c/" + name, "a/bb/" + name, "ab/" + name), unit)
+        self.assertEqual(self.group("a/b/c/x.js", name), ".")                              # the tree's root is "."
+        self.assertEqual(self.group("x.js", name), ".")
+
+    def test_the_manifest_is_the_gate_s_package_json_alone(self):
+        self.assertEqual(diffguard.SEED_MANIFEST_NAMES, ("package.json",))       # tohum/29k's ``manifest``, 26m:77-79
+        self.assertLessEqual(set(diffguard.SEED_MANIFEST_NAMES), diffguard.MANIFEST_NAMES)
+        # Nx's project.json, another ecosystem's manifest (the gate's measured names among them), a name that
+        # only looks like one, the file itself, a directory of the name: none marks a group
+        others = ["project.json", "pyproject.toml", "Cargo.toml", "go.mod", "package.json5", "xpackage.json", "x.js",
+                  "package.json/x"] + sorted(diffguard.MANIFEST_NAMES - set(diffguard.SEED_MANIFEST_NAMES))
+        for other in others:
+            with self.subTest(other=other):
+                self.assertEqual(self.group("a/b/x.js", "a/b/" + other, unit="a"), "a")
+                self.assertEqual(self.group("a/b/x.js", "a/b/" + other, "a/package.json"), "a")
+                self.assertEqual(self.group("a/b/x.js", "a/b/" + other, "package.json"), ".")
 
     def test_no_manifest_is_the_units_root(self):
-        for names in (None, D.PROJECT_MANIFESTS):
-            with self.subTest(names=names):
-                self.assertEqual(self.group("a/b/x.js", names=names), UNIT)
-                self.assertEqual(self.group("x.js", unit=".", names=names), ".")
-                self.assertIsNone(self.group("a/b/x.js", unit=None, names=names))
-                # another file is no manifest: a name that only looks like one, another ecosystem's, the file itself
-                self.assertEqual(self.group("a/b/x.js", "a/b/package.json5", "a/b/xpackage.json", "a/b/pyproject.toml",
-                                            "a/b/Cargo.toml", "a/b/x.js", "a/b/package.json/x", names=names), UNIT)
+        self.assertEqual(self.group("a/b/x.js", unit="a"), "a")
+        self.assertEqual(self.group("a/b/x.js", unit="a/b"), "a/b")
+        self.assertEqual(self.group("a/b/x.js"), ".")
+        self.assertEqual(self.group("x.js"), ".")
 
-    def test_a_manifest_above_the_unit_s_root_is_still_the_nearest(self):
-        self.assertEqual(self.group("a/b/x.js", "a/package.json", unit="a/b"), "a")
+    def test_the_search_stops_at_the_unit_s_root(self):
+        # tohum/26m:79-80: the unit's root included, nothing above it; the group is the root or under it
+        self.assertEqual(self.group("a/b/x.js", "a/package.json", unit="a/b"), "a/b")
+        self.assertEqual(self.group("a/b/c/x.js", "a/package.json", "package.json", unit="a/b"), "a/b")
+        self.assertEqual(self.group("a/b/c/x.js", "a/b/package.json", "a/package.json", unit="a/b"), "a/b")   # included
+        self.assertEqual(self.group("a/b/c/x.js", "a/b/c/package.json", "a/package.json", unit="a/b"), "a/b/c")
+
+    def test_a_file_outside_the_unit_takes_the_unit_s_root(self):
+        # this module's reading: no directory of such a file is on the way to the unit's root, no manifest is asked
+        for path in ("x.js", "a/x.js", "a/bb/x.js", "a/c/d/x.js", "ab/x.js"):
+            with self.subTest(path=path):
+                asked = []
+                read = lambda p: asked.append(p) or b"{}"      # noqa: E731  every directory holds a manifest
+                self.assertEqual((CB.group(path, read, "a/b"), asked), ("a/b", []))
+
+    def test_no_unit_root_is_no_group(self):
+        for manifests in ((), ("a/b/package.json",), ("package.json",)):
+            with self.subTest(manifests=manifests):
+                self.assertIsNone(self.group("a/b/x.js", *manifests, unit=None))
 
     def test_a_manifest_that_is_not_read_marks_nothing(self):
         with tempfile.TemporaryDirectory() as tree:
-            write_tree(tree, {"a/package.json": "{}", "a/b/c/x.js": "x\n", "a/b/c/project.json/keep": "", "real": "{}"})
+            write_tree(tree, {"a/package.json": "{}", "a/b/c/x.js": "x\n", "a/b/c/package.json/keep": "", "real": "{}"})
             os.symlink(os.path.join(tree, "real"), os.path.join(tree, "a", "b", "package.json"))
             read = lambda path: D._read_regular(tree, path)     # noqa: E731  the job's reader
-            self.assertEqual(CB.group("a/b/c/x.js", read, UNIT), "a")      # past the directory and the link
+            self.assertEqual(CB.group("a/b/c/x.js", read, "."), "a")      # past the directory and the link
             os.remove(os.path.join(tree, "a", "package.json"))
-            self.assertEqual(CB.group("a/b/c/x.js", read, UNIT), UNIT)
+            self.assertEqual(CB.group("a/b/c/x.js", read, "."), ".")
+
 
 class Twins(unittest.TestCase):
     """tohum/26q (7): a case whose planted violation has the fingerprint of another violation in the same file
@@ -1232,7 +1252,7 @@ class LivePath(LY.YazBase):
         # the mutated file lies below the unit's root, so the root is not the file's own directory
         two = '("pkg/a.js", "pkg/b.js")'
         self.assertEqual(TK.LINT.count(two), 1)     # the fixture's linter reads the files it names: name the third
-        write_tree(self.src, {"pkg/sub/c.js": "const q = 1;\n",
+        write_tree(self.src, {"pkg/sub/c.js": "const q = 1;\n", "package.json": "{}",
                               "pkg/lint.py": TK.LINT.replace(two, '("pkg/a.js", "pkg/b.js", "pkg/sub/c.js")')})
         deep = mutation(one_line("pkg/sub/c.js", 1, "const q = 1;", "var q = 1;"), path="pkg/sub/c.js")
         self.write_pulled({}, mutations={"deep": deep})
@@ -1240,9 +1260,10 @@ class LivePath(LY.YazBase):
         self.control(LY.OPEN)
         self.github()
         read = D._read_regular
-        # yaz reads a tree in which no file is a manifest: the group is the path of the one unit units.json names
-        with mock.patch.object(D, "_read_regular", lambda tree, path: None if os.path.basename(path) in D.PROJECT_MANIFESTS
-                               else read(tree, path)):
+        # yaz reads a tree in which no file at or under the unit's root is a manifest and the tree's root holds
+        # one: the group is the path of the one unit units.json names, not the root above it
+        with mock.patch.object(D, "_read_regular", lambda tree, path: None if path.startswith("pkg/")
+                               and os.path.basename(path) == "package.json" else read(tree, path)):
             yaz = self.line(self.run_yaz())
         self.assertEqual(yaz["cases"]["refused"], {})
         (case,) = yaz["cases"]["cases"]

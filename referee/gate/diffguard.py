@@ -86,7 +86,8 @@ MEASURED_CONFIG_NAMES = ("project.json", "nx.json", ".npmrc", ".nvmrc", ".node-v
 CONFIG_NAMES = frozenset(SEED_CONFIG_NAMES + MEASURED_CONFIG_NAMES)
 CONFIG_PATTERNS = SEED_CONFIG_PATTERNS
 CONFIG_ROOT_DIR = ".github/"
-MANIFEST_NAMES = frozenset(("package.json",) + ("Cargo.toml", "pyproject.toml"))
+SEED_MANIFEST_NAMES = ("package.json",)      # 29k's ``manifest``; also what marks a case's group (``cases.build``)
+MANIFEST_NAMES = frozenset(SEED_MANIFEST_NAMES + ("Cargo.toml", "pyproject.toml"))
 LOCK_NAMES = frozenset(("package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml")
                        + ("Cargo.lock", "poetry.lock", "uv.lock"))
 GITATTRIBUTES_NAMES = frozenset((".gitattributes",))
