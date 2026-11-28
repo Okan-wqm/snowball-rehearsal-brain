@@ -21,8 +21,8 @@
   {
    "id": "git_imports_json",
    "file": "tests/git_store.py",
-   "old": "import marshal, os, sys\nhere",
-   "new": "import marshal, os, sys, json\nhere",
+   "old": "\n\nSCRIPT = '''#!%s -IS\nimport marshal, os, sys\nhere",
+   "new": "\n\nSCRIPT = '''#!%s -IS\nimport marshal, os, sys, json\nhere",
    "tests": [
     "test_gitobj.py"
    ]

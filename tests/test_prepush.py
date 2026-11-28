@@ -500,6 +500,10 @@ class Quick(Base):
         self.assertEqual(self.green()["reasons"], ["tests_red", "timed_warm"])
         self.put("referee/tests/test_other.py", value_test("other", 2))
         R.cold_home = lambda home: os.path.realpath(sys.executable)
+        self.put("referee/tests/test_other.py", value_test("other", 3))
+        got = self.green()
+        self.assertEqual((got["reasons"], got["python"]), (["tests_red"], "cold_home"))  # a red run says its python too
+        self.put("referee/tests/test_other.py", value_test("other", 2))
         self.assertTrue(self.green()["ok"])
         R.cold_home = lambda home: asked.append(os.path.basename(home))
         self.put("referee/deep.py", "VALUE = 1  # the same\n")
