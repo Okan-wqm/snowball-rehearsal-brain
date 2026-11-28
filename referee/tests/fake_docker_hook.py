@@ -1,15 +1,33 @@
 """Child side of ``fake_docker``: block what the container flags forbid, then run the Python command.
 
-argv: CONFIG_JSON SCRIPT [ARG ...]; CONFIG_JSON is {network, read_only, rw: [host dirs], ro: [host dirs]}.
+argv: NETWORK READ_ONLY N_RW RW... N_RO RO... SCRIPT [ARG ...] (``fake_docker.hook_argv`` writes it): the
+network's name, ``1`` or ``0``, then the writable host directories and the read-only ones, each list after its
+count.
+
+Why not JSON and ``runpy``: this file is every fake container's start. ``json`` and ``runpy`` bring ``re``,
+``enum``, ``typing`` and ``pkgutil`` with them, and where the standard library has no bytecode (a read-only image
+that ships none) each start compiles them again: measured 2026-11-28 on such a home, 136 ms a start with them
+against 39 ms where bytecode is kept. What is imported now: ``os`` and ``sys``, which python has loaded before it reads this file,
+and ``errno``, which is built into the binary (``test_contained.StartTest`` holds the list).
 """
 
 import errno
-import json
 import os
-import runpy
 import sys
 
-CFG = json.loads(sys.argv[1])
+
+def _config(argv):
+    """``(cfg, rest)`` of the argv above: ``rest`` is SCRIPT and its arguments."""
+    network, read_only, rest = argv[0], argv[1] == "1", argv[2:]
+    lists = []
+    for _ in range(2):
+        n = int(rest[0])
+        lists.append(rest[1:1 + n])
+        rest = rest[1 + n:]
+    return {"network": network, "read_only": read_only, "rw": lists[0], "ro": lists[1]}, rest
+
+
+CFG, REST = _config(sys.argv[1:])
 RW = [os.path.realpath(p) for p in CFG["rw"]]
 RO = [os.path.realpath(p) for p in CFG["ro"]]
 WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
@@ -53,6 +71,15 @@ def hook(event, args):
         raise OSError(errno.ENETUNREACH, "Network is unreachable")
 
 
+def _run(path):
+    """Run the script at ``path`` as ``__main__``, as ``python path`` names it: ``__name__``, ``__file__``, the
+    file's name in tracebacks. Its directory is not put on ``sys.path`` (this process is isolated, ``-I``; nor
+    did ``runpy.run_path`` put it there)."""
+    with open(path, "rb") as fh:
+        code = compile(fh.read(), path, "exec")
+    exec(code, {"__name__": "__main__", "__file__": path, "__builtins__": __builtins__})
+
+
 sys.addaudithook(hook)
-sys.argv = sys.argv[2:]
-runpy.run_path(sys.argv[0], run_name="__main__")
+sys.argv = REST
+_run(sys.argv[0])

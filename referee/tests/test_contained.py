@@ -815,6 +815,77 @@ class RunTest(Base):
 
 # ---------------------------------------------------------------- the image
 
+class StartTest(Base):
+    """The fake container's start (``fake_docker_hook``): what the command is run as, and what the start costs."""
+
+    def script(self, name: str, text: str) -> None:
+        with open(os.path.join(self.tree, name), "w") as fh:
+            fh.write(text)
+
+    def start(self, *cmd: str) -> dict:
+        job = {"image": IMAGE, "cmd": ["python3", *cmd], "tree": self.tree}
+        return contained.run(job, operating(), runner=FakeDocker(images=[IMAGE]), base=self.base)
+
+    def test_the_command_runs_as_main_with_its_file_and_its_arguments(self):
+        self.script("who.py", "import sys\n"
+                              "open(sys.argv[1], 'w').write(repr((__name__, __file__, sys.argv)))\n")
+        result = self.start("/work/who.py", "/out/who.txt", "--b")
+        self.assertEqual(result["exit"], 0, result)
+        path = os.path.join(result["run_root"], "work", "who.py")
+        with open(os.path.join(result["run_root"], "out", "who.txt")) as fh:
+            self.assertEqual(fh.read(), repr(("__main__", path, [path, os.path.join(result["run_root"], "out", "who.txt"), "--b"])))
+
+    def test_the_commands_exit_and_its_traceback_are_its_own(self):
+        self.script("three.py", "import sys\nsys.exit(3)\n")
+        self.script("raises.py", "def f():\n    raise ValueError('seen')\nf()\n")
+        self.assertEqual(self.start("/work/three.py")["exit"], 3)
+        fake = FakeDocker(images=[IMAGE])
+        job = {"image": IMAGE, "cmd": ["python3", "/work/raises.py"], "tree": self.tree}
+        result = contained.run(job, operating(), runner=fake, base=self.base)
+        self.assertEqual(result["exit"], 1)
+        stderr = fake.calls[-1]["stderr"].decode()
+        self.assertIn('raises.py", line 2, in f', stderr)
+        self.assertTrue(stderr.rstrip().endswith("ValueError: seen"), stderr)
+
+    def test_a_start_imports_only_errno_beyond_what_a_bare_python_has_loaded(self):
+        # The cost this binds (the hook's docstring): a module the hook imports is compiled at every start where
+        # the standard library keeps no bytecode. The command sees the modules of a bare isolated start and ``errno``.
+        self.script("mods.py", "import sys\nopen(sys.argv[1], 'w').write('\\n'.join(sorted(sys.modules)))\n")
+        result = self.start("/work/mods.py", "/out/mods.txt")
+        self.assertEqual(result["exit"], 0, result)
+        with open(os.path.join(result["run_root"], "out", "mods.txt")) as fh:
+            seen = set(fh.read().split("\n"))
+        bare = subprocess.run([sys.executable, "-I", "-c", "import sys; print('\\n'.join(sorted(sys.modules)))"],
+                              env={}, capture_output=True, check=True).stdout.decode().split()
+        self.assertEqual(sorted(seen - set(bare)), ["errno"])
+        self.assertIn("errno", sys.builtin_module_names)    # in the binary: nothing to compile
+        self.assertIn("os", seen)
+
+    def test_each_mount_keeps_its_own_rule_when_several_are_writable_and_several_read_only(self):
+        dirs = {n: os.path.join(self.base, n) for n in ("w1", "w2", "r1", "r2", "none")}
+        for d in dirs.values():
+            os.mkdir(d)
+        self.script("touch.py", "import sys\n"
+                                "for d in sys.argv[1:]:\n"
+                                "    try:\n"
+                                "        open(d + '/f', 'w').close()\n"
+                                "    except OSError as e:\n"
+                                "        print(d, e.errno)\n")
+        argv = ["docker", "run", "--read-only", "--network", "none",
+                "--mount", "type=bind,src=%s,dst=/w1" % dirs["w1"],
+                "--mount", "type=bind,src=%s,dst=/r1,readonly" % dirs["r1"],
+                "--mount", "type=bind,src=%s,dst=/w2" % dirs["w2"],
+                "--mount", "type=bind,src=%s,dst=/r2,readonly" % dirs["r2"],
+                "--mount", "type=bind,src=%s,dst=/t,readonly" % self.tree,
+                IMAGE, "python3", "/t/touch.py", "/w1", "/r1", "/w2", "/r2", dirs["none"]]
+        res = FakeDocker(images=[IMAGE])(argv, {}, 30)
+        self.assertEqual(res.exit, 0, res)
+        self.assertEqual(res.stdout.decode().split("\n")[:-1],
+                         ["%s 30" % dirs[n] for n in ("r1", "r2", "none")])
+        self.assertEqual({n: os.listdir(d) for n, d in dirs.items()},
+                         {"w1": ["f"], "w2": ["f"], "r1": [], "r2": [], "none": []})
+
+
 class ImageTest(Base):
     """``ensure_image`` (tohum/08 item 2: the pull is the ``kos`` job's host step) on the fake host: a
     ``FakeDocker`` holds no image until one is loaded or pulled, and its ``docker run --pull never`` of an image

@@ -35,7 +35,6 @@ Not emulated: the group id, capabilities and the memory limit.
 
 from __future__ import annotations
 
-import json
 import os
 import stat
 import subprocess
@@ -66,6 +65,13 @@ def parse(argv: list[str]) -> dict:
             i += 2
         opts.append((flag, value))
     return {"opts": opts, "image": argv[i], "cmd": argv[i + 1:]}
+
+
+def hook_argv(cfg: dict) -> list[str]:
+    """``cfg`` as the child reads it (``fake_docker_hook._config``): the network, ``1`` or ``0`` for read-only,
+    then each list of host directories after its count."""
+    return ([cfg["network"], "1" if cfg["read_only"] else "0", str(len(cfg["rw"]))] + cfg["rw"]
+            + [str(len(cfg["ro"]))] + cfg["ro"])
 
 
 def _entries(roots: list[str]) -> set:
@@ -170,7 +176,7 @@ class FakeDocker:
         foreign = os.geteuid() != 0 and user is not None and user != str(os.geteuid())
         before = _entries(cfg["rw"]) if foreign else set()
         try:
-            proc = subprocess.run([sys.executable, "-I", HOOK, json.dumps(cfg)] + cmd[1:], env=cenv,
+            proc = subprocess.run([sys.executable, "-I", HOOK] + hook_argv(cfg) + cmd[1:], env=cenv,
                                   cwd=host(workdir), capture_output=True, timeout=timeout)
         except subprocess.TimeoutExpired as exc:
             call["killed"] = True
