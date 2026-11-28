@@ -36,7 +36,8 @@ steers the draw only; it judges nothing.
 revert, family: revert, commitment_sha256}`` (``commit_payload``, written by cycle N's ``yaz``; the key itself is
 never written or printed before the run); the plant ``part: drill, kind: plant, payload {drill: revert, family:
 revert, instance_id, merge_sha}``; the revert ``part: events, kind: revert``, the row's top-level ``cause``,
-``payload {merge_sha}``. No row carries a cycle id: "the previous cycle" is chain order only.
+``payload {merge_sha, head_sha}`` (``ledger.events.revert_payload``, the one builder; the judge reads ``merge_sha``
+alone, 29m:30). No row carries a cycle id: "the previous cycle" is chain order only.
 
 **The judge** (``judge``) reads a ledger file and a key; it takes no seed and does not derive the selection again:
 
@@ -63,12 +64,13 @@ the instance's ``files`` are committed on ``brain/drill/<cycle_id>`` from ``onto
 a check posted saying the merge is planted and is not a gate decision, the pull request merged (``target.land.pull_merge``,
 the sequence the loop's D8 plants with);
 ``observe(merge)`` gives ``(runs, facts)`` and ``gate.revert.revert_red`` decides and reverts onto
-``brain/drill/<cycle_id>-revert`` (calls 12 -> 13 -> 14). It returns the key and the plant and revert payloads (the
+``brain/drill/<cycle_id>-revert`` (calls 12 -> 13 -> 14), then ``target.land.revert_merge`` posts the gate's check
+on the revert commit and merges its pull request pinned to it, as the loop's D7 does: the merge commit is the
+revert row's ``head_sha``. It returns the key and the plant and revert payloads (the
 revert's ``cause`` beside it) for that cycle's ``ledger.append``; the verdict is ``judge`` over the appended ledger.
 
 Out of scope, stated: where the planted files come from (the catalog's other fields, e.g. a patch name, are the
-seed's fixtures and are not read here; ``run_drill`` takes ``files`` per instance id), merging the revert's pull
-request (the gate's), writing the rows (``ledger.append``), the other drill families (tohum/22a, stage 2).
+seed's fixtures and are not read here; ``run_drill`` takes ``files`` per instance id), writing the rows (``ledger.append``), the other drill families (tohum/22a, stage 2).
 
 Command line, run from ``referee/``, one JSON line on stdout, the cause of an error on stderr::
 
@@ -91,7 +93,7 @@ import sys
 from typing import Any, Callable
 
 from gate import revert
-from ledger import append, chain, serial
+from ledger import append, chain, events, serial
 from target import land, write
 import cli
 
@@ -175,11 +177,6 @@ def commit_payload(answer: dict) -> dict:
 
 def plant_payload(instance_id: str, merge_sha: str) -> dict:
     return {"drill": DRILL, "family": DRILL, "instance_id": instance_id, "merge_sha": merge_sha}
-
-
-def revert_payload(merge_sha: str) -> dict:
-    """``part: events, kind: revert``; the row's top-level ``cause`` is the revert's."""
-    return {"merge_sha": merge_sha}
 
 
 def _is(row: dict, part: str, kind: str) -> bool:
@@ -268,8 +265,9 @@ def run_drill(writer: Any, seed: Any, catalog: Any, cycle_id: str, files: Any, l
                             land.planted_summary(cycle_id))["merge_sha"]
     runs, facts = observe(merge)
     done = revert.revert_red(writer, runs, facts, merge, onto, branch + "-revert")
+    head = land.revert_merge(writer, merge, done, check_name) if done["reverted"] else None
     return {"key": answer, "plant": plant_payload(answer["instance_id"], merge), "reverted": done["reverted"],
-            "revert": revert_payload(merge) if done["reverted"] else None, "cause": done["cause"]}
+            "revert": events.revert_payload(merge, head) if done["reverted"] else None, "cause": done["cause"]}
 
 
 # ---------------------------------------------------------------- command line

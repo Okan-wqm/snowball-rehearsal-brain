@@ -353,8 +353,9 @@ refused tree is ``pulled_invalid``). Then:
   not of the form ``ledger.anchor`` reads, and carries ``heads`` and ``state``; Rekor unreadable, or an answer that
   is not the entry asked for, is unusable. Then tohum/13's chain break of ``brain/integration`` (E637), still
   before the target's tree is fetched: the listed head against the commit the anchored ledger names
-  (``loop.integration``; ``_cek_integration``): for a ``cut`` or ``merge`` row the head must be that commit and
-  nothing is fetched; for a ``revert`` row the head's ancestry is fetched without trees into
+  (``loop.integration``; ``_cek_integration``): for a ``cut`` or ``merge`` row and for a ``revert`` row that names
+  its ``head_sha`` (tohum/26f:78-79) the head must be that commit and
+  nothing is fetched; for a revert row without it (written before the field) the head's ancestry is fetched without trees into
   ``cek-*/integration-history.git`` (a failed fetch is unusable) and the head judged by its parents and tree id; a
   refusal is ``integration_refused`` with ``loop.integration``'s reasons and carries ``heads``, ``state``, ``root``
   and, when the ledger names one, ``integration`` (the row and the commit it names: the break's row; the head is
@@ -1576,14 +1577,14 @@ def _cek_integration(url: str, head: str, ledger: bytes, root: str, git: str,
                      environ: dict[str, str]) -> dict[str, Any]:
     """tohum/13's chain break of ``brain/integration`` (E637, ``loop.integration``) on the verified and anchored
     ledger: the row and commit it names, ``{row_id, kind, sha}``, or ``{reason: integration_refused, reasons,
-    integration?}`` (``integration`` the named row and commit, when the ledger names one). Only for a ``revert`` row
-    is anything fetched: the head's ancestry without trees (``loop.fetch`` ``history``) into
+    integration?}`` (``integration`` the named row and commit, when the ledger names one). Only for a ``reverted`` row
+    (a revert row without ``head_sha``, ``ledger.serial.integration_tip``) is anything fetched: the head's ancestry without trees (``loop.fetch`` ``history``) into
     ``cek-*/integration-history.git``."""
     try:
         tip = IG.named(ledger)
     except P.PulledError as exc:
         return {"reason": "integration_refused", "reasons": exc.reasons}
-    if tip["kind"] != "revert":
+    if tip["kind"] != "reverted":
         reasons = IG.reasons(tip, head)
     else:
         history_dir = os.path.join(root, "integration-history.git")

@@ -28,7 +28,7 @@ REFEREE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REFEREE)
 
 from harness import revert_drill as D  # noqa: E402
-from ledger import append, chain  # noqa: E402
+from ledger import append, chain, events  # noqa: E402
 from target import write as W  # noqa: E402
 from test_write import GATE, world  # noqa: E402
 
@@ -85,8 +85,14 @@ def plant(row_id: str, instance_id: str, merge: str) -> dict:
     return row(row_id, "drill", "plant", D.plant_payload(instance_id, merge))
 
 
-def reverted(row_id: str, merge: str, cause: str) -> dict:
-    return row(row_id, "events", "revert", D.revert_payload(merge), cause)
+REVERT_HEAD = "e" * 40
+
+
+def reverted(row_id: str, merge: str, cause: str, head: str | None = REVERT_HEAD) -> dict:
+    """The revert row as the loop writes it (``head``: the head its revert left); ``head=None`` is the row
+    written before tohum/26f gave it ``head_sha``."""
+    payload = {"merge_sha": merge} if head is None else events.revert_payload(merge, head)
+    return row(row_id, "events", "revert", payload, cause)
 
 
 def ledger_with(rows: list[dict], ledger: bytes = b"") -> bytes:
@@ -196,7 +202,8 @@ class Commitment(unittest.TestCase):
     def test_rows(self):
         self.assertEqual(D.plant_payload("i", M1), {"drill": "revert", "family": "revert", "instance_id": "i",
                                                     "merge_sha": M1})
-        self.assertEqual(D.revert_payload(M1), {"merge_sha": M1})
+        self.assertEqual(events.revert_payload(M1, M2), {"merge_sha": M1, "head_sha": M2})
+        self.assertFalse(hasattr(D, "revert_payload"))  # one builder of the row's payload, the ledger's
 
 
 class Judge(unittest.TestCase):
@@ -346,14 +353,21 @@ class Run(unittest.TestCase):
                 out, calls = self.drill(wr, cycle, ledger, lambda m, c=CAUSE[instance]: OBSERVED[c])
                 self.assertEqual(out["key"], hand_key(cycle))
                 merge = out["plant"]["merge_sha"]
+                branch = "brain/drill/" + cycle
                 self.assertEqual(out["plant"], D.plant_payload(instance, merge))
-                self.assertEqual((out["reverted"], out["cause"], out["revert"]), (True, CAUSE[instance],
-                                                                                 {"merge_sha": merge}))
+                revert_head = gh.refs[branch + "-revert"]
+                # the revert is finished as the loop's D7 finishes one: the gate's check on the revert commit,
+                # its pull request merged pinned to it; the row names the head that merge left (26f:78-79)
+                head = gh.refs["brain/integration"]
+                self.assertEqual(gh.commits[head]["parents"], [merge, revert_head])
+                self.assertEqual(gh.commits[head]["tree"], gh.commits[base]["tree"])
+                self.assertEqual((out["reverted"], out["cause"], out["revert"]),
+                                 (True, CAUSE[instance], {"merge_sha": merge, "head_sha": head}))
+                self.assertEqual([(c["name"], c["conclusion"]) for c in gh.checks if c["head_sha"] == revert_head],
+                                 [(GATE, "success")])
                 self.assertEqual(calls, [merge])
                 self.assertEqual(gh.commits[merge]["parents"][0], base)
-                branch = "brain/drill/" + cycle
                 self.assertEqual(gh.read_file(branch, "src/a.js"), FILES[instance]["src/a.js"].encode())
-                revert_head = gh.refs[branch + "-revert"]
                 self.assertEqual(gh.commits[revert_head]["tree"], gh.commits[base]["tree"])
                 planted_check = [c for c in gh.checks if c["head_sha"] == gh.commits[merge]["parents"][1]]
                 self.assertIn("not a gate decision", json.dumps(planted_check))
@@ -375,6 +389,7 @@ class Run(unittest.TestCase):
         out, _ = self.drill(wr, cycle, ledger, lambda m: ([GREEN_RUN], CALM))
         self.assertEqual((out["reverted"], out["revert"], out["cause"]), (False, None, None))
         self.assertNotIn("brain/drill/%s-revert" % cycle, gh.refs)
+        self.assertEqual(gh.refs["brain/integration"], out["plant"]["merge_sha"])  # nothing merged after the plant
         self.assertEqual(D.judge(self.appended(ledger, out, cycle), out["key"]),
                          {"verdict": "FAIL", "reasons": ["not_reverted"]})
 

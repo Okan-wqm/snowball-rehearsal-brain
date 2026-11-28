@@ -10,8 +10,8 @@ reject's reasons).
 ``row(cycle, suffix, kind, payload, cause, part)``: ``row_id`` ``<cycle_id>:<suffix>``, ``ts`` and ``snapshot_id``
 the cycle's, ``part`` ``events`` unless given, ``derivation`` ``tool``, ``trust`` ``verified``, no evidence refs; ``cause`` only when
 given. ``ratchet_base(cycle, base_run_sha256, counts)`` (row suffix ``ratchet``), ``observation(cycle,
-base_run_sha256, fixable)`` (suffix ``observation``) and ``revert(cycle, merge_sha, cause)`` (suffix ``revert``, with
-the cause), ``sentinel(cycle, merge_sha, verdict, flaky)`` (suffix ``sentinel``, no
+base_run_sha256, fixable)`` (suffix ``observation``) and ``revert(cycle, merge_sha, head_sha, cause)`` (suffix ``revert``, with
+the cause; its payload ``revert_payload``'s ``{merge_sha, head_sha}``, 26f:17-18), ``sentinel(cycle, merge_sha, verdict, flaky)`` (suffix ``sentinel``, no
 cause; 26f's ``{merge_sha, verdict, red: [], flaky}``). ``drill(cycle, kind, payload)``: D8's row, part ``drill`` (suffix ``drill``; the payload
 ``harness.revert_drill``'s). ``decided(cycle, cid, reasons, merged)``, the rows of one candidate's decision: a reject
 is one ``decision`` row (``{decision: reject, candidate, reasons}``, suffix ``c:<cid>``) with ``cause(reasons)``; a
@@ -106,10 +106,16 @@ def observation(cycle: dict, base_run_sha256: str, fixable: list[dict]) -> dict:
     return row(cycle, "observation", "observation", {"base_run_sha256": base_run_sha256, "fixable": fixable})
 
 
-def revert(cycle: dict, merge_sha: str, cause: str) -> dict:
-    """D7's revert of ``merge_sha`` with ``gate.revert``'s cause: the row that finishes its sentinel
-    (``ledger.serial``)."""
-    return row(cycle, "revert", "revert", {"merge_sha": merge_sha}, cause)
+def revert_payload(merge_sha: str, head_sha: str) -> dict:
+    """The ``revert`` row's payload (tohum/26f:17-18, 78-79; 29m:30): ``merge_sha`` the merge that was reverted,
+    ``head_sha`` the head the merge of the revert's pull request left on ``brain/integration``."""
+    return {"merge_sha": merge_sha, "head_sha": head_sha}
+
+
+def revert(cycle: dict, merge_sha: str, head_sha: str, cause: str) -> dict:
+    """D7's revert of ``merge_sha`` with ``gate.revert``'s cause: the row that finishes its sentinel and names
+    ``brain/integration``'s head after it, ``head_sha`` (``ledger.serial``)."""
+    return row(cycle, "revert", "revert", revert_payload(merge_sha, head_sha), cause)
 
 
 def sentinel(cycle: dict, merge_sha: str, verdict: str, flaky: list[str]) -> dict:

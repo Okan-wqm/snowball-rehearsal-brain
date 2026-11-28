@@ -73,17 +73,26 @@ class Head(unittest.TestCase):
         return {"row_id": "r", "kind": kind, "sha": sha}
 
     def revert_reasons(self, head: str, merged: str | None = None) -> list[str]:
-        return IG.reasons(self.tip("revert", merged or self.h.merge), head, self.h.source)
+        return IG.reasons(self.tip("reverted", merged or self.h.merge), head, self.h.source)
 
-    def test_a_cut_or_merge_row_names_the_head_itself(self):
-        for kind in ("cut", "merge"):
+    def test_a_cut_merge_or_revert_row_names_the_head_itself(self):
+        # a revert row's ``sha`` is its ``head_sha`` (26f:78-79): compared as a merge row's is, no shape judged,
+        # so a head with the revert's shape that is not the commit named is refused
+        for kind in ("cut", "merge", "revert"):
             with self.subTest(kind=kind):
                 self.assertEqual(IG.reasons(self.tip(kind, self.h.merge), self.h.merge, self.h.source), [])
                 # the commit after it (the gate's own revert too) is not the commit the row names
                 self.assertEqual(IG.reasons(self.tip(kind, self.h.merge), self.h.head, self.h.source),
                                  ["head_not_named"])
                 self.assertEqual(IG.reasons(self.tip(kind, self.h.merge), self.h.base), ["head_not_named"])
+        # another merge of the same revert commit on the same merge: the shape a row without ``head_sha`` is
+        # judged by passes it, the row that names the head does not
+        h = self.h
+        twin = S.commit(h.objects, h.before, b"another merge of the revert\n", (h.merge, h.revert))
+        self.assertEqual(IG.reasons(self.tip("revert", h.head), h.head, h.source), [])
+        self.assertEqual(IG.reasons(self.tip("revert", h.head), twin, h.source), ["head_not_named"])
         self.assertEqual(self.h.read, [])  # no object read: the comparison is of the two ids
+        self.assertEqual(self.revert_reasons(twin), [])
 
     def test_the_gates_revert_of_the_named_merge(self):
         self.assertEqual(self.revert_reasons(self.h.head), [])

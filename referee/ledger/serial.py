@@ -39,11 +39,13 @@ check as ``unfinished`` first.
 **The commit the ledger names for ``brain/integration``** (``integration_tip``, read by D1's ``loop.integration``;
 tohum/13 "Zincir kırığı", E637): the last row, in file order, of the three kinds that record a write on
 ``brain/integration``: ``events``/``integration_cut`` (``activate``'s cut, naming ``base_sha``), a merge of rule 2
-(naming ``merge_sha``, the head after it) and ``events``/``revert`` (naming the ``merge_sha`` it reverted: tohum/26f
-gives the row no field for the revert's own commit, reports/seed-078). Answer ``{row_id, kind: cut|merge|revert,
-sha}``, or ``None`` for a ledger with no such row. The same schema check as ``unfinished`` first. No other rule is
-applied here: whether a revert names the merge that was the tip before it is not judged (``loop.integration``
-judges the head's own parents instead).
+(naming ``merge_sha``, the head after it) and ``events``/``revert`` (naming ``head_sha``, the head the revert's merge
+left, tohum/26f:78-79 and 13:53-54: kind ``revert``; a revert row written before the page had that field carries
+``merge_sha`` alone, and for it the answer's kind is ``reverted`` and its ``sha`` the merge that was reverted, not
+a head). Answer ``{row_id, kind: cut|merge|revert|reverted, sha}``, or ``None`` for a ledger with no such row. The
+same schema check as ``unfinished`` first. No other rule is applied here: whether a revert names the merge that
+was the tip before it is not judged (for ``reverted``, ``loop.integration`` judges the head's own parents
+instead).
 
 **The candidate ids a merge used** (``used_ids``, read by D5, ``loop.decide``; tohum/26p:76-80: an id is for one
 merge of a target between two geneses): the ``candidate`` of every ``events``/``merge`` row after the rows' last
@@ -168,7 +170,9 @@ def integration_tip(ledger: bytes) -> dict[str, str] | None:
         elif _is_merge(row):
             tip = {"row_id": row["row_id"], "kind": "merge", "sha": row["payload"]["merge_sha"]}
         elif _type(row) == REVERT:
-            tip = {"row_id": row["row_id"], "kind": "revert", "sha": row["payload"]["merge_sha"]}
+            named = "head_sha" in row["payload"]
+            tip = {"row_id": row["row_id"], "kind": "revert" if named else "reverted",
+                   "sha": row["payload"]["head_sha" if named else "merge_sha"]}
     return tip
 
 

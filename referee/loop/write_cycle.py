@@ -124,8 +124,9 @@ published tool output (asama-0/08 rows 1 and 6, the fields a ready candidate's `
 once per base run, in any cycle, merging or not; per candidate in code-point order of its id, ``ledger.events.decided``'s rows (a
 reject's ``decision`` with D5's reasons and ``ledger.events.cause``; the merge's ``decision`` and then its ``merge``
 row with ``path``, ``target.land.land``'s ``{pull, head_sha, merge_sha}`` and ``hunk_covered``, the record of
-the hunks step 1 applied, ``ledger.events.hunk_covered``); ``revert {merge_sha}`` with
-``gate.revert``'s cause for an ``end`` it reverts, or ``sentinel {merge_sha, verdict, red: [], flaky}`` for a green or flaky
+the hunks step 1 applied, ``ledger.events.hunk_covered``); ``revert {merge_sha, head_sha}`` with
+``gate.revert``'s cause for an ``end`` it reverts (``head_sha`` the merge commit of the revert's pull request,
+``target.land.revert``'s ``merge_sha``: the head it left, tohum/26f:78-79), or ``sentinel {merge_sha, verdict, red: [], flaky}`` for a green or flaky
 one (the row that finishes the merge's sentinel, ``ledger.serial``; tohum/26f); D8's ``drill`` row (``commit`` with its payload, or ``plant`` with ``harness.revert_drill``'s
 ``{drill, family, instance_id, merge_sha}``, the planted merge's SHA; ``ledger.events.drill``); the ``copy_gate`` row
 with ``gate`` (``harness.pass_row``'s gate); the ``pass`` row with ``passed`` (tohum/26d); the response's cost rows as
@@ -325,7 +326,7 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
     if stops:
         raise land.HardStop("gozcu: %s" % ", ".join(stop["trigger"] for stop in stops), [])
 
-    def rows(merged: dict | None, plant_sha: str) -> list[dict]:
+    def rows(merged: dict | None, plant_sha: str, revert_head: str) -> list[dict]:
         out = [events.start(cyc)]
         if merge is not None or planted:
             out.append(events.ratchet_base(cyc, base_lint["base_run_sha256"], base_lint["counts"]))
@@ -333,7 +334,7 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
             out.append(events.observation(cyc, observe["base_run_sha256"], observe["fixable"]))
         out += candidate_rows(cyc, decided, merged, change)
         if red is not None:
-            out.append(events.revert(cyc, red["merge_sha"], cause))
+            out.append(events.revert(cyc, red["merge_sha"], revert_head, cause))
         elif end is not None:
             out.append(events.sentinel(cyc, end["merge_sha"], end["verdict"], end["flaky"]))
         if planted:
@@ -349,7 +350,8 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
     ledger, roots = art.state[B.STATE_LEDGER], art.state[B.STATE_ROOTS]
     args = (ledger, ledger, roots, roots, art.status)
     root_row_id = "%s:root" % cycle_id
-    dry = rows(dict(PLACEHOLDER, path=change["path"]) if change else None, PLACEHOLDER["merge_sha"])
+    dry = rows(dict(PLACEHOLDER, path=change["path"]) if change else None, PLACEHOLDER["merge_sha"],
+               PLACEHOLDER["merge_sha"])
     judged = watched(dry)  # no view reads what the placeholders stand for
     frozen = watch.rows(cyc, judged)
     try:
@@ -392,7 +394,8 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
                                     B.CHECK), instance_id=drill["instance_id"])
         landing = False
         planned = cycle.commit(state, "cycle %s" % cycle_id, *args,
-                               rows(merged, plant and plant["merge_sha"]) + frozen, imports, facts, signer,
+                               rows(merged, plant and plant["merge_sha"], reverted and reverted["merge_sha"]) + frozen,
+                               imports, facts, signer,
                                root_row_id, registers, sets)
     except W.Refused as exc:
         if landing and not writer.written:

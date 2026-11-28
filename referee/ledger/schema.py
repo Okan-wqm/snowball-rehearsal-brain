@@ -19,8 +19,10 @@ other key), each key's shape, and whether ``cause`` is required (a failed or rev
 ``decision`` only when it is a reject whose reasons are not all a closed gate's, ``ledger.events.standing``,
 tohum/26j). The words are the seed's vector pages' choices, which tohum/26 does not
 list yet (tohum/29m, 29n, 29o: "26'ya girmelidir"): the ``drill`` ``commit`` and ``plant`` payloads and the
-``events`` ``revert`` row are ``harness.revert_drill``'s (MF14, 29m; the loop's D7 writes the same revert row,
-``ledger.events.revert``); the ``cost`` payload is ``llm.call``'s (MF15,
+``events`` ``revert`` row are 29m's (MF14, ``harness.revert_drill``; the revert row's payload is
+``ledger.events.revert_payload``'s ``{merge_sha, head_sha}``, tohum/26f:17-18, written by the loop's D7; ``head_sha``
+is optional here because the rows written before the page had the field, ``{merge_sha}``, stay in the ledgers that
+hold them, and a ledger is checked whole: this module does not tell an old row from a new one without the field); the ``cost`` payload is ``llm.call``'s (MF15,
 its ``usd_micros`` the field 29n's brake sums); ``status`` and ``status_edited`` are ``status.block``'s (MF16, 29n);
 ``genesis`` is 29o's twelve keys; ``sentinel`` is tohum/26f's ``{merge_sha, verdict: green|flaky, red: [], flaky}``
 (``red`` always empty: a red ends at its ``revert`` row, 26f), D7's (``ledger.events.sentinel``); ``merge`` (tohum/26d:
@@ -331,7 +333,7 @@ ROW_TYPES: dict[tuple[str, str], tuple[Check, Any]] = {
     ("events", "ratchet_base"): (shape({"base_run_sha256": hex64, "counts": map_of(count)}), False),
     ("events", "observation"): (shape({"base_run_sha256": hex64, "fixable": list_of(FIXABLE)}), False),
     ("events", "decision"): (DECISION, _rejected),
-    ("events", "revert"): (shape({"merge_sha": hex40}), True),
+    ("events", "revert"): (shape({"merge_sha": hex40}, {"head_sha": hex40}), True),
     ("events", "merge"): (lambda p, where: MERGE(p, where) or _hunk_paths(p, where), False),
     ("events", "sentinel"): (shape({"merge_sha": hex40, "verdict": one_of(*SENTINEL_ENDS), "red": empty_list,
                                     "flaky": list_of(text, unique_sorted=True)}), False),

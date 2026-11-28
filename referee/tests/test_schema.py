@@ -83,7 +83,7 @@ class Artifacts(unittest.TestCase):
         common = {"ts": AW.TS, "derivation": "tool", "trust": "verified", "snapshot_id": AW.SNAP, "evidence_refs": []}
         drill = [dict(common, row_id="d1", part="drill", kind="commit", payload=revert_drill.commit_payload(key)),
                  dict(common, row_id="d2", part="drill", kind="plant", payload=revert_drill.plant_payload("i1", "a" * 40)),
-                 dict(common, row_id="d3", part="events", kind="revert", payload=revert_drill.revert_payload("a" * 40),
+                 dict(common, row_id="d3", part="events", kind="revert", payload=events.revert_payload("a" * 40, "b" * 40),
                       cause=key["cause"])]
         facts = {"ts": AW.TS, "snapshot_id": AW.SNAP, "row_id": "42:status", "canary_cap_usd_micros": 1000}
         planned = block.plan(self.ledger, self.ledger, [cost] + drill, b"hand edit\n", AW.World().imports, facts)
@@ -151,6 +151,14 @@ class Artifacts(unittest.TestCase):
         others = {(r["part"], r["kind"]): r for r in self.other_writers_rows()}
         revert = others[("events", "revert")]
         self.assert_reason({k: v for k, v in revert.items() if k != "cause"}, "row.cause: missing")
+        # tohum/26f:17-18 ``{merge_sha, head_sha}``: the head is a commit id when it is there; a row written
+        # before the page had the field (``merge_sha`` alone) stays readable, the merge it reverted does not
+        self.assertEqual(revert["payload"], {"merge_sha": "a" * 40, "head_sha": "b" * 40})
+        self.assert_reason(dict(revert, payload=dict(revert["payload"], head_sha="b" * 39)), "payload.head_sha")
+        self.assert_reason(dict(revert, payload=dict(revert["payload"], head_sha=None)), "payload.head_sha")
+        self.assert_reason(dict(revert, payload=dict(revert["payload"], base_sha="b" * 40)), "payload.base_sha")
+        self.assertEqual(schema.row_reasons(stored(dict(revert, payload={"merge_sha": "a" * 40}))), [])
+        self.assert_reason(dict(revert, payload={"head_sha": "b" * 40}), "payload.merge_sha")
         plant = others[("drill", "plant")]
         self.assert_reason(dict(plant, payload=dict(plant["payload"], drill="lesson")), "payload.drill")
         commit = others[("drill", "commit")]

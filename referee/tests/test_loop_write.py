@@ -1168,7 +1168,11 @@ class D7(Watching):
         # the merged head is a new base run, published in the cycle that watched it though it merges nothing
         self.assertNotEqual(added[1]["payload"]["base_run_sha256"], SE.observed(old_ledger))
         del added[1]
-        self.assertEqual((added[1]["payload"], added[1]["cause"]), ({"merge_sha": merge_sha}, "test_regression"))
+        # tohum/26f:17-18, 78-80: the merge that was reverted and the head the revert's merge left
+        self.assertEqual((added[1]["payload"], added[1]["cause"]),
+                         ({"merge_sha": merge_sha, "head_sha": revert["merge_sha"]}, "test_regression"))
+        self.assertEqual(SE.integration_tip(new),
+                         {"row_id": "10-1:revert", "kind": "revert", "sha": self.gh.refs[B.INTEGRATION]})
         self.assertEqual(SE.unfinished(new), [])
         self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [heads[B.STATE]])
 
@@ -1240,6 +1244,9 @@ class D7(Watching):
                  if r["row_id"].startswith(("10-1:", "11-1:"))]
         self.assertEqual(added, [("11-1:start", "cycle_start"), ("11-1:observation", "observation"),
                                  ("11-1:revert", "revert"), ("11-1:status", "status")])
+        # written once, when the merge lands, by the cycle that landed it (tohum/07:66-80)
+        [row] = [r for r in rows_of(self.state_file(B.STATE_LEDGER)) if r["kind"] == "revert"]
+        self.assertEqual(row["payload"], {"merge_sha": merge_sha, "head_sha": self.gh.refs[B.INTEGRATION]})
         self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [])
 
     def test_a_green_merge_is_ended_and_the_next_cycle_merges(self):

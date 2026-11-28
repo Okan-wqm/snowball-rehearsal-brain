@@ -41,7 +41,9 @@ read, and neither are a revert's (tohum/01b:78-79: a revert's closed pull reques
 ``gate.revert.assess`` of ``runs`` and ``facts`` is a revert: ``gate.revert.revert_red`` (the revert commit, whose tree is the merge's first
 parent's, on ``brain/revert/<merge_sha>``, and its pull request into ``brain/integration``), then the same check and
 pinned merge as a candidate's. Returns ``{cause, pull, commit, merge_sha}`` (``merge_sha`` the revert's merge
-commit). Runs and facts that are no revert are ``Unusable``, before anything is written.
+commit, the row's ``head_sha``; ``revert_merge`` is that check and merge alone, which
+``harness.revert_drill.run_drill`` finishes its own revert with). Runs and facts that are no revert are ``Unusable``,
+before anything is written.
 
 The genesis cycle (``activate``) creates ``brain/integration`` before it calls ``land``, so it asks ``refuse_closed``
 among its own reads, before that write, and ``land`` reads a second time. Not covered, stated: a pull request closed
@@ -152,9 +154,16 @@ def revert(writer: Any, merge_sha: str, runs: Any, facts: Any, check: str) -> di
     done = gate_revert.revert_red(writer, runs, facts, merge_sha, branches.INTEGRATION, REVERT_PREFIX + merge_sha)
     if not done["reverted"]:  # revert_red sent nothing
         raise Unusable("the sentinel's runs and facts are no red (%s): nothing to revert" % done["verdict"])
-    summary = "gate: revert of %s, cause %s" % (merge_sha, done["cause"])
     return {"cause": done["cause"], "pull": done["pull"], "commit": done["commit"],
-            "merge_sha": _checked_merge(writer, done["pull"], done["commit"], check, summary)}
+            "merge_sha": revert_merge(writer, merge_sha, done, check)}
+
+
+def revert_merge(writer: Any, merge_sha: str, done: dict, check: str) -> str:
+    """The gate's check on the revert commit ``gate.revert.revert_red`` made of ``merge_sha`` (``done``, a revert)
+    and its pull request's pinned merge. Returns the merge commit: the head the revert leaves, the revert row's
+    ``head_sha`` (tohum/26f:78-79)."""
+    summary = "gate: revert of %s, cause %s" % (merge_sha, done["cause"])
+    return _checked_merge(writer, done["pull"], done["commit"], check, summary)
 
 
 def _checked_merge(writer: Any, pull: Any, head: str, check: str, summary: str) -> str:

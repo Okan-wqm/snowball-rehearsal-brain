@@ -89,7 +89,7 @@ def plant(sha: str, ts: str = NOV) -> dict:
 
 
 def revert(sha: str, ts: str = NOV) -> dict:
-    return EV.revert(cyc(ts), sha, "test_regression")
+    return EV.revert(cyc(ts), sha, "e" * 40, "test_regression")
 
 
 def cost(usd: int, ts: str = NOV, row_id: str = "cost") -> dict:

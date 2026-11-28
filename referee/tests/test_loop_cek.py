@@ -1233,15 +1233,35 @@ class CekJob(unittest.TestCase):
         tree = before if head_tree is None else S.store_tree(head_tree, objects)
         return objects, merged, S.commit(objects, tree, b"merge of the revert\n", (merged, revert))
 
-    def test_a_revert_row_names_the_head_by_the_reverts_shape(self):
+    def test_a_revert_row_names_the_head_its_revert_left(self):
+        """tohum/26f:78-79: the row's ``head_sha`` is the head; it is compared as a merge row's is, no history read."""
         import test_serial as TS
         objects, merged, head = self.reverted_target()
-        self.renamed(TS.merge("l2", merged), reverted("l3", merged, "test_regression"))
+        self.renamed(TS.merge("l2", merged), reverted("l3", merged, "test_regression", head))
         self.clean()
         out, _, _ = self.run_cek(target=objects, listing=self.listing(head))
         self.assertTrue(out["ok"], out)
         line = self.one(out)
-        self.assertEqual(line["integration"], {"row_id": "l3", "kind": "revert", "sha": merged})
+        self.assertEqual(line["integration"], {"row_id": "l3", "kind": "revert", "sha": head})
+        self.assertEqual((line["heads"]["brain/integration"], line["assembled"]["commit"]), (head, head))
+        self.assertEqual([a for a in (c["argv"] for c in S.calls(self.bin)) if "--filter=tree:0" in a], [])
+        self.assertFalse(os.path.lexists(os.path.join(self.target_dir(), "integration-history.git")))
+        # a head with the revert's shape that the row does not name: refused by the id, nothing read
+        before = S.store_tree(self.TARGET, objects)
+        twin = S.commit(objects, before, b"another merge of the revert\n",
+                        (merged, S.commit(objects, before, b"revert\n", (merged,))))
+        self.integration_refused(["head_not_named"], {"row_id": "l3", "kind": "revert", "sha": head},
+                                 target=objects, listing=self.listing(twin))
+
+    def test_a_revert_row_without_head_sha_names_the_head_by_the_reverts_shape(self):
+        import test_serial as TS
+        objects, merged, head = self.reverted_target()
+        self.renamed(TS.merge("l2", merged), reverted("l3", merged, "test_regression", None))
+        self.clean()
+        out, _, _ = self.run_cek(target=objects, listing=self.listing(head))
+        self.assertTrue(out["ok"], out)
+        line = self.one(out)
+        self.assertEqual(line["integration"], {"row_id": "l3", "kind": "reverted", "sha": merged})
         self.assertEqual((line["heads"]["brain/integration"], line["assembled"]["commit"]), (head, head))
         # the head's ancestry without trees, into its own directory, before the head's tree
         argvs = [c["argv"] for c in S.calls(self.bin) if "fetch" in c["argv"]]
@@ -1255,8 +1275,8 @@ class CekJob(unittest.TestCase):
     def test_a_head_that_is_not_the_revert_of_the_named_merge(self):
         import test_serial as TS
         objects, merged, head = self.reverted_target()
-        named = {"row_id": "l3", "kind": "revert", "sha": merged}
-        self.renamed(TS.merge("l2", merged), reverted("l3", merged, "test_regression"))
+        named = {"row_id": "l3", "kind": "reverted", "sha": merged}
+        self.renamed(TS.merge("l2", merged), reverted("l3", merged, "test_regression", None))
         kept, _, with_content = self.reverted_target(dict(self.TARGET, **{"pkg/new.js": b"1\n"}))
         objects.update(kept)
         later = S.commit(objects, S.store_tree(self.TARGET, objects), b"later\n", (head,))
@@ -1276,7 +1296,7 @@ class CekJob(unittest.TestCase):
     def test_an_integration_history_fetch_that_fails_is_no_verdict(self):
         import test_serial as TS
         objects, merged, head = self.reverted_target()
-        self.renamed(TS.merge("l2", merged), reverted("l3", merged, "test_regression"))
+        self.renamed(TS.merge("l2", merged), reverted("l3", merged, "test_regression", None))
 
         def wrap(git):
             path = os.path.join(self.bin, "git-failing")

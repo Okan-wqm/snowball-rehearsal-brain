@@ -1,7 +1,8 @@
 """``brain/integration``'s head against the commit the verified ``brain/state`` ledger names (``çek``, D1; stage 0).
 
 Rules: tohum/13 "Zincir kırığı" (E637: a ``brain/integration`` head other than the commit the last signed state row
-names, a merge or a revert, is a chain break; the break's row and commit are reported; in (B) only tohum/25a's
+names, a merge or a revert, is a chain break; the naming row is the merge row's ``merge_sha``, the revert row's
+``head_sha`` or the cut row's ``base_sha``, 13:53-55; the break's row and commit are reported; in (B) only tohum/25a's
 failure procedure repairs it), tohum/01b (``brain/integration`` takes changes only by the gate's pull requests),
 tohum/26f (the ``merge``, ``plant`` and ``revert`` rows), ``ledger.serial.integration_tip`` (the one reader of which
 row names the commit), ``target.write`` (a merge is made with ``merge_method: merge``, its first parent the base;
@@ -18,9 +19,10 @@ cycle, so a verified ledger without one names nothing to compare the head with).
 
 **The head** (``reasons``), by the row's kind:
 
-- ``cut`` and ``merge``: the head must be the row's ``sha``, else ``head_not_named``. Nothing is fetched.
-- ``revert``: the row names the merge ``M`` it reverted, not the revert's own commit (tohum/26f's payload is
-  ``{merge_sha}``). The head is then judged by what the gate's revert of ``M`` leaves, read from commit objects
+- ``cut``, ``merge`` and ``revert`` (a revert row's ``head_sha``, tohum/26f:78-79): the head must be the row's
+  ``sha``, else ``head_not_named``. Nothing is fetched.
+- ``reverted``: a revert row written before tohum/26f gave it ``head_sha``; it names the merge ``M`` it reverted,
+  not the revert's own commit. The head is then judged by what the gate's revert of ``M`` leaves, read from commit objects
   only (``history``, an object source holding the head's ancestry), in this order, the first failing rule the one
   reason: the head has exactly two parents and the first is ``M`` (else ``revert_head_parents``); ``M`` has
   exactly two parents (else ``reverted_not_merge``); the head's second parent, the revert commit, has ``M`` as its
@@ -28,7 +30,7 @@ cycle, so a verified ledger without one names nothing to compare the head with).
   ``M``'s first parent (else ``revert_head_tree``). A git object reason of these reads (``loop.gitobj``:
   ``object_missing:<sha>``, ``commit_unreadable``, ...) is listed as ``integration:<reason>``.
 
-What the revert rules say and do not say: a head that passes is the merge, on top of ``M``, of one commit on ``M``
+What the ``reverted`` rules say and do not say: a head that passes is the merge, on top of ``M``, of one commit on ``M``
 whose content is the content before ``M``, and has that content. Who wrote the two commits and whether GitHub made
 the head from the gate's pull request are not judged; two heads of that shape (other messages, authors, dates) are
 not told apart.
@@ -61,8 +63,8 @@ def named(ledger: bytes) -> dict[str, str]:
 
 
 def reasons(tip: dict[str, str], head: str, history: Any = None) -> list[str]:
-    """Why ``head`` is not the commit ``tip`` names (see the module); ``history`` is read only for a ``revert``."""
-    if tip["kind"] != "revert":
+    """Why ``head`` is not the commit ``tip`` names (see the module); ``history`` is read only for a ``reverted``."""
+    if tip["kind"] != "reverted":
         return [] if head == tip["sha"] else ["head_not_named"]
     try:
         found = G.parents(history, head)

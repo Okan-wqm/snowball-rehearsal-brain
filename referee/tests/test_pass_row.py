@@ -85,6 +85,9 @@ TOY_EXPECT = {"bad-path": {"decision": "reject", "reason": "security_path:src/p.
 COPY_EXPECT = {"bad-unit": {"decision": "reject", "reason": "tests_red"}, "fix": {"decision": "merge"}}
 
 
+REVERT_HEAD = "e" * 40  # the head a revert left (the revert row's ``head_sha``); no test here reads it
+
+
 def h(n: int, width: int = 40) -> str:
     return ("%x" % n).rjust(width, "0")
 
@@ -175,7 +178,7 @@ def drill(state: State, instance_id: str, cause: str, merge_sha: str, revert_cau
     state.cycle(lambda c: EV.ratchet_base(c, h(21, 64), {"no-unused-vars": 0}),
                 lambda c: EV.drill(c, "plant", RD.plant_payload(instance_id, merge_sha)), cost)
     if reverted:
-        state.cycle(lambda c: EV.revert(c, merge_sha, revert_cause or cause), cost)
+        state.cycle(lambda c: EV.revert(c, merge_sha, REVERT_HEAD, revert_cause or cause), cost)
 
 
 def runs(state: State) -> int:
@@ -325,10 +328,10 @@ class Fails(unittest.TestCase):
         self.assertEqual(self.reasons(judge(toy), "#nobetci #hayatta"), ["toy:sentinel_unfinished:" + h(0xa1)])
         toy = State("toy")
         genesis_cycle(toy, [("good", [], merged(h(0xa1)))])
-        toy.cycle(lambda c: EV.revert(c, h(0xa1), "test_regression"))
+        toy.cycle(lambda c: EV.revert(c, h(0xa1), REVERT_HEAD, "test_regression"))
         self.assertEqual(self.reasons(judge(toy), "#nobetci #hayatta"), ["toy:reverted:" + h(0xa1)])
         toy = toy_world()
-        toy.cycle(lambda c: EV.revert(c, h(0xa1), "test_regression"), cost)
+        toy.cycle(lambda c: EV.revert(c, h(0xa1), REVERT_HEAD, "test_regression"), cost)
         self.assertEqual(self.reasons(judge(toy), "#nobetci #hayatta"), ["toy:serial:finished_twice:" + h(0xa1)])
 
     def test_each_drill_cause_is_shown_by_a_pass(self):
@@ -356,7 +359,7 @@ class Fails(unittest.TestCase):
                    and RD.key(SEED, str(n), rest)["instance_id"] == RD_LINT)
         toy.cycle(lambda c: EV.drill(c, "commit", RD.commit_payload(RD.key(SEED, run, CATALOG))), cost, run=run)
         toy.cycle(lambda c: EV.drill(c, "plant", RD.plant_payload(RD_BUILD, h(0xd1))), cost)
-        toy.cycle(lambda c: EV.revert(c, h(0xd1), "build_break"), cost)
+        toy.cycle(lambda c: EV.revert(c, h(0xd1), REVERT_HEAD, "build_break"), cost)
         self.assertEqual(self.reasons(judge(toy), "#geri-alma"),
                          ["toy:drill_fail:%s:cause_mismatch" % RD_BUILD,
                           "toy:drill_fail:%s:commitment_mismatch" % RD_BUILD,
@@ -366,7 +369,7 @@ class Fails(unittest.TestCase):
     def test_a_plant_without_commitment(self):
         toy = toy_world()
         toy.cycle(lambda c: EV.drill(c, "plant", RD.plant_payload(RD_TEST, h(0xe1))), cost)
-        toy.cycle(lambda c: EV.revert(c, h(0xe1), "test_regression"), cost)
+        toy.cycle(lambda c: EV.revert(c, h(0xe1), REVERT_HEAD, "test_regression"), cost)
         # judged against the last commitment before it, rd-lint's, already used
         self.assertEqual(self.reasons(judge(toy), "#geri-alma"), ["toy:drill_fail:%s:cause_mismatch" % RD_TEST,
                                                                   "toy:drill_fail:%s:instance_mismatch" % RD_TEST])
@@ -501,7 +504,7 @@ class Regenesis(unittest.TestCase):
         toy_world(toy, drills=[])
         toy.cycle(lambda c: EV.ratchet_base(c, h(21, 64), {"no-unused-vars": 0}),
                   lambda c: EV.drill(c, "plant", RD.plant_payload(RD_BUILD, h(0xe2))), cost)
-        toy.cycle(lambda c: EV.revert(c, h(0xe2), "build_break"), cost)
+        toy.cycle(lambda c: EV.revert(c, h(0xe2), REVERT_HEAD, "build_break"), cost)
         got = judge(toy)
         self.assertEqual(got["conditions"]["#geri-alma"], ["toy:drill_uncommitted:%s" % RD_BUILD,
                                                            "toy:cause_unshown:test_regression",

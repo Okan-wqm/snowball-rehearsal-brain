@@ -214,9 +214,12 @@ class IntegrationTip(unittest.TestCase):
         self.assertEqual(self.tip(START, cut("k", M1), merge("c1", M2)), {"row_id": "c1", "kind": "merge", "sha": M2})
         self.assertEqual(self.tip(START, cut("k", M1), plant("p1", "i1", M3)),
                          {"row_id": "p1", "kind": "merge", "sha": M3})
-        # a revert row names the merge it reverted, not its own commit (tohum/26f, reports/seed-078)
-        self.assertEqual(self.tip(START, cut("k", M1), merge("c1", M2), reverted("r1", M2, "test_regression")),
-                         {"row_id": "r1", "kind": "revert", "sha": M2})
+        # a revert row names the head its revert left, not the merge it reverted (tohum/26f:78-79, 13:53-54)
+        self.assertEqual(self.tip(START, cut("k", M1), merge("c1", M2), reverted("r1", M2, "test_regression", M3)),
+                         {"row_id": "r1", "kind": "revert", "sha": M3})
+        # one written before the page gave it ``head_sha`` names no head: the merge it reverted, said so by kind
+        self.assertEqual(self.tip(START, cut("k", M1), merge("c1", M2), reverted("r1", M2, "test_regression", None)),
+                         {"row_id": "r1", "kind": "reverted", "sha": M2})
 
     def test_the_last_one_in_file_order(self):
         rows = [START, cut("k", M1), merge("c1", M2), reverted("r1", M2, "test_regression"), merge("c2", M3)]
