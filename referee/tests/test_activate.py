@@ -588,8 +588,9 @@ class Refusals(unittest.TestCase):
 
     def test_github_refuses_to_create_the_integration_branch(self):
         w = AW.World(create_denied=("brain/integration",))
-        with self.assertRaises(W.ApiError):
+        with self.assertRaises(activate.HardStop) as ctx:  # tohum/28:57: the genesis cycle's failed write
             w.run()
+        self.assertEqual(ctx.exception.written, [])
         self.assertEqual(w.writes(), [("POST", "/repos/%s/git/refs" % AW.REPO)])
         self.assertEqual(sorted(w.gh.refs), ["main"])
 

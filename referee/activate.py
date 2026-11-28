@@ -84,7 +84,8 @@ the cycle id and the time. In this order; nothing is written before step 5:
    ``<cycle_id>:genesis``, ``:start``, ``:cut``, ``:ratchet``, ``:observation``, ``:c:<cid>``, ``:m:<cid>``, ``:status`` and the root
    row's ``:root``; every ``events`` row's ``snapshot_id`` is the cut.
 
-A failure after step 5 raises ``HardStop`` carrying the refs already written (tohum/25a's failure rule leaves them
+A failure of step 5 or after it (the cut's request too: tohum/28:57, the genesis cycle's failed write is
+``activation``) raises ``HardStop`` carrying the refs already written (tohum/25a's failure rule leaves them
 to the operator; step 3 refuses a retry). Returns ``{merge, state_sha, integration_sha, root, rekor_uuid, rows,
 row_hashes, entry, edited, files}``.
 
@@ -130,7 +131,7 @@ Refused = write.Refused
 Unusable = drift.Unusable  # one class: a read ``drift.check`` cannot use is genesis' own unusable
 
 
-HardStop = land.HardStop  # activation failed after its first write; ``written`` names the refs already written
+HardStop = land.HardStop  # activation failed at its first write or after it; ``written`` names the refs already written
 
 
 def _sha(data: bytes) -> str:
@@ -278,9 +279,9 @@ def activate(writer: write.Writer, files: dict[str, bytes], art: pulled.Pulled, 
         raise HardStop("state: %s" % cli.cause(exc), []) from None
     except cycle.FAILURES as exc:
         raise Refused(["state_unwritable: %s" % cli.cause(exc)]) from None
-    writer.create_branch(INTEGRATION, cut)
     merged = None
     try:
+        writer.create_branch(INTEGRATION, cut)
         if change is not None:
             merged = dict(land.land(writer, decided["merge"], change["path"], change["content"], cut, branches.CHECK),
                           path=change["path"])

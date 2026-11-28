@@ -241,8 +241,8 @@
   {
    "id": "write_commit_without_the_cases",
    "file": "loop/write_cycle.py",
-   "old": "                               root_row_id, registers, sets)\n    except (W.ApiError",
-   "new": "                               root_row_id, registers)\n    except (W.ApiError",
+   "old": "                               root_row_id, registers, sets)\n    except W.Refused",
+   "new": "                               root_row_id, registers)\n    except W.Refused",
    "tests": [
     "test_loop_write.CaseSet"
    ]

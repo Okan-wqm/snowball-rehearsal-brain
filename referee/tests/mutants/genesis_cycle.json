@@ -30,8 +30,8 @@
   {
    "id": "cut_not_created",
    "file": "activate.py",
-   "old": "    writer.create_branch(INTEGRATION, cut)\n    merged = None\n",
-   "new": "    merged = None\n",
+   "old": "    merged = None\n    try:\n        writer.create_branch(INTEGRATION, cut)\n",
+   "new": "    merged = None\n    try:\n",
    "tests": [
     "test_activate.py"
    ]

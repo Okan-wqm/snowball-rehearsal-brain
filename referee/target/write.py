@@ -206,6 +206,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import http.client
 import json
 import re
 import sys
@@ -239,7 +240,9 @@ class Refused(Exception):
 
 
 class ApiError(Exception):
-    """The API answered with an error status, or with a body that does not say what was asked."""
+    """The API answered with an error status, or with a body that does not say what was asked, or the transport
+    gave no answer (a timeout, a connection that broke: status ``None``; whether GitHub carried the request out is
+    then not known, and ``Writer.written`` does not name its refs)."""
 
     def __init__(self, status: int | None, message: str, body: Any = None):
         super().__init__("%s: %s%s" % (status, message, said(body)))
@@ -484,7 +487,10 @@ class Writer:
         if reasons:
             raise Refused(reasons)
         self.sent.append((method, path, body))
-        status, data = self.transport(method, path, body)
+        try:
+            status, data = self.transport(method, path, body)
+        except (OSError, http.client.HTTPException) as exc:  # no answer: a timeout, a connection that broke
+            raise ApiError(None, "%s %s: %s" % (method, path, cli.cause(exc))) from None
         if not isinstance(status, int) or not 200 <= status < 300:
             raise ApiError(status, "%s %s" % (method, path), data)
         self.written += refs

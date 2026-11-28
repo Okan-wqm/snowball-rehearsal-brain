@@ -20,7 +20,7 @@ a reason.
 ``land(writer, cid, path, content, base, check)``: branch ``brain/c/<cid>`` at ``base``, one commit setting ``path``
 to ``content``, a pull request into ``brain/integration``, a ``success`` check run named ``check`` on the commit, and
 the merge pinned to that commit; returns ``{pull, head_sha, merge_sha}``. Each step is one ``target.write`` call;
-an error leaves the earlier steps written (the caller's ``HardStop`` names them, ``writer.written``). The next
+an error leaves the earlier steps written (the caller names them, ``writer.written``). The next
 cycle that decides the same merge on the same base takes them up (``target.write``, "Standing branch": the branch,
 its commit when it is exactly this one, its open pull request) and creates only those of the three that are
 missing; the check and the merge are sent in every attempt, so a check an earlier attempt posted is posted a second
@@ -63,7 +63,9 @@ class Unusable(ValueError):
 
 
 class HardStop(append.HardStop):
-    """A cycle's write failed after its first write; ``written`` names the refs already written (tohum/28)."""
+    """A cycle's hard stop after its checks (tohum/28: a chain break, a root that cannot be signed, the activation's
+    failed write); ``written`` names the refs already written. An ordinary cycle's failed GitHub write is none
+    (tohum/28:51-60): ``loop.write_cycle.WriteFailed``."""
 
     def __init__(self, message: str, written: list[str]):
         super().__init__("%s (written: %s)" % (message, ", ".join(written) or "nothing"))
