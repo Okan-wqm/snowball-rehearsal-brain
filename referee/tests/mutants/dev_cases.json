@@ -348,6 +348,24 @@
    ]
   },
   {
+   "id": "group_never_under_the_unit_s_root_live",
+   "file": "cases/build.py",
+   "old": "    while at and at.startswith(below):",
+   "new": "    while False:",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
+   "id": "group_by_the_project_s_manifest_live",
+   "file": "cases/build.py",
+   "old": "for name in diffguard.SEED_MANIFEST_NAMES):",
+   "new": "for name in diffguard.SEED_MANIFEST_NAMES + (\"project.json\",)):",
+   "tests": [
+    "test_cases.LivePath"
+   ]
+  },
+  {
    "id": "group_prefix_without_the_slash",
    "file": "cases/build.py",
    "old": "else unit_root + \"/\"     #",

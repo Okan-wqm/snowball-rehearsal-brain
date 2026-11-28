@@ -12,8 +12,9 @@ on a line holding ``eval(``; it knows no other rule, as an ESLint whose configur
   the seed's order, the limit, the inputs, the places left out; each diff applies to its file through
   ``gate.diffguard``'s own parse; with held rows, the rules the set has no case of first and the held places
   passed over;
-- the group (``Group``, tohum/26e): the nearest directory at or above the file that holds a manifest, the tree's
-  root as ``.``, the unit's root where none is, no group with neither;
+- the group (``Group``, tohum/26e:68-69, 26m:77-80, 26n:73-78): the nearest directory holding a ``package.json``
+  from the file's own up to the unit's root and no higher, the unit's root where none is on that way or the file
+  lies outside the unit, no other name a manifest, and no group without a unit root;
 - the census (``Census``, tohum/29za, 26q (10)): each operator's rewrite by hand and the lines it leaves; over the
   toy fixture the proposal is the one ESLint was captured on (``tests/fixtures/toy-mutations.json``,
   ``tests/capture_toy_mutations.py``) and ``judge`` reads those runs: every rule of the toy's census has a valid
@@ -1209,7 +1210,8 @@ class LivePath(LY.YazBase):
         with open(self.results(case["validity_evidence"]["ref"]), "rb") as fh:
             self.assertEqual(case["validity_evidence"]["output_sha256"], sha(fh.read()))
         self.assertTrue(CB.hit(yaz["cases"]["oracle"][case["case_id"]], case))
-        # the group is read on the tree (pkg/ holds the manifest), and D6 wrote the case into the dev case set
+        # the group is the unit's root (the file lies in it; what decides under it:
+        # ``test_a_manifest_under_the_unit_s_root_is_the_group``), and D6 wrote the case into the dev case set
         self.assertEqual(case["group"], "pkg")
         self.assertEqual(yaz["written"]["cases"], {"added": [case["case_id"]], "kept": [], "refused": {}})
         held = self.gh.read_file(B.STATE, B.STATE_CASES)
@@ -1248,27 +1250,39 @@ class LivePath(LY.YazBase):
         self.assertEqual(yaz["cases"], {"cases": [], "oracle": {}, "refused": {
             NO_VAR_2: ["artefact_hash_mismatch"], NO_VAR_3: ["kos:missing"]}})
 
-    def test_a_file_under_no_manifest_takes_the_unit_s_root_as_its_group(self):
-        # the mutated file lies below the unit's root, so the root is not the file's own directory
+    def deep(self, more: dict, unread: tuple = ()) -> dict:
+        """The one case of a cycle whose mutation is in ``pkg/sub/c.js``, below the root ``pkg`` of the one unit
+        units.json names, on the fixture's tree with ``more`` and a manifest at the tree's root, above the unit;
+        yaz's reader gives no file for the paths in ``unread``."""
         two = '("pkg/a.js", "pkg/b.js")'
         self.assertEqual(TK.LINT.count(two), 1)     # the fixture's linter reads the files it names: name the third
-        write_tree(self.src, {"pkg/sub/c.js": "const q = 1;\n", "package.json": "{}",
-                              "pkg/lint.py": TK.LINT.replace(two, '("pkg/a.js", "pkg/b.js", "pkg/sub/c.js")')})
+        write_tree(self.src, dict({"pkg/sub/c.js": "const q = 1;\n", "package.json": "{}",
+                                   "pkg/lint.py": TK.LINT.replace(two, '("pkg/a.js", "pkg/b.js", "pkg/sub/c.js")')}, **more))
         deep = mutation(one_line("pkg/sub/c.js", 1, "const q = 1;", "var q = 1;"), path="pkg/sub/c.js")
         self.write_pulled({}, mutations={"deep": deep})
         self.hand_over(LK.J.run("kos", {"RUNNER_TEMP": self.temp}, runner=LK.RedAs()))
         self.control(LY.OPEN)
         self.github()
         read = D._read_regular
-        # yaz reads a tree in which no file at or under the unit's root is a manifest and the tree's root holds
-        # one: the group is the path of the one unit units.json names, not the root above it
-        with mock.patch.object(D, "_read_regular", lambda tree, path: None if path.startswith("pkg/")
-                               and os.path.basename(path) == "package.json" else read(tree, path)):
+        with mock.patch.object(D, "_read_regular", lambda tree, path: None if path in unread else read(tree, path)):
             yaz = self.line(self.run_yaz())
         self.assertEqual(yaz["cases"]["refused"], {})
         (case,) = yaz["cases"]["cases"]
         (unit,) = P.read(self.pulled).units["units"]
-        self.assertEqual((case["touched_paths"][0]["path"], case["group"], unit["path"]), ("pkg/sub/c.js", "pkg", "pkg"))
+        self.assertEqual((case["touched_paths"][0]["path"], unit["path"]), ("pkg/sub/c.js", "pkg"))
+        return case
+
+    def test_a_file_under_no_manifest_takes_the_unit_s_root_as_its_group(self):
+        # no manifest from the file's directory to the unit's root, the root's own not read either: the unit's
+        # root, not the tree's root above it with its manifest
+        self.assertEqual(self.deep({}, unread=("pkg/package.json",))["group"], "pkg")
+
+    def test_a_project_json_on_the_way_marks_no_group(self):
+        self.assertEqual(self.deep({"pkg/sub/project.json": "{}"})["group"], "pkg")      # tohum/26m:77-79
+
+    def test_a_manifest_under_the_unit_s_root_is_the_group(self):
+        # read on the tree yaz extracted, by the job's reader
+        self.assertEqual(self.deep({"pkg/sub/package.json": "{}"})["group"], "pkg/sub")
 
     def test_without_mutations_the_line_holds_no_case(self):
         self.kos({"good": LY.candidate(TK.GOOD)})
