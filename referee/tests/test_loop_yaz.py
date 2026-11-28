@@ -114,10 +114,10 @@ class Cycle(Base):
         P.extract_tree(os.path.join(self.pulled, P.TREE), tree)
         return tree
 
-    def decide(self, control=None, unfinished=(), unit=None, frozen=()) -> dict:
+    def decide(self, control=None, unfinished=(), unit=None, frozen=(), refused=None) -> dict:
         art = P.read(self.pulled)
         return E.decide(art, unit or recipe(), self.tree(), self.results(), OPEN if control is None else control,
-                        list(unfinished), list(frozen))
+                        list(unfinished), list(frozen), refused)
 
     def reasons(self, got: dict) -> dict:
         return {cid: d["reasons"] for cid, d in got["decisions"].items()}
@@ -147,6 +147,18 @@ class OneCycle(Cycle):
         self.kos({"a": candidate(BREAKS_TEST), "b": candidate(GOOD)})
         got = self.decide()
         self.assertEqual((got["merge"], self.reasons(got)), ("b", {"a": ["tests_red"], "b": []}))
+
+    def test_a_candidate_the_writer_refused_is_rejected_and_the_next_one_merges(self):
+        self.kos({"B1": candidate(GOOD), "a3": candidate(GOOD), "b2": candidate(BREAKS_TEST)})
+        got = self.decide(refused={"B1": ["branch_differs"]})
+        self.assertEqual((got["merge"], self.reasons(got)),
+                         ("a3", {"B1": ["branch_differs"], "a3": [], "b2": ["sentinel_pending", "tests_red"]}))
+        self.assertEqual(got["decisions"]["B1"]["decision"], "reject")
+        # beside the candidate's own reasons, and only the candidate named
+        got = self.decide(refused={"b2": ["branch_differs"], "B1": ["branch_differs"], "a3": ["branch_differs"]})
+        self.assertEqual((got["merge"], self.reasons(got)),
+                         (None, {"B1": ["branch_differs"], "a3": ["branch_differs"], "b2": ["branch_differs", "tests_red"]}))
+        self.assertEqual(self.decide(refused={}), self.decide())
 
     def test_no_candidates(self):
         self.kos({})

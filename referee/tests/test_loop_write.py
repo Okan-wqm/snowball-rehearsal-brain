@@ -119,6 +119,7 @@ from harness import pass_row as PR  # noqa: E402
 from harness import revert_drill as RD  # noqa: E402
 from loop import accepted as AC  # noqa: E402
 from drift import check as DC  # noqa: E402
+from loop import decide as E  # noqa: E402
 from loop import drill as DR  # noqa: E402
 from loop import job as J  # noqa: E402
 from loop import integration as IG  # noqa: E402
@@ -843,18 +844,136 @@ class WriteOutage(StateBase):
         out = self.run_yaz()
         self.assertEqual((out["ok"], out["done"], out["merge"]), (True, ["D5", "D6"], "good"), out)
 
-    def test_the_writer_s_refusal_with_nothing_written_is_a_refusal_with_its_reasons(self):
+
+B_JS = "var b = 1;\n"
+SECOND = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
+              **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})
+
+
+class StandingDiffers(StateBase):
+    listed = True
+
+    """tohum/26p "Yarım kalmış merge": ``brain/c/<id>`` stands and is not the candidate's commit. The candidate is
+    rejected ``branch_differs`` with no pull request and no check, and the cycle goes on."""
+
+    def stands(self, branch: str) -> str:
+        """``branch`` standing on a commit that is not this cycle's (another change of ``pkg/a.js`` on the head)."""
+        other = self.gh.seed_commit("another", parents=[HEADS[B.INTEGRATION]], files={"pkg/a.js": b"let a = 2;\n"})
+        self.gh.refs[branch] = other
+        return other
+
+    def decisions(self) -> list[dict]:
+        new = self.state_file(B.STATE_LEDGER)
+        self.assertEqual(SC.ledger_reasons(new), [])
+        return [r for r in rows_of(new)[len(rows_of(self.state[B.STATE_LEDGER])):] if r["kind"] in ("decision", "merge")]
+
+    def test_the_candidate_is_rejected_and_the_cycle_is_written(self):
+        reads = []
+        for differs in (False, True):
+            self.setUp()
+            self.kos({"good": candidate(GOOD)})
+            self.control(OPEN)
+            self.github()
+            other = self.stands("brain/c/good") if differs else None
+            with mock.patch.object(J, "_pulled_unit", wraps=J._pulled_unit) as unit, \
+                    mock.patch.object(J, "_pulled_tree", wraps=J._pulled_tree) as extracted:
+                out = self.run_yaz()
+            reads.append((unit.call_count, extracted.call_count))
+        # the second decision is made on the pulled and the tree the first one read: as many reads as a cycle
+        # that merges makes
+        self.assertEqual((reads[0], reads[0][1]), (reads[1], 1))
+        self.assertEqual((out["ok"], "reason" in out, out["done"], out["merge"]), (True, False, ["D5", "D6"], None), out)
+        self.assertEqual(out["decisions"], {"good": {"decision": "reject", "reasons": ["branch_differs"]}})
+        self.assertEqual((out["written"]["merge"], out["written"]["revert"]), (None, None))
+        # the branch as it stood, brain/integration where it was, no pull request, no check: one brain/state commit
+        head = self.gh.refs[B.STATE]
+        self.assertEqual(self.gh.refs, dict(HEADS, **{"brain/c/good": other, B.STATE: head}))
+        self.assertEqual((self.gh.pulls, self.gh.checks), ({}, []))
+        self.assertEqual([p for m, p in self.writes() if "/git/refs" in p], ["/repos/acme/t1/git/refs/heads/brain/state"])
+        self.assertEqual((out["written"]["state_sha"], self.gh.commits[head]["parents"]), (head, [HEADS[B.STATE]]))
+        # the reject is a decision row like any other: its cause from its reasons (tohum/26j), no merge row
+        [row] = self.decisions()
+        self.assertEqual((row["row_id"], row["payload"], row["cause"]),
+                         ("9-1:c:good", {"decision": "reject", "candidate": "good", "reasons": ["branch_differs"]},
+                          "unknown"))
+        self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [])
+        self.assertEqual(len(self.signer.payloads), 1)  # the cycle written is signed once; the refused try signed none
+
+    def test_the_next_candidate_with_no_reason_merges_in_the_same_cycle(self):
+        write_tree(self.src, {"pkg/b.js": B_JS})
+        cands = {"good": candidate(GOOD), "second": SECOND}
+        # without the standing branch: ``good`` merges and ``second`` waits for its sentinel
+        out = self.cycle(cands)
+        self.assertEqual((out["merge"], out["decisions"]["second"]),
+                         ("good", {"decision": "reject", "reasons": ["sentinel_pending"]}), out)
+        self.setUp()
+        write_tree(self.src, {"pkg/b.js": B_JS})
+        self.kos(cands)
+        self.control(OPEN)
+        self.github()
+        other = self.stands("brain/c/good")
+        out = self.run_yaz()
+        self.assertEqual((out["ok"], out["done"], out["merge"]), (True, ["D5", "D6"], "second"), out)
+        self.assertEqual({c: (d["decision"], d["reasons"]) for c, d in out["decisions"].items()},
+                         {"good": ("reject", ["branch_differs"]), "second": ("merge", [])})
+        merge = out["written"]["merge"]
+        self.assertEqual((merge["candidate"], merge["path"], self.gh.refs[B.INTEGRATION]),
+                         ("second", "pkg/b.js", merge["merge_sha"]))
+        self.assertEqual(self.gh.commits[merge["merge_sha"]]["parents"], [HEADS[B.INTEGRATION], merge["head_sha"]])
+        self.assertEqual((self.gh.read_file(B.INTEGRATION, "pkg/a.js"), self.gh.read_file(B.INTEGRATION, "pkg/b.js")),
+                         (A_JS.encode(), b"let b = 1;\n"))
+        self.assertEqual((self.gh.refs["brain/c/good"], self.gh.refs["brain/c/second"]), (other, merge["head_sha"]))
+        self.assertEqual([p["head"] for p in self.gh.pulls.values()], ["brain/c/second"])
+        self.assertEqual([c["head_sha"] for c in self.gh.checks], [merge["head_sha"]])
+        self.assertEqual([(r["row_id"], r["payload"].get("reasons"), r.get("cause")) for r in self.decisions()],
+                         [("9-1:c:good", ["branch_differs"], "unknown"), ("9-1:c:second", None, None),
+                          ("9-1:m:second", None, None)])
+        self.assertEqual(len(self.signer.payloads), 1)
+
+    def test_every_candidate_s_branch_differing_writes_the_cycle_with_no_merge(self):
+        write_tree(self.src, {"pkg/b.js": B_JS})
+        self.kos({"good": candidate(GOOD), "second": SECOND})
+        self.control(OPEN)
+        self.github()
+        other = self.stands("brain/c/good")
+        self.gh.refs["brain/c/second"] = other
+        out = self.run_yaz()
+        self.assertEqual((out["ok"], out["done"], out["merge"], out["written"]["merge"]), (True, ["D5", "D6"], None, None))
+        self.assertEqual([d["reasons"] for d in out["decisions"].values()], [["branch_differs"], ["branch_differs"]])
+        self.assertEqual((self.gh.refs[B.INTEGRATION], self.gh.pulls, self.gh.checks), (HEADS[B.INTEGRATION], {}, []))
+
+    def test_a_refusal_the_job_cannot_place_stops_it(self):
+        """The loop's two bounds: a candidate D5 rejected for its branch and the writer refuses again, and a plant
+        refused in a cycle that makes none. Neither happens with this writer and this D5; each is made here."""
         self.kos({"good": candidate(GOOD)})
         self.control(OPEN)
         self.github()
-        other = self.gh.seed_commit("another", parents=[HEADS[B.INTEGRATION]], files={"pkg/a.js": b"let a = 2;\n"})
-        self.gh.refs["brain/c/good"] = other  # a standing branch that is not this candidate's commit
+        self.stands("brain/c/good")
+        decide = E.decide
+        with mock.patch.object(E, "decide", lambda *args: decide(*args[:7])):  # a D5 that drops the refusal
+            with self.assertRaisesRegex(J.Unusable, "^yaz: the writer refused good, which D5 had rejected$"):
+                self.run_yaz()
+
+        def no_plant(*args, **kw):
+            raise WC.BranchDiffers()
+
+        with mock.patch.object(WC, "write", no_plant):
+            with self.assertRaisesRegex(J.Unusable, "^yaz: the writer refused a plant the cycle does not make$"):
+                self.run_yaz()
+        self.assertEqual([p for m, p in self.writes() if "/git/refs" in p], [])
+
+    def test_a_branch_that_stands_with_exactly_the_commit_is_no_refusal(self):
+        """The other side of the rule: the branch stands with this candidate's commit (an earlier try's), and the
+        candidate merges."""
+        self.kos({"good": candidate(GOOD)})
+        self.control(OPEN)
+        self.github()
+        gh = self.gh
+        self.run_yaz(lambda n, method, path: (503, {}) if path.endswith("/pulls") else None)  # the branch, no pull
+        stood = gh.refs["brain/c/good"]
         out = self.run_yaz()
-        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["done"]),
-                         (False, "write_refused", ["branch_differs"], ["D5"]), out)
-        self.assertNotIn("written", out)
-        self.assertEqual({p.rsplit("/", 1)[1] for _, p in self.writes()}, {"blobs", "trees"})  # objects, no ref
-        self.assertEqual((self.gh.refs, self.gh.pulls), (dict(HEADS, **{"brain/c/good": other}), {}))
+        self.assertEqual((out["ok"], out["merge"], out["decisions"]["good"]["reasons"]), (True, "good", []), out)
+        self.assertEqual(out["written"]["merge"]["head_sha"], stood)
 
 
 class Watching(StateBase):
@@ -929,6 +1048,19 @@ class D7(Watching):
         self.assertEqual((added[1]["payload"], added[1]["cause"]), ({"merge_sha": merge_sha}, "test_regression"))
         self.assertEqual(SE.unfinished(new), [])
         self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [heads[B.STATE]])
+
+    def test_a_standing_revert_branch_that_differs_stays_a_refusal_of_the_cycle(self):
+        """tohum/26p's rule names the candidate's and the drill's branch; the revert's is not under it: the writer's
+        ``revert_branch_differs`` with nothing written ends the cycle ``write_refused``, as before."""
+        first, heads = self.merged_then_watched(RED_AT_HEAD)
+        merge_sha = first["merge"]["merge_sha"]
+        other = self.gh.seed_commit("another", parents=[merge_sha], files={"pkg/a.js": b"let a = 2;\n"})
+        self.gh.refs["brain/revert/" + merge_sha] = other
+        before = dict(self.gh.refs)
+        out = self.run_yaz(GITHUB_RUN_ID="10")
+        self.assertEqual((out["ok"], out["reason"], out["reasons"], out["done"]),
+                         (False, "write_refused", ["revert_branch_differs"], ["D5"]), out)
+        self.assertEqual((self.gh.refs, len(self.gh.pulls)), (before, 1))
 
     def test_a_revert_whose_merge_is_answered_405_once_is_still_merged(self):
         """Loop run 45268983995 as the fake models it: the revert's merge, sent right after its check, is answered
@@ -1321,6 +1453,68 @@ class D8(StateBase):
         self.assertEqual((out["sentinel"]["verdict"], out["drill"]), ("green", {"action": "wait", "why": "merge_unfinished"}))
         self.next_cycle({}, "12", units=SENTINEL_UNITS)
         self.assertEqual(self.yaz("12", seed)["drill"]["action"], "plant")
+
+    def test_a_plant_whose_branch_stands_and_differs_is_not_made_and_the_next_cycle_plants(self):
+        """tohum/26p: ``brain/drill/<cycle>`` stands and is not the plant. The cycle is written with no plant and no
+        drill row, the commitment stands, and the next cycle (another branch name) plants it."""
+        seed = seed_for(drill_catalog(DRILL_CAUSES), RD_TEST, "9")
+        self.commit_cycle(seed)
+        self.next_cycle({}, "10", units=SENTINEL_UNITS)
+        base = self.gh.refs[B.INTEGRATION]
+        other = self.gh.seed_commit("another", parents=[base], files={"pkg/a.js": b"let a = 2;\n"})
+        self.gh.refs["brain/drill/10-1"] = other
+        old, state = self.state[B.STATE_LEDGER], self.gh.refs[B.STATE]
+        out = self.yaz("10", seed)
+        self.assertEqual((out["ok"], "reason" in out, out["done"], out["drill"]),
+                         (True, False, ["D5", "D6", "D8"], {"action": "none", "why": "branch_differs"}), out)
+        self.assertEqual((out["written"]["plant"], out["written"]["merge"]), (None, None))
+        self.assertEqual((self.gh.refs[B.INTEGRATION], self.gh.refs["brain/drill/10-1"]), (base, other))
+        self.assertEqual((self.gh.pulls, self.gh.checks), ({}, []))
+        self.assertEqual(self.gh.commits[self.gh.refs[B.STATE]]["parents"], [state])
+        self.assertEqual([(r["row_id"], r["kind"]) for r in self.added(old)],
+                         [("10-1:start", "cycle_start"), ("cagir-10-1", "cost"), ("10-1:status", "status")])
+        self.assertEqual(SE.unfinished(self.state_file(B.STATE_LEDGER)), [])
+        self.next_cycle({}, "11", units=SENTINEL_UNITS)
+        out = self.yaz("11", seed)
+        self.assertEqual((out["ok"], out["drill"]), (True, {"action": "plant", "instance_id": RD_TEST, "path": "pkg/a.js"}))
+        plant = out["written"]["plant"]
+        self.assertEqual((self.gh.refs[B.INTEGRATION], self.gh.refs["brain/drill/11-1"]),
+                         (plant["merge_sha"], plant["head_sha"]))
+
+    def test_a_candidate_refused_for_its_branch_does_not_keep_the_drill_waiting(self):
+        """D8's step is taken again from the decision made after the refusal: no candidate merges, so the cycle
+        plants (with the candidate merging it waits: ``test_the_drill_waits_for_a_candidates_merge_and_its_sentinel``)."""
+        seed = seed_for(drill_catalog(DRILL_CAUSES), RD_TEST, "9")
+        write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})
+        self.commit_cycle(seed)
+        nxt = dict(candidate(diff("pkg/b.js", ["var b = 1;"], ["let b = 1;"])),
+                   **{"finding.json": json.dumps(dict(FINDING, path="pkg/b.js")).encode()})
+        self.next_cycle({"d": nxt}, "10", units=SENTINEL_UNITS)
+        base = self.gh.refs[B.INTEGRATION]
+        other = self.gh.seed_commit("another", parents=[base], files={"pkg/a.js": b"let a = 2;\n"})
+        self.gh.refs["brain/c/d"] = other
+        old = self.state[B.STATE_LEDGER]
+        out = self.yaz("10", seed)
+        self.assertEqual((out["ok"], out["merge"], out["decisions"]["d"]["reasons"], out["drill"]),
+                         (True, None, ["branch_differs"], {"action": "plant", "instance_id": RD_TEST, "path": "pkg/a.js"}),
+                         out)
+        plant = out["written"]["plant"]
+        self.assertEqual((self.gh.refs[B.INTEGRATION], self.gh.refs["brain/c/d"]), (plant["merge_sha"], other))
+        self.assertEqual([p["head"] for p in self.gh.pulls.values()], ["brain/drill/10-1"])
+        self.assertEqual([(r["row_id"], r["kind"]) for r in self.added(old) if r["kind"] in ("decision", "plant", "merge")],
+                         [("10-1:c:d", "decision"), ("10-1:drill", "plant")])
+        # both branches differing: the candidate is rejected, nothing is planted, the cycle is written
+        self.setUp()
+        write_tree(self.src, {"pkg/b.js": "var b = 1;\n"})
+        self.commit_cycle(seed)
+        self.next_cycle({"d": nxt}, "10", units=SENTINEL_UNITS)
+        base = self.gh.refs[B.INTEGRATION]
+        other = self.gh.seed_commit("another", parents=[base], files={"pkg/a.js": b"let a = 2;\n"})
+        self.gh.refs["brain/c/d"] = self.gh.refs["brain/drill/10-1"] = other
+        out = self.yaz("10", seed)
+        self.assertEqual((out["ok"], out["merge"], out["decisions"]["d"]["reasons"], out["drill"]),
+                         (True, None, ["branch_differs"], {"action": "none", "why": "branch_differs"}), out)
+        self.assertEqual((self.gh.refs[B.INTEGRATION], self.gh.pulls), (base, {}))
 
     def test_a_changed_seed_or_a_patch_that_no_longer_applies_commits_again(self):
         doc = drill_catalog(DRILL_CAUSES)

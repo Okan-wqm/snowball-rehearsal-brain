@@ -227,6 +227,7 @@ _NAME = re.compile(r"[A-Za-z0-9._/-]+")
 _REPO = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
 _N = r"[1-9][0-9]{0,9}"
 _CONCLUSIONS = ("success", "failure")
+BRANCH_DIFFERS = "branch_differs"  # ``commit_on``'s refusal of a standing branch that is not its commit
 
 Transport = Callable[[str, str, Any], "tuple[int, Any]"]
 
@@ -555,14 +556,14 @@ class Writer:
             self.create_branch(branch, base)
             at = base
         elif at != base and self.read_commit(at)["parents"] != [base]:
-            raise Refused(["branch_differs"])
+            raise Refused([BRANCH_DIFFERS])
         tree = self._tree(files, self.read_commit(base)["tree"])
         if at == base:
             sha = self.commit(message, tree, [base])
             self.update_branch(branch, sha)
             return {"commit": sha, "standing": False}
         if self.read_commit(at)["tree"] != tree:
-            raise Refused(["branch_differs"])
+            raise Refused([BRANCH_DIFFERS])
         return {"commit": at, "standing": True}
 
     def head_or_none(self, branch: str) -> str | None:

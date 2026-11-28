@@ -301,6 +301,27 @@ class Live(LiveBase):
         self.github()
         self.assertEqual(self.line(self.run_yaz())["written"]["findings"], {"rows": 1, "unresolved_rows": 0, "refused": []})
 
+    def test_a_candidate_whose_branch_stands_and_differs_is_a_reject_of_its_finding(self):
+        """tohum/26p "Yarım kalmış merge" for a run-time candidate: the writer's ``branch_differs`` is a reject like
+        the gate's (no standing reason), so its finding is decided ``unresolved`` and a later candidate of the same
+        finding is not judged in this cycle."""
+        self.world({"a": package(), "b": package()})
+        self.assertEqual(self.judged()[:2], ("a", {"a": [], "b": ["finding_decided", "sentinel_pending"]}))
+        self.assertEqual(self.judged(refused={"a": ["branch_differs"]}),
+                         (None, {"a": ["branch_differs"], "b": ["finding_decided"]},
+                          [{"fingerprint": PRINT, "reasons": ["branch_differs"]}]))
+        self.github()
+        other = self.gh.seed_commit("another", parents=[HEADS[B.INTEGRATION]], files={"pkg/a.js": b"let a = 2;\n"})
+        self.gh.refs["brain/c/a"] = other
+        line = self.line(self.run_yaz())
+        self.assertEqual((line["ok"], line["merge"], line["done"]), (True, None, ["D5", "D6"]), line)
+        self.assertEqual({c: d["reasons"] for c, d in line["decisions"].items()},
+                         {"a": ["branch_differs"], "b": ["finding_decided"]})
+        self.assertEqual(line["written"]["findings"], {"rows": 1, "unresolved_rows": 1, "refused": []})
+        self.assertEqual(TFW.states(self.gh.read_file(B.STATE, B.STATE_FINDINGS)), ["open", "unresolved"])
+        self.assertEqual((self.gh.refs["brain/c/a"], self.gh.refs[B.INTEGRATION], self.gh.pulls),
+                         (other, HEADS[B.INTEGRATION], {}))
+
     def test_a_malformed_package_rejects_only_that_candidate(self):
         self.world({"bad": package(more=1), "good": package(), "nofinding": package(finding=None),
                     "notjson": b"{", "ready": package()},

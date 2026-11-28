@@ -11,7 +11,9 @@ tohum/07 (merges are serial: no merge while another merge's sentinel is unfinish
 the job's ``control`` step read it; ``unfinished``, the merge SHAs whose sentinel has not finished
 (``ledger.serial.unfinished`` of the ``brain/state`` ledger D1 verified, read by the ``yaz`` job); ``frozen``, the
 ``frozen:<trigger>`` reasons of the soft freezes in force that close this loop's merges (``gozcu.watch.closed`` of
-the same ledger; tohum/28, 27a).
+the same ledger; tohum/28, 27a); ``refused``, ``{cid: reasons}``, the writer's refusals of candidates D5 chose
+earlier in this cycle (``loop.write_cycle.BranchDiffers``, tohum/26p "Yarım kalmış merge"; empty in a cycle's first
+decision, ``loop.job``).
 
 **Rules.** Candidates are judged in code-point order of their id. Each one's ``reasons`` are, sorted and unique:
 
@@ -26,6 +28,10 @@ the same ledger; tohum/28, 27a).
   ``artefact_hash_mismatch``. A ``finding.json``, run file or ``hashes.json`` ``gate.check`` cannot use is
   ``candidate_unusable``;
 - every reason of ``frozen`` (tohum/28: the merge gate is closed), so under a freeze no candidate merges;
+- the reasons ``refused`` gives the candidate (``branch_differs``: its branch stands on the target and is not its
+  commit). The reject is that candidate's alone and is a reject like any other (a ``decision`` row whose ``cause``
+  is ``ledger.events.cause`` of its reasons; a run-time candidate's finding takes the decision): the candidates
+  after it are judged as if it had never been the cycle's merge, so the next one with no reason merges;
 - in every cycle but the genesis cycle (``loop.pulled.genesis``), the reasons of ``gate.allowlist.reasons``
   (P1 MF9, tohum/26j "İzin listesi, MF9") for the candidate's package, against ``art.organs`` (the organ
   definitions of the accepted SHA) and the ``accept`` rows of ``pulled``'s ``brain/state`` ledger (the ledger
@@ -201,8 +207,9 @@ def _finding_reasons(cand: LC.Candidate, registry: "dict[str, dict] | None", nam
 
 
 def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
-           unfinished: list[str], frozen: list[str]) -> dict[str, Any]:
+           unfinished: list[str], frozen: list[str], refused: dict[str, list[str]] | None = None) -> dict[str, Any]:
     """D5 over every candidate; see the module docstring."""
+    refused = refused or {}
     profile = V.guard_profile(tree, art.target, art.policy)
     read = LC.reader(results)
     whole = LC.index(read)      # the one reading of the results' index of this D5
@@ -256,6 +263,7 @@ def decide(art: P.Pulled, recipe: Any, tree: str, results: str, control: Any,
             except AL.Unusable:     # the rows were read above: a definition the package names cannot be hashed
                 reasons += _named(cand.package, art.organs, rows) + [ORGAN_UNUSABLE]
             reasons += _finding_reasons(cand, registry, named)
+        reasons += refused.get(cid, [])
         reasons = sorted(set(reasons + list(frozen)))
         decisions[cid] = {"decision": "reject" if reasons else "merge", "reasons": reasons}
         if cand is not None:

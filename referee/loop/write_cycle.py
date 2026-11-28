@@ -96,8 +96,15 @@ next ``cek`` refuses, tohum/13:56-57's chain break, kept by tohum/28:58-59):
   after a ref was written (``target.write.Refused``: ``merge_head_moved``) and its refusal of step 5's commit
   (``state_head_moved``: the root is signed by then) are ``WriteFailed`` naming the refs written
   (``writer.written``; none when the first write failed);
-- the writer's refusal in step 4 before any ref is written (a standing branch that differs; the commit's blobs and
-  tree may be created by then, objects no ref names) is ``Refused`` with the writer's reasons, as step 2's;
+- a standing branch of the cycle's merge or of D8's plant that is not this cycle's commit (``target.write``'s
+  ``branch_differs``, before any ref is written; the commit's blob and tree may be created by then, objects no ref
+  names) is ``BranchDiffers`` (the merge's branch when the cycle merges, else the plant's; tohum/26p "Yarım
+  kalmış merge": the refusal is that candidate's and the cycle goes on). Nothing of the cycle is written by this
+  call: the caller (``loop.job``) decides again with the refusal and calls ``write`` again;
+- any other refusal of the writer in step 4 before a ref is written (a standing revert branch that differs,
+  ``revert_branch_differs``; a merge that is no longer the head, ``revert_not_head``; a request its guard refuses)
+  is ``Refused`` with the writer's reasons, as step 2's: tohum/26p's rule names ``brain/c/<id>`` and
+  ``brain/drill/<cycle>``, not the revert's branch;
 - a chain break and a root that cannot be signed (``ledger.append.HardStop``, ``ledger.anchor.Unsignable``: tohum/28's
   triggers ``chain_break`` and ``rekor``) are ``target.land.HardStop`` naming the refs written.
 
@@ -180,6 +187,12 @@ class Refused(Exception):
 
 class Unusable(ValueError):
     pass
+
+
+class BranchDiffers(Exception):
+    """The branch step 4 lands from stands and is not this cycle's commit (tohum/26p "Yarım kalmış merge"); no ref
+    was written. The branch is the merge's, ``brain/c/<decided["merge"]>``, when the cycle merges, and D8's plant's
+    otherwise (a cycle lands one of the two, ``write``)."""
 
 
 class WriteFailed(Exception):
@@ -373,6 +386,8 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
                                root_row_id, registers, sets)
     except W.Refused as exc:
         if landing and not writer.written:
+            if exc.reasons == [W.BRANCH_DIFFERS]:  # ``commit_on``'s: the merge's branch, or the plant's
+                raise BranchDiffers(W.BRANCH_DIFFERS) from None
             raise Refused([*exc.reasons]) from None
         raise WriteFailed("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     except W.ApiError as exc:

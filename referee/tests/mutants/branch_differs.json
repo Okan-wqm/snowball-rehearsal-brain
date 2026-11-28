@@ -1,0 +1,153 @@
+{
+ "mutants": [
+  {
+   "id": "branch_differs_ends_the_cycle",
+   "file": "loop/job.py",
+   "old": "    except WC.BranchDiffers:\n        return {\"branch_differs\": d5[\"merge\"]}",
+   "new": "    except WC.BranchDiffers:\n        return {\"reason\": \"write_refused\", \"reasons\": [W.BRANCH_DIFFERS]}",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written",
+    "test_loop_write.D8.test_a_plant_whose_branch_stands_and_differs_is_not_made_and_the_next_cycle_plants"
+   ]
+  },
+  {
+   "id": "branch_differs_a_plain_refusal",
+   "file": "loop/write_cycle.py",
+   "old": "            if exc.reasons == [W.BRANCH_DIFFERS]:",
+   "new": "            if False:",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written",
+    "test_loop_write.D8.test_a_plant_whose_branch_stands_and_differs_is_not_made_and_the_next_cycle_plants"
+   ]
+  },
+  {
+   "id": "every_unwritten_refusal_branch_differs",
+   "file": "loop/write_cycle.py",
+   "old": "            if exc.reasons == [W.BRANCH_DIFFERS]:",
+   "new": "            if True:",
+   "tests": [
+    "test_loop_write.D7.test_a_standing_revert_branch_that_differs_stays_a_refusal_of_the_cycle"
+   ]
+  },
+  {
+   "id": "branch_differs_names_no_candidate",
+   "file": "loop/job.py",
+   "old": "return {\"branch_differs\": d5[\"merge\"]}",
+   "new": "return {\"branch_differs\": None}",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "refusal_not_given_to_d5",
+   "file": "loop/job.py",
+   "old": "d5, _, _ = yaz_d5(environ, tid, (art, tree), differs)",
+   "new": "d5, _, _ = yaz_d5(environ, tid, (art, tree), None)",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "second_decision_reads_pulled_again",
+   "file": "loop/job.py",
+   "old": "d5, _, _ = yaz_d5(environ, tid, (art, tree), differs)",
+   "new": "d5, _, _ = yaz_d5(environ, tid, None, differs)",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "held_unit_read_again",
+   "file": "loop/job.py",
+   "old": "    if held is None:\n        art, unit, refused = _pulled_unit(environ, tid)\n",
+   "new": "    if True:\n        art, unit, refused = _pulled_unit(environ, tid)\n",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "held_tree_extracted_again",
+   "file": "loop/job.py",
+   "old": "    if held is None:\n        _, tree, refused = _pulled_tree(environ, art, \"yaz\")\n",
+   "new": "    if True:\n        _, tree, refused = _pulled_tree(environ, art, \"yaz\")\n",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "drill_step_not_taken_again",
+   "file": "loop/job.py",
+   "old": "            raise Unusable(\"yaz: %s\" % d5[\"reason\"])\n        d8 = yaz_d8(environ, art, tree, d5)",
+   "new": "            raise Unusable(\"yaz: %s\" % d5[\"reason\"])\n        pass",
+   "tests": [
+    "test_loop_write.D8.test_a_candidate_refused_for_its_branch_does_not_keep_the_drill_waiting"
+   ]
+  },
+  {
+   "id": "refused_plant_shown_off",
+   "file": "loop/job.py",
+   "old": "PLANT_REFUSED = {\"action\": \"none\", \"why\": W.BRANCH_DIFFERS}",
+   "new": "PLANT_REFUSED = {\"action\": \"off\", \"why\": W.BRANCH_DIFFERS}",
+   "tests": [
+    "test_loop_write.D8.test_a_plant_whose_branch_stands_and_differs_is_not_made_and_the_next_cycle_plants"
+   ]
+  },
+  {
+   "id": "refused_plant_guard_inverted",
+   "file": "loop/job.py",
+   "old": "            if d8 == PLANT_REFUSED:\n                raise Unusable(",
+   "new": "            if d8 != PLANT_REFUSED:\n                raise Unusable(",
+   "tests": [
+    "test_loop_write.D8.test_a_plant_whose_branch_stands_and_differs_is_not_made_and_the_next_cycle_plants"
+   ]
+  },
+  {
+   "id": "refused_candidate_guard_inverted",
+   "file": "loop/job.py",
+   "old": "        if cid in differs:\n            raise Unusable(",
+   "new": "        if cid not in differs:\n            raise Unusable(",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "decide_drops_the_refusal",
+   "file": "loop/decide.py",
+   "old": "        reasons += refused.get(cid, [])\n",
+   "new": "        reasons += []\n",
+   "tests": [
+    "test_loop_yaz.OneCycle.test_a_candidate_the_writer_refused_is_rejected_and_the_next_one_merges",
+    "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written"
+   ]
+  },
+  {
+   "id": "decide_refuses_every_candidate",
+   "file": "loop/decide.py",
+   "old": "        reasons += refused.get(cid, [])\n",
+   "new": "        reasons += [r for rs in refused.values() for r in rs]\n",
+   "tests": [
+    "test_loop_yaz.OneCycle.test_a_candidate_the_writer_refused_is_rejected_and_the_next_one_merges",
+    "test_loop_write.StandingDiffers.test_the_next_candidate_with_no_reason_merges_in_the_same_cycle"
+   ]
+  },
+  {
+   "id": "refusal_after_the_finding_is_decided",
+   "file": "loop/decide.py",
+   "old": "        reasons += refused.get(cid, [])\n        reasons = sorted(set(reasons + list(frozen)))\n",
+   "new": "        reasons = sorted(set(reasons + list(frozen)))\n",
+   "tests": [
+    "test_candidates.Live.test_a_candidate_whose_branch_stands_and_differs_is_a_reject_of_its_finding"
+   ]
+  },
+  {
+   "id": "writer_names_another_reason",
+   "file": "target/write.py",
+   "old": "BRANCH_DIFFERS = \"branch_differs\"",
+   "new": "BRANCH_DIFFERS = \"branch_moved\"",
+   "tests": [
+    "test_loop_write.StandingDiffers.test_the_candidate_is_rejected_and_the_cycle_is_written",
+    "test_write.py"
+   ]
+  }
+ ]
+}
