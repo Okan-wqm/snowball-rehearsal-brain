@@ -1086,8 +1086,8 @@ def yaz_d6(environ: dict[str, str], tid: str, art: Any, tree: str, d5: dict[str,
         return {"reason": "hard_stop", "reasons": [cli.cause(exc)], "written": sorted(set(writer.written)),
                 "sign_calls": _sign_calls(signer, seen)}
     except WC.WriteFailed as exc:
-        return {"reason": "write_failed", "reasons": [cli.cause(exc)], "written": exc.written,
-                "sign_calls": _sign_calls(signer, seen)}
+        return {"reason": "write_failed", "reasons": [cli.cause(exc)],
+                "written": sorted(set(writer.written)), "sign_calls": _sign_calls(signer, seen)}
     except (WC.Unusable, W.ApiError, W.Refused) as exc:
         raise Unusable("yaz: %s" % cli.cause(exc)) from None
 

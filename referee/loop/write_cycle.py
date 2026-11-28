@@ -366,11 +366,14 @@ def write(art: P.Pulled, tree: str, decided: dict, cost: list[dict], writer: W.W
         planned = cycle.commit(state, "cycle %s" % cycle_id, *args,
                                rows(merged, plant and plant["merge_sha"]) + frozen, imports, facts, signer,
                                root_row_id, registers, sets)
-    except (W.ApiError, W.Refused) + cycle.FAILURES as exc:
-        if isinstance(exc, W.Refused) and not writer.written:
+    except W.Refused as exc:
+        if not writer.written:
             raise Refused(list(exc.reasons)) from None
-        end = WriteFailed if isinstance(exc, (W.ApiError, W.Refused)) else land.HardStop
-        raise end("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
+        raise WriteFailed("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
+    except W.ApiError as exc:
+        raise WriteFailed("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
+    except cycle.FAILURES as exc:
+        raise land.HardStop("%s: %s" % (type(exc).__name__, cli.cause(exc)), sorted(set(writer.written))) from None
     return {"merge": dict(merged, candidate=merge) if merged else None, "revert": reverted, "plant": plant,
             "state_sha": state.commits_made[-1],
             "root": planned["root"], "rekor_uuid": planned["entry"]["uuid"], "rows": len(planned["row_hashes"]),
