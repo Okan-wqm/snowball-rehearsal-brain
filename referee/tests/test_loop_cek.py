@@ -73,10 +73,13 @@ from __future__ import annotations
 
 import io
 import json
+import marshal
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
+import tempfile
 import unittest
 from unittest import mock
 
@@ -443,17 +446,17 @@ class FakeRekor:
 
 # ``git_store``'s test ``git`` answers every ``ls-remote`` with one listing; with more than one target each
 # repository has its own. This front answers ``ls-remote`` by the URL asked for (recorded in the same
-# ``calls.jsonl``) and hands every other command to ``git_store``'s ``git`` beside it.
-LISTING_GIT = '''#!%s
-import json, os, sys
+# ``git_store.CALLS``) and hands every other command to ``git_store``'s ``git`` beside it.
+LISTING_GIT = '''#!%s -IS
+import marshal, os, sys
 here = os.path.dirname(os.path.abspath(__file__))
 args = sys.argv[1:]
 if "ls-remote" in args:
-    with open(os.path.join(here, "calls.jsonl"), "a") as fh:
-        fh.write(json.dumps({"argv": args}) + "\\n")
-    with open(os.path.join(here, "listings.json")) as fh:
-        listings = json.load(fh)
-    sys.stdout.buffer.write(bytes.fromhex(listings[args[args.index("--") + 1]]))
+    with open(os.path.join(here, "calls"), "ab") as fh:
+        fh.write(marshal.dumps({"argv": args}))
+    with open(os.path.join(here, "listings"), "rb") as fh:
+        listings = marshal.load(fh)
+    sys.stdout.buffer.write(listings[args[args.index("--") + 1]])
     sys.exit(0)
 os.execv(os.path.join(here, "git"), [os.path.join(here, "git")] + args)
 '''
@@ -461,13 +464,27 @@ os.execv(os.path.join(here, "git"), [os.path.join(here, "git")] + args)
 
 def install_listing_git(directory: str, listings: dict[str, bytes]) -> str:
     """``LISTING_GIT`` in ``directory`` (which holds ``git_store``'s ``git``), ``listings`` URL -> answer."""
-    with open(os.path.join(directory, "listings.json"), "w") as fh:
-        json.dump({url: answer.hex() for url, answer in listings.items()}, fh)
+    with open(os.path.join(directory, "listings"), "wb") as fh:
+        marshal.dump(dict(listings), fh)
     path = os.path.join(directory, "git-listing")
     with open(path, "w") as fh:
         fh.write(LISTING_GIT % sys.executable)
     os.chmod(path, 0o755)
     return path
+
+
+class ListingGit(unittest.TestCase):
+    def test_it_answers_by_url_hands_the_rest_on_and_imports_no_module_from_a_file(self):
+        base = tempfile.mkdtemp(prefix="listing-git-")
+        self.addCleanup(shutil.rmtree, base, ignore_errors=True)
+        S.install_git(base, {}, listing=b"every\n", outputs={"version": b"v\n"})
+        git = install_listing_git(base, {"https://a": b"of a\n", "https://b": b"of b\n"})
+        asked = [["ls-remote", "--", "https://b"], ["version"]]
+        self.assertEqual([subprocess.run([git] + a, capture_output=True, check=True).stdout for a in asked],
+                         [b"of b\n", b"v\n"])
+        self.assertEqual([c["argv"] for c in S.calls(base)], asked)
+        # the cost this binds (``git_store.CALLS``): this front is one more python start per git command
+        self.assertEqual(S.start_imports(git, asked[0]), [])
 
 
 class CekJob(unittest.TestCase):
@@ -663,8 +680,8 @@ class CekJob(unittest.TestCase):
         """A new runner: no ``$RUNNER_TEMP`` content, no record of the fake ``git``'s calls."""
         shutil.rmtree(self.temp)
         os.makedirs(self.temp)
-        if os.path.exists(os.path.join(self.bin, "calls.jsonl")):
-            os.remove(os.path.join(self.bin, "calls.jsonl"))
+        if os.path.exists(os.path.join(self.bin, S.CALLS)):
+            os.remove(os.path.join(self.bin, S.CALLS))
 
     def test_the_job_runs_d1_and_hands_pulled_to_the_upload(self):
         out, commit, tree = self.run_cek()
@@ -969,8 +986,8 @@ class CekJob(unittest.TestCase):
                                  (b"", ["head_missing:brain/state", "head_missing:brain/integration",
                                         "head_missing:main"])):
             with self.subTest(reasons=reasons):
-                os.remove(os.path.join(self.bin, "calls.jsonl")) if os.path.exists(
-                    os.path.join(self.bin, "calls.jsonl")) else None
+                os.remove(os.path.join(self.bin, S.CALLS)) if os.path.exists(
+                    os.path.join(self.bin, S.CALLS)) else None
                 out, _, _ = self.run_cek(listing=listing)
                 self.stopped(out)
                 self.assertEqual([out["reason"]] + out.get("reasons", []), reasons)
@@ -1026,8 +1043,8 @@ class CekJob(unittest.TestCase):
             with self.subTest(name):
                 shutil.rmtree(self.temp)
                 os.makedirs(self.temp)
-                if os.path.exists(os.path.join(self.bin, "calls.jsonl")):
-                    os.remove(os.path.join(self.bin, "calls.jsonl"))
+                if os.path.exists(os.path.join(self.bin, S.CALLS)):
+                    os.remove(os.path.join(self.bin, S.CALLS))
                 self.state_head = head()
                 out, _, _ = self.run_cek()
                 self.assertEqual((out["ok"], out["reason"], out["reasons"]), (False, "state_refused", reasons))
@@ -1059,8 +1076,8 @@ class CekJob(unittest.TestCase):
             with self.subTest(name):
                 shutil.rmtree(self.temp)
                 os.makedirs(self.temp)
-                if os.path.exists(os.path.join(self.bin, "calls.jsonl")):
-                    os.remove(os.path.join(self.bin, "calls.jsonl"))
+                if os.path.exists(os.path.join(self.bin, S.CALLS)):
+                    os.remove(os.path.join(self.bin, S.CALLS))
                 self.setUp_state()
                 if head:
                     self.state_head = head()
@@ -1682,7 +1699,7 @@ class CekJob(unittest.TestCase):
                 api = self.TA.FakeApi([self.TA.artifact(11, "2026-11-01T00:00:00Z")], b"")
                 with self.assertRaisesRegex(J.Unusable, reason):
                     self.reset_and_run(bootstrap=boot, http=api)
-                self.assertFalse(os.path.exists(os.path.join(self.bin, "calls.jsonl")))  # no git ran
+                self.assertFalse(os.path.exists(os.path.join(self.bin, S.CALLS)))  # no git ran
                 self.assertEqual(api.calls, [])
         with self.subTest(file="a link to a valid file"):
             target = os.path.join(self.base, "elsewhere.json")
@@ -1700,7 +1717,7 @@ class CekJob(unittest.TestCase):
         with self.subTest(sigstore="not installed"):
             with self.assertRaisesRegex(J.Unusable, "sigstore_missing"):
                 self.reset_and_run(sigstore=False)
-            self.assertFalse(os.path.exists(os.path.join(self.bin, "calls.jsonl")))
+            self.assertFalse(os.path.exists(os.path.join(self.bin, S.CALLS)))
 
     def test_no_verdict(self):
         for kw in ({"env": {"GITHUB_TOKEN": None}}, {"env": {"GITHUB_WORKSPACE": None}},

@@ -63,7 +63,7 @@ class Fetch(unittest.TestCase):
         F.fetch(self.git_dir if git_dir is None else git_dir, url, sha, git=git, environ=environ)
 
     def calls(self) -> list[dict]:
-        path = os.path.join(self.bin, "calls.jsonl")
+        path = os.path.join(self.bin, S.CALLS)
         return S.calls(self.bin) if os.path.exists(path) else []
 
     def refused(self, reasons, **kw) -> None:
@@ -111,7 +111,7 @@ class Fetch(unittest.TestCase):
         self.assertEqual(self.calls()[2]["argv"], ["--git-dir=%s" % self.git_dir, "cat-file", "--batch"])  # read back
         self.assertEqual(self.calls()[1]["fds"], [os.devnull, os.devnull])
         shutil.rmtree(self.git_dir)
-        os.remove(os.path.join(self.bin, "calls.jsonl"))
+        os.remove(os.path.join(self.bin, S.CALLS))
         self.fetch()  # without it: one commit, no history, and no filter
         self.assertIn("--depth=1", self.calls()[1]["argv"])
         self.assertNotIn("--filter=tree:0", self.calls()[1]["argv"])
@@ -156,7 +156,7 @@ class Fetch(unittest.TestCase):
                                    ({"fetch": 128}, "fetch_failed:fetch:128", 2)):
             with self.subTest(reason):
                 if self.calls():
-                    os.remove(os.path.join(self.bin, "calls.jsonl"))
+                    os.remove(os.path.join(self.bin, S.CALLS))
                 self.refused([reason], exits=exits)
                 self.assertFalse(os.path.lexists(self.git_dir))
                 self.assertEqual(len(self.calls()), ran)  # nothing runs after the failing step
@@ -243,7 +243,7 @@ class Heads(unittest.TestCase):
                        else refs, git=git, environ=environ)
 
     def calls(self) -> list[dict]:
-        return S.calls(self.bin) if os.path.exists(os.path.join(self.bin, "calls.jsonl")) else []
+        return S.calls(self.bin) if os.path.exists(os.path.join(self.bin, S.CALLS)) else []
 
     def refused(self, reasons, **kw) -> None:
         with self.assertRaises(P.PulledError) as ctx:
@@ -310,7 +310,7 @@ class Heads(unittest.TestCase):
                                    ({"ls-remote": 128}, "heads_failed:ls-remote:128", 2)):
             with self.subTest(reason):
                 if self.calls():
-                    os.remove(os.path.join(self.bin, "calls.jsonl"))
+                    os.remove(os.path.join(self.bin, S.CALLS))
                 self.refused([reason], exits=exits, listing=b"%s\t%s\n" % (A40.encode(), STATE.encode()))
                 self.assertEqual(len(self.calls()), ran)
         with self.assertRaises(P.PulledError) as ctx:

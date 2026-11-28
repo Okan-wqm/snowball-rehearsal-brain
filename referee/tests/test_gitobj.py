@@ -156,6 +156,20 @@ class Batch(unittest.TestCase):
         self.assertEqual((call["env"]["GIT_CONFIG_GLOBAL"], call["env"]["GIT_CONFIG_NOSYSTEM"], call["env"]["HOME"]),
                          ("/dev/null", "1", "/h"))
 
+    def test_a_start_of_the_test_git_imports_no_module_from_a_file(self):
+        # The cost this binds (``git_store.CALLS``): each start compiles what it imports where no bytecode is kept.
+        git = S.install_git(self.dir, self.answers, outputs={"version": b"v\n"})
+        for args in (["--git-dir=/repo.git", "cat-file", "--batch"], ["version"], ["init", os.path.join(self.dir, "new")]):
+            with self.subTest(args=args):
+                self.assertEqual(S.start_imports(git, args, stdin=REAL_COMMIT.encode() + b"\n"), [])
+        self.assertEqual([c["argv"][-1] for c in S.calls(self.dir)], ["--batch", "version", os.path.join(self.dir, "new")])
+        # the measure sees an import: the same script with one more
+        with open(git) as fh:
+            text = fh.read()
+        with open(git, "w") as fh:
+            fh.write(text.replace("import marshal, os, sys", "import marshal, os, sys, json", 1))
+        self.assertIn("json", S.start_imports(git, ["version"]))
+
     def test_a_missing_object(self):
         blob = G.object_id("blob", b"hi\n")
         del self.answers[blob]

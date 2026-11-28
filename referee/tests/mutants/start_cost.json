@@ -1,0 +1,49 @@
+{
+ "mutants": [
+  {
+   "id": "hook_imports_json",
+   "file": "tests/fake_docker_hook.py",
+   "old": "import errno\n",
+   "new": "import errno\nimport json\n",
+   "tests": [
+    "test_contained.StartTest"
+   ]
+  },
+  {
+   "id": "hook_runs_by_runpy",
+   "file": "tests/fake_docker_hook.py",
+   "old": "import errno\n",
+   "new": "import errno\nimport runpy\n",
+   "tests": [
+    "test_contained.StartTest"
+   ]
+  },
+  {
+   "id": "git_imports_json",
+   "file": "tests/git_store.py",
+   "old": "import marshal, os, sys\nhere",
+   "new": "import marshal, os, sys, json\nhere",
+   "tests": [
+    "test_gitobj.py"
+   ]
+  },
+  {
+   "id": "listing_git_imports_json",
+   "file": "tests/test_loop_cek.py",
+   "old": "import marshal, os, sys\nhere",
+   "new": "import marshal, os, sys, json\nhere",
+   "tests": [
+    "test_loop_cek.ListingGit"
+   ]
+  },
+  {
+   "id": "start_imports_sees_nothing",
+   "file": "tests/git_store.py",
+   "old": "        names = (imported(shebang + [\"-X\", \"importtime\", script] + args)\n                 - imported(",
+   "new": "        names = (imported(shebang + [\"-X\", \"importtime\", script] + args)\n                 & imported(",
+   "tests": [
+    "test_gitobj.py"
+   ]
+  }
+ ]
+}

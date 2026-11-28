@@ -531,6 +531,33 @@
    "tests": [
     "test_prepush.py"
    ]
+  },
+  {
+   "id": "quick_times_cold",
+   "old": "emit=emit, cold=False)",
+   "new": "emit=emit)",
+   "file": "tests/prepush.py",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "run_hides_the_python_of_a_green_run",
+   "old": "\"readers\": readers,\n            \"python\": summary[\"python\"]}",
+   "new": "\"readers\": readers,\n            \"python\": \"cold_home\"}",
+   "file": "tests/prepush.py",
+   "tests": [
+    "test_prepush.py"
+   ]
+  },
+  {
+   "id": "run_hides_the_python_of_a_red_run",
+   "old": "\"stamp\": None,\n                \"python\": summary[\"python\"]}",
+   "new": "\"stamp\": None,\n                \"python\": \"own\"}",
+   "file": "tests/prepush.py",
+   "tests": [
+    "test_prepush.py"
+   ]
   }
  ]
 }

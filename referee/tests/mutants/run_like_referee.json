@@ -507,8 +507,8 @@
   },
   {
    "id": "moved_prefix_unchecked",
-   "old": "if moved == [home, home, home, swap(mine[3]), [swap(p) for p in mine[4]]] and",
-   "new": "if moved and moved[3:] == [swap(mine[3]), [swap(p) for p in mine[4]]] and",
+   "old": "if moved == [home, home, home, swap(mine[3]), [swap(p) for p in mine[4]]]:",
+   "new": "if moved and moved[3:] == [swap(mine[3]), [swap(p) for p in mine[4]]]:",
    "file": "tests/run_like_referee.py",
    "tests": [
     "test_run_like_referee.Interpreter"
@@ -516,8 +516,8 @@
   },
   {
    "id": "moved_path_unchecked",
-   "old": "if moved == [home, home, home, swap(mine[3]), [swap(p) for p in mine[4]]] and",
-   "new": "if moved and moved[:4] == [home, home, home, swap(mine[3])] and",
+   "old": "if moved == [home, home, home, swap(mine[3]), [swap(p) for p in mine[4]]]:",
+   "new": "if moved and moved[:4] == [home, home, home, swap(mine[3])]:",
    "file": "tests/run_like_referee.py",
    "tests": [
     "test_run_like_referee.Interpreter"
@@ -525,8 +525,8 @@
   },
   {
    "id": "bytecode_unchecked",
-   "old": "[swap(p) for p in mine[4]]] and os.path.isfile(cache):",
-   "new": "[swap(p) for p in mine[4]]]:",
+   "old": "if cache and os.path.isfile(cache):",
+   "new": "if cache:",
    "file": "tests/run_like_referee.py",
    "tests": [
     "test_run_like_referee.Interpreter"
@@ -575,6 +575,114 @@
    "file": "tests/run_like_referee.py",
    "tests": [
     "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "cold_home_dirs_left_open",
+   "old": "            os.chmod(top, 0o555)",
+   "new": "            os.chmod(top, 0o755)",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "cold_home_bytecode_unchecked",
+   "old": "if says_home(py, home, binary) and not any(PYCACHE in dirs for _, dirs, _ in os.walk(home)):",
+   "new": "if says_home(py, home, binary):",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "cold_home_says_unchecked",
+   "old": "if says_home(py, home, binary) and not any(PYCACHE in dirs for _, dirs, _ in os.walk(home)):",
+   "new": "if not any(PYCACHE in dirs for _, dirs, _ in os.walk(home)):",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "cold_home_failed_is_kept",
+   "old": "        remove(home)\n    return None",
+   "new": "        pass\n    return None",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "run_warm_by_default",
+   "old": "watch: tuple[str, ...] = (), cold: bool = True) -> dict:",
+   "new": "watch: tuple[str, ...] = (), cold: bool = False) -> dict:",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "run_cold_whatever_is_asked",
+   "old": "path, kind = pythons(work, cold)",
+   "new": "path, kind = pythons(work, True)",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "pythons_never_cold",
+   "old": "python = cold_home(os.path.join(work, \"python-cold\")) if cold else None",
+   "new": "python = None",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "pythons_cold_unasked",
+   "old": "python = cold_home(os.path.join(work, \"python-cold\")) if cold else None",
+   "new": "python = cold_home(os.path.join(work, \"python-cold\"))",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "cold_home_outside_the_work",
+   "old": "cold_home(os.path.join(work, \"python-cold\"))",
+   "new": "cold_home(os.path.join(os.path.dirname(work), \"python-cold\"))",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "cold_kind_named_own",
+   "old": "return bindir(os.path.join(work, \"bin\"), python), \"cold_home\"",
+   "new": "return bindir(os.path.join(work, \"bin\"), python), \"own\"",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Interpreter"
+   ]
+  },
+  {
+   "id": "main_warm_flag_ignored",
+   "old": "cold=not args.warm)",
+   "new": "cold=True)",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Main"
+   ]
+  },
+  {
+   "id": "main_always_warm",
+   "old": "cold=not args.warm)",
+   "new": "cold=False)",
+   "file": "tests/run_like_referee.py",
+   "tests": [
+    "test_run_like_referee.Main"
    ]
   }
  ]

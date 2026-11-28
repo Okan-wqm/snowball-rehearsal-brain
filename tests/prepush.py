@@ -17,7 +17,10 @@ Rules, each bound by ``tests/test_prepush.py``:
 - **run** runs every command of the manifest with ``run_like_referee`` (its rules and its out-of-scope list are
   that module's; no ``--only`` here) and prints its lines. It writes the stamp only when the summary is ok and
   ``state`` of the tree is the same after the run as before it; otherwise it removes a stamp that is there and
-  says why (``tests_red``, ``tree_changed_during_run``). Exit 0 with a stamp written, 1 without.
+  says why (``tests_red``, ``tree_changed_during_run``). Exit 0 with a stamp written, 1 without. Its last line
+  carries ``python``, the kind of interpreter the commands ran on (``run_like_referee``'s summary): the run asks
+  for ``cold_home``, where a command's time is nearest the referee's, and any other kind there says the times of
+  this run were a warm python's, which the stamp does not record.
 - **The stamp** holds ``state`` of every file ``git add -A`` would commit except ``founder-ledger.jsonl`` (a
   file's sha256 and execute bit, a link's target), the ledger's length and sha256, and ``readers``: the ids of the
   commands that read the ledger's bytes from their copy during the run (``run_like_referee.run_one``'s ``read``,
@@ -49,7 +52,8 @@ Rules, each bound by ``tests/test_prepush.py``:
   pattern names (``mutate.named`` over ``mutate.test_files``, ``mutate.closure_of``: the rules and import spaces
   ``mutate.py --touched`` reads by, one reader), those files included, or when its pattern names no file. A
   command of any other form is run whole every time, under its own id. The selected run as ``run``'s commands do
-  (``run_like_referee``), a part by its step alone from its directory; each not ok is ``test_failed:<id>``.
+  (``run_like_referee``) but on a warm python (its ``cold=False``: ``quick`` is the fast look, and a part's time
+  is not a command's), a part by its step alone from its directory; each not ok is ``test_failed:<id>``.
   ``--plan`` selects and runs nothing. One JSON line ``{ok, reasons, changed, parts, selected, unseen, ran}``:
   ``changed`` and ``parts`` are counts, ``unseen`` the changed paths in no part's closure, ``ran`` whether
   anything was run. Exit 0 ok, 1 not ok. It never writes or removes the stamp.
@@ -158,7 +162,8 @@ def green(root: str, git: str, path: str, jobs: int, timeout: float, emit=print)
     if reasons:
         if os.path.lexists(path):
             os.remove(path)
-        return {"ok": False, "reasons": reasons, "failed": summary["failed"], "stamp": None}
+        return {"ok": False, "reasons": reasons, "failed": summary["failed"], "stamp": None,
+                "python": summary["python"]}
     # One rule for "who read the ledger is not known": nothing was watched (no ledger at the run, or a still clock).
     readers = [r["id"] for r in results if r["read"]] if watched else None
     stamp = {"schema": SCHEMA, "files": {n: v for n, v in before.items() if n != LEDGER},
@@ -167,7 +172,8 @@ def green(root: str, git: str, path: str, jobs: int, timeout: float, emit=print)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(stamp, f, sort_keys=True)
     os.replace(path + ".tmp", path)
-    return {"ok": True, "reasons": [], "failed": [], "stamp": path, "readers": readers}
+    return {"ok": True, "reasons": [], "failed": [], "stamp": path, "readers": readers,
+            "python": summary["python"]}
 
 
 def read_stamp(path: str) -> dict | None:
@@ -308,7 +314,7 @@ def quick(root: str, git: str, path: str, jobs: int, timeout: float, emit=print,
               "selected": [t["id"] for t in selected], "unseen": sorted(changed - seen), "ran": False}
     if plan or not selected:
         return result
-    summary = R.run(root, selected, R.files(root, git), jobs, timeout, emit=emit)
+    summary = R.run(root, selected, R.files(root, git), jobs, timeout, emit=emit, cold=False)
     reasons = ["test_failed:%s" % i for i in summary["failed"]]
     return result | {"ok": not reasons, "reasons": reasons, "ran": True}
 

@@ -480,6 +480,28 @@ class Quick(Base):
         with open(self.stamp, "rb") as f:
             self.assertEqual(f.read(), stamped)  # a green quick pass stamps nothing
 
+    def test_run_times_on_a_cold_python_and_quick_on_a_warm_one(self):
+        # ``run_like_referee``'s cold home is asked for by ``run`` (a command's time is what it bounds) and not by
+        # ``quick``; here it answers None, so both go on with the warm interpreter.
+        asked: list = []
+        self.addCleanup(setattr, R, "cold_home", R.cold_home)
+        R.cold_home = lambda home: asked.append(os.path.basename(home))
+        self.tree()
+        got = self.green()
+        self.assertEqual((got["ok"], asked), (True, ["python-cold"]))
+        self.assertIn(got["python"], ("own", "moved_home"))             # said by run: no cold home was built
+        R.cold_home = lambda home: os.path.realpath(sys.executable)
+        self.assertEqual(self.green()["python"], "cold_home")
+        self.put("referee/tests/test_other.py", value_test("other", 3))
+        self.assertEqual([self.green()[k] for k in ("ok", "python")], [False, "cold_home"])
+        self.put("referee/tests/test_other.py", value_test("other", 2))
+        R.cold_home = lambda home: asked.append(os.path.basename(home))
+        self.assertTrue(self.green()["ok"])
+        del asked[1:]
+        self.put("referee/deep.py", "VALUE = 1  # the same\n")
+        got = self.quick()
+        self.assertEqual((got["ok"], got["ran"], asked), (True, True, ["python-cold"]))
+
     def test_the_stamped_tree_selects_and_runs_nothing(self):
         self.tree()
         self.assertTrue(self.green()["ok"])

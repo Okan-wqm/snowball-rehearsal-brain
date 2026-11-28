@@ -3,7 +3,7 @@
 Why: 057ad34 was rejected (test_failed T14) for a difference of environment only: the tests passed here, where git
 is installed, and failed in the referee's sandbox, which has none (founder ledger f396). This runner makes that
 class visible before a push. Run from anywhere: ``python3 tests/run_like_referee.py [-j N] [--timeout S]
-[--only ID ...]``.
+[--only ID ...] [--warm]``.
 
 What it does, each rule bound by ``tests/test_run_like_referee.py``:
 
@@ -25,7 +25,15 @@ What it does, each rule bound by ``tests/test_run_like_referee.py``:
 - **PATH holds only python**: a directory holding ``python`` and ``python3``, links to one interpreter. The
   command runs under ``/bin/sh -c`` (the shell is found by its path, not by PATH), from the copy's root (tohum/26c:
   ``cmd`` runs from the repository root), stdin ``/dev/null`` (not the runner's own stdin).
-- **Which interpreter** (``interpreter``): this one (``sys.executable``), except where its standard library is
+- **Which interpreter.** A run's python keeps no bytecode of the standard library (``cold_home``), unless the
+  caller asks for a warm one (``--warm``; ``run``'s ``cold=False``) or the cold home cannot be built. *Cold*: a
+  moved home (``move_home``, below) whose every directory is closed to writes (mode ``0555``), so that every
+  python process a command starts compiles every standard module it imports, which is what the referee's
+  durations say of its own (the time limit, below). It is used only when, started with an empty environment, it
+  reports itself as its prefix and the same module search path as this interpreter's with the prefix replaced,
+  and that start, which imports ``json``, has left no ``__pycache__`` directory under the home (as root, who
+  writes whatever the mode, it is not used). *Warm* (``interpreter``): this one (``sys.executable``), except
+  where its standard library is
   cold (``stdlib_cold``: no bytecode file for ``json`` and no way for this user to write one), so that every python
   process a command starts compiles every standard module it imports. There the links go to a moved home
   (``move_home``): a copy of this interpreter's binary beside a mirror of its standard library (directories made,
@@ -34,16 +42,27 @@ What it does, each rule bound by ``tests/test_run_like_referee.py``:
   included; a child told not to write bytecode writes none and loads what is there). It is used only when,
   started with an empty environment, it reports itself as its prefix, the same module search path as this
   interpreter's with the prefix replaced, and has written ``json``'s bytecode; otherwise the links go to this
-  interpreter as before. The summary's ``python`` says which: ``own`` or ``moved_home``. Measured where this was
+  interpreter as before. The summary's ``python`` says which: ``cold_home``, ``own`` or ``moved_home``; a run
+  asked cold that says another kind timed its commands warm. Measured where this was
   written (founder ledger, 2026-11-17): the capsule's ``/usr/local/lib/python3.12`` holds no bytecode and is
   read-only; one ``python -m loop.job`` start took 1.14 s cold and 0.56 s from a moved home.
 - **The environment is only** ``PATH``, ``HOME=/nonexistent`` (no home to read or write), ``TMPDIR`` (a new
   directory per command) and ``LANG=C.UTF-8``; nothing of this session's environment passes.
 - **A time limit per command** (``--timeout``, default ``TIMEOUT``, 600 s): a command that exceeds it is killed
-  and is ``timed_out``, not ok. The number is observed, not read from a page (reports/seed-081): the referee's
-  result for c467639 has T46 with ``duration_ms`` 600162, ``exit`` 124 and ``timed_out`` true, while this runner,
-  then at 1800 s, called the same tree green. A command's duration here is this host's, at this ``-j``; it says
-  nothing certain of the referee's host.
+  and is ``timed_out``, not ok. The number is tohum/29b:24's (each command alone, ``limits.test_timeout_s`` of
+  the operator's ``bootstrap.json``, 600 today); that file is in the referee's repository, which a session does
+  not read, so the constant here is the page's and the referee's results' (c467639 and 4292f47: T46 with
+  ``exit`` 124, ``timed_out`` true, ``duration_ms`` 600162 and 600160), not read from the file. **A duration
+  here is not the referee's**: both of those trees were green here. Measured 2026-11-28 on 4292f47's test
+  files: where a file's tests start many python processes the referee took 2.5 to 2.7 times this host's warm
+  time (``test_loop_kos`` 21.1 s against 7.9, ``test_loop_yaz`` 73.8 against 29.6, ``test_loop_handover`` 45.3
+  against 18.4) and 0.74 to 0.77 of this host's time on a home that keeps no bytecode (28.7, 95.8, 60.6), while
+  files that start none took about this host's warm time (``test_serial`` 0.46 against 0.42, ``test_treehash``
+  1.9 against 2.2). Read as: the referee's standard library is cold; not seen directly. So a warm run's durations bound no
+  command's time there (both rejected trees were green warm), and a cold run's are this host's, not the
+  referee's: by the three files above the referee took about three quarters of them, a ratio of one day and one
+  host that no test holds. What a cold run does hold: a command that exceeds the limit here on a cold library is
+  red here before it is pushed.
 - One JSON line per command (``id``, ``exit``, ``ok``, ``timed_out``, ``wrote``, ``duration_ms``, ``tail``: the
   last 600 characters of stdout and stderr together; ``read`` only when the caller watches paths, see ``run_one``),
   then one summary line (``ok``, ``tests``, ``failed``,
@@ -56,8 +75,9 @@ not_isolated`` and a test reaching the network can still pass here; no ``--cap-d
 a write outside the tree (``/tmp`` aside, the referee's root file system is read-only) is not seen;
 the referee's image (its python version, its ``/bin/sh``, its installed programs other than git) is not this
 machine's; under a moved home ``sys.prefix`` and the standard library's paths are the run's directory, not the
-installed ones (a test that reads them sees the difference), and whether the referee's own standard library is
-cold is not known here. A green run here is necessary evidence, not the referee's verdict.
+installed ones (a test that reads them sees the difference), the same under a cold home; the referee's own standard library is taken
+to be cold from the durations above, not from a look at it, and its machine's speed is not this one's. A green run here is necessary
+evidence, not the referee's verdict.
 """
 
 from __future__ import annotations
@@ -256,21 +276,51 @@ def interpreter(home: str, cold=stdlib_cold, python: dict | None = None) -> tupl
     py = python or this()
     if not cold(py["stdlib"]):
         return py["executable"], "own"
-    prefix = py["prefix"]
     try:
-        binary = move_home(home, os.path.realpath(py["executable"]), prefix, py["stdlib"], py["libdir"])
-        mine, moved = describe(py["executable"]), describe(binary)
-        if mine and mine[:3] == [prefix] * 3:
-            swap = lambda p: home + p[len(prefix):] if p.startswith(prefix + os.sep) else p  # noqa: E731
-            cache = os.path.join(os.path.dirname(swap(mine[3])), PYCACHE,
-                                 "__init__.%s.pyc" % sys.implementation.cache_tag)
-            if moved == [home, home, home, swap(mine[3]), [swap(p) for p in mine[4]]] and os.path.isfile(cache):
-                return binary, "moved_home"
+        binary = move_home(home, os.path.realpath(py["executable"]), py["prefix"], py["stdlib"], py["libdir"])
+        cache = says_home(py, home, binary)
+        if cache and os.path.isfile(cache):
+            return binary, "moved_home"
     except (OSError, ValueError, TypeError, IndexError):
         pass
     if os.path.lexists(home):
         remove(home)
     return py["executable"], "own"
+
+
+def says_home(py: dict, home: str, binary: str) -> str | None:
+    """The first two checks of a moved home: ``binary`` under ``home``, asked by ``describe``, reports ``home`` as
+    its prefix and the search path of ``py`` (``this()``'s shape) with the prefix replaced, ``py`` itself
+    reporting its own prefix. Then: where ``PROBE``'s bytecode file lies under ``home``, written or not (the
+    caller's third check); None when a check fails."""
+    prefix = py["prefix"]
+    mine, moved = describe(py["executable"]), describe(binary)
+    if mine and mine[:3] == [prefix] * 3:
+        swap = lambda p: home + p[len(prefix):] if p.startswith(prefix + os.sep) else p  # noqa: E731
+        if moved == [home, home, home, swap(mine[3]), [swap(p) for p in mine[4]]]:
+            return os.path.join(os.path.dirname(swap(mine[3])), PYCACHE,
+                                "__init__.%s.pyc" % sys.implementation.cache_tag)
+    return None
+
+
+def cold_home(home: str, python: dict | None = None) -> str | None:
+    """A python whose every start compiles what it imports: the binary of a moved home built at the new directory
+    ``home`` from ``python`` (``this()`` when None), every directory under it closed to writes (mode ``0555``), so
+    that python can keep no bytecode there. It is answered only when ``says_home`` holds and, after that start
+    (which imports ``json``), no directory named ``__pycache__`` lies under ``home``; a home that cannot be built
+    or fails a check is removed and the answer is None (as root, who writes whatever the mode, it fails)."""
+    py = python or this()
+    try:
+        binary = move_home(home, os.path.realpath(py["executable"]), py["prefix"], py["stdlib"], py["libdir"])
+        for top, _, _ in os.walk(home):
+            os.chmod(top, 0o555)
+        if says_home(py, home, binary) and not any(PYCACHE in dirs for _, dirs, _ in os.walk(home)):
+            return binary
+    except (OSError, ValueError, TypeError, IndexError):
+        pass
+    if os.path.lexists(home):
+        remove(home)
+    return None
 
 
 def bindir(path: str, python: str = sys.executable) -> str:
@@ -281,8 +331,12 @@ def bindir(path: str, python: str = sys.executable) -> str:
     return path
 
 
-def pythons(work: str) -> tuple[str, str]:
-    """The ``PATH`` directory of a run under ``work`` (``bindir`` of ``interpreter``) and the interpreter's kind."""
+def pythons(work: str, cold: bool = False) -> tuple[str, str]:
+    """The ``PATH`` directory of a run under ``work`` and the kind of the interpreter its links go to:
+    ``cold_home`` when ``cold`` is asked and ``cold_home`` builds one, else ``interpreter``'s answer."""
+    python = cold_home(os.path.join(work, "python-cold")) if cold else None
+    if python:
+        return bindir(os.path.join(work, "bin"), python), "cold_home"
     python, kind = interpreter(os.path.join(work, "python-home"))
     return bindir(os.path.join(work, "bin"), python), kind
 
@@ -352,12 +406,12 @@ def run_one(test: dict, root: str, names: list[str], path: str, work: str, timeo
 
 
 def run(root: str, tests: list[dict], names: list[str], jobs: int = 1, timeout: float = TIMEOUT,
-        emit=print, watch: tuple[str, ...] = ()) -> dict:
+        emit=print, watch: tuple[str, ...] = (), cold: bool = True) -> dict:
     """Run ``tests``, each on its own copy of ``names``; ``emit`` each result line, in the manifest's order;
-    return the summary. ``watch``: see ``run_one``."""
+    return the summary. ``watch``: see ``run_one``. ``cold``: see ``pythons``."""
     work = tempfile.mkdtemp(prefix="like-referee-")
     try:
-        path, kind = pythons(work)
+        path, kind = pythons(work, cold)
         with concurrent.futures.ThreadPoolExecutor(max(1, jobs)) as pool:
             results = list(pool.map(lambda t: run_one(t, root, names, path, work, timeout, watch), tests))
         for r in results:
@@ -373,6 +427,7 @@ def main(argv: list[str] | None = None, root: str = ROOT, git: str = "git") -> i
     ap.add_argument("-j", "--jobs", type=int, default=1)
     ap.add_argument("--timeout", type=float, default=TIMEOUT)
     ap.add_argument("--only", nargs="+")
+    ap.add_argument("--warm", action="store_true")
     args = ap.parse_args(argv)
     try:
         tests = manifest(root, args.only)
@@ -380,7 +435,7 @@ def main(argv: list[str] | None = None, root: str = ROOT, git: str = "git") -> i
     except Unreadable as e:
         print(json.dumps({"ok": False, "reason": str(e)}))
         return 2
-    summary = run(root, tests, names, args.jobs, args.timeout)
+    summary = run(root, tests, names, args.jobs, args.timeout, cold=not args.warm)
     print(json.dumps(summary, sort_keys=True))
     return 0 if summary["ok"] else 1
 

@@ -7,9 +7,9 @@ target); entries are sorted as git sorts them (a tree's name compared with a tra
 that a tree built here has the id real git gave the same files.
 
 ``install_git(directory, answers)`` writes an executable ``git`` that speaks ``cat-file --batch``: for each
-requested line it writes ``answers[line]`` (raw bytes, given hex-encoded in ``answers.json`` beside it) or
+requested line it writes ``answers[line]`` (raw bytes, kept in ``ANSWERS`` beside it) or
 ``<line> missing``, and exits after answering a line in ``exit_after``; it appends its argv, environment and
-what its stdin and stdout are (``fds``) to ``calls.jsonl`` beside itself. Its ``init`` (the first argument after the options, ``-c`` and ``-C`` taking a value)
+what its stdin and stdout are (``fds``) to ``CALLS`` beside itself (``calls`` reads them). Its ``init`` (the first argument after the options, ``-c`` and ``-C`` taking a value)
 creates the directory named last, its ``fetch`` does nothing, its ``ls-remote`` writes ``listing`` and any command named
 in ``outputs`` writes its bytes; each exits with ``exits[<command>]`` (0 when absent): the objects it then answers
 stand for what a fetch brought.
@@ -108,25 +108,31 @@ def batch_record(sha: str, kind: str, data: bytes) -> bytes:
     return b"%s %s %d\n" % (sha.encode(), kind.encode(), len(data)) + data + b"\n"
 
 
-SCRIPT = '''#!%s
-import json, os, sys
+# Both test ``git``s start as ``python -IS`` and import no module from a file but those every python start does (``start_imports``):
+# a test starts one per git command, hundreds in a file, and where the standard library keeps no bytecode (the
+# referee's sandbox) each start that imports ``json`` compiles it again. So what a start records and reads is
+# marshal, not JSON: ``CALLS`` (read it with ``calls``) and ``ANSWERS``, beside the script.
+CALLS, ANSWERS = "calls", "answers"
+
+SCRIPT = '''#!%s -IS
+import marshal, os, sys
 here = os.path.dirname(os.path.abspath(__file__))
 with open("/proc/self/environ", "rb") as fh:
     env = dict(item.decode().split("=", 1) for item in fh.read().split(b"\\0") if item)
-with open(os.path.join(here, "calls.jsonl"), "a") as fh:
-    fh.write(json.dumps({"argv": sys.argv[1:], "env": env,
-                         "fds": [os.path.realpath("/proc/self/fd/" + str(fd)) for fd in (0, 1)]}) + "\\n")
-with open(os.path.join(here, "answers.json")) as fh:
-    doc = json.load(fh)
+with open(os.path.join(here, "calls"), "ab") as fh:
+    fh.write(marshal.dumps({"argv": sys.argv[1:], "env": env,
+                            "fds": [os.path.realpath("/proc/self/fd/" + str(fd)) for fd in (0, 1)]}))
+with open(os.path.join(here, "answers"), "rb") as fh:
+    doc = marshal.load(fh)
 args, i = sys.argv[1:], 0
 while i < len(args) and args[i].startswith("-"):
     i += 2 if args[i] in ("-c", "-C") else 1
 if i < len(args) and (args[i] in ("init", "fetch") or args[i] in doc["outputs"]):
     if args[i] == "init":
         os.makedirs(args[-1])
-    sys.stdout.buffer.write(bytes.fromhex(doc["outputs"].get(args[i], "")))
+    sys.stdout.buffer.write(doc["outputs"].get(args[i], b""))
     sys.exit(doc["exits"].get(args[i], 0))
-answers = {k: bytes.fromhex(v) for k, v in doc["answers"].items()}
+answers = doc["answers"]
 out = sys.stdout.buffer
 for line in sys.stdin.buffer:
     key = line.rstrip(b"\\n").decode()
@@ -143,16 +149,42 @@ def install_git(directory: str, answers: dict[str, bytes], exit_after: tuple = (
     with open(path, "w") as fh:
         fh.write(SCRIPT % sys.executable)
     os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
-    with open(os.path.join(directory, "answers.json"), "w") as fh:
-        json.dump({"answers": {k: v.hex() for k, v in answers.items()}, "exit_after": list(exit_after),
-                   "exits": exits or {},
-                   "outputs": {k: v.hex() for k, v in ({"ls-remote": listing} | (outputs or {})).items()}}, fh)
+    with open(os.path.join(directory, ANSWERS), "wb") as fh:
+        marshal.dump({"answers": dict(answers), "exit_after": list(exit_after), "exits": exits or {},
+                      "outputs": {"ls-remote": listing} | (outputs or {})}, fh)
     return path
 
 
 def calls(directory: str) -> list[dict]:
-    with open(os.path.join(directory, "calls.jsonl")) as fh:
-        return [json.loads(line) for line in fh]
+    """What the test ``git``s in ``directory`` recorded, one dict per start, in order (``CALLS``)."""
+    out = []
+    with open(os.path.join(directory, CALLS), "rb") as fh:
+        while fh.peek(1):
+            out.append(marshal.load(fh))
+    return out
+
+
+def start_imports(script: str, args: list[str], stdin: bytes = b"") -> list[str]:
+    """The modules a start of ``script`` (run as its ``#!`` line says, with ``args``) imports from a file beyond
+    those every start of python imports: python's own ``-X importtime`` report of that start, less the report of
+    an empty file run as ``python -IS`` and less the modules built into the binary or frozen in it, which cost no
+    compiling. What the scripts here promise is that this is empty (see ``CALLS``)."""
+    import importlib.machinery
+    import subprocess
+    import tempfile
+
+    def imported(argv: list[str]) -> set[str]:
+        proc = subprocess.run(argv, input=stdin, env={}, capture_output=True)
+        return {line.rsplit("|", 1)[1].strip() for line in proc.stderr.decode().splitlines()[1:]
+                if line.startswith("import time:")}
+
+    with open(script) as fh:
+        shebang = fh.readline().rstrip("\n")[2:].split(" ")
+    with tempfile.NamedTemporaryFile(suffix=".py") as empty:
+        names = (imported(shebang + ["-X", "importtime", script] + args)
+                 - imported([sys.executable, "-IS", "-X", "importtime", empty.name]))
+    return sorted(n for n in names if n not in sys.builtin_module_names
+                  and importlib.machinery.FrozenImporter.find_spec(n) is None)
 
 
 # ---------------------------------------------------------------- a history git (``ledger.founder``'s ref check)

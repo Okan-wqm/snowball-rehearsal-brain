@@ -34,7 +34,9 @@ line of a report pushed without a run; founder ledger f1359 onward).
    whole order of an agent's run and the rules it is measured by.
 4. `python3 tests/prepush.py run -j 3`. It runs the whole manifest as `tests/run_like_referee.py` does and writes
    a stamp only when every command is green on a tree that did not change during the run. Red: repair the cause,
-   then run again; do not push.
+   then run again; do not push. Its last line's `python` must say `cold_home`: only then were the commands timed
+   on a python that keeps no bytecode, as the referee's durations say its own does, and a command near the
+   limit (600 s) was seen here; a command over half of it is the next thing to make cheaper.
 5. Write the ledger rows with `python -m ledger.founder append` (from `referee/`); among them, in every
    session, the outcome row of each agent run of an earlier session that has none (`brain:agents`, step 4: a
    push with no agent run owes it too, and `python3 tests/agent_rules.py`, a lesson's recheck, is red without

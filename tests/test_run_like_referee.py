@@ -45,11 +45,11 @@ class Base(unittest.TestCase):
         os.chmod(path, mode)
         return name
 
-    def run_cmds(self, *cmds: str, names: list[str] | None = None, jobs: int = 1, timeout: float = 60.0):
+    def run_cmds(self, *cmds: str, names: list[str] | None = None, jobs: int = 1, timeout: float = 60.0, **how):
         lines: list[str] = []
         tests = [{"id": "T%d" % n, "cmd": c} for n, c in enumerate(cmds)]
         summary = R.run(self.root, tests, names if names is not None else [self.put("a.txt")], jobs, timeout,
-                        emit=lines.append)
+                        emit=lines.append, **how)
         return [json.loads(l) for l in lines], summary
 
 
@@ -201,7 +201,7 @@ class Environment(Base):
         with open(dump) as f:
             python, python3, executable, path = json.load(f)
         self.assertEqual((python, executable), (python3, os.path.join(path, "python")))
-        self.assertIn(summary["python"], ("own", "moved_home"))
+        self.assertIn(summary["python"], ("cold_home", "own", "moved_home"))
         if summary["python"] == "own":
             self.assertEqual(python, os.path.realpath(sys.executable))
         else:
@@ -234,7 +234,8 @@ class Environment(Base):
 
 FAKE_PYTHON = """#!%s
 # A stand-in for a python binary: started as ``<it> -I -c SELF`` it answers from where its own file lies, as a
-# python finds its prefix; MODE makes it break one of the things ``interpreter`` checks of a moved home.
+# python finds its prefix; MODE makes it break one of the things ``interpreter`` and ``cold_home`` check of a
+# moved home (``pries``: it opens the closed directory and writes its bytecode all the same).
 import json, os, sys
 MODE, FIRST, TAG = %r, %r, %r
 if sys.argv[1:3] != ["-I", "-c"] or set(os.environ) - {"LC_CTYPE"}:  # LC_CTYPE: python's own locale coercion
@@ -246,6 +247,8 @@ if moved and MODE == "fails":
     sys.exit(1)
 if not (moved and MODE == "no_bytecode"):
     try:
+        if moved and MODE == "pries":
+            os.chmod(os.path.join(lib, "json"), 0o755)
         os.makedirs(os.path.join(lib, "json", "__pycache__"), exist_ok=True)
         open(os.path.join(lib, "json", "__pycache__", "__init__.%%s.pyc" %% TAG), "w").close()
     except OSError:
@@ -355,22 +358,110 @@ class Interpreter(Base):
                 self.assertEqual(R.interpreter(home, cold=lambda lib: True, python=bent), (bent["executable"], "own"))
                 self.assertFalse(os.path.lexists(home))
 
-    def test_a_run_links_to_what_interpreter_answers_and_says_its_kind(self):
-        asked = []
-        saved = R.interpreter
-        self.addCleanup(setattr, R, "interpreter", saved)
-        R.interpreter = lambda home: asked.append(home) or (sys.executable, "a-kind")
+    def answers(self, cold: str | None) -> list:
+        """``cold_home`` and ``interpreter`` replaced: the first answers ``cold``, the second this interpreter as
+        ``a-kind``; the list is who was asked, with what."""
+        asked: list = []
+        self.addCleanup(setattr, R, "interpreter", R.interpreter)
+        self.addCleanup(setattr, R, "cold_home", R.cold_home)
+        R.interpreter = lambda home: asked.append(("warm", home)) or (sys.executable, "a-kind")
+        R.cold_home = lambda home: asked.append(("cold", home)) or cold
+        return asked
+
+    def linked(self, **how) -> tuple[str, str, str]:
+        """A run of one command: the summary's ``python``, the run's directory, what its ``python3`` links to."""
         dump = os.path.join(self.tmp, "link.txt")
         out, summary = self.run_cmds("python -c \"import json,os; p=os.environ['PATH']; json.dump([p, os.readlink("
-                                     "os.path.join(p, 'python3'))], open(%r,'w'))\"" % dump)
+                                     "os.path.join(p, 'python3'))], open(%r,'w'))\"" % dump, **how)
         self.assertTrue(out[0]["ok"], out)
-        self.assertEqual(summary["python"], "a-kind")
         with open(dump) as f:
             path, link = json.load(f)
-        self.assertEqual(link, sys.executable)
-        # the home is asked for in the run's own directory, beside its PATH directory, so it is removed with it
-        self.assertEqual(asked, [os.path.join(os.path.dirname(path), "python-home")])
         self.assertEqual(os.path.dirname(os.path.dirname(path)), self.work)
+        return summary["python"], os.path.dirname(path), link
+
+    def test_a_run_asks_for_a_cold_home_first_and_says_cold_home_when_it_gets_one(self):
+        asked = self.answers(os.path.realpath(sys.executable))
+        kind, run, link = self.linked()
+        self.assertEqual((kind, link), ("cold_home", os.path.realpath(sys.executable)))
+        # the home is asked for in the run's own directory, beside its PATH directory, so it is removed with it
+        self.assertEqual(asked, [("cold", os.path.join(run, "python-cold"))])
+
+    def test_a_run_with_no_cold_home_links_to_what_interpreter_answers_and_says_its_kind(self):
+        asked = self.answers(None)
+        kind, run, link = self.linked()
+        self.assertEqual((kind, link), ("a-kind", sys.executable))
+        self.assertEqual(asked, [("cold", os.path.join(run, "python-cold")), ("warm", os.path.join(run, "python-home"))])
+
+    def test_a_run_asked_warm_and_pythons_unasked_build_no_cold_home(self):
+        asked = self.answers(os.path.realpath(sys.executable))
+        kind, run, link = self.linked(cold=False)
+        self.assertEqual((kind, link), ("a-kind", sys.executable))
+        self.assertEqual(asked, [("warm", os.path.join(run, "python-home"))])
+        work = os.path.join(self.tmp, "w")
+        os.mkdir(work)
+        self.assertEqual(R.pythons(work), (os.path.join(work, "bin"), "a-kind"))
+        self.assertEqual(asked[1:], [("warm", os.path.join(work, "python-home"))])
+
+    def closed(self, home: str) -> None:
+        """Every directory under ``home`` is closed to writes and none is a bytecode cache."""
+        tops = [top for top, _, _ in os.walk(home)]
+        self.assertEqual({stat.S_IMODE(os.lstat(t).st_mode) for t in tops}, {0o555})
+        self.assertEqual([t for t in tops if os.path.basename(t) == "__pycache__"], [])
+
+    def test_a_cold_home_is_a_moved_home_closed_to_writes(self):
+        # no_bytecode: a python that writes none is what a cold home asks for, not a failed check.
+        for mode in ("good", "no_bytecode"):
+            with self.subTest(mode=mode):
+                py, home = self.fake(mode), os.path.join(self.tmp, "home-" + mode)
+                self.assertEqual(R.cold_home(home, python=py), os.path.join(home, "bin", "py-fake"))
+                self.assertEqual(os.readlink(os.path.join(home, "lib", "py", "json", "__init__.py")),
+                                 os.path.join(py["stdlib"], "json", "__init__.py"))
+                self.closed(home)
+
+    def test_a_cold_home_failing_a_check_or_a_layout_that_cannot_move_is_removed_and_is_none(self):
+        # pries: the start left bytecode in the home (as root's python would), so the home is not cold.
+        for mode in ("old_prefix", "other_path", "fails", "venv", "pries"):
+            with self.subTest(mode=mode):
+                py, home = self.fake(mode), os.path.join(self.tmp, "home-" + mode)
+                self.assertIsNone(R.cold_home(home, python=py))
+                self.assertFalse(os.path.lexists(home))
+        py, home = self.fake("good"), os.path.join(self.tmp, "home")
+        outside = self.stdlib("outside")
+        for change in ({"stdlib": outside}, {"libdir": outside}, {"executable": os.path.join(self.tmp, "absent")}):
+            with self.subTest(change=change):
+                self.assertIsNone(R.cold_home(home, python=dict(py, **change)))
+                self.assertFalse(os.path.lexists(home))
+
+    def test_this_interpreter_in_a_cold_home_compiles_at_every_start_and_keeps_nothing(self):
+        # The real interpreter, where its layout moves and this user is not root (else the answer is None and
+        # nothing is left): a child with an empty environment takes the home as its prefix, imports a module of
+        # the standard library from there, and no bytecode of it is there afterwards.
+        home = os.path.join(self.tmp, "home")
+        python = R.cold_home(home)
+        if python is None:
+            self.assertFalse(os.path.lexists(home))
+            return
+        import subprocess
+        path = R.bindir(os.path.join(self.tmp, "bin"), python)
+        code = "import colorsys, sys; print(sys.prefix); print(colorsys.__file__); print(colorsys.__cached__)"
+        for _ in range(2):
+            proc = subprocess.run([os.path.join(path, "python"), "-c", code], env={}, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            prefix, source, cached = proc.stdout.decode().split()
+            self.assertEqual(prefix, home)
+            self.assertTrue(source.startswith(home + os.sep) and cached.startswith(home + os.sep), (source, cached))
+            self.assertFalse(os.path.lexists(cached))
+        self.closed(home)
+
+    def test_a_run_as_it_is_called_is_cold_where_a_cold_home_builds(self):
+        # Nothing replaced: the run says cold_home exactly when this machine's interpreter gives one.
+        probe = R.cold_home(os.path.join(self.tmp, "probe"))
+        kind, run, link = self.linked()
+        self.assertEqual(kind == "cold_home", probe is not None)
+        if probe is not None:
+            self.assertEqual(link, os.path.join(run, "python-cold", os.path.relpath(
+                os.path.realpath(sys.executable), sys.base_prefix)))
+        self.assertEqual(os.listdir(self.work), [])
 
     def test_this_interpreter_made_cold_serves_bytecode_to_a_child_with_an_empty_environment(self):
         # The real interpreter: where its layout moves (the three checks say), a module a child imports is
@@ -410,7 +501,7 @@ class Results(Base):
         self.assertEqual([(r["exit"], r["ok"]) for r in out], [(0, True), (3, False), (0, True)])
         self.assertEqual(out[0]["tail"], "a" * 599 + "\n")
         self.assertEqual(out[1]["tail"], "boom")
-        self.assertIn(summary.pop("python"), ("own", "moved_home"))
+        self.assertIn(summary.pop("python"), ("cold_home", "own", "moved_home"))
         self.assertEqual(summary, {"ok": False, "tests": 3, "failed": ["T1"], "network": "not_isolated"})
 
     def test_a_command_over_the_limit_is_timed_out(self):
@@ -449,6 +540,15 @@ class Main(Base):
         with contextlib.redirect_stdout(buf):
             code = R.main(list(argv), root=self.root, git=self.git)
         return code, [json.loads(l) for l in buf.getvalue().splitlines()]
+
+    def test_warm_is_asked_by_its_flag_only(self):
+        asked: list = []
+        self.addCleanup(setattr, R, "cold_home", R.cold_home)
+        R.cold_home = lambda home: asked.append(home)
+        self.assertEqual((self.main("--only", "T1")[0], len(asked)), (0, 1))
+        code, lines = self.main("--only", "T1", "--warm")
+        self.assertEqual((code, len(asked)), (0, 1))
+        self.assertIn(lines[-1]["python"], ("own", "moved_home"))
 
     def test_exit_codes(self):
         self.assertEqual(self.main("--only", "T1")[0], 0)

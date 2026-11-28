@@ -7,8 +7,9 @@ count.
 Why not JSON and ``runpy``: this file is every fake container's start. ``json`` and ``runpy`` bring ``re``,
 ``enum``, ``typing`` and ``pkgutil`` with them, and where the standard library has no bytecode (a read-only image
 that ships none) each start compiles them again: measured 2026-11-28 on such a home, 136 ms a start with them
-against 39 ms where bytecode is kept. What is imported now: ``os`` and ``sys``, which python has loaded before it reads this file,
-and ``errno``, which is built into the binary (``test_contained.StartTest`` holds the list).
+against 39 ms where bytecode is kept, and 18 ms without them. What is imported now: ``os`` and ``sys``, which
+python has loaded before it reads this file, and ``errno``, which is built into the binary
+(``test_contained.StartTest`` holds the list).
 """
 
 import errno
